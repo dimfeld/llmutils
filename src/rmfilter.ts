@@ -8,6 +8,7 @@ import * as changeCase from 'change-case';
 import os from 'node:os';
 import { glob, globSync } from 'glob';
 import { xmlFormatPrompt } from './xml/prompt';
+import { generateSearchReplacePrompt } from './diff-editor/prompts';
 
 let { values, positionals } = parseArgs({
   options: {
@@ -129,7 +130,7 @@ if (values.help) {
   console.log();
   console.log('Options:');
   console.log('  --cwd <dir>                 Set the working directory, defaults to git root');
-  console.log('  -f, --edit-format <format>  Set the edit format (diff or xml)');
+  console.log('  -f, --edit-format (xml|diff)  Set the edit format');
   console.log('  -p, --packages <packages>   Include the contents of these packages');
   console.log('  -u, --upstream <packages>   Include this packages and its dependencies');
   console.log('  -d, --downstream <packages> Include this package and its dependents');
@@ -499,6 +500,7 @@ const finalOutput = [
   docsTag,
   rulesTag,
   values['edit-format'] === 'whole-xml' ? xmlFormatPrompt : '',
+  values['edit-format'] === 'diff' ? generateSearchReplacePrompt : '',
   instructionsTag,
 ]
   .filter(Boolean)

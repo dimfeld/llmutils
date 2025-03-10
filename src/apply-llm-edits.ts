@@ -11,11 +11,23 @@ import clipboard from 'clipboardy';
 import { enableDebug } from './logging.ts';
 import { processRawFiles } from './parse_raw_edits.ts';
 import { processXmlContents } from './parse_xml.ts';
+import { processSearchReplace } from './diff-editor/parse.ts';
 
 const args = process.argv.slice(2);
+
+if (args.includes('--help')) {
+  console.log('Usage: apply-llm-edits [options]');
+  console.log('Options:');
+  console.log('  --stdin           Read input from stdin');
+  console.log('  --gitroot         Write files to the Git root');
+  console.log('  --debug           Enable debug logging');
+  console.log('  --dry-run         Dry run - do not apply changes');
+  process.exit(0);
+}
+
 const useStdin = args.includes('--stdin');
 const writeToGitroot = args.includes('--gitroot');
-const xmlMode = args.includes('--xml');
+const dryRun = args.includes('--dry-run');
 
 enableDebug(args.includes('--debug'));
 
@@ -25,20 +37,37 @@ const writeRoot = writeToGitroot
   ? (await $`git rev-parse --show-toplevel`.text()).trim()
   : process.cwd();
 
+const xmlMode = content.includes('<code_changes>');
+const diffMode = content.includes('<<<<<<< SEARCH');
+
+export interface ProcessFileOptions {
+  content: string;
+  writeRoot: string;
+  dryRun: boolean;
+}
+
+let processPromise;
 if (xmlMode) {
-  processXmlContents({
+  processPromise = processXmlContents({
     content,
     writeRoot,
-  }).catch((err: Error) => {
-    console.error('Error processing input:', err);
-    process.exit(1);
+    dryRun,
+  });
+} else if (diffMode) {
+  processPromise = processSearchReplace({
+    content,
+    writeRoot,
+    dryRun,
   });
 } else {
-  processRawFiles({
+  processPromise = processRawFiles({
     content,
     writeRoot,
-  }).catch((err) => {
-    console.error('Error processing input:', err);
-    process.exit(1);
+    dryRun,
   });
 }
+
+processPromise.catch((err) => {
+  console.error('Error processing input:', err);
+  process.exit(1);
+});

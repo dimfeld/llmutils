@@ -3,21 +3,19 @@ import { $ } from 'bun';
 import * as path from 'path';
 
 import { debugLog } from './logging.ts';
-
-export interface ProcessFileOptions {
-  content: string;
-  writeRoot: string;
-}
+import type { ProcessFileOptions } from './apply-llm-edits.ts';
 
 function processLastNonEmptyLine(line: string) {
   // Check for markdown header (e.g., **`filename`**)
-  const markdownMatch = line.match(/\*\*`(.+?)`\*\*/) || line.match(/^`(.+?)`$/);
+  line = line.trim();
+  const markdownMatch =
+    line.match(/\*\*`(.+?)`\*\*/) || line.match(/^`(.+?)`$/) || line.match(/^#+ +`?([^`]+)`?$/);
   if (markdownMatch) {
     debugLog('Found markdown header:', markdownMatch[1]);
     return markdownMatch[1].trim();
   }
   // Check for raw filename (e.g., src/some/file.js)
-  else if (line.trim().includes('/')) {
+  else if (line.includes('/') && !line.includes(' ')) {
     debugLog('Found raw filename:', line);
     return line.trim();
   }
@@ -26,7 +24,7 @@ function processLastNonEmptyLine(line: string) {
 function processFirstCommentLine(line: string) {
   let commentContentsMatch =
     /^\/\/ +(.+)/.exec(line) ||
-    /^# +(.+)/.exec(line) ||
+    /^#+ +(.+)/.exec(line) ||
     /^\s*\/\* +(.+)\*\/.*/.exec(line) ||
     /^<!-- (.+?) -->/.exec(line) ||
     /^<file path="(.+?)">/.exec(line);
@@ -40,7 +38,7 @@ function processFirstCommentLine(line: string) {
   }
   return filename;
 }
-export async function processRawFiles({ content, writeRoot }: ProcessFileOptions) {
+export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFileOptions) {
   // Split content into lines
   const lines = content.split('\n');
   let state:
@@ -95,7 +93,12 @@ export async function processRawFiles({ content, writeRoot }: ProcessFileOptions
         let foundFilename = processLastNonEmptyLine(lastNonEmptyLine);
         if (foundFilename) {
           filename = foundFilename;
-          state = 'skippingLanguageSpecifier';
+          state = 'trimmingLeadingLines';
+          // The filename was outside of the code block, so this line is content we want to push.
+          if (line.trim()) {
+            // instead we should have manual line advancement so we can push off handling this
+            currentBlock.push(line);
+          }
           continue;
         }
       }
@@ -110,11 +113,6 @@ export async function processRawFiles({ content, writeRoot }: ProcessFileOptions
       } else {
         state = 'ignoring';
       }
-    }
-
-    if (state === 'skippingLanguageSpecifier') {
-      state = 'trimmingLeadingLines';
-      continue; // Skip the language specifier line
     }
 
     if (state === 'trimmingLeadingLines' || state === 'trimmingPostCommentLines') {
@@ -144,7 +142,9 @@ export async function processRawFiles({ content, writeRoot }: ProcessFileOptions
   for (const [filePath, content] of filesToWrite) {
     const fullPath = path.resolve(writeRoot, filePath);
     try {
-      await Bun.write(fullPath, content.join('\n'));
+      if (!dryRun) {
+        await Bun.write(fullPath, content.join('\n'));
+      }
       console.log(`Wrote ${content.length} lines to file: ${filePath}`);
     } catch (err) {
       console.error(`Failed to write ${filePath}: ${err as Error}`);

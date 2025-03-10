@@ -1,19 +1,14 @@
-import { parseXmlString } from './xml/parse.ts';
+import { parseContentsWithXml, parseXmlString } from './xml/parse.ts';
 import { applyFileChanges } from './xml/apply.ts';
+import type { ProcessFileOptions } from './apply-llm-edits.ts';
 
-export async function processXmlContents({
-  content,
-  writeRoot,
-}: {
-  content: string;
-  writeRoot: string;
-}) {
-  const changes = (await parseXmlString(content)) ?? [];
+export async function processXmlContents({ content, writeRoot, dryRun }: ProcessFileOptions) {
+  const changes = (await parseContentsWithXml(content)) ?? [];
   if (!changes) {
     throw new Error(`No changes found in XML output`);
   }
 
   for (let change of changes) {
-    await applyFileChanges(change, writeRoot);
+    await applyFileChanges(change, writeRoot, dryRun);
   }
 }

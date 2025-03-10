@@ -8,6 +8,22 @@ interface ParsedFileChange {
   file_code?: string;
 }
 
+export async function parseContentsWithXml(content: string) {
+  const results: ParsedFileChange[] = [];
+  const regex = /<code_changes>(.*?)<\/code_changes>/gms;
+
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    const xmlContent = match[1];
+    const parsed = await parseXmlString(xmlContent);
+    if (parsed) {
+      results.push(...parsed);
+    }
+  }
+
+  return results;
+}
+
 export async function parseXmlString(xmlString: string): Promise<ParsedFileChange[] | null> {
   try {
     const parser = new DOMParser();

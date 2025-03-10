@@ -1,142 +1,122 @@
 // This is a port of Aider's edit_block coder
 import * as path from 'path';
 import * as fs from 'fs';
+import * as diff from 'diff';
 import stringComparison from 'string-comparison';
-
-// Assuming these types would come from your IO utilities
-interface IO {
-  readText(path: string): string;
-  writeText(path: string, content: string): void;
-}
+import type { ProcessFileOptions } from '../apply-llm-edits';
 
 interface Edit {
-  path: string;
+  filePath: string;
   original: string;
   updated: string;
 }
 
-export class EditBlockCoder {
-  private editFormat: string = 'diff';
-  private fence: [string, string] = ['```', '```'];
-  private io: IO;
-  private shellCommands: string[] = [];
+const fence = '```';
 
-  constructor(io: IO) {
-    this.io = io;
-  }
+export async function processSearchReplace({ content, writeRoot, dryRun }: ProcessFileOptions) {
+  const edits = getEdits(content, writeRoot);
+  applyEdits(edits, writeRoot, dryRun);
+}
 
-  private absRootPath(path: string): string {
-    // TODO Implement your path resolution logic
-    return path;
-  }
+function getEdits(content: string, rootDir: string): Edit[] {
+  const edits = findOriginalUpdateBlocks(
+    content,
+    [] // TODO getInchatRelativeFiles would need to be implemented
+  );
 
-  private getRelFname(fullPath: string): string {
-    // TODO Implement your relative path logic
-    return fullPath;
-  }
+  // this.shellCommands.push(
+  //   ...edits.filter((edit) => edit.filePath === null).map((edit) => edit.updated)
+  // );
 
-  getEdits(content: string): Edit[] {
-    const edits = findOriginalUpdateBlocks(
-      content,
-      this.fence,
-      [] // TODO getInchatRelativeFiles would need to be implemented
-    );
+  return edits
+    .filter((edit) => edit.filePath !== null)
+    .map((edit) => ({
+      filePath: edit.filePath!,
+      original: edit.original!,
+      updated: edit.updated,
+    }));
+}
 
-    this.shellCommands.push(
-      ...edits.filter((edit) => edit.path === null).map((edit) => edit.updated)
-    );
+function applyEdits(edits: Edit[], rootDir: string, dryRun: boolean = false): Edit[] | void {
+  const failed: Edit[] = [];
+  const passed: Edit[] = [];
+  const updatedEdits: Edit[] = [];
 
-    return edits
-      .filter((edit) => edit.path !== null)
-      .map((edit) => ({
-        path: edit.path!,
-        original: edit.original!,
-        updated: edit.updated,
-      }));
-  }
+  for (const edit of edits) {
+    const { filePath, original, updated } = edit;
+    const fullPath = path.resolve(rootDir, filePath);
+    let newContent: string | null = null;
 
-  applyEdits(edits: Edit[], dryRun: boolean = false): Edit[] | void {
-    const failed: Edit[] = [];
-    const passed: Edit[] = [];
-    const updatedEdits: Edit[] = [];
-
-    for (const edit of edits) {
-      const { path, original, updated } = edit;
-      const fullPath = this.absRootPath(path);
-      let newContent: string | null = null;
-
-      if (fs.existsSync(fullPath)) {
-        const content = this.io.readText(fullPath);
-        newContent = doReplace(fullPath, content, original, updated, this.fence);
-      }
-
-      if (!newContent && original.trim()) {
-        // TODO Try other files in chat - implement abs_fnames logic
-      }
-
-      updatedEdits.push({ path, original, updated });
-
-      if (newContent) {
-        if (!dryRun) {
-          this.io.writeText(fullPath, newContent);
-        }
-        passed.push(edit);
-      } else {
-        failed.push(edit);
-      }
+    if (fs.existsSync(fullPath)) {
+      const content = fs.readFileSync(fullPath, 'utf-8');
+      newContent = doReplace(fullPath, content, original, updated);
     }
 
-    if (dryRun) {
-      return updatedEdits;
+    if (!newContent && original.trim()) {
+      // TODO Try other files in chat - implement abs_fnames logic
     }
 
-    if (!failed.length) {
-      return;
-    }
+    updatedEdits.push({ filePath, original, updated });
 
-    throw new Error(this.formatErrorMessage(failed, passed));
+    if (newContent) {
+      console.log(`Applying edit to ${fullPath}`);
+      if (!dryRun) {
+        fs.writeFileSync(fullPath, newContent);
+      }
+      passed.push(edit);
+    } else {
+      failed.push(edit);
+    }
   }
 
-  private formatErrorMessage(failed: Edit[], passed: Edit[]): string {
-    const blocks = failed.length === 1 ? 'block' : 'blocks';
-    let res = `# ${failed.length} SEARCH/REPLACE ${blocks} failed to match!\n`;
+  if (!failed.length) {
+    return;
+  }
 
-    for (const edit of failed) {
-      const { path, original, updated } = edit;
-      const fullPath = this.absRootPath(path);
-      const content = this.io.readText(fullPath);
+  throw new Error(formatErrorMessage(rootDir, failed, passed));
+}
 
-      res += `
-## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines in ${path}
+function formatErrorMessage(rootDir: string, failed: Edit[], passed: Edit[]): string {
+  const blocks = failed.length === 1 ? 'block' : 'blocks';
+  let res = `# ${failed.length} SEARCH/REPLACE ${blocks} failed to match!\n`;
+
+  for (const edit of failed) {
+    const { original, updated } = edit;
+    const fullPath = path.resolve(rootDir, edit.filePath);
+    const content = fs.readFileSync(fullPath, 'utf-8');
+
+    res += `
+## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines in ${fullPath}
 <<<<<<< SEARCH
 ${original}=======
 ${updated}>>>>>>> REPLACE
 
 `;
-      const similar = findSimilarLines(original, content);
-      if (similar) {
-        res += `Did you mean to match some of these actual lines from ${path}?
+    const similar = findSimilarLines(original, content);
+    if (similar) {
+      res += `Did you mean to match some of these actual lines from ${fullPath}?
 
-${this.fence[0]}
+${fence}
 ${similar}
-${this.fence[1]}
+${fence}
 
 `;
-      }
+
+      const similarDiff = diff.createPatch('file', original, similar);
+      res += `${similarDiff}\n`;
     }
-    return res;
   }
+  return res;
 }
 
 function doReplace(
   fname: string,
   content: string | null,
   beforeText: string,
-  afterText: string,
-  fence: [string, string]
+  afterText: string
 ): string | null {
-  beforeText = stripQuotedWrapping(beforeText, fname, fence);
-  afterText = stripQuotedWrapping(afterText, fname, fence);
+  beforeText = stripQuotedWrapping(beforeText, fname);
+  afterText = stripQuotedWrapping(afterText, fname);
 
   if (!fs.existsSync(fname) && !beforeText.trim()) {
     fs.writeFileSync(fname, '');
@@ -154,11 +134,7 @@ function doReplace(
   return replaceMostSimilarChunk(content, beforeText, afterText);
 }
 
-function stripQuotedWrapping(
-  res: string,
-  fname?: string,
-  fence: [string, string] = ['```', '```']
-): string {
+function stripQuotedWrapping(res: string, fname?: string): string {
   if (!res) return res;
 
   let lines = res.split('\n');
@@ -167,7 +143,7 @@ function stripQuotedWrapping(
     lines = lines.slice(1);
   }
 
-  if (lines[0].startsWith(fence[0]) && lines[lines.length - 1].startsWith(fence[1])) {
+  if (lines[0].startsWith(fence) && lines[lines.length - 1].startsWith(fence)) {
     lines = lines.slice(1, -1);
   }
 
@@ -198,10 +174,14 @@ function replaceMostSimilarChunk(whole: string, part: string, replace: string): 
 }
 
 function prep(content: string): { content: string; lines: string[] } {
+  let lines = content.split('\n').map((line) => line + '\n');
+  if (lines.length > 1 && lines.at(-1) === '\n') {
+    lines = lines.slice(0, -1);
+  }
+
   if (content && !content.endsWith('\n')) {
     content += '\n';
   }
-  const lines = content.split('\n').map((line) => line + '\n');
   return { content, lines };
 }
 
@@ -358,8 +338,8 @@ function replacePartWithMissingLeadingWhitespace(
   let numLeading = 0;
   if (leading.length && Math.min(...leading) > 0) {
     numLeading = Math.min(...leading);
-    partLines = partLines.map((p) => (p.trim() ? p.slice(numLeading) : p));
-    replaceLines = replaceLines.map((p) => (p.trim() ? p.slice(numLeading) : p));
+    partLines = partLines.map((p) => p.slice(numLeading).trimEnd());
+    replaceLines = replaceLines.map((p) => p.slice(numLeading).trimEnd());
   }
 
   // Can we find an exact match not including the leading whitespace
@@ -418,16 +398,12 @@ function matchButForLeadingWhitespace(wholeLines: string[], partLines: string[])
 }
 
 interface EditBlock {
-  path: string | null;
+  filePath: string | null;
   original: string | null;
   updated: string;
 }
 
-function findOriginalUpdateBlocks(
-  content: string,
-  fence: [string, string] = ['```', '```'],
-  validFnames: string[] = []
-): EditBlock[] {
+function findOriginalUpdateBlocks(content: string, validFnames: string[] = []): EditBlock[] {
   const lines = content.split('\n').map((line) => line + '\n');
   const results: EditBlock[] = [];
   let i = 0;
@@ -467,7 +443,7 @@ function findOriginalUpdateBlocks(
       if (i < lines.length && lines[i].trim().startsWith('```')) {
         i++; // Skip the closing ```
       }
-      results.push({ path: null, original: null, updated: shellContent.join('') });
+      results.push({ filePath: null, original: null, updated: shellContent.join('') });
       continue;
     }
 
@@ -478,7 +454,6 @@ function findOriginalUpdateBlocks(
         const isNewFileDivider = i + 1 < lines.length && dividerPattern.test(lines[i + 1].trim());
         let filename = findFilename(
           lines.slice(Math.max(0, i - 3), i),
-          fence,
           isNewFileDivider ? null : validFnames
         );
 
@@ -487,7 +462,7 @@ function findOriginalUpdateBlocks(
             filename = currentFilename;
           } else {
             throw new Error(
-              `Bad/missing filename. The filename must be alone on the line before the opening fence ${fence[0]}`
+              `Bad/missing filename. The filename must be alone on the line before the opening fence ${fence}`
             );
           }
         } else {
@@ -524,7 +499,7 @@ function findOriginalUpdateBlocks(
         }
 
         results.push({
-          path: currentFilename,
+          filePath: currentFilename,
           original: originalText.join(''),
           updated: updatedText.join(''),
         });
@@ -540,16 +515,15 @@ function findOriginalUpdateBlocks(
   return results;
 }
 
-function stripFilename(filename: string, fence: [string, string]): string | undefined {
+function stripFilename(filename: string): string | undefined {
   filename = filename.trim();
 
   if (filename === '...') {
     return undefined;
   }
 
-  const startFence = fence[0];
   const tripleBackticks = '```';
-  if (filename.startsWith(startFence) || filename.startsWith(tripleBackticks)) {
+  if (filename.startsWith(fence) || filename.startsWith(tripleBackticks)) {
     return undefined;
   }
 
@@ -562,11 +536,7 @@ function stripFilename(filename: string, fence: [string, string]): string | unde
   return filename;
 }
 
-function findFilename(
-  lines: string[],
-  fence: [string, string],
-  validFnames: string[] | null
-): string | undefined {
+function findFilename(lines: string[], validFnames: string[] | null): string | undefined {
   if (validFnames === null) {
     validFnames = [];
   }
@@ -576,13 +546,13 @@ function findFilename(
   const filenames: string[] = [];
 
   for (const line of reversedLines) {
-    const filename = stripFilename(line, fence);
+    const filename = stripFilename(line);
     if (filename) {
       filenames.push(filename);
     }
 
     // Only continue as long as we keep seeing fences
-    if (!line.startsWith(fence[0]) && !line.startsWith('```')) {
+    if (!line.startsWith(fence)) {
       break;
     }
   }
