@@ -434,6 +434,12 @@ if (values.docs) {
 let rulesContent: string[] = [];
 
 for (let pattern of values.rules || []) {
+  // simple check, should be better
+  if (pattern.startsWith('~/')) {
+    let homeDir = os.homedir();
+    pattern = path.join(homeDir, pattern.slice(2));
+  }
+
   const matches = await glob(pattern);
   if (matches.length === 0) {
     console.error(`No files found matching pattern: ${pattern}`);
@@ -455,7 +461,6 @@ if (!values['omit-cursorrules']) {
     const cursorrulesContent = await Bun.file(cursorrulesPath).text();
     rulesContent.push(cursorrulesContent);
   } catch (error) {
-    console.error('no cursor rules');
     // It's ok if .cursorrules doesn't exist
   }
 }

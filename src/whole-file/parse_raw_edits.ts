@@ -9,12 +9,13 @@ function processLastNonEmptyLine(line: string) {
   // Check for markdown header (e.g., **`filename`**)
   line = line.trim();
   const markdownMatch =
-    line.match(/\*\*`(.+?)`\*\*/) ||
+    line.match(/\*\*`?(.+?)`?\*\*/) ||
     line.match(/^`(.+?)`$/) ||
     line.match(/^#+ +`?([^`]+)`?$/) ||
     line.match(/#+ .+ `(.+?)`/);
   if (markdownMatch && markdownMatch[1].includes('.')) {
     debugLog('Found markdown header:', markdownMatch[1]);
+
     return markdownMatch[1].trim();
   }
   // Check for raw filename (e.g., src/some/file.js)
@@ -89,7 +90,15 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
 
     if (state === 'startCodeBlock') {
       // Check preBlockLines for filename
-      const lastNonEmptyLine = preBlockLines.findLast((l) => l.trim() !== '');
+      const lastNonEmptyLine = preBlockLines.findLast((l) => {
+        l = l.trim();
+        // Sometimes it outputs a
+        // ```
+        // filename
+        // ```
+        // so this is an easy way to skip back to the filename
+        return l && l !== '```';
+      });
       if (lastNonEmptyLine) {
         debugLog('Found last non-empty line:', lastNonEmptyLine);
 
