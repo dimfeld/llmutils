@@ -1,20 +1,27 @@
 #!/usr/bin/env bun
 import { $, type SpawnOptions, type Subprocess } from 'bun';
+import { encode } from 'gpt-tokenizer';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { packageUp } from 'package-up';
 import { parseArgs } from 'util';
 import * as changeCase from 'change-case';
 import os from 'node:os';
-import { glob, globSync } from 'glob';
+import { glob } from 'glob';
 import { xmlFormatPrompt } from './xml/prompt';
 import { generateSearchReplacePrompt } from './diff-editor/prompts';
+import { generateWholeFilePrompt } from './whole-file/prompts';
 
 let { values, positionals } = parseArgs({
   options: {
     include: {
       type: 'string',
       short: 'i',
+      multiple: true,
+    },
+    ignore: {
+      type: 'string',
+      short: 'I',
       multiple: true,
     },
     'edit-format': {
@@ -76,6 +83,9 @@ let { values, positionals } = parseArgs({
       short: 'r',
       multiple: true,
     },
+    'omit-cursorrules': {
+      type: 'boolean',
+    },
     expand: {
       type: 'boolean',
       short: 'e',
@@ -94,6 +104,9 @@ let { values, positionals } = parseArgs({
     },
     cwd: {
       type: 'string',
+    },
+    gitroot: {
+      type: 'boolean',
     },
     help: {
       type: 'boolean',
@@ -129,8 +142,11 @@ if (values.help) {
   console.log('usage: rmfilter <packages>');
   console.log();
   console.log('Options:');
-  console.log('  --cwd <dir>                 Set the working directory, defaults to git root');
+  console.log('  --cwd <dir>                 Set the working directory');
+  console.log('  --gitroot                   Set the working directory to the git root');
   console.log('  -f, --edit-format (xml|diff)  Set the edit format');
+  console.log('  -i, --include <files>       Include these globs');
+  console.log('  --ignore <files>            Ignore these globs');
   console.log('  -p, --packages <packages>   Include the contents of these packages');
   console.log('  -u, --upstream <packages>   Include this packages and its dependencies');
   console.log('  -d, --downstream <packages> Include this package and its dependents');
@@ -150,9 +166,10 @@ if (values.help) {
   console.log('  -w, --whole-word            Match whole words only');
   console.log('  -a, --architect             Enable architect mode (removes empty lines)');
   console.log(
-    '  -i, --instructions          Add instructions to the prompt, prefix with @ to indicate a file.'
+    '  --instructions          Add instructions to the prompt, prefix with @ to indicate a file.'
   );
   console.log('  -r, --rules <rules>         Add rules files to the prompt');
+  console.log('  --omit-cursorrules          Do not autoload .cursorrules');
   console.log('  -d, --docs <docs>           Add docs files to the prompt');
   console.log('  -o, --output <file>         Specify the output file');
   console.log('  -c, --copy                  Copy the output file to the clipboard');
@@ -168,7 +185,9 @@ if (values['edit-format'] && !['whole-xml', 'diff', 'whole'].includes(values['ed
   process.exit(1);
 }
 
-let rootDir = values.cwd || (await $`git rev-parse --show-toplevel`.nothrow().text()).trim();
+const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim();
+
+let rootDir = values.cwd || (values.gitroot ? gitRoot : undefined) || process.cwd();
 rootDir = rootDir ? path.resolve(rootDir) : process.cwd();
 
 async function getDeps(packages: string[] | undefined, mode: 'upstream' | 'downstream' | 'only') {
@@ -330,15 +349,15 @@ let pathsSet = new Set(
 let allPaths = Array.from(pathsSet).join(',');
 
 const architectArgs = values.architect ? ['--remove-empty-lines'] : [];
+const ignoreArgs = values.ignore ? ['--ignore', values.ignore.join(',')] : [];
 
 const tempFile = path.join(tmpdir(), `repomix-${Math.random().toString(36).slice(2)}.txt`);
 let proc = logSpawn(
   [
     'repomix',
-    '--ignore',
-    '*.sql',
     '--include',
     allPaths,
+    ...ignoreArgs,
     ...architectArgs,
     ...positionals,
     '-o',
@@ -412,29 +431,37 @@ if (values.docs) {
   docsTag = `<docs>\n${output}\n</docs>`;
 }
 
-let rulesTag = '';
-if (values.rules) {
-  let rulesContent: string[] = [];
+let rulesContent: string[] = [];
 
-  for (let pattern of values.rules) {
-    const matches = await glob(pattern);
-    if (matches.length === 0) {
-      console.error(`No files found matching pattern: ${pattern}`);
+for (let pattern of values.rules || []) {
+  const matches = await glob(pattern);
+  if (matches.length === 0) {
+    console.error(`No files found matching pattern: ${pattern}`);
+    process.exit(1);
+  }
+  for (const file of matches) {
+    try {
+      rulesContent.push(await Bun.file(file).text());
+    } catch (error) {
+      console.error(`Error reading rules file: ${file}`);
       process.exit(1);
     }
-    for (const file of matches) {
-      try {
-        rulesContent.push(await Bun.file(file).text());
-      } catch (error) {
-        console.error(`Error reading rules file: ${file}`);
-        process.exit(1);
-      }
-    }
   }
-
-  let output = rulesContent.map((s) => s.trim()).join('\n\n');
-  rulesTag = `<rules>\n${output}\n</rules>`;
 }
+
+if (!values['omit-cursorrules']) {
+  const cursorrulesPath = path.join(gitRoot || rootDir, '.cursorrules');
+  try {
+    const cursorrulesContent = await Bun.file(cursorrulesPath).text();
+    rulesContent.push(cursorrulesContent);
+  } catch (error) {
+    console.error('no cursor rules');
+    // It's ok if .cursorrules doesn't exist
+  }
+}
+
+let rulesOutput = rulesContent.map((s) => s.trim()).join('\n\n');
+let rulesTag = rulesOutput ? `<rules>\n${rulesOutput}\n</rules>` : '';
 
 async function copyToClipboard(text: string) {
   let command: string[];
@@ -495,18 +522,23 @@ if (values.output) {
   }
 }
 
+const editFormat = values['edit-format'] || 'whole-file';
+
 const finalOutput = [
   repomixOutput,
   docsTag,
   rulesTag,
-  values['edit-format'] === 'whole-xml' ? xmlFormatPrompt : '',
-  values['edit-format'] === 'diff' ? generateSearchReplacePrompt : '',
+  editFormat === 'whole-xml' ? xmlFormatPrompt : '',
+  editFormat === 'diff' ? generateSearchReplacePrompt : '',
+  editFormat === 'whole-file' ? generateWholeFilePrompt : '',
   instructionsTag,
 ]
   .filter(Boolean)
   .join('\n\n');
 await Bun.write(outputFile, finalOutput);
+const tokens = encode(finalOutput);
 console.log(`Output written to ${outputFile}`);
+console.log(`Tokens: ${tokens.length}`);
 
 if (values.copy) {
   await copyToClipboard(finalOutput);

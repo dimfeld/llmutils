@@ -9,8 +9,8 @@
 import { $ } from 'bun';
 import clipboard from 'clipboardy';
 import { enableDebug } from './logging.ts';
-import { processRawFiles } from './parse_raw_edits.ts';
-import { processXmlContents } from './parse_xml.ts';
+import { processRawFiles } from './whole-file/parse_raw_edits.ts';
+import { processXmlContents } from './xml/parse_xml.ts';
 import { processSearchReplace } from './diff-editor/parse.ts';
 
 const args = process.argv.slice(2);

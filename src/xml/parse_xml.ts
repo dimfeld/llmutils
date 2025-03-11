@@ -1,6 +1,6 @@
-import { parseContentsWithXml, parseXmlString } from './xml/parse.ts';
-import { applyFileChanges } from './xml/apply.ts';
-import type { ProcessFileOptions } from './apply-llm-edits.ts';
+import { parseContentsWithXml } from './parse.ts';
+import { applyFileChanges } from './apply.ts';
+import type { ProcessFileOptions } from '../apply-llm-edits.ts';
 
 export async function processXmlContents({ content, writeRoot, dryRun }: ProcessFileOptions) {
   const changes = (await parseContentsWithXml(content)) ?? [];

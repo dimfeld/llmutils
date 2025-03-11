@@ -50,6 +50,8 @@ function applyEdits(edits: Edit[], rootDir: string, dryRun: boolean = false): Ed
     if (fs.existsSync(fullPath)) {
       const content = fs.readFileSync(fullPath, 'utf-8');
       newContent = doReplace(fullPath, content, original, updated);
+    } else {
+      newContent = doReplace(fullPath, null, original, updated);
     }
 
     if (!newContent && original.trim()) {
@@ -83,7 +85,12 @@ function formatErrorMessage(rootDir: string, failed: Edit[], passed: Edit[]): st
   for (const edit of failed) {
     const { original, updated } = edit;
     const fullPath = path.resolve(rootDir, edit.filePath);
-    const content = fs.readFileSync(fullPath, 'utf-8');
+    let content;
+    try {
+      content = fs.readFileSync(fullPath, 'utf-8');
+    } catch (e) {
+      content = '';
+    }
 
     res += `
 ## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines in ${fullPath}
@@ -173,12 +180,17 @@ function replaceMostSimilarChunk(whole: string, part: string, replace: string): 
   return tryDotdotdots(wholePrep, partPrep, replacePrep);
 }
 
-function prep(content: string): { content: string; lines: string[] } {
+function splitLinesWithEndings(content: string) {
   let lines = content.split('\n').map((line) => line + '\n');
   if (lines.length > 1 && lines.at(-1) === '\n') {
     lines = lines.slice(0, -1);
   }
 
+  return lines;
+}
+
+function prep(content: string): { content: string; lines: string[] } {
+  const lines = splitLinesWithEndings(content);
   if (content && !content.endsWith('\n')) {
     content += '\n';
   }
@@ -404,7 +416,7 @@ interface EditBlock {
 }
 
 function findOriginalUpdateBlocks(content: string, validFnames: string[] = []): EditBlock[] {
-  const lines = content.split('\n').map((line) => line + '\n');
+  const lines = splitLinesWithEndings(content);
   const results: EditBlock[] = [];
   let i = 0;
   let currentFilename: string | null = null;

@@ -22,7 +22,8 @@ If the file contains code or other data wrapped/escaped in json/xml/quotes or ot
 
 *SEARCH/REPLACE* blocks will *only* replace the first match occurrence.
 Include multiple unique *SEARCH/REPLACE* blocks if needed.
-Always include enough context around the lines actually being edited so that the SEARCH/REPLACE block can be uniquely identified in the file.
+
+Remember to always return enough extra lines around the lines actually being edited so that the SEARCH/REPLACE block can be uniquely identified in the file. But be concise;  ten lines in each direction will usually suffice. No need to return the entire file when only a few lines are changing.
 
 Break large *SEARCH/REPLACE* blocks into a series of smaller blocks that each change a small portion of the file.
 
@@ -49,7 +50,7 @@ ONLY EVER RETURN CODE IN A *SEARCH/REPLACE BLOCK*!
 
 <example name="Deleting a Block">
 mathweb/flask/app.py
-{fence[0]}python
+${fence}python
 <<<<<<< SEARCH
 def factorial(n):
     "compute factorial"
@@ -61,12 +62,12 @@ def factorial(n):
 
 =======
 >>>>>>> REPLACE
-{fence[1]}
+${fence}
 </example>
 
 <example name="Changing Lines, with unchanged context in both sides to help with edit placement">
 libs/db/schema.ts
-{fence[0]}typescript
+${fence}typescript
 <<<<<<< SEARCH
  threadId: uuid('thread_id')
       .notNull()
@@ -84,10 +85,10 @@ libs/db/schema.ts
     fieldTeamId: uuid('field_team_id').references(() => fieldTeams.id, { onDelete: 'set null' }),
     data: jsonb('data').notNull().$type<ProcessingEventData>(),
 >>>>>>> REPLACE
-{fence[1]}
+${fence}
 
 libs/db/schema.ts
-{fence[0]}typescript
+${fence}typescript
 <<<<<<< SEARCH
     id: uuid('id').primaryKey().$defaultFn(uuidv7),
     organizationId: uuid('organization_id')
@@ -111,9 +112,7 @@ libs/db/schema.ts
 
     processingEventId: uuid('processing_event_id'),
 >>>>>>> REPLACE
-{fence[1]}
+${fence}
 </example>
-
-Remember to always return enough extra lines around the lines actually being edited so that the SEARCH/REPLACE block can be uniquely identified in the file.
 
 </formatting>`;

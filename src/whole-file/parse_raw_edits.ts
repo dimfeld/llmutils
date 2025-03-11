@@ -2,15 +2,18 @@
 import { $ } from 'bun';
 import * as path from 'path';
 
-import { debugLog } from './logging.ts';
-import type { ProcessFileOptions } from './apply-llm-edits.ts';
+import { debugLog } from '../logging.ts';
+import type { ProcessFileOptions } from '../apply-llm-edits.ts';
 
 function processLastNonEmptyLine(line: string) {
   // Check for markdown header (e.g., **`filename`**)
   line = line.trim();
   const markdownMatch =
-    line.match(/\*\*`(.+?)`\*\*/) || line.match(/^`(.+?)`$/) || line.match(/^#+ +`?([^`]+)`?$/);
-  if (markdownMatch) {
+    line.match(/\*\*`(.+?)`\*\*/) ||
+    line.match(/^`(.+?)`$/) ||
+    line.match(/^#+ +`?([^`]+)`?$/) ||
+    line.match(/#+ .+ `(.+?)`/);
+  if (markdownMatch && markdownMatch[1].includes('.')) {
     debugLog('Found markdown header:', markdownMatch[1]);
     return markdownMatch[1].trim();
   }
