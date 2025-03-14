@@ -70,6 +70,10 @@ let { values, positionals } = parseArgs({
       type: 'boolean',
       short: 'w',
     },
+    instruction: {
+      type: 'string',
+      multiple: true,
+    },
     instructions: {
       type: 'string',
       multiple: true,
@@ -168,6 +172,7 @@ if (values.help) {
   console.log(
     '  --instructions          Add instructions to the prompt, prefix with @ to indicate a file.'
   );
+  console.log('  --instruction          Alias for --instructions.');
   console.log('  -r, --rules <rules>         Add rules files to the prompt');
   console.log('  --omit-cursorrules          Do not autoload .cursorrules');
   console.log('  -d, --docs <docs>           Add docs files to the prompt');
@@ -188,7 +193,6 @@ if (values['edit-format'] && !['whole-xml', 'diff', 'whole'].includes(values['ed
 const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim();
 
 let rootDir = values.cwd || (values.gitroot ? gitRoot : undefined) || process.cwd();
-rootDir = rootDir ? path.resolve(rootDir) : process.cwd();
 
 async function getDeps(packages: string[] | undefined, mode: 'upstream' | 'downstream' | 'only') {
   if (!packages?.length) {
@@ -355,6 +359,8 @@ const tempFile = path.join(tmpdir(), `repomix-${Math.random().toString(36).slice
 let proc = logSpawn(
   [
     'repomix',
+    '--top-files-len',
+    '20',
     '--include',
     allPaths,
     ...ignoreArgs,
@@ -379,10 +385,11 @@ const repomixOutput = await Bun.file(tempFile).text();
 await Bun.file(tempFile).unlink();
 
 let instructionsTag = '';
-if (values.instructions) {
+let instructionValues = [...(values.instructions || []), ...(values.instruction || [])];
+if (instructionValues.length) {
   let instructionsContent: string[] = [];
 
-  for (let instruction of values.instructions) {
+  for (let instruction of instructionValues) {
     if (instruction.startsWith('@')) {
       const pattern = instruction.slice(1);
       const matches = await glob(pattern);
@@ -542,7 +549,7 @@ const finalOutput = [
   .join('\n\n');
 await Bun.write(outputFile, finalOutput);
 const tokens = encode(finalOutput);
-console.log(`Output written to ${outputFile}`);
+console.log(`Output written to ${outputFile}, edit format: ${editFormat}`);
 console.log(`Tokens: ${tokens.length}`);
 
 if (values.copy) {
