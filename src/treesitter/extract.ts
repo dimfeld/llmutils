@@ -1,4 +1,4 @@
-import { Parser, Node, Tree, TreeCursor } from 'web-tree-sitter';
+import { Parser, Node, Tree, TreeCursor, type Language, Query } from 'web-tree-sitter';
 import { loadLanguage } from './load_language.ts';
 
 await Parser.init();
@@ -72,6 +72,7 @@ function extractExportedFunctions(tree: Tree) {
   const functions: Function[] = [];
 
   function traverse(cursor: TreeCursor) {
+    console.log(cursor.currentNode.type, cursor.currentNode.text);
     if (
       (cursor.currentNode.type === 'function_declaration' ||
         cursor.currentNode.type === 'method_definition') &&
@@ -333,41 +334,194 @@ function extractImports(tree: Tree) {
   return imports;
 }
 
-export async function parseFile(filename: string, code: string) {
-  const parser = new Parser();
+export class Extractor {
+  languages: Map<string, Language> = new Map();
 
-  let language: string;
-  if (/.svelte(.(ts|js))?$/.test(filename)) {
-    language = 'svelte';
-  } else if (filename.endsWith('.ts') || filename.endsWith('.js')) {
-    language = 'typescript';
-  } else {
-    return null;
+  async getLanguage(language: string) {
+    if (!this.languages.has(language)) {
+      this.languages.set(language, await loadLanguage(language));
+    }
+    return this.languages.get(language);
   }
 
-  const languageModule = await loadLanguage(language);
-  parser.setLanguage(languageModule);
+  async createParser(language: string) {
+    const languageModule = await this.getLanguage(language);
+    if (!languageModule) {
+      throw new Error(`Language ${language} not found`);
+    }
+    const parser = new Parser();
+    parser.setLanguage(languageModule);
+    return parser;
+  }
 
-  const tree = parser.parse(code);
+  async parseFile(filename: string, code: string) {
+    let language: string;
+    if (filename.endsWith('.svelte')) {
+      language = 'svelte';
+    } else if (filename.endsWith('.ts') || filename.endsWith('.js')) {
+      language = 'typescript';
+    } else {
+      return null;
+    }
 
-  // Run the extraction
-  const exportedFunctions = extractExportedFunctions(tree);
-  const exportedVariables = extractExportedVariables(tree);
-  const exportedClasses = extractExportedClasses(tree);
-  const interfaces = extractInterfaces(tree);
-  const typeAliases = extractTypeAliases(tree);
-  const allComments = extractComments(tree);
-  const importedModules = extractImports(tree);
+    const parser = await this.createParser(language);
 
-  return {
-    exportedFunctions,
-    exportedVariables,
-    exportedClasses,
-    interfaces,
-    typeAliases,
-    allComments,
-    importedModules,
-  };
+    const tree = parser.parse(code);
+    if (!tree) {
+      return null;
+    }
+
+    try {
+      if (language === 'svelte') {
+        return await this.extractSvelteScript(tree);
+      } else {
+        return this.extractTree(tree);
+      }
+    } finally {
+      tree.delete();
+    }
+  }
+
+  extractTree(tree: Tree) {
+    const exportedFunctions = extractExportedFunctions(tree);
+    const exportedVariables = extractExportedVariables(tree);
+    const exportedClasses = extractExportedClasses(tree);
+    const interfaces = extractInterfaces(tree);
+    const typeAliases = extractTypeAliases(tree);
+    const allComments = extractComments(tree);
+    const importedModules = extractImports(tree);
+
+    return {
+      exportedFunctions,
+      exportedVariables,
+      exportedClasses,
+      interfaces,
+      typeAliases,
+      allComments,
+      importedModules,
+    };
+  }
+
+  async extractSvelteScript(tree: Tree) {
+    const rootNode = tree.rootNode;
+    const scriptText = rootNode
+      .descendantsOfType('script_element')
+      .flatMap((n) => n?.descendantsOfType('raw_text') || []);
+
+    // Just join the context = module and the regular script together if both exist.
+    // For these purposes it's fine.
+    const svelteScript = scriptText
+      .map((n) => n?.text)
+      .filter(Boolean)
+      .join('\n');
+
+    const scriptParser = await this.createParser('typescript');
+    const scriptTree = scriptParser.parse(svelteScript);
+    if (!scriptTree) {
+      return null;
+    }
+
+    try {
+      // Find the $props() call expression
+      const propsDeclaration = await this.findPropsDeclaration(scriptTree);
+      if (propsDeclaration) {
+        console.log('Found props declaration:', propsDeclaration.text);
+      }
+
+      const typeAliases = extractTypeAliases(tree);
+      const allComments = extractComments(tree);
+      const importedModules = extractImports(tree);
+
+      return {
+        typeAliases,
+        allComments,
+        importedModules,
+      };
+    } finally {
+      scriptTree.delete();
+    }
+  }
+
+  async findPropsDeclaration(tree: Tree): Promise<Node | null> {
+    const rootNode = tree.rootNode;
+    const language = await this.getLanguage('typescript');
+    if (!language) {
+      return null;
+    }
+
+    // let q = new Query(
+    //   language,
+    //   `(lexical_declaration
+    //   (variable_declarator  value:
+    //     (call_expression function: (identifier) @function-name (#eq? @function-name "$props") )
+    //     )
+    //   )`
+    // );
+
+    let q = new Query(
+      language,
+      `(lexical_declaration
+  (variable_declarator
+    type: (type_annotation) @type-annotation
+    value: (call_expression
+      function: (identifier) @function-name
+      (#eq? @function-name "$props")
+      )))`
+    );
+    const lexicals = q.matches(rootNode);
+    console.log(lexicals.map((l) => l.captures.map((c) => c.name)));
+    let propTypeNodes = lexicals.map(
+      (l) => l.captures.find((c) => c.name === 'type-annotation')?.node.children[1]
+    );
+
+    let propTypeDef = propTypeNodes.map((n) => {
+      if (!n) {
+        return null;
+      }
+
+      if (n.type === 'object_type') {
+        return n.text;
+      } else {
+        const q = `(interface_declaration
+          name: (type_identifier) @name (#eq? @name "${n.text}")
+          ) @intdecl`;
+        const query = new Query(language, q);
+        const matches = query.matches(tree.rootNode);
+        if (matches.length > 0) {
+          return matches[0].captures[0].node.text;
+        }
+      }
+    });
+
+    console.log('typedefs', propTypeDef);
+
+    function traverse(node: Node): Node | null {
+      if (node.type === 'lexical_declaration') {
+        // Look for call expressions within this declaration
+        const callExpressions = node.descendantsOfType('call_expression');
+        for (const call of callExpressions) {
+          if (!call) continue;
+          const functionName = call.childForFieldName('identifier');
+          if (functionName?.text === '$props') {
+            return node;
+          }
+        }
+      }
+
+      for (let child of node.children) {
+        if (child) {
+          const result = traverse(child);
+          if (result) {
+            return result;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    return traverse(rootNode);
+  }
 }
 
 // Output results with JSDoc details

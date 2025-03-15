@@ -1,9 +1,17 @@
 import { test } from 'bun:test';
-import { parseFile } from './extract.ts';
+import { Extractor } from './extract.ts';
 import * as path from 'node:path';
 
-test('extract', async () => {
+test('typescript', async () => {
   const data = await Bun.file(path.join(__dirname, 'fixtures', 'extractTest.ts.txt')).text();
-  const result = await parseFile('extractTest.ts', data);
+  const extractor = new Extractor();
+  const result = await extractor.parseFile('extractTest.ts', data);
+  console.dir(result, { depth: null });
+});
+
+test.only('svelte', async () => {
+  const data = await Bun.file(path.join(__dirname, 'fixtures', 'extractTest.svelte.txt')).text();
+  const extractor = new Extractor();
+  const result = await extractor.parseFile('extractTest.svelte', data);
   console.dir(result, { depth: null });
 });

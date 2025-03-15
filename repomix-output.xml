@@ -1,0 +1,865 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where content has been compressed (code blocks are separated by ⋮---- delimiter).
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: **/*.tfstate, **/*.tfstate.backup, **/*.pem, **/*_snapshot.json, **/drizzle/**, **/terraform_provider*, **/.terraform/**
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Content has been compressed - code blocks are separated by ⋮---- delimiter
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+src/
+  dependency_graph/
+    resolve.ts
+  diff-editor/
+    parse.ts
+    prompts.ts
+    whole-file.ts
+  treesitter/
+    fixtures/
+      extractTest.ts.txt
+    extract.test.ts
+    extract.ts
+    load_language.ts
+  whole-file/
+    parse_raw_edits.ts
+    prompts.ts
+  xml/
+    apply.ts
+    parse_xml.ts
+    parse.ts
+    prompt.ts
+  apply-llm-edits.ts
+  index.ts
+  logging.ts
+  rmfilter.ts
+.gitignore
+.prettierignore
+.prettierrc
+eslint.config.js
+package.json
+README.md
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/dependency_graph/resolve.ts">
+import { resolve as resolveExports } from 'resolve.exports';
+import { packageUp } from 'package-up';
+⋮----
+type MaybeAwaited<T extends Promise<any>> = Awaited<T> | T;
+⋮----
+async function cachePromise<T extends Promise<any>>(
+  cache: Map<string, MaybeAwaited<T>>,
+  key: string,
+  fn: () => T
+): Promise<T>
+⋮----
+type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
+⋮----
+export class Resolver
+⋮----
+/**
+   * Resolves import paths for a TypeScript file
+   * @param filePath Path to the TypeScript file
+   * @param imports Array of import specifiers from the file
+   * @returns Map of import specifiers to resolved file paths
+   */
+async resolveImportPaths(filePath: string, imports: string[]): Promise<Map<string, string>>
+⋮----
+private async internalResolveImportPaths(
+    filePath: string,
+    imports: string[]
+): Promise<Map<string, string>>
+⋮----
+// Skip built-in Node.js modules
+⋮----
+// Handle relative imports
+⋮----
+// Handle package imports
+⋮----
+/**
+   * Resolves relative imports
+   */
+async resolveRelativeImport(baseDir: string, importSpecifier: string): Promise<string>
+⋮----
+private async internalResolveRelativeImport(
+    baseDir: string,
+    importSpecifier: string
+): Promise<string>
+⋮----
+// Check if it's a directory with an index file
+⋮----
+// Check with extensions
+⋮----
+/**
+   * Resolves package imports including export maps and pnpm workspaces
+   */
+async resolvePackageImport(baseDir: string, importSpecifier: string): Promise<string>
+⋮----
+private async internalResolvePackageImport(
+    baseDir: string,
+    importSpecifier: string
+): Promise<string>
+⋮----
+// Check export maps using resolve.exports
+⋮----
+unsafe: true, // Allow falling back to main/module fields
+⋮----
+// Check pnpm workspace
+⋮----
+// Fallback to node_modules
+⋮----
+/**
+   * Resolves pnpm workspace packages
+   */
+async resolvePnpmWorkspace(
+    baseDir: string,
+    packageData: any,
+    importSpecifier: string
+): Promise<string | null>
+⋮----
+private async internalResolvePnpmWorkspace(
+    baseDir: string,
+    packageData: any,
+    importSpecifier: string
+): Promise<string | null>
+</file>
+
+<file path="src/diff-editor/parse.ts">
+// This is a port of Aider's edit_block coder
+⋮----
+import stringComparison from 'string-comparison';
+import type { ProcessFileOptions } from '../apply-llm-edits';
+⋮----
+interface Edit {
+  filePath: string;
+  original: string;
+  updated: string;
+}
+⋮----
+export async function processSearchReplace(
+⋮----
+function getEdits(content: string, rootDir: string): Edit[]
+⋮----
+[] // TODO getInchatRelativeFiles would need to be implemented
+⋮----
+// this.shellCommands.push(
+//   ...edits.filter((edit) => edit.filePath === null).map((edit) => edit.updated)
+// );
+⋮----
+function applyEdits(edits: Edit[], rootDir: string, dryRun: boolean = false): Edit[] | void
+⋮----
+// TODO Try other files in chat - implement abs_fnames logic
+⋮----
+function formatErrorMessage(rootDir: string, failed: Edit[], passed: Edit[]): string
+⋮----
+function doReplace(
+  fname: string,
+  content: string | null,
+  beforeText: string,
+  afterText: string
+): string | null
+⋮----
+function stripQuotedWrapping(res: string, fname?: string): string
+⋮----
+function replaceMostSimilarChunk(whole: string, part: string, replace: string): string | null
+⋮----
+// Handle spurious blank lines
+⋮----
+function splitLinesWithEndings(content: string)
+⋮----
+function prep(content: string):
+⋮----
+function perfectOrWhitespace(
+  wholeLines: string[],
+  partLines: string[],
+  replaceLines: string[]
+): string | null
+⋮----
+function perfectReplace(
+  wholeLines: string[],
+  partLines: string[],
+  replaceLines: string[]
+): string | null
+⋮----
+function findSimilarLines(
+  searchLines: string,
+  contentLines: string,
+  threshold: number = 0.6
+): string
+⋮----
+function tryDotdotdots(whole: string, part: string, replace: string): string | null
+⋮----
+/**
+   * See if the edit block has ... lines.
+   * If not, return empty string.
+   * If yes, try and do a perfect edit with the ... chunks.
+   * If there's a mismatch or otherwise imperfect edit, throw an Error.
+   * If perfect edit succeeds, return the updated whole.
+   */
+⋮----
+// No dots in this edit block, return empty string
+⋮----
+// Filter out the ... markers, keeping only the content pieces
+⋮----
+// Compare odd strings (the ... markers) in partPieces and replacePieces
+⋮----
+// Replace the first occurrence
+⋮----
+function replacePartWithMissingLeadingWhitespace(
+  wholeLines: string[],
+  partLines: string[],
+  replaceLines: string[]
+): string | null
+⋮----
+// GPT often messes up leading whitespace.
+// It usually does it uniformly across the ORIG and UPD blocks.
+// Either omitting all leading whitespace, or including only some of it.
+⋮----
+// Outdent everything in partLines and replaceLines by the max fixed amount possible
+⋮----
+// Can we find an exact match not including the leading whitespace
+⋮----
+function matchButForLeadingWhitespace(wholeLines: string[], partLines: string[]): string | null
+⋮----
+// Does the non-whitespace all agree?
+⋮----
+// Are they all offset the same?
+⋮----
+interface EditBlock {
+  filePath: string | null;
+  original: string | null;
+  updated: string;
+}
+⋮----
+function findOriginalUpdateBlocks(content: string, validFnames: string[] = []): EditBlock[]
+⋮----
+// Check for shell code blocks
+⋮----
+i++; // Skip the closing ```
+⋮----
+// Check for SEARCH/REPLACE blocks
+⋮----
+// If next line after HEAD exists and is DIVIDER, it's a new file
+⋮----
+function stripFilename(filename: string): string | undefined
+⋮----
+function findFilename(lines: string[], validFnames: string[] | null): string | undefined
+⋮----
+// Go back through the 3 preceding lines
+⋮----
+// Only continue as long as we keep seeing fences
+⋮----
+// Pick the *best* filename found
+// Check for exact match first
+⋮----
+// Check for partial match (basename match)
+⋮----
+// This is a simplified version - in a real app you'd use a Path library
+⋮----
+// Perform fuzzy matching with validFnames
+⋮----
+// If no fuzzy match, look for a file w/extension
+⋮----
+function getCloseMatches(
+  target: string,
+  candidates: string[],
+  n: number,
+  cutoff: number
+): string[]
+⋮----
+.filter((r) => r.rating >= cutoff) // Cutoff
+.sort((a, b) => b.rating - a.rating) // Sort by similarity
+.slice(0, n) // Limit to n
+</file>
+
+<file path="src/diff-editor/prompts.ts">
+
+</file>
+
+<file path="src/diff-editor/whole-file.ts">
+interface Edit {
+  path: string;
+  fnameSource?: string;
+  newLines?: string[];
+}
+⋮----
+interface IO {
+  readText(path: string): string | null;
+  writeText(path: string, content: string): void;
+}
+⋮----
+readText(path: string): string | null;
+writeText(path: string, content: string): void;
+⋮----
+// Base Coder class (simplified)
+abstract class Coder
+⋮----
+constructor(root: string, io: IO)
+⋮----
+protected absRootPath(path: string): string
+⋮----
+abstract getEdits(content: string): Edit[];
+abstract applyEdits(edits: Edit[]): void;
+⋮----
+// WholeFileCoder
+class WholeFileCoder extends Coder
+⋮----
+private getInchatRelativeFiles(): string[]
+⋮----
+// Placeholder - implement based on your needs
+⋮----
+getEdits(content: string, mode: 'update' | 'diff' = 'update'): Edit[]
+⋮----
+// Ending a block
+⋮----
+// Starting a new block
+⋮----
+.replace(/^\*+|\*+$/g, '') // Remove ** markers
+.replace(/:$/, '') // Remove trailing colon
+.replace(/`/g, '') // Remove backticks
+.replace(/^#/, '') // Remove leading #
+⋮----
+// Process edits by source priority
+⋮----
+applyEdits(edits: Edit[]): void
+⋮----
+private doLiveDiff(fullPath: string, newLines: string[], final: boolean): string[]
+⋮----
+// Note: This needs a diff library equivalent to Python's diffs
+// For now, returning simple diff placeholder
+⋮----
+class SearchTextNotUniqueError extends Error
+</file>
+
+<file path="src/treesitter/fixtures/extractTest.ts.txt">
+// Utility module
+import { util } from './utils';
+import fs from 'fs';
+
+// Function doc comment
+export function myFunction(a: string, b: number): string {
+    return a + b;
+}
+
+export function complexReturnType() : Promise<Abc> {
+
+}
+
+export function unionReturnType() : number|null {}
+export function intersectReturnType() : number&null {}
+
+/**
+ * Multi-line JSDoc for class
+ */
+export class MyClass implements SomeInterface {
+    constructor(public x: number) {}
+    method() {}
+}
+
+export const exportedConst: string = 'hello';
+export let exportedVar: number = 123;
+export let exportedClass: MyClass;
+
+// Interface comment
+export interface MyInterface {
+    x: number;
+    y: string;
+}
+
+/**
+ * Type alias comment
+ */
+export type MyType = 'foo' | 'bar';
+
+// Random comment
+const internalVar = 42;
+
+import * as other from './other-module';
+</file>
+
+<file path="src/treesitter/extract.test.ts">
+import { test } from 'bun:test';
+import { parseFile } from './extract.ts';
+</file>
+
+<file path="src/treesitter/extract.ts">
+import { Parser, Node, Tree, TreeCursor } from 'web-tree-sitter';
+import { loadLanguage } from './load_language.ts';
+⋮----
+// Check if a node is exported
+function isExported(node: Node)
+⋮----
+export interface Comment {
+  raw: string;
+  jsdoc: JsDoc;
+}
+⋮----
+// Get preceding comments and parse JSDoc tags
+function getPrecedingComments(node: Node): Comment | undefined
+⋮----
+export interface JsDoc {
+  params: {
+    type: string;
+    name: string;
+    description: string;
+  }[];
+  return:
+    | {
+        type: string;
+        description: string;
+      }
+    | undefined;
+}
+⋮----
+// Parse JSDoc tags from a comment block
+function parseJSDoc(comment: string)
+⋮----
+export interface Function {
+  signature: string;
+  comment: Comment | undefined;
+}
+⋮----
+// Extract exported functions
+function extractExportedFunctions(tree: Tree)
+⋮----
+function traverse(cursor: TreeCursor)
+⋮----
+export interface Variable {
+  signature: string;
+  keyword: string;
+  name: string;
+  type: string;
+  value: string;
+}
+⋮----
+function getActualType(typeNode: Node | null)
+⋮----
+// Extract exported variables
+function extractExportedVariables(tree: Tree)
+⋮----
+function traverse(node: Node)
+⋮----
+signature: node.text, // `${keyword} ${name}: ${type} = ${value}`,
+⋮----
+export interface Class {
+  signature: string;
+  comment: Comment | undefined;
+  methods: Method[];
+}
+⋮----
+export interface Method {
+  signature: string;
+  comment: Comment | undefined;
+}
+⋮----
+// Extract exported classes with method signatures
+function extractExportedClasses(tree: Tree)
+⋮----
+function getMethodSignature(methodNode: Node)
+⋮----
+export interface TsInterface {
+  signature: string;
+  name: string;
+  body: string;
+  comment: Comment | undefined;
+}
+⋮----
+// Extract TypeScript interfaces
+function extractInterfaces(tree: Tree)
+⋮----
+export interface TsType {
+  signature: string;
+  comment: Comment | undefined;
+}
+⋮----
+// Extract TypeScript type aliases
+function extractTypeAliases(tree: Tree)
+⋮----
+// Extract all comments
+function extractComments(tree: Tree)
+⋮----
+// Extract imported modules
+function extractImports(tree: Tree)
+⋮----
+export async function parseFile(filename: string, code: string)
+⋮----
+// Run the extraction
+⋮----
+// Output results with JSDoc details
+export function printJSDoc(comment: Comment, indent = '')
+</file>
+
+<file path="src/treesitter/load_language.ts">
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { Parser, Language } from 'web-tree-sitter';
+⋮----
+export async function loadLanguage(langName: string): Promise<Language>
+⋮----
+async function getWasmPath(langName: string): Promise<string>
+</file>
+
+<file path="src/whole-file/parse_raw_edits.ts">
+// parse raw edits without any format guidance
+import { $ } from 'bun';
+⋮----
+import { debugLog } from '../logging.ts';
+import type { ProcessFileOptions } from '../apply-llm-edits.ts';
+⋮----
+function processLastNonEmptyLine(line: string)
+⋮----
+// Check for markdown header (e.g., **`filename`**)
+⋮----
+// Check for raw filename (e.g., src/some/file.js)
+⋮----
+function processFirstCommentLine(line: string)
+export async function processRawFiles(
+⋮----
+// Split content into lines
+⋮----
+// Process line by line
+⋮----
+// Process completed block
+⋮----
+preBlockLines = []; // Reset for the next code block
+⋮----
+// Check preBlockLines for filename
+⋮----
+// Sometimes it outputs a
+// ```
+// filename
+// ```
+// so this is an easy way to skip back to the filename
+⋮----
+// The filename was outside of the code block, so this line is content we want to push.
+⋮----
+// instead we should have manual line advancement so we can push off handling this
+⋮----
+// Fallback to checking first line inside the code block
+⋮----
+continue; // Skip empty lines
+⋮----
+// Handle any remaining block
+⋮----
+// Write files to disk
+</file>
+
+<file path="src/whole-file/prompts.ts">
+
+</file>
+
+<file path="src/xml/apply.ts">
+// from github.com/mckaywrigley/o1-xml-parser
+import { promises as fs } from 'fs';
+import { dirname, join } from 'path';
+⋮----
+export interface FileChange {
+  file_summary: string;
+  file_operation: string;
+  file_path: string;
+  file_code?: string;
+}
+⋮----
+export async function applyFileChanges(
+  change: FileChange,
+  projectDirectory: string,
+  dryRun: boolean = false
+)
+⋮----
+async function ensureDirectoryExists(dir: string)
+</file>
+
+<file path="src/xml/parse_xml.ts">
+import { parseContentsWithXml } from './parse.ts';
+import { applyFileChanges } from './apply.ts';
+import type { ProcessFileOptions } from '../apply-llm-edits.ts';
+⋮----
+export async function processXmlContents(
+</file>
+
+<file path="src/xml/parse.ts">
+// from github.com/mckaywrigley/o1-xml-parser + modifications
+import { DOMParser } from '@xmldom/xmldom';
+⋮----
+interface ParsedFileChange {
+  file_summary: string;
+  file_operation: string;
+  file_path: string;
+  file_code?: string;
+}
+⋮----
+export async function parseContentsWithXml(content: string)
+⋮----
+export async function parseXmlString(xmlString: string): Promise<ParsedFileChange[] | null>
+</file>
+
+<file path="src/xml/prompt.ts">
+
+</file>
+
+<file path="src/apply-llm-edits.ts">
+/* Apply LLM whole-file blocks from copied LLM output.
+ * This looks for blocks with filenames either in a comment at the start of the block
+ * or on the last non-blank line before the block (as a markdown header or raw filename),
+ * and writes the contents to the path given, relative to the Git root.
+ **/
+⋮----
+import { $ } from 'bun';
+import clipboard from 'clipboardy';
+import { enableDebug } from './logging.ts';
+import { processRawFiles } from './whole-file/parse_raw_edits.ts';
+import { processXmlContents } from './xml/parse_xml.ts';
+import { processSearchReplace } from './diff-editor/parse.ts';
+⋮----
+export interface ProcessFileOptions {
+  content: string;
+  writeRoot: string;
+  dryRun: boolean;
+}
+</file>
+
+<file path="src/index.ts">
+
+</file>
+
+<file path="src/logging.ts">
+export function enableDebug(enabled: boolean)
+⋮----
+export function debugLog(...args: any[])
+</file>
+
+<file path="src/rmfilter.ts">
+import { $, type SpawnOptions, type Subprocess } from 'bun';
+import { encode } from 'gpt-tokenizer';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { packageUp } from 'package-up';
+import { parseArgs } from 'util';
+⋮----
+import os from 'node:os';
+import { glob } from 'glob';
+import { xmlFormatPrompt } from './xml/prompt';
+import { generateSearchReplacePrompt } from './diff-editor/prompts';
+import { generateWholeFilePrompt } from './whole-file/prompts';
+⋮----
+// Helper function to log and execute commands
+function logSpawn<
+  T extends SpawnOptions.OptionsObject<
+    SpawnOptions.Writable,
+    SpawnOptions.Readable,
+    SpawnOptions.Readable
+  >,
+>(cmd: string[], options?: T)
+⋮----
+// Update help message
+⋮----
+async function getDeps(packages: string[] | undefined, mode: 'upstream' | 'downstream' | 'only')
+⋮----
+function expandPattern(pattern: string)
+⋮----
+async function useRepomixIgnore()
+⋮----
+async function grepFor(
+  patterns: string[] | undefined,
+  mode: 'file' | 'package',
+  baseDirs?: string[]
+): Promise<string[]>
+⋮----
+async function processGrepIn(grepInArgs: string[] | undefined): Promise<string[]>
+⋮----
+// simple check, should be better
+⋮----
+// It's ok if .cursorrules doesn't exist
+⋮----
+async function copyToClipboard(text: string)
+</file>
+
+<file path=".gitignore">
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+</file>
+
+<file path=".prettierignore">
+# Package Managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+
+**/dist/
+
+**/temp_*.md
+</file>
+
+<file path=".prettierrc">
+{
+  "useTabs": false,
+  "tabWidth": 2,
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "printWidth": 100
+}
+</file>
+
+<file path="eslint.config.js">
+export function createConfig() {
+⋮----
+// Doesn't work properly with zod's z.infer
+⋮----
+].filter((x) => x != null);
+⋮----
+export default ts.config(...createConfig(true));
+</file>
+
+<file path="package.json">
+{
+  "name": "llmutils",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "apply-llm-edits": "./src/apply-llm-edits.ts",
+    "rmfilter": "./src/rmfilter.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/bun": "latest",
+    "eslint": "^9.22.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.3",
+    "typescript-eslint": "^8.26.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@types/glob": "^8.1.0",
+    "@xmldom/xmldom": "^0.9.8",
+    "change-case": "^5.4.4",
+    "clipboardy": "^4.0.0",
+    "diff": "^7.0.0",
+    "glob": "^11.0.1",
+    "gpt-tokenizer": "^2.9.0",
+    "package-up": "^5.0.0",
+    "resolve.exports": "^2.0.3",
+    "string-comparison": "^1.3.0",
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-python": "^0.23.6",
+    "tree-sitter-rust": "^0.23.2",
+    "tree-sitter-svelte": "^0.11.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "web-tree-sitter": "^0.25.3"
+  }
+}
+</file>
+
+<file path="README.md">
+# llmutils
+
+Command-line utilities for managing context with chat-oriented programming, and applying edits back.
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    // Enable latest features
+    "lib": ["ESNext", "DOM"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Some stricter flags (disabled by default)
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false
+  }
+}
+</file>
+
+</files>
