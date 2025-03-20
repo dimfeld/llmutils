@@ -1,5 +1,6 @@
 // Utility module
-import { util } from './utils';
+import { util, util2 as another, type Some } from './utils';
+import type { Abc } from './types';
 import fs from 'fs';
 
 // Function doc comment
@@ -41,3 +42,7 @@ export type MyType = 'foo' | 'bar';
 const internalVar = 42;
 
 import * as other from './other-module';
+
+export type { a as b, c } from './reexport';
+export * from './another-reexport';
+export type * from './third-reexport';

@@ -331,6 +331,27 @@ async function processGrepIn(grepInArgs: string[] | undefined): Promise<string[]
   return results.flat();
 }
 
+async function processRawIncludes(includes: string[] | undefined): Promise<string[]> {
+  if (!includes?.length) {
+    return [];
+  }
+
+  return Promise.all(
+    includes.map(async (include) => {
+      try {
+        let f = await Bun.file(include).stat();
+        if (f.isDirectory()) {
+          return path.join(include, '**');
+        }
+      } catch (e) {
+        // errors are fine
+      }
+
+      return include;
+    })
+  );
+}
+
 let upstream = [...(values.upstream ?? []), ...(values.both ?? [])];
 let downstream = [...(values.downstream ?? []), ...(values.both ?? [])];
 
@@ -343,7 +364,7 @@ let pathsSet = new Set(
       grepFor(values.grep, 'file'),
       grepFor(values['grep-package'], 'package'),
       processGrepIn(values['grep-in']),
-      ...(values.include ?? []),
+      processRawIncludes(values.include),
     ])
   )
     .flat()

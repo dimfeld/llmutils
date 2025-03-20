@@ -312,26 +312,95 @@ function extractComments(tree: Tree) {
   return comments;
 }
 
-// Extract imported modules
-function extractImports(tree: Tree) {
-  const imports: string[] = [];
+// Extract imported modules and reexports
+function extractImportsExportModules(tree: Tree) {
   const rootNode = tree.rootNode;
 
-  function traverse(node: Node) {
-    if (node.type === 'import_statement') {
-      const sourceNode = node.childForFieldName('source');
-      if (sourceNode) {
-        const moduleName = sourceNode.text.replace(/['"]/g, '');
-        imports.push(moduleName);
-      }
-    }
-    for (let child of node.children) {
-      traverse(child);
-    }
-  }
+  let query = new Query(
+    tree.language,
+    `[
+        (import_statement (import_clause (_) @import-clause) source: (string) @import-source)
+        (export_statement (export_clause) @export-clause source: (string) @export-name)
+        (export_statement source: (string) @export-name)
+    ]`
+  );
 
-  traverse(rootNode);
-  return imports;
+  try {
+    let matches = query.matches(rootNode);
+
+    const imports = matches
+      .map((match) => {
+        let importModule = match.captures.find((c) => c.name === 'import-source')!;
+        let imported = match.captures.find((c) => c.name === 'import-clause')!;
+
+        if (!importModule || !imported) {
+          return;
+        }
+
+        let namedImports: { name: string; alias?: string }[] | undefined = [];
+
+        if (imported.node.type === 'named_imports') {
+          namedImports = imported.node.children
+            .filter((c) => c?.type === 'import_specifier')
+            .map((c) => {
+              let t = c?.text.split(' ') || [];
+
+              if (t[0] === 'type') {
+                t = t.slice(1);
+              }
+
+              if (t.length === 3 && t[1] === 'as') {
+                return { name: t[0], alias: t[2] };
+              } else {
+                return { name: t[0] };
+              }
+            });
+        }
+
+        return {
+          module: importModule.node.text,
+          namedImports: namedImports?.length ? namedImports : undefined,
+        };
+      })
+      .filter((i) => i != null);
+
+    const reexports = matches
+      .map((match) => {
+        let exportName = match.captures.find((c) => c.name === 'export-name');
+        if (!exportName) {
+          return;
+        }
+
+        let exportClause = match.captures.find((c) => c.name === 'export-clause');
+        let namedExports: { name: string; alias?: string }[] | undefined = [];
+
+        if (exportClause) {
+          namedExports = exportClause.node.children
+            .filter((c) => c?.type === 'export_specifier')
+            .map((c) => {
+              let t = c?.text.split(' ') || [];
+              if (t[0] === 'type') {
+                t = t.slice(1);
+              }
+              if (t.length === 3 && t[1] === 'as') {
+                return { name: t[0], alias: t[2] };
+              } else {
+                return { name: t[0] };
+              }
+            });
+        }
+
+        return {
+          module: exportName.node.text,
+          namedExports: namedExports?.length ? namedExports : undefined,
+        };
+      })
+      .filter((i) => i != null);
+
+    return { imports, reexports };
+  } finally {
+    query.delete();
+  }
 }
 
 export class Extractor {
@@ -383,23 +452,13 @@ export class Extractor {
   }
 
   extractTree(tree: Tree) {
-    const exportedFunctions = extractExportedFunctions(tree);
-    const exportedVariables = extractExportedVariables(tree);
-    const exportedClasses = extractExportedClasses(tree);
-    const interfaces = extractInterfaces(tree);
-    const typeAliases = extractTypeAliases(tree);
-    const allComments = extractComments(tree);
-    const importedModules = extractImports(tree);
-
-    return {
-      exportedFunctions,
-      exportedVariables,
-      exportedClasses,
-      interfaces,
-      typeAliases,
-      allComments,
-      importedModules,
-    };
+    // const exportedFunctions = extractExportedFunctions(tree);
+    // const exportedVariables = extractExportedVariables(tree);
+    // const exportedClasses = extractExportedClasses(tree);
+    // const interfaces = extractInterfaces(tree);
+    // const typeAliases = extractTypeAliases(tree);
+    // const allComments = extractComments(tree);
+    return extractImportsExportModules(tree);
   }
 
   async extractSvelteScript(tree: Tree) {

@@ -1,0 +1,6 @@
+.gitignore
+.DS_Store
+tsconfig.json
+.*ignore
+package.json
+eslint.config.js
