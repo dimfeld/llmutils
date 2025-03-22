@@ -489,12 +489,12 @@ export class Extractor {
 
       const typeAliases = extractTypeAliases(tree);
       const allComments = extractComments(tree);
-      const importedModules = extractImports(tree);
+      const importedModules = extractImportsExportModules(tree);
 
       return {
         typeAliases,
         allComments,
-        importedModules,
+        importedModules: importedModules.imports,
       };
     } finally {
       scriptTree.delete();
@@ -503,7 +503,7 @@ export class Extractor {
 
   async findPropsDeclaration(tree: Tree): Promise<Node | null> {
     const rootNode = tree.rootNode;
-    const language = await this.getLanguage('typescript');
+    const language = tree.language;
     if (!language) {
       return null;
     }
