@@ -57,12 +57,11 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
   let filename = null;
   let stripEndingFileTag = false;
   const filesToWrite = new Map();
-  let preBlockLines = [];
 
   // Process line by line
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (state === 'searching' && !line.startsWith('```')) {
-      preBlockLines.push(line);
       continue;
     }
 
@@ -82,7 +81,6 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
         state = 'searching';
         currentBlock = [];
         filename = null;
-        preBlockLines = []; // Reset for the next code block
         stripEndingFileTag = false;
       }
       continue;
@@ -90,14 +88,14 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
 
     if (state === 'startCodeBlock') {
       // Check preBlockLines for filename
-      const lastNonEmptyLine = preBlockLines.findLast((l) => {
+      const lastNonEmptyLine = lines.slice(0, i).findLast((l) => {
         l = l.trim();
         // Sometimes it outputs a
         // ```
         // filename
         // ```
         // so this is an easy way to skip back to the filename
-        return l && l !== '```';
+        return l && !l.startsWith('```');
       });
       if (lastNonEmptyLine) {
         debugLog('Found last non-empty line:', lastNonEmptyLine);
