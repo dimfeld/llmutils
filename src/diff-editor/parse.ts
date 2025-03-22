@@ -43,6 +43,12 @@ function applyEdits(edits: Edit[], rootDir: string, dryRun: boolean = false): Ed
   const updatedEdits: Edit[] = [];
 
   for (const edit of edits) {
+    if (edit.filePath.includes('mathweb/flask/app.py')) {
+      throw new Error(
+        'Found edits from the sample prompt. Perhaps you forgot to copy the results?'
+      );
+    }
+
     const { filePath, original, updated } = edit;
     const fullPath = path.resolve(rootDir, filePath);
     let newContent: string | null = null;
