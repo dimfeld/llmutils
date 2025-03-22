@@ -1,6 +1,11 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { resolve as resolveExports } from 'resolve.exports';
+import * as YAML from 'js-yaml';
+import {
+  resolve as resolveExports,
+  legacy as resolveLegacy,
+  type Package as PackageJson,
+} from 'resolve.exports';
 import { packageUp } from 'package-up';
 import { findUp } from 'find-up';
 
@@ -24,11 +29,31 @@ async function cachePromise<T extends Promise<any>>(
 
 type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
 
+interface Package {
+  name: string;
+  path: string;
+  packageJson: PackageJson;
+  type: 'builtin' | 'dependency' | 'workspace';
+}
+
 export class Resolver {
   cachedImportPath: FnCache<typeof this.internalResolveImportPaths> = new Map();
   cachedRelativeImport: FnCache<typeof this.internalResolveRelativeImport> = new Map();
   cachedPackageImport: FnCache<typeof this.internalResolvePackageImport> = new Map();
-  cachedPnpmWorkspace: FnCache<typeof this.internalResolvePnpmWorkspace> = new Map();
+  packageFromDir: FnCache<() => Promise<Package>> = new Map();
+
+  packages: Map<string, Package> = new Map();
+  resolveNodeModules = false;
+
+  constructor(packages: Map<string, Package>) {
+    this.packages = packages;
+  }
+
+  static async new(baseDir: string = process.cwd()) {
+    let packages = (await Resolver.resolvePnpmWorkspace(baseDir)) ?? new Map();
+    const resolver = new Resolver(packages);
+    return resolver;
+  }
 
   /**
    * Resolves import paths for a TypeScript file
@@ -36,54 +61,44 @@ export class Resolver {
    * @param imports Array of import specifiers from the file
    * @returns Map of import specifiers to resolved file paths
    */
-  async resolveImportPaths(filePath: string, imports: string[]): Promise<Map<string, string>> {
-    return cachePromise(this.cachedImportPath, filePath, () =>
-      this.internalResolveImportPaths(filePath, imports)
+  async resolveImportPaths(
+    filePath: string,
+    imports: string[]
+  ): Promise<{ importPath: string; resolved: string | null }[]> {
+    let baseDir = path.dirname(filePath);
+    return Promise.all(
+      imports.map((importPath) =>
+        cachePromise(this.cachedImportPath, `${baseDir}:${importPath}`, () =>
+          this.internalResolveImportPaths(baseDir, importPath)
+        )
+      )
     );
   }
 
   private async internalResolveImportPaths(
-    filePath: string,
-    imports: string[]
-  ): Promise<Map<string, string>> {
-    if (this.cachedImportPath.has(filePath)) {
-      return this.cachedImportPath.get(filePath)!;
+    baseDir: string,
+    importSpecifier: string
+  ): Promise<{ importPath: string; resolved: string | null }> {
+    // Skip built-in Node.js modules
+    if (importSpecifier.startsWith('node:')) {
+      return { importPath: importSpecifier, resolved: null };
     }
 
-    const resolvedPaths = new Map<string, string>();
-    const baseDir = path.dirname(filePath);
-
-    for (const importSpecifier of imports) {
-      try {
-        // Skip built-in Node.js modules
-        if (importSpecifier.startsWith('node:')) {
-          resolvedPaths.set(importSpecifier, '[built-in]');
-          continue;
-        }
-
-        // Handle relative imports
-        if (importSpecifier.startsWith('.') || importSpecifier.startsWith('/')) {
-          const resolvedPath = await this.resolveRelativeImport(baseDir, importSpecifier);
-          resolvedPaths.set(importSpecifier, resolvedPath);
-          continue;
-        }
-
-        // Handle package imports
-        const resolvedPath = await this.resolvePackageImport(baseDir, importSpecifier);
-        resolvedPaths.set(importSpecifier, resolvedPath);
-      } catch (error) {
-        resolvedPaths.set(importSpecifier, `Error: ${(error as Error).message}`);
-      }
+    // Handle relative imports
+    if (importSpecifier.startsWith('.') || importSpecifier.startsWith('/')) {
+      const resolvedPath = await this.resolveRelativeImport(baseDir, importSpecifier);
+      return { importPath: importSpecifier, resolved: resolvedPath };
     }
 
-    this.cachedImportPath.set(filePath, resolvedPaths);
-    return resolvedPaths;
+    // Handle package imports
+    const resolvedPath = await this.resolvePackageImport(baseDir, importSpecifier);
+    return { importPath: importSpecifier, resolved: resolvedPath };
   }
 
   /**
    * Resolves relative imports
    */
-  async resolveRelativeImport(baseDir: string, importSpecifier: string): Promise<string> {
+  async resolveRelativeImport(baseDir: string, importSpecifier: string): Promise<string | null> {
     return cachePromise(this.cachedRelativeImport, importSpecifier, () =>
       this.internalResolveRelativeImport(baseDir, importSpecifier)
     );
@@ -92,14 +107,14 @@ export class Resolver {
   private async internalResolveRelativeImport(
     baseDir: string,
     importSpecifier: string
-  ): Promise<string> {
+  ): Promise<string | null> {
     let resolvedPath = path.resolve(baseDir, importSpecifier);
     const extensions = ['.ts', '.tsx', '.js', '.jsx'];
 
     // Check if it's a directory with an index file
     if (
-      await fs
-        .stat(resolvedPath)
+      await Bun.file(resolvedPath)
+        .stat()
         .then((stats) => stats.isDirectory())
         .catch(() => false)
     ) {
@@ -119,14 +134,14 @@ export class Resolver {
       }
     }
 
-    throw new Error(`Cannot resolve relative import: ${importSpecifier}`);
+    return null;
   }
 
   /**
    * Resolves package imports including export maps and pnpm workspaces
    */
-  async resolvePackageImport(baseDir: string, importSpecifier: string): Promise<string> {
-    return cachePromise(this.cachedPackageImport, importSpecifier, () =>
+  async resolvePackageImport(baseDir: string, importSpecifier: string): Promise<string | null> {
+    return cachePromise(this.cachedPackageImport, `${baseDir}:${importSpecifier}`, () =>
       this.internalResolvePackageImport(baseDir, importSpecifier)
     );
   }
@@ -134,124 +149,116 @@ export class Resolver {
   private async internalResolvePackageImport(
     baseDir: string,
     importSpecifier: string
-  ): Promise<string> {
-    const packageJsonPath = await packageUp({ cwd: baseDir });
-    if (!packageJsonPath) {
-      throw new Error('No package.json found in project');
+  ): Promise<string | null> {
+    const thisPkg = await this.resolvePackageJson(baseDir);
+
+    let subpathIndex = -1;
+    if (importSpecifier.startsWith('@')) {
+      // @namespace/name/subpath
+      let firstSlash = importSpecifier.indexOf('/', 1);
+      if (firstSlash > 0) {
+        subpathIndex = importSpecifier.indexOf('/', firstSlash + 1);
+      }
+    } else {
+      subpathIndex = importSpecifier.indexOf('/');
     }
 
-    const packageJsonDir = path.dirname(packageJsonPath);
-    const packageData = await Bun.file(packageJsonPath).json();
+    let depName = subpathIndex > 0 ? importSpecifier.substring(0, subpathIndex) : importSpecifier;
+    let depSubpath = subpathIndex > 0 ? importSpecifier.slice(subpathIndex + 1) : '';
+
+    let depVersion =
+      thisPkg.packageJson.dependencies?.[depName] ?? thisPkg.packageJson.devDependencies?.[depName];
+
+    let pkg: Package | undefined;
+    if (depVersion?.startsWith('workspace:')) {
+      pkg = this.packages.get(depName);
+    } else if (this.resolveNodeModules) {
+      const nodeModulesPath = path.join(thisPkg.path, 'node_modules', depName);
+      const pkgJsonPath = path.join(nodeModulesPath, 'package.json');
+      const pkgData = await Bun.file(pkgJsonPath).json();
+      pkg = { name: depName, path: nodeModulesPath, packageJson: pkgData, type: 'builtin' };
+    }
+
+    if (!pkg) {
+      return null;
+    }
 
     // Check export maps using resolve.exports
-    if (packageData.exports) {
-      const resolvedExport = resolveExports(packageData, importSpecifier, {
+    if (pkg.packageJson.exports) {
+      const resolvedExport = resolveExports(pkg.packageJson, depSubpath || '.', {
         conditions: ['import', 'require', 'node', 'default'],
         unsafe: true, // Allow falling back to main/module fields
       });
 
       if (resolvedExport) {
         const exportPath = Array.isArray(resolvedExport) ? resolvedExport[0] : resolvedExport;
-        return path.resolve(packageJsonDir, exportPath);
+        return path.resolve(pkg.path, exportPath);
       }
+    } else if (depSubpath) {
+      return path.join(pkg.path, depSubpath);
     }
 
-    // Check pnpm workspace
-    const workspacePath = await this.resolvePnpmWorkspace(
-      packageJsonDir,
-      packageData,
-      importSpecifier
-    );
-    if (workspacePath) return workspacePath;
+    const subpath =
+      resolveLegacy(pkg.packageJson, {
+        browser: false,
+      }) || '';
+    return path.join(pkg.path, subpath);
+  }
 
-    // Fallback to node_modules
-    const nodeModulesPath = path.join(packageJsonDir, 'node_modules', importSpecifier);
-    const pkgJsonPath = path.join(nodeModulesPath, 'package.json');
+  /** Find the package.json for a directory */
+  private async resolvePackageJson(dir: string): Promise<Package> {
+    return cachePromise(this.packageFromDir, dir, async () => {
+      const packageJsonPath = await packageUp({ cwd: dir });
+      if (!packageJsonPath) {
+        throw new Error('No package.json found in project');
+      }
 
-    try {
-      const pkgData = await Bun.file(pkgJsonPath).json();
-      const resolvedExport = resolveExports(pkgData, '.', {
-        conditions: ['import', 'require', 'node', 'default'],
-        unsafe: true,
-      });
-      const mainFile = resolvedExport || pkgData.module || pkgData.main || 'index.js';
-      return path.join(nodeModulesPath, Array.isArray(mainFile) ? mainFile[0] : mainFile);
-    } catch {
-      throw new Error(`Cannot resolve package: ${importSpecifier}`);
-    }
+      const packageJson = await Bun.file(packageJsonPath).json();
+      return {
+        name: packageJson.name,
+        path: path.dirname(packageJsonPath),
+        packageJson,
+        type: 'workspace',
+      } satisfies Package;
+    });
   }
 
   /**
    * Resolves pnpm workspace packages
    */
-  async resolvePnpmWorkspace(
-    baseDir: string,
-    packageData: any,
-    importSpecifier: string
-  ): Promise<string | null> {
-    return cachePromise(this.cachedPnpmWorkspace, importSpecifier, () =>
-      this.internalResolvePnpmWorkspace(baseDir, packageData, importSpecifier)
-    );
-  }
-
-  private async internalResolvePnpmWorkspace(
-    baseDir: string,
-    packageData: any,
-    importSpecifier: string
-  ): Promise<string | null> {
+  private static async resolvePnpmWorkspace(baseDir: string): Promise<Map<string, Package> | null> {
     const pnpmWorkspaceYamlPath = await findUp('pnpm-workspace.yaml', {
       cwd: baseDir,
     });
 
-    let workspacePatterns: string[] = [];
+    if (!pnpmWorkspaceYamlPath) return null;
 
-    if (pnpmWorkspaceYamlPath) {
-      const content = await Bun.file(pnpmWorkspaceYamlPath).text();
-      const lines = content.split('\n');
-      let inPackages = false;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed === 'packages:') {
-          inPackages = true;
-          continue;
-        }
-        if (inPackages) {
-          if (trimmed.startsWith('- ')) {
-            const pattern = trimmed.slice(2).trim().replace(/['"]/g, '');
-            workspacePatterns.push(pattern);
-          } else if (trimmed === '') {
-            continue;
-          } else {
-            break;
-          }
-        }
-      }
-    } else if (packageData.workspaces) {
-      workspacePatterns = packageData.workspaces;
-    }
+    const content = await Bun.file(pnpmWorkspaceYamlPath).text();
+    const workspacePatterns: string[] = (YAML.load(content) as any)?.packages;
+    if (workspacePatterns?.length === 0) return null;
 
-    if (workspacePatterns.length === 0) return null;
-
+    const packageMap = new Map<string, Package>();
+    const workspaceRoot = path.dirname(pnpmWorkspaceYamlPath);
     for (const pattern of workspacePatterns) {
-      const workspaceDir = path.join(baseDir, pattern.replace('/*', ''));
+      const workspaceDir = path.join(workspaceRoot, pattern.replace('/*', ''));
       const packages = await fs.readdir(workspaceDir).catch(() => []);
       for (const pkg of packages) {
         const pkgJsonPath = path.join(workspaceDir, pkg, 'package.json');
         try {
           const pkgData = await Bun.file(pkgJsonPath).json();
-          if (pkgData.name === importSpecifier) {
-            const resolvedExport = resolveExports(pkgData, '.', {
-              conditions: ['import', 'require', 'node', 'default'],
-              unsafe: true,
-            });
-            const mainFile = resolvedExport || pkgData.module || pkgData.main || 'index.js';
-            return path.join(workspaceDir, pkg, Array.isArray(mainFile) ? mainFile[0] : mainFile);
-          }
+
+          packageMap.set(pkgData.name, {
+            name: pkgData.name,
+            path: path.join(workspaceDir, pkg),
+            packageJson: pkgData,
+            type: 'workspace',
+          });
         } catch {
           continue;
         }
       }
     }
-    return null;
+
+    return packageMap;
   }
 }
