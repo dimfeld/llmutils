@@ -97,8 +97,8 @@ export class Resolver {
 
     // Check if it's a directory with an index file
     if (
-      await Bun.file(resolvedPath)
-        .stat()
+      await fs
+        .stat(resolvedPath)
         .then((stats) => stats.isDirectory())
         .catch(() => false)
     ) {
@@ -140,7 +140,7 @@ export class Resolver {
     }
 
     const packageJsonDir = path.dirname(packageJsonPath);
-    const packageData = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
+    const packageData = await Bun.file(packageJsonPath).json();
 
     // Check export maps using resolve.exports
     if (packageData.exports) {
