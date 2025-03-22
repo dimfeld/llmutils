@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { resolve as resolveExports } from 'resolve.exports';
 import { packageUp } from 'package-up';
+import { findUp } from 'find-up';
 
 type MaybeAwaited<T extends Promise<any>> = Awaited<T> | T;
 
@@ -198,13 +199,42 @@ export class Resolver {
     packageData: any,
     importSpecifier: string
   ): Promise<string | null> {
-    if (!packageData.workspaces) return null;
+    const pnpmWorkspaceYamlPath = await findUp('pnpm-workspace.yaml', {
+      cwd: baseDir,
+    });
 
-    const workspacePatterns = packageData.workspaces;
+    let workspacePatterns: string[] = [];
+
+    if (pnpmWorkspaceYamlPath) {
+      const content = await Bun.file(pnpmWorkspaceYamlPath).text();
+      const lines = content.split('\n');
+      let inPackages = false;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed === 'packages:') {
+          inPackages = true;
+          continue;
+        }
+        if (inPackages) {
+          if (trimmed.startsWith('- ')) {
+            const pattern = trimmed.slice(2).trim().replace(/['"]/g, '');
+            workspacePatterns.push(pattern);
+          } else if (trimmed === '') {
+            continue;
+          } else {
+            break;
+          }
+        }
+      }
+    } else if (packageData.workspaces) {
+      workspacePatterns = packageData.workspaces;
+    }
+
+    if (workspacePatterns.length === 0) return null;
+
     for (const pattern of workspacePatterns) {
       const workspaceDir = path.join(baseDir, pattern.replace('/*', ''));
       const packages = await fs.readdir(workspaceDir).catch(() => []);
-
       for (const pkg of packages) {
         const pkgJsonPath = path.join(workspaceDir, pkg, 'package.json');
         try {

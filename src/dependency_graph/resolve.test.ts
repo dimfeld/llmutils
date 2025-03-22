@@ -6,13 +6,13 @@ import { Resolver } from './resolve';
 
 async function setupMockStructure(): Promise<string> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'resolver-test-'));
-  
+
   // Create src directory
   await fs.mkdir(path.join(tempDir, 'src'));
   await Bun.write(path.join(tempDir, 'src', 'main.ts'), '// main.ts');
   await fs.mkdir(path.join(tempDir, 'src', 'utils'));
   await Bun.write(path.join(tempDir, 'src', 'utils', 'index.ts'), '// utils/index.ts');
-  
+
   // Create node_modules
   await fs.mkdir(path.join(tempDir, 'node_modules'));
   await fs.mkdir(path.join(tempDir, 'node_modules', 'pkg1'));
@@ -21,15 +21,18 @@ async function setupMockStructure(): Promise<string> {
     JSON.stringify({ main: 'index.js' })
   );
   await Bun.write(path.join(tempDir, 'node_modules', 'pkg1', 'index.js'), '// pkg1/index.js');
-  
+
   await fs.mkdir(path.join(tempDir, 'node_modules', 'pkg2'));
   await Bun.write(
     path.join(tempDir, 'node_modules', 'pkg2', 'package.json'),
     JSON.stringify({ main: 'lib/main.js' })
   );
   await fs.mkdir(path.join(tempDir, 'node_modules', 'pkg2', 'lib'));
-  await Bun.write(path.join(tempDir, 'node_modules', 'pkg2', 'lib', 'main.js'), '// pkg2/lib/main.js');
-  
+  await Bun.write(
+    path.join(tempDir, 'node_modules', 'pkg2', 'lib', 'main.js'),
+    '// pkg2/lib/main.js'
+  );
+
   // Create packages for workspace
   await fs.mkdir(path.join(tempDir, 'packages'));
   await fs.mkdir(path.join(tempDir, 'packages', 'workspace-pkg'));
@@ -37,14 +40,17 @@ async function setupMockStructure(): Promise<string> {
     path.join(tempDir, 'packages', 'workspace-pkg', 'package.json'),
     JSON.stringify({ name: 'workspace-pkg', main: 'index.ts' })
   );
-  await Bun.write(path.join(tempDir, 'packages', 'workspace-pkg', 'index.ts'), '// workspace-pkg/index.ts');
-  
-  // Create root package.json with workspaces
   await Bun.write(
-    path.join(tempDir, 'package.json'),
-    JSON.stringify({ workspaces: ['packages/*'] })
+    path.join(tempDir, 'packages', 'workspace-pkg', 'index.ts'),
+    '// workspace-pkg/index.ts'
   );
-  
+
+  // Create pnpm-workspace.yaml instead of package.json with workspaces
+  await Bun.write(path.join(tempDir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'");
+
+  // Create root package.json (without workspaces)
+  await Bun.write(path.join(tempDir, 'package.json'), JSON.stringify({}));
+
   return tempDir;
 }
 
@@ -96,7 +102,9 @@ describe('Resolver', () => {
     const filePath = path.join(tempDir, 'src', 'main.ts');
     const imports = ['workspace-pkg'];
     const resolved = await resolver.resolveImportPaths(filePath, imports);
-    expect(resolved.get('workspace-pkg')).toBe(path.join(tempDir, 'packages', 'workspace-pkg', 'index.ts'));
+    expect(resolved.get('workspace-pkg')).toBe(
+      path.join(tempDir, 'packages', 'workspace-pkg', 'index.ts')
+    );
   });
 
   test('skips built-in modules', async () => {
