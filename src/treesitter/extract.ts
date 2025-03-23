@@ -467,7 +467,7 @@ export class Extractor {
     return extractImportsExportModules(tree);
   }
 
-  async extractSvelteScript(tree: Tree) {
+  async getSvelteScript(tree: Tree) {
     const rootNode = tree.rootNode;
     const scriptText = rootNode
       .descendantsOfType('script_element')
@@ -481,7 +481,11 @@ export class Extractor {
       .join('\n');
 
     const scriptParser = await this.createParser('typescript');
-    const scriptTree = scriptParser.parse(svelteScript);
+    return scriptParser.parse(svelteScript);
+  }
+
+  async extractSvelteScript(tree: Tree) {
+    const scriptTree = await this.getSvelteScript(tree);
     if (!scriptTree) {
       return null;
     }

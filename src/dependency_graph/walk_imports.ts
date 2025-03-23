@@ -33,9 +33,18 @@ export class ImportWalker {
       const code = await Bun.file(filePath).text();
       const language = path.extname(filePath) === '.svelte' ? 'svelte' : 'typescript';
       const parser = await this.extractor.createParser(language);
-      const tree = parser.parse(code);
+      let tree = parser.parse(code);
       if (!tree) {
         return null;
+      }
+
+      if (language === 'svelte') {
+        let svelteTree = await this.extractor.getSvelteScript(tree);
+        tree.delete();
+        if (!svelteTree) {
+          return null;
+        }
+        tree = svelteTree;
       }
 
       try {
@@ -154,12 +163,16 @@ export class ImportWalker {
 
       const modulePath = resolved.resolved;
 
-      for (const namedImport of imp.namedImports || []) {
-        const variableName = namedImport.name;
-        const definingFile = await this.findDefiningFile(variableName, modulePath);
-        if (definingFile) {
-          definingFiles.add(definingFile);
+      if (imp.namedImports) {
+        for (const namedImport of imp.namedImports || []) {
+          const variableName = namedImport.name;
+          const definingFile = await this.findDefiningFile(variableName, modulePath);
+          if (definingFile) {
+            definingFiles.add(definingFile);
+          }
         }
+      } else {
+        definingFiles.add(modulePath);
       }
     }
 

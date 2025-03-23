@@ -84,6 +84,11 @@ export class Resolver {
       return { importPath: importSpecifier, resolved: null };
     }
 
+    if (importSpecifier.startsWith('$lib/')) {
+      let packagePath = await this.resolvePackageJson(baseDir);
+      importSpecifier = path.join(packagePath.path, 'src', 'lib', importSpecifier.slice(5));
+    }
+
     // Handle relative imports
     if (importSpecifier.startsWith('.') || importSpecifier.startsWith('/')) {
       const resolvedPath = await this.resolveRelativeImport(baseDir, importSpecifier);

@@ -11,6 +11,9 @@ import { glob } from 'glob';
 import { xmlFormatPrompt } from './xml/prompt';
 import { generateSearchReplacePrompt } from './diff-editor/prompts';
 import { generateWholeFilePrompt } from './whole-file/prompts';
+import { ImportWalker } from './dependency_graph/walk_imports.ts';
+import { Extractor } from './treesitter/extract.ts';
+import { Resolver } from './dependency_graph/resolve.ts';
 
 let { values, positionals } = parseArgs({
   options: {
@@ -36,11 +39,9 @@ let { values, positionals } = parseArgs({
     upstream: {
       type: 'string',
       multiple: true,
-      short: 'u',
     },
     downstream: {
       type: 'string',
-      short: 'd',
       multiple: true,
     },
     both: {
@@ -69,6 +70,11 @@ let { values, positionals } = parseArgs({
     'whole-word': {
       type: 'boolean',
       short: 'w',
+    },
+    'with-imports': {
+      type: 'string',
+      short: 'W',
+      multiple: true,
     },
     instruction: {
       type: 'string',
@@ -152,8 +158,11 @@ if (values.help) {
   console.log('  -i, --include <files>       Include these globs');
   console.log('  --ignore <files>            Ignore these globs');
   console.log('  -p, --packages <packages>   Include the contents of these packages');
-  console.log('  -u, --upstream <packages>   Include this packages and its dependencies');
-  console.log('  -d, --downstream <packages> Include this package and its dependents');
+  console.log('  --upstream <packages>   Include this packages and its dependencies');
+  console.log('  --downstream <packages> Include this package and its dependents');
+  console.log(
+    '  -W, --with-imports <files>  Include the contents of these files and all files they import from'
+  );
   console.log(
     '  -b, --both <packages>       Include the package and its upstream and downstream dependencies'
   );
@@ -352,6 +361,25 @@ async function processRawIncludes(includes: string[] | undefined): Promise<strin
   );
 }
 
+async function processWithImports(withImports: string[] | undefined): Promise<string[]> {
+  if (!withImports?.length) {
+    return [];
+  }
+
+  withImports = withImports.flatMap((include) => include.split(','));
+
+  let walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
+
+  let results = await Promise.all(
+    withImports.map(async (include) => {
+      let imports = await walker.getDefiningFiles(path.resolve(rootDir, include));
+      return imports;
+    })
+  );
+
+  return results.flat().map((f) => path.relative(rootDir, f));
+}
+
 let upstream = [...(values.upstream ?? []), ...(values.both ?? [])];
 let downstream = [...(values.downstream ?? []), ...(values.both ?? [])];
 
@@ -365,6 +393,7 @@ let pathsSet = new Set(
       grepFor(values['grep-package'], 'package'),
       processGrepIn(values['grep-in']),
       processRawIncludes(values.include),
+      processWithImports(values['with-imports']),
     ])
   )
     .flat()
