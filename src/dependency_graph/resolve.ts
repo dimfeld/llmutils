@@ -127,14 +127,32 @@ export class Resolver {
     }
 
     // Check with extensions
-    for (const ext of extensions) {
-      const pathWithExt = resolvedPath + ext;
-      if (await Bun.file(pathWithExt).exists()) {
-        return pathWithExt;
-      }
+    const existingExt = path.extname(resolvedPath);
+    let candidates: string[];
+    if (!existingExt) {
+      candidates = extensions.map((ext) => resolvedPath + ext);
+    } else if (existingExt === '.js') {
+      candidates = [resolvedPath, resolvedPath.replace('.js', '.ts')];
+    } else if (existingExt === '.ts') {
+      candidates = [resolvedPath, resolvedPath.replace('.ts', '.js')];
+    } else if (existingExt === '.mjs') {
+      candidates = [resolvedPath, resolvedPath.replace('.mjs', '.mts')];
+    } else if (existingExt === '.mts') {
+      candidates = [resolvedPath, resolvedPath.replace('.mts', '.mjs')];
+    } else {
+      candidates = [resolvedPath];
     }
 
-    return null;
+    let exists = await Promise.all(
+      candidates.map((candidate) =>
+        Bun.file(candidate)
+          .exists()
+          .then((e) => (e ? candidate : undefined))
+          .catch(() => undefined)
+      )
+    );
+
+    return exists.find((candidate) => candidate != null) ?? null;
   }
 
   /**

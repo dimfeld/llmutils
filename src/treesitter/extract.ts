@@ -68,11 +68,11 @@ export interface Function {
 }
 
 // Extract exported functions
-function extractExportedFunctions(tree: Tree) {
+export function extractExportedFunctions(tree: Tree) {
   const functions: Function[] = [];
 
   function traverse(cursor: TreeCursor) {
-    console.log(cursor.currentNode.type, cursor.currentNode.text);
+    // console.log(cursor.currentNode.type, cursor.currentNode.text);
     if (
       (cursor.currentNode.type === 'function_declaration' ||
         cursor.currentNode.type === 'method_definition') &&
@@ -85,7 +85,7 @@ function extractExportedFunctions(tree: Tree) {
       const params = paramNode?.text || '()';
 
       if (name === 'complexReturnType') {
-        console.log(returnTypeNode?.children?.map((c) => c?.type));
+        // console.log(returnTypeNode?.children?.map((c) => c?.type));
       }
 
       const returnType = returnTypeNode ? getActualType(returnTypeNode)?.text : '';
@@ -120,7 +120,7 @@ export interface Variable {
 }
 
 function getActualType(typeNode: Node | null) {
-  console.log(typeNode?.children?.map((c) => c?.type));
+  // console.log(typeNode?.children?.map((c) => c?.type));
   return typeNode?.children?.find(
     (c) =>
       c?.type === 'type_identifier' ||
@@ -133,7 +133,7 @@ function getActualType(typeNode: Node | null) {
 }
 
 // Extract exported variables
-function extractExportedVariables(tree: Tree) {
+export function extractExportedVariables(tree: Tree) {
   const variables: Variable[] = [];
   const rootNode = tree.rootNode;
 
@@ -187,7 +187,7 @@ export interface Method {
 }
 
 // Extract exported classes with method signatures
-function extractExportedClasses(tree: Tree) {
+export function extractExportedClasses(tree: Tree) {
   const classes: Class[] = [];
   const rootNode = tree.rootNode;
 
@@ -313,7 +313,7 @@ function extractComments(tree: Tree) {
 }
 
 // Extract imported modules and reexports
-function extractImportsExportModules(tree: Tree) {
+export function extractImportsExportModules(tree: Tree) {
   const rootNode = tree.rootNode;
 
   let query = new Query(
@@ -357,8 +357,14 @@ function extractImportsExportModules(tree: Tree) {
             });
         }
 
+        let modulePath = importModule.node.text;
+        let firstChar = modulePath[0];
+        if (firstChar === `'` || firstChar === `"`) {
+          modulePath = modulePath.slice(1, modulePath.length - 1);
+        }
+
         return {
-          module: importModule.node.text,
+          module: modulePath,
           namedImports: namedImports?.length ? namedImports : undefined,
         };
       })
@@ -484,7 +490,7 @@ export class Extractor {
       // Find the $props() call expression
       const propsDeclaration = await this.findPropsDeclaration(scriptTree);
       if (propsDeclaration) {
-        console.log('Found props declaration:', propsDeclaration.text);
+        // console.log('Found props declaration:', propsDeclaration.text);
       }
 
       const typeAliases = extractTypeAliases(tree);
