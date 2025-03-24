@@ -115,9 +115,6 @@ let { values, positionals } = parseArgs({
     cwd: {
       type: 'string',
     },
-    gitroot: {
-      type: 'boolean',
-    },
     help: {
       type: 'boolean',
       short: 'h',
@@ -153,7 +150,6 @@ if (values.help) {
   console.log();
   console.log('Options:');
   console.log('  --cwd <dir>                 Set the working directory');
-  console.log('  --gitroot                   Set the working directory to the git root');
   console.log('  -f, --edit-format (xml|diff)  Set the edit format');
   console.log('  -i, --include <files>       Include these globs');
   console.log('  --ignore <files>            Ignore these globs');
@@ -201,7 +197,7 @@ if (values['edit-format'] && !['whole-xml', 'diff', 'whole'].includes(values['ed
 
 const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim();
 
-let rootDir = values.cwd || (values.gitroot ? gitRoot : undefined) || process.cwd();
+let rootDir = values.cwd || gitRoot || process.cwd();
 
 async function getDeps(packages: string[] | undefined, mode: 'upstream' | 'downstream' | 'only') {
   if (!packages?.length) {
