@@ -8,26 +8,7 @@ import {
 } from 'resolve.exports';
 import { packageUp } from 'package-up';
 import { findUp } from 'find-up';
-
-type MaybeAwaited<T extends Promise<any>> = Awaited<T> | T;
-
-async function cachePromise<T extends Promise<any>>(
-  cache: Map<string, MaybeAwaited<T>>,
-  key: string,
-  fn: () => T
-): Promise<T> {
-  if (cache.has(key)) {
-    return cache.get(key)!;
-  }
-
-  let p = cache.get(key);
-  if (p) return p;
-  let result = await fn();
-  cache.set(key, result);
-  return result;
-}
-
-type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
+import { cachePromise, type FnCache } from '../rmfilter/utils.ts';
 
 interface Package {
   name: string;
@@ -229,7 +210,7 @@ export class Resolver {
   }
 
   /** Find the package.json for a directory */
-  private async resolvePackageJson(dir: string): Promise<Package> {
+  async resolvePackageJson(dir: string): Promise<Package> {
     return cachePromise(this.packageFromDir, dir, async () => {
       const packageJsonPath = await packageUp({ cwd: dir });
       if (!packageJsonPath) {

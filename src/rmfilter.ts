@@ -1,223 +1,160 @@
 #!/usr/bin/env bun
-import { $, type SpawnOptions, type Subprocess } from 'bun';
-import { logSpawn, setDebug } from './rmfilter/utils.ts';
-import { encode } from 'gpt-tokenizer';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { packageUp } from 'package-up';
-import { parseArgs } from 'util';
+import { $ } from 'bun';
 import * as changeCase from 'change-case';
-import os from 'node:os';
 import { glob } from 'glob';
-import { xmlFormatPrompt } from './xml/prompt';
-import { generateSearchReplacePrompt } from './diff-editor/prompts';
-import { generateWholeFilePrompt } from './whole-file/prompts';
-import { ImportWalker } from './dependency_graph/walk_imports.ts';
-import { Extractor } from './treesitter/extract.ts';
+import { encode } from 'gpt-tokenizer';
+import path from 'node:path';
+import { parseArgs } from 'util';
 import { Resolver } from './dependency_graph/resolve.ts';
+import { ImportWalker } from './dependency_graph/walk_imports.ts';
+import { generateSearchReplacePrompt } from './diff-editor/prompts';
 import { getAdditionalDocs } from './rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
+import { logSpawn, setDebug } from './rmfilter/utils.ts';
+import { Extractor } from './treesitter/extract.ts';
+import { generateWholeFilePrompt } from './whole-file/prompts';
+import { xmlFormatPrompt } from './xml/prompt';
+import { debugLog } from './logging.ts';
 
-let { values, positionals } = parseArgs({
-  options: {
-    include: {
-      type: 'string',
-      short: 'i',
-      multiple: true,
-    },
-    ignore: {
-      type: 'string',
-      short: 'I',
-      multiple: true,
-    },
-    'edit-format': {
-      type: 'string',
-      short: 'f',
-    },
-    packages: {
-      type: 'string',
-      multiple: true,
-      short: 'p',
-    },
-    upstream: {
-      type: 'string',
-      multiple: true,
-    },
-    downstream: {
-      type: 'string',
-      multiple: true,
-    },
-    both: {
-      type: 'string',
-      short: 'b',
-      multiple: true,
-    },
-    path: {
-      type: 'string',
-      multiple: true,
-    },
-    grep: {
-      type: 'string',
-      short: 'g',
-      multiple: true,
-    },
-    'grep-in': {
-      type: 'string',
-      multiple: true,
-    },
-    'grep-package': {
-      type: 'string',
-      short: 'G',
-      multiple: true,
-    },
-    'whole-word': {
-      type: 'boolean',
-      short: 'w',
-    },
-    'with-imports': {
-      type: 'string',
-      multiple: true,
-    },
-    'with-all-imports': {
-      type: 'string',
-      multiple: true,
-    },
-    instruction: {
-      type: 'string',
-      multiple: true,
-    },
-    instructions: {
-      type: 'string',
-      multiple: true,
-    },
-    docs: {
-      type: 'string',
-      multiple: true,
-    },
-    rules: {
-      type: 'string',
-      short: 'r',
-      multiple: true,
-    },
-    'omit-cursorrules': {
-      type: 'boolean',
-    },
-    expand: {
-      type: 'boolean',
-      short: 'e',
-    },
-    architect: {
-      type: 'boolean',
-      short: 'a',
-    },
-    output: {
-      type: 'string',
-      short: 'o',
-    },
-    copy: {
-      type: 'boolean',
-      short: 'c',
-    },
-    cwd: {
-      type: 'string',
-    },
-    gitroot: {
-      type: 'boolean',
-    },
-    help: {
-      type: 'boolean',
-      short: 'h',
-    },
-    debug: {
-      type: 'boolean',
-    },
-  },
-  allowPositionals: true,
-  allowNegative: true,
+// Define global options
+const globalOptions = {
+  'edit-format': { type: 'string', short: 'f' },
+  output: { type: 'string', short: 'o' },
+  copy: { type: 'boolean', short: 'c' },
+  cwd: { type: 'string' },
+  gitroot: { type: 'boolean' },
+  help: { type: 'boolean', short: 'h' },
+  debug: { type: 'boolean' },
+  instructions: { type: 'string', multiple: true },
+  instruction: { type: 'string', multiple: true },
+  docs: { type: 'string', multiple: true },
+  rules: { type: 'string', multiple: true },
+  'omit-cursorrules': { type: 'boolean' },
+} as const;
+
+// Define command-specific options
+const commandOptions = {
+  grep: { type: 'string', short: 'g', multiple: true },
+  'whole-word': { type: 'boolean', short: 'w' },
+  expand: { type: 'boolean', short: 'e' },
+  'with-imports': { type: 'boolean' },
+  'with-all-imports': { type: 'boolean' },
+  upstream: { type: 'string', multiple: true },
+  downstream: { type: 'string', multiple: true },
+} as const;
+
+// Parse global options and collect all positionals
+const allArgs = process.argv.slice(2);
+const globalAllArgs = allArgs.filter((arg) => {
+  if (arg === '--') {
+    return false;
+  }
+
+  if (arg.startsWith('--')) {
+    // omit any command options
+    if (commandOptions[arg.slice(2) as keyof typeof commandOptions]) {
+      return false;
+    }
+  }
+
+  return true;
 });
+// Get global args from all the commands regardless of where they are
+const parsedGlobal = parseArgs({
+  options: globalOptions,
+  allowPositionals: true,
+  args: globalAllArgs,
+});
+const globalValues = parsedGlobal.values;
 
-// Update help message
-if (values.help) {
-  console.log('usage: rmfilter <packages>');
-  console.log();
-  console.log('Options:');
-  console.log('  --cwd <dir>                 Set the working directory');
-  console.log('  --gitroot                   Use the Git root as the working directory');
-  console.log('  -f, --edit-format (xml|diff)  Set the edit format');
-  console.log('  -i, --include <files>       Include these globs');
-  console.log('  --ignore <files>            Ignore these globs');
-  console.log('  -p, --packages <packages>   Include the contents of these packages');
-  console.log('  --upstream <packages>   Include this packages and its dependencies');
-  console.log('  --downstream <packages> Include this package and its dependents');
+// Handle help message
+if (globalValues.help) {
   console.log(
-    '  --with-imports <files>  Include the contents of these files and all files containings its imports'
+    'usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...'
   );
-  console.log(
-    '  --with-all-imports <files>  Include the contents of these files and their entire import tree'
-  );
-  console.log(
-    '  -b, --both <packages>       Include the package and its upstream and downstream dependencies'
-  );
-  console.log('  -g, --grep <patterns>       Include files that match this pattern');
-  console.log(
-    '  --grep-in <base_dirs>:<patterns>  Include files that match these patterns in specified directories'
-  );
-  console.log(
-    '  -G, --grep-package <pkg>    Include all packages with a file whose contents matches ths pattern'
-  );
-  console.log(
-    '  -e, --expand                Expand search terms to include snake case, camel case, etc.'
-  );
-  console.log('  -w, --whole-word            Match whole words only');
-  console.log('  -a, --architect             Enable architect mode (removes empty lines)');
-  console.log(
-    '  --instructions          Add instructions to the prompt, prefix with @ to indicate a file.'
-  );
-  console.log('  --instruction          Alias for --instructions.');
-  console.log('  -r, --rules <rules>         Add rules files to the prompt');
-  console.log('  --omit-cursorrules          Do not autoload .cursorrules');
-  console.log('  -d, --docs <docs>           Add docs files to the prompt');
-  console.log('  -o, --output <file>         Specify the output file');
-  console.log('  -c, --copy                  Copy the output file to the clipboard');
-  console.log('  -h, --help                  Show this help message and exit');
-  console.log('  -D, --debug                 Print all executed commands');
+  console.log('\nGlobal Options:');
+  console.log('  --edit-format <format>  Set edit format (whole-xml, diff, whole)');
+  console.log('  -o, --output <file>     Specify output file');
+  console.log('  -c, --copy              Copy output to clipboard');
+  console.log('  --cwd <dir>             Set working directory');
+  console.log('  --gitroot               Use Git root as working directory');
+  console.log('  -h, --help              Show this help message');
+  console.log('  --debug                 Print executed commands');
+  console.log('  --instructions <text>   Add instructions (prefix @ for files)');
+  console.log('  --docs <globs>          Add documentation files');
+  console.log('  --rules <globs>         Add rules files');
+  console.log('  --omit-cursorrules      Skip loading .cursorrules');
+  console.log('\nCommand Options (per command):');
+  console.log('  -g, --grep <patterns>   Include files matching these patterns');
+  console.log('  -w, --whole-word        Match whole words in grep');
+  console.log('  -e, --expand            Expand grep patterns (snake_case, camelCase)');
+  console.log('  --with-imports          Include direct imports of files');
+  console.log('  --with-all-imports      Include entire import tree');
+  console.log('  --upstream <pkgs>       Include upstream dependencies');
+  console.log('  --downstream <pkgs>     Include downstream dependents');
   process.exit(0);
 }
 
-if (values['edit-format'] && !['whole-xml', 'diff', 'whole'].includes(values['edit-format'])) {
+// Validate edit-format
+if (
+  globalValues['edit-format'] &&
+  !['whole-xml', 'diff', 'whole'].includes(globalValues['edit-format'])
+) {
   console.error(
-    `Invalid edit format: ${values['edit-format']}. Must be 'whole-xml', 'diff', or 'whole`
+    `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', or 'whole'`
   );
   process.exit(1);
 }
 
-setDebug(values.debug || false);
+// Set up environment
+setDebug(globalValues.debug || false);
 const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
+const baseDir = globalValues.cwd || (globalValues.gitroot ? gitRoot : process.cwd());
 
-let baseDir = values.cwd || (values.gitroot ? gitRoot : process.cwd());
-
-async function getDeps(packages: string[] | undefined, mode: 'upstream' | 'downstream' | 'only') {
-  if (!packages?.length) {
-    return [];
-  }
-
-  packages = packages.flatMap((p) => p.split(','));
-
-  let args = packages.flatMap((pkg) => {
-    let filter: string;
-    if (mode === 'upstream') {
-      filter = `${pkg}...`;
-    } else if (mode === 'downstream') {
-      filter = `...${pkg}`;
-    } else {
-      filter = pkg;
+// Split positionals into commands
+const commands: string[][] = [];
+let currentCommand: string[] = [];
+for (const arg of allArgs) {
+  if (arg === '--') {
+    if (currentCommand.length > 0) {
+      commands.push(currentCommand);
+      currentCommand = [];
     }
+  } else {
+    currentCommand.push(arg);
+  }
+}
+if (currentCommand.length > 0) {
+  commands.push(currentCommand);
+}
+
+if (commands.length === 0) {
+  console.error('No commands provided');
+  process.exit(1);
+}
+
+// Parse each command
+const commandParseds = commands.map((cmdArgs) =>
+  parseArgs({
+    options: { ...commandOptions, ...globalOptions },
+    allowPositionals: true,
+    args: cmdArgs,
+  })
+);
+
+debugLog({ globalValues, commandParseds });
+
+async function getDeps(packages: string[], mode: 'upstream' | 'downstream') {
+  if (!packages.length) return [];
+  packages = packages.flatMap((p) => p.split(','));
+  const args = packages.flatMap((pkg) => {
+    const filter = mode === 'upstream' ? `${pkg}...` : mode === 'downstream' ? `...${pkg}` : pkg;
     return ['-F', filter];
   });
-
-  let proc = logSpawn(['turbo', 'ls', '--output', 'json', ...args], { cwd: gitRoot });
-  let output: { packages: { items: { path: string }[] } } = await new Response(proc.stdout).json();
-
+  const proc = logSpawn(['turbo', 'ls', '--output', 'json', ...args], { cwd: gitRoot });
+  const output: { packages: { items: { path: string }[] } } = await new Response(
+    proc.stdout
+  ).json();
   return output.packages.items.map((p) => p.path);
 }
 
@@ -225,248 +162,116 @@ function expandPattern(pattern: string) {
   return [changeCase.snakeCase(pattern), changeCase.camelCase(pattern)];
 }
 
-let repomixIgnoreExistsPromise: Promise<boolean> | undefined;
-async function useRepomixIgnore() {
-  repomixIgnoreExistsPromise ??= Bun.file(path.join(baseDir, '.repomixignore')).exists();
-  return repomixIgnoreExistsPromise;
-}
-
 async function grepFor(
-  patterns: string[] | undefined,
-  mode: 'file' | 'package',
-  baseDirs?: string[]
+  patterns: string[],
+  sourceFiles: string[],
+  expand: boolean,
+  wholeWord: boolean
 ): Promise<string[]> {
-  if (!patterns?.length) {
-    return [];
-  }
-
+  if (!patterns.length) return [];
   patterns = patterns.flatMap((p) => p.split(','));
+  if (expand) patterns = patterns.flatMap(expandPattern);
+  const args = patterns.flatMap((p) => ['-e', p]);
+  if (await Bun.file(path.join(baseDir, '.repomixignore')).exists()) {
+    args.push(`--ignore-file=${path.join(baseDir, '.repomixignore')}`);
+  }
+  if (wholeWord) args.push('--word-regexp');
 
-  if (values.expand) {
-    patterns = patterns.flatMap(expandPattern);
+  const searchPaths = sourceFiles.length ? sourceFiles : [baseDir];
+  const lowercase = args.every((a) => a.toLowerCase() === a);
+  if (lowercase) {
+    args.push('-i');
   }
 
-  let args = patterns.flatMap((pattern) => ['-e', pattern]);
-  if (await useRepomixIgnore()) {
-    const ignorePath = path.join(baseDir, '.repomixignore');
-    args.push(`--ignore-file=${ignorePath}`);
-  }
-
-  if (values['whole-word']) {
-    args.push('--word-regexp');
-  }
-
-  const searchDirs = baseDirs?.length
-    ? baseDirs.map((dir) => path.resolve(baseDir, dir))
-    : [baseDir];
-
-  const resultsPromises = searchDirs.map(async (dir) => {
-    let proc = logSpawn(['rg', '-i', '--files-with-matches', ...args, dir], {});
-    return await new Response(proc.stdout).text();
-  });
-
-  const results = await Promise.all(resultsPromises);
-
-  let files = results
-    .flatMap((result) => result.split('\n'))
+  const proc = logSpawn(['rg', '--files-with-matches', ...args, ...searchPaths], {});
+  const files = (await new Response(proc.stdout).text())
+    .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .map((file) => path.resolve(baseDir, file));
-
-  if (mode === 'file') {
-    return files;
-  }
-
-  let packagePaths = await Promise.all(
-    files.map((file) =>
-      packageUp({
-        cwd: path.dirname(file),
-      })
-    )
-  );
-
-  let packageDirs = new Set(
-    packagePaths
-      .map((p) => {
-        if (!p) {
-          return;
-        }
-
-        let dir = path.dirname(p);
-        let relDir = path.relative(baseDir, dir);
-        if (relDir === '') {
-          return;
-        }
-
-        return relDir;
-      })
-      .filter((p) => p != null)
-  );
-
-  return [...packageDirs];
+  return files;
 }
 
-async function processGrepIn(grepInArgs: string[] | undefined): Promise<string[]> {
-  if (!grepInArgs?.length) {
-    return [];
-  }
-
-  const grepCalls = grepInArgs
-    .map((arg) => {
-      const [dirsStr, patternsStr] = arg.split(':');
-      if (!dirsStr || !patternsStr) {
-        console.error(`Invalid --grep-in format: ${arg}. Expected format: <dirs>:<patterns>`);
-        return null;
-      }
-
-      const dirs = dirsStr.split(',');
-      const patterns = patternsStr.split(',');
-
-      return { dirs, patterns };
-    })
-    .filter((call) => call !== null);
-
-  const results = await Promise.all(
-    grepCalls.map(({ dirs, patterns }) => grepFor(patterns, 'file', dirs))
-  );
-
-  return results.flat();
-}
-
-async function processRawIncludes(includes: string[] | undefined): Promise<string[]> {
-  if (!includes?.length) {
-    return [];
-  }
-
-  return Promise.all(
-    includes.map(async (include) => {
-      try {
-        let f = await Bun.file(include).stat();
-        if (f.isDirectory()) {
-          return path.resolve(baseDir, path.join(include, '**'));
-        }
-      } catch (e) {
-        // errors are fine
-      }
-
-      return path.resolve(baseDir, include);
-    })
-  );
-}
-
-let walker = new ImportWalker(new Extractor(), await Resolver.new(gitRoot));
-async function processWithImports(
-  withImports: string[] | undefined,
-  allImports: boolean
-): Promise<string[]> {
-  if (!withImports?.length) {
-    return [];
-  }
-
-  withImports = withImports.flatMap((include) => include.split(','));
-  // in case any of them are globs
-  withImports = await glob(withImports, { cwd: baseDir });
-
-  let results: Set<string> = new Set();
+const walker = new ImportWalker(new Extractor(), await Resolver.new(gitRoot));
+async function processWithImports(files: string[], allImports: boolean): Promise<string[]> {
+  const results = new Set<string>(files);
   await Promise.all(
-    withImports.map(async (include) => {
-      let filePath = path.resolve(baseDir, include);
+    files.map(async (file) => {
+      const filePath = path.resolve(baseDir, file);
       if (allImports) {
         await walker.getImportTree(filePath, results);
       } else {
-        let result = await walker.getDefiningFiles(filePath);
-        for (let r of result) {
-          results.add(r);
-        }
+        const imports = await walker.getDefiningFiles(filePath);
+        imports.forEach((imp) => results.add(imp));
       }
     })
   );
-
   return Array.from(results);
 }
 
-let upstream = [...(values.upstream ?? []), ...(values.both ?? [])];
-let downstream = [...(values.downstream ?? []), ...(values.both ?? [])];
+// Process each command
+async function processCommand(cmdParsed: (typeof commandParseds)[number]): Promise<Set<string>> {
+  const filesSet = new Set<string>();
+  const cmdValues = cmdParsed.values;
+  const positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
-let pathsSet = new Set(
-  (
-    await Promise.all([
-      getDeps(upstream, 'upstream'),
-      getDeps(downstream, 'downstream'),
-      getDeps(values.packages, 'only'),
-      grepFor(values.grep, 'file'),
-      grepFor(values['grep-package'], 'package'),
-      processGrepIn(values['grep-in']),
-      processRawIncludes(values.include),
-      processWithImports(values['with-imports'], false),
-      processWithImports(values['with-all-imports'], true),
-    ])
-  )
-    .flat()
-    .concat(values.path ?? [])
-);
+  // Process positionals (files/globs)
+  if (positionals.length > 0) {
+    let files = await glob(positionals, { cwd: baseDir });
 
-let allPaths = Array.from(pathsSet, (p) => path.relative(gitRoot, p)).join(',');
-
-const architectArgs = values.architect ? ['--remove-empty-lines'] : [];
-const ignoreArgs = values.ignore ? ['--ignore', values.ignore.join(',')] : [];
-
-const repomixOutput = await callRepomix(gitRoot, [
-  '--top-files-len',
-  '20',
-  '--include',
-  allPaths,
-  ...ignoreArgs,
-  ...architectArgs,
-  ...positionals,
-]);
-
-async function copyToClipboard(text: string) {
-  let command: string[];
-  if (process.platform === 'darwin') {
-    command = ['pbcopy'];
-  } else if (process.platform === 'win32') {
-    command = ['clip'];
-  } else {
-    const hasWlCopy = await $`command -v wl-copy`
-      .quiet()
-      .then(() => true)
-      .catch(() => false);
-    if (hasWlCopy) {
-      command = ['wl-copy'];
-    } else {
-      const hasXclip = await $`command -v xclip`
-        .quiet()
-        .then(() => true)
-        .catch(() => false);
-      if (hasXclip) {
-        command = ['xclip', '-selection', 'clipboard'];
-      } else {
-        console.warn('No clipboard utility found (install wl-copy or xclip on Linux)');
-        return;
-      }
+    if (cmdValues.grep) {
+      files = await grepFor(
+        cmdValues.grep,
+        files,
+        cmdValues.expand ?? false,
+        cmdValues['whole-word'] ?? false
+      );
     }
+
+    if (cmdValues['with-imports']) {
+      files = await processWithImports(files, false);
+    } else if (cmdValues['with-all-imports']) {
+      files = await processWithImports(files, true);
+    }
+    files.forEach((file) => filesSet.add(file));
   }
-  const proc = logSpawn(command, {
-    stdin: 'pipe',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
-  proc.stdin.write(text);
-  await proc.stdin.end();
-  const exitCode = await proc.exited;
-  if (exitCode === 0) {
-    console.log('Output copied to clipboard');
-  } else {
-    console.warn(`Failed to copy to clipboard (exit code: ${exitCode})`);
+
+  // TODO These don't really do the right thing anymore. Need to either drop them since I wasn't really using them,
+  // or maybe make them into their own commands, or maybe just pull out the relevant packages from the files.
+  // Process package-related options
+  if (cmdValues.upstream) {
+    const upstreamFiles = await getDeps(cmdValues.upstream, 'upstream');
+    upstreamFiles.forEach((file) => filesSet.add(file));
   }
+  if (cmdValues.downstream) {
+    const downstreamFiles = await getDeps(cmdValues.downstream, 'downstream');
+    downstreamFiles.forEach((file) => filesSet.add(file));
+  }
+
+  if (filesSet.size === 0) {
+    console.error('No files found for command', cmdParsed);
+    process.exit(1);
+  }
+  return filesSet;
 }
 
-let outputFile = values.output ?? (await getOutputPath());
+// Execute commands and combine results
+const allFilesSet = new Set<string>();
+await Promise.all(
+  commandParseds.map(async (cmdParsed) => {
+    const cmdFiles = await processCommand(cmdParsed);
+    cmdFiles.forEach((file) => allFilesSet.add(file));
+  })
+);
+const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p)).join(',');
 
-const editFormat = values['edit-format'] || 'whole-file';
+// Call repomix
+const repomixOutput = await callRepomix(gitRoot, ['--top-files-len', '20', '--include', allPaths]);
 
-const { docsTag, instructionsTag, rulesTag } = await getAdditionalDocs(baseDir, values);
+// Handle output
+const outputFile = globalValues.output ?? (await getOutputPath());
+const editFormat = globalValues['edit-format'] || 'whole-file';
+const { docsTag, instructionsTag, rulesTag } = await getAdditionalDocs(baseDir, globalValues);
 const finalOutput = [
   repomixOutput,
   docsTag,
@@ -478,11 +283,30 @@ const finalOutput = [
 ]
   .filter(Boolean)
   .join('\n\n');
+
 await Bun.write(outputFile, finalOutput);
 const tokens = encode(finalOutput);
 console.log(`Output written to ${outputFile}, edit format: ${editFormat}`);
 console.log(`Tokens: ${tokens.length}`);
 
-if (values.copy) {
+if (globalValues.copy) {
   await copyToClipboard(finalOutput);
+}
+
+async function copyToClipboard(text: string) {
+  const command =
+    process.platform === 'darwin'
+      ? ['pbcopy']
+      : process.platform === 'win32'
+        ? ['clip']
+        : ['xclip', '-selection', 'clipboard'];
+  const proc = logSpawn(command, { stdin: 'pipe', stdout: 'inherit', stderr: 'inherit' });
+  proc.stdin.write(text);
+  await proc.stdin.end();
+  const exitCode = await proc.exited;
+  console.log(
+    exitCode === 0
+      ? 'Output copied to clipboard'
+      : `Failed to copy to clipboard (exit code: ${exitCode})`
+  );
 }

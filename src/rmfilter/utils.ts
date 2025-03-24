@@ -1,6 +1,6 @@
 import type { SpawnOptions } from 'bun';
 
-let debug = false;
+export let debug = false;
 export function setDebug(value: boolean) {
   debug = value;
 }
@@ -21,3 +21,19 @@ export function logSpawn<
   }
   return Bun.spawn(cmd, options);
 }
+
+export type MaybeAwaited<T extends Promise<any>> = Awaited<T> | T;
+export async function cachePromise<T extends Promise<any>>(
+  cache: Map<string, MaybeAwaited<T>>,
+  key: string,
+  fn: () => T
+): Promise<T> {
+  let p = cache.get(key);
+  if (p) return p;
+
+  let result = await fn();
+  cache.set(key, result);
+  return result;
+}
+
+export type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
