@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { $, type SpawnOptions, type Subprocess } from 'bun';
+import { logSpawn, setDebug } from './rmfilter/utils.ts';
 import { encode } from 'gpt-tokenizer';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,6 +15,8 @@ import { generateWholeFilePrompt } from './whole-file/prompts';
 import { ImportWalker } from './dependency_graph/walk_imports.ts';
 import { Extractor } from './treesitter/extract.ts';
 import { Resolver } from './dependency_graph/resolve.ts';
+import { getAdditionalDocs } from './rmfilter/additional_docs.ts';
+import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
 
 let { values, positionals } = parseArgs({
   options: {
@@ -133,23 +136,6 @@ let { values, positionals } = parseArgs({
   allowNegative: true,
 });
 
-// Helper function to log and execute commands
-function logSpawn<
-  T extends SpawnOptions.OptionsObject<
-    SpawnOptions.Writable,
-    SpawnOptions.Readable,
-    SpawnOptions.Readable
-  >,
->(cmd: string[], options?: T) {
-  if (values.debug) {
-    console.log(`[DEBUG] Executing: ${cmd.join(' ')}`);
-    if (options?.cwd) {
-      console.log(`[DEBUG] cwd: ${options.cwd}`);
-    }
-  }
-  return Bun.spawn(cmd, options);
-}
-
 // Update help message
 if (values.help) {
   console.log('usage: rmfilter <packages>');
@@ -205,6 +191,7 @@ if (values['edit-format'] && !['whole-xml', 'diff', 'whole'].includes(values['ed
   process.exit(1);
 }
 
+setDebug(values.debug || false);
 const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
 
 let baseDir = values.cwd || (values.gitroot ? gitRoot : process.cwd());
@@ -424,125 +411,15 @@ let allPaths = Array.from(pathsSet, (p) => path.relative(gitRoot, p)).join(',');
 const architectArgs = values.architect ? ['--remove-empty-lines'] : [];
 const ignoreArgs = values.ignore ? ['--ignore', values.ignore.join(',')] : [];
 
-const tempFile = path.join(tmpdir(), `repomix-${Math.random().toString(36).slice(2)}.txt`);
-let proc = logSpawn(
-  [
-    'repomix',
-    '--top-files-len',
-    '20',
-    '--include',
-    allPaths,
-    ...ignoreArgs,
-    ...architectArgs,
-    ...positionals,
-    '-o',
-    tempFile,
-  ],
-  {
-    cwd: gitRoot,
-    stdout: 'inherit',
-    stderr: 'inherit',
-  }
-);
-const exitCode = await proc.exited;
-if (exitCode !== 0) {
-  console.error(`repomix exited with code ${exitCode}`);
-  process.exit(exitCode);
-}
-
-const repomixOutput = await Bun.file(tempFile).text();
-await Bun.file(tempFile).unlink();
-
-let instructionsTag = '';
-let instructionValues = [...(values.instructions || []), ...(values.instruction || [])];
-if (instructionValues.length) {
-  let instructionsContent: string[] = [];
-
-  for (let instruction of instructionValues) {
-    if (instruction.startsWith('@')) {
-      const pattern = instruction.slice(1);
-      const matches = await glob(pattern);
-      if (matches.length === 0) {
-        console.error(`No files found matching pattern: ${pattern}`);
-        process.exit(1);
-      }
-      for (const file of matches) {
-        try {
-          instructionsContent.push(await Bun.file(file).text());
-        } catch (error) {
-          console.error(`Error reading instructions file: ${file}`);
-          process.exit(1);
-        }
-      }
-    } else {
-      instructionsContent.push(instruction);
-    }
-  }
-
-  let output = instructionsContent.map((s) => s.trim()).join('\n\n');
-  instructionsTag = `<instructions>\n${output}\n</instructions>`;
-}
-
-let docsTag = '';
-if (values.docs) {
-  let docsContent: string[] = [];
-
-  for (let pattern of values.docs) {
-    const matches = await glob(pattern);
-    if (matches.length === 0) {
-      console.error(`No files found matching pattern: ${pattern}`);
-      process.exit(1);
-    }
-    for (const file of matches) {
-      try {
-        docsContent.push(await Bun.file(file).text());
-      } catch (error) {
-        console.error(`Error reading docs file: ${file}`);
-        process.exit(1);
-      }
-    }
-  }
-
-  let output = docsContent.map((s) => s.trim()).join('\n\n');
-  docsTag = `<docs>\n${output}\n</docs>`;
-}
-
-let rulesContent: string[] = [];
-
-for (let pattern of values.rules || []) {
-  // simple check, should be better
-  if (pattern.startsWith('~/')) {
-    let homeDir = os.homedir();
-    pattern = path.join(homeDir, pattern.slice(2));
-  }
-
-  const matches = await glob(pattern);
-  if (matches.length === 0) {
-    console.error(`No files found matching pattern: ${pattern}`);
-    process.exit(1);
-  }
-  for (const file of matches) {
-    try {
-      rulesContent.push(await Bun.file(file).text());
-    } catch (error) {
-      console.error(`Error reading rules file: ${file}`);
-      process.exit(1);
-    }
-  }
-}
-
-if (!values['omit-cursorrules']) {
-  const cursorrulesPath = path.join(gitRoot || baseDir, '.cursorrules');
-  try {
-    const cursorrulesContent = await Bun.file(cursorrulesPath).text();
-    rulesContent.push(cursorrulesContent);
-  } catch (error) {
-    // It's ok if .cursorrules doesn't exist
-  }
-}
-
-let rulesOutput = rulesContent.map((s) => s.trim()).join('\n\n');
-let rulesTag = rulesOutput ? `<rules>\n${rulesOutput}\n</rules>` : '';
+const repomixOutput = await callRepomix(gitRoot, [
+  '--top-files-len',
+  '20',
+  '--include',
+  allPaths,
+  ...ignoreArgs,
+  ...architectArgs,
+  ...positionals,
+]);
 
 async function copyToClipboard(text: string) {
   let command: string[];
@@ -585,26 +462,11 @@ async function copyToClipboard(text: string) {
   }
 }
 
-let outputFile;
-if (values.output) {
-  outputFile = values.output;
-} else {
-  const configPath = path.join(os.homedir(), '.config', 'repomix', 'repomix.config.json');
-  if (await Bun.file(configPath).exists()) {
-    try {
-      const config = await Bun.file(configPath).json();
-      outputFile = config.output?.filePath;
-    } catch (error) {
-      console.error(`Error reading config file: ${configPath}`);
-    }
-  }
-  if (!outputFile) {
-    outputFile = './repomix_output.txt';
-  }
-}
+let outputFile = values.output ?? (await getOutputPath());
 
 const editFormat = values['edit-format'] || 'whole-file';
 
+const { docsTag, instructionsTag, rulesTag } = await getAdditionalDocs(baseDir, values);
 const finalOutput = [
   repomixOutput,
   docsTag,
