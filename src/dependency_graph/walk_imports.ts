@@ -142,10 +142,10 @@ export class ImportWalker {
     return null;
   }
 
-  async getDefiningFiles(filePath: string): Promise<string[]> {
+  async getDefiningFiles(filePath: string): Promise<Set<string>> {
     const fileInfo = await this.getFileInfo(filePath);
     if (!fileInfo) {
-      return [];
+      return new Set();
     }
 
     const definingFiles = new Set<string>();
@@ -176,6 +176,32 @@ export class ImportWalker {
       }
     }
 
-    return Array.from(definingFiles);
+    return definingFiles;
+  }
+
+  /** Get the import tree of a file and all the files it imports. If processing multiple files at once,
+   * you can define `seen` yourself and pass it in to avoid duplicate work. */
+  async getImportTree(filePath: string, seen: Set<string> = new Set()): Promise<Set<string>> {
+    if (seen.has(filePath)) {
+      return seen;
+    }
+
+    let fileInfo = await this.getFileInfo(filePath);
+    if (!fileInfo) {
+      return seen;
+    }
+
+    seen.add(filePath);
+
+    let resolved = await this.resolver.resolveImportPaths(filePath, [
+      ...fileInfo.imports.map((imp) => imp.module),
+      ...fileInfo.reexports.map((reexport) => reexport.module),
+    ]);
+
+    let modulePaths = resolved.map((r) => r.resolved).filter((r) => r != null);
+
+    await Promise.all(modulePaths.map((modulePath) => this.getImportTree(modulePath, seen)));
+
+    return seen;
   }
 }

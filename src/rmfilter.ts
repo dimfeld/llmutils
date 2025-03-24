@@ -73,7 +73,10 @@ let { values, positionals } = parseArgs({
     },
     'with-imports': {
       type: 'string',
-      short: 'W',
+      multiple: true,
+    },
+    'with-all-imports': {
+      type: 'string',
       multiple: true,
     },
     instruction: {
@@ -157,7 +160,10 @@ if (values.help) {
   console.log('  --upstream <packages>   Include this packages and its dependencies');
   console.log('  --downstream <packages> Include this package and its dependents');
   console.log(
-    '  -W, --with-imports <files>  Include the contents of these files and all files they import from'
+    '  --with-imports <files>  Include the contents of these files and all files containings its imports'
+  );
+  console.log(
+    '  --with-all-imports <files>  Include the contents of these files and their entire import tree'
   );
   console.log(
     '  -b, --both <packages>       Include the package and its upstream and downstream dependencies'
@@ -357,23 +363,35 @@ async function processRawIncludes(includes: string[] | undefined): Promise<strin
   );
 }
 
-async function processWithImports(withImports: string[] | undefined): Promise<string[]> {
+let walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
+async function processWithImports(
+  withImports: string[] | undefined,
+  allImports: boolean
+): Promise<string[]> {
   if (!withImports?.length) {
     return [];
   }
 
   withImports = withImports.flatMap((include) => include.split(','));
+  // in case any of them are globs
+  withImports = await glob(withImports, { cwd: rootDir });
 
-  let walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
-
-  let results = await Promise.all(
+  let results: Set<string> = new Set();
+  await Promise.all(
     withImports.map(async (include) => {
-      let imports = await walker.getDefiningFiles(path.resolve(rootDir, include));
-      return imports;
+      let filePath = path.resolve(rootDir, include);
+      if (allImports) {
+        await walker.getImportTree(filePath, results);
+      } else {
+        let result = await walker.getDefiningFiles(filePath);
+        for (let r of result) {
+          results.add(r);
+        }
+      }
     })
   );
 
-  return results.flat().map((f) => path.relative(rootDir, f));
+  return Array.from(results, (f) => path.relative(rootDir, f));
 }
 
 let upstream = [...(values.upstream ?? []), ...(values.both ?? [])];
@@ -389,7 +407,8 @@ let pathsSet = new Set(
       grepFor(values['grep-package'], 'package'),
       processGrepIn(values['grep-in']),
       processRawIncludes(values.include),
-      processWithImports(values['with-imports']),
+      processWithImports(values['with-imports'], false),
+      processWithImports(values['with-all-imports'], true),
     ])
   )
     .flat()

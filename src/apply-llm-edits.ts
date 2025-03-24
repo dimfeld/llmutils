@@ -19,23 +19,22 @@ if (args.includes('--help')) {
   console.log('Usage: apply-llm-edits [options]');
   console.log('Options:');
   console.log('  --stdin           Read input from stdin');
-  console.log('  --gitroot         Write files to the Git root');
+  console.log('  --cwd <path>      Write files based on the given path');
   console.log('  --debug           Enable debug logging');
   console.log('  --dry-run         Dry run - do not apply changes');
   process.exit(0);
 }
 
 const useStdin = args.includes('--stdin');
-const writeToGitroot = args.includes('--gitroot');
 const dryRun = args.includes('--dry-run');
+const cwdIndex = args.findIndex((arg) => arg == '--cwd');
+const cwd = cwdIndex != -1 ? args[cwdIndex + 1] : undefined;
 
 enableDebug(args.includes('--debug'));
 
 const content = useStdin ? await Bun.stdin.text() : await clipboard.read();
 
-const writeRoot = writeToGitroot
-  ? (await $`git rev-parse --show-toplevel`.text()).trim()
-  : process.cwd();
+const writeRoot = cwd || (await $`git rev-parse --show-toplevel`.text()).trim() || process.cwd();
 
 const xmlMode = content.includes('<code_changes>');
 const diffMode = content.includes('<<<<<<< SEARCH');
