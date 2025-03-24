@@ -118,6 +118,9 @@ let { values, positionals } = parseArgs({
     cwd: {
       type: 'string',
     },
+    gitroot: {
+      type: 'boolean',
+    },
     help: {
       type: 'boolean',
       short: 'h',
@@ -153,6 +156,7 @@ if (values.help) {
   console.log();
   console.log('Options:');
   console.log('  --cwd <dir>                 Set the working directory');
+  console.log('  --gitroot                   Use the Git root as the working directory');
   console.log('  -f, --edit-format (xml|diff)  Set the edit format');
   console.log('  -i, --include <files>       Include these globs');
   console.log('  --ignore <files>            Ignore these globs');
@@ -201,9 +205,9 @@ if (values['edit-format'] && !['whole-xml', 'diff', 'whole'].includes(values['ed
   process.exit(1);
 }
 
-const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim();
+const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
 
-let rootDir = values.cwd || gitRoot || process.cwd();
+let baseDir = values.cwd || (values.gitroot ? gitRoot : process.cwd());
 
 async function getDeps(packages: string[] | undefined, mode: 'upstream' | 'downstream' | 'only') {
   if (!packages?.length) {
@@ -224,7 +228,7 @@ async function getDeps(packages: string[] | undefined, mode: 'upstream' | 'downs
     return ['-F', filter];
   });
 
-  let proc = logSpawn(['turbo', 'ls', '--output', 'json', ...args], { cwd: rootDir });
+  let proc = logSpawn(['turbo', 'ls', '--output', 'json', ...args], { cwd: gitRoot });
   let output: { packages: { items: { path: string }[] } } = await new Response(proc.stdout).json();
 
   return output.packages.items.map((p) => p.path);
@@ -236,7 +240,7 @@ function expandPattern(pattern: string) {
 
 let repomixIgnoreExistsPromise: Promise<boolean> | undefined;
 async function useRepomixIgnore() {
-  repomixIgnoreExistsPromise ??= Bun.file(path.join(rootDir, '.repomixignore')).exists();
+  repomixIgnoreExistsPromise ??= Bun.file(path.join(baseDir, '.repomixignore')).exists();
   return repomixIgnoreExistsPromise;
 }
 
@@ -257,7 +261,7 @@ async function grepFor(
 
   let args = patterns.flatMap((pattern) => ['-e', pattern]);
   if (await useRepomixIgnore()) {
-    const ignorePath = path.join(rootDir, '.repomixignore');
+    const ignorePath = path.join(baseDir, '.repomixignore');
     args.push(`--ignore-file=${ignorePath}`);
   }
 
@@ -266,8 +270,8 @@ async function grepFor(
   }
 
   const searchDirs = baseDirs?.length
-    ? baseDirs.map((dir) => path.resolve(rootDir, dir))
-    : [rootDir];
+    ? baseDirs.map((dir) => path.resolve(baseDir, dir))
+    : [baseDir];
 
   const resultsPromises = searchDirs.map(async (dir) => {
     let proc = logSpawn(['rg', '-i', '--files-with-matches', ...args, dir], {});
@@ -280,7 +284,7 @@ async function grepFor(
     .flatMap((result) => result.split('\n'))
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((file) => path.relative(rootDir, path.resolve(file)));
+    .map((file) => path.resolve(baseDir, file));
 
   if (mode === 'file') {
     return files;
@@ -289,7 +293,7 @@ async function grepFor(
   let packagePaths = await Promise.all(
     files.map((file) =>
       packageUp({
-        cwd: path.dirname(path.resolve(rootDir, file)),
+        cwd: path.dirname(file),
       })
     )
   );
@@ -302,7 +306,7 @@ async function grepFor(
         }
 
         let dir = path.dirname(p);
-        let relDir = path.relative(rootDir, dir);
+        let relDir = path.relative(baseDir, dir);
         if (relDir === '') {
           return;
         }
@@ -352,18 +356,18 @@ async function processRawIncludes(includes: string[] | undefined): Promise<strin
       try {
         let f = await Bun.file(include).stat();
         if (f.isDirectory()) {
-          return path.join(include, '**');
+          return path.resolve(baseDir, path.join(include, '**'));
         }
       } catch (e) {
         // errors are fine
       }
 
-      return include;
+      return path.resolve(baseDir, include);
     })
   );
 }
 
-let walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
+let walker = new ImportWalker(new Extractor(), await Resolver.new(gitRoot));
 async function processWithImports(
   withImports: string[] | undefined,
   allImports: boolean
@@ -374,12 +378,12 @@ async function processWithImports(
 
   withImports = withImports.flatMap((include) => include.split(','));
   // in case any of them are globs
-  withImports = await glob(withImports, { cwd: rootDir });
+  withImports = await glob(withImports, { cwd: baseDir });
 
   let results: Set<string> = new Set();
   await Promise.all(
     withImports.map(async (include) => {
-      let filePath = path.resolve(rootDir, include);
+      let filePath = path.resolve(baseDir, include);
       if (allImports) {
         await walker.getImportTree(filePath, results);
       } else {
@@ -391,7 +395,7 @@ async function processWithImports(
     })
   );
 
-  return Array.from(results, (f) => path.relative(rootDir, f));
+  return Array.from(results);
 }
 
 let upstream = [...(values.upstream ?? []), ...(values.both ?? [])];
@@ -415,7 +419,7 @@ let pathsSet = new Set(
     .concat(values.path ?? [])
 );
 
-let allPaths = Array.from(pathsSet).join(',');
+let allPaths = Array.from(pathsSet, (p) => path.relative(gitRoot, p)).join(',');
 
 const architectArgs = values.architect ? ['--remove-empty-lines'] : [];
 const ignoreArgs = values.ignore ? ['--ignore', values.ignore.join(',')] : [];
@@ -435,7 +439,7 @@ let proc = logSpawn(
     tempFile,
   ],
   {
-    cwd: rootDir,
+    cwd: gitRoot,
     stdout: 'inherit',
     stderr: 'inherit',
   }
@@ -528,7 +532,7 @@ for (let pattern of values.rules || []) {
 }
 
 if (!values['omit-cursorrules']) {
-  const cursorrulesPath = path.join(gitRoot || rootDir, '.cursorrules');
+  const cursorrulesPath = path.join(gitRoot || baseDir, '.cursorrules');
   try {
     const cursorrulesContent = await Bun.file(cursorrulesPath).text();
     rulesContent.push(cursorrulesContent);
