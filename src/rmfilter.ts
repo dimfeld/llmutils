@@ -194,7 +194,7 @@ async function grepFor(
 
 const walker = new ImportWalker(new Extractor(), await Resolver.new(gitRoot));
 async function processWithImports(files: string[], allImports: boolean): Promise<string[]> {
-  const results = new Set<string>(files);
+  const results = new Set<string>();
   await Promise.all(
     files.map(async (file) => {
       const filePath = path.resolve(baseDir, file);
@@ -206,6 +206,10 @@ async function processWithImports(files: string[], allImports: boolean): Promise
       }
     })
   );
+
+  for (let f of files) {
+    results.add(f);
+  }
   return Array.from(results);
 }
 
@@ -217,7 +221,18 @@ async function processCommand(cmdParsed: (typeof commandParseds)[number]): Promi
 
   // Process positionals (files/globs)
   if (positionals.length > 0) {
-    let files = await glob(positionals, { cwd: baseDir });
+    let withDirGlobs = await Promise.all(
+      positionals.map(async (p) => {
+        let isDir = await Bun.file(p)
+          .stat()
+          .then((d) => d.isDirectory())
+          .catch(() => false);
+
+        let replaced = p.replaceAll(/\[|\]/g, '\\$&');
+        return isDir ? `${replaced}/**` : replaced;
+      })
+    );
+    let files = await glob(withDirGlobs, { cwd: baseDir, nodir: true });
 
     if (cmdValues.grep) {
       files = await grepFor(

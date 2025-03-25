@@ -49,9 +49,31 @@ export class Resolver {
     let baseDir = path.dirname(filePath);
     return Promise.all(
       imports.map((importPath) =>
-        cachePromise(this.cachedImportPath, `${baseDir}:${importPath}`, () =>
-          this.internalResolveImportPaths(baseDir, importPath)
-        )
+        cachePromise(this.cachedImportPath, `${baseDir}:${importPath}`, async () => {
+          let result = await this.internalResolveImportPaths(baseDir, importPath);
+          if (result.resolved) {
+            let tryPaths = [result.resolved.replace('/dist/', '/src/')];
+
+            if (path.extname(tryPaths[0]) === '.js') {
+              tryPaths.push(tryPaths[0].replace('.js', '.ts'));
+            }
+
+            let exists = await Promise.all(
+              tryPaths.map(async (tryPath) => {
+                try {
+                  let exists = await Bun.file(tryPath).exists();
+                  return exists ? tryPath : undefined;
+                } catch {
+                  return undefined;
+                }
+              })
+            );
+
+            result.resolved = exists.find((e) => e != null) ?? result.resolved;
+          }
+
+          return result;
+        })
       )
     );
   }
