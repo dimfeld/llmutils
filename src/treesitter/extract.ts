@@ -24,6 +24,14 @@ function getPrecedingComments(node: Node): Comment | undefined {
   return comment ? { raw: comment, jsdoc: parseJSDoc(comment) } : undefined;
 }
 
+function stripQuotes(str: string) {
+  let firstChar = str[0];
+  if (firstChar === `'` || firstChar === `"`) {
+    return str.slice(1, str.length - 1);
+  }
+  return str;
+}
+
 export interface JsDoc {
   params: {
     type: string;
@@ -357,11 +365,7 @@ export function extractImportsExportModules(tree: Tree) {
             });
         }
 
-        let modulePath = importModule.node.text;
-        let firstChar = modulePath[0];
-        if (firstChar === `'` || firstChar === `"`) {
-          modulePath = modulePath.slice(1, modulePath.length - 1);
-        }
+        let modulePath = stripQuotes(importModule.node.text);
 
         return {
           module: modulePath,
@@ -396,8 +400,10 @@ export function extractImportsExportModules(tree: Tree) {
             });
         }
 
+        let modulePath = stripQuotes(exportName.node.text);
+
         return {
-          module: exportName.node.text,
+          module: modulePath,
           namedExports: namedExports?.length ? namedExports : undefined,
         };
       })

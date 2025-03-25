@@ -55,7 +55,7 @@ export class Resolver {
             let tryPaths = [result.resolved.replace('/dist/', '/src/')];
 
             if (path.extname(tryPaths[0]) === '.js') {
-              tryPaths.push(tryPaths[0].replace('.js', '.ts'));
+              tryPaths.push(tryPaths[0].slice(0, -3) + '.ts');
             }
 
             let exists = await Promise.all(
