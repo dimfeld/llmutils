@@ -8,10 +8,10 @@
 
 import { $ } from 'bun';
 import clipboard from 'clipboardy';
-import { enableDebug } from './logging.ts';
 import { processRawFiles } from './whole-file/parse_raw_edits.ts';
 import { processXmlContents } from './xml/parse_xml.ts';
 import { processSearchReplace } from './diff-editor/parse.ts';
+import { setDebug } from './rmfilter/utils.ts';
 
 const args = process.argv.slice(2);
 
@@ -30,7 +30,7 @@ const dryRun = args.includes('--dry-run');
 const cwdIndex = args.findIndex((arg) => arg == '--cwd');
 const cwd = cwdIndex != -1 ? args[cwdIndex + 1] : undefined;
 
-enableDebug(args.includes('--debug'));
+setDebug(args.includes('--debug'));
 
 const content = useStdin ? await Bun.stdin.text() : await clipboard.read();
 
