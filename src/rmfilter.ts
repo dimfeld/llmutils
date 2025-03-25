@@ -41,6 +41,7 @@ const commandOptions = {
   'with-all-imports': { type: 'boolean' },
   upstream: { type: 'string', multiple: true },
   downstream: { type: 'string', multiple: true },
+  largest: { type: 'string', short: 'l' },
 } as const;
 
 // Parse global options and collect all positionals
@@ -92,6 +93,7 @@ if (globalValues.help) {
   console.log('  --with-all-imports      Include entire import tree');
   console.log('  --upstream <pkgs>       Include upstream dependencies');
   console.log('  --downstream <pkgs>     Include downstream dependents');
+  console.log('  -l, --largest <number>  Keep only the N largest files');
   process.exit(0);
 }
 
@@ -243,11 +245,36 @@ async function processCommand(cmdParsed: (typeof commandParseds)[number]): Promi
       );
     }
 
+    // Apply largest filter if specified
+    if (cmdValues.largest) {
+      const n = parseInt(cmdValues.largest, 10);
+      if (isNaN(n) || n <= 0) {
+        console.error(
+          `Invalid value for --largest: ${cmdValues.largest}. Must be a positive number`
+        );
+        process.exit(1);
+      }
+      const filesWithSizes = await Promise.all(
+        files.map(async (file) => ({
+          file,
+          size: await Bun.file(file)
+            .stat()
+            .then((d) => d.size)
+            .catch(() => 0),
+        }))
+      );
+      files = filesWithSizes
+        .sort((a, b) => b.size - a.size)
+        .slice(0, n)
+        .map((f) => f.file);
+    }
+
     if (cmdValues['with-imports']) {
       files = await processWithImports(files, false);
     } else if (cmdValues['with-all-imports']) {
       files = await processWithImports(files, true);
     }
+
     files.forEach((file) => filesSet.add(file));
   }
 
