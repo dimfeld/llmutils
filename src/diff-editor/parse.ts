@@ -60,10 +60,6 @@ function applyEdits(edits: Edit[], rootDir: string, dryRun: boolean = false): Ed
       newContent = doReplace(fullPath, null, original, updated);
     }
 
-    if (!newContent && original.trim()) {
-      // TODO Try other files in chat - implement abs_fnames logic
-    }
-
     updatedEdits.push({ filePath, original, updated });
 
     if (newContent) {
@@ -211,7 +207,13 @@ function perfectOrWhitespace(
   let res = perfectReplace(wholeLines, partLines, replaceLines);
   if (res) return res;
 
-  return replacePartWithMissingLeadingWhitespace(wholeLines, partLines, replaceLines);
+  res = replacePartWithMissingLeadingWhitespace(wholeLines, partLines, replaceLines);
+  if (res) return res;
+
+  res = replacePartWithExtraTrailingNewlines(wholeLines, partLines, replaceLines);
+  if (res) return res;
+
+  return null;
 }
 
 function perfectReplace(
@@ -387,6 +389,37 @@ function replacePartWithMissingLeadingWhitespace(
   return null;
 }
 
+function removeTrailingNewlines(lines: string[]): string[] | null {
+  let last = lines.findLastIndex((line) => !!line.trim());
+  if (last === -1) {
+    return null;
+  }
+  return lines.slice(0, last + 1);
+}
+
+function replacePartWithExtraTrailingNewlines(
+  wholeLines: string[],
+  partLines: string[],
+  replaceLines: string[]
+): string | null {
+  let trimmedWhole = removeTrailingNewlines(wholeLines);
+  if (!trimmedWhole) {
+    return null;
+  }
+
+  let trimmedPart = removeTrailingNewlines(partLines);
+  if (!trimmedPart) {
+    return null;
+  }
+
+  let trimmedReplace = removeTrailingNewlines(replaceLines);
+  if (!trimmedReplace) {
+    return null;
+  }
+
+  return perfectReplace(trimmedWhole, trimmedPart, trimmedReplace);
+}
+
 function matchButForLeadingWhitespace(wholeLines: string[], partLines: string[]): string | null {
   const num = wholeLines.length;
 
@@ -489,6 +522,7 @@ function findOriginalUpdateBlocks(content: string, validFnames: string[] = []): 
 
         const originalText: string[] = [];
         i++;
+
         while (i < lines.length && !dividerPattern.test(lines[i].trim())) {
           originalText.push(lines[i]);
           i++;
