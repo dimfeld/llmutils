@@ -2,6 +2,15 @@ import path from 'node:path';
 import os from 'node:os';
 import { logSpawn } from './utils.ts';
 
+const purposeString = `
+<purpose>
+This file contains a packed representation of a repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes. This is a subset of the files in the repository,
+not the entire thing.
+</purpose>
+`;
+
 export async function callRepomix(gitRoot: string, args: string[]) {
   const tempFile = path.join(os.tmpdir(), `repomix-${Math.random().toString(36).slice(2)}.txt`);
   let proc = logSpawn(['repomix', ...args, '-o', tempFile], {
@@ -15,8 +24,14 @@ export async function callRepomix(gitRoot: string, args: string[]) {
     process.exit(exitCode);
   }
 
-  const repomixOutput = await Bun.file(tempFile).text();
+  let repomixOutput = await Bun.file(tempFile).text();
   await Bun.file(tempFile).unlink();
+
+  // Drop the notes section
+  repomixOutput = repomixOutput
+    .replace(/<notes>.*<\/notes>/s, '')
+    .replace(/<purpose>.*<\/purpose>/s, purposeString);
+
   return repomixOutput;
 }
 
