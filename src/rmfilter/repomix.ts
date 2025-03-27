@@ -1,3 +1,4 @@
+import { $ } from 'bun';
 import path from 'node:path';
 import os from 'node:os';
 import { logSpawn } from './utils.ts';
@@ -12,6 +13,15 @@ not the entire thing.
 `;
 
 export async function callRepomix(gitRoot: string, args: string[]) {
+  let repoOrigin = await $`git config --get remote.origin.url`.cwd(gitRoot).nothrow().text();
+
+  if (repoOrigin) {
+    repoOrigin = repoOrigin.trim().replace(/\.git$/, '');
+    repoOrigin = repoOrigin.split(':')[1];
+  }
+
+  let repoName = repoOrigin || path.basename(gitRoot);
+
   const tempFile = path.join(os.tmpdir(), `repomix-${Math.random().toString(36).slice(2)}.txt`);
   let proc = logSpawn(['repomix', ...args, '-o', tempFile], {
     cwd: gitRoot,
@@ -32,7 +42,12 @@ export async function callRepomix(gitRoot: string, args: string[]) {
     .replace(/<notes>.*<\/notes>/s, '')
     .replace(/<purpose>.*<\/purpose>/s, purposeString);
 
-  return repomixOutput;
+  const withoutFirstLine = repomixOutput.slice(repomixOutput.indexOf('\n') + 1);
+
+  const output = `This file is a subset of the ${repoName} repository's contents.
+${withoutFirstLine}`;
+
+  return output;
 }
 
 export async function getOutputPath() {
