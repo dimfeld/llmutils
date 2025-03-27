@@ -194,7 +194,8 @@ async function grepFor(
   return files;
 }
 
-const walker = new ImportWalker(new Extractor(), await Resolver.new(gitRoot));
+const resolver = await Resolver.new(gitRoot);
+const walker = new ImportWalker(new Extractor(), resolver);
 async function processWithImports(files: string[], allImports: boolean): Promise<string[]> {
   const results = new Set<string>();
   await Promise.all(
@@ -299,21 +300,46 @@ async function processCommand(cmdParsed: (typeof commandParseds)[number]): Promi
 
 // Execute commands and combine results
 const allFilesSet = new Set<string>();
+const allFileDirs = new Set<string>();
 await Promise.all(
   commandParseds.map(async (cmdParsed) => {
     const cmdFiles = await processCommand(cmdParsed);
-    cmdFiles.forEach((file) => allFilesSet.add(file));
+    cmdFiles.forEach((file) => {
+      allFilesSet.add(file);
+      allFileDirs.add(path.dirname(file));
+    });
   })
 );
-const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p)).join(',');
+
+// Add package.json for the relevant files to help inform the model about imports
+await Promise.all(
+  Array.from(allFileDirs, async (d) => {
+    let pkg = await resolver.resolvePackageJson(d);
+    if (pkg?.path) {
+      allFilesSet.add(path.join(pkg.path, 'package.json'));
+    }
+  })
+);
+
+if (resolver.pnpmWorkspacePath) {
+  allFilesSet.add(resolver.pnpmWorkspacePath);
+}
+
+const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
 
 // Call repomix
-const repomixOutput = await callRepomix(gitRoot, ['--top-files-len', '20', '--include', allPaths]);
+const repomixOutput = await callRepomix(gitRoot, [
+  '--top-files-len',
+  '20',
+  '--include',
+  allPaths.join(','),
+]);
 
 // Handle output
 const outputFile = globalValues.output ?? (await getOutputPath());
 const editFormat = globalValues['edit-format'] || 'whole-file';
 const { docsTag, instructionsTag, rulesTag } = await getAdditionalDocs(baseDir, globalValues);
+
 const finalOutput = [
   repomixOutput,
   docsTag,

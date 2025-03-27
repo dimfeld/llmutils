@@ -24,6 +24,7 @@ export class Resolver {
   packageFromDir: FnCache<() => Promise<Package>> = new Map();
 
   packages: Map<string, Package> = new Map();
+  pnpmWorkspacePath: string | undefined;
   resolveNodeModules = false;
 
   constructor(packages: Map<string, Package>) {
@@ -31,8 +32,9 @@ export class Resolver {
   }
 
   static async new(baseDir: string = process.cwd()) {
-    let packages = (await Resolver.resolvePnpmWorkspace(baseDir)) ?? new Map();
-    const resolver = new Resolver(packages);
+    let workspace = await Resolver.resolvePnpmWorkspace(baseDir);
+    const resolver = new Resolver(workspace?.packages ?? new Map());
+    resolver.pnpmWorkspacePath = workspace?.path;
     return resolver;
   }
 
@@ -252,7 +254,10 @@ export class Resolver {
   /**
    * Resolves pnpm workspace packages
    */
-  private static async resolvePnpmWorkspace(baseDir: string): Promise<Map<string, Package> | null> {
+  private static async resolvePnpmWorkspace(baseDir: string): Promise<{
+    packages: Map<string, Package>;
+    path: string;
+  } | null> {
     const pnpmWorkspaceYamlPath = await findUp('pnpm-workspace.yaml', {
       cwd: baseDir,
     });
@@ -285,6 +290,6 @@ export class Resolver {
       }
     }
 
-    return packageMap;
+    return { packages: packageMap, path: pnpmWorkspaceYamlPath };
   }
 }
