@@ -321,10 +321,6 @@ await Promise.all(
   })
 );
 
-if (resolver.pnpmWorkspacePath) {
-  allFilesSet.add(resolver.pnpmWorkspacePath);
-}
-
 const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
 
 // Call repomix
