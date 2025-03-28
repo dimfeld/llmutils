@@ -3,9 +3,9 @@ import path from 'node:path';
 import os from 'node:os';
 import { logSpawn } from './utils.ts';
 
-const purposeString = `
+const purposeString = (repoName: string) => `
 <purpose>
-This file contains a packed representation of a repository's contents.
+This file contains a packed representation of the \`${repoName}\` repository's contents.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes. This is a subset of the files in the repository,
 not the entire thing.
@@ -44,7 +44,7 @@ export async function callRepomix(gitRoot: string, args: string[]) {
 
   const withoutFirstLine = repomixOutput.slice(repomixOutput.indexOf('\n') + 1);
 
-  const output = `This file is a subset of the ${repoName} repository's contents.
+  const output = `This file is a subset of the \`${repoName}\` repository's contents.
 ${withoutFirstLine}`;
 
   return output;

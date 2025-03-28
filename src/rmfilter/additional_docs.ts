@@ -105,3 +105,23 @@ export async function getAdditionalDocs(
 
   return { docsTag, instructionsTag, rulesTag };
 }
+
+export async function buildExamplesTag(examples: { pattern: string; file: string }[]) {
+  let files = await Promise.all(
+    examples.map(async (e) => {
+      let content = await Bun.file(e.file).text();
+      return `<example>
+<pattern>\`${e.pattern}\`</pattern>
+<example_file>
+${content}
+</example_file>
+</example>`;
+    })
+  );
+
+  return `<examples>
+This is a list of examples of certain patterns in the codebase which may be helpful to implement those patterns. The pattern tag contains the patterns that was matched to find the file, and should hint as what in the file is relevant.
+
+${files.join('\n')}
+</examples>`;
+}

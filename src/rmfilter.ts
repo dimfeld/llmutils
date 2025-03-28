@@ -8,7 +8,7 @@ import { parseArgs } from 'util';
 import { Resolver } from './dependency_graph/resolve.ts';
 import { ImportWalker } from './dependency_graph/walk_imports.ts';
 import { generateSearchReplacePrompt } from './diff-editor/prompts';
-import { getAdditionalDocs } from './rmfilter/additional_docs.ts';
+import { buildExamplesTag, getAdditionalDocs } from './rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
 import { logSpawn, setDebug } from './rmfilter/utils.ts';
 import { Extractor } from './treesitter/extract.ts';
@@ -42,6 +42,7 @@ const commandOptions = {
   upstream: { type: 'string', multiple: true },
   downstream: { type: 'string', multiple: true },
   largest: { type: 'string', short: 'l' },
+  example: { type: 'string', multiple: true },
 } as const;
 
 // Parse global options and collect all positionals
@@ -94,6 +95,8 @@ if (globalValues.help) {
   console.log('  --upstream <pkgs>       Include upstream dependencies');
   console.log('  --downstream <pkgs>     Include downstream dependents');
   console.log('  -l, --largest <number>  Keep only the N largest files');
+  console.log('  --example <pattern>  Include the largest file that matches the pattern.');
+  console.log('');
   process.exit(0);
 }
 
@@ -216,9 +219,28 @@ async function processWithImports(files: string[], allImports: boolean): Promise
   return Array.from(results);
 }
 
+async function getLargestNFiles(files: string[], n: number) {
+  const filesWithSizes = await Promise.all(
+    files.map(async (file) => ({
+      file,
+      size: await Bun.file(file)
+        .stat()
+        .then((d) => d.size)
+        .catch(() => 0),
+    }))
+  );
+  return filesWithSizes
+    .sort((a, b) => b.size - a.size)
+    .slice(0, n)
+    .map((f) => f.file);
+}
+
 // Process each command
-async function processCommand(cmdParsed: (typeof commandParseds)[number]): Promise<Set<string>> {
+async function processCommand(
+  cmdParsed: (typeof commandParseds)[number]
+): Promise<{ filesSet: Set<string>; examples: { pattern: string; file: string }[] }> {
   const filesSet = new Set<string>();
+  const allFoundExamples: { pattern: string; file: string }[] = [];
   const cmdValues = cmdParsed.values;
   const positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
@@ -236,6 +258,26 @@ async function processCommand(cmdParsed: (typeof commandParseds)[number]): Promi
       })
     );
     let files = await glob(withDirGlobs, { cwd: baseDir, nodir: true });
+
+    let exampleFiles: Promise<{ pattern: string; file: string }[]> | undefined;
+    if (cmdValues.example?.length) {
+      let values = cmdValues.example.flatMap((p) => p.split(','));
+      exampleFiles = Promise.all(
+        values.map(async (p) => {
+          let matching = await grepFor([p], files, false, false);
+
+          if (!matching.length) {
+            throw new Error(`No files found matching example pattern: ${p}`);
+          }
+
+          let largest = await getLargestNFiles(matching, 1);
+          return {
+            pattern: p,
+            file: largest[0],
+          };
+        })
+      );
+    }
 
     if (cmdValues.grep) {
       files = await grepFor(
@@ -255,19 +297,21 @@ async function processCommand(cmdParsed: (typeof commandParseds)[number]): Promi
         );
         process.exit(1);
       }
-      const filesWithSizes = await Promise.all(
-        files.map(async (file) => ({
-          file,
-          size: await Bun.file(file)
-            .stat()
-            .then((d) => d.size)
-            .catch(() => 0),
-        }))
-      );
-      files = filesWithSizes
-        .sort((a, b) => b.size - a.size)
-        .slice(0, n)
-        .map((f) => f.file);
+
+      files = await getLargestNFiles(files, n);
+    }
+
+    let foundExamples = await (exampleFiles ?? []);
+    if (foundExamples.length) {
+      allFoundExamples.push(...foundExamples);
+
+      if (cmdValues.grep) {
+        // If we have other filters, then add the example files to the list of files
+        files.push(...foundExamples.map((f) => f.file));
+      } else {
+        // Otherwise, just use the example files so we don't include everything
+        files = foundExamples.map((f) => f.file);
+      }
     }
 
     if (cmdValues['with-imports']) {
@@ -295,19 +339,21 @@ async function processCommand(cmdParsed: (typeof commandParseds)[number]): Promi
     console.error('No files found for command', cmdParsed);
     process.exit(1);
   }
-  return filesSet;
+  return { filesSet, examples: allFoundExamples };
 }
 
 // Execute commands and combine results
 const allFilesSet = new Set<string>();
 const allFileDirs = new Set<string>();
+const allExamples: { pattern: string; file: string }[] = [];
 await Promise.all(
   commandParseds.map(async (cmdParsed) => {
     const cmdFiles = await processCommand(cmdParsed);
-    cmdFiles.forEach((file) => {
+    cmdFiles.filesSet.forEach((file) => {
       allFilesSet.add(file);
       allFileDirs.add(path.dirname(file));
     });
+    allExamples.push(...cmdFiles.examples);
   })
 );
 
@@ -336,8 +382,20 @@ const outputFile = globalValues.output ?? (await getOutputPath());
 const editFormat = globalValues['edit-format'] || 'whole-file';
 const { docsTag, instructionsTag, rulesTag } = await getAdditionalDocs(baseDir, globalValues);
 
+const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
+
+if (allExamples.length) {
+  console.log('\n## EXAMPLES');
+  for (let { pattern, file } of allExamples) {
+    console.log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
+  }
+}
+
+const examplesTag = await buildExamplesTag(allExamples);
+
 const finalOutput = [
   repomixOutput,
+  examplesTag,
   docsTag,
   rulesTag,
   editFormat === 'whole-xml' ? xmlFormatPrompt : '',
@@ -350,8 +408,9 @@ const finalOutput = [
 
 await Bun.write(outputFile, finalOutput);
 const tokens = encode(finalOutput);
-console.log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+console.log('\n## OUTPUT');
 console.log(`Tokens: ${tokens.length}`);
+console.log(`Output written to ${outputFile}, edit format: ${editFormat}`);
 
 if (globalValues.copy) {
   await copyToClipboard(finalOutput);
