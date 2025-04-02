@@ -46,14 +46,14 @@ export interface ProcessFileOptions {
 }
 
 let processPromise;
-if (xmlMode) {
-  processPromise = processXmlContents({
+if (diffMode) {
+  processPromise = processSearchReplace({
     content,
     writeRoot,
     dryRun,
   });
-} else if (diffMode) {
-  processPromise = processSearchReplace({
+} else if (xmlMode) {
+  processPromise = processXmlContents({
     content,
     writeRoot,
     dryRun,

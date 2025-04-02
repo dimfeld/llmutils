@@ -20,4 +20,23 @@ export function processData(data: string) {
 }
 \`\`\`
 </format_example>
+
+<format_rule>If you are writing a markdown file, instead of triple-ticks, you can put the contents inside <file> and </file> tags so that any triple-ticks in the markdown do not end the file contents.</format_rule>
+
+<format_example filetype="markdown">
+<file path="apps/web/src/lib/data/process.md">
+# My markdown file
+
+This is a markdown file.
+
+A code block:
+\`\`\`
+import { process } from './process';
+
+export function processData(data: string) {
+  return process(data);
+}
+\`\`\`
+</file>
+</format_example>
 </formatting>`;

@@ -63,33 +63,47 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
   let currentBlock = [];
   let filename = null;
   let stripEndingFileTag = false;
+  let expectedEndTag = '';
   const filesToWrite = new Map();
 
   // Process line by line
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (state === 'searching' && !line.startsWith('```')) {
+
+    if (state === 'searching') {
+      if (line.startsWith('```')) {
+        debugLog('Found start of code block');
+        expectedEndTag = '```';
+        state = 'startCodeBlock';
+      } else if (line.startsWith('<file ')) {
+        expectedEndTag = '</file>';
+
+        let m = /^<file path="(.+?)">/.exec(line);
+        if (m) {
+          filename = m[1];
+          // Skip the startCodeBlock state since we already have the filename
+          state = 'trimmingLeadingLines';
+        } else {
+          state = 'startCodeBlock';
+        }
+      }
       continue;
     }
 
-    if (line.startsWith('```')) {
-      if (state === 'searching') {
-        debugLog('Found start of code block');
-        state = 'startCodeBlock';
-      } else {
-        debugLog('Found end of code block filename=', filename);
-        // Process completed block
-        if (filename && state !== 'ignoring') {
-          if (stripEndingFileTag && currentBlock[currentBlock.length - 1].trim() === '</file>') {
-            currentBlock.pop();
-          }
-          filesToWrite.set(filename, currentBlock);
+    if (line.startsWith(expectedEndTag)) {
+      debugLog('Found end of code block filename=', filename);
+      // Process completed block
+      if (filename && state !== 'ignoring') {
+        if (stripEndingFileTag && currentBlock[currentBlock.length - 1].trim() === '</file>') {
+          currentBlock.pop();
         }
-        state = 'searching';
-        currentBlock = [];
-        filename = null;
-        stripEndingFileTag = false;
+        filesToWrite.set(filename, currentBlock);
       }
+      state = 'searching';
+      currentBlock = [];
+      filename = null;
+      stripEndingFileTag = false;
+      expectedEndTag = '';
       continue;
     }
 
