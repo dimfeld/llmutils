@@ -2,6 +2,7 @@ import { $ } from 'bun';
 import { glob } from 'fast-glob';
 import os from 'node:os';
 import path from 'node:path';
+import { debugLog } from '../logging.ts';
 
 export async function getAdditionalDocs(
   baseDir: string,
@@ -154,13 +155,26 @@ export async function getDiffTag(
     }
   }
 
-  const usingJj = await Bun.file(path.join(baseDir, '.jj')).exists();
+  const usingJj = await Bun.file(path.join(baseDir, '.jj'))
+    .stat()
+    .then((s) => s.isDirectory())
+    .catch(() => false);
+  const excludeFiles = [
+    'pnpm-lock.yaml',
+    'bun.lockb',
+    'package-lock.json',
+    'bun.lock',
+    'yarn.lock',
+    'Cargo.lock',
+  ];
 
   let diff = '';
   if (usingJj) {
-    diff = await $`jj diff --from ${baseBranch}`.cwd(baseDir).nothrow().text();
+    const exclude = excludeFiles.map((f) => `~file:${f}`).join('&');
+    diff = await $`jj diff --from ${baseBranch} ${exclude}`.cwd(baseDir).nothrow().text();
   } else {
-    diff = await $`git diff ${baseBranch}`.cwd(baseDir).nothrow().text();
+    const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
+    diff = await $`git diff ${baseBranch} ${exclude}`.cwd(baseDir).nothrow().text();
   }
 
   if (!diff) {
