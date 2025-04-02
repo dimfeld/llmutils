@@ -8,7 +8,7 @@ import { parseArgs } from 'util';
 import { Resolver } from './dependency_graph/resolve.ts';
 import { ImportWalker } from './dependency_graph/walk_imports.ts';
 import { generateSearchReplacePrompt } from './diff-editor/prompts';
-import { buildExamplesTag, getAdditionalDocs } from './rmfilter/additional_docs.ts';
+import { buildExamplesTag, getAdditionalDocs, getDiffTag } from './rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
 import { logSpawn, setDebug } from './rmfilter/utils.ts';
 import { Extractor } from './treesitter/extract.ts';
@@ -30,6 +30,8 @@ const globalOptions = {
   docs: { type: 'string', multiple: true },
   rules: { type: 'string', multiple: true },
   'omit-cursorrules': { type: 'boolean' },
+  'with-diff': { type: 'boolean' },
+  'with-diff-from': { type: 'string' },
 } as const;
 
 // Define command-specific options
@@ -75,27 +77,29 @@ if (globalValues.help) {
     'usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...'
   );
   console.log('\nGlobal Options:');
-  console.log('  --edit-format <format>  Set edit format (whole-xml, diff, whole)');
-  console.log('  -o, --output <file>     Specify output file');
-  console.log('  -c, --copy              Copy output to clipboard');
-  console.log('  --cwd <dir>             Set working directory');
-  console.log('  --gitroot               Use Git root as working directory');
-  console.log('  -h, --help              Show this help message');
-  console.log('  --debug                 Print executed commands');
-  console.log('  --instructions <text>   Add instructions (prefix @ for files)');
-  console.log('  --docs <globs>          Add documentation files');
-  console.log('  --rules <globs>         Add rules files');
-  console.log('  --omit-cursorrules      Skip loading .cursorrules');
+  console.log('  --edit-format <format>    Set edit format (whole-xml, diff, whole)');
+  console.log('  -o, --output <file>       Specify output file');
+  console.log('  -c, --copy               Copy output to clipboard');
+  console.log('  --cwd <dir>               Set working directory');
+  console.log('  --gitroot                 Use Git root as working directory');
+  console.log('  -h, --help                Show this help message');
+  console.log('  --debug                   Print executed commands');
+  console.log('  --with-diff               Include Git diff in output');
+  console.log('  --with-diff-from <branch> Include diff from <branch> in output');
+  console.log('  --instructions <text>     Add instructions (prefix @ for files)');
+  console.log('  --docs <globs>            Add documentation files');
+  console.log('  --rules <globs>           Add rules files');
+  console.log('  --omit-cursorrules        Skip loading .cursorrules');
   console.log('\nCommand Options (per command):');
-  console.log('  -g, --grep <patterns>   Include files matching these patterns');
-  console.log('  -w, --whole-word        Match whole words in grep');
-  console.log('  -e, --expand            Expand grep patterns (snake_case, camelCase)');
-  console.log('  --with-imports          Include direct imports of files');
-  console.log('  --with-all-imports      Include entire import tree');
-  console.log('  --upstream <pkgs>       Include upstream dependencies');
-  console.log('  --downstream <pkgs>     Include downstream dependents');
-  console.log('  -l, --largest <number>  Keep only the N largest files');
-  console.log('  --example <pattern>  Include the largest file that matches the pattern.');
+  console.log('  -g, --grep <patterns>     Include files matching these patterns');
+  console.log('  -w, --whole-word          Match whole words in grep');
+  console.log('  -e, --expand              Expand grep patterns (snake_case, camelCase)');
+  console.log('  --with-imports            Include direct imports of files');
+  console.log('  --with-all-imports        Include entire import tree');
+  console.log('  --upstream <pkgs>         Include upstream dependencies');
+  console.log('  --downstream <pkgs>       Include downstream dependents');
+  console.log('  -l, --largest <number>    Keep only the N largest files');
+  console.log('  --example <pattern>       Include the largest file that matches the pattern.');
   console.log('');
   process.exit(0);
 }
@@ -244,101 +248,84 @@ async function processCommand(
   const cmdValues = cmdParsed.values;
   const positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
-  // Process positionals (files/globs)
-  if (positionals.length > 0) {
-    let withDirGlobs = await Promise.all(
-      positionals.map(async (p) => {
-        let isDir = await Bun.file(p)
-          .stat()
-          .then((d) => d.isDirectory())
-          .catch(() => false);
+  if (positionals.length === 0) {
+    return { filesSet, examples: [] };
+  }
 
-        let replaced = p.replaceAll(/\[|\]/g, '\\$&');
-        return isDir ? `${replaced}/**` : replaced;
+  let withDirGlobs = await Promise.all(
+    positionals.map(async (p) => {
+      let isDir = await Bun.file(p)
+        .stat()
+        .then((d) => d.isDirectory())
+        .catch(() => false);
+
+      let replaced = p.replaceAll(/\[|\]/g, '\\$&');
+      return isDir ? `${replaced}/**` : replaced;
+    })
+  );
+  let files = await glob(withDirGlobs, { cwd: baseDir, nodir: true });
+
+  let exampleFiles: Promise<{ pattern: string; file: string }[]> | undefined;
+  if (cmdValues.example?.length) {
+    let values = cmdValues.example.flatMap((p) => p.split(','));
+    exampleFiles = Promise.all(
+      values.map(async (p) => {
+        let matching = await grepFor([p], files, false, false);
+
+        if (!matching.length) {
+          throw new Error(`No files found matching example pattern: ${p}`);
+        }
+
+        let largest = await getLargestNFiles(matching, 1);
+        return {
+          pattern: p,
+          file: largest[0],
+        };
       })
     );
-    let files = await glob(withDirGlobs, { cwd: baseDir, nodir: true });
+  }
 
-    let exampleFiles: Promise<{ pattern: string; file: string }[]> | undefined;
-    if (cmdValues.example?.length) {
-      let values = cmdValues.example.flatMap((p) => p.split(','));
-      exampleFiles = Promise.all(
-        values.map(async (p) => {
-          let matching = await grepFor([p], files, false, false);
+  if (cmdValues.grep) {
+    files = await grepFor(
+      cmdValues.grep,
+      files,
+      cmdValues.expand ?? false,
+      cmdValues['whole-word'] ?? false
+    );
+  }
 
-          if (!matching.length) {
-            throw new Error(`No files found matching example pattern: ${p}`);
-          }
-
-          let largest = await getLargestNFiles(matching, 1);
-          return {
-            pattern: p,
-            file: largest[0],
-          };
-        })
-      );
+  // Apply largest filter if specified
+  if (cmdValues.largest) {
+    const n = parseInt(cmdValues.largest, 10);
+    if (isNaN(n) || n <= 0) {
+      console.error(`Invalid value for --largest: ${cmdValues.largest}. Must be a positive number`);
+      process.exit(1);
     }
+
+    files = await getLargestNFiles(files, n);
+  }
+
+  let foundExamples = await (exampleFiles ?? []);
+  if (foundExamples.length) {
+    allFoundExamples.push(...foundExamples);
 
     if (cmdValues.grep) {
-      files = await grepFor(
-        cmdValues.grep,
-        files,
-        cmdValues.expand ?? false,
-        cmdValues['whole-word'] ?? false
-      );
+      // If we have other filters, then add the example files to the list of files
+      files.push(...foundExamples.map((f) => f.file));
+    } else {
+      // Otherwise, just use the example files so we don't include everything
+      files = foundExamples.map((f) => f.file);
     }
-
-    // Apply largest filter if specified
-    if (cmdValues.largest) {
-      const n = parseInt(cmdValues.largest, 10);
-      if (isNaN(n) || n <= 0) {
-        console.error(
-          `Invalid value for --largest: ${cmdValues.largest}. Must be a positive number`
-        );
-        process.exit(1);
-      }
-
-      files = await getLargestNFiles(files, n);
-    }
-
-    let foundExamples = await (exampleFiles ?? []);
-    if (foundExamples.length) {
-      allFoundExamples.push(...foundExamples);
-
-      if (cmdValues.grep) {
-        // If we have other filters, then add the example files to the list of files
-        files.push(...foundExamples.map((f) => f.file));
-      } else {
-        // Otherwise, just use the example files so we don't include everything
-        files = foundExamples.map((f) => f.file);
-      }
-    }
-
-    if (cmdValues['with-imports']) {
-      files = await processWithImports(files, false);
-    } else if (cmdValues['with-all-imports']) {
-      files = await processWithImports(files, true);
-    }
-
-    files.forEach((file) => filesSet.add(file));
   }
 
-  // TODO These don't really do the right thing anymore. Need to either drop them since I wasn't really using them,
-  // or maybe make them into their own commands, or maybe just pull out the relevant packages from the files.
-  // Process package-related options
-  if (cmdValues.upstream) {
-    const upstreamFiles = await getDeps(cmdValues.upstream, 'upstream');
-    upstreamFiles.forEach((file) => filesSet.add(file));
-  }
-  if (cmdValues.downstream) {
-    const downstreamFiles = await getDeps(cmdValues.downstream, 'downstream');
-    downstreamFiles.forEach((file) => filesSet.add(file));
+  if (cmdValues['with-imports']) {
+    files = await processWithImports(files, false);
+  } else if (cmdValues['with-all-imports']) {
+    files = await processWithImports(files, true);
   }
 
-  if (filesSet.size === 0) {
-    console.error('No files found for command', cmdParsed);
-    process.exit(1);
-  }
+  files.forEach((file) => filesSet.add(file));
+
   return { filesSet, examples: allFoundExamples };
 }
 
@@ -369,18 +356,9 @@ await Promise.all(
 
 const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
 
-// Call repomix
-const repomixOutput = await callRepomix(gitRoot, [
-  '--top-files-len',
-  '20',
-  '--include',
-  allPaths.join(','),
-]);
-
 // Handle output
 const outputFile = globalValues.output ?? (await getOutputPath());
 const editFormat = globalValues['edit-format'] || 'whole-file';
-const { docsTag, instructionsTag, rulesTag } = await getAdditionalDocs(baseDir, globalValues);
 
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
 
@@ -391,16 +369,39 @@ if (allExamples.length) {
   }
 }
 
-const examplesTag = await buildExamplesTag(allExamples);
+const [examplesTag, diffTag, { docsTag, instructionsTag, rulesTag, rawInstructions }] =
+  await Promise.all([
+    buildExamplesTag(allExamples),
+    getDiffTag(gitRoot, globalValues),
+    getAdditionalDocs(baseDir, globalValues),
+  ]);
+
+// Call repomix
+const repomixOutput = allPaths.length
+  ? await callRepomix(gitRoot, rawInstructions, [
+      '--top-files-len',
+      '20',
+      '--include',
+      allPaths.join(','),
+    ])
+  : '';
+
+const guidelinesTag = `<guidelines>
+<guideline>When making a change, update related tests.</guideline>
+<guideline>Leave existing comments and docstrings alone unless updating them is relevant to the change.</guideline>
+<guideline>It is ok for existing comments to seem redundant or obvious, as long as they are correct.</guideline>
+</guidelines>`;
 
 const finalOutput = [
   repomixOutput,
+  diffTag,
   examplesTag,
   docsTag,
   rulesTag,
   editFormat === 'whole-xml' ? xmlFormatPrompt : '',
   editFormat === 'diff' ? generateSearchReplacePrompt : '',
   editFormat === 'whole-file' ? generateWholeFilePrompt : '',
+  guidelinesTag,
   instructionsTag,
 ]
   .filter(Boolean)

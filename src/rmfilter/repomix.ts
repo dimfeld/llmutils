@@ -3,16 +3,19 @@ import path from 'node:path';
 import os from 'node:os';
 import { logSpawn } from './utils.ts';
 
-const purposeString = (repoName: string) => `
-<purpose>
-This file contains a packed representation of the \`${repoName}\` repository's contents.
-It is designed to be easily consumable by AI systems for analysis, code review,
-or other automated processes. This is a subset of the files in the repository,
-not the entire thing.
-</purpose>
-`;
+function purposeString(repoName: string, instructions: string) {
+  if (instructions) {
+    return `This file contains a packed representation of the \`${repoName}\` repository's contents.
+This is a relevant subset of the files in the repository, for the following task:
 
-export async function callRepomix(gitRoot: string, args: string[]) {
+${instructions}`;
+  } else {
+    return `This file contains a packed representation of the \`${repoName}\` repository's contents.
+This is a relevant subset of the files in the repository, not the entire thing.`;
+  }
+}
+
+export async function callRepomix(gitRoot: string, instructions: string, args: string[]) {
   let repoOrigin = await $`git config --get remote.origin.url`.cwd(gitRoot).nothrow().text();
 
   if (repoOrigin) {
@@ -40,11 +43,14 @@ export async function callRepomix(gitRoot: string, args: string[]) {
   // Drop the notes section
   repomixOutput = repomixOutput
     .replace(/<notes>.*<\/notes>/s, '')
-    .replace(/<purpose>.*<\/purpose>/s, purposeString);
+    .replace(/<purpose>.*<\/purpose>/s, '');
 
   const withoutFirstLine = repomixOutput.slice(repomixOutput.indexOf('\n') + 1);
 
-  const output = `This file is a subset of the \`${repoName}\` repository's contents.
+  const output = `<purpose>
+  ${purposeString(repoName, instructions)}
+</purpose>
+
 ${withoutFirstLine}`;
 
   return output;

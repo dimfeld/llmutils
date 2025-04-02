@@ -1,3 +1,4 @@
+import { $ } from 'bun';
 import { glob } from 'fast-glob';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,6 +14,7 @@ export async function getAdditionalDocs(
   }
 ) {
   let instructionsTag = '';
+  let rawInstructions = '';
   let instructionValues = [...(values.instructions || []), ...(values.instruction || [])];
   if (instructionValues.length) {
     let instructionsContent: string[] = [];
@@ -38,8 +40,8 @@ export async function getAdditionalDocs(
       }
     }
 
-    let output = instructionsContent.map((s) => s.trim()).join('\n\n');
-    instructionsTag = `<instructions>\n${output}\n</instructions>`;
+    rawInstructions = instructionsContent.map((s) => s.trim()).join('\n\n');
+    instructionsTag = `<instructions>\n${rawInstructions}\n</instructions>`;
   }
 
   let docsTag = '';
@@ -103,10 +105,13 @@ export async function getAdditionalDocs(
   let rulesOutput = rulesContent.map((s) => s.trim()).join('\n\n');
   let rulesTag = rulesOutput ? `<rules>\n${rulesOutput}\n</rules>` : '';
 
-  return { docsTag, instructionsTag, rulesTag };
+  return { docsTag, instructionsTag, rulesTag, rawInstructions };
 }
 
 export async function buildExamplesTag(examples: { pattern: string; file: string }[]) {
+  if (!examples.length) {
+    return '';
+  }
   let files = await Promise.all(
     examples.map(async (e) => {
       let content = await Bun.file(e.file).text();
@@ -124,4 +129,47 @@ This is a list of examples of certain patterns in the codebase which may be help
 
 ${files.join('\n')}
 </examples>`;
+}
+
+export async function getDiffTag(
+  baseDir: string,
+  values: { 'with-diff'?: boolean; 'with-diff-from'?: string }
+) {
+  let baseBranch: string;
+  if (values['with-diff-from']) {
+    baseBranch = values['with-diff-from'];
+  } else {
+    // Try to get default branch from git config
+    baseBranch = (
+      await $`git config --get init.defaultBranch`.cwd(baseDir).nothrow().text()
+    ).trim();
+
+    if (!baseBranch) {
+      // Try to get default branch from remote
+      const defaultBranch = (await $`git branch --list main master`.cwd(baseDir).nothrow().text())
+        .replace('*', '')
+        .trim();
+
+      baseBranch = defaultBranch || 'main';
+    }
+  }
+
+  const usingJj = await Bun.file(path.join(baseDir, '.jj')).exists();
+
+  let diff = '';
+  if (usingJj) {
+    diff = await $`jj diff --from ${baseBranch}`.cwd(baseDir).nothrow().text();
+  } else {
+    diff = await $`git diff ${baseBranch}`.cwd(baseDir).nothrow().text();
+  }
+
+  if (!diff) {
+    return '';
+  }
+
+  return `<git_diff>
+This is a diff of all the current changes in this branch from the base branch.
+
+${diff}
+</git_diff>`;
 }
