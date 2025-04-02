@@ -9,23 +9,24 @@ function processLastNonEmptyLine(line: string) {
   // Check for markdown header (e.g., **`filename`**)
   line = line.trim();
   const markdownMatch =
-    line.match(/\*\*`?(.+?)`?\*\*/) ||
-    line.match(/^`(.+?)`$/) ||
+    line.match(/\*\*`?(\S+?)`?\*\*/) ||
+    line.match(/^`(\S+?)`$/) ||
     line.match(/^#+ +`?([^`]+)`?$/) ||
-    line.match(/#+ .+ `(.+?)`/);
+    line.match(/#+ .+ `(\S+?)`/);
   if (markdownMatch && markdownMatch[1].includes('.')) {
     debugLog('Found markdown header:', markdownMatch[1]);
 
     return markdownMatch[1].trim();
   }
   // Check for raw filename (e.g., src/some/file.js)
-  else if (line.includes('/') && !line.includes(' ')) {
+  let plainPathFirstLine = /^(\S+\.\w{2,6})$/.exec(line.trim());
+  if (plainPathFirstLine) {
     debugLog('Found raw filename:', line);
-    return line.trim();
+    return plainPathFirstLine[1];
   }
 }
 
-function processFirstCommentLine(line: string) {
+function findFilenameOnFirstLine(line: string) {
   let commentContentsMatch =
     /^\/\/ +(.+)/.exec(line) ||
     /^#+ +(.+)/.exec(line) ||
@@ -33,15 +34,21 @@ function processFirstCommentLine(line: string) {
     /^<!-- (.+?) -->/.exec(line) ||
     /^<file path="(.+?)">/.exec(line);
 
-  if (!commentContentsMatch) {
-    return;
+  if (commentContentsMatch) {
+    let filename = commentContentsMatch[1].trim();
+    if (filename.startsWith('file:')) {
+      filename = filename.split(':')[1].trim();
+    }
+    return filename;
   }
-  let filename = commentContentsMatch[1].trim();
-  if (filename.startsWith('file:')) {
-    filename = filename.split(':')[1].trim();
+
+  // Look for something that looks like a path with an extension
+  let plainPathFirstLine = /^(\S+\.\w{2,6})$/.exec(line.trim());
+  if (plainPathFirstLine) {
+    return plainPathFirstLine[1];
   }
-  return filename;
 }
+
 export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFileOptions) {
   // Split content into lines
   const lines = content.split('\n');
@@ -114,7 +121,7 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
       }
 
       // Fallback to checking first line inside the code block
-      const commentMatch = processFirstCommentLine(line);
+      const commentMatch = findFilenameOnFirstLine(line);
       if (commentMatch) {
         stripEndingFileTag = line.startsWith(`<file `);
         filename = commentMatch;

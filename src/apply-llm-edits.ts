@@ -25,7 +25,7 @@ if (args.includes('--help')) {
   process.exit(0);
 }
 
-const useStdin = args.includes('--stdin');
+const useStdin = args.includes('--stdin') || !process.stdin.isTTY;
 const dryRun = args.includes('--dry-run');
 const cwdIndex = args.findIndex((arg) => arg == '--cwd');
 const cwd = cwdIndex != -1 ? args[cwdIndex + 1] : undefined;
