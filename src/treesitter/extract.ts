@@ -72,6 +72,7 @@ function parseJSDoc(comment: string) {
 
 export interface Function {
   signature: string;
+  name: string;
   comment: Comment | undefined;
 }
 
@@ -99,7 +100,7 @@ export function extractExportedFunctions(tree: Tree) {
       const returnType = returnTypeNode ? getActualType(returnTypeNode)?.text : '';
       const signature = `function ${name}${params} : ${returnType}`;
       const comment = getPrecedingComments(cursor.currentNode);
-      functions.push({ signature, comment });
+      functions.push({ signature, name, comment });
     }
 
     let walked = cursor.gotoFirstChild();
@@ -185,6 +186,7 @@ export function extractExportedVariables(tree: Tree) {
 
 export interface Class {
   signature: string;
+  name: string;
   comment: Comment | undefined;
   methods: Method[];
 }
@@ -229,7 +231,7 @@ export function extractExportedClasses(tree: Tree) {
         }
       }
 
-      classes.push({ signature, comment, methods });
+      classes.push({ signature, name, comment, methods });
     }
     for (let child of node.children) {
       if (child) {
@@ -250,7 +252,7 @@ export interface TsInterface {
 }
 
 // Extract TypeScript interfaces
-function extractInterfaces(tree: Tree) {
+export function extractExportedInterfaces(tree: Tree) {
   const interfaces: TsInterface[] = [];
   const rootNode = tree.rootNode;
 
@@ -274,12 +276,13 @@ function extractInterfaces(tree: Tree) {
 }
 
 export interface TsType {
+  name: string;
   signature: string;
   comment: Comment | undefined;
 }
 
 // Extract TypeScript type aliases
-function extractTypeAliases(tree: Tree) {
+export function extractExportedTypeAliases(tree: Tree) {
   const types: TsType[] = [];
   const rootNode = tree.rootNode;
 
@@ -291,7 +294,7 @@ function extractTypeAliases(tree: Tree) {
       const value = valueNode ? ` = ${valueNode.text}` : '';
       const signature = `type ${name}${value}`;
       const comment = getPrecedingComments(node);
-      types.push({ signature, comment });
+      types.push({ signature, name, comment });
     }
     for (let child of node.children) {
       traverse(child);
@@ -503,7 +506,7 @@ export class Extractor {
         // console.log('Found props declaration:', propsDeclaration.text);
       }
 
-      const typeAliases = extractTypeAliases(tree);
+      const typeAliases = extractExportedTypeAliases(tree);
       const allComments = extractComments(tree);
       const importedModules = extractImportsExportModules(tree);
 

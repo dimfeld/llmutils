@@ -1,8 +1,11 @@
+import { file } from 'bun';
 import {
   extractExportedVariables,
   extractExportedFunctions,
   extractExportedClasses,
   extractImportsExportModules,
+  extractExportedInterfaces,
+  extractExportedTypeAliases,
   Extractor,
 } from '../treesitter/extract.js';
 import { Resolver } from './resolve.js';
@@ -59,14 +62,22 @@ export class ImportWalker {
 
         const functions = extractExportedFunctions(tree);
         for (const f of functions) {
-          const nameMatch = f.signature.match(/function (\w+)/);
-          if (nameMatch) exportedNames.add(nameMatch[1]);
+          exportedNames.add(f.name);
         }
 
         const classes = extractExportedClasses(tree);
         for (const c of classes) {
-          const nameMatch = c.signature.match(/class (\w+)/);
-          if (nameMatch) exportedNames.add(nameMatch[1]);
+          exportedNames.add(c.name);
+        }
+
+        const interfaces = extractExportedInterfaces(tree);
+        for (const i of interfaces) {
+          exportedNames.add(i.name);
+        }
+
+        const typeAliases = extractExportedTypeAliases(tree);
+        for (const t of typeAliases) {
+          exportedNames.add(t.name);
         }
 
         const fileInfo: FileInfo = {
