@@ -248,7 +248,7 @@ async function processCommand(
   const cmdValues = cmdParsed.values;
   const positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
-  if (positionals.length === 0) {
+  if (positionals.length === 0 && !cmdValues.example?.length) {
     return { filesSet, examples: [] };
   }
 
@@ -362,13 +362,6 @@ const editFormat = globalValues['edit-format'] || 'whole-file';
 
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
 
-if (allExamples.length) {
-  console.log('\n## EXAMPLES');
-  for (let { pattern, file } of allExamples) {
-    console.log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
-  }
-}
-
 const [examplesTag, diffTag, { docsTag, instructionsTag, rulesTag, rawInstructions }] =
   await Promise.all([
     buildExamplesTag(allExamples),
@@ -408,6 +401,19 @@ const finalOutput = [
   .join('\n\n');
 
 await Bun.write(outputFile, finalOutput);
+
+if (allExamples.length) {
+  console.log('\n## EXAMPLES');
+  for (let { pattern, file } of allExamples) {
+    console.log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
+  }
+}
+
+if (rawInstructions) {
+  console.log('\n## INSTRUCTIONS');
+  console.log(rawInstructions);
+}
+
 const tokens = encode(finalOutput);
 console.log('\n## OUTPUT');
 console.log(`Tokens: ${tokens.length}`);

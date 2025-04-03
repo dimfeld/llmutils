@@ -25,7 +25,7 @@ export async function getAdditionalDocs(
         const pattern = instruction.slice(1);
         const matches = await glob(pattern);
         if (matches.length === 0) {
-          console.error(`No files found matching pattern: ${pattern}`);
+          console.error(`No files found matching instructions pattern: ${pattern}`);
           process.exit(1);
         }
         for (const file of matches) {
