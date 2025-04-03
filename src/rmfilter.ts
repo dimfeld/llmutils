@@ -32,6 +32,7 @@ const globalOptions = {
   'omit-cursorrules': { type: 'boolean' },
   'with-diff': { type: 'boolean' },
   'with-diff-from': { type: 'string' },
+  'instructions-editor': { type: 'boolean' },
 } as const;
 
 // Define command-specific options
@@ -90,6 +91,7 @@ if (globalValues.help) {
   console.log('  --docs <globs>            Add documentation files');
   console.log('  --rules <globs>           Add rules files');
   console.log('  --omit-cursorrules        Skip loading .cursorrules');
+  console.log('  --instructions-editor     Open editor for instructions in $EDITOR');
   console.log('\nCommand Options (per command):');
   console.log('  -g, --grep <patterns>     Include files matching these patterns');
   console.log('  -w, --whole-word          Match whole words in grep');
@@ -119,6 +121,23 @@ if (
 setDebug(globalValues.debug || false);
 const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
 const baseDir = globalValues.cwd || (globalValues.gitroot ? gitRoot : process.cwd());
+
+// Handle instructions editor
+let editorInstructions = '';
+if (globalValues['instructions-editor']) {
+  const instructionsFile = path.join(gitRoot, 'repomix-instructions.txt');
+  const editor = process.env.EDITOR || 'nano';
+  let editorProcess = logSpawn([editor, instructionsFile], {
+    stdio: ['inherit', 'inherit', 'inherit'],
+  });
+  await editorProcess.exited;
+  editorInstructions = (await Bun.file(instructionsFile).text()).trim();
+
+  if (editorInstructions.length === 0) {
+    console.error('No instructions provided');
+    process.exit(1);
+  }
+}
 
 // Split positionals into commands
 const commands: string[][] = [];
@@ -366,7 +385,10 @@ const [examplesTag, diffTag, { docsTag, instructionsTag, rulesTag, rawInstructio
   await Promise.all([
     buildExamplesTag(allExamples),
     getDiffTag(gitRoot, globalValues),
-    getAdditionalDocs(baseDir, globalValues),
+    getAdditionalDocs(baseDir, {
+      ...globalValues,
+      instructions: (globalValues.instructions || []).concat(editorInstructions),
+    }),
   ]);
 
 // Call repomix
