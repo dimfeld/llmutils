@@ -435,6 +435,17 @@ const guidelinesTag = `<guidelines>
 <guideline>It is ok for existing comments to seem redundant or obvious, as long as they are correct.</guideline>
 </guidelines>`;
 
+debugLog({
+  repomixOutput: repomixOutput.length,
+  diffTag: diffTag.length,
+  examplesTag: examplesTag.length,
+  docsTag: docsTag.length,
+  rulesTag: rulesTag.length,
+  editFormat: editFormat,
+  notBare: !globalValues.bare,
+  instructionsTag: instructionsTag.length,
+});
+
 const notBare = !globalValues.bare;
 const finalOutput = [
   repomixOutput,

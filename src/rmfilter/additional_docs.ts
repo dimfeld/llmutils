@@ -136,10 +136,10 @@ export async function getDiffTag(
   baseDir: string,
   values: { 'with-diff'?: boolean; 'with-diff-from'?: string }
 ) {
-  let baseBranch: string;
+  let baseBranch: string | undefined;
   if (values['with-diff-from']) {
     baseBranch = values['with-diff-from'];
-  } else {
+  } else if (values['with-diff']) {
     // Try to get default branch from git config
     baseBranch = (
       await $`git config --get init.defaultBranch`.cwd(baseDir).nothrow().text()
@@ -153,6 +153,10 @@ export async function getDiffTag(
 
       baseBranch = defaultBranch || 'main';
     }
+  }
+
+  if (!baseBranch) {
+    return '';
   }
 
   const usingJj = await Bun.file(path.join(baseDir, '.jj'))
