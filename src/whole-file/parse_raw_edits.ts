@@ -174,7 +174,7 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
     const fullPath = path.resolve(writeRoot, filePath);
     try {
       if (!dryRun) {
-        await Bun.write(fullPath, content.join('\n'));
+        await Bun.write(fullPath, content.join('\n') + '\n');
       }
       console.log(`Wrote ${content.length} lines to file: ${filePath}`);
     } catch (err) {
