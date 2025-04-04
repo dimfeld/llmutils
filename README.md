@@ -56,8 +56,12 @@ rmfilter --example "fetchData" --example "processResponse" --output filtered.txt
 # Process files with diff and custom instructions
 rmfilter --with-diff --instructions "Optimize all functions" src/**/*.ts
 
-# Multiple commands with different filters
-rmfilter src/lib/*.ts --grep "export" -- src/tests/*.ts --grep "labels"
+# Multiple commands with different filters. Copy output to clipboard
+rmfilter src/lib/*.ts --grep "export" -- src/tests/*.ts --grep "labels" \
+  --instructions 'Add a field to a class' --copy
+
+# Open instructions in the editor
+rmfilter src/**/*.ts --instructions-editor --copy
 ```
 
 ### Applying LLM Edits
