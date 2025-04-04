@@ -33,6 +33,7 @@ const globalOptions = {
   'with-diff': { type: 'boolean' },
   'with-diff-from': { type: 'string' },
   'instructions-editor': { type: 'boolean' },
+  bare: { type: 'boolean' },
 } as const;
 
 // Define command-specific options
@@ -40,6 +41,7 @@ const commandOptions = {
   grep: { type: 'string', short: 'g', multiple: true },
   'whole-word': { type: 'boolean', short: 'w' },
   expand: { type: 'boolean', short: 'e' },
+  'no-expand-pages': { type: 'boolean' },
   'with-imports': { type: 'boolean' },
   'with-all-imports': { type: 'boolean' },
   upstream: { type: 'string', multiple: true },
@@ -78,11 +80,14 @@ if (globalValues.help) {
     'usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...'
   );
   console.log('\nGlobal Options:');
-  console.log('  --edit-format <format>    Set edit format (whole-xml, diff, whole)');
+  console.log(
+    '  --edit-format <format>    Set edit format (whole-xml, diff, whole) or "none" to omit'
+  );
   console.log('  -o, --output <file>       Specify output file');
   console.log('  -c, --copy               Copy output to clipboard');
   console.log('  --cwd <dir>               Set working directory');
   console.log('  --gitroot                 Use Git root as working directory');
+  console.log('  --bare                    Omit all extra rules and formatting instructions');
   console.log('  -h, --help                Show this help message');
   console.log('  --debug                   Print executed commands');
   console.log('  --with-diff               Include Git diff in output');
@@ -96,6 +101,7 @@ if (globalValues.help) {
   console.log('  -g, --grep <patterns>     Include files matching these patterns');
   console.log('  -w, --whole-word          Match whole words in grep');
   console.log('  -e, --expand              Expand grep patterns (snake_case, camelCase)');
+  console.log('  --no-expand-pages         Disable inclusion of matching page/server route files');
   console.log('  --with-imports            Include direct imports of files');
   console.log('  --with-all-imports        Include entire import tree');
   console.log('  --upstream <pkgs>         Include upstream dependencies');
@@ -109,12 +115,17 @@ if (globalValues.help) {
 // Validate edit-format
 if (
   globalValues['edit-format'] &&
-  !['whole-xml', 'diff', 'whole'].includes(globalValues['edit-format'])
+  !['whole-xml', 'diff', 'whole', 'none'].includes(globalValues['edit-format'])
 ) {
   console.error(
-    `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', or 'whole'`
+    `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', 'whole', or 'none'`
   );
   process.exit(1);
+}
+
+if (globalValues.bare) {
+  globalValues['omit-cursorrules'] = true;
+  globalValues['edit-format'] = 'none';
 }
 
 // Set up environment
@@ -125,7 +136,7 @@ const baseDir = globalValues.cwd || (globalValues.gitroot ? gitRoot : process.cw
 // Handle instructions editor
 let editorInstructions = '';
 if (globalValues['instructions-editor']) {
-  const instructionsFile = path.join(gitRoot, 'repomix-instructions.txt');
+  const instructionsFile = path.join(gitRoot, 'repomix-instructions.md');
   const editor = process.env.EDITOR || 'nano';
   let editorProcess = logSpawn([editor, instructionsFile], {
     stdio: ['inherit', 'inherit', 'inherit'],
@@ -356,8 +367,25 @@ await Promise.all(
   commandParseds.map(async (cmdParsed) => {
     const cmdFiles = await processCommand(cmdParsed);
     cmdFiles.filesSet.forEach((file) => {
+      const dirname = path.dirname(file);
+
+      if (!cmdParsed.values['no-expand-pages']) {
+        let filename = path.basename(file);
+        if (filename == '+page.server.ts' || filename == '+page.ts') {
+          allFilesSet.add(path.join(dirname, '+page.svelte'));
+        } else if (filename == '+page.svelte') {
+          allFilesSet.add(path.join(dirname, '+page.server.ts'));
+          allFilesSet.add(path.join(dirname, '+page.ts'));
+        } else if (filename == '+layout.server.ts' || filename == '+layout.ts') {
+          allFilesSet.add(path.join(dirname, '+layout.svelte'));
+        } else if (filename == '+layout.svelte') {
+          allFilesSet.add(path.join(dirname, '+layout.server.ts'));
+          allFilesSet.add(path.join(dirname, '+layout.ts'));
+        }
+      }
+
       allFilesSet.add(file);
-      allFileDirs.add(path.dirname(file));
+      allFileDirs.add(dirname);
     });
     allExamples.push(...cmdFiles.examples);
   })
@@ -407,16 +435,17 @@ const guidelinesTag = `<guidelines>
 <guideline>It is ok for existing comments to seem redundant or obvious, as long as they are correct.</guideline>
 </guidelines>`;
 
+const notBare = !globalValues.bare;
 const finalOutput = [
   repomixOutput,
   diffTag,
   examplesTag,
   docsTag,
   rulesTag,
-  editFormat === 'whole-xml' ? xmlFormatPrompt : '',
-  editFormat === 'diff' ? generateSearchReplacePrompt : '',
-  editFormat === 'whole-file' ? generateWholeFilePrompt : '',
-  guidelinesTag,
+  editFormat === 'whole-xml' && notBare ? xmlFormatPrompt : '',
+  editFormat === 'diff' && notBare ? generateSearchReplacePrompt : '',
+  editFormat === 'whole-file' && notBare ? generateWholeFilePrompt : '',
+  notBare ? guidelinesTag : '',
   instructionsTag,
 ]
   .filter(Boolean)
