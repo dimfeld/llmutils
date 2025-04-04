@@ -174,8 +174,13 @@ export async function getDiffTag(
 
   let diff = '';
   if (usingJj) {
-    const exclude = excludeFiles.map((f) => `~file:${f}`).join('&');
-    diff = await $`jj diff --from ${baseBranch} ${exclude}`.cwd(baseDir).nothrow().text();
+    const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
+      '&'
+    );
+
+    const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
+
+    diff = await $`jj diff --from ${from} ${exclude}`.cwd(baseDir).nothrow().text();
   } else {
     const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
     diff = await $`git diff ${baseBranch} ${exclude}`.cwd(baseDir).nothrow().text();
