@@ -9,29 +9,24 @@ The two scripts are:
 - rmfilter: A wrapper around repomix which can analyze import trees to gather all the files referenced by a root file, and add instructions and other rules to the repomix output. Supports both "whole file" and "diff" edit modes.
 - apply-llm-edits: Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
 
+Some of the features, such as dependency analysis, only work with the code I've been writing at work recently, and so
+assume a repository written with Typescript and PNPM workspaces.
 
 ## Installation
 
-This project uses [Bun](https://bun.sh) as its runtime and package manager.
-
-### Prerequisites
-- Bun (version 1.x or higher)
-- Git
+This project assumes you have these tools installed:
+- [Bun](https://bun.sh/)
+- [ripgrep](https://github.com/BurntSushi/ripgrep)
+- [repomix](https://github.com/yamadashy/repomix)
 
 ### Build Instructions
-1. Clone the repository:
+
+Clone the repository, install dependencies, and then install globally:
+
 ```bash
 git clone https://github.com/dimfeld/llmutils.git
 cd llmutils
-```
-
-2. Install dependencies:
-```bash
 bun install
-```
-
-3. Install globally:
-```bash
 pnpm add -g .
 ```
 
