@@ -41,8 +41,13 @@ export async function getAdditionalDocs(
       }
     }
 
-    rawInstructions = instructionsContent.map((s) => s.trim()).join('\n\n');
-    instructionsTag = `<instructions>\n${rawInstructions}\n</instructions>`;
+    rawInstructions = instructionsContent
+      .map((s) => s.trim())
+      .join('\n\n')
+      .trim();
+    if (rawInstructions) {
+      instructionsTag = `<instructions>\n${rawInstructions}\n</instructions>`;
+    }
   }
 
   let docsTag = '';
