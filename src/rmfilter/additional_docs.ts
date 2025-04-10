@@ -139,12 +139,12 @@ ${files.join('\n')}
 
 export async function getDiffTag(
   baseDir: string,
-  values: { 'with-diff'?: boolean; 'with-diff-from'?: string }
+  values: { 'with-diff'?: boolean; 'diff-from'?: string; 'changed-files'?: boolean }
 ) {
   let baseBranch: string | undefined;
-  if (values['with-diff-from']) {
-    baseBranch = values['with-diff-from'];
-  } else if (values['with-diff']) {
+  if (values['diff-from']) {
+    baseBranch = values['diff-from'];
+  } else if (values['with-diff'] || values['changed-files']) {
     // Try to get default branch from git config
     baseBranch = (
       await $`git config --get init.defaultBranch`.cwd(baseDir).nothrow().text()
@@ -161,7 +161,7 @@ export async function getDiffTag(
   }
 
   if (!baseBranch) {
-    return '';
+    return { diffTag: '', changedFiles: [] };
   }
 
   const usingJj = await Bun.file(path.join(baseDir, '.jj'))
@@ -178,6 +178,7 @@ export async function getDiffTag(
   ];
 
   let diff = '';
+  let changedFiles: string[] = [];
   if (usingJj) {
     const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
       '&'
@@ -185,19 +186,53 @@ export async function getDiffTag(
 
     const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
 
-    diff = await $`jj diff --from ${from} ${exclude}`.cwd(baseDir).nothrow().text();
+    if (values['with-diff']) {
+      diff = await $`jj diff --from ${from} ${exclude}`.cwd(baseDir).nothrow().text();
+    }
+
+    if (values['changed-files']) {
+      let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(baseDir).nothrow().text();
+      changedFiles = summ
+        .split('\n')
+        .map((line) => {
+          line = line.trim();
+          if (!line || line.startsWith('D')) {
+            return '';
+          }
+
+          // M file/name
+          return line.slice(2);
+        })
+        .filter((line) => !!line);
+    }
   } else {
     const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
-    diff = await $`git diff ${baseBranch} ${exclude}`.cwd(baseDir).nothrow().text();
+    if (values['with-diff']) {
+      diff = await $`git diff ${baseBranch} ${exclude}`.cwd(baseDir).nothrow().text();
+    }
+
+    if (values['changed-files']) {
+      let summ = await $`git diff --name-only ${baseBranch} ${exclude}`
+        .cwd(baseDir)
+        .nothrow()
+        .text();
+      changedFiles = summ
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => !!line);
+    }
   }
 
-  if (!diff) {
-    return '';
-  }
-
-  return `<git_diff>
+  let diffTag = diff
+    ? `<git_diff>
 This is a diff of all the current changes in this branch from the base branch.
 
 ${diff}
-</git_diff>`;
+</git_diff>`
+    : '';
+
+  return {
+    diffTag,
+    changedFiles,
+  };
 }

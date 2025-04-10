@@ -31,7 +31,9 @@ const globalOptions = {
   rules: { type: 'string', multiple: true },
   'omit-cursorrules': { type: 'boolean' },
   'with-diff': { type: 'boolean' },
-  'with-diff-from': { type: 'string' },
+  'changed-files': { type: 'boolean' },
+  'diff-from': { type: 'string' },
+  'files-from-diff': { type: 'boolean' },
   'instructions-editor': { type: 'boolean' },
   bare: { type: 'boolean' },
 } as const;
@@ -90,8 +92,9 @@ if (globalValues.help) {
   console.log('  --bare                    Omit all extra rules and formatting instructions');
   console.log('  -h, --help                Show this help message');
   console.log('  --debug                   Print executed commands');
-  console.log('  --with-diff               Include Git diff in output');
-  console.log('  --with-diff-from <branch> Include diff from <branch> in output');
+  console.log('  --with-diff               Include Git diff against main/master in output');
+  console.log('  --changed-files           Include all changed files');
+  console.log('  --diff-from (<branch>|<rev>) Diff from <branch> instead of main');
   console.log('  --instructions <text>     Add instructions (prefix @ for files)');
   console.log('  --docs <globs>            Add documentation files');
   console.log('  --rules <globs>           Add rules files');
@@ -401,23 +404,30 @@ await Promise.all(
   })
 );
 
-const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
-
 // Handle output
 const outputFile = globalValues.output ?? (await getOutputPath());
 const editFormat = globalValues['edit-format'] || 'whole-file';
 
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
 
-const [examplesTag, diffTag, { docsTag, instructionsTag, rulesTag, rawInstructions }] =
-  await Promise.all([
-    buildExamplesTag(allExamples),
-    getDiffTag(gitRoot, globalValues),
-    getAdditionalDocs(baseDir, {
-      ...globalValues,
-      instructions: (globalValues.instructions || []).concat(editorInstructions),
-    }),
-  ]);
+const [
+  examplesTag,
+  { diffTag, changedFiles },
+  { docsTag, instructionsTag, rulesTag, rawInstructions },
+] = await Promise.all([
+  buildExamplesTag(allExamples),
+  getDiffTag(gitRoot, globalValues),
+  getAdditionalDocs(baseDir, {
+    ...globalValues,
+    instructions: (globalValues.instructions || []).concat(editorInstructions),
+  }),
+]);
+
+for (let file of changedFiles) {
+  allFilesSet.add(path.resolve(gitRoot, file));
+}
+
+const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
 
 // Call repomix
 const repomixOutput = allPaths.length
