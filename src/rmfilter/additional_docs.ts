@@ -44,6 +44,7 @@ export async function getAdditionalDocs(
 
     rawInstructions = instructionsContent
       .map((s) => s.trim())
+      .filter(Boolean)
       .join('\n\n')
       .trim();
     if (rawInstructions) {
@@ -75,8 +76,11 @@ export async function getAdditionalDocs(
       }
     }
 
-    let output = docsContent.map((s) => s.trim()).join('\n\n');
-    docsTag = `<docs>\n${output}\n</docs>`;
+    let output = docsContent
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join('\n\n');
+    docsTag = output ? `<docs>\n${output}\n</docs>` : '';
   }
 
   let rulesContent: string[] = [];
@@ -113,7 +117,10 @@ export async function getAdditionalDocs(
     }
   }
 
-  let rulesOutput = rulesContent.map((s) => s.trim()).join('\n\n');
+  let rulesOutput = rulesContent
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join('\n\n');
   let rulesTag = rulesOutput ? `<rules>\n${rulesOutput}\n</rules>` : '';
 
   return { docsTag, instructionsTag, rulesTag, rawInstructions };
