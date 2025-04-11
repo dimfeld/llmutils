@@ -11,6 +11,7 @@
     },
     "edit-format": {
       "type": "string",
+      "enum": ["whole-xml", "diff", "whole", "none"],
       "description": "Set edit format: 'whole-xml', 'diff', 'whole', or 'none'."
     },
     "output": {

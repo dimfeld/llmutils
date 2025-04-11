@@ -3,23 +3,22 @@ import { $ } from 'bun';
 import * as changeCase from 'change-case';
 import { glob } from 'glob';
 import { encode } from 'gpt-tokenizer';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'util';
+import { parse, stringify } from 'yaml';
+import { z } from 'zod';
 import { Resolver } from './dependency_graph/resolve.ts';
 import { ImportWalker } from './dependency_graph/walk_imports.ts';
 import { generateSearchReplacePrompt } from './diff-editor/prompts';
+import { debugLog } from './logging.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from './rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
 import { logSpawn, setDebug, setQuiet } from './rmfilter/utils.ts';
 import { Extractor } from './treesitter/extract.ts';
 import { generateWholeFilePrompt } from './whole-file/prompts';
 import { xmlFormatPrompt } from './xml/prompt';
-import { debugLog } from './logging.ts';
-import { parse } from 'yaml';
-import { z } from 'zod';
-
-import fs from 'node:fs/promises';
-import os from 'node:os';
 
 // Define global options
 const globalOptions = {
@@ -45,6 +44,7 @@ const globalOptions = {
   preset: { type: 'string' },
   quiet: { type: 'boolean', short: 'q' },
   'list-presets': { type: 'boolean' },
+  new: { type: 'string' },
 } as const;
 
 // Define command-specific options
@@ -121,6 +121,7 @@ const globalAllArgs = allArgs.filter((arg) => {
 
   return true;
 });
+
 // Get global args from all the commands regardless of where they are
 const parsedGlobal = parseArgs({
   options: globalOptions,
@@ -194,7 +195,7 @@ async function findAllPresetFiles(
     } catch (e) {
       // Ignore errors like directory not found
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-        debugLog(`Error searching directory ${dir}: ${e}`);
+        debugLog(`Error searching directory ${dir}: ${(e as Error).message}`);
       }
     }
   }
@@ -303,6 +304,9 @@ if (globalValues.help) {
   console.log(
     'usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...'
   );
+  console.log('\nCommands:');
+  console.log('  --new <file>              Create a new YAML config file at the specified path');
+  console.log('  --list-presets            List available presets and exit');
   console.log('\nGlobal Options:');
   console.log('  --config <file>           Load configuration from YAML file');
   console.log(
@@ -312,12 +316,11 @@ if (globalValues.help) {
     '  --edit-format <format>    Set edit format (whole-xml, diff, whole) or "none" to omit'
   );
   console.log('  -o, --output <file>       Specify output file');
-  console.log('  -c, --copy               Copy output to clipboard');
+  console.log('  -c, --copy                Copy output to clipboard');
   console.log('  --cwd <dir>               Set working directory');
   console.log('  --gitroot                 Use Git root as working directory');
   console.log('  --bare                    Omit all extra rules and formatting instructions');
   console.log('  -h, --help                Show this help message');
-  console.log('  --list-presets            List available presets and exit');
   console.log('  --debug                   Print executed commands');
   console.log('  -q, --quiet               Suppress all output from tool and spawned processes');
   console.log('  --with-diff               Include Git diff against main/master in output');
@@ -341,6 +344,40 @@ if (globalValues.help) {
   console.log('  --example <pattern>       Include the largest file that matches the pattern.');
   console.log('');
   process.exit(0);
+}
+
+// Handle creation of new YAML config
+if (globalValues.new) {
+  const yamlPath = path.resolve(process.cwd(), globalValues.new);
+  const defaultConfig: z.infer<typeof ConfigSchema> = {
+    description: 'New rmfilter configuration',
+    'edit-format': 'whole',
+    copy: true,
+    quiet: false,
+    docs: [],
+    rules: [],
+    commands: [
+      {
+        globs: ['src/**/*.{ts,tsx,js,jsx}'],
+        grep: [],
+        'whole-word': false,
+        expand: false,
+      },
+    ],
+    instructions: 'instructions here',
+  };
+
+  try {
+    await fs.access(yamlPath);
+    console.error(`File already exists at ${yamlPath}`);
+    process.exit(1);
+  } catch {
+    // File doesn't exist, proceed with creation
+    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json\n${stringify(defaultConfig)}`;
+    await Bun.write(yamlPath, yamlContent);
+    console.log(`Created new configuration file at ${yamlPath}`);
+    process.exit(0);
+  }
 }
 
 // Handle list-presets
