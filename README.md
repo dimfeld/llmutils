@@ -32,6 +32,87 @@ bun install
 pnpm add -g .
 ```
 
+## Configuration and Presets
+
+`rmfilter` supports configuration through YAML files, allowing you to define reusable settings and commands. You can specify a config file directly with `--config` or use presets with `--preset`, which are stored in `.rmfilter/` directories or `$HOME/.config/rmfilter/`.
+
+### YAML Configuration
+
+The YAML config file allows you to set global options and define multiple commands. Here's the structure:
+
+- **Global options**: Options like `edit-format`, `output`, `copy`, `instructions`, etc., that apply to all commands.
+- **Commands**: An array of command-specific settings, each containing `globs` and command options like `grep`, `with-imports`, etc.
+
+The configuration is validated against a schema (available at `https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json`). You can reference it in your YAML file with:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json
+```
+
+### Example Config File
+
+Here's an example YAML configuration:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json
+edit-format: diff
+copy: true
+instructions: |
+  Update all API calls to use the new endpoint format
+docs:
+  - "docs/**/*.md"
+rules:
+  - ".cursorrules"
+commands:
+  - globs:
+      - "src/api/**/*.ts"
+    grep:
+      - "fetch"
+    with-imports: true
+  - globs:
+      - "src/tests/api/**/*.ts"
+    grep: "test"
+    example: "apiTest"
+```
+
+This config:
+- Sets the edit format to `diff` and copies output to the clipboard.
+- Includes instructions for updating API calls and references a file for additional instructions.
+- Includes all markdown files in `docs/` and `.cursorrules` for context.
+- Defines two commands: one for API source files with `fetch`, including their imports, and another for test files with an example pattern.
+
+### Using Config Files
+
+To use a config file directly:
+
+```bash
+rmfilter --config path/to/config.yml
+```
+
+### Preset System
+
+Presets are named YAML files stored in:
+- `.rmfilter/` directories, searched from the current directory up to the git root.
+- `$HOME/.config/rmfilter/` for user-wide presets.
+
+To use a preset:
+
+```bash
+rmfilter --preset example
+```
+
+This loads `.rmfilter/example.yml` (or from `$HOME/.config/rmfilter/example.yml` if not found locally).
+
+### Combining CLI and Config
+
+CLI arguments override YAML settings. For example:
+
+```bash
+rmfilter --preset example --edit-format diff src/extra/**/*.ts
+```
+
+This uses the `example` preset but changes the edit format to `diff` and adds an extra glob.
+
 ## Usage Examples
 
 ### Using rmfilter
@@ -84,6 +165,3 @@ cat edits.txt | apply-llm-edits --stdin --cwd ./src
 apply-llm-edits --dry-run
 ```
 
-## TODO
-
-- [ ] Presets for common things like "Make a PR description given this code and diff"
