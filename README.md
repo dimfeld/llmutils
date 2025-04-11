@@ -83,3 +83,7 @@ cat edits.txt | apply-llm-edits --stdin --cwd ./src
 # Dry run to preview changes
 apply-llm-edits --dry-run
 ```
+
+## TODO
+
+- [ ] Presets for common things like "Make a PR description given this code and diff"

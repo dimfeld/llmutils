@@ -1,0 +1,156 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "rmfilter Configuration Schema",
+  "description": "Configuration for rmfilter, specifying global options and commands for file filtering.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "edit-format": {
+      "type": "string",
+      "description": "Set edit format: 'whole-xml', 'diff', 'whole', or 'none'."
+    },
+    "output": {
+      "type": "string",
+      "description": "Specify output file path."
+    },
+    "copy": {
+      "type": "boolean",
+      "description": "Copy output to clipboard."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Set working directory."
+    },
+    "gitroot": {
+      "type": "boolean",
+      "description": "Use Git root as working directory."
+    },
+    "debug": {
+      "type": "boolean",
+      "description": "Print executed commands for debugging."
+    },
+    "instructions": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ],
+      "description": "Add instructions (prefix '@' for files)."
+    },
+    "instruction": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ],
+      "description": "Alias for instructions (merged with instructions)."
+    },
+    "docs": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ],
+      "description": "Add documentation file globs."
+    },
+    "rules": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ],
+      "description": "Add rules file globs."
+    },
+    "omit-cursorrules": {
+      "type": "boolean",
+      "description": "Skip loading .cursorrules."
+    },
+    "with-diff": {
+      "type": "boolean",
+      "description": "Include Git diff against main/master in output."
+    },
+    "changed-files": {
+      "type": "boolean",
+      "description": "Include all changed files."
+    },
+    "diff-from": {
+      "type": "string",
+      "description": "Diff from specified branch or revision instead of main."
+    },
+    "files-from-diff": {
+      "type": "boolean",
+      "description": "Include files from diff."
+    },
+    "instructions-editor": {
+      "type": "boolean",
+      "description": "Open editor for instructions in $EDITOR."
+    },
+    "bare": {
+      "type": "boolean",
+      "description": "Omit extra rules and formatting instructions."
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "globs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of file globs to process."
+          },
+          "grep": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Include files matching these patterns."
+          },
+          "whole-word": {
+            "type": "boolean",
+            "description": "Match whole words in grep."
+          },
+          "expand": {
+            "type": "boolean",
+            "description": "Expand grep patterns (snake_case, camelCase)."
+          },
+          "no-expand-pages": {
+            "type": "boolean",
+            "description": "Disable inclusion of matching page/server route files."
+          },
+          "with-imports": {
+            "type": "boolean",
+            "description": "Include direct imports of files."
+          },
+          "with-all-imports": {
+            "type": "boolean",
+            "description": "Include entire import tree."
+          },
+          "upstream": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Include upstream dependencies."
+          },
+          "downstream": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Include downstream dependents."
+          },
+          "largest": {
+            "type": "string",
+            "description": "Keep only the N largest files (number as string)."
+          },
+          "example": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Include the largest file matching the pattern."
+          }
+        }
+      },
+      "description": "List of commands with file globs and options."
+    }
+  }
+}

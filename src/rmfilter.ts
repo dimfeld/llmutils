@@ -15,6 +15,8 @@ import { Extractor } from './treesitter/extract.ts';
 import { generateWholeFilePrompt } from './whole-file/prompts';
 import { xmlFormatPrompt } from './xml/prompt';
 import { debugLog } from './logging.ts';
+import { parse } from 'yaml';
+import { z } from 'zod';
 
 // Define global options
 const globalOptions = {
@@ -36,6 +38,7 @@ const globalOptions = {
   'files-from-diff': { type: 'boolean' },
   'instructions-editor': { type: 'boolean' },
   bare: { type: 'boolean' },
+  config: { type: 'string' },
 } as const;
 
 // Define command-specific options
@@ -51,6 +54,48 @@ const commandOptions = {
   largest: { type: 'string', short: 'l' },
   example: { type: 'string', multiple: true },
 } as const;
+
+// Zod schemas for YAML validation
+// Put this comment at the top of your YAML file to reference the schema:
+// # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json
+const CommandConfigSchema = z
+  .object({
+    globs: z.string().array().optional(),
+    grep: z.union([z.string(), z.string().array()]).optional(),
+    'whole-word': z.boolean().optional(),
+    expand: z.boolean().optional(),
+    'no-expand-pages': z.boolean().optional(),
+    'with-imports': z.boolean().optional(),
+    'with-all-imports': z.boolean().optional(),
+    upstream: z.union([z.string(), z.string().array()]).optional(),
+    downstream: z.union([z.string(), z.string().array()]).optional(),
+    largest: z.string().optional(),
+    example: z.union([z.string(), z.string().array()]).optional(),
+  })
+  .strict();
+
+const ConfigSchema = z
+  .object({
+    'edit-format': z.enum(['whole-xml', 'diff', 'whole', 'none']).optional(),
+    output: z.string().optional(),
+    copy: z.boolean().optional(),
+    cwd: z.string().optional(),
+    gitroot: z.boolean().optional(),
+    debug: z.boolean().optional(),
+    instructions: z.union([z.string(), z.string().array()]).optional(),
+    instruction: z.union([z.string(), z.string().array()]).optional(),
+    docs: z.union([z.string(), z.string().array()]).optional(),
+    rules: z.union([z.string(), z.string().array()]).optional(),
+    'omit-cursorrules': z.boolean().optional(),
+    'with-diff': z.boolean().optional(),
+    'changed-files': z.boolean().optional(),
+    'diff-from': z.string().optional(),
+    'files-from-diff': z.boolean().optional(),
+    'instructions-editor': z.boolean().optional(),
+    bare: z.boolean().optional(),
+    commands: CommandConfigSchema.array().optional(),
+  })
+  .strict();
 
 // Parse global options and collect all positionals
 const allArgs = process.argv.slice(2);
@@ -74,7 +119,77 @@ const parsedGlobal = parseArgs({
   allowPositionals: true,
   args: globalAllArgs,
 });
-const globalValues = parsedGlobal.values;
+let globalValues = parsedGlobal.values;
+
+// Load YAML config if provided
+let yamlCommands: string[][] = [];
+let yamlConfigPath: string | undefined;
+if (globalValues.config) {
+  try {
+    yamlConfigPath = path.resolve(process.cwd(), globalValues.config);
+    const configFile = await Bun.file(yamlConfigPath).text();
+    const parsedConfig = parse(configFile);
+    const config = ConfigSchema.parse(parsedConfig);
+
+    // Merge YAML global options with CLI global options (CLI takes precedence)
+    globalValues = {
+      ...config,
+      ...globalValues,
+      instruction: undefined,
+      // Merge arrays for options that support multiple values
+      instructions: [
+        ...(config.instructions
+          ? Array.isArray(config.instructions)
+            ? config.instructions
+            : [config.instructions]
+          : []),
+        ...(config.instruction
+          ? Array.isArray(config.instruction)
+            ? config.instruction
+            : [config.instruction]
+          : []),
+        ...(globalValues.instructions || []),
+        ...(globalValues.instruction || []),
+      ].filter(Boolean),
+      docs: [
+        ...(config.docs ? (Array.isArray(config.docs) ? config.docs : [config.docs]) : []),
+        ...(globalValues.docs || []),
+      ].filter(Boolean),
+      rules: [
+        ...(config.rules ? (Array.isArray(config.rules) ? config.rules : [config.rules]) : []),
+        ...(globalValues.rules || []),
+      ].filter(Boolean),
+    };
+
+    // Convert YAML commands to argument arrays
+    if (config.commands) {
+      yamlCommands = config.commands.map((cmd) => {
+        const args: string[] = [];
+        if (cmd.globs) {
+          args.push(...(Array.isArray(cmd.globs) ? cmd.globs : [cmd.globs]));
+        }
+        for (const [key, value] of Object.entries(cmd)) {
+          if (key === 'globs') continue;
+          if (value === undefined || value === null) continue;
+          const flag = `--${key}`;
+          if (typeof value === 'boolean') {
+            if (value) args.push(flag);
+          } else if (Array.isArray(value)) {
+            value.forEach((v) => {
+              args.push(flag, v.toString());
+            });
+          } else {
+            args.push(flag, value.toString());
+          }
+        }
+        return args;
+      });
+    }
+  } catch (error) {
+    console.error(`Failed to load YAML config: ${(error as Error).message}`);
+    process.exit(1);
+  }
+}
 
 // Handle help message
 if (globalValues.help) {
@@ -82,6 +197,7 @@ if (globalValues.help) {
     'usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...'
   );
   console.log('\nGlobal Options:');
+  console.log('  --config <file>           Load configuration from YAML file');
   console.log(
     '  --edit-format <format>    Set edit format (whole-xml, diff, whole) or "none" to omit'
   );
@@ -134,7 +250,25 @@ if (globalValues.bare) {
 // Set up environment
 setDebug(globalValues.debug || false);
 const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
-const baseDir = globalValues.cwd || (globalValues.gitroot ? gitRoot : process.cwd());
+
+function calculateBaseDir() {
+  if (globalValues.cwd) {
+    return globalValues.cwd;
+  }
+
+  if (globalValues.gitroot) {
+    return gitRoot;
+  }
+
+  if (yamlConfigPath) {
+    // If we use a YAML config, default to the directory of the config file
+    return path.dirname(yamlConfigPath);
+  }
+
+  return process.cwd();
+}
+
+const baseDir = calculateBaseDir();
 
 // Handle instructions editor
 let editorInstructions = '';
@@ -169,6 +303,9 @@ for (const arg of allArgs) {
 if (currentCommand.length > 0) {
   commands.push(currentCommand);
 }
+
+// Append YAML commands
+commands.push(...yamlCommands);
 
 if (commands.length === 0) {
   console.error('No commands provided');
