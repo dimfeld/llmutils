@@ -18,6 +18,8 @@ import { debugLog } from './logging.ts';
 import { parse } from 'yaml';
 import { z } from 'zod';
 
+import fs from 'node:fs/promises';
+
 // Define global options
 const globalOptions = {
   'edit-format': { type: 'string', short: 'f' },
@@ -35,10 +37,10 @@ const globalOptions = {
   'with-diff': { type: 'boolean' },
   'changed-files': { type: 'boolean' },
   'diff-from': { type: 'string' },
-  'files-from-diff': { type: 'boolean' },
   'instructions-editor': { type: 'boolean' },
   bare: { type: 'boolean' },
   config: { type: 'string' },
+  preset: { type: 'string' },
 } as const;
 
 // Define command-specific options
@@ -90,7 +92,6 @@ const ConfigSchema = z
     'with-diff': z.boolean().optional(),
     'changed-files': z.boolean().optional(),
     'diff-from': z.string().optional(),
-    'files-from-diff': z.boolean().optional(),
     'instructions-editor': z.boolean().optional(),
     bare: z.boolean().optional(),
     commands: CommandConfigSchema.array().optional(),
@@ -121,69 +122,119 @@ const parsedGlobal = parseArgs({
 });
 let globalValues = parsedGlobal.values;
 
+const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
+
+// Function to search for preset YAML file
+async function findPresetFile(preset: string, gitRoot: string): Promise<string | null> {
+  let currentDir = process.cwd();
+  const gitRootDir = path.resolve(gitRoot);
+
+  // Search from current directory up to git root
+  while (currentDir.startsWith(gitRootDir) || currentDir === gitRootDir) {
+    const presetPath = path.join(currentDir, '.rmfilter', `${preset}.yml`);
+    try {
+      await fs.access(presetPath);
+      return presetPath;
+    } catch {
+      // Move up to parent directory
+      const parentDir = path.dirname(currentDir);
+      if (parentDir === currentDir) break; // Reached root
+      currentDir = parentDir;
+    }
+  }
+
+  // Check $HOME/.config/rmfilter
+  const homeConfigPath = path.join(
+    process.env.HOME || process.env.USERPROFILE || '',
+    '.config',
+    'rmfilter',
+    `${preset}.yml`
+  );
+  try {
+    await fs.access(homeConfigPath);
+    return homeConfigPath;
+  } catch {
+    return null;
+  }
+}
+
 // Load YAML config if provided
 let yamlCommands: string[][] = [];
 let yamlConfigPath: string | undefined;
-if (globalValues.config) {
+if (globalValues.preset || globalValues.config) {
   try {
-    yamlConfigPath = path.resolve(process.cwd(), globalValues.config);
-    const configFile = await Bun.file(yamlConfigPath).text();
-    const parsedConfig = parse(configFile);
-    const config = ConfigSchema.parse(parsedConfig);
+    if (globalValues.preset) {
+      const presetPath = await findPresetFile(globalValues.preset, gitRoot);
+      if (!presetPath) {
+        console.error(
+          `Preset '${globalValues.preset}' not found in .rmfilter/ directories or $HOME/.config/rmfilter/`
+        );
+        process.exit(1);
+      }
+      yamlConfigPath = presetPath;
+    } else if (globalValues.config) {
+      yamlConfigPath = path.resolve(process.cwd(), globalValues.config);
+    }
 
-    // Merge YAML global options with CLI global options (CLI takes precedence)
-    globalValues = {
-      ...config,
-      ...globalValues,
-      instruction: undefined,
-      // Merge arrays for options that support multiple values
-      instructions: [
-        ...(config.instructions
-          ? Array.isArray(config.instructions)
-            ? config.instructions
-            : [config.instructions]
-          : []),
-        ...(config.instruction
-          ? Array.isArray(config.instruction)
-            ? config.instruction
-            : [config.instruction]
-          : []),
-        ...(globalValues.instructions || []),
-        ...(globalValues.instruction || []),
-      ].filter(Boolean),
-      docs: [
-        ...(config.docs ? (Array.isArray(config.docs) ? config.docs : [config.docs]) : []),
-        ...(globalValues.docs || []),
-      ].filter(Boolean),
-      rules: [
-        ...(config.rules ? (Array.isArray(config.rules) ? config.rules : [config.rules]) : []),
-        ...(globalValues.rules || []),
-      ].filter(Boolean),
-    };
+    if (yamlConfigPath) {
+      const configFile = await Bun.file(yamlConfigPath).text();
+      const parsedConfig = parse(configFile);
+      const config = ConfigSchema.parse(parsedConfig);
 
-    // Convert YAML commands to argument arrays
-    if (config.commands) {
-      yamlCommands = config.commands.map((cmd) => {
-        const args: string[] = [];
-        if (cmd.globs) {
-          args.push(...(Array.isArray(cmd.globs) ? cmd.globs : [cmd.globs]));
-        }
-        for (const [key, value] of Object.entries(cmd)) {
-          if (key === 'globs') continue;
-          if (value === undefined || value === null) continue;
-          const flag = `--${key}`;
-          if (typeof value === 'boolean') {
-            if (value) args.push(flag);
-          } else if (Array.isArray(value)) {
-            value.forEach((v) => {
-              args.push(flag, v.toString());
-            });
-          } else {
-            args.push(flag, value.toString());
+      // Merge YAML global options with CLI global options (CLI takes precedence)
+      globalValues = {
+        ...config,
+        ...globalValues,
+        instruction: undefined,
+        // Merge arrays for options that support multiple values
+        instructions: [
+          ...(config.instructions
+            ? Array.isArray(config.instructions)
+              ? config.instructions
+              : [config.instructions]
+            : []),
+          ...(config.instruction
+            ? Array.isArray(config.instruction)
+              ? config.instruction
+              : [config.instruction]
+            : []),
+          ...(globalValues.instructions || []),
+          ...(globalValues.instruction || []),
+        ].filter(Boolean),
+        docs: [
+          ...(config.docs ? (Array.isArray(config.docs) ? config.docs : [config.docs]) : []),
+          ...(globalValues.docs || []),
+        ].filter(Boolean),
+        rules: [
+          ...(config.rules ? (Array.isArray(config.rules) ? config.rules : [config.rules]) : []),
+          ...(globalValues.rules || []),
+        ].filter(Boolean),
+      };
+
+      // Convert YAML commands to argument arrays
+      if (config.commands) {
+        yamlCommands = config.commands.map((cmd) => {
+          const args: string[] = [];
+          if (cmd.globs) {
+            args.push(...(Array.isArray(cmd.globs) ? cmd.globs : [cmd.globs]));
           }
-        }
-        return args;
-      });
+          for (const [key, value] of Object.entries(cmd)) {
+            if (key === 'globs') continue;
+            if (value === undefined || value === null) continue;
+            const flag = `--${key}`;
+            if (typeof value === 'boolean') {
+              if (value) args.push(flag);
+            } else if (Array.isArray(value)) {
+              value.forEach((v) => {
+                args.push(flag, v.toString());
+              });
+            } else {
+              args.push(flag, value.toString());
+            }
+          }
+          return args;
+        });
+      }
     }
   } catch (error) {
     console.error(`Failed to load YAML config: ${(error as Error).message}`);
@@ -198,6 +249,9 @@ if (globalValues.help) {
   );
   console.log('\nGlobal Options:');
   console.log('  --config <file>           Load configuration from YAML file');
+  console.log(
+    '  --preset <name>           Load preset YAML config from .rmfilter/<name>.yml or $HOME/.config/rmfilter/<name>.yml'
+  );
   console.log(
     '  --edit-format <format>    Set edit format (whole-xml, diff, whole) or "none" to omit'
   );
@@ -249,7 +303,6 @@ if (globalValues.bare) {
 
 // Set up environment
 setDebug(globalValues.debug || false);
-const gitRoot = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
 
 function calculateBaseDir() {
   if (globalValues.cwd) {
@@ -260,7 +313,7 @@ function calculateBaseDir() {
     return gitRoot;
   }
 
-  if (yamlConfigPath) {
+  if (yamlConfigPath && yamlConfigPath.startsWith(gitRoot)) {
     // If we use a YAML config, default to the directory of the config file
     return path.dirname(yamlConfigPath);
   }

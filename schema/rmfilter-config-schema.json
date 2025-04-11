@@ -30,31 +30,19 @@
       "description": "Print executed commands for debugging."
     },
     "instructions": {
-      "anyOf": [
-        { "type": "string" },
-        { "type": "array", "items": { "type": "string" } }
-      ],
+      "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
       "description": "Add instructions (prefix '@' for files)."
     },
     "instruction": {
-      "anyOf": [
-        { "type": "string" },
-        { "type": "array", "items": { "type": "string" } }
-      ],
+      "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
       "description": "Alias for instructions (merged with instructions)."
     },
     "docs": {
-      "anyOf": [
-        { "type": "string" },
-        { "type": "array", "items": { "type": "string" } }
-      ],
+      "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
       "description": "Add documentation file globs."
     },
     "rules": {
-      "anyOf": [
-        { "type": "string" },
-        { "type": "array", "items": { "type": "string" } }
-      ],
+      "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
       "description": "Add rules file globs."
     },
     "omit-cursorrules": {
@@ -67,15 +55,11 @@
     },
     "changed-files": {
       "type": "boolean",
-      "description": "Include all changed files."
+      "description": "Include all files in the diff."
     },
     "diff-from": {
       "type": "string",
       "description": "Diff from specified branch or revision instead of main."
-    },
-    "files-from-diff": {
-      "type": "boolean",
-      "description": "Include files from diff."
     },
     "instructions-editor": {
       "type": "boolean",
@@ -97,10 +81,7 @@
             "description": "List of file globs to process."
           },
           "grep": {
-            "anyOf": [
-              { "type": "string" },
-              { "type": "array", "items": { "type": "string" } }
-            ],
+            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include files matching these patterns."
           },
           "whole-word": {
@@ -124,17 +105,11 @@
             "description": "Include entire import tree."
           },
           "upstream": {
-            "anyOf": [
-              { "type": "string" },
-              { "type": "array", "items": { "type": "string" } }
-            ],
+            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include upstream dependencies."
           },
           "downstream": {
-            "anyOf": [
-              { "type": "string" },
-              { "type": "array", "items": { "type": "string" } }
-            ],
+            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include downstream dependents."
           },
           "largest": {
@@ -142,10 +117,7 @@
             "description": "Keep only the N largest files (number as string)."
           },
           "example": {
-            "anyOf": [
-              { "type": "string" },
-              { "type": "array", "items": { "type": "string" } }
-            ],
+            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include the largest file matching the pattern."
           }
         }
