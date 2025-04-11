@@ -10,7 +10,7 @@ import { ImportWalker } from './dependency_graph/walk_imports.ts';
 import { generateSearchReplacePrompt } from './diff-editor/prompts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from './rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
-import { logSpawn, setDebug } from './rmfilter/utils.ts';
+import { logSpawn, setDebug, setQuiet } from './rmfilter/utils.ts';
 import { Extractor } from './treesitter/extract.ts';
 import { generateWholeFilePrompt } from './whole-file/prompts';
 import { xmlFormatPrompt } from './xml/prompt';
@@ -38,9 +38,11 @@ const globalOptions = {
   'changed-files': { type: 'boolean' },
   'diff-from': { type: 'string' },
   'instructions-editor': { type: 'boolean' },
+  'omit-instructions-tag': { type: 'boolean' },
   bare: { type: 'boolean' },
   config: { type: 'string' },
   preset: { type: 'string' },
+  quiet: { type: 'boolean', short: 'q' },
 } as const;
 
 // Define command-specific options
@@ -81,6 +83,7 @@ const ConfigSchema = z
     'edit-format': z.enum(['whole-xml', 'diff', 'whole', 'none']).optional(),
     output: z.string().optional(),
     copy: z.boolean().optional(),
+    quiet: z.boolean().optional(),
     cwd: z.string().optional(),
     gitroot: z.boolean().optional(),
     debug: z.boolean().optional(),
@@ -89,6 +92,7 @@ const ConfigSchema = z
     docs: z.union([z.string(), z.string().array()]).optional(),
     rules: z.union([z.string(), z.string().array()]).optional(),
     'omit-cursorrules': z.boolean().optional(),
+    'omit-instructions-tag': z.boolean().optional(),
     'with-diff': z.boolean().optional(),
     'changed-files': z.boolean().optional(),
     'diff-from': z.string().optional(),
@@ -262,6 +266,7 @@ if (globalValues.help) {
   console.log('  --bare                    Omit all extra rules and formatting instructions');
   console.log('  -h, --help                Show this help message');
   console.log('  --debug                   Print executed commands');
+  console.log('  -q, --quiet               Suppress all output from tool and spawned processes');
   console.log('  --with-diff               Include Git diff against main/master in output');
   console.log('  --changed-files           Include all changed files');
   console.log('  --diff-from (<branch>|<rev>) Diff from <branch> instead of main');
@@ -303,6 +308,7 @@ if (globalValues.bare) {
 
 // Set up environment
 setDebug(globalValues.debug || false);
+setQuiet(globalValues.quiet || false);
 
 function calculateBaseDir() {
   if (globalValues.cwd) {
@@ -664,22 +670,24 @@ const finalOutput = [
 
 await Bun.write(outputFile, finalOutput);
 
-if (allExamples.length) {
-  console.log('\n## EXAMPLES');
-  for (let { pattern, file } of allExamples) {
-    console.log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
+if (!globalValues.quiet) {
+  if (allExamples.length) {
+    console.log('\n## EXAMPLES');
+    for (let { pattern, file } of allExamples) {
+      console.log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
+    }
   }
-}
 
-if (rawInstructions) {
-  console.log('\n## INSTRUCTIONS');
-  console.log(rawInstructions);
-}
+  if (rawInstructions) {
+    console.log('\n## INSTRUCTIONS');
+    console.log(rawInstructions);
+  }
 
-const tokens = encode(finalOutput);
-console.log('\n## OUTPUT');
-console.log(`Tokens: ${tokens.length}`);
-console.log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+  const tokens = encode(finalOutput);
+  console.log('\n## OUTPUT');
+  console.log(`Tokens: ${tokens.length}`);
+  console.log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+}
 
 if (globalValues.copy) {
   await copyToClipboard(finalOutput);
@@ -692,13 +700,19 @@ async function copyToClipboard(text: string) {
       : process.platform === 'win32'
         ? ['clip']
         : ['xclip', '-selection', 'clipboard'];
-  const proc = logSpawn(command, { stdin: 'pipe', stdout: 'inherit', stderr: 'inherit' });
+  const proc = logSpawn(command, {
+    stdin: 'pipe',
+    stdout: globalValues.quiet ? 'ignore' : 'inherit',
+    stderr: globalValues.quiet ? 'ignore' : 'inherit',
+  });
   proc.stdin.write(text);
   await proc.stdin.end();
   const exitCode = await proc.exited;
-  console.log(
-    exitCode === 0
-      ? 'Output copied to clipboard'
-      : `Failed to copy to clipboard (exit code: ${exitCode})`
-  );
+  if (!globalValues.quiet) {
+    console.log(
+      exitCode === 0
+        ? 'Output copied to clipboard'
+        : `Failed to copy to clipboard (exit code: ${exitCode})`
+    );
+  }
 }

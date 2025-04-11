@@ -1,6 +1,12 @@
 import type { SpawnOptions } from 'bun';
 
 export let debug = false;
+export let quiet = false;
+
+export function setQuiet(value: boolean) {
+  quiet = value;
+}
+
 export function setDebug(value: boolean) {
   debug = value;
 }
@@ -19,6 +25,28 @@ export function logSpawn<
       console.log(`[DEBUG] cwd: ${options.cwd}`);
     }
   }
+
+  if (quiet) {
+    let opts = options || ({} as T);
+    if (opts.stdout !== 'pipe') {
+      opts.stdout = 'ignore';
+    }
+
+    if (opts.stderr !== 'pipe') {
+      opts.stderr = 'ignore';
+    }
+
+    if (opts.stdio) {
+      if (opts.stdio[0] !== 'pipe') {
+        opts.stdio[0] = 'ignore';
+      }
+
+      if (opts.stdio[1] !== 'pipe') {
+        opts.stdio[1] = 'ignore';
+      }
+    }
+  }
+
   return Bun.spawn(cmd, options);
 }
 

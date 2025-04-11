@@ -12,6 +12,7 @@ export async function getAdditionalDocs(
     docs?: string[];
     rules?: string[];
     'omit-cursorrules'?: boolean;
+    'omit-instructions-tag'?: boolean;
   }
 ) {
   let instructionsTag = '';
@@ -46,7 +47,11 @@ export async function getAdditionalDocs(
       .join('\n\n')
       .trim();
     if (rawInstructions) {
-      instructionsTag = `<instructions>\n${rawInstructions}\n</instructions>`;
+      if (values['omit-instructions-tag']) {
+        instructionsTag = rawInstructions;
+      } else {
+        instructionsTag = `<instructions>\n${rawInstructions}\n</instructions>`;
+      }
     }
   }
 

@@ -13,6 +13,10 @@
       "type": "string",
       "description": "Specify output file path."
     },
+    "quiet": {
+      "type": "boolean",
+      "description": "Suppress all console output"
+    },
     "copy": {
       "type": "boolean",
       "description": "Copy output to clipboard."
