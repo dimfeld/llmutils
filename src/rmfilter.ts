@@ -19,6 +19,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 
 import fs from 'node:fs/promises';
+import os from 'node:os';
 
 // Define global options
 const globalOptions = {
@@ -43,6 +44,7 @@ const globalOptions = {
   config: { type: 'string' },
   preset: { type: 'string' },
   quiet: { type: 'boolean', short: 'q' },
+  'list-presets': { type: 'boolean' },
 } as const;
 
 // Define command-specific options
@@ -80,6 +82,7 @@ const CommandConfigSchema = z
 
 const ConfigSchema = z
   .object({
+    description: z.string().optional(),
     'edit-format': z.enum(['whole-xml', 'diff', 'whole', 'none']).optional(),
     output: z.string().optional(),
     copy: z.boolean().optional(),
@@ -147,19 +150,68 @@ async function findPresetFile(preset: string, gitRoot: string): Promise<string |
     }
   }
 
-  // Check $HOME/.config/rmfilter
-  const homeConfigPath = path.join(
-    process.env.HOME || process.env.USERPROFILE || '',
-    '.config',
-    'rmfilter',
-    `${preset}.yml`
-  );
+  const homeConfigDir = path.join(os.homedir(), '.config', 'rmfilter');
+  const homePresetPath = path.join(homeConfigDir, `${preset}.yml`);
   try {
-    await fs.access(homeConfigPath);
-    return homeConfigPath;
+    await fs.access(homePresetPath);
+    return homePresetPath;
   } catch {
-    return null;
+    // Ignore error if file doesn't exist
   }
+
+  return null;
+}
+
+// Function to find all preset files
+async function findAllPresetFiles(
+  gitRoot: string
+): Promise<{ name: string; description: string | undefined }[]> {
+  const presets = new Map<string, string>();
+  let currentDir = process.cwd();
+  const gitRootDir = path.resolve(gitRoot);
+  const homeConfigDir = path.join(os.homedir(), '.config', 'rmfilter');
+
+  const searchDirs: string[] = [];
+
+  // Collect directories from current path up to git root
+  while (currentDir.startsWith(gitRootDir) || currentDir === gitRootDir) {
+    searchDirs.push(path.join(currentDir, '.rmfilter'));
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break; // Reached root
+    currentDir = parentDir;
+  }
+
+  // Add home config dir
+  searchDirs.push(homeConfigDir);
+
+  // Use glob to find all .yml files in these directories
+  for (const dir of searchDirs) {
+    try {
+      const files = await glob('*.yml', { cwd: dir, absolute: true });
+      files.forEach((file) => {
+        presets.set(path.basename(file, '.yml'), file);
+      });
+    } catch (e) {
+      // Ignore errors like directory not found
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+        debugLog(`Error searching directory ${dir}: ${e}`);
+      }
+    }
+  }
+
+  const items = await Promise.all(
+    Array.from(presets.entries()).map(async ([presetName, path]) => {
+      const data = await Bun.file(path).text();
+      const parsedConfig = parse(data);
+      const config = ConfigSchema.parse(parsedConfig);
+      return {
+        name: presetName,
+        description: config.description,
+      };
+    })
+  );
+
+  return items.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // Load YAML config if provided
@@ -265,6 +317,7 @@ if (globalValues.help) {
   console.log('  --gitroot                 Use Git root as working directory');
   console.log('  --bare                    Omit all extra rules and formatting instructions');
   console.log('  -h, --help                Show this help message');
+  console.log('  --list-presets            List available presets and exit');
   console.log('  --debug                   Print executed commands');
   console.log('  -q, --quiet               Suppress all output from tool and spawned processes');
   console.log('  --with-diff               Include Git diff against main/master in output');
@@ -287,6 +340,26 @@ if (globalValues.help) {
   console.log('  -l, --largest <number>    Keep only the N largest files');
   console.log('  --example <pattern>       Include the largest file that matches the pattern.');
   console.log('');
+  process.exit(0);
+}
+
+// Handle list-presets
+if (globalValues['list-presets']) {
+  const presets = await findAllPresetFiles(gitRoot);
+  if (presets.length > 0) {
+    console.log('Available presets:');
+    const longestNameLength = presets.reduce((max, preset) => Math.max(max, preset.name.length), 0);
+
+    presets.forEach((preset) => {
+      if (preset.description) {
+        console.log(`${preset.name.padEnd(longestNameLength, ' ')}   ${preset.description}`);
+      } else {
+        console.log(`${preset.name.padEnd(longestNameLength, ' ')}`);
+      }
+    });
+  } else {
+    console.log('No presets found.');
+  }
   process.exit(0);
 }
 

@@ -5,6 +5,10 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "description": {
+      "type": "string",
+      "description": "A description of this config file"
+    },
     "edit-format": {
       "type": "string",
       "description": "Set edit format: 'whole-xml', 'diff', 'whole', or 'none'."
