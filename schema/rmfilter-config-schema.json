@@ -53,6 +53,10 @@
       "type": "boolean",
       "description": "Skip loading .cursorrules."
     },
+    "omit-instructions-tag": {
+      "type": "boolean",
+      "description": "Do not wrap instructions in <instructions> tag."
+    },
     "with-diff": {
       "type": "boolean",
       "description": "Include Git diff against main/master in output."
