@@ -64,7 +64,7 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
   let filename = null;
   let stripEndingFileTag = false;
   let expectedEndTag = '';
-  const filesToWrite = new Map();
+  const filesToWrite = new Map<string, string[]>();
 
   // Process line by line
   for (let i = 0; i < lines.length; i++) {
@@ -94,9 +94,6 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
       debugLog('Found end of code block filename=', filename);
       // Process completed block
       if (filename && state !== 'ignoring') {
-        if (stripEndingFileTag && currentBlock[currentBlock.length - 1].trim() === '</file>') {
-          currentBlock.pop();
-        }
         filesToWrite.set(filename, currentBlock);
       }
       state = 'searching';
@@ -162,10 +159,6 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
   // Handle any remaining block
   debugLog(`Finished block: file '${filename}', ${currentBlock.length} lines`);
   if (filename && state !== 'ignoring' && currentBlock.length > 0) {
-    if (stripEndingFileTag && currentBlock[currentBlock.length - 1].trim() === '</file>') {
-      currentBlock.pop();
-    }
-
     filesToWrite.set(filename, currentBlock);
   }
 
@@ -174,7 +167,12 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
     const fullPath = path.resolve(writeRoot, filePath);
     try {
       if (!dryRun) {
-        await Bun.write(fullPath, content.join('\n') + '\n');
+        let contentStr = content.join('\n').trimEnd();
+        // Sometimes the model sticks a </file> on the end of the file.
+        if (contentStr.endsWith('</file>')) {
+          contentStr = contentStr.slice(0, -'</file>'.length);
+        }
+        await Bun.write(fullPath, contentStr + '\n');
       }
       console.log(`Wrote ${content.length} lines to file: ${filePath}`);
     } catch (err) {
