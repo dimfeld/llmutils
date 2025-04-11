@@ -30,7 +30,7 @@ const globalOptions = {
   help: { type: 'boolean', short: 'h' },
   debug: { type: 'boolean' },
   instructions: { type: 'string', multiple: true },
-  instruction: { type: 'string', multiple: true },
+  instruction: { type: 'string', short: 'i', multiple: true },
   docs: { type: 'string', multiple: true },
   rules: { type: 'string', multiple: true },
   'omit-cursorrules': { type: 'boolean' },
@@ -270,7 +270,7 @@ if (globalValues.help) {
   console.log('  --with-diff               Include Git diff against main/master in output');
   console.log('  --changed-files           Include all changed files');
   console.log('  --diff-from (<branch>|<rev>) Diff from <branch> instead of main');
-  console.log('  --instructions <text>     Add instructions (prefix @ for files)');
+  console.log('  -i, --instructions <text> Add instructions (prefix @ for files)');
   console.log('  --docs <globs>            Add documentation files');
   console.log('  --rules <globs>           Add rules files');
   console.log('  --omit-cursorrules        Skip loading .cursorrules');
