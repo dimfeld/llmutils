@@ -700,6 +700,10 @@ async function processCommand(
     files.forEach((file) => filesSet.add(file));
   }
 
+  if (filesSet.size === 0) {
+    throw new Error(`No files found for file set: ${positionals.join(', ')}`);
+  }
+
   return { filesSet, examples: allFoundExamples };
 }
 
@@ -769,6 +773,11 @@ for (let file of changedFiles) {
 }
 
 const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
+
+if (!allPaths.length && !globalValues['with-diff']) {
+  console.error('No files found');
+  process.exit(1);
+}
 
 // Call repomix
 const repomixOutput = allPaths.length
