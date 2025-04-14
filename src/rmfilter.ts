@@ -53,6 +53,7 @@ const globalOptions = {
 
 // Define command-specific options
 const commandOptions = {
+  base: { type: 'string' },
   grep: { type: 'string', short: 'g', multiple: true },
   'whole-word': { type: 'boolean', short: 'w' },
   expand: { type: 'boolean', short: 'e' },
@@ -70,6 +71,7 @@ const commandOptions = {
 // # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json
 const CommandConfigSchema = z
   .object({
+    base: z.string().optional().describe('Base directory for globs for this command'),
     globs: z.string().array().optional(),
     grep: z.union([z.string(), z.string().array()]).optional(),
     'whole-word': z.boolean().optional(),
@@ -593,7 +595,7 @@ async function processCommand(
   const filesSet = new Set<string>();
   const allFoundExamples: { pattern: string; file: string }[] = [];
   const cmdValues = cmdParsed.values;
-  const positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
+  let positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
   if (positionals.length === 0 && !cmdValues.example?.length) {
     return { filesSet, examples: [] };
@@ -604,6 +606,11 @@ async function processCommand(
 
   if (debug) {
     console.time(`Globbing ${positionals.join(', ')}`);
+  }
+
+  const globBase = cmdParsed.values.base;
+  if (globBase) {
+    positionals = positionals.map((p) => path.join(globBase, p));
   }
 
   let hasGlobs = positionals.some((p) => p.includes('*') || p.includes('?'));

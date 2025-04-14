@@ -93,6 +93,10 @@
             "items": { "type": "string" },
             "description": "List of file globs to process."
           },
+          "base": {
+            "type": "string",
+            "description": "Base path for globs."
+          },
           "grep": {
             "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include files matching these patterns."
