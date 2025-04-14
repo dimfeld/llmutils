@@ -11,7 +11,10 @@ import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { Resolver } from './dependency_graph/resolve.ts';
 import { ImportWalker } from './dependency_graph/walk_imports.ts';
-import { generateSearchReplacePrompt } from './diff-editor/prompts';
+import {
+  diffFilenameOutsideFencePrompt,
+  diffFilenameInsideFencePrompt,
+} from './diff-editor/prompts';
 import { debugLog } from './logging.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from './rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
@@ -84,7 +87,9 @@ const CommandConfigSchema = z
 const ConfigSchema = z
   .object({
     description: z.string().optional(),
-    'edit-format': z.enum(['whole-xml', 'diff', 'whole', 'none']).optional(),
+    'edit-format': z
+      .enum(['whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'whole', 'none'])
+      .optional(),
     output: z.string().optional(),
     copy: z.boolean().optional(),
     quiet: z.boolean().optional(),
@@ -404,10 +409,12 @@ if (globalValues['list-presets']) {
 // Validate edit-format
 if (
   globalValues['edit-format'] &&
-  !['whole-xml', 'diff', 'whole', 'none'].includes(globalValues['edit-format'])
+  !['whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'whole', 'none'].includes(
+    globalValues['edit-format']
+  )
 ) {
   console.error(
-    `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', 'whole', or 'none'`
+    `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'whole', or 'none'`
   );
   process.exit(1);
 }
@@ -798,7 +805,9 @@ const finalOutput = [
   docsTag,
   rulesTag,
   editFormat === 'whole-xml' && notBare ? xmlFormatPrompt : '',
-  editFormat === 'diff' && notBare ? generateSearchReplacePrompt : '',
+  editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt : '',
+  editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt : '',
+  editFormat === 'diff-fenced' && notBare ? diffFilenameInsideFencePrompt : '',
   editFormat === 'whole-file' && notBare ? generateWholeFilePrompt : '',
   notBare ? guidelinesTag : '',
   instructionsTag,
