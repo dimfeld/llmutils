@@ -27,6 +27,7 @@
     "diff": "^7.0.0",
     "find-up": "^7.0.0",
     "glob": "^11.0.1",
+    "globby": "^14.1.0",
     "gpt-tokenizer": "^2.9.0",
     "js-yaml": "^4.1.0",
     "package-up": "^5.0.0",

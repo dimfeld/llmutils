@@ -15,10 +15,11 @@ import { generateSearchReplacePrompt } from './diff-editor/prompts';
 import { debugLog } from './logging.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from './rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
-import { logSpawn, setDebug, setQuiet } from './rmfilter/utils.ts';
+import { debug, logSpawn, setDebug, setQuiet } from './rmfilter/utils.ts';
 import { Extractor } from './treesitter/extract.ts';
 import { generateWholeFilePrompt } from './whole-file/prompts';
 import { xmlFormatPrompt } from './xml/prompt';
+import { globby } from 'globby';
 
 // Define global options
 const globalOptions = {
@@ -591,25 +592,59 @@ async function processCommand(
     return { filesSet, examples: [] };
   }
 
-  let withDirGlobs = await Promise.all(
-    positionals.map(async (p) => {
-      let isDir = await Bun.file(p)
-        .stat()
-        .then((d) => d.isDirectory())
-        .catch(() => false);
+  const onlyExamples = cmdValues.example?.length && !cmdValues.grep?.length;
+  let files: string[] | undefined;
 
-      let replaced = p.replaceAll(/\[|\]/g, '\\$&');
-      return isDir ? `${replaced}/**` : replaced;
-    })
-  );
-  let files = await glob(withDirGlobs, { cwd: baseDir, nodir: true });
+  if (debug) {
+    console.time(`Globbing ${positionals.join(', ')}`);
+  }
+
+  let hasGlobs = positionals.some((p) => p.includes('*') || p.includes('?'));
+  if (hasGlobs) {
+    let withDirGlobs = await Promise.all(
+      positionals.map(async (p) => {
+        let isDir = await Bun.file(p)
+          .stat()
+          .then((d) => d.isDirectory())
+          .catch(() => false);
+
+        let replaced = p.replaceAll(/\[|\]/g, '\\$&');
+        return isDir ? `${replaced}/**` : replaced;
+      })
+    );
+
+    files = await globby(withDirGlobs, {
+      cwd: baseDir,
+      onlyFiles: true,
+      absolute: false,
+      dot: true,
+      followSymbolicLinks: false,
+      ignoreFiles: ['**/.gitignore', '**/.repomixignore'],
+    });
+
+    if (cmdValues.grep && files.length) {
+      files = await grepFor(
+        cmdValues.grep,
+        files,
+        cmdValues.expand ?? false,
+        cmdValues['whole-word'] ?? false
+      );
+    }
+  } else if (!onlyExamples) {
+    let searchTerms = cmdValues.grep?.length ? cmdValues.grep : ['.'];
+    files = await grepFor(searchTerms, positionals, false, false);
+  }
+
+  if (debug) {
+    console.timeEnd(`Globbing ${positionals.join(', ')}`);
+  }
 
   let exampleFiles: Promise<{ pattern: string; file: string }[]> | undefined;
   if (cmdValues.example?.length) {
     let values = cmdValues.example.flatMap((p) => p.split(','));
     exampleFiles = Promise.all(
       values.map(async (p) => {
-        let matching = await grepFor([p], files, false, false);
+        let matching = await grepFor([p], files || positionals, false, false);
 
         if (!matching.length) {
           throw new Error(`No files found matching example pattern: ${p}`);
@@ -624,17 +659,8 @@ async function processCommand(
     );
   }
 
-  if (cmdValues.grep) {
-    files = await grepFor(
-      cmdValues.grep,
-      files,
-      cmdValues.expand ?? false,
-      cmdValues['whole-word'] ?? false
-    );
-  }
-
   // Apply largest filter if specified
-  if (cmdValues.largest) {
+  if (files && cmdValues.largest) {
     const n = parseInt(cmdValues.largest, 10);
     if (isNaN(n) || n <= 0) {
       console.error(`Invalid value for --largest: ${cmdValues.largest}. Must be a positive number`);
@@ -648,7 +674,7 @@ async function processCommand(
   if (foundExamples.length) {
     allFoundExamples.push(...foundExamples);
 
-    if (cmdValues.grep) {
+    if (cmdValues.grep && files) {
       // If we have other filters, then add the example files to the list of files
       files.push(...foundExamples.map((f) => f.file));
     } else {
@@ -657,13 +683,15 @@ async function processCommand(
     }
   }
 
-  if (cmdValues['with-imports']) {
-    files = await processWithImports(files, false);
-  } else if (cmdValues['with-all-imports']) {
-    files = await processWithImports(files, true);
-  }
+  if (files) {
+    if (cmdValues['with-imports']) {
+      files = await processWithImports(files, false);
+    } else if (cmdValues['with-all-imports']) {
+      files = await processWithImports(files, true);
+    }
 
-  files.forEach((file) => filesSet.add(file));
+    files.forEach((file) => filesSet.add(file));
+  }
 
   return { filesSet, examples: allFoundExamples };
 }
