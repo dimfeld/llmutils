@@ -20,14 +20,14 @@ Use the *FULL* file path, as shown to you by the user.
 Every *SEARCH* section must *EXACTLY MATCH* the file content to be replaced, character for character, including all comments, docstrings, etc.
 If the file contains code or other data wrapped/escaped in json/xml/quotes or other containers, you need to propose edits to the literal contents of the file, including the container markup.
 
-Remember to always return enough extra lines around the lines actually being searched so that the SEARCH/REPLACE block can be uniquely identified in the file. But be concise;  ten lines in each direction will usually suffice. Keep it concise, with just enough surrounding context to find the lines.
-
 *SEARCH/REPLACE* blocks will *only* replace the first match occurrence.
 Include multiple unique *SEARCH/REPLACE* blocks if needed.
+Include enough lines in each SEARCH section to uniquely match each set of lines that need to change.
 
+Keep *SEARCH/REPLACE* blocks concise.
 Break large *SEARCH/REPLACE* blocks into a series of smaller blocks that each change a small portion of the file.
-
-Only create *SEARCH/REPLACE* blocks for files that the user has added to the chat!
+Include just the changing lines, and a few surrounding lines if needed for uniqueness.
+Do not include long runs of unchanging lines in *SEARCH/REPLACE* blocks.
 
 To move code within a file, use 2 *SEARCH/REPLACE* blocks: 1 to delete it from its current location, 1 to insert it in the new location.
 
@@ -137,14 +137,14 @@ Use the *FULL* file path, as shown to you by the user.
 Every *SEARCH* section must *EXACTLY MATCH* the file content to be replaced, character for character, including all comments, docstrings, etc.
 If the file contains code or other data wrapped/escaped in json/xml/quotes or other containers, you need to propose edits to the literal contents of the file, including the container markup.
 
-Remember to always return enough extra lines around the lines actually being searched so that the SEARCH/REPLACE block can be uniquely identified in the file. But be concise;  ten lines in each direction will usually suffice. Keep it concise, with just enough surrounding context to find the lines.
-
 *SEARCH/REPLACE* blocks will *only* replace the first match occurrence.
 Include multiple unique *SEARCH/REPLACE* blocks if needed.
+Include enough lines in each SEARCH section to uniquely match each set of lines that need to change.
 
+Keep *SEARCH/REPLACE* blocks concise.
 Break large *SEARCH/REPLACE* blocks into a series of smaller blocks that each change a small portion of the file.
-
-Only create *SEARCH/REPLACE* blocks for files that the user has added to the chat!
+Include just the changing lines, and a few surrounding lines if needed for uniqueness.
+Do not include long runs of unchanging lines in *SEARCH/REPLACE* blocks.
 
 To move code within a file, use 2 *SEARCH/REPLACE* blocks: 1 to delete it from its current location, 1 to insert it in the new location.
 
