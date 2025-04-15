@@ -358,8 +358,8 @@ function replacePartWithMissingLeadingWhitespace(
   let numLeading = 0;
   if (leading.length && Math.min(...leading) > 0) {
     numLeading = Math.min(...leading);
-    partLines = partLines.map((p) => p.slice(numLeading).trimEnd());
-    replaceLines = replaceLines.map((p) => p.slice(numLeading).trimEnd());
+    partLines = partLines.map((p) => p.slice(numLeading).trimEnd() + '\n');
+    replaceLines = replaceLines.map((p) => p.slice(numLeading).trimEnd() + '\n');
   }
 
   // Can we find an exact match not including the leading whitespace
@@ -424,7 +424,7 @@ function matchButForLeadingWhitespace(wholeLines: string[], partLines: string[])
   const num = wholeLines.length;
 
   // Does the non-whitespace all agree?
-  if (!wholeLines.every((line, i) => line.trimStart() === partLines[i].trimStart())) {
+  if (!wholeLines.every((line, i) => line.trim() === partLines[i].trim())) {
     return null;
   }
 
