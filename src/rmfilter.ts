@@ -359,7 +359,7 @@ if (globalValues.new) {
   const yamlPath = path.resolve(process.cwd(), globalValues.new);
   const defaultConfig: z.infer<typeof ConfigSchema> = {
     description: 'New rmfilter configuration',
-    'edit-format': 'whole',
+    'edit-format': 'diff',
     copy: true,
     quiet: false,
     docs: [],
@@ -758,7 +758,7 @@ await Promise.all(
 
 // Handle output
 const outputFile = globalValues.output ?? (await getOutputPath());
-const editFormat = globalValues['edit-format'] || 'whole-file';
+const editFormat = globalValues['edit-format'] || 'diff';
 
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
 
