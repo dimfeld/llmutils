@@ -165,3 +165,7 @@ cat edits.txt | apply-llm-edits --stdin --cwd ./src
 apply-llm-edits --dry-run
 ```
 
+## Acknowledgements
+
+- [repomix](https://github.com/yamadashy/repomix) and [ripgrep](https://github.com/BurntSushi/ripgrep) provide a lot of the internal functionality
+- The diff editing style prompts and application code are ported from [Aider](https://github.dev/Aider-AI/aider).
