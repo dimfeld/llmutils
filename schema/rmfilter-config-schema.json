@@ -101,6 +101,10 @@
             "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include files matching these patterns."
           },
+          "ignore": {
+            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
+            "description": "Exclude files matching these patterns."
+          },
           "whole-word": {
             "type": "boolean",
             "description": "Match whole words in grep."

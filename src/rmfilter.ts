@@ -55,6 +55,7 @@ const globalOptions = {
 const commandOptions = {
   base: { type: 'string' },
   grep: { type: 'string', short: 'g', multiple: true },
+  ignore: { type: 'string', multiple: true },
   'whole-word': { type: 'boolean', short: 'w' },
   expand: { type: 'boolean', short: 'e' },
   'no-expand-pages': { type: 'boolean' },
@@ -74,6 +75,7 @@ const CommandConfigSchema = z
     base: z.string().optional().describe('Base directory for globs for this command'),
     globs: z.string().array().optional(),
     grep: z.union([z.string(), z.string().array()]).optional(),
+    ignore: z.string().array().optional(),
     'whole-word': z.boolean().optional(),
     expand: z.boolean().optional(),
     'no-expand-pages': z.boolean().optional(),
@@ -283,8 +285,15 @@ if (globalValues.preset || globalValues.config) {
           if (cmd.globs) {
             args.push(...(Array.isArray(cmd.globs) ? cmd.globs : [cmd.globs]));
           }
+
+          if (cmd.ignore) {
+            for (const ignore of cmd.ignore) {
+              args.push(`--ignore`, ignore);
+            }
+          }
+
           for (const [key, value] of Object.entries(cmd)) {
-            if (key === 'globs') continue;
+            if (key === 'globs' || key === 'ignore') continue;
             if (value === undefined || value === null) continue;
             const flag = `--${key}`;
             if (typeof value === 'boolean') {
@@ -343,6 +352,7 @@ if (globalValues.help) {
   console.log('  -g, --grep <patterns>     Include files matching these patterns');
   console.log('  -w, --whole-word          Match whole words in grep');
   console.log('  -e, --expand              Expand grep patterns (snake_case, camelCase)');
+  console.log('  --ignore <patterns>       Ignore files matching these patterns');
   console.log('  --no-expand-pages         Disable inclusion of matching page/server route files');
   console.log('  --with-imports            Include direct imports of files');
   console.log('  --with-all-imports        Include entire import tree');
@@ -613,7 +623,8 @@ async function processCommand(
     positionals = positionals.map((p) => path.join(globBase, p));
   }
 
-  let hasGlobs = positionals.some((p) => p.includes('*') || p.includes('?'));
+  let hasGlobs =
+    positionals.some((p) => p.includes('*') || p.includes('?')) || cmdValues.ignore?.length;
   if (hasGlobs) {
     let withDirGlobs = await Promise.all(
       positionals.map(async (p) => {
@@ -627,12 +638,25 @@ async function processCommand(
       })
     );
 
+    let ignoreGlobs = await Promise.all(
+      cmdValues.ignore?.map(async (p) => {
+        let isDir = await Bun.file(p)
+          .stat()
+          .then((d) => d.isDirectory())
+          .catch(() => false);
+
+        let replaced = p.replaceAll(/\[|\]/g, '\\$&');
+        return isDir ? `${replaced}/**` : replaced;
+      }) || []
+    );
+
     files = await globby(withDirGlobs, {
       cwd: baseDir,
       onlyFiles: true,
       absolute: false,
       dot: true,
       followSymbolicLinks: false,
+      ignore: ignoreGlobs.length ? ignoreGlobs : undefined,
       ignoreFiles: ['**/.gitignore', '**/.repomixignore'],
     });
 
