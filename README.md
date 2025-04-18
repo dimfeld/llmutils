@@ -5,11 +5,12 @@ Command-line utilities for managing context with chat-oriented programming, and 
 This is unoptimized and a bit of a mess right now, but overall works well for collecting a relevant set of files when
 you know a good starting point.
 
-The two scripts are:
+The scripts are:
 
-- rmfilter: A wrapper around repomix which can analyze import trees to gather all the files referenced by a root file, and add instructions and other rules to the repomix output. Supports both "whole file" and "diff" edit modes.
-- apply-llm-edits: Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
-- rmrun - Send the rmfilter output to a language model and apply the edits back.
+- `rmfilter` - A wrapper around repomix which can analyze import trees to gather all the files referenced by a root file, and add instructions and other rules to the repomix output. Supports both "whole file" and "diff" edit modes.
+- `apply-llm-edits` - Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
+- `rmrun` - Send the rmfilter output to a language model and apply the edits back.
+- `rmfind` - Find relevant files to use with rmfilter
 
 Some of the features, such as dependency analysis, only work with the code I've been writing at work recently, and so
 assume a repository written with Typescript and PNPM workspaces.
@@ -129,7 +130,7 @@ rmfilter src/**/*.ts tests/**/*.ts
 # they import.
 rmfilter src/routes/admin src/lib/auth.ts src/lib/server/auth \
   --grep users --grep email --with-imports \
-   --instructions 'Add a checkbox to the "add a user" sheet that determines whetther or not a verification email is sent. Set verified=true and skip sendign the email when the checkbox is not set. It shouldbe set by default' --copy
+   --instructions 'Add a checkbox to the "add a user" sheet that determines whether or not a verification email is sent. Set verified=true and skip sendign the email when the checkbox is not set. It shouldbe set by default' --copy
 
 # Filter with multiple grep patterns and case expansion
 rmfilter --grep "function" --grep "class" --expand src/**/*.ts
@@ -165,9 +166,19 @@ cat edits.txt | apply-llm-edits --stdin --cwd ./src
 
 # Dry run to preview changes
 apply-llm-edits --dry-run
+
+# Run and apply in one go
+rmfilter src/**/*.ts --instructions 'Make it better'
+rmrun
 ```
+
+## TODO
+
+- rmfind: take a natural language query and generate grep terms from that
+- rmfind: send found files into an LLM to try to pull out the most relevant ones for the query
 
 ## Acknowledgements
 
 - [repomix](https://github.com/yamadashy/repomix) and [ripgrep](https://github.com/BurntSushi/ripgrep) provide a lot of the internal functionality
 - The diff editing style prompts and application code are ported from [Aider](https://github.dev/Aider-AI/aider).
+
