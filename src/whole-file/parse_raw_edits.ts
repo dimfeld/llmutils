@@ -1,9 +1,7 @@
-// parse raw edits without any format guidance
-import { $ } from 'bun';
 import * as path from 'path';
 
 import { debugLog } from '../logging.ts';
-import type { ProcessFileOptions } from '../apply-llm-edits.ts';
+import type { ProcessFileOptions } from '../apply-llm-edits-internal.ts';
 
 function processLastNonEmptyLine(line: string) {
   // Check for markdown header (e.g., **`filename`**)

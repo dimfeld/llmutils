@@ -520,9 +520,9 @@ async function getDeps(packages: string[], mode: 'upstream' | 'downstream') {
     return ['-F', filter];
   });
   const proc = logSpawn(['turbo', 'ls', '--output', 'json', ...args], { cwd: gitRoot });
-  const output: { packages: { items: { path: string }[] } } = await new Response(
-    proc.stdout
-  ).json();
+  const output = (await new Response(proc.stdout).json()) as {
+    packages: { items: { path: string }[] };
+  };
   return output.packages.items.map((p) => p.path);
 }
 

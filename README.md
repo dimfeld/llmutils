@@ -9,6 +9,7 @@ The two scripts are:
 
 - rmfilter: A wrapper around repomix which can analyze import trees to gather all the files referenced by a root file, and add instructions and other rules to the repomix output. Supports both "whole file" and "diff" edit modes.
 - apply-llm-edits: Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
+- rmrun - Send the rmfilter output to a language model and apply the edits back.
 
 Some of the features, such as dependency analysis, only work with the code I've been writing at work recently, and so
 assume a repository written with Typescript and PNPM workspaces.
@@ -20,6 +21,7 @@ This project assumes you have these tools installed:
 - [Bun](https://bun.sh/)
 - [ripgrep](https://github.com/BurntSushi/ripgrep)
 - [repomix](https://github.com/yamadashy/repomix)
+- [llm](https://llm.datasette.io/en/stable/index.html)
 
 ### Build Instructions
 

@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as diff from 'diff';
 import stringComparison from 'string-comparison';
-import type { ProcessFileOptions } from '../apply-llm-edits';
+import type { ProcessFileOptions } from '../apply-llm-edits-internal';
 
 interface Edit {
   filePath: string;

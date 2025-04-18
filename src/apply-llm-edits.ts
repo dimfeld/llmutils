@@ -6,11 +6,8 @@
  * and writes the contents to the path given, relative to the Git root.
  **/
 
-import { $ } from 'bun';
+import { applyLlmEdits, getWriteRoot } from './apply-llm-edits-internal.js';
 import clipboard from 'clipboardy';
-import { processRawFiles } from './whole-file/parse_raw_edits.ts';
-import { processXmlContents } from './xml/parse_xml.ts';
-import { processSearchReplace } from './diff-editor/parse.ts';
 import { setDebug } from './rmfilter/utils.ts';
 
 const args = process.argv.slice(2);
@@ -34,39 +31,11 @@ setDebug(args.includes('--debug'));
 
 const content = useStdin ? await Bun.stdin.text() : await clipboard.read();
 
-const writeRoot = cwd || (await $`git rev-parse --show-toplevel`.text()).trim() || process.cwd();
-
-const xmlMode = content.includes('<code_changes>');
-const diffMode = content.includes('<<<<<<< SEARCH');
-
-export interface ProcessFileOptions {
-  content: string;
-  writeRoot: string;
-  dryRun: boolean;
-}
-
-let processPromise;
-if (diffMode) {
-  processPromise = processSearchReplace({
-    content,
-    writeRoot,
-    dryRun,
-  });
-} else if (xmlMode) {
-  processPromise = processXmlContents({
-    content,
-    writeRoot,
-    dryRun,
-  });
-} else {
-  processPromise = processRawFiles({
-    content,
-    writeRoot,
-    dryRun,
-  });
-}
-
-processPromise.catch((err) => {
+applyLlmEdits({
+  content,
+  writeRoot: await getWriteRoot(cwd),
+  dryRun,
+}).catch((err) => {
   console.error('Error processing input:', err);
   process.exit(1);
 });
