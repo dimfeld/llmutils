@@ -82,6 +82,10 @@
       "type": "boolean",
       "description": "Omit extra rules and formatting instructions."
     },
+    "compress": {
+      "type": "boolean",
+      "description": "Set the repomix --compress flag."
+    },
     "commands": {
       "type": "array",
       "items": {

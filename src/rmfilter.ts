@@ -50,6 +50,7 @@ const globalOptions = {
   quiet: { type: 'boolean', short: 'q' },
   'list-presets': { type: 'boolean' },
   new: { type: 'string' },
+  compress: { type: 'boolean' },
 } as const;
 
 // Define command-specific options
@@ -112,6 +113,7 @@ const ConfigSchema = z
     'diff-from': z.string().optional(),
     'instructions-editor': z.boolean().optional(),
     bare: z.boolean().optional(),
+    compress: z.boolean().optional(),
     commands: CommandConfigSchema.array().optional(),
   })
   .strict();
@@ -778,14 +780,15 @@ if (!allPaths.length && !globalValues['with-diff']) {
   process.exit(1);
 }
 
+const compress = globalValues.compress ? '--compress' : '';
+
 // Call repomix
 const repomixOutput = allPaths.length
-  ? await callRepomix(gitRoot, rawInstructions, [
-      '--top-files-len',
-      '20',
-      '--include',
-      allPaths.join(','),
-    ])
+  ? await callRepomix(
+      gitRoot,
+      rawInstructions,
+      ['--top-files-len', '20', compress, '--include', allPaths.join(',')].filter((v) => v)
+    )
   : '';
 
 const guidelinesTag = `<guidelines>
