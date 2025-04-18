@@ -15,7 +15,7 @@ const fence = '```';
 
 export async function processSearchReplace({ content, writeRoot, dryRun }: ProcessFileOptions) {
   const edits = getEdits(content, writeRoot);
-  applyEdits(edits, writeRoot, dryRun);
+  await applyEdits(edits, writeRoot, dryRun);
 }
 
 function getEdits(content: string, rootDir: string): Edit[] {
@@ -37,7 +37,11 @@ function getEdits(content: string, rootDir: string): Edit[] {
     }));
 }
 
-function applyEdits(edits: Edit[], rootDir: string, dryRun: boolean = false): Edit[] | void {
+async function applyEdits(
+  edits: Edit[],
+  rootDir: string,
+  dryRun: boolean = false
+): Promise<Edit[] | void> {
   const failed: Edit[] = [];
   const passed: Edit[] = [];
   const updatedEdits: Edit[] = [];
@@ -54,10 +58,10 @@ function applyEdits(edits: Edit[], rootDir: string, dryRun: boolean = false): Ed
     let newContent: string | null = null;
 
     if (fs.existsSync(fullPath)) {
-      const content = fs.readFileSync(fullPath, 'utf-8');
-      newContent = doReplace(fullPath, content, original, updated);
+      const content = await Bun.file(fullPath).text();
+      newContent = await doReplace(fullPath, content, original, updated);
     } else {
-      newContent = doReplace(fullPath, null, original, updated);
+      newContent = await doReplace(fullPath, null, original, updated);
     }
 
     updatedEdits.push({ filePath, original, updated });
@@ -65,7 +69,7 @@ function applyEdits(edits: Edit[], rootDir: string, dryRun: boolean = false): Ed
     if (newContent) {
       console.log(`Applying edit to ${fullPath}`);
       if (!dryRun) {
-        fs.writeFileSync(fullPath, newContent);
+        await Bun.write(fullPath, newContent);
       }
       passed.push(edit);
     } else {
@@ -118,17 +122,18 @@ ${fence}
   return res;
 }
 
-function doReplace(
+async function doReplace(
   fname: string,
   content: string | null,
   beforeText: string,
   afterText: string
-): string | null {
+): Promise<string | null> {
   beforeText = stripQuotedWrapping(beforeText, fname);
   afterText = stripQuotedWrapping(afterText, fname);
 
-  if (!fs.existsSync(fname) && !beforeText.trim()) {
-    fs.writeFileSync(fname, '');
+  let file = Bun.file(fname);
+  if (!(await file.exists()) && !beforeText.trim()) {
+    await file.write('');
     content = '';
   }
 

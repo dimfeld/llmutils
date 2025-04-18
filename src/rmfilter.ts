@@ -23,6 +23,7 @@ import { Extractor } from './treesitter/extract.ts';
 import { generateWholeFilePrompt } from './whole-file/prompts';
 import { xmlFormatPrompt } from './xml/prompt';
 import { globby } from 'globby';
+import { grepFor } from './common/file_finder.ts';
 
 // Define global options
 const globalOptions = {
@@ -526,40 +527,6 @@ async function getDeps(packages: string[], mode: 'upstream' | 'downstream') {
   return output.packages.items.map((p) => p.path);
 }
 
-function expandPattern(pattern: string) {
-  return [changeCase.snakeCase(pattern), changeCase.camelCase(pattern)];
-}
-
-async function grepFor(
-  patterns: string[],
-  sourceFiles: string[],
-  expand: boolean,
-  wholeWord: boolean
-): Promise<string[]> {
-  if (!patterns.length) return [];
-  patterns = patterns.flatMap((p) => p.split(','));
-  if (expand) patterns = patterns.flatMap(expandPattern);
-  const args = patterns.flatMap((p) => ['-e', p]);
-  if (await Bun.file(path.join(baseDir, '.repomixignore')).exists()) {
-    args.push(`--ignore-file=${path.join(baseDir, '.repomixignore')}`);
-  }
-  if (wholeWord) args.push('--word-regexp');
-
-  const searchPaths = sourceFiles.length ? sourceFiles : [baseDir];
-  const lowercase = args.every((a) => a.toLowerCase() === a);
-  if (lowercase) {
-    args.push('-i');
-  }
-
-  const proc = logSpawn(['rg', '--files-with-matches', ...args, ...searchPaths], {});
-  const files = (await new Response(proc.stdout).text())
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((file) => path.resolve(baseDir, file));
-  return files;
-}
-
 const resolver = await Resolver.new(gitRoot);
 const walker = new ImportWalker(new Extractor(), resolver);
 async function processWithImports(files: string[], allImports: boolean): Promise<string[]> {
@@ -662,6 +629,7 @@ async function processCommand(
 
     if (cmdValues.grep && files.length) {
       files = await grepFor(
+        baseDir,
         cmdValues.grep,
         files,
         cmdValues.expand ?? false,
@@ -670,7 +638,7 @@ async function processCommand(
     }
   } else if (!onlyExamples) {
     let searchTerms = cmdValues.grep?.length ? cmdValues.grep : ['.'];
-    files = await grepFor(searchTerms, positionals, false, false);
+    files = await grepFor(baseDir, searchTerms, positionals, false, false);
   }
 
   if (debug) {
@@ -682,7 +650,7 @@ async function processCommand(
     let values = cmdValues.example.flatMap((p) => p.split(','));
     exampleFiles = Promise.all(
       values.map(async (p) => {
-        let matching = await grepFor([p], files || positionals, false, false);
+        let matching = await grepFor(baseDir, [p], files || positionals, false, false);
 
         if (!matching.length) {
           throw new Error(`No files found matching example pattern: ${p}`);

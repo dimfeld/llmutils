@@ -6,7 +6,8 @@
   "bin": {
     "apply-llm-edits": "./src/apply-llm-edits.ts",
     "rmfilter": "./src/rmfilter.ts",
-    "rmrun": "./src/rmrun.ts"
+    "rmrun": "./src/rmrun.ts",
+    "rmfind": "./src/rmfind.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",

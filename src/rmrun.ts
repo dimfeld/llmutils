@@ -61,4 +61,5 @@ await outputFile.end();
 console.log('\nWrote to repomix-result.txt. Applying...');
 
 const content = chunks.join('');
+console.log('Applying changes...');
 await applyLlmEdits({ content });
