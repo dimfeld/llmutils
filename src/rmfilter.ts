@@ -369,7 +369,7 @@ if (globalValues.help) {
 
 // Handle creation of new YAML config
 if (globalValues.new) {
-  const yamlPath = path.resolve(process.cwd(), globalValues.new);
+  let yamlPath = path.resolve(process.cwd(), globalValues.new);
   const defaultConfig: z.infer<typeof ConfigSchema> = {
     description: 'New rmfilter configuration',
     'edit-format': 'diff',
@@ -387,6 +387,10 @@ if (globalValues.new) {
     ],
     instructions: 'instructions here',
   };
+
+  if(!yamlPath.endsWith('.yml') && !yamlPath.endsWith('.yaml')) {
+    yamlPath += '.yml';
+  }
 
   try {
     await fs.access(yamlPath);
