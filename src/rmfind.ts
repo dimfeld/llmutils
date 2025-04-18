@@ -17,7 +17,7 @@ const { values, positionals } = parseArgs({
     gitroot: { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
     debug: { type: 'boolean' },
-    quiet: { type: 'boolean', short: 'q' },
+    quiet: { type: 'boolean' },
     yaml: { type: 'boolean' },
   },
   allowPositionals: true,
@@ -37,7 +37,7 @@ Options:
   --gitroot              Use Git root as working directory.
   -h, --help             Show this help message.
   --debug                Print debug information.
-  -q, --quiet            Suppress informational output (fzf UI still shown).
+  --quiet                Suppress informational output
   --yaml                 Output a YAML array instead of space-separated
 `);
   process.exit(0);

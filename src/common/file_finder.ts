@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { $ } from 'bun';
 import * as changeCase from 'change-case';
 import { globby } from 'globby';
 import path from 'node:path';
