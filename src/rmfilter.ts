@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import { $ } from 'bun';
-import * as changeCase from 'change-case';
 import { glob } from 'glob';
 import { encode } from 'gpt-tokenizer';
 import fs from 'node:fs/promises';
@@ -385,10 +384,10 @@ if (globalValues.new) {
         expand: false,
       },
     ],
-    instructions: 'instructions here',
+    instructions: 'instructions\ngo here',
   };
 
-  if(!yamlPath.endsWith('.yml') && !yamlPath.endsWith('.yaml')) {
+  if (!yamlPath.endsWith('.yml') && !yamlPath.endsWith('.yaml')) {
     yamlPath += '.yml';
   }
 
@@ -398,7 +397,10 @@ if (globalValues.new) {
     process.exit(1);
   } catch {
     // File doesn't exist, proceed with creation
-    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json\n${stringify(defaultConfig)}`;
+    const configContents = stringify(defaultConfig, { indentSeq: false });
+    const yamlContent =
+      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json\n' +
+      configContents;
     await Bun.write(yamlPath, yamlContent);
     console.log(`Created new configuration file at ${yamlPath}`);
     process.exit(0);
