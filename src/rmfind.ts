@@ -3,9 +3,14 @@ import { $ } from 'bun';
 import path from 'node:path';
 import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
+import { generateObject } from 'ai';
+import { z } from 'zod';
 import { globFiles, grepFor } from './common/file_finder.ts';
+import { createModel } from './common/model_factory.ts';
 import { setDebug, setQuiet } from './rmfilter/utils.ts';
 import { debugLog } from './logging.ts';
+
+const DEFAULT_MODEL = 'google/gemini-2.5-flash-preview-04-17';
 
 const { values, positionals } = parseArgs({
   options: {
@@ -18,7 +23,9 @@ const { values, positionals } = parseArgs({
     help: { type: 'boolean', short: 'h' },
     debug: { type: 'boolean' },
     quiet: { type: 'boolean' },
+    model: { type: 'string', short: 'm', default: DEFAULT_MODEL },
     yaml: { type: 'boolean' },
+    query: { type: 'string', short: 'q' },
   },
   allowPositionals: true,
 });
@@ -33,6 +40,8 @@ Options:
   --ignore <pattern>     Glob pattern for files/dirs to ignore (can be repeated).
   -w, --whole-word       Match whole words in grep.
   -e, --expand           Expand grep patterns (snake_case, camelCase).
+  -q, --query <query>    Filter files using a natural language query (requires AI SDK).
+  -m, --model <model>    AI model to use (default: ${DEFAULT_MODEL}).
   --cwd <dir>            Set working directory.
   --gitroot              Use Git root as working directory.
   -h, --help             Show this help message.
@@ -46,7 +55,69 @@ Options:
 setDebug(values.debug || false);
 setQuiet(values.quiet || false);
 
+async function filterFilesWithQuery(
+  modelName: string,
+  query: string,
+  baseDir: string,
+  files: string[]
+) {
+  debugLog(`Filtering ${files.length} files with query: ${query}`);
+  try {
+    // Read contents of all files
+    const fileContents = await Promise.all(
+      files.map(async (file) => ({
+        path: path.relative(baseDir, file),
+        content: await Bun.file(file).text(),
+      }))
+    );
+
+    // Define schema for AI response
+    const schema = z.object({
+      relevantFiles: z.array(z.string()),
+    });
+
+    // Generate prompt
+    const prompt = `
+Given the following files and their contents, select the files that are relevant to the query: "${query}".
+Return a list of file paths that match the query.
+
+Files:
+${fileContents.map((f) => `Path: ${f.path}\nContent:\n${f.content}`).join('\n\n---\n\n')}
+
+Respond with a JSON object containing a "relevantFiles" array of file paths. 
+Remember, the query to match is: "${query}"
+      `;
+
+    // Query the language model
+    const model = createModel(modelName);
+    const { object } = await generateObject({
+      model,
+      schema,
+      prompt,
+      mode: 'json',
+    });
+
+    // Filter files based on AI response
+    let filteredFiles = object.relevantFiles
+      .map((relPath) => path.resolve(baseDir, relPath))
+      .filter((file) => files.includes(file));
+
+    debugLog(`AI filtered to ${filteredFiles.length} files: ${filteredFiles.join(', ')}`);
+    return filteredFiles;
+  } catch (error) {
+    console.error(`Error processing query: ${(error as Error).toString()}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
+  try {
+    await $`which fzf`.quiet();
+  } catch (error) {
+    console.error('Error: fzf command not found. Please install fzf.');
+    process.exit(1);
+  }
+
   // 1. Determine Base Directory
   let baseDir = process.cwd();
   if (values.cwd) {
@@ -114,16 +185,22 @@ async function main() {
     process.exit(0);
   }
 
-  // 3. Check for fzf
-  try {
-    await $`which fzf`.quiet();
-  } catch (error) {
-    console.error('Error: fzf command not found. Please install fzf.');
-    process.exit(1);
+  // 3. Filter files with natural language query if provided
+  let filteredFiles = initialFiles;
+  if (values.query) {
+    filteredFiles = await filterFilesWithQuery(values.model, values.query, baseDir, filteredFiles);
+    debugLog(`Filtered to ${filteredFiles.length} files with query.`);
+  }
+
+  if (filteredFiles.length === 0) {
+    if (!values.quiet) {
+      console.log('No files matched the query.');
+    }
+    process.exit(0);
   }
 
   // 4. Run fzf
-  const fzfInput = initialFiles.map((file) => path.relative(baseDir, file)).join('\n');
+  const fzfInput = filteredFiles.map((file) => path.relative(baseDir, file)).join('\n');
   const fzfProc = Bun.spawn(['fzf', '--multi', '--ansi', '--tac'], {
     stdin: 'pipe',
     stdout: 'pipe',
