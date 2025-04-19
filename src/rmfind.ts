@@ -199,14 +199,26 @@ async function main() {
     process.exit(0);
   }
 
-  // 4. Run fzf
+  // 4. Run fzf with preview window on the right
   const fzfInput = filteredFiles.map((file) => path.relative(baseDir, file)).join('\n');
-  const fzfProc = Bun.spawn(['fzf', '--multi', '--ansi', '--tac'], {
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'inherit', // Show fzf UI errors
-    cwd: baseDir,
-  });
+  const fzfProc = Bun.spawn(
+    [
+      'fzf',
+      '--multi',
+      '--ansi',
+      '--tac',
+      '--preview',
+      'bat --color=always --style=numbers {} || cat {}',
+      '--preview-window',
+      'right:50%',
+    ],
+    {
+      stdin: 'pipe',
+      stdout: 'pipe',
+      stderr: 'inherit', // Show fzf UI errors
+      cwd: baseDir,
+    }
+  );
 
   fzfProc.stdin.write(fzfInput);
   await fzfProc.stdin.end();
