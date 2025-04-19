@@ -34,7 +34,7 @@ Clone the repository, install dependencies, and then install globally:
 git clone https://github.com/dimfeld/llmutils.git
 cd llmutils
 bun install
-pnpm add -g .
+pnpm add -g file://$(pwd)
 ```
 
 ## Configuration and Presets

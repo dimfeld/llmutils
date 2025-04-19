@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
-import { applyLlmEdits } from './apply-llm-edits-internal.js';
+import { applyLlmEdits } from './apply-llm-edits/apply.ts';
 
 const DEFAULT_MODEL = 'gemini-2.5-pro-exp-03-25';
 const { values, positionals } = parseArgs({

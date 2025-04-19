@@ -8,21 +8,21 @@ import path from 'node:path';
 import { parseArgs } from 'util';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
-import { Resolver } from './dependency_graph/resolve.ts';
-import { ImportWalker } from './dependency_graph/walk_imports.ts';
+import { Resolver } from '../dependency_graph/resolve.ts';
+import { ImportWalker } from '../dependency_graph/walk_imports.ts';
 import {
   diffFilenameOutsideFencePrompt,
   diffFilenameInsideFencePrompt,
-} from './diff-editor/prompts';
-import { debugLog } from './logging.ts';
-import { buildExamplesTag, getAdditionalDocs, getDiffTag } from './rmfilter/additional_docs.ts';
-import { callRepomix, getOutputPath } from './rmfilter/repomix.ts';
-import { debug, logSpawn, setDebug, setQuiet } from './rmfilter/utils.ts';
-import { Extractor } from './treesitter/extract.ts';
-import { generateWholeFilePrompt } from './whole-file/prompts';
-import { xmlFormatPrompt } from './xml/prompt';
+} from '../diff-editor/prompts';
+import { debugLog } from '../logging.ts';
+import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/additional_docs.ts';
+import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
+import { debug, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { Extractor } from '../treesitter/extract.ts';
+import { generateWholeFilePrompt } from '../whole-file/prompts';
+import { xmlFormatPrompt } from '../xml/prompt';
 import { globby } from 'globby';
-import { grepFor } from './common/file_finder.ts';
+import { grepFor } from '../common/file_finder.ts';
 
 // Define global options
 const globalOptions = {

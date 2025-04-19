@@ -4,10 +4,10 @@
   "type": "module",
   "private": true,
   "bin": {
-    "apply-llm-edits": "./src/apply-llm-edits.ts",
-    "rmfilter": "./src/rmfilter.ts",
+    "apply-llm-edits": "./src/apply-llm-edits/cmd.ts",
+    "rmfilter": "./src/rmfilter/rmfilter.ts",
     "rmrun": "./src/rmrun.ts",
-    "rmfind": "./src/rmfind.ts"
+    "rmfind": "./src/rmfind/rmfind.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",

@@ -6,9 +6,9 @@
  * and writes the contents to the path given, relative to the Git root.
  **/
 
-import { applyLlmEdits, getWriteRoot } from './apply-llm-edits-internal.js';
+import { applyLlmEdits, getWriteRoot } from './apply.js';
 import clipboard from 'clipboardy';
-import { setDebug } from './rmfilter/utils.ts';
+import { setDebug } from '../rmfilter/utils.ts';
 
 const args = process.argv.slice(2);
 

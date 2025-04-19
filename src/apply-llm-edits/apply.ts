@@ -1,7 +1,7 @@
 import { $ } from 'bun';
-import { processRawFiles } from './whole-file/parse_raw_edits.ts';
-import { processXmlContents } from './xml/parse_xml.ts';
-import { processSearchReplace } from './diff-editor/parse.ts';
+import { processRawFiles } from '../whole-file/parse_raw_edits.ts';
+import { processXmlContents } from '../xml/parse_xml.ts';
+import { processSearchReplace } from '../diff-editor/parse.ts';
 
 export interface ApplyLlmEditsOptions {
   content: string;
