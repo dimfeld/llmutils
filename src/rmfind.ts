@@ -125,7 +125,7 @@ Return a list of file paths that match the query.
 Files:
 ${batch.map((f) => `Path: ${f.path}\nContent:\n${f.content}`).join('\n\n---\n\n')}
 
-Respond with a JSON object containing a "relevantFiles" array of file paths. 
+Respond with a JSON object containing a "relevantFiles" array of file paths.
 Remember, the query to match is: "${query}"
       `;
 
