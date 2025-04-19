@@ -63,7 +63,7 @@ export async function globFiles(
   return files;
 }
 
-function expandPattern(pattern: string): string[] {
+export function expandPattern(pattern: string): string[] {
   return [changeCase.snakeCase(pattern), changeCase.camelCase(pattern)];
 }
 

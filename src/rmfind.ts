@@ -5,7 +5,7 @@ import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
 import { generateObject } from 'ai';
 import { z } from 'zod';
-import { globFiles, grepFor } from './common/file_finder.ts';
+import { expandPattern, globFiles, grepFor } from './common/file_finder.ts';
 import { createModel } from './common/model_factory.ts';
 import { setDebug, setQuiet } from './rmfilter/utils.ts';
 import { debugLog } from './logging.ts';
@@ -154,6 +154,38 @@ Remember, the query to match is: "${query}"
   }
 }
 
+/**
+ * Generates grep terms from a natural language query using a language model.
+ * @param modelName The model identifier (e.g., "google/gemini-2.0-flash").
+ * @param query The natural language query to convert into grep terms.
+ * @returns A promise that resolves to an array of grep patterns.
+ */
+async function generateGrepTermsFromQuery(modelName: string, query: string): Promise<string[]> {
+  debugLog(`Generating grep terms for query: ${query}`);
+  const schema = z.object({
+    grepTerms: z.array(z.string()),
+  });
+  const model = createModel(modelName);
+  const prompt = `
+Given the following natural language query, generate a list of grep patterns that would help find relevant files.
+The patterns should be suitable for use with ripgrep (e.g., exact phrases, keywords, or regex patterns).
+Focus on specific terms or phrases that capture the intent of the query.
+
+Query: "${query}"
+
+Respond with a JSON object containing a "grepTerms" array of strings.
+  `;
+  const { object } = await generateObject({
+    model,
+    schema,
+    prompt,
+    mode: 'json',
+  });
+  debugLog(`Generated grep terms: ${object.grepTerms.join(', ')}`);
+  const grepTerms = new Set(object.grepTerms.flatMap(expandPattern));
+  return Array.from(grepTerms);
+}
+
 async function main() {
   try {
     await $`which fzf`.quiet();
@@ -175,24 +207,31 @@ async function main() {
   // 2. Find Initial Files (Globbing or Grepping)
   let initialFiles: string[] = [];
   const hasGlobs = positionals.length > 0;
-  const grep = values.grep ?? [];
-  const hasGrep = values.grep && values.grep.length > 0;
+  let grep = values.grep ?? [];
+  let hasGrep = grep.length > 0;
+  const hasQuery = !!values.query;
 
-  if (!hasGlobs && !hasGrep) {
-    console.error('Error: No globs, directories, or grep patterns provided.');
+  if (!hasGlobs && !hasGrep && !hasQuery) {
+    console.error('Error: No globs, directories, grep patterns, or query provided.');
     console.error('Use --help for usage information.');
     process.exit(1);
   }
 
   try {
+    // Generate grep terms from query if no grep terms are provided
+    if (values.query && !hasGrep) {
+      grep = await generateGrepTermsFromQuery(values.model, values.query);
+      hasGrep = grep.length > 0;
+    }
+
     if (hasGlobs) {
       debugLog(
         `Globbing patterns: ${positionals.join(', ')} with ignore: ${values.ignore?.join(', ')}`
       );
       initialFiles = await globFiles(baseDir, positionals, values.ignore);
       debugLog(`Found ${initialFiles.length} files via globbing.`);
-      // If grep is also specified, filter the globbed files
-      if (hasGrep) {
+      // If grep is specified or generated, filter the globbed files
+      if (hasGrep || hasQuery) {
         debugLog(
           `Grepping within ${initialFiles.length} globbed files for patterns: ${grep.join(', ')}`
         );
@@ -205,8 +244,8 @@ async function main() {
         );
         debugLog(`Found ${initialFiles.length} files after grep filtering.`);
       }
-    } else if (hasGrep) {
-      // Only grep is specified, search the base directory
+    } else if (hasGrep || hasQuery) {
+      // Only grep is specified or generated, search the base directory
       debugLog(`Grepping base directory for patterns: ${grep.join(', ')}`);
       initialFiles = await grepFor(
         baseDir,
