@@ -11,7 +11,7 @@ import { setDebug, setQuiet } from './rmfilter/utils.ts';
 import { debugLog } from './logging.ts';
 import { encode } from 'gpt-tokenizer';
 
-const DEFAULT_MODEL = 'google/gemini-2.5-flash-preview-04-17';
+const DEFAULT_MODEL = 'google/gemini-2.0-flash';
 
 const { values, positionals } = parseArgs({
   options: {
