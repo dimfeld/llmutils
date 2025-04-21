@@ -23,11 +23,17 @@ const { values, positionals } = parseArgs({
     debug: { type: 'boolean' },
     quiet: { type: 'boolean' },
     model: { type: 'string', short: 'm', default: DEFAULT_MODEL },
+    yaml: { type: 'boolean' },
+    query: { type: 'string', short: 'q' },
+
+    // Debugging options
+
     // Allow overriding specific models
     'classifier-model': { type: 'string' },
     'grep-generator-model': { type: 'string' },
-    yaml: { type: 'boolean' },
-    query: { type: 'string', short: 'q' },
+
+    // One of: grep-generation, grep, classify
+    'stop-after': { type: 'string' },
   },
   allowPositionals: true,
 });
@@ -54,6 +60,11 @@ Options:
   If no grep patterns are provided, but a query is provided, rmfind will generate grep terms from the query usng a language model.
 `);
   process.exit(0);
+}
+
+if (values['stop-after']) {
+  // The only reason to use stop-after is for debugging so always turn it on.
+  values.debug = true;
 }
 
 setDebug(values.debug || false);
@@ -100,6 +111,10 @@ async function main() {
       hasGrep = grep.length > 0;
     }
 
+    if (values['stop-after'] === 'grep-generation') {
+      process.exit(0);
+    }
+
     if (hasGlobs) {
       debugLog(
         `Globbing patterns: ${positionals.join(', ')} with ignore: ${values.ignore?.join(', ')}`
@@ -144,15 +159,23 @@ async function main() {
     process.exit(0);
   }
 
+  if (values['stop-after'] === 'grep') {
+    process.exit(0);
+  }
+
   // 3. Filter files with natural language query if provided
   let filteredFiles = initialFiles;
   if (values.query) {
-    filteredFiles = await filterFilesWithQuery(
+    let foundFiles = await filterFilesWithQuery(
       classifierModel,
       values.query,
       baseDir,
       filteredFiles
     );
+
+    // TODO Use the other relevance info from the classifier
+    filteredFiles = foundFiles.map((file) => file.filename);
+
     debugLog(`Filtered to ${filteredFiles.length} files with query.`);
   }
 
@@ -160,6 +183,10 @@ async function main() {
     if (!values.quiet) {
       console.log('No files matched the query.');
     }
+    process.exit(0);
+  }
+
+  if (values['stop-after'] === 'classify') {
     process.exit(0);
   }
 
