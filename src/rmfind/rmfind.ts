@@ -1,16 +1,13 @@
 #!/usr/bin/env bun
 import { $ } from 'bun';
-import path from 'node:path';
 import clipboard from 'clipboardy';
+import path from 'node:path';
 import { parseArgs } from 'util';
-import { generateObject } from 'ai';
-import { z } from 'zod';
-import { expandPattern, globFiles, grepFor } from '../common/file_finder.ts';
-import { createModel } from '../common/model_factory.ts';
-import { setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { globFiles, grepFor } from '../common/file_finder.ts';
 import { debugLog } from '../logging.ts';
-import { encode } from 'gpt-tokenizer';
+import { setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { generateGrepTermsFromQuery } from './generate_grep_terms.ts';
+import { filterFilesWithQuery } from './llm_file_filter.ts';
 
 const DEFAULT_MODEL = 'google/gemini-2.0-flash';
 
@@ -26,6 +23,9 @@ const { values, positionals } = parseArgs({
     debug: { type: 'boolean' },
     quiet: { type: 'boolean' },
     model: { type: 'string', short: 'm', default: DEFAULT_MODEL },
+    // Allow overriding specific models
+    'classifier-model': { type: 'string' },
+    'grep-generator-model': { type: 'string' },
     yaml: { type: 'boolean' },
     query: { type: 'string', short: 'q' },
   },
@@ -50,110 +50,14 @@ Options:
   --debug                Print debug information.
   --quiet                Suppress informational output
   --yaml                 Output a YAML array instead of space-separated
+
+  If no grep patterns are provided, but a query is provided, rmfind will generate grep terms from the query usng a language model.
 `);
   process.exit(0);
 }
 
 setDebug(values.debug || false);
 setQuiet(values.quiet || false);
-
-async function filterFilesWithQuery(
-  modelName: string,
-  query: string,
-  baseDir: string,
-  files: string[]
-) {
-  debugLog(`Filtering ${files.length} files with query: ${query}`);
-  try {
-    // Read contents of all files
-    const fileContents = await Promise.all(
-      files.map(async (file) => ({
-        path: path.relative(baseDir, file),
-        content: await Bun.file(file).text(),
-      }))
-    );
-
-    // Define schema for AI response
-    const schema = z.object({
-      relevantFiles: z.array(z.string()),
-    });
-
-    // Batch files into groups of roughly 64,000 tokens
-    const TOKEN_LIMIT = 64000;
-    const batches: { path: string; content: string }[][] = [];
-    let currentBatch: { path: string; content: string }[] = [];
-    let currentTokenCount = 0;
-
-    const basePromptTokens = encode(`
-Given the following files and their contents, select the files that are relevant to the query: "${query}".
-Return a list of file paths that match the query.
-
-Files:
-`).length;
-
-    for (const file of fileContents) {
-      const fileTokens = encode(`Path: ${file.path}\nContent:\n${file.content}\n\n---\n\n`).length;
-      if (
-        currentTokenCount + fileTokens + basePromptTokens > TOKEN_LIMIT &&
-        currentBatch.length > 0
-      ) {
-        batches.push(currentBatch);
-        currentBatch = [];
-        currentTokenCount = 0;
-      }
-      currentBatch.push(file);
-      currentTokenCount += fileTokens;
-    }
-    if (currentBatch.length > 0) {
-      batches.push(currentBatch);
-    }
-
-    debugLog(`Created ${batches.length} batches for processing`);
-
-    // Process each batch
-    const model = createModel(modelName);
-    const allRelevantFiles = new Set<string>();
-
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      debugLog(`Processing batch ${i + 1} with ${batch.length} files`);
-
-      // Generate prompt for the batch
-      const prompt = `
-Given the following files and their contents, select the files that are relevant to the query: "${query}".
-Return a list of file paths that match the query.
-
-Files:
-${batch.map((f) => `Path: ${f.path}\nContent:\n${f.content}`).join('\n\n---\n\n')}
-
-Respond with a JSON object containing a "relevantFiles" array of file paths.
-Remember, the query to match is: "${query}"
-      `;
-
-      // Query the language model
-      const { object } = await generateObject({
-        model,
-        schema,
-        prompt,
-        mode: 'json',
-      });
-
-      // Collect relevant files from this batch
-      object.relevantFiles.forEach((relPath) => allRelevantFiles.add(relPath));
-    }
-
-    // Filter files based on AI response
-    let filteredFiles = Array.from(allRelevantFiles)
-      .map((relPath) => path.resolve(baseDir, relPath))
-      .filter((file) => files.includes(file));
-
-    debugLog(`AI filtered to ${filteredFiles.length} files: ${filteredFiles.join(', ')}`);
-    return filteredFiles;
-  } catch (error) {
-    console.error(`Error processing query: ${(error as Error).toString()}`);
-    process.exit(1);
-  }
-}
 
 async function main() {
   try {
@@ -162,6 +66,9 @@ async function main() {
     console.error('Error: fzf command not found. Please install fzf.');
     process.exit(1);
   }
+
+  let classifierModel = values['classifier-model'] || values.model;
+  let grepGeneratorModel = values['grep-generator-model'] || values.model;
 
   // 1. Determine Base Directory
   let baseDir = process.cwd();
@@ -189,7 +96,7 @@ async function main() {
   try {
     // Generate grep terms from query if no grep terms are provided
     if (values.query && !hasGrep) {
-      grep = await generateGrepTermsFromQuery(values.model, values.query);
+      grep = await generateGrepTermsFromQuery(grepGeneratorModel, values.query);
       hasGrep = grep.length > 0;
     }
 
@@ -240,7 +147,12 @@ async function main() {
   // 3. Filter files with natural language query if provided
   let filteredFiles = initialFiles;
   if (values.query) {
-    filteredFiles = await filterFilesWithQuery(values.model, values.query, baseDir, filteredFiles);
+    filteredFiles = await filterFilesWithQuery(
+      classifierModel,
+      values.query,
+      baseDir,
+      filteredFiles
+    );
     debugLog(`Filtered to ${filteredFiles.length} files with query.`);
   }
 

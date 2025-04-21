@@ -10,7 +10,8 @@
     "rmfind": "./src/rmfind/rmfind.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "dev-install": "pnpm add -g file://$(pwd)"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
