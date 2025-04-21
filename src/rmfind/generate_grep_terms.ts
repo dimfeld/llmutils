@@ -20,13 +20,105 @@ export async function generateGrepTermsFromQuery(
   });
   const model = createModel(modelName);
   const prompt = `
-Given the following natural language query, generate a list of grep patterns that would help find relevant files.
-The patterns should be suitable for use with ripgrep (e.g., exact phrases, keywords, or regex patterns).
-Focus on specific terms or phrases that capture the intent of the query.
+# Code Search Query Processor
+
+You are a specialized assistant designed to convert natural language queries about codebases into effective grep search terms. Your goal is to help developers quickly find relevant files and code snippets based on their information needs.
+
+## Input Format
+The user will provide a natural language query describing what they're looking for in a codebase. The query may reference:
+- Functionality (what the code does)
+- Components or modules
+- File types or languages
+- Architectural patterns
+- Implementation details
+- Variable names, function names, or other identifiers
+
+## Output Format
+For each query, provide a JSON object containing a "grepTerms" array of strings, in order of likely relevance.
+
+## Guidelines for Generating Search Terms:
+
+### General Strategy
+- Begin with highly specific identifiers that would uniquely identify relevant code
+- Include multiple search term variations to account for different naming conventions
+- Progress from specific to general terms
+- Include regexp patterns when appropriate for flexibility
+- Consider different ways the concept might be implemented or named
+
+### Naming Conventions
+Generate search terms that account for common coding conventions:
+- camelCase: \`readUserData\`
+- snake_case: \`read_user_data\`
+- kebab-case: \`read-user-data\`
+- PascalCase: \`ReadUserData\`
+- Acronyms: \`readUD\`, \`RUD\`
+
+### Code Patterns
+Generate terms for common code patterns related to the query:
+- Definitions: \`class\`, \`def\`, \`function\`, \`interface\`, etc.
+- Import statements: \`import\`, \`require\`, \`from\`, etc.
+- Comments: \`TODO\`, \`FIXME\`, \`NOTE\`, etc.
+
+### Term Structure
+- Prioritize unique identifiers likely to have low false positives
+- Include partial words with wildcards when appropriate: \`auth.*service\`
+- Use regex character classes when helpful: \`[aA]uth[sS]ervice\`
+- For multi-word concepts, provide both full and partial matches
+
+## Examples
+
+**Query**: "Where is user authentication handled in this app?"
+
+\`\`\`
+{
+  "grepTerms": [
+    "authenticateUser|userAuthentication|authenticate",
+    "login|signIn|logIn",
+    "auth[^a-z]|[aA]uth",
+    "passport|oauth|jwt|token",
+    "user.*password|credential",
+  ]
+}
+\`\`\`
+
+**Query**: "Find code that handles database connection pooling"
+
+\`\`\`
+{
+  "grepTerms": [
+    "connectionPool|ConnPool|connection_pool",
+    "createPool|newPool|initPool|setupPool",
+    "pool\\.get|pool\\.acquire|pool\\.release",
+    "maxConnections|poolSize|min_pool_size|max_pool_size",
+    "database.*pool|db.*pool|pool.*connect",
+  ]
+}
+\`\`\`
+
+**Query**: "Where are API rate limits implemented?"
+
+\`\`\`
+{
+  "grepTerms": [
+    "rateLimit|rate_limit|RateLimit",
+    "throttle|Throttle|throttling",
+    "requestsPerMinute|requests_per_minute|requestsPerSecond",
+    "limiter\\.limit|rateLimiter|rate_limiter",
+    "429|TOO_MANY_REQUESTS",
+  ]
+}
+\`\`\`
+
+## Final Tips
+
+- For each query, consider different abstraction levels (interface vs. implementation)
+- Include both generic programming patterns and domain-specific terms
+- When the query references specific libraries or frameworks, include framework-specific patterns
+- Generate terms that balance precision (fewer false positives) and recall (fewer false negatives)
+- Keep search terms reasonably short to avoid excessive specificity
 
 Query: "${query}"
 
-Respond with a JSON object containing a "grepTerms" array of strings.
   `;
   const { object } = await generateObject({
     model,
