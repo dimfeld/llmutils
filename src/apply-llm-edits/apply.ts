@@ -1,17 +1,11 @@
 import { $ } from 'bun';
-import { processRawFiles } from '../whole-file/parse_raw_edits.ts';
-import { processXmlContents } from '../xml/parse_xml.ts';
-import { processSearchReplace } from '../diff-editor/parse.ts';
+import { processRawFiles } from '../editor/whole-file/parse_raw_edits.ts';
+import { processXmlContents } from '../editor/xml/parse_xml.ts';
+import { processSearchReplace } from '../editor/diff-editor/parse.ts';
 
 export interface ApplyLlmEditsOptions {
   content: string;
   writeRoot?: string;
-  dryRun?: boolean;
-}
-
-export interface ProcessFileOptions {
-  content: string;
-  writeRoot: string;
   dryRun?: boolean;
 }
 

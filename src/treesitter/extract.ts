@@ -267,7 +267,9 @@ export function extractExportedInterfaces(tree: Tree) {
       interfaces.push({ signature, name, body, comment });
     }
     for (let child of node.children) {
-      traverse(child);
+      if (child) {
+        traverse(child);
+      }
     }
   }
 
@@ -297,7 +299,9 @@ export function extractExportedTypeAliases(tree: Tree) {
       types.push({ signature, name, comment });
     }
     for (let child of node.children) {
-      traverse(child);
+      if (child) {
+        traverse(child);
+      }
     }
   }
 
@@ -315,7 +319,9 @@ function extractComments(tree: Tree) {
       comments.push(node.text);
     }
     for (let child of node.children) {
-      traverse(child);
+      if (child) {
+        traverse(child);
+      }
     }
   }
 

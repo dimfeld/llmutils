@@ -13,14 +13,14 @@ import { ImportWalker } from '../dependency_graph/walk_imports.ts';
 import {
   diffFilenameOutsideFencePrompt,
   diffFilenameInsideFencePrompt,
-} from '../diff-editor/prompts';
+} from '../editor/diff-editor/prompts.ts';
 import { debugLog } from '../logging.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { Extractor } from '../treesitter/extract.ts';
-import { generateWholeFilePrompt } from '../whole-file/prompts';
-import { xmlFormatPrompt } from '../xml/prompt';
+import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
+import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
 import { globby } from 'globby';
 import { grepFor } from '../common/file_finder.ts';
 

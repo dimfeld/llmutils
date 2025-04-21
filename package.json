@@ -9,6 +9,9 @@
     "rmrun": "./src/rmrun.ts",
     "rmfind": "./src/rmfind/rmfind.ts"
   },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
     "@types/diff": "^7.0.2",
