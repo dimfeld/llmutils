@@ -127,6 +127,6 @@ Query: "${query}"
     mode: 'json',
   });
   debugLog(`Generated grep terms: ${object.grepTerms.join(', ')}`);
-  const grepTerms = new Set(object.grepTerms.flatMap(expandPattern));
+  const grepTerms = new Set(object.grepTerms);
   return Array.from(grepTerms);
 }

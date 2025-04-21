@@ -133,7 +133,9 @@ async function main() {
           values.expand ?? false,
           values['whole-word'] ?? false
         );
-        debugLog(`Found ${initialFiles.length} files after grep filtering.`);
+        debugLog(
+          `Found ${initialFiles.length} files after grep filtering: ${initialFiles.join(', ')}.`
+        );
       }
     } else if (hasGrep || hasQuery) {
       // Only grep is specified or generated, search the base directory
@@ -145,7 +147,7 @@ async function main() {
         values.expand ?? false,
         values['whole-word'] ?? false
       );
-      debugLog(`Found ${initialFiles.length} files via grep.`);
+      debugLog(`Found ${initialFiles.length} files via grep: ${initialFiles.join(', ')}.`);
     }
   } catch (error) {
     console.error(`Error finding files: ${(error as Error).toString()}`);
