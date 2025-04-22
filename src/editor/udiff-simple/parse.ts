@@ -515,13 +515,6 @@ function processFencedBlock(
 
   for (let i = blockStartIndex; i < blockLines.length; i++) {
     const line = blockLines[i];
-    console.log({
-      line,
-      i,
-      next: blockLines[i + 1],
-      minus: line.startsWith('--- '),
-      nextPlus: blockLines[i + 1] && blockLines[i + 1].startsWith('+++ '),
-    });
 
     if (line.startsWith('@@')) {
       // End of previous hunk (if any)

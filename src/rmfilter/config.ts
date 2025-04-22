@@ -304,51 +304,47 @@ export async function getCurrentConfig() {
 
   // Handle help message
   if (globalValues.help) {
-    console.log(
-      'usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...'
-    );
-    console.log('\nCommands:');
-    console.log('  --new <file>              Create a new YAML config file at the specified path');
-    console.log('  --list-presets            List available presets and exit');
-    console.log('\nGlobal Options:');
-    console.log('  --config <file>           Load configuration from YAML file');
-    console.log(
-      '  --preset <name>           Load preset YAML config from .rmfilter/<name>.yml or $HOME/.config/rmfilter/<name>.yml'
-    );
-    console.log(
-      '  --edit-format <format>    Set edit format (whole-xml, diff, whole) or "none" to omit'
-    );
-    console.log('  -o, --output <file>       Specify output file');
-    console.log('  -c, --copy                Copy output to clipboard');
-    console.log('  --cwd <dir>               Set working directory');
-    console.log('  --gitroot                 Use Git root as working directory');
-    console.log('  --bare                    Omit all extra rules and formatting instructions');
-    console.log('  -h, --help                Show this help message');
-    console.log('  --debug                   Print executed commands');
-    console.log('  -q, --quiet               Suppress all output from tool and spawned processes');
-    console.log('  --with-diff               Include Git diff against main/master in output');
-    console.log('  --changed-files           Include all changed files');
-    console.log('  --diff-from (<branch>|<rev>) Diff from <branch> instead of main');
-    console.log('  -i, --instructions <text> Add instructions (prefix @ for files)');
-    console.log('  --docs <globs>            Add documentation files');
-    console.log('  --rules <globs>           Add rules files');
-    console.log('  --omit-cursorrules        Skip loading .cursorrules');
-    console.log('  --instructions-editor     Open editor for instructions in $EDITOR');
-    console.log('\nCommand Options (per command):');
-    console.log('  -g, --grep <patterns>     Include files matching these patterns');
-    console.log('  -w, --whole-word          Match whole words in grep');
-    console.log('  -e, --expand              Expand grep patterns (snake_case, camelCase)');
-    console.log('  --ignore <patterns>       Ignore files matching these patterns');
-    console.log(
-      '  --no-expand-pages         Disable inclusion of matching page/server route files'
-    );
-    console.log('  --with-imports            Include direct imports of files');
-    console.log('  --with-all-imports        Include entire import tree');
-    console.log('  --upstream <pkgs>         Include upstream dependencies');
-    console.log('  --downstream <pkgs>       Include downstream dependents');
-    console.log('  -l, --largest <number>    Keep only the N largest files');
-    console.log('  --example <pattern>       Include the largest file that matches the pattern.');
-    console.log('');
+    console.log(`usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...
+
+Commands:
+  --new <file>              Create a new YAML config file at the specified path
+  --list-presets            List available presets and exit
+
+Global Options:
+  --config <file>           Load configuration from YAML file
+  --preset <name>           Load preset YAML config from .rmfilter/<name>.yml or $HOME/.config/rmfilter/<name>.yml
+  --edit-format <format>    Set edit format (whole-xml, diff, whole) or "none" to omit
+  -o, --output <file>       Specify output file
+  -c, --copy                Copy output to clipboard
+  --cwd <dir>               Set working directory
+  --gitroot                 Use Git root as working directory
+  --bare                    Omit all extra rules and formatting instructions
+  -h, --help                Show this help message
+  --debug                   Print executed commands
+  -q, --quiet               Suppress all output from tool and spawned processes
+  --with-diff               Include Git diff against main/master in output
+  --changed-files           Include all changed files
+  --diff-from (<branch>|<rev>) Diff from <branch> instead of main
+  -i, --instructions <text> Add instructions (prefix @ for files)
+  --docs <globs>            Add documentation files
+  --rules <globs>           Add rules files
+  --omit-cursorrules        Skip loading .cursorrules
+  --instructions-editor     Open editor for instructions in $EDITOR
+
+Command Options (per command):
+  -g, --grep <patterns>     Include files matching these patterns
+  -w, --whole-word          Match whole words in grep
+  -e, --expand              Expand grep patterns (snake_case, camelCase)
+  --ignore <patterns>       Ignore files matching these patterns
+  --no-expand-pages         Disable inclusion of matching page/server route files
+  --with-imports            Include direct imports of files
+  --with-all-imports        Include entire import tree
+  --upstream <pkgs>         Include upstream dependencies
+  --downstream <pkgs>       Include downstream dependents
+  -l, --largest <number>    Keep only the N largest files
+  --example <pattern>       Include the largest file that matches the pattern.
+`);
+
     process.exit(0);
   }
 
