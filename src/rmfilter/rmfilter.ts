@@ -17,6 +17,10 @@ import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { Extractor } from '../treesitter/extract.ts';
 import { getCurrentConfig, listPresets, writeSampleConfig } from './config.ts';
+import {
+  extractFileReferencesFromInstructions,
+  getInstructionsFromEditor,
+} from './instructions.ts';
 
 const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
 
@@ -80,18 +84,28 @@ const baseDir = calculateBaseDir();
 // Handle instructions editor
 let editorInstructions = '';
 if (globalValues['instructions-editor']) {
-  const instructionsFile = path.join(gitRoot, 'repomix-instructions.md');
-  const editor = process.env.EDITOR || 'nano';
-  let editorProcess = logSpawn([editor, instructionsFile], {
-    stdio: ['inherit', 'inherit', 'inherit'],
-  });
-  await editorProcess.exited;
-  editorInstructions = (await Bun.file(instructionsFile).text()).trim();
+  editorInstructions = await getInstructionsFromEditor();
 
   if (editorInstructions.length === 0) {
     console.error('No instructions provided');
     process.exit(1);
   }
+}
+
+// Extract file and directory references from instructions
+const { files, directories } = await extractFileReferencesFromInstructions(
+  baseDir,
+  editorInstructions
+);
+
+if (files.length > 0 || directories.length > 0) {
+  // Create a new command with the extracted paths as positionals
+  const newCommandArgs = [...files, ...directories];
+  const newCommand = {
+    positionals: newCommandArgs,
+    values: {},
+  };
+  commandsParsed.push(newCommand);
 }
 
 if (commandsParsed.length === 0) {
