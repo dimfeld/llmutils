@@ -13,6 +13,7 @@ import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
 import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
 import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
 import { debugLog } from '../logging.ts';
+import { quiet } from '../rmfilter/utils.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.ts';
@@ -158,6 +159,19 @@ async function processCommand(
   cmdParsed: (typeof commandsParsed)[number]
 ): Promise<{ filesSet: Set<string>; examples: { pattern: string; file: string }[] }> {
   const filesSet = new Set<string>();
+  if (!quiet) {
+    const cmdInfo: string[] = [`positionals=[${cmdParsed.positionals.join(', ')}]`];
+    if (cmdParsed.values.grep?.length) {
+      cmdInfo.push(`grep=[${cmdParsed.values.grep.join(', ')}]`);
+    }
+    if (cmdParsed.values.example?.length) {
+      cmdInfo.push(`example=[${cmdParsed.values.example.join(', ')}]`);
+    }
+    if (cmdParsed.values.ignore?.length) {
+      cmdInfo.push(`ignore=[${cmdParsed.values.ignore.join(', ')}]`);
+    }
+    console.log(`Command: ${cmdInfo.join(' ')}`);
+  }
   const allFoundExamples: { pattern: string; file: string }[] = [];
   const cmdValues = cmdParsed.values;
   let positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
