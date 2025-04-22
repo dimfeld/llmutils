@@ -338,7 +338,7 @@ await Promise.all(
 
 // Handle output
 const outputFile = globalValues.output ?? (await getOutputPath());
-const editFormat = globalValues['edit-format'] || 'diff';
+const editFormat = globalValues['edit-format'] || 'udiff-simple';
 
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
 
