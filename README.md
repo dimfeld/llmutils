@@ -218,14 +218,8 @@ rmfilter src/**/*.ts --instructions 'Make it better'
 rmrun
 ```
 
-## TODO
-
-- rmfind: take a natural language query and generate grep terms from that
-
 ## Acknowledgements
 
-- [repomix](https://github.com/yamadashy/repomix) and [ripgrep](https://github.com/BurntSushi/ripgrep) provide a lot```bash
-git clone https://github.com/dimfeld/llmutils.git
-cd llmutils
-bun install
-pnpm add -g .
+- [repomix](https://github.com/yamadashy/repomix) and [ripgrep](https://github.com/BurntSushi/ripgrep) provide a lot of
+the internal functionality.
+- The editor prompts and much of the code for applying edits are from [Aider](https://github.com/Aider-AI/aider).
