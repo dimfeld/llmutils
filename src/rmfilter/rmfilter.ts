@@ -11,6 +11,7 @@ import {
 } from '../editor/diff-editor/prompts.ts';
 import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
 import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
+import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
 import { debugLog } from '../logging.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
@@ -43,12 +44,12 @@ if (globalValues['list-presets']) {
 // Validate edit-format
 if (
   globalValues['edit-format'] &&
-  !['whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'whole', 'none'].includes(
+  !['whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'udiff-simple', 'whole', 'none'].includes(
     globalValues['edit-format']
   )
 ) {
   console.error(
-    `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'whole', or 'none'`
+    `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'udiff-simple', 'whole', or 'none'`
   );
   process.exit(1);
 }
@@ -404,6 +405,7 @@ const finalOutput = [
   editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt : '',
   editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt : '',
   editFormat === 'diff-fenced' && notBare ? diffFilenameInsideFencePrompt : '',
+  editFormat === 'udiff-simple' && notBare ? udiffPrompt : '',
   editFormat === 'whole-file' && notBare ? generateWholeFilePrompt : '',
   notBare ? guidelinesTag : '',
   instructionsTag,

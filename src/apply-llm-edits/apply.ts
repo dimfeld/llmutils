@@ -2,6 +2,7 @@ import { $ } from 'bun';
 import { processRawFiles } from '../editor/whole-file/parse_raw_edits.ts';
 import { processXmlContents } from '../editor/xml/parse_xml.ts';
 import { processSearchReplace } from '../editor/diff-editor/parse.ts';
+import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 
 export interface ApplyLlmEditsOptions {
   content: string;
@@ -13,8 +14,15 @@ export async function applyLlmEdits({ content, writeRoot, dryRun }: ApplyLlmEdit
   writeRoot ??= await getWriteRoot();
   const xmlMode = content.includes('<code_changes>');
   const diffMode = content.includes('<<<<<<< SEARCH');
+  const udiffMode = content.includes('```diff') && content.includes('@@');
 
-  if (diffMode) {
+  if (udiffMode) {
+    return await processUnifiedDiff({
+      content,
+      writeRoot,
+      dryRun,
+    });
+  } else if (diffMode) {
     return await processSearchReplace({
       content,
       writeRoot,

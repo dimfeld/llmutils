@@ -33,7 +33,7 @@ export const ConfigSchema = z
   .object({
     description: z.string().optional(),
     'edit-format': z
-      .enum(['whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'whole', 'none'])
+      .enum(['whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'udiff-simple', 'whole', 'none'])
       .optional(),
     output: z.string().optional(),
     copy: z.boolean().optional(),
