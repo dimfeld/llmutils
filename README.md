@@ -208,7 +208,7 @@ rmfilter src/**/*.ts --copy
 apply-llm-edits
 
 # Apply edits from stdin with custom working directory
-cat edits.txt | apply-llm-edits --stdin --cwd}
+cat edits.txt | apply-llm-edits --stdin --cwd
 
 # Dry run to preview changes
 apply-llm-edits --dry-run
