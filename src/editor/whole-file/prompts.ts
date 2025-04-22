@@ -2,6 +2,7 @@ export const generateWholeFilePrompt = `<formatting>
 When generating file edits, print the path of the file to edit, followed by a markdown-style triple-tick code block with the full contents of the file.
 
 <format_rule>Always use the *FULL* file path, as shown to you by the user.</format_rule>
+<format_rule>Always include the file path, even if you are only generating a single file or if you are generting a new file.</format_rule>
 <format_rule>The path should be relative to the project root directory, e.g. src/lib/data/process.ts</format_rule>
 <format_rule>The path should be printed alone on its own line just before the file contents, and without any description, bolding, headers, or similar markdown formatting. The path should not be inside a code block.</format_rule>
 <format_rule>Always show the full content of the file; do not skip any unchanged content.</format_rule>
