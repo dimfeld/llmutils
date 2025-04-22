@@ -100,20 +100,6 @@ if (commandsParsed.length === 0) {
 }
 debugLog({ globalValues, commandsParsed });
 
-async function getDeps(packages: string[], mode: 'upstream' | 'downstream') {
-  if (!packages.length) return [];
-  packages = packages.flatMap((p) => p.split(','));
-  const args = packages.flatMap((pkg) => {
-    const filter = mode === 'upstream' ? `${pkg}...` : mode === 'downstream' ? `...${pkg}` : pkg;
-    return ['-F', filter];
-  });
-  const proc = logSpawn(['turbo', 'ls', '--output', 'json', ...args], { cwd: gitRoot });
-  const output = (await new Response(proc.stdout).json()) as {
-    packages: { items: { path: string }[] };
-  };
-  return output.packages.items.map((p) => p.path);
-}
-
 const resolver = await Resolver.new(gitRoot);
 const walker = new ImportWalker(new Extractor(), resolver);
 async function processWithImports(files: string[], allImports: boolean): Promise<string[]> {
