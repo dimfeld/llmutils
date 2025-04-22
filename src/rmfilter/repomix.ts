@@ -42,8 +42,8 @@ export async function callRepomix(gitRoot: string, instructions: string, args: s
 
   // Drop the notes section
   repomixOutput = repomixOutput
-    .replace(/<notes>.*<\/notes>/s, '')
-    .replace(/<purpose>.*<\/purpose>/s, '');
+    .replace(/^<notes>.*?^<\/notes>/ms, '')
+    .replace(/^<purpose>.*?^<\/purpose>/ms, '');
 
   const withoutFirstLine = repomixOutput.slice(repomixOutput.indexOf('\n') + 1);
 
