@@ -1,3 +1,4 @@
+import { $ } from 'bun';
 import type { SpawnOptions } from 'bun';
 
 export let debug = false;
@@ -65,3 +66,15 @@ export async function cachePromise<T extends Promise<any>>(
 }
 
 export type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
+
+let cachedGitRoot: string | undefined;
+export async function getGitRoot() {
+  if (cachedGitRoot) {
+    return cachedGitRoot;
+  }
+
+  const value = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
+
+  cachedGitRoot = value;
+  return value;
+}
