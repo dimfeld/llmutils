@@ -159,6 +159,16 @@ async function processCommand(
   cmdParsed: (typeof commandsParsed)[number]
 ): Promise<{ filesSet: Set<string>; examples: { pattern: string; file: string }[] }> {
   const filesSet = new Set<string>();
+
+  const ignore = cmdParsed.values.ignore?.map((i) => {
+    if (!i.includes('/') && !i.includes('**')) {
+      // No existing double-wildcard or slash, so make this match any path.
+      return `**/${i}`;
+    } else {
+      return i;
+    }
+  });
+
   if (!quiet) {
     const cmdInfo: string[] = [`positionals=[${cmdParsed.positionals.join(', ')}]`];
     if (cmdParsed.values.grep?.length) {
@@ -167,8 +177,8 @@ async function processCommand(
     if (cmdParsed.values.example?.length) {
       cmdInfo.push(`example=[${cmdParsed.values.example.join(', ')}]`);
     }
-    if (cmdParsed.values.ignore?.length) {
-      cmdInfo.push(`ignore=[${cmdParsed.values.ignore.join(', ')}]`);
+    if (ignore?.length) {
+      cmdInfo.push(`ignore=[${ignore.join(', ')}]`);
     }
     console.log(`Command: ${cmdInfo.join(' ')}`);
   }
@@ -192,8 +202,7 @@ async function processCommand(
     positionals = positionals.map((p) => path.join(globBase, p));
   }
 
-  let hasGlobs =
-    positionals.some((p) => p.includes('*') || p.includes('?')) || cmdValues.ignore?.length;
+  let hasGlobs = positionals.some((p) => p.includes('*') || p.includes('?')) || ignore?.length;
   if (hasGlobs) {
     let withDirGlobs = await Promise.all(
       positionals.map(async (p) => {
@@ -208,7 +217,7 @@ async function processCommand(
     );
 
     let ignoreGlobs = await Promise.all(
-      cmdValues.ignore?.map(async (p) => {
+      ignore?.map(async (p) => {
         let isDir = await Bun.file(p)
           .stat()
           .then((d) => d.isDirectory())
