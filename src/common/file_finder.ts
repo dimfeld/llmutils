@@ -88,6 +88,17 @@ export async function grepFor(
     return sourceFiles || [];
   }
 
+  if (sourceFiles && sourceFiles.length > 512) {
+    let chunks: string[][] = [];
+    for (let i = 0; i < sourceFiles.length; i += 512) {
+      chunks.push(sourceFiles.slice(i, i + 512));
+    }
+    const results = await Promise.all(
+      chunks.map((chunk) => grepFor(baseDir, patterns, chunk, expand, wholeWord))
+    );
+    return results.flat();
+  }
+
   const processedPatterns = patterns.flatMap((p) => p.split(','));
   const finalPatterns = expand ? processedPatterns.flatMap(expandPattern) : processedPatterns;
 
