@@ -186,7 +186,7 @@ async function processCommand(
   const cmdValues = cmdParsed.values;
   let positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
-  if (positionals.length === 0 && !cmdValues.example?.length) {
+  if (positionals.length === 0 && !cmdValues.grep?.length && !cmdValues.example?.length) {
     return { filesSet, examples: [] };
   }
 
@@ -204,6 +204,11 @@ async function processCommand(
 
   let hasGlobs = positionals.some((p) => p.includes('*') || p.includes('?')) || ignore?.length;
   if (hasGlobs) {
+    if (positionals.length === 0) {
+      // This happens when we have no positionals but we do have an ignore
+      positionals = ['**'];
+    }
+
     let withDirGlobs = await Promise.all(
       positionals.map(async (p) => {
         let isDir = await Bun.file(p)
