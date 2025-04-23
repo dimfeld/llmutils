@@ -232,7 +232,7 @@ async function processCommand(
       cwd: baseDir,
       onlyFiles: true,
       absolute: false,
-      dot: true,
+      dot: false,
       followSymbolicLinks: false,
       ignore: ignoreGlobs.length ? ignoreGlobs : undefined,
       ignoreFiles: ['**/.gitignore', '**/.repomixignore'],
