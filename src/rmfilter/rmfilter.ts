@@ -357,9 +357,13 @@ await Promise.all(
 // Add package.json for the relevant files to help inform the model about imports
 await Promise.all(
   Array.from(allFileDirs, async (d) => {
-    let pkg = await resolver.resolvePackageJson(d);
-    if (pkg?.path) {
-      allFilesSet.add(path.join(pkg.path, 'package.json'));
+    try {
+      let pkg = await resolver.resolvePackageJson(d);
+      if (pkg?.path) {
+        allFilesSet.add(path.join(pkg.path, 'package.json'));
+      }
+    } catch {
+      // it's fine if there is no package.json since we're not always in JS
     }
   })
 );
