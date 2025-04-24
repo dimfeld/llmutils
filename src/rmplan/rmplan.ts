@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import yaml from 'yaml';
-import { planSchema } from './planSchema.js';
+import { planSchema, type PlanSchema } from './planSchema.js';
 import { generateObject, generateText } from 'ai';
 import { createModel } from '../common/model_factory.js';
 import { logSpawn } from '../rmfilter/utils.js';
@@ -11,6 +11,26 @@ import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
 import { cleanupYaml } from './cleanup.js';
+
+interface PendingTaskResult {
+  task: PlanSchema['tasks'][number];
+  taskIndex: number;
+  stepIndex?: number;
+}
+
+function findPendingTask(planData: PlanSchema): PendingTaskResult | null {
+  for (let i = 0; i < planData.tasks.length; i++) {
+    const task = planData.tasks[i];
+
+    // Find first unfinished step in task
+    for (let j = 0; j < task.steps.length; j++) {
+      if (!task.steps[j].done) {
+        return { task, taskIndex: i, stepIndex: j };
+      }
+    }
+  }
+  return null;
+}
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -162,46 +182,22 @@ program
 
       const planData = result.data;
 
-      let foundTaskIndex = -1;
-      let foundStepIndex = -1;
-
-      // Find the first unfinished step/task
-      outerLoop: for (let i = 0; i < planData.tasks.length; i++) {
-        const task = planData.tasks[i];
-        for (let j = 0; j < task.steps.length; j++) {
-          if (!task.steps[j].done) {
-            if (foundTaskIndex === -1) {
-              foundTaskIndex = i;
-              foundStepIndex = j;
-
-              if (!options.task) {
-                break outerLoop;
-              }
-            } else if (i === foundTaskIndex) {
-              // Continue finding all steps in this task
-              continue;
-            } else {
-              break outerLoop;
-            }
-          }
-        }
-      }
-
-      if (foundTaskIndex === -1) {
+      const pending = findPendingTask(planData);
+      if (!pending) {
         console.log('All steps are already done.');
         process.exit(0);
       }
 
       // Mark the appropriate steps as done
-      const task = planData.tasks[foundTaskIndex];
+      const task = pending.task;
       if (options.task) {
         for (const step of task.steps) {
           step.done = true;
         }
-        console.log(`Marked all steps in task '${task.title}'  done`);
+        console.log(`Marked all steps in task '${task.title}' done`);
       } else {
-        task.steps[foundStepIndex].done = true;
-        console.log(`Marked task '${task.title}' step ${foundStepIndex + 1} done`);
+        task.steps[pending.stepIndex!].done = true;
+        console.log(`Marked task '${task.title}' step ${pending.stepIndex! + 1} done`);
       }
 
       // Write the updated plan back to file
@@ -219,32 +215,20 @@ program
     try {
       const fileContent = await Bun.file(planFile).text();
       const parsed = yaml.parse(fileContent);
-      const result = planSchema.safeParse(parsed);
+      const plan = planSchema.safeParse(parsed);
 
-      if (!result.success) {
-        console.error('Validation errors:', result.error);
+      if (!plan.success) {
+        console.error('Validation errors:', plan.error);
         process.exit(1);
       }
 
-      const planData = result.data;
-
-      let activeTask = null;
-      let activeTaskIndex = -1;
-
-      // Find the first task with pending steps
-      for (let i = 0; i < planData.tasks.length; i++) {
-        const task = planData.tasks[i];
-        if (task.steps.some(step => !step.done)) {
-          activeTask = task;
-          activeTaskIndex = i;
-          break;
-        }
-      }
-
-      if (!activeTask) {
+      const planData = plan.data;
+      const result = findPendingTask(planData);
+      if (!result) {
         console.log('No pending steps found in the plan.');
         process.exit(0);
       }
+      const activeTask = result.task;
 
       console.log('Found pending steps in task:', activeTask.title);
     } catch (err) {

@@ -17,3 +17,5 @@ export const planSchema = z.object({
     })
   ),
 });
+
+export type PlanSchema = z.infer<typeof planSchema>;
