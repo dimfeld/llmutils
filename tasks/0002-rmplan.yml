@@ -44,10 +44,12 @@ tasks:
           2.  Add an entry for `rmplan`: `"rmplan": "src/rmplan/rmplan.ts"`.
           3.  Run `bun install` to link the binary.
           4.  Verify you can run `rmplan --help` and see the basic structure and subcommands.
+        done: true
       - prompt: |
           Add basic integration tests for the CLI structure.
           1.  Create a test file, e.g., `src/rmplan/rmplan.test.ts`.
           2.  Add tests that execute `rmplan --help`, `rmplan generate --help`, etc. (using `Bun.spawnSync` or similar) and assert that the command runs without error and prints help output. This verifies the basic `commander` setup.
+        done: true
 
   - title: Implement `generate` Subcommand
     description: Implement the logic for the `generate` subcommand, including argument handling, prompt generation, temporary file usage, and calling `rmfilter`.
@@ -63,6 +65,7 @@ tasks:
           2.  Add options `--plan <file>` and `--plan-editor`. Use `.option()` for these. Make them conflict (a user should provide one or the other, or maybe neither if we allow piping later, but let's require one for now). You might need custom logic for this check later.
           3.  Allow arbitrary arguments after `--` to be passed to `rmfilter`. Commander can handle this using `.allowUnknownOption().parseOptions(process.argv)`. You'll need to manually find the index of `--` and slice the args.
           4.  Update the `.action()` function for `generate` to accept `options` and `command` (which contains the arguments).
+        done: true
       - prompt: |
           Implement the plan loading logic for the `generate` subcommand.
           1.  Inside the `generate` action, check if `--plan` or `--plan-editor` was provided. Exit with an error if neither is present.
@@ -72,6 +75,7 @@ tasks:
               - Call `await getInstructionsFromEditor('rmplan-plan.md')` (use a specific filename) to get the plan text from the user's editor.
               - Handle potential errors (e.g., empty input).
           4.  Store the loaded plan text in a variable `planText`.
+        done: true
       - prompt: |
           Implement the prompt generation and temporary file handling.
           1.  Import `planPrompt` from `src/rmplan/prompt.ts`.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { planSchema } from './planSchema.js';
+import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { planPrompt } from './prompt.js';
 import { Command } from 'commander';
 
@@ -25,8 +26,30 @@ program
       process.exit(1);
     }
 
-    // TODO: Pass rmfilterArgs to rmfilter logic
-    console.log('generate...');
+    let planText: string | undefined;
+
+    if (options.plan) {
+      try {
+        planText = await Bun.file(options.plan).text();
+      } catch (err) {
+        console.error(`Failed to read plan file: ${options.plan}`);
+        process.exit(1);
+      }
+    } else if (options.planEditor) {
+      try {
+        planText = await getInstructionsFromEditor('rmplan-plan.md');
+        if (!planText || !planText.trim()) {
+          console.error('No plan text was provided from the editor.');
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error('Failed to get plan from editor:', err);
+        process.exit(1);
+      }
+    }
+
+    // planText now contains the loaded plan
+    console.log('Loaded plan text:', planText);
     console.log('Options:', options);
     console.log('rmfilter args:', rmfilterArgs);
   });
