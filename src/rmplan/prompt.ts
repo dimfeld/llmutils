@@ -13,7 +13,7 @@ tasks:
           describing what to do.
       - prompt: Another step`;
 
-const planExampleFormat2 = `goal: [single-line string]
+export const planExampleFormatGeneric = `goal: [single-line string]
 details: [single-line or multi-line string]
 tasks:
   - title: [single-line string]
@@ -47,7 +47,7 @@ When generating the final output with the prompts, output an overall goal, proje
 <formatting>
 Use the following YAML format for your final prompt output:
 \`\`\`yaml
-${planExampleFormat2}
+${planExampleFormatGeneric}
 \`\`\`
 </formatting>
 `;
