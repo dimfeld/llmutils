@@ -131,6 +131,13 @@ program
       process.exit(1);
     }
     validatedPlan = result.data;
+
+    const outputYaml = yaml.stringify(validatedPlan);
+    if (options.output) {
+      await Bun.write(options.output, outputYaml);
+    } else {
+      console.log(outputYaml);
+    }
   });
 
 program
