@@ -12,11 +12,13 @@ import os from 'os';
 import path from 'path';
 import { cleanupYaml } from './cleanup.js';
 import { select } from '@inquirer/prompts';
+import { getGitRoot } from '../rmfilter/utils.js';
+import clipboard from 'clipboardy';
 
 interface PendingTaskResult {
   task: PlanSchema['tasks'][number];
   taskIndex: number;
-  stepIndex?: number;
+  stepIndex: number;
 }
 
 function findPendingTask(planData: PlanSchema): PendingTaskResult | null {
@@ -191,17 +193,32 @@ program
         process.exit(0);
       }
 
+      let output: string[] = [];
+
       // Mark the appropriate steps as done
       const task = pending.task;
       if (options.task) {
-        for (const step of task.steps) {
+        const pendingSteps = task.steps.filter((step) => !step.done);
+        for (const step of pendingSteps) {
           step.done = true;
         }
-        console.log(`Marked all steps in task '${task.title}' done`);
+        output.push('Marked all steps in task done');
+        output.push(task.title);
+
+        for (let i = 0; i < pendingSteps.length; i++) {
+          const step = pendingSteps[i];
+          output.push(`\n## Step ${i + 1}]\n\n${step.prompt}`);
+        }
       } else {
-        task.steps[pending.stepIndex!].done = true;
-        console.log(`Marked task '${task.title}' step ${pending.stepIndex! + 1} done`);
+        task.steps[pending.stepIndex].done = true;
+        console.log(`Marked task '${task.title}' step ${pending.stepIndex + 1} done`);
+
+        output.push(`Marked step done`);
+        output.push(`${task.title} step ${pending.stepIndex + 1}`);
+        output.push(`\n${task.steps[pending.stepIndex].prompt}`);
       }
+
+      console.log(output.join('\n'));
 
       // Write the updated plan back to file
       await Bun.write(planFile, yaml.stringify(planData));
@@ -214,7 +231,9 @@ program
 program
   .command('next <planFile>')
   .description('Prepare the next step(s) from a plan YAML for execution')
-  .action(async (planFile) => {
+  .option('--rmfilter', 'Use rmfilter to generate the prompt')
+  .option('--previous', 'Include information about previous completed steps')
+  .action(async (planFile, options) => {
     try {
       const fileContent = await Bun.file(planFile).text();
       const parsed = yaml.parse(fileContent);
@@ -233,6 +252,21 @@ program
       }
       const activeTask = result.task;
 
+      let gitRoot = await getGitRoot();
+
+      let files = (
+        await Promise.all(
+          activeTask.files.map(async (file) => {
+            let fullPath = path.resolve(gitRoot, file);
+            if (await Bun.file(fullPath).exists()) {
+              return fullPath;
+            } else {
+              return null;
+            }
+          })
+        )
+      ).filter((x) => x != null);
+
       // Separate completed and pending steps
       const completedSteps = activeTask.steps.filter((step) => step.done);
       const pendingSteps = activeTask.steps.filter((step) => !step.done);
@@ -242,31 +276,50 @@ program
         process.exit(0);
       }
 
-      // Prompt user to select steps
-      const selectedIndex = await select({
-        message: 'Run up to which step?',
-        choices: pendingSteps.map((step, index) => ({
-          name: `[${index + 1}] ${step.prompt.split('\n')[0]}...`,
-          description: step.prompt,
-          value: index,
-        })),
-      });
+      let selectedIndex: number;
+      if (pendingSteps.length === 1) {
+        // If only one pending step, select it automatically
+        selectedIndex = 0;
+        console.log(
+          `Automatically selected the only pending step: [1] ${pendingSteps[0].prompt.split('\n')[0]}...`
+        );
+      } else {
+        // Otherwise, prompt user to select steps
+        selectedIndex = await select({
+          message: 'Run up to which step?',
+          choices: pendingSteps.map((step, index) => ({
+            name: `[${index + 1}] ${step.prompt.split('\n')[0]}...`,
+            description: step.prompt,
+            value: index,
+          })),
+        });
+      }
+
       const selectedPendingSteps = pendingSteps.slice(0, selectedIndex + 1);
       // Build the LLM prompt
       const promptParts: string[] = [];
-      promptParts.push(`Goal: ${planData.goal}\nDetails: ${planData.details}\n`);
+      promptParts.push(`# Goal: ${planData.goal}\n\nDetails: ${planData.details}\n`);
       promptParts.push(
-        `Current Task: ${activeTask.title}\nDescription: ${activeTask.description}\n`
+        `## Current Task: ${activeTask.title}\n\nDescription: ${activeTask.description}\n`
       );
 
-      if (completedSteps.length > 0) {
-        promptParts.push('Completed Steps in this Task:');
+      if (options.previous && completedSteps.length > 0) {
+        promptParts.push('## Completed Steps in this Task:');
         completedSteps.forEach((step, index) => {
           promptParts.push(`- [DONE] ${step.prompt.split('\\n')[0]}...`);
         });
       }
 
-      promptParts.push('\nSelected Next Steps to Implement:');
+      if (!options.rmfilter) {
+        promptParts.push(
+          '## Relevant Files\n\nThese are relevant files for the next steps. If you think additional files are relevant, you can update them as well.'
+        );
+        files.forEach((file) => {
+          promptParts.push(`- ${file}`);
+        });
+      }
+
+      promptParts.push('\n## Selected Next Steps to Implement:\n');
       selectedPendingSteps.forEach((step, index) => {
         promptParts.push(`- [TODO ${index + 1}] ${step.prompt}`);
       });
@@ -283,25 +336,28 @@ program
         await Bun.write(tmpPromptPath, llmPrompt);
         wrotePrompt = true;
 
-        // Step 2: Get the list of files for the current task
-        const taskFiles = activeTask.files;
+        if (options.rmfilter) {
+          // Construct the argument list for rmfilter
+          const rmfilterArgs = [
+            'rmfilter',
+            '--copy',
+            '--gitroot',
+            ...files,
+            '--instructions',
+            `@${tmpPromptPath}`,
+          ];
 
-        // Step 3: Construct the argument list for rmfilter
-        const rmfilterArgs = [
-          'rmfilter',
-          ...taskFiles,
-          '--bare',
-          '--instructions',
-          `@${tmpPromptPath}`,
-        ];
-
-        // Step 4: Execute rmfilter using logSpawn with inherited stdio
-        const proc = logSpawn(rmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
-        // Step 5: Await completion and check the exit code
-        const exitRes = await proc.exited;
-        if (exitRes !== 0) {
-          console.error(`rmfilter exited with code ${exitRes}`);
-          process.exit(exitRes ?? 1);
+          // Step 4: Execute rmfilter using logSpawn with inherited stdio
+          const proc = logSpawn(rmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
+          // Step 5: Await completion and check the exit code
+          const exitRes = await proc.exited;
+          if (exitRes !== 0) {
+            console.error(`rmfilter exited with code ${exitRes}`);
+            process.exit(exitRes ?? 1);
+          }
+        } else {
+          console.log('Copying prompt to clipboard...');
+          await clipboard.write(llmPrompt);
         }
       } finally {
         // Step 6: Clean up the temporary file
