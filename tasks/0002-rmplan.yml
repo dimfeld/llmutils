@@ -209,7 +209,7 @@ tasks:
           8.  Test that the modified data is written back correctly (mock `Bun.write` and check the content passed to it).
 
   - title: Implement `next` Subcommand (Core Logic)
-    description: "Implement the non-interactive parts of the `next` subcommand: loading the plan, finding the next task/steps, and preparing data for prompt generation."
+    description: 'Implement the non-interactive parts of the `next` subcommand: loading the plan, finding the next task/steps, and preparing data for prompt generation.'
     files:
       - src/rmplan/rmplan.ts
       - src/rmplan/planSchema.ts
@@ -219,6 +219,7 @@ tasks:
           1.  Target the `.command('next')` definition.
           2.  Add a required argument `<planFile>` for the path to the plan YAML file.
           3.  Update the `.action()` function to accept `planFile`.
+        done: true
       - prompt: |
           Implement plan loading, parsing, validation, and finding the next active task.
           1.  Inside the `next` action, load, parse, and validate the `planFile` similarly to the `done` command. Store valid data in `planData`.
@@ -227,6 +228,7 @@ tasks:
           4.  For each task, check if *any* step within `task.steps` has `done === false` using `task.steps.some(step => !step.done)`.
           5.  If such a task is found, assign it to `activeTask`, store its index `i` in `activeTaskIndex`, and `break` the loop.
           6.  If after the loop `activeTask` is still `null`, print "No pending steps found in the plan." and exit.
+        done: true
       - prompt: |
           Identify completed and pending steps within the active task.
           1.  Assuming `activeTask` is found:
@@ -234,6 +236,7 @@ tasks:
           3.  Iterate through `activeTask.steps`.
           4.  If `step.done` is true, add it to `completedSteps`.
           5.  If `step.done` is false, add it to `pendingSteps`.
+        done: true
       - prompt: |
           Add tests for the `next` subcommand's core logic.
           1.  In `src/rmplan/rmplan.test.ts`, add tests for `next`.
@@ -272,6 +275,7 @@ tasks:
               const selectedPendingSteps = answers.selectedSteps; // Array of selected step objects
               ```
           6.  Store the result in `selectedPendingSteps`.
+        done: true
       - prompt: |
           Construct the final prompt for the LLM.
           1.  Create a prompt string builder or array.
@@ -290,6 +294,7 @@ tasks:
               selectedPendingSteps.forEach((step, index) => promptParts.push(`- [TODO ${index + 1}] ${step.prompt}`));
               ```
           6.  Join the prompt parts into a single string `llmPrompt`.
+        done: true
       - prompt: |
           Implement temporary file handling and the call to `rmfilter` for the `next` subcommand.
           1.  Write the generated `llmPrompt` to a temporary file (similar to the `generate` command). Use try/finally for cleanup.
@@ -298,6 +303,7 @@ tasks:
           4.  Execute `rmfilter` using `logSpawn` with inherited stdio.
           5.  Await completion and check the exit code.
           6.  Clean up the temporary file in the `finally` block.
+        done: true
       - prompt: |
           Add tests for the `next` subcommand's interaction and `rmfilter` call.
           1.  In `src/rmplan/rmplan.test.ts`:
@@ -305,4 +311,3 @@ tasks:
           3.  Verify that the generated LLM prompt string contains the correct goal, details, task info, completed steps summary, and *only* the selected pending steps.
           4.  Mock `Bun.write` and `Bun.file().unlink()` for temp file checks.
           5.  Mock `logSpawn` and assert that `rmfilter` is called with the correct arguments: the task's files, `--bare`, and `--instructions @<tempfile>`.
-
