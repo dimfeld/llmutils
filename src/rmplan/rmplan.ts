@@ -202,7 +202,7 @@ program
         for (const step of pendingSteps) {
           step.done = true;
         }
-        output.push('Marked all steps in task done');
+        output.push('Marked all steps in task done\n');
         output.push(task.title);
 
         for (let i = 0; i < pendingSteps.length; i++) {
@@ -211,10 +211,13 @@ program
         }
       } else {
         task.steps[pending.stepIndex].done = true;
-        console.log(`Marked task '${task.title}' step ${pending.stepIndex + 1} done`);
 
-        output.push(`Marked step done`);
-        output.push(`${task.title} step ${pending.stepIndex + 1}`);
+        output.push(`Marked step done\n`);
+        if (task.steps.length > 1) {
+          output.push(`${task.title} step ${pending.stepIndex + 1}`);
+        } else {
+          output.push(`${task.title}`);
+        }
         output.push(`\n${task.steps[pending.stepIndex].prompt}`);
       }
 
