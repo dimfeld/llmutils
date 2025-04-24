@@ -23,6 +23,7 @@ tasks:
           4.  Import `planSchema` in `src/rmplan/rmplan.ts`.
           5.  Remove the old schema definition code from `src/rmplan/rmplan.ts`.
           6.  Keep the initial shebang and import for `planPrompt`. Remove the example file loading and parsing logic for now.
+        done: true
       - prompt: |
           Install necessary dependencies and set up the basic CLI structure using `commander`.
           1.  Add `commander` and `yaml` as dependencies using `bun add commander yaml`.
@@ -36,6 +37,7 @@ tasks:
               - `next`: `.command('next').description('Prepare the next step(s) from a plan YAML for execution')`
           6.  Add placeholder `.action(() => { console.log('...'); })` calls for each subcommand for now.
           7.  Add `program.parse(process.argv);` at the end of the file.
+        done: true
       - prompt: |
           Configure the `rmplan` executable in `package.json`.
           1.  In `package.json`, ensure there is a `bin` field.

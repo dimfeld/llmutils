@@ -11,8 +11,24 @@ program
 program
   .command('generate')
   .description('Generate planning prompt and context for a task')
-  .action(() => {
+  .option('--plan <file>', 'YAML plan file to use')
+  .option('--plan-editor', 'Open plan in editor')
+  .allowUnknownOption(true)
+  .action((options, command) => {
+    // Find '--' in process.argv to get extra args for rmfilter
+    const doubleDashIdx = process.argv.indexOf('--');
+    const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
+
+    // Manual conflict check for --plan and --plan-editor
+    if ((options.plan && options.planEditor) || (!options.plan && !options.planEditor)) {
+      console.error('You must provide either --plan <file> or --plan-editor (but not both).');
+      process.exit(1);
+    }
+
+    // TODO: Pass rmfilterArgs to rmfilter logic
     console.log('generate...');
+    console.log('Options:', options);
+    console.log('rmfilter args:', rmfilterArgs);
   });
 
 program
