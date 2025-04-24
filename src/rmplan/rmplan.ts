@@ -12,7 +12,7 @@ import os from 'os';
 import path from 'path';
 import { cleanupYaml } from './cleanup.js';
 import { select } from '@inquirer/prompts';
-import { getGitRoot } from '../rmfilter/utils.js';
+import { commitAll, getGitRoot } from '../rmfilter/utils.js';
 import clipboard from 'clipboardy';
 
 interface PendingTaskResult {
@@ -174,6 +174,7 @@ program
   .command('done <planFile>')
   .description('Mark the next step/task in a plan YAML as done')
   .option('--task', 'Mark all steps in the current task as done')
+  .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
     try {
       const fileContent = await Bun.file(planFile).text();
@@ -202,7 +203,7 @@ program
         for (const step of pendingSteps) {
           step.done = true;
         }
-        output.push('Marked all steps in task done\n');
+        console.log('Marked all steps in task done\n');
         output.push(task.title);
 
         for (let i = 0; i < pendingSteps.length; i++) {
@@ -212,7 +213,7 @@ program
       } else {
         task.steps[pending.stepIndex].done = true;
 
-        output.push(`Marked step done\n`);
+        console.log(`Marked step done\n`);
         if (task.steps.length > 1) {
           output.push(`${task.title} step ${pending.stepIndex + 1}`);
         } else {
@@ -221,7 +222,12 @@ program
         output.push(`\n${task.steps[pending.stepIndex].prompt}`);
       }
 
-      console.log(output.join('\n'));
+      const message = output.join('\n');
+      console.log(message);
+      if (options.commit) {
+        console.log('');
+        await commitAll(message);
+      }
 
       // Write the updated plan back to file
       await Bun.write(planFile, yaml.stringify(planData));

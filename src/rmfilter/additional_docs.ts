@@ -3,6 +3,7 @@ import { glob } from 'fast-glob';
 import os from 'node:os';
 import path from 'node:path';
 import { debugLog } from '../logging.ts';
+import { getUsingJj } from './utils.ts';
 
 export async function getAdditionalDocs(
   baseDir: string,
@@ -176,10 +177,6 @@ export async function getDiffTag(
     return { diffTag: '', changedFiles: [] };
   }
 
-  const usingJj = await Bun.file(path.join(baseDir, '.jj'))
-    .stat()
-    .then((s) => s.isDirectory())
-    .catch(() => false);
   const excludeFiles = [
     'pnpm-lock.yaml',
     'bun.lockb',
@@ -191,7 +188,7 @@ export async function getDiffTag(
 
   let diff = '';
   let changedFiles: string[] = [];
-  if (usingJj) {
+  if (await getUsingJj()) {
     const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
       '&'
     );
