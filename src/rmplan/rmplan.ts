@@ -213,9 +213,9 @@ program
   });
 
 program
-  .command('next')
+  .command('next <planFile>')
   .description('Prepare the next step(s) from a plan YAML for execution')
-  .action(() => {
+  .action(async (planFile) => {
     console.log('next...');
   });
 
