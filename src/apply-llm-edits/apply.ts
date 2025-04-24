@@ -8,13 +8,16 @@ export interface ApplyLlmEditsOptions {
   content: string;
   writeRoot?: string;
   dryRun?: boolean;
+  mode?: 'diff' | 'udiff' | 'xml' | 'whole';
 }
 
-export async function applyLlmEdits({ content, writeRoot, dryRun }: ApplyLlmEditsOptions) {
+export async function applyLlmEdits({ content, writeRoot, dryRun, mode }: ApplyLlmEditsOptions) {
   writeRoot ??= await getWriteRoot();
-  const xmlMode = content.includes('<code_changes>');
-  const diffMode = content.includes('<<<<<<< SEARCH');
-  const udiffMode = content.includes('```diff') && content.includes('@@');
+  const xmlMode = mode === 'xml' || content.includes('<code_changes>');
+  const diffMode = mode === 'diff' || content.includes('<<<<<<< SEARCH');
+  const udiffMode =
+    mode === 'udiff' ||
+    ((content.startsWith('--- ') || content.includes('```diff')) && content.includes('@@'));
 
   if (udiffMode) {
     return await processUnifiedDiff({
