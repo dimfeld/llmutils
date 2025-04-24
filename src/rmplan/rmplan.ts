@@ -11,6 +11,7 @@ import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
 import { cleanupYaml } from './cleanup.js';
+import { select } from '@inquirer/prompts';
 
 interface PendingTaskResult {
   task: PlanSchema['tasks'][number];
@@ -234,7 +235,26 @@ program
       const completedSteps = activeTask.steps.filter((step) => step.done);
       const pendingSteps = activeTask.steps.filter((step) => !step.done);
 
-      console.log('Found pending steps in task:', activeTask.title);
+      if (pendingSteps.length === 0) {
+        console.log('No pending steps in the current task.');
+        process.exit(0);
+      }
+
+      // Prompt user to select steps
+      const selectedIndex = await select({
+        message: 'Run up to which step?',
+        choices: pendingSteps.map((step, index) => ({
+          name: `[${index + 1}] ${step.prompt.split('\n')[0]}...`,
+          description: step.prompt,
+          value: index,
+        })),
+      });
+      const selectedPendingSteps = pendingSteps.slice(0, selectedIndex + 1);
+      // You can now use selectedSteps as needed for the next action
+      console.log(
+        'Selected steps:',
+        selectedPendingSteps.map((s) => s.prompt)
+      );
     } catch (err) {
       console.error('Failed to process plan file:', err);
       process.exit(1);
