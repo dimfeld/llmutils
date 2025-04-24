@@ -173,6 +173,7 @@ program
 program
   .command('done <planFile>')
   .description('Mark the next step/task in a plan YAML as done')
+  .option('--steps <steps>', 'Number of steps to mark as done', '1')
   .option('--task', 'Mark all steps in the current task as done')
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
@@ -211,16 +212,35 @@ program
           output.push(`\n## Step ${i + 1}]\n\n${step.prompt}`);
         }
       } else {
-        task.steps[pending.stepIndex].done = true;
+        let nowDoneSteps = task.steps.slice(pending.stepIndex, pending.stepIndex + options.steps);
+        for (const step of nowDoneSteps) {
+          step.done = true;
+        }
 
-        console.log(`Marked step done\n`);
-        if (task.steps.length > 1) {
+        console.log(
+          `Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`
+        );
+        if (nowDoneSteps.length > 1) {
+          output.push(
+            `${task.title} steps ${pending.stepIndex + 1}-${pending.stepIndex + nowDoneSteps.length}`
+          );
+        } else if (task.steps.length > 1) {
           output.push(`${task.title} step ${pending.stepIndex + 1}`);
         } else {
           output.push(`${task.title}`);
         }
-        output.push(`\n${task.steps[pending.stepIndex].prompt}`);
+
+        if (nowDoneSteps.length > 1) {
+          for (const step of nowDoneSteps) {
+            output.push(`\n## Step ${task.steps.indexOf(step) + 1}\n\n${step.prompt}`);
+          }
+        } else {
+          output.push(`\n${task.steps[pending.stepIndex].prompt}`);
+        }
       }
+
+      // Write the updated plan back to file
+      await Bun.write(planFile, yaml.stringify(planData));
 
       const message = output.join('\n');
       console.log(message);
@@ -228,9 +248,6 @@ program
         console.log('');
         await commitAll(message);
       }
-
-      // Write the updated plan back to file
-      await Bun.write(planFile, yaml.stringify(planData));
     } catch (err) {
       console.error('Failed to process plan file:', err);
       process.exit(1);
@@ -242,7 +259,13 @@ program
   .description('Prepare the next step(s) from a plan YAML for execution')
   .option('--rmfilter', 'Use rmfilter to generate the prompt')
   .option('--previous', 'Include information about previous completed steps')
+  .allowExcessArguments(true)
+  .allowUnknownOption(true)
   .action(async (planFile, options) => {
+    // Find '--' in process.argv to get extra args for rmfilter
+    const doubleDashIdx = process.argv.indexOf('--');
+    const cmdLineRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
+
     try {
       const fileContent = await Bun.file(planFile).text();
       const parsed = yaml.parse(fileContent);
@@ -315,7 +338,7 @@ program
       if (options.previous && completedSteps.length > 0) {
         promptParts.push('## Completed Subtasks in this Task:');
         completedSteps.forEach((step, index) => {
-          promptParts.push(`- [DONE] ${step.prompt.split('\\n')[0]}...`);
+          promptParts.push(`- [DONE] ${step.prompt.split('\n')[0]}...`);
         });
       }
 
@@ -354,6 +377,7 @@ program
             ...files,
             '--instructions',
             `@${tmpPromptPath}`,
+            ...cmdLineRmfilterArgs,
           ];
 
           // Step 4: Execute rmfilter using logSpawn with inherited stdio

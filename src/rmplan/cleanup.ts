@@ -36,7 +36,7 @@ Now, format the input text into valid YAML according to the following guidelines
 ${exampleFormat}
    \`\`\`
 
-2. Use quotes for strings containing special characters or when necessary to avoid YAML parsing errors.
+2. Use quotes for strings containing special characters or when necessary to avoid YAML parsing errors. Particularly, strings containing colons (:) should be quoted.
 
 3. For multi-line strings, use the pipe character (|) followed by the indented text on subsequent lines.
 
@@ -53,9 +53,20 @@ Output only the cleaned and formatted YAML, without any additional explanations 
 
 export async function cleanupYaml(input: string) {
   const prompt = cleanupPrompt(input);
-  const result = await generateText({
-    model: createModel('gemini-2.5-flash-preview-04-17'),
+  let { text } = await generateText({
+    model: createModel('google/gemini-2.5-flash-preview-04-17'),
     prompt,
   });
-  return result.text;
+
+  const startIndex = text.indexOf('goal:');
+  if (startIndex >= 0) {
+    text = text.slice(startIndex);
+  }
+
+  text = text.trimEnd();
+  if (text.endsWith('```')) {
+    text = text.slice(0, -3).trimEnd();
+  }
+
+  return text;
 }
