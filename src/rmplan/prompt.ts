@@ -1,3 +1,18 @@
+export const planExampleFormat = `
+goal: the goal of the project plan
+details: details and analysis about the plan
+tasks:
+  - title: the title of a task
+    description: more information about the task
+    files:
+      - src/index.ts
+      - other files
+    steps:
+      - prompt: |
+          This is a multiline prompt
+          describing what to do.
+      - prompt: Another step`;
+
 export function planPrompt(plan: string) {
   // This is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
   return `This is a project plan for an upcoming feature.
@@ -22,19 +37,7 @@ When generating the final output with the prompts, output an overall goal, proje
 <formatting>
 Use the following YAML format for your final prompt output:
 \`\`\`yaml
-goal: the goal of the project plan
-details: details and analysis about the plan
-tasks:
-  - title: the title of a task
-    description: more information about the task
-    files:
-      - src/index.ts
-      - other files
-    steps:
-      - prompt: |
-          This is a multiline prompt
-          describing what to do.
-      - prompt: Another step
+${planExampleFormat}
 \`\`\`
 </formatting>
 `;

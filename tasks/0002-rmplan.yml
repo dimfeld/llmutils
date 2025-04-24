@@ -142,6 +142,7 @@ tasks:
           2.  Check if the `options.output` file path was provided.
           3.  If yes, write the stringified YAML to `options.output` using `Bun.write()`.
           4.  If no, print the stringified YAML to stdout using `console.log()`.
+        done: true
       - prompt: |
           Add tests for the `extract` subcommand.
           1.  In `src/rmplan/rmplan.test.ts`, add tests for `extract`.

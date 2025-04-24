@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 import yaml from 'yaml';
 import { planSchema } from './planSchema.js';
+import { generateObject, generateText } from 'ai';
+import { createModel } from '../common/model_factory.js';
 import { logSpawn } from '../rmfilter/utils.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { planPrompt } from './prompt.js';
+import { planExampleFormat, planPrompt } from './prompt.js';
 import clipboardy from 'clipboardy';
 import { Command } from 'commander';
 import os from 'os';
@@ -83,8 +85,6 @@ program
         }
       }
     }
-    console.log('Options:', options);
-    console.log('rmfilter args:', rmfilterArgs);
   });
 
 program
@@ -103,34 +103,51 @@ program
     console.log('inputText:', inputText);
     console.log('outputFile:', options.output);
 
-    let parsedObject: unknown;
     let validatedPlan: unknown;
 
+    const match = inputText.match(/```yaml\n([\s\S]*?)\n```/i);
+    const rawYaml = match ? match[1] : inputText;
     try {
-      // Try parsing the entire inputText as YAML
-      parsedObject = yaml.parse(inputText);
+      const parsedObject = yaml.parse(rawYaml);
+      validatedPlan = planSchema.parse(parsedObject);
     } catch (e) {
-      // If direct parse fails, try extracting a ```yaml ... ``` block
-      const match = inputText.match(/```yaml\n([\s\S]*?)\n```/i);
-      if (match && match[1]) {
-        try {
-          parsedObject = yaml.parse(match[1]);
-        } catch (e2) {
-          console.error('Failed to parse YAML from code block:', e2);
+      // ignore since we're going to the next try
+    }
+
+    if (!validatedPlan) {
+      // Use Gemini Flash to clean up the text to valid YAML
+      console.warn('YAML parsing failed, attempting LLM cleanup...');
+      const model = createModel('gemini-2.5-flash-preview-04-17');
+      const prompt = `Clean up the following text into valid YAML. Output only the YAML, no explanation.
+      
+Look especially at places where strings need to be quoted, or the pipe character for multi-line strings is missing.
+
+The expected YAML format is:
+${planExampleFormat}
+
+The YAML to clean up is:
+---\n${inputText}\n---`;
+      const result = await generateText({
+        model,
+        prompt,
+      });
+
+      let cleanedYaml = result.text;
+      const match = cleanedYaml.match(/```yaml\n([\s\S]*?)\n```/i);
+      let rawYaml = match ? match[1] : cleanedYaml;
+      try {
+        const parsedObject = yaml.parse(rawYaml);
+        const result = planSchema.safeParse(parsedObject);
+        if (!result.success) {
+          console.error('Validation errors:', result.error);
           process.exit(1);
         }
-      } else {
-        console.error('Failed to parse YAML: No valid YAML block found.');
+        validatedPlan = result.data;
+      } catch (e3) {
+        console.error('Failed to parse YAML even after Gemini Flash cleanup.');
         process.exit(1);
       }
     }
-
-    const result = planSchema.safeParse(parsedObject);
-    if (!result.success) {
-      console.error('Validation errors:', result.error);
-      process.exit(1);
-    }
-    validatedPlan = result.data;
 
     const outputYaml = yaml.stringify(validatedPlan);
     if (options.output) {
