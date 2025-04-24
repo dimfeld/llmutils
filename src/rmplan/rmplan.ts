@@ -154,14 +154,58 @@ program
       const fileContent = await Bun.file(planFile).text();
       const parsed = yaml.parse(fileContent);
       const result = planSchema.safeParse(parsed);
-      
+
       if (!result.success) {
         console.error('Validation errors:', result.error);
         process.exit(1);
       }
-      
+
       const planData = result.data;
-      console.log('Plan loaded successfully');
+
+      let foundTaskIndex = -1;
+      let foundStepIndex = -1;
+
+      // Find the first unfinished step/task
+      outerLoop: for (let i = 0; i < planData.tasks.length; i++) {
+        const task = planData.tasks[i];
+        for (let j = 0; j < task.steps.length; j++) {
+          if (!task.steps[j].done) {
+            if (foundTaskIndex === -1) {
+              foundTaskIndex = i;
+              foundStepIndex = j;
+
+              if (!options.task) {
+                break outerLoop;
+              }
+            } else if (i === foundTaskIndex) {
+              // Continue finding all steps in this task
+              continue;
+            } else {
+              break outerLoop;
+            }
+          }
+        }
+      }
+
+      if (foundTaskIndex === -1) {
+        console.log('All steps are already done.');
+        process.exit(0);
+      }
+
+      // Mark the appropriate steps as done
+      const task = planData.tasks[foundTaskIndex];
+      if (options.task) {
+        for (const step of task.steps) {
+          step.done = true;
+        }
+        console.log(`Marked all steps in task '${task.title}'  done`);
+      } else {
+        task.steps[foundStepIndex].done = true;
+        console.log(`Marked task '${task.title}' step ${foundStepIndex + 1} done`);
+      }
+
+      // Write the updated plan back to file
+      await Bun.write(planFile, yaml.stringify(planData));
     } catch (err) {
       console.error('Failed to process plan file:', err);
       process.exit(1);

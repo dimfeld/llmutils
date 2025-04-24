@@ -167,6 +167,7 @@ tasks:
           2.  Add a required argument `<planFile>` for the path to the plan YAML file.
           3.  Add a boolean option `--task` using `.option('--task', 'Mark all steps in the current task as done')`.
           4.  Update the `.action()` function to accept `planFile` and `options`.
+        done: true
       - prompt: |
           Implement file loading, parsing, and validation for the `done` subcommand.
           1.  Import `yaml`.
@@ -174,6 +175,7 @@ tasks:
           3.  Inside the `done` action, read the content of `planFile` using `Bun.file(planFile).text()`.
           4.  Parse the content using `yaml.parse()`.
           5.  Validate the parsed object using `planSchema.safeParse()`. Handle errors (print to stderr, exit). Store the valid data in `planData`.
+        done: true
       - prompt: |
           Implement the logic to find and mark the next step/task as done.
           1.  Initialize variables `foundTaskIndex = -1`, `foundStepIndex = -1`.
@@ -188,11 +190,13 @@ tasks:
               - Iterate through all steps in `planData.tasks[foundTaskIndex].steps` and set `step.done = true` for each.
           10. Else (`options.task` is false):
               - Set `planData.tasks[foundTaskIndex].steps[foundStepIndex].done = true`.
+        done: true
       - prompt: |
           Implement saving the modified plan back to the file.
           1.  Stringify the modified `planData` object back into YAML using `yaml.stringify()`.
           2.  Write the updated YAML string back to the original `planFile` path using `Bun.write()`.
           3.  Optionally print a confirmation message like "Marked step X in task Y as done." or "Marked task Y as done.".
+        done: true
       - prompt: |
           Add tests for the `done` subcommand.
           1.  In `src/rmplan/rmplan.test.ts`, add tests for `done`.
