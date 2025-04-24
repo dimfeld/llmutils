@@ -149,8 +149,23 @@ program
   .command('done <planFile>')
   .description('Mark the next step/task in a plan YAML as done')
   .option('--task', 'Mark all steps in the current task as done')
-  .action((planFile, options) => {
-    console.log('done...');
+  .action(async (planFile, options) => {
+    try {
+      const fileContent = await Bun.file(planFile).text();
+      const parsed = yaml.parse(fileContent);
+      const result = planSchema.safeParse(parsed);
+      
+      if (!result.success) {
+        console.error('Validation errors:', result.error);
+        process.exit(1);
+      }
+      
+      const planData = result.data;
+      console.log('Plan loaded successfully');
+    } catch (err) {
+      console.error('Failed to process plan file:', err);
+      process.exit(1);
+    }
   });
 
 program
