@@ -250,11 +250,27 @@ program
         })),
       });
       const selectedPendingSteps = pendingSteps.slice(0, selectedIndex + 1);
-      // You can now use selectedSteps as needed for the next action
-      console.log(
-        'Selected steps:',
-        selectedPendingSteps.map((s) => s.prompt)
-      );
+      // Build the LLM prompt
+      const promptParts: string[] = [];
+      promptParts.push(`Goal: ${planData.goal}\nDetails: ${planData.details}\n`);
+      promptParts.push(`Current Task: ${activeTask.title}\nDescription: ${activeTask.description}\n`);
+
+      if (completedSteps.length > 0) {
+        promptParts.push('Completed Steps in this Task:');
+        completedSteps.forEach((step, index) => {
+          promptParts.push(`- [DONE] ${step.prompt.split('\\n')[0]}...`);
+        });
+      }
+
+      promptParts.push('\nSelected Next Steps to Implement:');
+      selectedPendingSteps.forEach((step, index) => {
+        promptParts.push(`- [TODO ${index + 1}] ${step.prompt}`);
+      });
+
+      const llmPrompt = promptParts.join('\n');
+      console.log('\n----- LLM PROMPT -----\n');
+      console.log(llmPrompt);
+      console.log('\n---------------------\n');
     } catch (err) {
       console.error('Failed to process plan file:', err);
       process.exit(1);
