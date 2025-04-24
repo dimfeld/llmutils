@@ -83,6 +83,7 @@ tasks:
           3.  Import `os` and `path`.
           4.  Generate a unique temporary file path, e.g., `path.join(os.tmpdir(), \`rmplan-prompt-\${Date.now()}.md\`)`.
           5.  Write the generated planning prompt string to this temporary file using `Bun.write()`. Use a try/finally block to ensure cleanup.
+        done: true
       - prompt: |
           Implement the logic to call `rmfilter`.
           1.  Import `logSpawn` from `src/rmfilter/utils.ts`.
@@ -92,6 +93,7 @@ tasks:
           5.  Use `logSpawn` to execute the `rmfilter` command. Ensure `stdio` is configured appropriately (likely `'inherit'` for `stdout`, `stderr`, `stdin`) so `rmfilter` interacts directly with the user's terminal or pipes.
           6.  Await the completion of the `rmfilter` process using `await proc.exited`. Check the exit code for errors.
           7.  Inside the `finally` block from the previous step, delete the temporary file using `Bun.file(tempFilePath).unlink()`.
+        done: true
       - prompt: |
           Add tests for the `generate` subcommand.
           1.  In `src/rmplan/rmplan.test.ts`, add tests specifically for `generate`.

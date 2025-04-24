@@ -1,21 +1,22 @@
 #!/usr/bin/env bun
 import { planSchema } from './planSchema.js';
+import { logSpawn } from '../rmfilter/utils.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { planPrompt } from './prompt.js';
 import { Command } from 'commander';
+import os from 'os';
+import path from 'path';
 
 const program = new Command();
-program
-  .name('rmplan')
-  .description('Generate and execute task plans using LLMs');
+program.name('rmplan').description('Generate and execute task plans using LLMs');
 
 program
   .command('generate')
   .description('Generate planning prompt and context for a task')
-  .option('--plan <file>', 'YAML plan file to use')
+  .option('--plan <file>', 'Plan text file to use')
   .option('--plan-editor', 'Open plan in editor')
   .allowUnknownOption(true)
-  .action((options, command) => {
+  .action(async (options, command) => {
     // Find '--' in process.argv to get extra args for rmfilter
     const doubleDashIdx = process.argv.indexOf('--');
     const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
@@ -49,7 +50,37 @@ program
     }
 
     // planText now contains the loaded plan
-    console.log('Loaded plan text:', planText);
+    const promptString = planPrompt(planText!);
+    const tmpPromptPath = path.join(os.tmpdir(), `rmplan-prompt-${Date.now()}.md`);
+    let wrotePrompt = false;
+    try {
+      await Bun.write(tmpPromptPath, promptString);
+      wrotePrompt = true;
+      console.log('Prompt written to:', tmpPromptPath);
+
+      // Call rmfilter with constructed args
+      const rmfilterFullArgs = [
+        'rmfilter',
+        ...rmfilterArgs,
+        '--bare',
+        '--instructions',
+        `@${tmpPromptPath}`,
+      ];
+      const proc = logSpawn(rmfilterFullArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
+      const exitRes = await proc.exited;
+      if (exitRes !== 0) {
+        console.error(`rmfilter exited with code ${exitRes}`);
+        process.exit(exitRes ?? 1);
+      }
+    } finally {
+      if (wrotePrompt) {
+        try {
+          await Bun.file(tmpPromptPath).unlink();
+        } catch (e) {
+          console.warn('Warning: failed to clean up temp file:', tmpPromptPath);
+        }
+      }
+    }
     console.log('Options:', options);
     console.log('rmfilter args:', rmfilterArgs);
   });
