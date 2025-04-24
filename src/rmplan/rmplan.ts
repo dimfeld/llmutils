@@ -230,6 +230,10 @@ program
       }
       const activeTask = result.task;
 
+      // Separate completed and pending steps
+      const completedSteps = activeTask.steps.filter((step) => step.done);
+      const pendingSteps = activeTask.steps.filter((step) => !step.done);
+
       console.log('Found pending steps in task:', activeTask.title);
     } catch (err) {
       console.error('Failed to process plan file:', err);
