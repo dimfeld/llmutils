@@ -41,6 +41,7 @@ program
   .description('Generate planning prompt and context for a task')
   .option('--plan <file>', 'Plan text file to use')
   .option('--plan-editor', 'Open plan in editor')
+  .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (options, command) => {
     // Find '--' in process.argv to get extra args for rmfilter
@@ -78,6 +79,7 @@ program
     // planText now contains the loaded plan
     const promptString = planPrompt(planText!);
     const tmpPromptPath = path.join(os.tmpdir(), `rmplan-prompt-${Date.now()}.md`);
+    let exitRes: number | undefined;
     let wrotePrompt = false;
     try {
       await Bun.write(tmpPromptPath, promptString);
@@ -93,11 +95,7 @@ program
         `@${tmpPromptPath}`,
       ];
       const proc = logSpawn(rmfilterFullArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
-      const exitRes = await proc.exited;
-      if (exitRes !== 0) {
-        console.error(`rmfilter exited with code ${exitRes}`);
-        process.exit(exitRes ?? 1);
-      }
+      exitRes = await proc.exited;
     } finally {
       if (wrotePrompt) {
         try {
@@ -106,6 +104,11 @@ program
           console.warn('Warning: failed to clean up temp file:', tmpPromptPath);
         }
       }
+    }
+
+    if (exitRes !== 0) {
+      console.error(`rmfilter exited with code ${exitRes}`);
+      process.exit(exitRes ?? 1);
     }
   });
 
@@ -122,8 +125,6 @@ program
     } else {
       inputText = await clipboardy.read();
     }
-    console.log('inputText:', inputText);
-    console.log('outputFile:', options.output);
 
     let validatedPlan: unknown;
 
@@ -161,6 +162,7 @@ program
     const outputYaml = yaml.stringify(validatedPlan);
     if (options.output) {
       await Bun.write(options.output, outputYaml);
+      console.log(`Wrote result to ${options.output}`);
     } else {
       console.log(outputYaml);
     }
