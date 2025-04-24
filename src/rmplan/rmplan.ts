@@ -3,6 +3,7 @@ import { planSchema } from './planSchema.js';
 import { logSpawn } from '../rmfilter/utils.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { planPrompt } from './prompt.js';
+import clipboardy from 'clipboardy';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
@@ -86,10 +87,20 @@ program
   });
 
 program
-  .command('extract')
+  .command('extract [inputFile]')
   .description('Extract and validate a plan YAML from text')
-  .action(() => {
-    console.log('extract...');
+  .option('-o, --output <outputFile>', 'Write result to a file instead of stdout')
+  .action(async (inputFile, options) => {
+    let inputText: string;
+    if (inputFile) {
+      inputText = await Bun.file(inputFile).text();
+    } else if (!process.stdin.isTTY) {
+      inputText = await Bun.stdin.text();
+    } else {
+      inputText = await clipboardy.read();
+    }
+    console.log('inputText:', inputText);
+    console.log('outputFile:', options.output);
   });
 
 program
