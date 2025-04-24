@@ -253,7 +253,9 @@ program
       // Build the LLM prompt
       const promptParts: string[] = [];
       promptParts.push(`Goal: ${planData.goal}\nDetails: ${planData.details}\n`);
-      promptParts.push(`Current Task: ${activeTask.title}\nDescription: ${activeTask.description}\n`);
+      promptParts.push(
+        `Current Task: ${activeTask.title}\nDescription: ${activeTask.description}\n`
+      );
 
       if (completedSteps.length > 0) {
         promptParts.push('Completed Steps in this Task:');
@@ -271,6 +273,44 @@ program
       console.log('\n----- LLM PROMPT -----\n');
       console.log(llmPrompt);
       console.log('\n---------------------\n');
+
+      // Step 1: Write llmPrompt to a temporary file
+      const tmpPromptPath = path.join(os.tmpdir(), `rmplan-next-prompt-${Date.now()}.md`);
+      let wrotePrompt = false;
+      try {
+        await Bun.write(tmpPromptPath, llmPrompt);
+        wrotePrompt = true;
+
+        // Step 2: Get the list of files for the current task
+        const taskFiles = activeTask.files;
+
+        // Step 3: Construct the argument list for rmfilter
+        const rmfilterArgs = [
+          'rmfilter',
+          ...taskFiles,
+          '--bare',
+          '--instructions',
+          `@${tmpPromptPath}`,
+        ];
+
+        // Step 4: Execute rmfilter using logSpawn with inherited stdio
+        const proc = logSpawn(rmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
+        // Step 5: Await completion and check the exit code
+        const exitRes = await proc.exited;
+        if (exitRes !== 0) {
+          console.error(`rmfilter exited with code ${exitRes}`);
+          process.exit(exitRes ?? 1);
+        }
+      } finally {
+        // Step 6: Clean up the temporary file
+        if (wrotePrompt) {
+          try {
+            await Bun.file(tmpPromptPath).unlink();
+          } catch (e) {
+            console.warn('Warning: failed to clean up temp file:', tmpPromptPath);
+          }
+        }
+      }
     } catch (err) {
       console.error('Failed to process plan file:', err);
       process.exit(1);
