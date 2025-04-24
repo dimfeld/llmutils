@@ -146,9 +146,10 @@ program
   });
 
 program
-  .command('done')
+  .command('done <planFile>')
   .description('Mark the next step/task in a plan YAML as done')
-  .action(() => {
+  .option('--task', 'Mark all steps in the current task as done')
+  .action((planFile, options) => {
     console.log('done...');
   });
 
