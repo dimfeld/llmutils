@@ -216,7 +216,41 @@ program
   .command('next <planFile>')
   .description('Prepare the next step(s) from a plan YAML for execution')
   .action(async (planFile) => {
-    console.log('next...');
+    try {
+      const fileContent = await Bun.file(planFile).text();
+      const parsed = yaml.parse(fileContent);
+      const result = planSchema.safeParse(parsed);
+
+      if (!result.success) {
+        console.error('Validation errors:', result.error);
+        process.exit(1);
+      }
+
+      const planData = result.data;
+
+      let activeTask = null;
+      let activeTaskIndex = -1;
+
+      // Find the first task with pending steps
+      for (let i = 0; i < planData.tasks.length; i++) {
+        const task = planData.tasks[i];
+        if (task.steps.some(step => !step.done)) {
+          activeTask = task;
+          activeTaskIndex = i;
+          break;
+        }
+      }
+
+      if (!activeTask) {
+        console.log('No pending steps found in the plan.');
+        process.exit(0);
+      }
+
+      console.log('Found pending steps in task:', activeTask.title);
+    } catch (err) {
+      console.error('Failed to process plan file:', err);
+      process.exit(1);
+    }
   });
 
 program.parse(process.argv);
