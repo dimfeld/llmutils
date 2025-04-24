@@ -304,7 +304,7 @@ program
       );
 
       if (options.previous && completedSteps.length > 0) {
-        promptParts.push('## Completed Steps in this Task:');
+        promptParts.push('## Completed Subtasks in this Task:');
         completedSteps.forEach((step, index) => {
           promptParts.push(`- [DONE] ${step.prompt.split('\\n')[0]}...`);
         });
@@ -312,14 +312,14 @@ program
 
       if (!options.rmfilter) {
         promptParts.push(
-          '## Relevant Files\n\nThese are relevant files for the next steps. If you think additional files are relevant, you can update them as well.'
+          '## Relevant Files\n\nThese are relevant files for the next subtasks. If you think additional files are relevant, you can update them as well.'
         );
         files.forEach((file) => {
           promptParts.push(`- ${file}`);
         });
       }
 
-      promptParts.push('\n## Selected Next Steps to Implement:\n');
+      promptParts.push('\n## Selected Next Subtasks to Implement:\n');
       selectedPendingSteps.forEach((step, index) => {
         promptParts.push(`- [TODO ${index + 1}] ${step.prompt}`);
       });
