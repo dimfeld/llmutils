@@ -115,23 +115,16 @@ tasks:
           2.  Add an optional argument `[inputFile]` to specify an input file. If not provided, assume input comes from stdin.
           3.  Add an option `-o, --output <outputFile>` for writing the result to a file instead of stdout.
           4.  Update the `.action()` function to accept the `inputFile` argument and `options`.
+        done: true
       - prompt: |
           Implement input reading for the `extract` subcommand.
           1.  Inside the `extract` action:
           2.  Check if `inputFile` argument is provided.
           3.  If yes, read the content using `await Bun.file(inputFile).text()`.
-          4.  If no, read from stdin. You can use a helper function like:
-              ```typescript
-              async function readStdin(): Promise<string> {
-                const chunks = [];
-                for await (const chunk of Bun.stdin.stream()) {
-                  chunks.push(Buffer.from(chunk));
-                }
-                return Buffer.concat(chunks).toString('utf8');
-              }
-              const inputText = await readStdin();
-              ```
+          4.  If no, read from stdin if it is not a TTY. Else read from the clipboard using the clipboardy package. 
+              You can use `await Bun.stdin.text()` to read stdin.
           5.  Store the result in `inputText`.
+        done: true
       - prompt: |
           Implement YAML extraction, parsing, and validation.
           1.  Import `yaml` from the `yaml` package.
@@ -142,6 +135,7 @@ tasks:
           4.  Once a potential YAML object is parsed, validate it using `planSchema.safeParse(parsedObject)`.
           5.  If `safeParse` fails (`!result.success`), print the validation errors (`result.error`) to stderr and exit with a non-zero code.
           6.  If successful, store the validated data (`result.data`) in `validatedPlan`.
+        done: true
       - prompt: |
           Implement output handling for the `extract` subcommand.
           1.  Stringify the `validatedPlan` back into YAML format using `yaml.stringify(validatedPlan)`.

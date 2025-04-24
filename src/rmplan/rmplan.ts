@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import yaml from 'yaml';
 import { planSchema } from './planSchema.js';
 import { logSpawn } from '../rmfilter/utils.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
@@ -101,6 +102,35 @@ program
     }
     console.log('inputText:', inputText);
     console.log('outputFile:', options.output);
+
+    let parsedObject: unknown;
+    let validatedPlan: unknown;
+
+    try {
+      // Try parsing the entire inputText as YAML
+      parsedObject = yaml.parse(inputText);
+    } catch (e) {
+      // If direct parse fails, try extracting a ```yaml ... ``` block
+      const match = inputText.match(/```yaml\n([\s\S]*?)\n```/i);
+      if (match && match[1]) {
+        try {
+          parsedObject = yaml.parse(match[1]);
+        } catch (e2) {
+          console.error('Failed to parse YAML from code block:', e2);
+          process.exit(1);
+        }
+      } else {
+        console.error('Failed to parse YAML: No valid YAML block found.');
+        process.exit(1);
+      }
+    }
+
+    const result = planSchema.safeParse(parsedObject);
+    if (!result.success) {
+      console.error('Validation errors:', result.error);
+      process.exit(1);
+    }
+    validatedPlan = result.data;
   });
 
 program
