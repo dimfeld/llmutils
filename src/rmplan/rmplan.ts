@@ -10,6 +10,7 @@ import clipboardy from 'clipboardy';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import { cleanupYaml } from './cleanup.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -117,22 +118,9 @@ program
     if (!validatedPlan) {
       // Use Gemini Flash to clean up the text to valid YAML
       console.warn('YAML parsing failed, attempting LLM cleanup...');
-      const model = createModel('gemini-2.5-flash-preview-04-17');
-      const prompt = `Clean up the following text into valid YAML. Output only the YAML, no explanation.
-      
-Look especially at places where strings need to be quoted, or the pipe character for multi-line strings is missing.
+      const result = await cleanupYaml(inputText);
 
-The expected YAML format is:
-${planExampleFormat}
-
-The YAML to clean up is:
----\n${inputText}\n---`;
-      const result = await generateText({
-        model,
-        prompt,
-      });
-
-      let cleanedYaml = result.text;
+      let cleanedYaml = result;
       const match = cleanedYaml.match(/```yaml\n([\s\S]*?)\n```/i);
       let rawYaml = match ? match[1] : cleanedYaml;
       try {

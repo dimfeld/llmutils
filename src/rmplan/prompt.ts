@@ -13,6 +13,16 @@ tasks:
           describing what to do.
       - prompt: Another step`;
 
+const planExampleFormat2 = `goal: [single-line string]
+details: [single-line or multi-line string]
+tasks:
+  - title: [single-line string]
+    description: [single-line or multi-line string]
+    files:
+      - [list of file paths]
+    steps:
+      - prompt: [single-line or multi-line string]`;
+
 export function planPrompt(plan: string) {
   // This is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
   return `This is a project plan for an upcoming feature.
@@ -37,7 +47,7 @@ When generating the final output with the prompts, output an overall goal, proje
 <formatting>
 Use the following YAML format for your final prompt output:
 \`\`\`yaml
-${planExampleFormat}
+${planExampleFormat2}
 \`\`\`
 </formatting>
 `;
