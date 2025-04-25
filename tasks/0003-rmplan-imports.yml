@@ -67,7 +67,7 @@ tasks:
                ```
           Ensure the new options are documented in the command's help text
           implicitly by commander.
-        done: false
+        done: true
   - title: Implement Candidate File Extraction
     description: Implement the logic to determine the initial set of files for
       import analysis, using either files mentioned in the prompt or the task's

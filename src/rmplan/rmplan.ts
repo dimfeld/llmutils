@@ -272,6 +272,11 @@ program
   .description('Prepare the next step(s) from a plan YAML for execution')
   .option('--rmfilter', 'Use rmfilter to generate the prompt')
   .option('--previous', 'Include information about previous completed steps')
+  .option('--with-imports', 'Include direct imports of files found in the prompt or task files')
+  .option(
+    '--with-all-imports',
+    'Include the entire import tree of files found in the prompt or task files'
+  )
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planFile, options) => {
@@ -283,6 +288,17 @@ program
       const fileContent = await Bun.file(planFile).text();
       const parsed = yaml.parse(fileContent);
       const plan = planSchema.safeParse(parsed);
+
+      // Check for conflicting import options
+      if (options.withImports && options.withAllImports) {
+        console.error(
+          'Error: Cannot use both --with-imports and --with-all-imports. Please choose one.'
+        );
+        process.exit(1);
+      }
+
+      let candidateFilesForImports: string[] = []; // Placeholder
+      let performImportAnalysis = options.withImports || options.withAllImports;
 
       if (!plan.success) {
         console.error('Validation errors:', plan.error);
@@ -311,6 +327,10 @@ program
           })
         )
       ).filter((x) => x != null);
+
+      if (performImportAnalysis) {
+        // TODO: Extract candidate files
+      }
 
       // Separate completed and pending steps
       const completedSteps = activeTask.steps.filter((step) => step.done);
@@ -407,6 +427,15 @@ program
             ...cmdLineRmfilterArgs,
           ];
 
+          if (performImportAnalysis) {
+            // TODO: Modify rmfilterArgs for import options
+            rmfilterArgs.push(
+              '--',
+              ...candidateFilesForImports,
+              options.withImports ? '--with-imports' : '--with-all-imports'
+            );
+          }
+
           // Step 4: Execute rmfilter using logSpawn with inherited stdio
           const proc = logSpawn(rmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
           // Step 5: Await completion and check the exit code
@@ -417,6 +446,10 @@ program
           }
         } else {
           console.log('Copying prompt to clipboard...');
+          if (performImportAnalysis) {
+            // TODO: Perform standalone import analysis and update 'files'
+          }
+
           await clipboard.write(llmPrompt);
         }
       } finally {
