@@ -381,9 +381,12 @@ program
       });
 
       const llmPrompt = promptParts.join('\n');
-      console.log('\n----- LLM PROMPT -----\n');
-      console.log(llmPrompt);
-      console.log('\n---------------------\n');
+      if (!options.rmfilter) {
+        // rmfilter will print the prompt if we are using it, but print it out otherwise
+        console.log('\n----- LLM PROMPT -----\n');
+        console.log(llmPrompt);
+        console.log('\n---------------------\n');
+      }
 
       // Step 1: Write llmPrompt to a temporary file
       const tmpPromptPath = path.join(os.tmpdir(), `rmplan-next-prompt-${Date.now()}.md`);
