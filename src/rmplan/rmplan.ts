@@ -372,6 +372,7 @@ program
 
       const selectedPendingSteps = pendingSteps.slice(0, selectedIndex + 1);
 
+      let candidateFilesForImports: string[] = [];
       if (performImportAnalysis) {
         const prompts = selectedPendingSteps.map((step) => step.prompt).join('\n');
         const gitRoot = await getGitRoot();
@@ -381,7 +382,6 @@ program
         );
         const resolvedTaskFiles = files; // Reuse existing resolved files
 
-        let candidateFilesForImports: string[] = [];
         if (filesFromPrompt.length > 0) {
           // If prompt has files, use them. Assume they are absolute or resolvable from gitRoot.
           // Ensure they are absolute paths.
