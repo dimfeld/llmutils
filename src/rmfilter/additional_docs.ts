@@ -131,20 +131,40 @@ export async function buildExamplesTag(examples: { pattern: string; file: string
   if (!examples.length) {
     return '';
   }
+
+  let grouped = Object.groupBy(examples, (e) => e.file);
+
   let files = await Promise.all(
-    examples.map(async (e) => {
-      let content = await Bun.file(e.file).text();
-      return `<example>
-<pattern>\`${e.pattern}\`</pattern>
-<example_file>
+    Object.values(grouped).map(async (e) => {
+      let file = e![0].file;
+      let patterns = e!.map(({ pattern }) => {
+        // Component examples commonly start with < since it improves grep accuracy, but remove
+        // that here to make it more clear to the model.
+        if (pattern.startsWith('<') && !pattern.endsWith('>')) {
+          pattern = pattern.slice(1);
+        }
+        return `for="${pattern}"`;
+      });
+
+      let content = await Bun.file(file).text();
+      // This isn't really valid XML but the LLM doesn't care.
+      let patternAttr = patterns.join(' ');
+
+      return `
+<example ${patternAttr}>
 ${content}
-</example_file>
 </example>`;
     })
   );
 
   return `<examples>
-This is a list of examples of certain patterns in the codebase which may be helpful to implement those patterns. The pattern tag contains the patterns that was matched to find the file, and should hint as what in the file is relevant.
+# Code Examples Reference
+This section contains real code examples from the codebase that demonstrate key patterns and components. When writing code, reference these examples to maintain consistent style and implementation patterns.
+
+## How to use these examples:
+1. Each example is tagged with one or more pattern identifiers in the \`for\` attribute
+2. Study the implementation details for the relevant portion of the file before coding similar functionality
+3. Match variable naming conventions, parameter usage, and overall structure
 
 ${files.join('\n')}
 </examples>`;
