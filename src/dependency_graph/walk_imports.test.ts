@@ -23,11 +23,6 @@ test('walk imports from apply-llm-edits.ts', async () => {
   const rootDir = path.dirname((await packageUp())!);
   const walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
 
-  const imports = await walker.getDefiningFiles(path.join(rootDir, 'src/apply-llm-edits.ts'));
-  expect(Array.from(imports).sort()).toEqual([
-    path.join(rootDir, 'src/diff-editor/parse.ts'),
-    path.join(rootDir, 'src/logging.ts'),
-    path.join(rootDir, 'src/whole-file/parse_raw_edits.ts'),
-    path.join(rootDir, 'src/xml/parse_xml.ts'),
-  ]);
+  const imports = await walker.getDefiningFiles(path.join(rootDir, 'src/apply-llm-edits/apply.ts'));
+  expect(Array.from(imports).sort()).toMatchSnapshot();
 });
