@@ -448,12 +448,20 @@ async function doReplace(
  * Parses the LLM response content to find ```diff blocks and extract hunks.
  */
 export function findDiffs(content: string): { filePath: string | null; hunk: string[] }[] {
+  content = content.trimStart();
   if (!content.endsWith('\n')) {
     content += '\n';
   }
   const lines = splitLinesWithEndings(content);
   let lineNum = 0;
   const edits: { filePath: string | null; hunk: string[] }[] = [];
+
+  if (lines[0].startsWith('--- ')) {
+    edits.push(...processFencedBlock(lines, 0).edits);
+    if (edits.length) {
+      return edits;
+    }
+  }
 
   while (lineNum < lines.length) {
     const line = lines[lineNum];
@@ -561,6 +569,16 @@ function processFencedBlock(
       }
     }
     // Ignore lines outside hunks that aren't ---/+++ pairs
+  }
+
+  if (inHunk) {
+    if (currentHunk.at(-1) === '\n') {
+      currentHunk.pop();
+    }
+
+    if (currentHunk.length) {
+      edits.push({ filePath: currentFilePath, hunk: currentHunk });
+    }
   }
 
   return { edits, nextLineNum: endLineNum + 1 };

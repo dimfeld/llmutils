@@ -17,6 +17,7 @@ if (args.includes('--help')) {
   console.log('Options:');
   console.log('  --stdin           Read input from stdin');
   console.log('  --cwd <path>      Write files based on the given path');
+  console.log('  --udiff           Force udiff mode');
   console.log('  --debug           Enable debug logging');
   console.log('  --dry-run         Dry run - do not apply changes');
   process.exit(0);
@@ -35,6 +36,7 @@ applyLlmEdits({
   content,
   writeRoot: await getWriteRoot(cwd),
   dryRun,
+  mode: args.includes('--udiff') ? 'udiff' : undefined,
 }).catch((err) => {
   console.error('Error processing input:', err);
   process.exit(1);

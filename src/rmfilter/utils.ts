@@ -1,5 +1,6 @@
 import { $ } from 'bun';
 import type { SpawnOptions } from 'bun';
+import * as path from 'node:path';
 
 export let debug = false;
 export let quiet = false;
@@ -68,7 +69,7 @@ export async function cachePromise<T extends Promise<any>>(
 export type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
 
 let cachedGitRoot: string | undefined;
-export async function getGitRoot() {
+export async function getGitRoot(): Promise<string> {
   if (cachedGitRoot) {
     return cachedGitRoot;
   }
@@ -77,4 +78,32 @@ export async function getGitRoot() {
 
   cachedGitRoot = value;
   return value;
+}
+
+let cachedUsingJj: boolean | undefined;
+export async function getUsingJj(): Promise<boolean> {
+  if (typeof cachedUsingJj === 'boolean') {
+    return cachedUsingJj;
+  }
+
+  const gitRoot = await getGitRoot();
+  cachedUsingJj = await Bun.file(path.join(gitRoot, '.jj'))
+    .stat()
+    .then((s) => s.isDirectory())
+    .catch(() => false);
+  return cachedUsingJj;
+}
+
+export async function commitAll(message: string): Promise<number> {
+  const usingJj = await getUsingJj();
+
+  if (usingJj) {
+    return await logSpawn(['jj', 'commit', '-m', message], {
+      stdio: ['ignore', 'inherit', 'inherit'],
+    }).exited;
+  } else {
+    return await logSpawn(['git', 'commit', '-a', '-m', message], {
+      stdio: ['ignore', 'inherit', 'inherit'],
+    }).exited;
+  }
 }

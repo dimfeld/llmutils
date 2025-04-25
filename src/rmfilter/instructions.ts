@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { getGitRoot, logSpawn } from './utils.ts';
 
-export async function getInstructionsFromEditor() {
+export async function getInstructionsFromEditor(filename = 'repomix-instructions.md') {
   const gitRoot = await getGitRoot();
-  const instructionsFile = path.join(gitRoot, 'repomix-instructions.md');
+  const instructionsFile = path.join(gitRoot, filename);
   const editor = process.env.EDITOR || 'nano';
   let editorProcess = logSpawn([editor, instructionsFile], {
     stdio: ['inherit', 'inherit', 'inherit'],

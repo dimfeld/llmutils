@@ -2,15 +2,13 @@
 
 Command-line utilities for managing context with chat-oriented programming, and applying edits back.
 
-This is unoptimized and a bit of a mess right now, but overall works well for collecting a relevant set of files when
-you know a good starting point.
-
 The scripts are:
 
 - `rmfilter` - A wrapper around repomix which can analyze import trees to gather all the files referenced by a root file, and add instructions and other rules to the repomix output. Supports both "whole file" and "diff" edit modes.
 - `apply-llm-edits` - Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
 - `rmrun` - Send the rmfilter output to a language model and apply the edits back.
 - `rmfind` - Find relevant files to use with rmfilter
+- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks.
 
 Some of the features, such as dependency analysis, only work with the code I've been writing at work recently, and so
 assume a repository written with Typescript and PNPM workspaces.
@@ -133,7 +131,7 @@ The `rmfind` utility helps you locate relevant files in your repository using a 
 Run `rmfind` with various options to find and select files:
 
 ```bash
-# Find TypeScript files in src/ and select interactively with fzf
+# Find Typescript files in src/ and select interactively with fzf
 rmfind src/**/*.ts
 
 # Filter files containing "fetch" or "api" and select with fzf
@@ -162,6 +160,69 @@ rmfind src/**/*.ts --query "database migrations" --model google/gemini-2.5-flash
 - The `--query` option requires an AI model and may incur usage costs depending on the model provider.
 - Use `--debug` to see detailed logs for troubleshooting.
 - The `--quiet` flag suppresses non-error output for cleaner scripting.
+
+## rmplan
+
+The `rmplan` utility generates and manages step-by-step project plans for code changes using LLMs. It supports creating, validating, and executing tasks, ensuring incremental progress with detailed prompts for code generation.
+
+### Key Features
+- **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
+- **YAML Validation**: Extract and validate plans in YAML format, with automatic cleanup for malformed input using an LLM.
+- **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
+- **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
+- **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
+
+### Usage
+
+The general usage pattern is that you will:
+
+1. Use the `generate` command to generate a planning prompt.
+2. Paste the output of that into a language model. As of April 2025, Google Gemini 2.5 Pro is probably the best choice.
+3. Copy its output to the clipboard or a file.
+4. Use the `extract` command to extract the plan YAML to a file.
+5. Use the `next` command to get the prompt for the next step(s).
+6. Run the prompt with whatever LLM or coding agent you prefer.
+7. Use the `done` command to mark the next step(s) as done and commit changes.
+
+Then repeat steps 5 through 7 until the task is done.
+
+Run `rmplan` with different commands to manage project plans:
+
+```bash
+# Generate a plan from a text file and pass extra args to rmfilter
+rmplan generate --plan plan.txt -- src/**/*.ts --grep auth
+
+# Open an editor to write a plan and generate a prompt
+rmplan generate --plan-editor
+
+# Extract and validate a plan from a file
+rmplan extract output.txt --output plan.yml
+
+# Extract a plan from clipboard or stdin. Write to stdout
+rmplan extract
+
+# Prepare the next step(s) and build the context with rmfilter 
+# This automatically passes the prompt output as the instructions to rmfilter
+rmplan next plan.yml --rmfilter -- src/**/*.ts
+
+# Include previous steps in the prompt
+rmplan next plan.yml --previous
+
+# Mark the next step as done and commit changes
+rmplan done plan.yml --commit
+
+# Mark the next 2 steps as done and commit changes
+rmplan done plan.yml --commit --steps 2
+```
+
+### Requirements
+
+- Set the `GOOGLE_GENERATIVE_AI_API_KEY` environment variable to use the YAML cleanup feature in the extract command.
+
+### Notes
+- The `--rmfilter` option requires additional arguments for `rmfilter` (passed after `--`).
+- Use `--previous` to include completed steps for context in the LLM prompt.
+- The `--commit` option supports both git and jj for version control.
 
 ## Usage Examples
 
@@ -196,6 +257,23 @@ rmfilter src/lib/*.ts --grep "export" -- src/tests/*.ts --grep "labels" \
 
 # Open instructions in the editor
 rmfilter src/**/*.ts --instructions-editor --copy
+```
+
+### Using rmplan
+Generate and manage project plans:
+
+```bash
+# Create a plan for adding a new feature
+rmplan generate --plan-editor -- src/api/**/*.ts
+
+# Validate and clean up a plan from LLM output
+rmplan extract llm-output.txt --output plan.yml
+
+# Execute the next step with repository context
+rmplan next plan.yml --rmfilter -- src/api/**/*.ts --grep fetch
+
+# Mark multiple steps as done and commit
+rmplan done plan.yml --steps 2 --commit
 ```
 
 ### Applying LLM Edits

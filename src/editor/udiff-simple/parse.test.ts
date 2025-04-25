@@ -64,6 +64,22 @@ Some text...
   expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
 });
 
+test('find_diffs without fenced block', () => {
+  const content = `
+--- a/dir name with spaces/file.txt
++++ b/dir name with spaces/file.txt
+@@ ... @@
+-Original
++Modified`;
+  const edits = findDiffs(content);
+  console.log(edits);
+  expect(edits.length).toBe(1);
+
+  const edit = edits[0];
+  expect(edit.filePath).toBe('dir name with spaces/file.txt');
+  expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
+});
+
 test('find multi diffs', () => {
   const content = `
 To implement the \`--check-update\` option, I will make the following changes:
