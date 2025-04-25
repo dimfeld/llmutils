@@ -17,7 +17,7 @@ if (args.includes('--help')) {
   console.log('Options:');
   console.log('  --stdin           Read input from stdin');
   console.log('  --cwd <path>      Write files based on the given path');
-  console.log('  --udiff           Force udiff mode');
+  console.log('  --mode <mode>          Force an edit mode');
   console.log('  --debug           Enable debug logging');
   console.log('  --dry-run         Dry run - do not apply changes');
   process.exit(0);
@@ -26,6 +26,8 @@ if (args.includes('--help')) {
 const useStdin = args.includes('--stdin') || !process.stdin.isTTY;
 const dryRun = args.includes('--dry-run');
 const cwdIndex = args.findIndex((arg) => arg == '--cwd');
+const modeIndex = args.findIndex((arg) => arg == '--mode');
+const modeValue = modeIndex != -1 ? args[modeIndex + 1] : undefined;
 const cwd = cwdIndex != -1 ? args[cwdIndex + 1] : undefined;
 
 setDebug(args.includes('--debug'));
@@ -36,7 +38,7 @@ applyLlmEdits({
   content,
   writeRoot: await getWriteRoot(cwd),
   dryRun,
-  mode: args.includes('--udiff') ? 'udiff' : undefined,
+  mode: modeValue as 'diff' | 'udiff' | 'xml' | 'whole',
 }).catch((err) => {
   console.error('Error processing input:', err);
   process.exit(1);

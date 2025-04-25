@@ -13,11 +13,13 @@ export interface ApplyLlmEditsOptions {
 
 export async function applyLlmEdits({ content, writeRoot, dryRun, mode }: ApplyLlmEditsOptions) {
   writeRoot ??= await getWriteRoot();
-  const xmlMode = mode === 'xml' || content.includes('<code_changes>');
-  const diffMode = mode === 'diff' || content.includes('<<<<<<< SEARCH');
+  const xmlMode = mode === 'xml' || (!mode && content.includes('<code_changes>'));
+  const diffMode = mode === 'diff' || (!mode && content.includes('<<<<<<< SEARCH'));
   const udiffMode =
     mode === 'udiff' ||
-    ((content.startsWith('--- ') || content.includes('```diff')) && content.includes('@@'));
+    (!mode &&
+      (content.startsWith('--- ') || content.includes('```diff')) &&
+      content.includes('@@'));
 
   if (udiffMode) {
     return await processUnifiedDiff({
