@@ -67,7 +67,7 @@ tasks:
                ```
           Ensure the new options are documented in the command's help text
           implicitly by commander.
-        done: false
+        done: true
   - title: Implement Candidate File Extraction
     description: Implement the logic to determine the initial set of files for
       import analysis, using either files mentioned in the prompt or the task's
@@ -115,7 +115,7 @@ tasks:
           Make sure `candidateFilesForImports` holds absolute paths at the end
           of this step. Log the source and count of candidate files if not
           quiet.
-        done: false
+        done: true
   - title: Implement --rmfilter Integration
     description: Modify the rmfilter execution logic to pass the candidate files and
       import flags correctly when both `--rmfilter` and an import option are
@@ -174,7 +174,7 @@ tasks:
               ```
           Adjust the existing `rmfilterArgs` construction carefully to achieve
           this conditional inclusion.
-        done: false
+        done: true
   - title: Implement Standalone Import Analysis
     description: Implement the import analysis directly within rmplan for cases
       where `--rmfilter` is not used, leveraging the existing `ImportWalker` and
@@ -253,7 +253,7 @@ tasks:
           Ensure all file paths used within this block
           (`candidateFilesForImports`, results from `ImportWalker`, the final
           `files` list) are absolute paths.
-        done: false
+        done: true
   - title: Refine and Test
     description: Review path handling, add logging, and perform manual testing of
       all scenarios.
@@ -289,4 +289,4 @@ tasks:
           variables. Ensure error handling (e.g., file not found during
           standalone analysis) is reasonable (e.g., prints a warning and
           continues).
-        done: false
+        done: true

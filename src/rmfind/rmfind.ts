@@ -5,7 +5,7 @@ import path from 'node:path';
 import { parseArgs } from 'util';
 import { globFiles, grepFor } from '../common/file_finder.ts';
 import { debugLog } from '../logging.ts';
-import { setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { generateGrepTermsFromQuery } from './generate_grep_terms.ts';
 import { filterFilesWithQuery } from './llm_file_filter.ts';
 
@@ -23,6 +23,7 @@ const { values, positionals } = parseArgs({
     debug: { type: 'boolean' },
     quiet: { type: 'boolean' },
     model: { type: 'string', short: 'm', default: DEFAULT_MODEL },
+    fzf: { type: 'boolean' },
     yaml: { type: 'boolean' },
     query: { type: 'string', short: 'q' },
 
@@ -56,6 +57,7 @@ Options:
   --debug                Print debug information.
   --quiet                Suppress informational output
   --yaml                 Output a YAML array instead of space-separated
+  --fzf                  Use fzf to select files interactively
 
   If no grep patterns are provided, but a query is provided, rmfind will generate grep terms from the query usng a language model.
 `);
@@ -109,6 +111,10 @@ async function main() {
     if (values.query && !hasGrep) {
       grep = await generateGrepTermsFromQuery(grepGeneratorModel, values.query);
       hasGrep = grep.length > 0;
+
+      if (!quiet) {
+        console.warn(`Generated grep terms: ${grep.join(', ')}\n`);
+      }
     }
 
     if (values['stop-after'] === 'grep-generation') {
@@ -192,52 +198,71 @@ async function main() {
     process.exit(0);
   }
 
-  // 4. Run fzf with preview window on the right
-  const fzfInput = filteredFiles.map((file) => path.relative(baseDir, file)).join('\n');
-  const fzfProc = Bun.spawn(
-    [
-      'fzf',
-      '--multi',
-      '--ansi',
-      '--tac',
-      '--preview',
-      'bat --color=always --style=numbers {} || cat {}',
-      '--preview-window',
-      'right:50%',
-    ],
-    {
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: 'inherit', // Show fzf UI errors
-      cwd: baseDir,
+  // 4. Process files (with fzf if --fzf is set, otherwise use all filtered files)
+  let selectedRelativeFiles: string[] = [];
+  if (values.fzf) {
+    try {
+      await $`which fzf`.quiet();
+    } catch (error) {
+      console.error('Error: fzf command not found. Please install fzf.');
+      process.exit(1);
     }
-  );
 
-  fzfProc.stdin.write(fzfInput);
-  await fzfProc.stdin.end();
+    const fzfInput = filteredFiles.map((file) => path.relative(baseDir, file)).join('\n');
+    const fzfProc = Bun.spawn(
+      [
+        'fzf',
+        '--multi',
+        '--ansi',
+        '--tac',
+        '--preview',
+        'bat --color=always --style=numbers {} || cat {}',
+        '--preview-window',
+        'right:50%',
+      ],
+      {
+        stdin: 'pipe',
+        stdout: 'pipe',
+        stderr: 'inherit', // Show fzf UI errors
+        cwd: baseDir,
+      }
+    );
 
-  const fzfOutput = await new Response(fzfProc.stdout).text();
-  const exitCode = await fzfProc.exited;
+    fzfProc.stdin.write(fzfInput);
+    await fzfProc.stdin.end();
 
-  if (exitCode !== 0) {
-    // fzf exits with 130 if user cancels (e.g., Esc or Ctrl+C)
-    if (exitCode !== 130 && !values.quiet) {
-      console.error(`fzf exited with error code ${exitCode}`);
+    const fzfOutput = await new Response(fzfProc.stdout).text();
+    const exitCode = await fzfProc.exited;
+
+    if (exitCode !== 0) {
+      // fzf exits with 130 if user cancels (e.g., Esc or Ctrl+C)
+      if (exitCode !== 130 && !values.quiet) {
+        console.error(`fzf exited with error code ${exitCode}`);
+      }
+      // Exit silently if user cancelled or error occurred
+      process.exit(exitCode === 130 ? 0 : 1);
+    } else {
+      selectedRelativeFiles = fzfOutput.trim().split('\n').filter(Boolean);
     }
-    // Exit silently if user cancelled or error occurred
-    process.exit(exitCode === 130 ? 0 : 1);
+  } else {
+    selectedRelativeFiles = filteredFiles.map((file) => path.relative(baseDir, file));
   }
 
-  // 5. Process and Output Selection
-  const selectedRelativeFiles = fzfOutput.trim().split('\n').filter(Boolean);
+  // 5. Output Selection
+  if (selectedRelativeFiles.length === 0) {
+    if (!values.quiet) {
+      console.warn('No files selected.');
+    }
+    process.exit(0);
+  }
 
   if (selectedRelativeFiles.length > 0) {
-    // Output space-separated absolute paths
+    // Output absolute paths
     let output: string;
     if (values.yaml) {
       output = selectedRelativeFiles.map((file) => `    - "${file}"`).join('\n');
     } else {
-      output = selectedRelativeFiles.join(' ');
+      output = selectedRelativeFiles.map((file) => `'${file}'`).join(' ');
     }
 
     await clipboard.write(output);

@@ -3,13 +3,17 @@ import yaml from 'yaml';
 import { planSchema, type PlanSchema } from './planSchema.js';
 import { generateObject, generateText } from 'ai';
 import { createModel } from '../common/model_factory.js';
-import { logSpawn } from '../rmfilter/utils.js';
+import { logSpawn, quiet } from '../rmfilter/utils.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { planExampleFormat, planPrompt } from './prompt.js';
 import clipboardy from 'clipboardy';
 import { Command } from 'commander';
+import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import os from 'os';
 import path from 'path';
+import { Resolver } from '../dependency_graph/resolve';
+import { ImportWalker } from '../dependency_graph/walk_imports';
+import { Extractor } from '../treesitter/extract';
 import { cleanupYaml } from './cleanup.js';
 import { select } from '@inquirer/prompts';
 import { commitAll, getGitRoot } from '../rmfilter/utils.js';
@@ -272,6 +276,11 @@ program
   .description('Prepare the next step(s) from a plan YAML for execution')
   .option('--rmfilter', 'Use rmfilter to generate the prompt')
   .option('--previous', 'Include information about previous completed steps')
+  .option('--with-imports', 'Include direct imports of files found in the prompt or task files')
+  .option(
+    '--with-all-imports',
+    'Include the entire import tree of files found in the prompt or task files'
+  )
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planFile, options) => {
@@ -283,6 +292,16 @@ program
       const fileContent = await Bun.file(planFile).text();
       const parsed = yaml.parse(fileContent);
       const plan = planSchema.safeParse(parsed);
+
+      // Check for conflicting import options
+      if (options.withImports && options.withAllImports) {
+        console.error(
+          'Error: Cannot use both --with-imports and --with-all-imports. Please choose one.'
+        );
+        process.exit(1);
+      }
+
+      let performImportAnalysis = options.withImports || options.withAllImports;
 
       if (!plan.success) {
         console.error('Validation errors:', plan.error);
@@ -352,9 +371,89 @@ program
       }
 
       const selectedPendingSteps = pendingSteps.slice(0, selectedIndex + 1);
+
+      let candidateFilesForImports: string[] = [];
+      if (performImportAnalysis) {
+        const prompts = selectedPendingSteps.map((step) => step.prompt).join('\n');
+        const gitRoot = await getGitRoot();
+        const { files: filesFromPrompt } = await extractFileReferencesFromInstructions(
+          gitRoot,
+          prompts
+        );
+        const resolvedTaskFiles = files; // Reuse existing resolved files
+
+        if (filesFromPrompt.length > 0) {
+          // If prompt has files, use them. Assume they are absolute or resolvable from gitRoot.
+          // Ensure they are absolute paths.
+          candidateFilesForImports = filesFromPrompt.map((f) => path.resolve(gitRoot, f));
+          if (!quiet) {
+            console.log(
+              `Using ${candidateFilesForImports.length} files found in prompt for import analysis.`
+            );
+          }
+        } else {
+          // Fallback to task files if prompt has no files.
+          candidateFilesForImports = resolvedTaskFiles.map((f) => path.resolve(gitRoot, f));
+          if (!quiet) {
+            console.log(
+              `No files found in prompt, using ${candidateFilesForImports.length} task files for import analysis.`
+            );
+          }
+        }
+        // Filter out any non-existent files just in case
+        candidateFilesForImports = (
+          await Promise.all(
+            candidateFilesForImports.map(async (f) => ((await Bun.file(f).exists()) ? f : null))
+          )
+        ).filter((f) => f !== null);
+
+        if (!options.rmfilter) {
+          const resolver = await Resolver.new(gitRoot);
+          const walker = new ImportWalker(new Extractor(), resolver);
+
+          async function processImportsStandalone(
+            initialFiles: string[],
+            allImports: boolean
+          ): Promise<string[]> {
+            const results = new Set<string>();
+            await Promise.all(
+              initialFiles.map(async (file) => {
+                const filePath = path.resolve(gitRoot, file);
+                try {
+                  if (allImports) {
+                    await walker.getImportTree(filePath, results);
+                  } else {
+                    const definingFiles = await walker.getDefiningFiles(filePath);
+                    definingFiles.forEach((imp) => results.add(imp));
+                    results.add(filePath);
+                  }
+                } catch (error) {
+                  console.warn(`Warning: Error processing imports for ${filePath}:`, error);
+                }
+              })
+            );
+            // Ensure initial files are included
+            initialFiles.forEach((f) => results.add(path.resolve(gitRoot, f)));
+            return Array.from(results);
+          }
+
+          const expandedFiles = await processImportsStandalone(
+            candidateFilesForImports,
+            options.withAllImports
+          );
+          const combinedFiles = [...files, ...expandedFiles];
+          const uniqueFiles = Array.from(new Set(combinedFiles));
+          files = uniqueFiles;
+        }
+      }
+
+      files = files.map((f) => path.relative(gitRoot, f)).sort();
+
       // Build the LLM prompt
       const promptParts: string[] = [];
-      promptParts.push(`# Goal: ${planData.goal}\n\nDetails: ${planData.details}\n`);
+      promptParts.push(
+        `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
+      );
       promptParts.push(
         `## Current Task: ${activeTask.title}\n\nDescription: ${activeTask.description}\n`
       );
@@ -377,13 +476,16 @@ program
 
       promptParts.push('\n## Selected Next Subtasks to Implement:\n');
       selectedPendingSteps.forEach((step, index) => {
-        promptParts.push(`- [TODO ${index + 1}] ${step.prompt}`);
+        promptParts.push(`- [${index + 1}] ${step.prompt}`);
       });
 
       const llmPrompt = promptParts.join('\n');
-      console.log('\n----- LLM PROMPT -----\n');
-      console.log(llmPrompt);
-      console.log('\n---------------------\n');
+      if (!options.rmfilter) {
+        // rmfilter will print the prompt if we are using it, but print it out otherwise
+        console.log('\n----- LLM PROMPT -----\n');
+        console.log(llmPrompt);
+        console.log('\n---------------------\n');
+      }
 
       // Step 1: Write llmPrompt to a temporary file
       const tmpPromptPath = path.join(os.tmpdir(), `rmplan-next-prompt-${Date.now()}.md`);
@@ -394,18 +496,38 @@ program
 
         if (options.rmfilter) {
           // Construct the argument list for rmfilter
-          const rmfilterArgs = [
+          const baseRmfilterArgs = [
             'rmfilter',
             '--copy',
             '--gitroot',
-            ...files,
             '--instructions',
             `@${tmpPromptPath}`,
-            ...cmdLineRmfilterArgs,
           ];
 
+          let finalRmfilterArgs: string[];
+          if (performImportAnalysis) {
+            const relativeCandidateFiles = candidateFilesForImports.map((f) =>
+              path.relative(gitRoot, f)
+            );
+            const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
+            if (options.withImports) {
+              importCommandBlockArgs.push('--with-imports');
+            } else if (options.withAllImports) {
+              importCommandBlockArgs.push('--with-all-imports');
+            }
+
+            finalRmfilterArgs = [
+              ...baseRmfilterArgs,
+              ...importCommandBlockArgs,
+              '--',
+              ...cmdLineRmfilterArgs,
+            ];
+          } else {
+            finalRmfilterArgs = [...baseRmfilterArgs, ...files, ...cmdLineRmfilterArgs];
+          }
+
           // Step 4: Execute rmfilter using logSpawn with inherited stdio
-          const proc = logSpawn(rmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
+          const proc = logSpawn(finalRmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
           // Step 5: Await completion and check the exit code
           const exitRes = await proc.exited;
           if (exitRes !== 0) {
@@ -414,6 +536,7 @@ program
           }
         } else {
           console.log('Copying prompt to clipboard...');
+
           await clipboard.write(llmPrompt);
         }
       } finally {
