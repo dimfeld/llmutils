@@ -450,27 +450,38 @@ program
 
         if (options.rmfilter) {
           // Construct the argument list for rmfilter
-          const rmfilterArgs = [
+          const baseRmfilterArgs = [
             'rmfilter',
             '--copy',
             '--gitroot',
-            ...files,
             '--instructions',
             `@${tmpPromptPath}`,
-            ...cmdLineRmfilterArgs,
           ];
 
+          let finalRmfilterArgs: string[];
           if (performImportAnalysis) {
-            // TODO: Modify rmfilterArgs for import options
-            rmfilterArgs.push(
-              '--',
-              ...candidateFilesForImports,
-              options.withImports ? '--with-imports' : '--with-all-imports'
+            const relativeCandidateFiles = candidateFilesForImports.map((f) =>
+              path.relative(gitRoot, f)
             );
+            const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
+            if (options.withImports) {
+              importCommandBlockArgs.push('--with-imports');
+            } else if (options.withAllImports) {
+              importCommandBlockArgs.push('--with-all-imports');
+            }
+
+            finalRmfilterArgs = [
+              ...baseRmfilterArgs,
+              ...importCommandBlockArgs,
+              '--',
+              ...cmdLineRmfilterArgs,
+            ];
+          } else {
+            finalRmfilterArgs = [...baseRmfilterArgs, ...files, ...cmdLineRmfilterArgs];
           }
 
           // Step 4: Execute rmfilter using logSpawn with inherited stdio
-          const proc = logSpawn(rmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
+          const proc = logSpawn(finalRmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
           // Step 5: Await completion and check the exit code
           const exitRes = await proc.exited;
           if (exitRes !== 0) {

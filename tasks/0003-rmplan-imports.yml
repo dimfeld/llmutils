@@ -174,7 +174,7 @@ tasks:
               ```
           Adjust the existing `rmfilterArgs` construction carefully to achieve
           this conditional inclusion.
-        done: false
+        done: true
   - title: Implement Standalone Import Analysis
     description: Implement the import analysis directly within rmplan for cases
       where `--rmfilter` is not used, leveraging the existing `ImportWalker` and
