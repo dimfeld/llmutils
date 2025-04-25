@@ -424,10 +424,6 @@ program
                     await walker.getImportTree(filePath, results);
                   } else {
                     const definingFiles = await walker.getDefiningFiles(filePath);
-                    console.log({
-                      filePath,
-                      definingFiles,
-                    });
                     definingFiles.forEach((imp) => results.add(imp));
                     results.add(filePath);
                   }
