@@ -48,7 +48,7 @@ ONLY EVER RETURN CODE IN A *SEARCH/REPLACE BLOCK*!
 ## SEARCH/REPLACE Block Examples
 
 
-<example name="Deleting a Block">
+<formatting_example name="Deleting a Block">
 mathweb/flask/app.py
 ${fence}python
 <<<<<<< SEARCH
@@ -63,9 +63,9 @@ def factorial(n):
 =======
 >>>>>>> REPLACE
 ${fence}
-</example>
+</formatting_example>
 
-<example name="Changing Lines, with unchanged context in both sides to help with edit placement">
+<formatting_example name="Changing Lines, with unchanged context in both sides to help with edit placement">
 libs/db/schema.ts
 ${fence}typescript
 <<<<<<< SEARCH
@@ -113,7 +113,7 @@ ${fence}typescript
     processingEventId: uuid('processing_event_id'),
 >>>>>>> REPLACE
 ${fence}
-</example>
+</formatting_example>
 
 </formatting>`;
 
@@ -165,7 +165,7 @@ ONLY EVER RETURN CODE IN A *SEARCH/REPLACE BLOCK*!
 ## SEARCH/REPLACE Block Examples
 
 
-<example name="Deleting a Block">
+<formatting_example name="Deleting a Block">
 ${fence}python
 mathweb/flask/app.py
 <<<<<<< SEARCH
@@ -180,9 +180,9 @@ def factorial(n):
 =======
 >>>>>>> REPLACE
 ${fence}
-</example>
+</formatting_example>
 
-<example name="Changing Lines, with unchanged context in both sides to help with edit placement">
+<formatting_example name="Changing Lines, with unchanged context in both sides to help with edit placement">
 ${fence}typescript
 libs/db/schema.ts
 <<<<<<< SEARCH
@@ -230,6 +230,6 @@ libs/db/schema.ts
     processingEventId: uuid('processing_event_id'),
 >>>>>>> REPLACE
 ${fence}
-</example>
+</formatting_example>
 
 </formatting>`;

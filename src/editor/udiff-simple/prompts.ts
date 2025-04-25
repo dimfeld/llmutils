@@ -13,7 +13,7 @@ Don't leave out any lines or the diff patch won't apply correctly.
 
 To make a new file, show a diff from \`--- /dev/null\` to \`+++ path/to/new/file.ext\`.
 
-<example>
+<formatting_example>
 ${fence}diff
 --- mathweb/flask/app.py
 +++ mathweb/flask/app.py
@@ -50,7 +50,7 @@ ${fence}diff
 +            count += 1
 +    return str(num)
 ${fence}
-</example>
+</formatting_example>
 
 </formatting>
 `;

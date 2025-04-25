@@ -274,10 +274,16 @@ async function processCommand(
           throw new Error(`No files found matching example pattern: ${p}`);
         }
 
-        let { largest, smallest } = await getNFilesBySize(matching, 1, 1);
+        let {
+          largest: [largest],
+          smallest: [smallest],
+        } = await getNFilesBySize(matching, 1, 1);
+
+        let resultFiles = largest !== smallest ? [largest, smallest] : [largest];
+
         return {
           pattern: p,
-          files: [largest[0], smallest[0]],
+          files: resultFiles,
         };
       })
     );
