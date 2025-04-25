@@ -126,3 +126,41 @@ These changes will add the \`--check-update\` option to the command-line interfa
   expect(edits.length).toBe(2);
   expect(edits[0].hunk.length).toBe(3);
 });
+
+test('find nested diff block', () => {
+  const content = `
+Example of a nested diff block:
+
+\`\`\`diff
+\`\`\`diff
+--- src/rmplan/rmplan.ts
++++ src/rmplan/rmplan.ts
+@@ -290,6 +290,8 @@
+   .description('Prepare the next step(s) from a plan YAML for execution')
+   .option('--rmfilter', 'Use rmfilter to generate the prompt')
+   .option('--previous', 'Include information about previous completed steps')
++  .option('--with-imports', 'Include direct imports of files found in the prompt or task files')
+   .allowExcessArguments(true)
+   .allowUnknownOption(true)
+   .action(async (planFile, options) => {
+\`\`\`
+\`\`\`
+
+This should extract the inner diff correctly.
+`;
+
+  const edits = findDiffs(content);
+  console.log(edits);
+  expect(edits.length).toBe(1);
+  const edit = edits[0];
+  expect(edit.filePath).toBe('src/rmplan/rmplan.ts');
+  expect(edit.hunk).toEqual([
+    "   .description('Prepare the next step(s) from a plan YAML for execution')\n",
+    "   .option('--rmfilter', 'Use rmfilter to generate the prompt')\n",
+    "   .option('--previous', 'Include information about previous completed steps')\n",
+    "+  .option('--with-imports', 'Include direct imports of files found in the prompt or task files')\n",
+    '   .allowExcessArguments(true)\n',
+    '   .allowUnknownOption(true)\n',
+    '   .action(async (planFile, options) => {\n',
+  ]);
+});

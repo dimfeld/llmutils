@@ -445,7 +445,7 @@ async function doReplace(
 }
 
 /**
- * Parses the LLM response content to find ```diff blocks and extract hunks.
+ * Parses the LLM response content to find ```diff blocks and extract hunks, including nested diff blocks.
  */
 export function findDiffs(content: string): { filePath: string | null; hunk: string[] }[] {
   content = content.trimStart();
@@ -453,26 +453,72 @@ export function findDiffs(content: string): { filePath: string | null; hunk: str
     content += '\n';
   }
   const lines = splitLinesWithEndings(content);
-  let lineNum = 0;
   const edits: { filePath: string | null; hunk: string[] }[] = [];
 
-  if (lines[0].startsWith('--- ')) {
-    edits.push(...processFencedBlock(lines, 0).edits);
-    if (edits.length) {
-      return edits;
+  // Stack to track nested fenced blocks
+  let fenceStack: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trimEnd();
+
+    // Detect start of a fenced block
+    if (line.startsWith('```')) {
+      const fenceType = line.substring(3).trim();
+      if (fenceStack.length === 0 && fenceType === 'diff') {
+        // Top-level diff block
+        const result = processFencedBlock(lines, i + 1);
+        edits.push(...result.edits);
+        i = result.nextLineNum;
+        continue;
+      } else if (fenceType === 'diff') {
+        // Nested diff block, collect it as a single hunk
+        let nestedContent: string[] = [];
+        let j = i;
+        let nestedFenceCount = 1;
+
+        while (j < lines.length && nestedFenceCount > 0) {
+          const nextLine = lines[j];
+          nestedContent.push(nextLine);
+          if (nextLine.startsWith('```')) {
+            if (nextLine.trim() === '```') {
+              nestedFenceCount--;
+            } else if (nextLine.startsWith('```diff')) {
+              nestedFenceCount++;
+            }
+          }
+          j++;
+        }
+
+        // Remove the closing fence from nestedContent
+        if (nestedContent[nestedContent.length - 1].trim() === '```') {
+          nestedContent.pop();
+        }
+
+        // Process the nested diff block
+        const nestedEdits = findDiffs(nestedContent.join(''));
+        edits.push(...nestedEdits);
+        i = j;
+        continue;
+      } else {
+        // Other fenced block (e.g., ```yaml), push to stack
+        fenceStack.push(fenceType);
+      }
+    } else if (line.trim() === '```' && fenceStack.length > 0) {
+      // End of a non-diff fenced block
+      fenceStack.pop();
+    } else if (fenceStack.length === 0 && line.startsWith('--- ')) {
+      // Non-fenced diff at the start of content
+      const result = processFencedBlock(lines, i);
+      edits.push(...result.edits);
+      if (result.edits.length) {
+        return edits;
+      }
     }
+
+    i++;
   }
 
-  while (lineNum < lines.length) {
-    const line = lines[lineNum];
-    if (line.startsWith('```diff')) {
-      const result = processFencedBlock(lines, lineNum + 1);
-      edits.push(...result.edits);
-      lineNum = result.nextLineNum;
-    } else {
-      lineNum++;
-    }
-  }
   return edits;
 }
 
