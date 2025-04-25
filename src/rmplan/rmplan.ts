@@ -3,11 +3,12 @@ import yaml from 'yaml';
 import { planSchema, type PlanSchema } from './planSchema.js';
 import { generateObject, generateText } from 'ai';
 import { createModel } from '../common/model_factory.js';
-import { logSpawn } from '../rmfilter/utils.js';
+import { logSpawn, quiet } from '../rmfilter/utils.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { planExampleFormat, planPrompt } from './prompt.js';
 import clipboardy from 'clipboardy';
 import { Command } from 'commander';
+import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import os from 'os';
 import path from 'path';
 import { cleanupYaml } from './cleanup.js';
@@ -328,10 +329,6 @@ program
         )
       ).filter((x) => x != null);
 
-      if (performImportAnalysis) {
-        // TODO: Extract candidate files
-      }
-
       // Separate completed and pending steps
       const completedSteps = activeTask.steps.filter((step) => step.done);
       const pendingSteps = activeTask.steps.filter((step) => !step.done);
@@ -372,6 +369,42 @@ program
       }
 
       const selectedPendingSteps = pendingSteps.slice(0, selectedIndex + 1);
+
+      if (performImportAnalysis) {
+        const prompts = selectedPendingSteps.map((step) => step.prompt).join('\n');
+        const gitRoot = await getGitRoot();
+        const { files: filesFromPrompt } = await extractFileReferencesFromInstructions(
+          gitRoot,
+          prompts
+        );
+        const resolvedTaskFiles = files; // Reuse existing resolved files
+
+        if (filesFromPrompt.length > 0) {
+          // If prompt has files, use them. Assume they are absolute or resolvable from gitRoot.
+          // Ensure they are absolute paths.
+          candidateFilesForImports = filesFromPrompt.map((f) => path.resolve(gitRoot, f));
+          if (!quiet) {
+            console.log(
+              `Using ${candidateFilesForImports.length} files found in prompt for import analysis.`
+            );
+          }
+        } else {
+          // Fallback to task files if prompt has no files.
+          candidateFilesForImports = resolvedTaskFiles; // Already absolute
+          if (!quiet) {
+            console.log(
+              `No files found in prompt, using ${candidateFilesForImports.length} task files for import analysis.`
+            );
+          }
+        }
+        // Filter out any non-existent files just in case
+        candidateFilesForImports = (
+          await Promise.all(
+            candidateFilesForImports.map(async (f) => ((await Bun.file(f).exists()) ? f : null))
+          )
+        ).filter((f) => f !== null);
+      }
+
       // Build the LLM prompt
       const promptParts: string[] = [];
       promptParts.push(`# Goal: ${planData.goal}\n\nDetails: ${planData.details}\n`);

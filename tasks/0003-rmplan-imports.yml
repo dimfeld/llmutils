@@ -115,7 +115,7 @@ tasks:
           Make sure `candidateFilesForImports` holds absolute paths at the end
           of this step. Log the source and count of candidate files if not
           quiet.
-        done: false
+        done: true
   - title: Implement --rmfilter Integration
     description: Modify the rmfilter execution logic to pass the candidate files and
       import flags correctly when both `--rmfilter` and an import option are
