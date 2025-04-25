@@ -11,6 +11,9 @@ import { Command } from 'commander';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import os from 'os';
 import path from 'path';
+import { Resolver } from '../dependency_graph/resolve';
+import { ImportWalker } from '../dependency_graph/walk_imports';
+import { Extractor } from '../treesitter/extract';
 import { cleanupYaml } from './cleanup.js';
 import { select } from '@inquirer/prompts';
 import { commitAll, getGitRoot } from '../rmfilter/utils.js';
@@ -298,7 +301,6 @@ program
         process.exit(1);
       }
 
-      let candidateFilesForImports: string[] = []; // Placeholder
       let performImportAnalysis = options.withImports || options.withAllImports;
 
       if (!plan.success) {
@@ -379,6 +381,7 @@ program
         );
         const resolvedTaskFiles = files; // Reuse existing resolved files
 
+        let candidateFilesForImports: string[] = [];
         if (filesFromPrompt.length > 0) {
           // If prompt has files, use them. Assume they are absolute or resolvable from gitRoot.
           // Ensure they are absolute paths.
@@ -390,7 +393,7 @@ program
           }
         } else {
           // Fallback to task files if prompt has no files.
-          candidateFilesForImports = resolvedTaskFiles; // Already absolute
+          candidateFilesForImports = resolvedTaskFiles.map((f) => path.resolve(gitRoot, f));
           if (!quiet) {
             console.log(
               `No files found in prompt, using ${candidateFilesForImports.length} task files for import analysis.`
@@ -403,7 +406,57 @@ program
             candidateFilesForImports.map(async (f) => ((await Bun.file(f).exists()) ? f : null))
           )
         ).filter((f) => f !== null);
+
+        if (!options.rmfilter) {
+          const resolver = await Resolver.new(gitRoot);
+          const walker = new ImportWalker(new Extractor(), resolver);
+
+          async function processImportsStandalone(
+            initialFiles: string[],
+            allImports: boolean
+          ): Promise<string[]> {
+            const results = new Set<string>();
+            await Promise.all(
+              initialFiles.map(async (file) => {
+                const filePath = path.resolve(gitRoot, file);
+                try {
+                  if (allImports) {
+                    await walker.getImportTree(filePath, results);
+                  } else {
+                    const definingFiles = await walker.getDefiningFiles(filePath);
+                    console.log({
+                      filePath,
+                      definingFiles,
+                    });
+                    definingFiles.forEach((imp) => results.add(imp));
+                    results.add(filePath);
+                  }
+                } catch (error) {
+                  console.warn(`Warning: Error processing imports for ${filePath}:`, error);
+                }
+              })
+            );
+            // Ensure initial files are included
+            initialFiles.forEach((f) => results.add(path.resolve(gitRoot, f)));
+            return Array.from(results);
+          }
+
+          const expandedFiles = await processImportsStandalone(
+            candidateFilesForImports,
+            options.withAllImports
+          );
+          console.log({
+            files,
+            expandedFiles,
+            candidateFilesForImports,
+          });
+          const combinedFiles = [...files, ...expandedFiles];
+          const uniqueFiles = Array.from(new Set(combinedFiles));
+          files = uniqueFiles;
+        }
       }
+
+      files = files.map((f) => path.relative(gitRoot, f)).sort();
 
       // Build the LLM prompt
       const promptParts: string[] = [];
@@ -490,9 +543,6 @@ program
           }
         } else {
           console.log('Copying prompt to clipboard...');
-          if (performImportAnalysis) {
-            // TODO: Perform standalone import analysis and update 'files'
-          }
 
           await clipboard.write(llmPrompt);
         }

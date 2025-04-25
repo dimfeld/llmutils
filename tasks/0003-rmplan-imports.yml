@@ -253,7 +253,7 @@ tasks:
           Ensure all file paths used within this block
           (`candidateFilesForImports`, results from `ImportWalker`, the final
           `files` list) are absolute paths.
-        done: false
+        done: true
   - title: Refine and Test
     description: Review path handling, add logging, and perform manual testing of
       all scenarios.
