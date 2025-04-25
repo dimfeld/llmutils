@@ -130,8 +130,21 @@ program
 
     let validatedPlan: unknown;
 
-    const match = inputText.match(/```yaml\n([\s\S]*?)\n```/i);
-    const rawYaml = match ? match[1] : inputText;
+    function findYamlStart(inputText: string): string {
+      const match = inputText.match(/```yaml\n([\s\S]*?)\n```/i);
+      if (match) {
+        return match[1];
+      }
+
+      let goal = inputText.indexOf('goal:');
+      if (goal >= 0) {
+        return inputText.slice(goal);
+      }
+
+      return inputText;
+    }
+
+    const rawYaml = findYamlStart(inputText);
     try {
       const parsedObject = yaml.parse(rawYaml);
       validatedPlan = planSchema.parse(parsedObject);
@@ -143,10 +156,7 @@ program
       // Use Gemini Flash to clean up the text to valid YAML
       console.warn('YAML parsing failed, attempting LLM cleanup...');
       const result = await cleanupYaml(inputText);
-
-      let cleanedYaml = result;
-      const match = cleanedYaml.match(/```yaml\n([\s\S]*?)\n```/i);
-      let rawYaml = match ? match[1] : cleanedYaml;
+      const rawYaml = findYamlStart(result);
       try {
         const parsedObject = yaml.parse(rawYaml);
         const result = planSchema.safeParse(parsedObject);
@@ -155,8 +165,11 @@ program
           process.exit(1);
         }
         validatedPlan = result.data;
-      } catch (e3) {
-        console.error('Failed to parse YAML even after Gemini Flash cleanup.');
+      } catch (e) {
+        await Bun.write('rmplan-clean-failure.yml', result);
+        console.error(
+          'Failed to parse YAML even after Gemini Flash cleanup. Saved cleaned output to rmplan-clean-failure.yml'
+        );
         process.exit(1);
       }
     }
