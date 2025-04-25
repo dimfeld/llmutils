@@ -25,6 +25,12 @@ export async function extractFileReferencesFromInstructions(baseDir: string, ins
   const matches = instructions.match(pathRegex) || [];
   const results = await Promise.all(
     matches.map(async (match) => {
+      if (!match.includes('.') && !match.includes('/')) {
+        // Filter out things that are just words and may accidentally match paths,
+        // like "services" or "apps".
+        return null;
+      }
+
       const normalizedPath = path.normalize(path.join(baseDir, match));
       try {
         const stats = await Bun.file(normalizedPath).stat();
