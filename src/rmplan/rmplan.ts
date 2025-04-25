@@ -445,11 +445,6 @@ program
             candidateFilesForImports,
             options.withAllImports
           );
-          console.log({
-            files,
-            expandedFiles,
-            candidateFilesForImports,
-          });
           const combinedFiles = [...files, ...expandedFiles];
           const uniqueFiles = Array.from(new Set(combinedFiles));
           files = uniqueFiles;

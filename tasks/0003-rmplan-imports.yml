@@ -289,4 +289,4 @@ tasks:
           variables. Ensure error handling (e.g., file not found during
           standalone analysis) is reasonable (e.g., prints a warning and
           continues).
-        done: false
+        done: true
