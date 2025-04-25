@@ -451,7 +451,9 @@ program
 
       // Build the LLM prompt
       const promptParts: string[] = [];
-      promptParts.push(`# Goal: ${planData.goal}\n\nDetails: ${planData.details}\n`);
+      promptParts.push(
+        `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
+      );
       promptParts.push(
         `## Current Task: ${activeTask.title}\n\nDescription: ${activeTask.description}\n`
       );
@@ -474,7 +476,7 @@ program
 
       promptParts.push('\n## Selected Next Subtasks to Implement:\n');
       selectedPendingSteps.forEach((step, index) => {
-        promptParts.push(`- [TODO ${index + 1}] ${step.prompt}`);
+        promptParts.push(`- [${index + 1}] ${step.prompt}`);
       });
 
       const llmPrompt = promptParts.join('\n');
