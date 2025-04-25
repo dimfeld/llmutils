@@ -138,7 +138,7 @@ async function processWithImports(files: string[], allImports: boolean): Promise
   return Array.from(results);
 }
 
-async function getLargestNFiles(files: string[], n: number) {
+async function getNFilesBySize(files: string[], nLargest: number, nSmallest: number) {
   const filesWithSizes = await Promise.all(
     files.map(async (file) => ({
       file,
@@ -148,10 +148,12 @@ async function getLargestNFiles(files: string[], n: number) {
         .catch(() => 0),
     }))
   );
-  return filesWithSizes
-    .sort((a, b) => b.size - a.size)
-    .slice(0, n)
-    .map((f) => f.file);
+  const sorted = filesWithSizes.sort((a, b) => b.size - a.size);
+
+  const largest = nLargest ? sorted.slice(0, nLargest).map((f) => f.file) : [];
+  const smallest = nSmallest ? sorted.slice(-nSmallest).map((f) => f.file) : [];
+
+  return { largest, smallest };
 }
 
 // Process each command
@@ -261,7 +263,7 @@ async function processCommand(
     console.timeEnd(`Globbing ${positionals.join(', ')}`);
   }
 
-  let exampleFiles: Promise<{ pattern: string; file: string }[]> | undefined;
+  let exampleFiles: Promise<{ pattern: string; files: string[] }[]> | undefined;
   if (cmdValues.example?.length) {
     let values = cmdValues.example.flatMap((p) => p.split(','));
     exampleFiles = Promise.all(
@@ -272,10 +274,10 @@ async function processCommand(
           throw new Error(`No files found matching example pattern: ${p}`);
         }
 
-        let largest = await getLargestNFiles(matching, 1);
+        let { largest, smallest } = await getNFilesBySize(matching, 1, 1);
         return {
           pattern: p,
-          file: largest[0],
+          files: [largest[0], smallest[0]],
         };
       })
     );
@@ -289,20 +291,7 @@ async function processCommand(
       process.exit(1);
     }
 
-    files = await getLargestNFiles(files, n);
-  }
-
-  let foundExamples = await (exampleFiles ?? []);
-  if (foundExamples.length) {
-    allFoundExamples.push(...foundExamples);
-
-    if (cmdValues.grep && files) {
-      // If we have other filters, then add the example files to the list of files
-      files.push(...foundExamples.map((f) => f.file));
-    } else {
-      // Otherwise, just use the example files so we don't include everything
-      files = foundExamples.map((f) => f.file);
-    }
+    files = (await getNFilesBySize(files, n, 0)).largest;
   }
 
   if (files) {
@@ -311,9 +300,25 @@ async function processCommand(
     } else if (cmdValues['with-all-imports']) {
       files = await processWithImports(files, true);
     }
-
-    files.forEach((file) => filesSet.add(file));
   }
+
+  let foundExamples = await (exampleFiles ?? []);
+  if (foundExamples.length) {
+    const examples = foundExamples.flatMap((f) =>
+      f.files.map((file) => ({ pattern: f.pattern, file }))
+    );
+    allFoundExamples.push(...examples);
+
+    if (cmdValues.grep && files) {
+      // If we have other filters, then add the example files to the list of files
+      files.push(...examples.map((f) => f.file));
+    } else {
+      // Otherwise, just use the example files so we don't include everything
+      files = examples.map((f) => f.file);
+    }
+  }
+
+  files?.forEach((file) => filesSet.add(file));
 
   if (filesSet.size === 0) {
     throw new Error(`No files found for file set: ${positionals.join(', ')}`);
