@@ -317,13 +317,24 @@ program
         );
       } else {
         // Otherwise, prompt user to select steps
+        let maxWidth = process.stdout.columns - 12;
         selectedIndex = await select({
           message: 'Run up to which step?',
-          choices: pendingSteps.map((step, index) => ({
-            name: `[${index + 1}] ${step.prompt.split('\n')[0]}...`,
-            description: step.prompt,
-            value: index,
-          })),
+          choices: pendingSteps.map((step, index) => {
+            let lines = step.prompt.split('\n');
+            let name: string;
+            if (lines[0].length > maxWidth) {
+              name = `[${index + 1}] ${lines[0].slice(0, maxWidth)}...`;
+            } else {
+              name = `[${index + 1}] ${lines[0]}`;
+            }
+
+            return {
+              name,
+              description: '\n' + step.prompt,
+              value: index,
+            };
+          }),
         });
       }
 
