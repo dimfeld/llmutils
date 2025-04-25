@@ -42,7 +42,7 @@ From here you should have the foundation to provide a series of prompts for a co
 
 The goal is to output prompts, but context, etc is important as well. Remember when creating a prompt that the model executing it may not have all the context you have and will not be as smart as you, so you need to be very detailed and include plenty of information about which files to edit, what to do and how to do it.
 
-When generating the final output with the prompts, output an overall goal, project details, and then a list of tasks. Each task should have a list of relevant files and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files.
+When generating the final output with the prompts, output an overall goal, project details, and then a list of tasks. Each task should have a list of relevant files and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include dependencies or built-in system libraries in this list.
 
 The tool that consumes this YAML will join the data for a task together into one or more prompts.
 
