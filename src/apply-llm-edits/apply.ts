@@ -1,8 +1,8 @@
-import { $ } from 'bun';
 import { processRawFiles } from '../editor/whole-file/parse_raw_edits.ts';
 import { processXmlContents } from '../editor/xml/parse_xml.ts';
 import { processSearchReplace } from '../editor/diff-editor/parse.ts';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
+import { getGitRoot } from '../rmfilter/utils.ts';
 
 export interface ApplyLlmEditsOptions {
   content: string;
@@ -49,5 +49,5 @@ export async function applyLlmEdits({ content, writeRoot, dryRun, mode }: ApplyL
 }
 
 export async function getWriteRoot(cwd?: string) {
-  return cwd || (await $`git rev-parse --show-toplevel`.text()).trim() || process.cwd();
+  return cwd || (await getGitRoot()) || process.cwd();
 }

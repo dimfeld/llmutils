@@ -1,7 +1,8 @@
 import * as path from 'path';
-import * as fs from 'fs';
 import * as diff from 'diff';
 import type { ProcessFileOptions } from '../types.ts';
+
+import { secureWrite } from '../../rmfilter/utils.js';
 
 // Custom Error for specific diff application failures
 class UnifiedDiffError extends Error {
@@ -410,30 +411,23 @@ function applyPartialHunk(
  * Handles creating new files.
  */
 async function doReplace(
-  fname: string,
   content: string | null, // null if file doesn't exist
   hunk: string[]
 ): Promise<string | null> {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
-  const absFname = path.resolve(fname); // Ensure absolute path
 
   // Handle creating a new file
-  const fileExists = content !== null; // Assume null content means file doesn't exist
+  const fileExists = content !== null;
   if (!fileExists && !beforeText.trim()) {
     // If file doesn't exist and the 'before' part is empty/whitespace,
     // treat it as creating a new file with the 'after' content.
-    return afterText; // Return the content for the new file
+    return afterText;
   }
 
   if (content === null) {
     // If file doesn't exist but 'before' is not empty, it's an error (cannot apply change to non-existent file)
     return null;
   }
-
-  // Handle inserting into an empty file or appending?
-  // Python code checks `if not before_text.strip(): new_content = content + after_text`
-  // This seems to handle appending if the diff specifies adding lines without removing/changing existing ones.
-  // Let's try applying this logic: If 'before' is effectively empty, just append 'after'.
   if (!beforeText.trim()) {
     // Append to existing file content
     return content + afterText;
@@ -686,25 +680,30 @@ async function applyEdits(
 
   let hunksAppliedCount = 0;
   for (const { filePath, hunk } of uniqueEdits) {
-    const fullPath = path.resolve(rootDir, filePath);
+    const fullPathForRead = path.resolve(rootDir, filePath);
     let currentContent: string | null = null;
-    let fileExists = false;
 
     try {
-      currentContent = await Bun.file(fullPath).text();
-      fileExists = true;
+      const file = Bun.file(fullPathForRead);
+      if (await file.exists()) {
+        currentContent = await file.text();
+      }
     } catch (e) {
-      // file doesn't exist
+      console.error(`Error accessing file ${filePath}: ${e as Error}`);
+      errors.push(
+        `Error accessing file ${filePath}: ${e instanceof Error ? e.message : String(e)}`
+      );
+      continue; // Skip this edit if we can't read the file
     }
 
     try {
-      const newContent = await doReplace(fullPath, currentContent, hunk);
+      const newContent = await doReplace(currentContent, hunk);
 
       if (newContent !== null) {
         // SUCCESS!
         console.log(`Applying hunk to ${filePath}`);
         if (!dryRun) {
-          await Bun.write(fullPath, newContent);
+          await secureWrite(rootDir, filePath, newContent);
         }
         hunksAppliedCount++;
       } else {

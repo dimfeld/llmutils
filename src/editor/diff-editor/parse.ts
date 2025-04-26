@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as diff from 'diff';
 import stringComparison from 'string-comparison';
 import type { ProcessFileOptions } from '../types.ts';
+import { secureWrite } from '../../rmfilter/utils.js';
 
 interface Edit {
   filePath: string;
@@ -21,12 +22,8 @@ export async function processSearchReplace({ content, writeRoot, dryRun }: Proce
 function getEdits(content: string, rootDir: string): Edit[] {
   const edits = findOriginalUpdateBlocks(
     content,
-    [] // TODO getInchatRelativeFiles would need to be implemented
+    [] // TODO consider using list of files from the original prompt if we have it
   );
-
-  // this.shellCommands.push(
-  //   ...edits.filter((edit) => edit.filePath === null).map((edit) => edit.updated)
-  // );
 
   return edits
     .filter((edit) => edit.filePath !== null)
@@ -54,22 +51,28 @@ async function applyEdits(
     }
 
     const { filePath, original, updated } = edit;
-    const fullPath = path.resolve(rootDir, filePath);
     let newContent: string | null = null;
 
-    if (fs.existsSync(fullPath)) {
-      const content = await Bun.file(fullPath).text();
-      newContent = await doReplace(fullPath, content, original, updated);
-    } else {
-      newContent = await doReplace(fullPath, null, original, updated);
+    try {
+      const file = Bun.file(path.resolve(rootDir, filePath));
+      let fileContent: string | null = null;
+      if (await file.exists()) {
+        fileContent = await file.text();
+      }
+      newContent = await doReplace(filePath, fileContent, original, updated);
+    } catch (e) {
+      // Handle potential read errors if necessary
+      console.error(`Error reading file ${filePath}: ${e as Error}`);
+      failed.push(edit); // Mark as failed if read fails
+      continue;
     }
 
     updatedEdits.push({ filePath, original, updated });
 
-    if (newContent) {
-      console.log(`Applying edit to ${fullPath}`);
+    if (newContent !== null) {
+      console.log(`Applying edit to ${filePath}`);
       if (!dryRun) {
-        await Bun.write(fullPath, newContent);
+        await secureWrite(rootDir, filePath, newContent);
       }
       passed.push(edit);
     } else {
@@ -123,18 +126,19 @@ ${fence}
 }
 
 async function doReplace(
-  fname: string,
+  relativePath: string,
   content: string | null,
   beforeText: string,
   afterText: string
 ): Promise<string | null> {
-  beforeText = stripQuotedWrapping(beforeText, fname);
-  afterText = stripQuotedWrapping(afterText, fname);
+  beforeText = stripQuotedWrapping(beforeText, relativePath);
+  afterText = stripQuotedWrapping(afterText, relativePath);
 
-  let file = Bun.file(fname);
-  if (!(await file.exists()) && !beforeText.trim()) {
-    await file.write('');
-    content = '';
+  // File existence is determined by `content !== null`
+  const fileExists = content !== null;
+
+  if (!fileExists && !beforeText.trim()) {
+    return afterText;
   }
 
   if (content === null) {
