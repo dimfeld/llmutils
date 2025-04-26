@@ -122,7 +122,7 @@ export async function commitAll(message: string): Promise<number> {
 }
 
 // Function to perform the path validation for secure file operations
-function validatePath(baseDir: string, relativePath: string): string {
+export function validatePath(baseDir: string, relativePath: string): string {
   const absoluteBaseDir = path.resolve(baseDir);
   const absoluteTargetPath = path.resolve(absoluteBaseDir, relativePath);
 
