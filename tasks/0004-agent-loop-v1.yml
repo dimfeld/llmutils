@@ -1,0 +1,458 @@
+goal: Add an 'agent' command to rmplan for automated plan execution.
+details: >-
+  The agent command will automate the process of executing steps defined in an
+  rmplan YAML file.
+
+  It will sequentially:
+
+  1. Prepare the next step using logic similar to `rmplan next --rmfilter`
+  (selecting the first pending step automatically).
+
+  2. Execute the step using logic similar to an assumed `rmrun` command/function
+  (implementation placeholder).
+
+  3. Mark the step as done using logic similar to `rmplan done --commit` if
+  execution succeeds.
+
+  4. Repeat until all steps are completed.
+
+  This requires refactoring the `next` and `done` command logic into reusable
+  functions placed in a new `actions.ts` file.
+tasks:
+  - title: Refactor 'done' command logic into a reusable function
+    description: Create actions.ts and move the core logic of finding the next
+      pending task and marking steps/tasks as done into `findPendingTask` and
+      `markStepDone` functions. Update the 'done' command to use this new
+      function.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+      - src/rmplan/planSchema.ts
+      - src/rmfilter/utils.ts
+    steps:
+      - prompt: >
+          Create a new file `src/rmplan/actions.ts`.
+
+
+          Move the `PendingTaskResult` interface and the `findPendingTask`
+          function from `src/rmplan/rmplan.ts` to the new
+          `src/rmplan/actions.ts` file.
+
+
+          Ensure necessary imports (`PlanSchema` from `./planSchema.js`) are
+          added to `actions.ts`. Export the interface and function.
+
+
+          Update `src/rmplan/rmplan.ts` to import `PendingTaskResult` and
+          `findPendingTask` from `./actions.js`. Remove the original definitions
+          from `rmplan.ts`.
+        done: false
+      - prompt: >
+          In `src/rmplan/actions.ts`, define the signature for a new
+          asynchronous function `markStepDone`.
+
+
+          It should accept the following arguments:
+
+          - `planFile`: string - The path to the plan YAML file.
+
+          - `options`: An object containing:
+            - `task?`: boolean - If true, mark all remaining steps in the current task as done.
+            - `steps?`: number - The number of steps to mark as done (defaults to 1 if not provided and `task` is false).
+            - `commit?`: boolean - If true, commit the changes using `jj` or `git`.
+          - `currentTask?`: An optional object containing `taskIndex` (number)
+          and `stepIndex` (number). If provided, `markStepDone` will mark steps
+          starting from this index instead of calling `findPendingTask`.
+
+
+          The function should return a Promise resolving to an object `{
+          planComplete: boolean; message: string }`. `planComplete` indicates if
+          all steps in the plan are now done. `message` is a string describing
+          the action taken (e.g., which steps were marked done).
+
+
+          Include necessary imports like `yaml`, `planSchema`, `PlanSchema`,
+          `findPendingTask`, `commitAll`. Export the function.
+        done: false
+      - prompt: >
+          Move the core implementation logic from the `done` command's action
+          handler in `src/rmplan/rmplan.ts` into the newly defined
+          `markStepDone` function in `src/rmplan/actions.ts`.
+
+
+          Adapt the logic:
+
+          1. Load and parse the `planFile`. Validate against `planSchema`.
+
+          2. Use the provided `currentTask` indices or call `findPendingTask` to
+          determine the task/step to start marking from.
+
+          3. Handle the case where no pending tasks are found (return
+          `planComplete: true`).
+
+          4. Implement the logic for marking steps/tasks as done based on the
+          `options.task` and `options.steps` parameters. Update the `planData`
+          object.
+
+          5. Generate the descriptive `message` based on the actions taken.
+
+          6. Write the updated `planData` back to `planFile`.
+
+          7. If `options.commit` is true, call `commitAll` with the generated
+          message.
+
+          8. Determine if the entire plan is now complete by checking if
+          `findPendingTask` returns null *after* the updates.
+
+          9. Return the `{ planComplete, message }` object.
+
+          10. Add error handling (e.g., for file reading/writing, YAML parsing).
+          Throw errors or return a rejected promise on failure.
+        done: false
+      - prompt: >
+          Update the `done` command's action handler in `src/rmplan/rmplan.ts`.
+
+
+          It should now:
+
+          1. Call the `markStepDone` function (imported from `./actions.js`).
+
+          2. Pass the `planFile` argument and the command's options
+          (`options.task`, `options.steps`, `options.commit`) to `markStepDone`.
+
+          3. Print the `message` returned by `markStepDone` to the console.
+
+          4. Handle potential errors from `markStepDone` using a try/catch
+          block, printing an error message if it fails.
+
+          5. Remove the old logic that is now inside `markStepDone`. Keep
+          necessary imports like `Command`.
+        done: false
+  - title: Refactor 'next' command logic into a reusable function
+    description: Move the core logic of preparing the next step (including finding
+      files, building the prompt, and optionally calling rmfilter) into a
+      `prepareNextStep` function in actions.ts. Add an option to disable
+      interactive step selection. Update the 'next' command to use this
+      function.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+      - src/rmplan/planSchema.ts
+      - src/rmfilter/rmfilter.ts
+      - src/rmfilter/utils.ts
+      - src/rmfilter/instructions.ts
+      - src/common/file_finder.ts
+      - src/dependency_graph/resolve.ts
+      - src/dependency_graph/walk_imports.ts
+      - src/treesitter/extract.ts
+      - src/common/model_factory.ts
+      - clipboardy
+      - "@inquirer/prompts"
+      - os
+      - path
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts`, define the signature for a new
+          asynchronous function `prepareNextStep`.
+
+
+          It should accept the following arguments:
+
+          - `planFile`: string - The path to the plan YAML file.
+
+          - `options`: An object containing:
+            - `rmfilter?`: boolean - If true, use `rmfilter` to generate the prompt and context.
+            - `previous?`: boolean - If true, include information about previously completed steps in the prompt.
+            - `withImports?`: boolean - If true, include direct imports (passed to rmfilter or handled internally).
+            - `withAllImports?`: boolean - If true, include the entire import tree (passed to rmfilter or handled internally).
+            - `selectSteps?`: boolean - If true (default), prompt the user to select which pending step(s) to include. If false, automatically select only the *first* pending step.
+            - `rmfilterArgs?`: string[] - Additional arguments to pass to `rmfilter`.
+
+          The function should return a Promise resolving to an object:
+
+          `{ prompt: string; promptFilePath: string | null; taskIndex: number;
+          stepIndex: number; numStepsSelected: number }`.
+
+          - `prompt`: The generated prompt text.
+
+          - `promptFilePath`: The path to the temporary file containing the
+          prompt if `rmfilter` was used, otherwise `null`.
+
+          - `taskIndex`, `stepIndex`: Indices of the *first* step
+          selected/prepared.
+
+          - `numStepsSelected`: How many steps were included in the prompt (will
+          be 1 if `selectSteps` is false).
+
+
+          Include necessary imports (e.g., `yaml`, `planSchema`, `PlanSchema`,
+          `findPendingTask`, `getGitRoot`, `logSpawn`,
+          `extractFileReferencesFromInstructions`, `Resolver`, `ImportWalker`,
+          `Extractor`, `select`, `clipboard`, `os`, `path`). Export the
+          function.
+        done: false
+      - prompt: >
+          Move the core implementation logic from the `next` command's action
+          handler in `src/rmplan/rmplan.ts` into the newly defined
+          `prepareNextStep` function in `src/rmplan/actions.ts`.
+
+
+          Adapt the logic:
+
+          1. Load and parse the `planFile`, validate schema.
+
+          2. Call `findPendingTask` to get the current task/step (`result`).
+          Handle the case where the plan is complete.
+
+          3. Implement step selection:
+             - If `options.selectSteps` is true, use `@inquirer/prompts`' `select` to let the user choose how many steps to include (up to the end of the current task).
+             - If `options.selectSteps` is false, automatically select only the first pending step (`numStepsSelected = 1`).
+             - Store the selected pending steps in `selectedPendingSteps`.
+          4. Perform import analysis if `options.withImports` or
+          `options.withAllImports` is true:
+             - Extract file references from the selected steps' prompts.
+             - Use task files as fallback if no files found in prompts.
+             - Resolve files relative to git root.
+             - If `options.rmfilter` is false, perform import analysis using `ImportWalker` directly (as currently done in `next`). Add resulting files to the `files` list.
+             - If `options.rmfilter` is true, *do not* perform import analysis here; instead, prepare the arguments (`candidateFilesForImports`, `--with-imports`/`--with-all-imports`) to be passed to `rmfilter` later.
+          5. Build the LLM prompt string (`llmPrompt`) including goal, details,
+          task info, completed steps (if `options.previous`), relevant files (if
+          `options.rmfilter` is false), and the selected next steps.
+
+          6. Handle `options.rmfilter`:
+             - If true:
+               - Write `llmPrompt` to a temporary file (`tmpPromptPath`).
+               - Construct the arguments for `logSpawn` calling `rmfilter`. Include base args (`--copy`, `--gitroot`, `--instructions @tmpPromptPath`), task files, import analysis args (if applicable, placed correctly with `--`), and `options.rmfilterArgs`.
+               - **Do not spawn `rmfilter` here.** Instead, return the constructed `llmPrompt` and the `tmpPromptPath`. The caller (agent command) will handle spawning.
+             - If false:
+               - Return the constructed `llmPrompt` and `promptFilePath: null`.
+          7. Return the object `{ prompt: llmPrompt, promptFilePath:
+          tmpPromptPath or null, taskIndex: result.taskIndex, stepIndex:
+          result.stepIndex, numStepsSelected: selectedPendingSteps.length }`.
+
+          8. Add error handling and ensure temporary files are managed
+          appropriately (caller will be responsible for deletion if path is
+          returned).
+        done: false
+      - prompt: >
+          Update the `next` command's action handler in `src/rmplan/rmplan.ts`.
+
+
+          It should now:
+
+          1. Call the `prepareNextStep` function (imported from `./actions.js`).
+
+          2. Pass the `planFile` argument and the command's options
+          (`options.rmfilter`, `options.previous`, etc.) and any extra
+          `rmfilterArgs` (`cmdLineRmfilterArgs`). Set `selectSteps: true` (the
+          default behavior for the `next` command).
+
+          3. Receive the result `{ prompt, promptFilePath, ... }`.
+
+          4. If `options.rmfilter` was true (and thus `promptFilePath` is not
+          null):
+             - Construct the `rmfilter` command arguments as calculated within `prepareNextStep` (consider refactoring argument construction slightly so `prepareNextStep` can return the args array or have a helper).
+             - Spawn `rmfilter` using `logSpawn`.
+             - Await the process and handle exit code.
+             - Clean up the temporary prompt file.
+          5. If `options.rmfilter` was false:
+             - Print the `prompt` to the console.
+             - Copy the `prompt` to the clipboard using `clipboard.write`.
+          6. Handle potential errors from `prepareNextStep` or `rmfilter`
+          execution.
+
+          7. Remove the old logic that is now inside `prepareNextStep`. Keep
+          necessary imports.
+        done: false
+  - title: Add 'agent' command skeleton and loop structure
+    description: Add the basic 'agent <planFile>' command to rmplan.ts. Implement
+      the main loop structure that loads the plan and iterates using
+      `findPendingTask` until completion or error.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/planSchema.ts
+      - src/rmplan/actions.ts
+      - yaml
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.ts`, add a new command `agent <planFile>` using
+          `program.command`.
+
+          - Give it a description like 'Automatically execute steps in a plan
+          YAML file'.
+
+          - Add an option `--rmfilter-arg <arg...>` to allow passing extra
+          arguments to rmfilter (can be used multiple times).
+
+          - Add an action handler function `async (planFile, options) => { ...
+          }`.
+        done: false
+      - prompt: >
+          Implement the initial part of the `agent` command's action handler in
+          `src/rmplan/rmplan.ts`:
+
+          1. Add a `try...catch` block for overall error handling.
+
+          2. Inside the `try` block, start an infinite `while (true)` loop.
+
+          3. **Inside the loop:** Load the `planFile` content using
+          `Bun.file(planFile).text()`.
+
+          4. Parse the YAML content using `yaml.parse`.
+
+          5. Validate the parsed data against `planSchema.safeParse`. Handle
+          validation errors (log and exit). Store the valid data in `planData`.
+
+          6. Call `findPendingTask(planData)` to find the next step.
+
+          7. If `findPendingTask` returns `null`, log a success message ("Plan
+          complete!") and `break` the loop.
+
+          8. Store the result of `findPendingTask` (e.g., in `pendingTaskInfo`).
+
+          9. Add necessary imports (`yaml`, `planSchema`, `findPendingTask`).
+        done: false
+  - title: Integrate 'prepareNextStep' into the agent command
+    description: Call the `prepareNextStep` function from within the agent's loop.
+      Configure it to use rmfilter and automatically select the first pending
+      step. Capture the generated prompt file path.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+      - src/rmplan/planSchema.ts
+      - src/rmfilter/utils.ts
+      - os
+      - path
+    steps:
+      - prompt: >
+          Inside the `agent` command's `while` loop in `src/rmplan/rmplan.ts`,
+          after finding the `pendingTaskInfo`:
+
+          1. Call `prepareNextStep(planFile, { rmfilter: true, selectSteps:
+          false, rmfilterArgs: options.rmfilterArg || [] })`.
+
+          2. Use `await` and store the result (e.g., in
+          `stepPreparationResult`). Destructure `{ promptFilePath, taskIndex,
+          stepIndex, numStepsSelected }`.
+
+          3. **Important**: `prepareNextStep` needs refinement or the agent
+          needs to handle the case where `promptFilePath` is null even if
+          `rmfilter` is true (e.g., if `prepareNextStep` encountered an error
+          before creating the file). For now, assume `promptFilePath` will be a
+          valid path string if `rmfilter: true` succeeds within
+          `prepareNextStep`.
+
+          4. Add logging indicating which task/step is being prepared (e.g.,
+          `console.log(\`Preparing Task ${taskIndex + 1}, Step ${stepIndex +
+          1}...\`);`).
+
+          5. Add error handling around the `prepareNextStep` call. If it throws,
+          log the error and `break` the loop.
+
+          6. Import `prepareNextStep` from `./actions.js`.
+        done: false
+  - title: Add placeholder for 'rmrun' execution
+    description: Define and call a placeholder function `runAndApplyChanges` within
+      the agent loop. This function simulates running the prompt (using rmfilter
+      output) and applying changes, returning a success/failure status.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+      - src/rmfilter/utils.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts`, define a new asynchronous function
+          `runAndApplyChanges(promptFilePath: string): Promise<boolean>`.
+
+
+          For now, implement it as a placeholder:
+
+          1. Log a message like `[Placeholder] Running rmrun with prompt:
+          ${promptFilePath}`.
+
+          2. Simulate success by returning `Promise.resolve(true)`.
+
+          3. In a real implementation, this would involve spawning `rmrun` (or
+          equivalent logic), passing the `promptFilePath`, waiting for it,
+          checking its exit code, and potentially applying changes.
+
+
+          Export this function.
+        done: false
+      - prompt: >
+          Inside the `agent` command's `while` loop in `src/rmplan/rmplan.ts`,
+          after successfully calling `prepareNextStep` and getting the
+          `promptFilePath`:
+
+          1. Call `await runAndApplyChanges(promptFilePath)`.
+
+          2. Store the boolean result in a variable (e.g., `applySucceeded`).
+
+          3. **Crucially**: Clean up the temporary prompt file created by
+          `prepareNextStep`. Add a `finally` block around the call to
+          `runAndApplyChanges` (or just after it if errors are handled) to
+          `await Bun.file(promptFilePath).unlink()`. Handle potential unlink
+          errors gracefully (log warning).
+
+          4. Add logging indicating whether the apply step succeeded or failed.
+
+          5. Import `runAndApplyChanges` from `./actions.js`.
+        done: false
+  - title: Integrate 'markStepDone' into the agent command
+    description: If the placeholder `runAndApplyChanges` succeeds, call
+      `markStepDone` to mark the step as complete and commit the changes
+      automatically.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+      - src/rmplan/planSchema.ts
+    steps:
+      - prompt: >
+          Inside the `agent` command's `while` loop in `src/rmplan/rmplan.ts`,
+          after the call to `runAndApplyChanges`:
+
+          1. Check if `applySucceeded` is true.
+
+          2. If true:
+             - Call `await markStepDone(planFile, { steps: 1, commit: true }, { taskIndex: pendingTaskInfo.taskIndex, stepIndex: pendingTaskInfo.stepIndex })`. Pass the task/step index explicitly so `markStepDone` doesn't need to find it again.
+             - Store the result `{ message, planComplete }`.
+             - Log the `message` returned by `markStepDone`.
+             - Check if `planComplete` is true. If so, log a success message ("Plan fully completed!") and `break` the loop.
+          3. If `applySucceeded` is false:
+             - Log an error message indicating the step failed and the agent is stopping.
+             - `break` the loop.
+          4. Import `markStepDone` from `./actions.js`.
+        done: false
+  - title: Finalize 'agent' command with loop control and logging
+    description: Add proper loop termination conditions (plan completion or error),
+      refine error handling for file operations and function calls, and ensure
+      informative logging for user feedback throughout the process.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+      - src/rmplan/planSchema.ts
+    steps:
+      - prompt: >
+          Review the `agent` command's action handler in `src/rmplan/rmplan.ts`.
+
+
+          1. Ensure the main `while(true)` loop has clear exit points (`break`)
+          for:
+             - Plan completion (checked after `markStepDone`).
+             - Failure during `prepareNextStep`.
+             - Failure during `runAndApplyChanges`.
+             - Failure during `markStepDone` (add `try...catch` around it, log error, break loop).
+             - Failure during initial plan loading/parsing (should already exit).
+          2. Refine logging:
+             - Add a log message when the agent starts.
+             - Ensure existing logs clearly state which task/step is being prepared, executed, and marked done.
+             - Ensure success and failure messages at the end are clear.
+          3. Enhance the main `try...catch` block around the loop to catch any
+          unexpected errors, log them, and exit gracefully (`process.exit(1)`).
+
+          4. Verify all necessary imports are present and unused
+          variables/imports are removed.
+
+          5. Add a final log message outside the loop if it exited due to an
+          error, e.g., "Agent stopped due to error.".
+        done: false
