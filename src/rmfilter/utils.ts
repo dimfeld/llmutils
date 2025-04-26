@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import { debugLog } from '../logging.js';
+import { findUp } from 'find-up';
 export let debug = false;
 export let quiet = false;
 
@@ -76,9 +77,19 @@ export async function getGitRoot(): Promise<string> {
     return cachedGitRoot;
   }
 
-  const value = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim() || process.cwd();
+  let value = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim();
 
-  cachedGitRoot = value;
+  if (!value) {
+    // jj workspaces won't have a git root
+    let jjDir = await findUp('.jj', { type: 'directory' });
+    if (jjDir) {
+      const components = jjDir.split(path.sep);
+      components.pop();
+      value = components.join(path.sep);
+    }
+  }
+
+  cachedGitRoot = value || process.cwd();
   return value;
 }
 
