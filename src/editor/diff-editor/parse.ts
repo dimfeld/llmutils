@@ -22,12 +22,8 @@ export async function processSearchReplace({ content, writeRoot, dryRun }: Proce
 function getEdits(content: string, rootDir: string): Edit[] {
   const edits = findOriginalUpdateBlocks(
     content,
-    [] // TODO getInchatRelativeFiles would need to be implemented
+    [] // TODO consider using list of files from the original prompt if we have it
   );
-
-  // this.shellCommands.push(
-  //   ...edits.filter((edit) => edit.filePath === null).map((edit) => edit.updated)
-  // );
 
   return edits
     .filter((edit) => edit.filePath !== null)
