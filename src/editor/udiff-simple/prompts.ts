@@ -1,9 +1,9 @@
 const fence = '```';
 
 export const udiffPrompt = `<formatting>
-# File editing rules
+# File Output Rules
 
-Return edits similar to unified diffs that \`diff -U0\` would produce. Put these diffs inside a markdown
+When editing files or creating new files, generate edits similar to unified diffs that \`diff -U0\` would produce. Put these diffs inside a markdown
 triple-tick code block of type \`diff\`.
 
 The user's patch tool needs CORRECT patches that apply cleanly against the current contents of the file!
@@ -12,6 +12,7 @@ Make sure you mark all new or modified lines with \`+\`.
 Don't leave out any lines or the diff patch won't apply correctly.
 
 To make a new file, show a diff from \`--- /dev/null\` to \`+++ path/to/new/file.ext\`.
+
 
 <formatting_example>
 ${fence}diff
@@ -51,6 +52,8 @@ ${fence}diff
 +    return str(num)
 ${fence}
 </formatting_example>
+
+Always use this diff format when writing files, whether they are edits to existing files or new files. Prefer not to create artifacts, but even if you do, the content of any artifacts must conform to this output format.
 
 </formatting>
 `;
