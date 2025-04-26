@@ -1,7 +1,6 @@
-import * as path from 'path';
-
 import { debugLog } from '../../logging.ts';
 import type { ProcessFileOptions } from '../types.ts';
+import { secureWrite } from '../../rmfilter/utils.ts'; // Import secureWrite
 
 function processLastNonEmptyLine(line: string) {
   // Check for markdown header (e.g., **`filename`**)
@@ -161,18 +160,17 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
   }
 
   // Write files to disk
-  for (const [filePath, content] of filesToWrite) {
-    const fullPath = path.resolve(writeRoot, filePath);
+  for (const [filePath, contentLines] of filesToWrite) {
     try {
       if (!dryRun) {
-        let contentStr = content.join('\n').trimEnd();
+        let contentStr = contentLines.join('\n').trimEnd();
         // Sometimes the model sticks a </file> on the end of the file.
         if (contentStr.endsWith('</file>')) {
           contentStr = contentStr.slice(0, -'</file>'.length);
         }
-        await Bun.write(fullPath, contentStr + '\n');
+        await secureWrite(writeRoot, filePath, contentStr + '\n');
       }
-      console.log(`Wrote ${content.length} lines to file: ${filePath}`);
+      console.log(`Wrote ${contentLines.length} lines to file: ${filePath}`);
     } catch (err) {
       console.error(`Failed to write ${filePath}: ${err as Error}`);
     }
