@@ -307,4 +307,4 @@ tasks:
           files) is used when generating the "Relevant Files" section of the LLM
           prompt later in the `prepareNextStep` function (the part that runs if
           `rmfilter` is false).
-        done: false
+        done: true

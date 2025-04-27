@@ -234,6 +234,7 @@ export async function prepareNextStep(
         }
         // Merge and deduplicate found files with existing files
         const combinedFiles = new Set([...files, ...rmfindResult.files]);
+        // Update the main 'files' variable with the merged list
         files = Array.from(combinedFiles).sort();
       }
     } catch (error) {
@@ -250,6 +251,7 @@ export async function prepareNextStep(
     promptParts.push('## Completed Subtasks in this Task:');
     completedSteps.forEach((step) => promptParts.push(`- [DONE] ${step.prompt.split('\n')[0]}...`));
   }
+  // This section now correctly uses the potentially updated 'files' list (including autofound files)
   if (!rmfilter) {
     promptParts.push(
       '## Relevant Files\n\nThese are relevant files for the next subtasks. If you think additional files are relevant, you can update them as well.'
@@ -272,19 +274,22 @@ export async function prepareNextStep(
     );
     await Bun.write(promptFilePath, llmPrompt);
 
+    // Base arguments for rmfilter
     const baseRmfilterArgs = ['--gitroot', '--instructions', `@${promptFilePath}`];
+    // Convert the potentially updated 'files' list (task + autofound) to relative paths
+    const relativeFiles = files.map((f) => path.relative(gitRoot, f));
+
     if (performImportAnalysis) {
+      // If import analysis is needed, construct the import command block
       const relativeCandidateFiles = candidateFilesForImports.map((f) => path.relative(gitRoot, f));
       const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
       if (withImports) importCommandBlockArgs.push('--with-imports');
       else if (withAllImports) importCommandBlockArgs.push('--with-all-imports');
-      finalRmfilterArgs = [...baseRmfilterArgs, ...importCommandBlockArgs, '--', ...rmfilterArgs];
+      // Pass base args, files (task+autofound), import block, separator, user args
+      finalRmfilterArgs = [...baseRmfilterArgs, ...relativeFiles, ...importCommandBlockArgs, '--', ...rmfilterArgs];
     } else {
-      finalRmfilterArgs = [
-        ...baseRmfilterArgs,
-        ...files.map((f) => path.relative(gitRoot, f)),
-        ...rmfilterArgs,
-      ];
+      // Pass base args, files (task+autofound), separator, user args
+      finalRmfilterArgs = [...baseRmfilterArgs, ...relativeFiles, '--', ...rmfilterArgs];
     }
   }
 
