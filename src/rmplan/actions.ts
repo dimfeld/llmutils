@@ -2,7 +2,7 @@ import yaml from 'yaml';
 import { planSchema } from './planSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { getGitRoot, logSpawn, quiet } from '../rmfilter/utils.js';
-import { debug } from '../rmfilter/utils.js'; // Import debug
+import { debug } from '../rmfilter/utils.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
@@ -66,7 +66,7 @@ export async function prepareNextStep(
     withAllImports = false,
     selectSteps = true,
     rmfilterArgs = [],
-    autofind = false, // Default autofind to false
+    autofind = false,
   } = options;
 
   if (withImports && withAllImports) {
@@ -211,21 +211,9 @@ export async function prepareNextStep(
     const rmfindOptions: RmfindOptions = {
       baseDir: gitRoot,
       query: query,
-      model: process.env.RMFIND_MODEL || 'google/gemini-2.0-flash', // Use env var or default
-      classifierModel:
-        process.env.RMFIND_CLASSIFIER_MODEL ||
-        process.env.RMFIND_MODEL ||
-        'google/gemini-2.0-flash',
-      grepGeneratorModel:
-        process.env.RMFIND_GREP_GENERATOR_MODEL ||
-        process.env.RMFIND_MODEL ||
-        'google/gemini-2.0-flash',
-      globs: [], // Query-based finding
-      ignoreGlobs: undefined,
-      grepPatterns: undefined, // Let rmfind generate them
-      wholeWord: false,
-      expand: true, // Good for query generation
-      debug: debug,
+      classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL,
+      grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL,
+      globs: [], // Look in the base directory
       quiet: quiet,
     };
 
@@ -257,7 +245,6 @@ export async function prepareNextStep(
     promptParts.push('## Completed Subtasks in this Task:');
     completedSteps.forEach((step) => promptParts.push(`- [DONE] ${step.prompt.split('\n')[0]}...`));
   }
-  // This section now correctly uses the potentially updated 'files' list (including autofound files)
   if (!rmfilter) {
     promptParts.push(
       '## Relevant Files\n\nThese are relevant files for the next subtasks. If you think additional files are relevant, you can update them as well.'
@@ -280,7 +267,6 @@ export async function prepareNextStep(
     );
     await Bun.write(promptFilePath, llmPrompt);
 
-    // Base arguments for rmfilter
     const baseRmfilterArgs = ['--gitroot', '--instructions', `@${promptFilePath}`];
     // Convert the potentially updated 'files' list (task + autofound) to relative paths
     const relativeFiles = files.map((f) => path.relative(gitRoot, f));

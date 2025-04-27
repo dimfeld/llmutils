@@ -4,8 +4,8 @@ import clipboard from 'clipboardy';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { debugLog } from '../logging.ts';
-import { setDebug, setQuiet } from '../rmfilter/utils.ts';
-import { findFilesCore, type RmfindOptions, type RmfindResult } from './core.ts'; // Import core elements
+import { getGitRoot, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { findFilesCore, type RmfindOptions, type RmfindResult } from './core.ts';
 
 const DEFAULT_MODEL = 'google/gemini-2.0-flash';
 
@@ -70,8 +70,7 @@ async function main() {
   if (values.cwd) {
     baseDir = path.resolve(values.cwd);
   } else if (values.gitroot) {
-    const gitRootResult = await $`git rev-parse --show-toplevel`.nothrow().text();
-    baseDir = gitRootResult.trim() || process.cwd();
+    baseDir = (await getGitRoot()) || process.cwd();
   } else {
     baseDir = process.cwd();
   }
@@ -86,10 +85,8 @@ async function main() {
     query: values.query,
     wholeWord: values['whole-word'],
     expand: values.expand,
-    model: values.model ?? DEFAULT_MODEL,
     classifierModel: values['classifier-model'] || values.model || DEFAULT_MODEL,
     grepGeneratorModel: values['grep-generator-model'] || values.model || DEFAULT_MODEL,
-    debug: values.debug ?? false,
     quiet: values.quiet ?? false,
   };
 
@@ -170,7 +167,6 @@ async function main() {
   }
 
   if (selectedRelativeFiles.length > 0) {
-    // Output relative paths (as selected or determined)
     let output: string;
     if (values.yaml) {
       output = selectedRelativeFiles.map((file) => `    - "${file}"`).join('\n');

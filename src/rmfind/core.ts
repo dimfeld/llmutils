@@ -12,17 +12,15 @@ import { filterFilesWithQuery, type RelevantFile } from './llm_file_filter.ts';
  */
 export interface RmfindOptions {
   baseDir: string;
-  globs: string[]; // Corresponds to positional arguments
+  globs: string[];
   ignoreGlobs?: string[];
   grepPatterns?: string[];
   query?: string;
   wholeWord?: boolean;
   expand?: boolean;
-  model: string; // Default model for unspecified AI tasks
-  classifierModel: string; // Model specifically for classifying files based on query
-  grepGeneratorModel: string; // Model specifically for generating grep patterns from query
-  debug: boolean;
-  quiet: boolean;
+  classifierModel?: string; // Model specifically for classifying files based on query
+  grepGeneratorModel?: string; // Model specifically for generating grep patterns from query
+  quiet?: boolean;
 }
 
 /**
@@ -32,6 +30,8 @@ export interface RmfindResult {
   files: string[]; // Absolute paths of the found files
   // TODO: Potentially add relevance scores or other metadata later
 }
+
+const DEFAULT_MODEL = 'google/gemini-2.0-flash';
 
 /**
  * Finds files based on the provided options.
@@ -45,10 +45,8 @@ export async function findFilesCore(options: RmfindOptions): Promise<RmfindResul
     query,
     wholeWord,
     expand,
-    model,
-    classifierModel,
-    grepGeneratorModel,
-    debug,
+    classifierModel = DEFAULT_MODEL,
+    grepGeneratorModel = DEFAULT_MODEL,
     quiet,
   } = options;
 
