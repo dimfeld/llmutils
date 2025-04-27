@@ -190,7 +190,7 @@ tasks:
           `extractFileReferencesFromInstructions`, `Resolver`, `ImportWalker`,
           `Extractor`, `select`, `clipboard`, `os`, `path`). Export the
           function.
-        done: false
+        done: true
       - prompt: >
           Move the core implementation logic from the `next` command's action
           handler in `src/rmplan/rmplan.ts` into the newly defined
@@ -233,7 +233,7 @@ tasks:
           8. Add error handling and ensure temporary files are managed
           appropriately (caller will be responsible for deletion if path is
           returned).
-        done: false
+        done: true
       - prompt: >
           Update the `next` command's action handler in `src/rmplan/rmplan.ts`.
 
