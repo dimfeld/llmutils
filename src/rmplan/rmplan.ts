@@ -7,7 +7,7 @@ import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { logSpawn, secureRm } from '../rmfilter/utils.js';
 import { markStepDone, prepareNextStep } from './actions.js';
-import { cleanupYaml } from './cleanup.js';
+import { cleanupYaml } from './cleanup.js';import { runAndApplyChanges } from './actions.js';
 import { planSchema, PlanSchema } from './planSchema.js';
 import { findPendingTask } from './actions.js';
 import { planPrompt } from './prompt.js';
@@ -284,6 +284,26 @@ program
           break;
         }
         const { promptFilePath, taskIndex, stepIndex, numStepsSelected } = stepPreparationResult;
+
+        if (promptFilePath) {
+          let applySucceeded = false;
+          try {
+            applySucceeded = await runAndApplyChanges(promptFilePath);
+            console.log(`Step execution ${applySucceeded ? 'succeeded' : 'failed'}`);
+            if (applySucceeded) {
+              await markStepDone(planFile, { commit: true }, { taskIndex, stepIndex });
+            }
+          } finally {
+            try {
+              await Bun.file(promptFilePath).unlink();
+            } catch (e) {
+              console.warn('Warning: failed to clean up temp file:', promptFilePath);
+            }
+          }
+        } else {
+          console.error('No prompt file path provided for step execution');
+          break;
+        }
       }
     } catch (err) {
       console.error('Failed to execute plan:', err);

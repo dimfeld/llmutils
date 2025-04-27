@@ -351,10 +351,10 @@ tasks:
 
           6. Import `prepareNextStep` from `./actions.js`.
         done: true
-  - title: Add placeholder for 'rmrun' execution
+  - title: Add 'rmrun' execution
     description: Define and call a placeholder function `runAndApplyChanges` within
-      the agent loop. This function simulates running the prompt (using rmfilter
-      output) and applying changes, returning a success/failure status.
+      the agent loop. This function runs the prompt (using rmfilter output) and
+      applies changes, returning a success/failure status.
     files:
       - src/rmplan/rmplan.ts
       - src/rmplan/actions.ts
@@ -364,21 +364,12 @@ tasks:
           In `src/rmplan/actions.ts`, define a new asynchronous function
           `runAndApplyChanges(promptFilePath: string): Promise<boolean>`.
 
+          1. This function should run `rmrun  ${promptFilePath}`.
 
-          For now, implement it as a placeholder:
-
-          1. Log a message like `[Placeholder] Running rmrun with prompt:
-          ${promptFilePath}`.
-
-          2. Simulate success by returning `Promise.resolve(true)`.
-
-          3. In a real implementation, this would involve spawning `rmrun` (or
-          equivalent logic), passing the `promptFilePath`, waiting for it,
-          checking its exit code, and potentially applying changes.
-
+          2. Check its exit code and return true if it is zero.
 
           Export this function.
-        done: false
+        done: true
       - prompt: >
           Inside the `agent` command's `while` loop in `src/rmplan/rmplan.ts`,
           after successfully calling `prepareNextStep` and getting the
@@ -397,7 +388,7 @@ tasks:
           4. Add logging indicating whether the apply step succeeded or failed.
 
           5. Import `runAndApplyChanges` from `./actions.js`.
-        done: false
+        done: true
   - title: Integrate 'markStepDone' into the agent command
     description: If the placeholder `runAndApplyChanges` succeeds, call
       `markStepDone` to mark the step as complete and commit the changes

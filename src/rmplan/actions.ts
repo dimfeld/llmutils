@@ -11,6 +11,7 @@ import clipboard from 'clipboardy';
 import os from 'os';
 import path from 'path';
 import { commitAll } from '../rmfilter/utils.js';
+import { logSpawn } from '../rmfilter/utils.js';
 
 interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -344,4 +345,16 @@ export async function markStepDone(
 
   // 8. Return result
   return { planComplete, message };
+}
+
+// Runs rmrun with the provided prompt file and applies changes
+export async function runAndApplyChanges(promptFilePath: string): Promise<boolean> {
+  const proc = logSpawn(['rmrun', promptFilePath], {
+    stdio: ['inherit', 'inherit', 'inherit'],
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    console.error(`rmrun failed with exit code ${exitCode}`);
+  }
+  return exitCode === 0;
 }
