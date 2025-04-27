@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { logSpawn } from '../rmfilter/utils.js';
+import { getGitRoot, logSpawn } from '../rmfilter/utils.js';
 import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
 import { cleanupYaml } from './cleanup.js';
 import { planSchema } from './planSchema.js';
@@ -13,12 +13,14 @@ import { planPrompt } from './prompt.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
+import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 
 program
   .command('generate')
   .description('Generate planning prompt and context for a task')
   .option('--plan <file>', 'Plan text file to use')
   .option('--plan-editor', 'Open plan in editor')
+  .option('--quiet', 'Suppress informational output')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (options, command) => {
@@ -65,9 +67,45 @@ program
       console.log('Prompt written to:', tmpPromptPath);
 
       // Call rmfilter with constructed args
+      let additionalFiles: string[] = [];
+      if (options.autofind) {
+        console.log('[Autofind] Searching for relevant files based on plan...');
+        const gitRoot = (await getGitRoot()) || process.cwd();
+        const query = planText!;
+
+        const rmfindOptions: RmfindOptions = {
+          baseDir: gitRoot,
+          query: query,
+          classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL,
+          grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL,
+          globs: [],
+          quiet: options.quiet ?? false,
+        };
+
+        try {
+          const rmfindResult = await findFilesCore(rmfindOptions);
+          if (rmfindResult && rmfindResult.files.length > 0) {
+            if (!options.quiet) {
+              console.log(
+                `[Autofind] Found ${rmfindResult.files.length} potentially relevant files:`
+              );
+              rmfindResult.files.forEach((f) => console.log(`  - ${path.relative(gitRoot, f)}`));
+            }
+            additionalFiles = rmfindResult.files.map((f) => path.relative(gitRoot, f));
+          }
+        } catch (error) {
+          console.warn(
+            `[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
+      // Append autofound files to rmfilter args
       const rmfilterFullArgs = [
         'rmfilter',
         ...rmfilterArgs,
+        '--',
+        ...additionalFiles,
         '--bare',
         '--instructions',
         `@${tmpPromptPath}`,
