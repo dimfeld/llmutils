@@ -286,7 +286,7 @@ tasks:
 
           - Add an action handler function `async (planFile, options) => { ...
           }`.
-        done: false
+        done: true
       - prompt: >
           Implement the initial part of the `agent` command's action handler in
           `src/rmplan/rmplan.ts`:
@@ -311,7 +311,7 @@ tasks:
           8. Store the result of `findPendingTask` (e.g., in `pendingTaskInfo`).
 
           9. Add necessary imports (`yaml`, `planSchema`, `findPendingTask`).
-        done: false
+        done: true
   - title: Integrate 'prepareNextStep' into the agent command
     description: Call the `prepareNextStep` function from within the agent's loop.
       Configure it to use rmfilter and automatically select the first pending

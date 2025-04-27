@@ -9,6 +9,7 @@ import { logSpawn, secureRm } from '../rmfilter/utils.js';
 import { markStepDone, prepareNextStep } from './actions.js';
 import { cleanupYaml } from './cleanup.js';
 import { planSchema } from './planSchema.js';
+import { findPendingTask } from './actions.js';
 import { planPrompt } from './prompt.js';
 
 const program = new Command();
@@ -234,6 +235,41 @@ program
       }
     } catch (err) {
       console.error('Failed to process plan file:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('agent <planFile>')
+  .description('Automatically execute steps in a plan YAML file')
+  .option('--rmfilter-arg <arg...>', 'Extra arguments to pass to rmfilter', [])
+  .action(async (planFile, options) => {
+    try {
+      while (true) {
+        const fileContent = await Bun.file(planFile).text();
+        let parsed;
+        try {
+          parsed = yaml.parse(fileContent);
+        } catch (err) {
+          console.error('Failed to parse YAML:', err);
+          process.exit(1);
+        }
+
+        const planResult = planSchema.safeParse(parsed);
+        if (!planResult.success) {
+          console.error('Validation errors:', JSON.stringify(planResult.error.issues, null, 2));
+          process.exit(1);
+        }
+
+        const planData = planResult.data;
+        const pendingTaskInfo = findPendingTask(planData);
+        if (!pendingTaskInfo) {
+          console.log('Plan complete!');
+          break;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to execute plan:', err);
       process.exit(1);
     }
   });
