@@ -2,13 +2,14 @@ import yaml from 'yaml';
 import { planSchema } from './planSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { getGitRoot, logSpawn, quiet } from '../rmfilter/utils.js';
+import { debug } from '../rmfilter/utils.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
 import { Extractor } from '../treesitter/extract.js';
 import { select } from '@inquirer/prompts';
 import clipboard from 'clipboardy';
-import os from 'os';
+import os from 'node:os';
 import path from 'path';
 import { commitAll } from '../rmfilter/utils.js';
 
@@ -19,7 +20,10 @@ interface PrepareNextStepOptions {
   withAllImports?: boolean;
   selectSteps?: boolean;
   rmfilterArgs?: string[];
+  autofind?: boolean;
 }
+
+import { findFilesCore, type RmfindOptions, type RmfindResult } from '../rmfind/core.js';
 
 // Interface for the result of finding a pending task
 export interface PendingTaskResult {
@@ -62,6 +66,7 @@ export async function prepareNextStep(
     withAllImports = false,
     selectSteps = true,
     rmfilterArgs = [],
+    autofind = false,
   } = options;
 
   if (withImports && withAllImports) {
@@ -188,6 +193,49 @@ export async function prepareNextStep(
     }
   }
 
+  // Autofind relevant files based on task details
+  if (autofind) {
+    if (!quiet) {
+      console.log('[Autofind] Searching for relevant files based on task details...');
+    }
+    // Construct a natural language query string
+    const queryParts = [
+      `Goal: ${planData.goal}`,
+      `Details: ${planData.details}`,
+      `Task: ${activeTask.title}`,
+      `Description: ${activeTask.description}`,
+    ].filter((part) => part != null && part.trim() !== '');
+    const query = queryParts.join('\n\n');
+
+    // Define the RmfindOptions
+    const rmfindOptions: RmfindOptions = {
+      baseDir: gitRoot,
+      query: query,
+      classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL,
+      grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL,
+      globs: [], // Look in the base directory
+      quiet: quiet,
+    };
+
+    try {
+      const rmfindResult = await findFilesCore(rmfindOptions);
+      if (rmfindResult && rmfindResult.files.length > 0) {
+        if (!quiet) {
+          console.log(`[Autofind] Found ${rmfindResult.files.length} potentially relevant files:`);
+          rmfindResult.files.forEach((f) => console.log(`  - ${path.relative(gitRoot, f)}`));
+        }
+        // Merge and deduplicate found files with existing files
+        const combinedFiles = new Set([...files, ...rmfindResult.files]);
+        // Update the main 'files' variable with the merged list
+        files = Array.from(combinedFiles).sort();
+      }
+    } catch (error) {
+      console.warn(
+        `[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
   // 5. Build the LLM prompt
   const promptParts: string[] = [
     `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`,
@@ -220,18 +268,26 @@ export async function prepareNextStep(
     await Bun.write(promptFilePath, llmPrompt);
 
     const baseRmfilterArgs = ['--gitroot', '--instructions', `@${promptFilePath}`];
+    // Convert the potentially updated 'files' list (task + autofound) to relative paths
+    const relativeFiles = files.map((f) => path.relative(gitRoot, f));
+
     if (performImportAnalysis) {
+      // If import analysis is needed, construct the import command block
       const relativeCandidateFiles = candidateFilesForImports.map((f) => path.relative(gitRoot, f));
       const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
       if (withImports) importCommandBlockArgs.push('--with-imports');
       else if (withAllImports) importCommandBlockArgs.push('--with-all-imports');
-      finalRmfilterArgs = [...baseRmfilterArgs, ...importCommandBlockArgs, '--', ...rmfilterArgs];
-    } else {
+      // Pass base args, files (task+autofound), import block, separator, user args
       finalRmfilterArgs = [
         ...baseRmfilterArgs,
-        ...files.map((f) => path.relative(gitRoot, f)),
+        ...relativeFiles,
+        ...importCommandBlockArgs,
+        '--',
         ...rmfilterArgs,
       ];
+    } else {
+      // Pass base args, files (task+autofound), separator, user args
+      finalRmfilterArgs = [...baseRmfilterArgs, ...relativeFiles, '--', ...rmfilterArgs];
     }
   }
 
