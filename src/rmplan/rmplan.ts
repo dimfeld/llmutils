@@ -291,7 +291,7 @@ program
           break;
         }
 
-        console.log('## Generating Context\n');
+        console.log('\n## Generating Context\n');
 
         const rmfilterOutputPath = promptFilePath.replace('.md', '.xml');
         const proc = logSpawn(['rmfilter', '--output', rmfilterOutputPath, ...rmfilterArgs], {
@@ -303,8 +303,8 @@ program
           process.exit(exitRes ?? 1);
         }
 
-        console.log('## Execution\n');
-        const applySucceeded = await runAndApplyChanges(promptFilePath).catch((err: Error) => {
+        console.log('\n## Execution\n');
+        const applySucceeded = await runAndApplyChanges(rmfilterOutputPath).catch((err: Error) => {
           console.error('Failed to execute step:', err);
           hasError = true;
           return false;
