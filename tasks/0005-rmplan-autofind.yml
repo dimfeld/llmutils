@@ -163,7 +163,7 @@ tasks:
 
           3. Destructure the `autofind` flag from the `options` argument
           (defaulting to `false`).
-        done: false
+        done: true
   - title: Implement Autofind Logic in rmplan prepareNextStep
     description: Call the refactored rmfind core logic when --autofind is enabled.
     files:

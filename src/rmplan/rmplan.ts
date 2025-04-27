@@ -183,6 +183,7 @@ program
     '--with-all-imports',
     'Include the entire import tree of files found in the prompt or task files'
   )
+  .option('--autofind', 'Automatically run rmfind to find relevant files based on the plan task')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planFile, options) => {
@@ -197,6 +198,7 @@ program
         withImports: options.withImports,
         withAllImports: options.withAllImports,
         selectSteps: true,
+        autofind: options.autofind,
         rmfilterArgs: cmdLineRmfilterArgs,
       });
 

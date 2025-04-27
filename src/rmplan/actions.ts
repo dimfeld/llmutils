@@ -19,6 +19,7 @@ interface PrepareNextStepOptions {
   withAllImports?: boolean;
   selectSteps?: boolean;
   rmfilterArgs?: string[];
+  autofind?: boolean;
 }
 
 // Interface for the result of finding a pending task
@@ -62,6 +63,7 @@ export async function prepareNextStep(
     withAllImports = false,
     selectSteps = true,
     rmfilterArgs = [],
+    autofind = false, // Default autofind to false
   } = options;
 
   if (withImports && withAllImports) {
