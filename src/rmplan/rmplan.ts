@@ -166,19 +166,11 @@ program
   .option('--task', 'Mark all steps in the current task as done')
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
-    try {
-      const result = await markStepDone(planFile, {
-        task: options.task,
-        steps: options.steps ? parseInt(options.steps, 10) : 1,
-        commit: options.commit,
-      });
-      if (result.planComplete) {
-        console.log(result.message);
-      }
-    } catch (err) {
-      console.error('Failed to mark step as done:', err);
-      process.exit(1);
-    }
+    await markStepDone(planFile, {
+      task: options.task,
+      steps: options.steps ? parseInt(options.steps, 10) : 1,
+      commit: options.commit,
+    });
   });
 
 program
@@ -241,14 +233,19 @@ program
 program
   .command('agent <planFile>')
   .description('Automatically execute steps in a plan YAML file')
-  .option('--rmfilter-arg <arg...>', 'Extra arguments to pass to rmfilter', [])
+  .option('-m, --model <model>', 'Model to use for LLM')
+  .option('--steps <steps>', 'Number of steps to execute')
   .allowExcessArguments(true)
   .action(async (planFile, options) => {
     console.log('Starting agent to execute plan:', planFile);
     try {
       let hasError = false;
 
-      while (true) {
+      const maxSteps = options.steps ? parseInt(options.steps, 10) : Infinity;
+      let stepCount = 0;
+      while (stepCount < maxSteps) {
+        stepCount++;
+
         const fileContent = await Bun.file(planFile).text();
         let parsed;
         try {
@@ -272,12 +269,11 @@ program
         }
 
         console.log(
-          `Preparing Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
+          `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
         );
         const stepPreparationResult = await prepareNextStep(planFile, {
           rmfilter: true,
           selectSteps: false,
-          rmfilterArgs: options.rmfilterArg || [],
         }).catch((err) => {
           console.error('Failed to prepare next step:', err);
           hasError = true;
@@ -288,48 +284,61 @@ program
           break;
         }
 
-        const { promptFilePath, taskIndex, stepIndex, numStepsSelected } = stepPreparationResult;
+        const { promptFilePath, taskIndex, stepIndex, rmfilterArgs } = stepPreparationResult;
 
-        if (promptFilePath) {
-          let applySucceeded = false;
-          applySucceeded = await runAndApplyChanges(promptFilePath).catch((err: Error) => {
-            console.error('Failed to execute step:', err);
-            hasError = true;
-            return false;
-          });
-
-          if (!applySucceeded) {
-            console.error('Step execution failed, stopping agent.');
-            hasError = true;
-            break;
-          }
-
-          let markResult;
-          try {
-            markResult = await markStepDone(
-              planFile,
-              { steps: 1, commit: true },
-              { taskIndex, stepIndex }
-            );
-            console.log(`Marked step as done: ${markResult.message}`);
-            if (markResult.planComplete) {
-              console.log('Plan fully completed!');
-              break;
-            }
-          } catch (err) {
-            console.error('Failed to mark step as done:', err);
-            hasError = true;
-            break;
-          } finally {
-            try {
-              await Bun.file(promptFilePath).unlink();
-            } catch (e) {
-              console.warn('Warning: failed to clean up temp file:', promptFilePath);
-            }
-          }
-        } else {
+        if (!promptFilePath || !rmfilterArgs) {
           console.error('No prompt file path provided for step execution');
           break;
+        }
+
+        console.log('## Generating Context\n');
+
+        const rmfilterOutputPath = promptFilePath.replace('.md', '.xml');
+        const proc = logSpawn(['rmfilter', '--output', rmfilterOutputPath, ...rmfilterArgs], {
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+        const exitRes = await proc.exited;
+        if (exitRes !== 0) {
+          console.error(`rmfilter exited with code ${exitRes}`);
+          process.exit(exitRes ?? 1);
+        }
+
+        console.log('## Execution\n');
+        const applySucceeded = await runAndApplyChanges(promptFilePath).catch((err: Error) => {
+          console.error('Failed to execute step:', err);
+          hasError = true;
+          return false;
+        });
+
+        if (!applySucceeded) {
+          console.error('Step execution failed, stopping agent.');
+          hasError = true;
+          break;
+        }
+
+        let markResult;
+        try {
+          console.log('## Marking done\n');
+          markResult = await markStepDone(
+            planFile,
+            { steps: 1, commit: true },
+            { taskIndex, stepIndex }
+          );
+          console.log(`Marked step as done: ${markResult.message}`);
+          if (markResult.planComplete) {
+            console.log('Plan fully completed!');
+            break;
+          }
+        } catch (err) {
+          console.error('Failed to mark step as done:', err);
+          hasError = true;
+          break;
+        } finally {
+          try {
+            await Bun.file(promptFilePath).unlink();
+          } catch (e) {
+            console.warn('Warning: failed to clean up temp file:', promptFilePath);
+          }
         }
       }
       if (hasError) {

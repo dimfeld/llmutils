@@ -1,7 +1,7 @@
 import yaml from 'yaml';
 import { planSchema } from './planSchema.js';
 import type { PlanSchema } from './planSchema.js';
-import { getGitRoot, logSpawn } from '../rmfilter/utils.js';
+import { getGitRoot, logSpawn, quiet } from '../rmfilter/utils.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
@@ -93,7 +93,7 @@ export async function prepareNextStep(
         return (await Bun.file(fullPath).exists()) ? fullPath : null;
       })
     )
-  ).filter((x): x is string => x != null);
+  ).filter((x) => x != null);
 
   // 2. Separate completed and pending steps
   const completedSteps = activeTask.steps.filter((step) => step.done);
@@ -136,15 +136,31 @@ export async function prepareNextStep(
       gitRoot,
       prompts
     );
-    candidateFilesForImports = filesFromPrompt.length
-      ? filesFromPrompt.map((f) => path.resolve(gitRoot, f))
-      : files;
 
+    if (filesFromPrompt.length > 0) {
+      // If prompt has files, use them. Assume they are absolute or resolvable from gitRoot.
+      // Ensure they are absolute paths.
+      candidateFilesForImports = filesFromPrompt.map((f) => path.resolve(gitRoot, f));
+      if (!quiet) {
+        console.log(
+          `Using ${candidateFilesForImports.length} files found in prompt for import analysis.`
+        );
+      }
+    } else {
+      // Fallback to task files if prompt has no files.
+      candidateFilesForImports = files.map((f) => path.resolve(gitRoot, f));
+      if (!quiet) {
+        console.log(
+          `No files found in prompt, using ${candidateFilesForImports.length} task files for import analysis.`
+        );
+      }
+    }
+    // Filter out any non-existent files just in case
     candidateFilesForImports = (
       await Promise.all(
         candidateFilesForImports.map(async (f) => ((await Bun.file(f).exists()) ? f : null))
       )
-    ).filter((f): f is string => f !== null);
+    ).filter((f) => f !== null);
 
     if (!rmfilter) {
       const resolver = await Resolver.new(gitRoot);
@@ -197,7 +213,10 @@ export async function prepareNextStep(
   let promptFilePath: string | null = null;
   let finalRmfilterArgs: string[] | undefined;
   if (rmfilter) {
-    promptFilePath = path.join(os.tmpdir(), `rmplan-next-prompt-${Date.now()}.md`);
+    promptFilePath = path.join(
+      os.tmpdir(),
+      `rmplan-next-prompt-${Date.now()}-${crypto.randomUUID()}.md`
+    );
     await Bun.write(promptFilePath, llmPrompt);
 
     const baseRmfilterArgs = ['--gitroot', '--instructions', `@${promptFilePath}`];
@@ -214,11 +233,6 @@ export async function prepareNextStep(
         ...rmfilterArgs,
       ];
     }
-  } else {
-    console.log('\n----- LLM PROMPT -----\n');
-    console.log(llmPrompt);
-    console.log('\n---------------------\n');
-    await clipboard.write(llmPrompt);
   }
 
   // 7. Return result

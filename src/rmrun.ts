@@ -3,11 +3,11 @@ import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
 import { applyLlmEdits } from './apply-llm-edits/apply.ts';
 
-const DEFAULT_MODEL = 'gemini-2.5-pro-exp-03-25';
+const DEFAULT_RUN_MODEL = 'gemini-2.5-pro-exp-03-25';
 const { values, positionals } = parseArgs({
   arg: Bun.argv,
   options: {
-    model: { type: 'string', short: 'm', default: DEFAULT_MODEL },
+    model: { type: 'string', short: 'm', default: DEFAULT_RUN_MODEL },
     help: { type: 'boolean', short: 'h' },
   },
   strict: true,
@@ -17,7 +17,7 @@ const { values, positionals } = parseArgs({
 if (values.help) {
   console.log(`Usage: rmrun [options] [filename]
 Options:
-  -m, --model     Model to use (default: ${DEFAULT_MODEL})
+  -m, --model     Model to use (default: ${DEFAULT_RUN_MODEL})
   -h, --help      Print this help message
 `);
   process.exit(0);
