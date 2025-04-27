@@ -12,6 +12,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
+    "lint": "eslint .",
     "dev-install": "pnpm add -g file://$(pwd)",
     "rmfilter": "src/rmfilter.ts",
     "rmfind": "src/rmfind.ts",

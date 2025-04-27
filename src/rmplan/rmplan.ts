@@ -1,43 +1,15 @@
 #!/usr/bin/env bun
-import yaml from 'yaml';
-import { planSchema, type PlanSchema } from './planSchema.js';
-import { generateObject, generateText } from 'ai';
-import { createModel } from '../common/model_factory.js';
-import { logSpawn, quiet } from '../rmfilter/utils.js';
-import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { planExampleFormat, planPrompt } from './prompt.js';
 import clipboardy from 'clipboardy';
 import { Command } from 'commander';
-import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import os from 'os';
 import path from 'path';
-import { Resolver } from '../dependency_graph/resolve';
-import { ImportWalker } from '../dependency_graph/walk_imports';
-import { Extractor } from '../treesitter/extract';
+import yaml from 'yaml';
+import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
+import { logSpawn } from '../rmfilter/utils.js';
+import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
 import { cleanupYaml } from './cleanup.js';
-import { select } from '@inquirer/prompts';
-import { commitAll, getGitRoot } from '../rmfilter/utils.js';
-import clipboard from 'clipboardy';
-
-interface PendingTaskResult {
-  task: PlanSchema['tasks'][number];
-  taskIndex: number;
-  stepIndex: number;
-}
-
-function findPendingTask(planData: PlanSchema): PendingTaskResult | null {
-  for (let i = 0; i < planData.tasks.length; i++) {
-    const task = planData.tasks[i];
-
-    // Find first unfinished step in task
-    for (let j = 0; j < task.steps.length; j++) {
-      if (!task.steps[j].done) {
-        return { task, taskIndex: i, stepIndex: j };
-      }
-    }
-  }
-  return null;
-}
+import { planSchema } from './planSchema.js';
+import { planPrompt } from './prompt.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -194,81 +166,11 @@ program
   .option('--task', 'Mark all steps in the current task as done')
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
-    try {
-      const fileContent = await Bun.file(planFile).text();
-      const parsed = yaml.parse(fileContent);
-      const result = planSchema.safeParse(parsed);
-
-      if (!result.success) {
-        console.error('Validation errors:', result.error);
-        process.exit(1);
-      }
-
-      const planData = result.data;
-
-      const pending = findPendingTask(planData);
-      if (!pending) {
-        console.log('All steps are already done.');
-        process.exit(0);
-      }
-
-      let output: string[] = [];
-
-      // Mark the appropriate steps as done
-      const task = pending.task;
-      if (options.task) {
-        const pendingSteps = task.steps.filter((step) => !step.done);
-        for (const step of pendingSteps) {
-          step.done = true;
-        }
-        console.log('Marked all steps in task done\n');
-        output.push(task.title);
-
-        for (let i = 0; i < pendingSteps.length; i++) {
-          const step = pendingSteps[i];
-          output.push(`\n## Step ${i + 1}]\n\n${step.prompt}`);
-        }
-      } else {
-        let nowDoneSteps = task.steps.slice(pending.stepIndex, pending.stepIndex + options.steps);
-        for (const step of nowDoneSteps) {
-          step.done = true;
-        }
-
-        console.log(
-          `Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`
-        );
-        if (nowDoneSteps.length > 1) {
-          output.push(
-            `${task.title} steps ${pending.stepIndex + 1}-${pending.stepIndex + nowDoneSteps.length}`
-          );
-        } else if (task.steps.length > 1) {
-          output.push(`${task.title} step ${pending.stepIndex + 1}`);
-        } else {
-          output.push(`${task.title}`);
-        }
-
-        if (nowDoneSteps.length > 1) {
-          for (const step of nowDoneSteps) {
-            output.push(`\n## Step ${task.steps.indexOf(step) + 1}\n\n${step.prompt}`);
-          }
-        } else {
-          output.push(`\n${task.steps[pending.stepIndex].prompt}`);
-        }
-      }
-
-      // Write the updated plan back to file
-      await Bun.write(planFile, yaml.stringify(planData));
-
-      const message = output.join('\n');
-      console.log(message);
-      if (options.commit) {
-        console.log('');
-        await commitAll(message);
-      }
-    } catch (err) {
-      console.error('Failed to process plan file:', err);
-      process.exit(1);
-    }
+    await markStepDone(planFile, {
+      task: options.task,
+      steps: options.steps ? parseInt(options.steps, 10) : 1,
+      commit: options.commit,
+    });
   });
 
 program
@@ -289,268 +191,163 @@ program
     const cmdLineRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
 
     try {
-      const fileContent = await Bun.file(planFile).text();
-      const parsed = yaml.parse(fileContent);
-      const plan = planSchema.safeParse(parsed);
-
-      // Check for conflicting import options
-      if (options.withImports && options.withAllImports) {
-        console.error(
-          'Error: Cannot use both --with-imports and --with-all-imports. Please choose one.'
-        );
-        process.exit(1);
-      }
-
-      let performImportAnalysis = options.withImports || options.withAllImports;
-
-      if (!plan.success) {
-        console.error('Validation errors:', plan.error);
-        process.exit(1);
-      }
-
-      const planData = plan.data;
-      const result = findPendingTask(planData);
-      if (!result) {
-        console.log('No pending steps found in the plan.');
-        process.exit(0);
-      }
-      const activeTask = result.task;
-
-      let gitRoot = await getGitRoot();
-
-      let files = (
-        await Promise.all(
-          activeTask.files.map(async (file) => {
-            let fullPath = path.resolve(gitRoot, file);
-            if (await Bun.file(fullPath).exists()) {
-              return fullPath;
-            } else {
-              return null;
-            }
-          })
-        )
-      ).filter((x) => x != null);
-
-      // Separate completed and pending steps
-      const completedSteps = activeTask.steps.filter((step) => step.done);
-      const pendingSteps = activeTask.steps.filter((step) => !step.done);
-
-      if (pendingSteps.length === 0) {
-        console.log('No pending steps in the current task.');
-        process.exit(0);
-      }
-
-      let selectedIndex: number;
-      if (pendingSteps.length === 1) {
-        // If only one pending step, select it automatically
-        selectedIndex = 0;
-        console.log(
-          `Automatically selected the only pending step: [1] ${pendingSteps[0].prompt.split('\n')[0]}...`
-        );
-      } else {
-        // Otherwise, prompt user to select steps
-        let maxWidth = process.stdout.columns - 12;
-        selectedIndex = await select({
-          message: 'Run up to which step?',
-          choices: pendingSteps.map((step, index) => {
-            let lines = step.prompt.split('\n');
-            let name: string;
-            if (lines[0].length > maxWidth) {
-              name = `[${index + 1}] ${lines[0].slice(0, maxWidth)}...`;
-            } else {
-              name = `[${index + 1}] ${lines[0]}`;
-            }
-
-            return {
-              name,
-              description: '\n' + step.prompt,
-              value: index,
-            };
-          }),
-        });
-      }
-
-      const selectedPendingSteps = pendingSteps.slice(0, selectedIndex + 1);
-
-      let candidateFilesForImports: string[] = [];
-      if (performImportAnalysis) {
-        const prompts = selectedPendingSteps.map((step) => step.prompt).join('\n');
-        const gitRoot = await getGitRoot();
-        const { files: filesFromPrompt } = await extractFileReferencesFromInstructions(
-          gitRoot,
-          prompts
-        );
-        const resolvedTaskFiles = files; // Reuse existing resolved files
-
-        if (filesFromPrompt.length > 0) {
-          // If prompt has files, use them. Assume they are absolute or resolvable from gitRoot.
-          // Ensure they are absolute paths.
-          candidateFilesForImports = filesFromPrompt.map((f) => path.resolve(gitRoot, f));
-          if (!quiet) {
-            console.log(
-              `Using ${candidateFilesForImports.length} files found in prompt for import analysis.`
-            );
-          }
-        } else {
-          // Fallback to task files if prompt has no files.
-          candidateFilesForImports = resolvedTaskFiles.map((f) => path.resolve(gitRoot, f));
-          if (!quiet) {
-            console.log(
-              `No files found in prompt, using ${candidateFilesForImports.length} task files for import analysis.`
-            );
-          }
-        }
-        // Filter out any non-existent files just in case
-        candidateFilesForImports = (
-          await Promise.all(
-            candidateFilesForImports.map(async (f) => ((await Bun.file(f).exists()) ? f : null))
-          )
-        ).filter((f) => f !== null);
-
-        if (!options.rmfilter) {
-          const resolver = await Resolver.new(gitRoot);
-          const walker = new ImportWalker(new Extractor(), resolver);
-
-          async function processImportsStandalone(
-            initialFiles: string[],
-            allImports: boolean
-          ): Promise<string[]> {
-            const results = new Set<string>();
-            await Promise.all(
-              initialFiles.map(async (file) => {
-                const filePath = path.resolve(gitRoot, file);
-                try {
-                  if (allImports) {
-                    await walker.getImportTree(filePath, results);
-                  } else {
-                    const definingFiles = await walker.getDefiningFiles(filePath);
-                    definingFiles.forEach((imp) => results.add(imp));
-                    results.add(filePath);
-                  }
-                } catch (error) {
-                  console.warn(`Warning: Error processing imports for ${filePath}:`, error);
-                }
-              })
-            );
-            // Ensure initial files are included
-            initialFiles.forEach((f) => results.add(path.resolve(gitRoot, f)));
-            return Array.from(results);
-          }
-
-          const expandedFiles = await processImportsStandalone(
-            candidateFilesForImports,
-            options.withAllImports
-          );
-          const combinedFiles = [...files, ...expandedFiles];
-          const uniqueFiles = Array.from(new Set(combinedFiles));
-          files = uniqueFiles;
-        }
-      }
-
-      files = files.map((f) => path.relative(gitRoot, f)).sort();
-
-      // Build the LLM prompt
-      const promptParts: string[] = [];
-      promptParts.push(
-        `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
-      );
-      promptParts.push(
-        `## Current Task: ${activeTask.title}\n\nDescription: ${activeTask.description}\n`
-      );
-
-      if (options.previous && completedSteps.length > 0) {
-        promptParts.push('## Completed Subtasks in this Task:');
-        completedSteps.forEach((step, index) => {
-          promptParts.push(`- [DONE] ${step.prompt.split('\n')[0]}...`);
-        });
-      }
-
-      if (!options.rmfilter) {
-        promptParts.push(
-          '## Relevant Files\n\nThese are relevant files for the next subtasks. If you think additional files are relevant, you can update them as well.'
-        );
-        files.forEach((file) => {
-          promptParts.push(`- ${file}`);
-        });
-      }
-
-      promptParts.push('\n## Selected Next Subtasks to Implement:\n');
-      selectedPendingSteps.forEach((step, index) => {
-        promptParts.push(`- [${index + 1}] ${step.prompt}`);
+      const result = await prepareNextStep(planFile, {
+        rmfilter: options.rmfilter,
+        previous: options.previous,
+        withImports: options.withImports,
+        withAllImports: options.withAllImports,
+        selectSteps: true,
+        rmfilterArgs: cmdLineRmfilterArgs,
       });
 
-      const llmPrompt = promptParts.join('\n');
-      if (!options.rmfilter) {
-        // rmfilter will print the prompt if we are using it, but print it out otherwise
-        console.log('\n----- LLM PROMPT -----\n');
-        console.log(llmPrompt);
-        console.log('\n---------------------\n');
-      }
-
-      // Step 1: Write llmPrompt to a temporary file
-      const tmpPromptPath = path.join(os.tmpdir(), `rmplan-next-prompt-${Date.now()}.md`);
-      let wrotePrompt = false;
-      try {
-        await Bun.write(tmpPromptPath, llmPrompt);
-        wrotePrompt = true;
-
-        if (options.rmfilter) {
-          // Construct the argument list for rmfilter
-          const baseRmfilterArgs = [
-            'rmfilter',
-            '--copy',
-            '--gitroot',
-            '--instructions',
-            `@${tmpPromptPath}`,
-          ];
-
-          let finalRmfilterArgs: string[];
-          if (performImportAnalysis) {
-            const relativeCandidateFiles = candidateFilesForImports.map((f) =>
-              path.relative(gitRoot, f)
-            );
-            const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
-            if (options.withImports) {
-              importCommandBlockArgs.push('--with-imports');
-            } else if (options.withAllImports) {
-              importCommandBlockArgs.push('--with-all-imports');
-            }
-
-            finalRmfilterArgs = [
-              ...baseRmfilterArgs,
-              ...importCommandBlockArgs,
-              '--',
-              ...cmdLineRmfilterArgs,
-            ];
-          } else {
-            finalRmfilterArgs = [...baseRmfilterArgs, ...files, ...cmdLineRmfilterArgs];
-          }
-
-          // Step 4: Execute rmfilter using logSpawn with inherited stdio
-          const proc = logSpawn(finalRmfilterArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
-          // Step 5: Await completion and check the exit code
+      if (options.rmfilter && result.promptFilePath && result.rmfilterArgs) {
+        try {
+          const proc = logSpawn(['rmfilter', '--copy', ...result.rmfilterArgs], {
+            stdio: ['inherit', 'inherit', 'inherit'],
+          });
           const exitRes = await proc.exited;
           if (exitRes !== 0) {
             console.error(`rmfilter exited with code ${exitRes}`);
             process.exit(exitRes ?? 1);
           }
-        } else {
-          console.log('Copying prompt to clipboard...');
-
-          await clipboard.write(llmPrompt);
-        }
-      } finally {
-        // Step 6: Clean up the temporary file
-        if (wrotePrompt) {
+        } finally {
           try {
-            await Bun.file(tmpPromptPath).unlink();
+            await Bun.file(result.promptFilePath).unlink();
           } catch (e) {
-            console.warn('Warning: failed to clean up temp file:', tmpPromptPath);
+            console.warn('Warning: failed to clean up temp file:', result.promptFilePath);
           }
         }
+      } else {
+        console.log('\n----- LLM PROMPT -----\n');
+        console.log(result.prompt);
+        console.log('\n---------------------\n');
+        await clipboardy.write(result.prompt);
+        console.log('Prompt copied to clipboard');
       }
     } catch (err) {
       console.error('Failed to process plan file:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('agent <planFile>')
+  .description('Automatically execute steps in a plan YAML file')
+  .option('-m, --model <model>', 'Model to use for LLM')
+  .option('--steps <steps>', 'Number of steps to execute')
+  .allowExcessArguments(true)
+  .action(async (planFile, options) => {
+    console.log('Starting agent to execute plan:', planFile);
+    try {
+      let hasError = false;
+
+      const maxSteps = options.steps ? parseInt(options.steps, 10) : Infinity;
+      let stepCount = 0;
+      while (stepCount < maxSteps) {
+        stepCount++;
+
+        const fileContent = await Bun.file(planFile).text();
+        let parsed;
+        try {
+          parsed = yaml.parse(fileContent);
+        } catch (err) {
+          console.error('Failed to parse YAML:', err);
+          process.exit(1);
+        }
+
+        const planResult = planSchema.safeParse(parsed);
+        if (!planResult.success) {
+          console.error('Validation errors:', JSON.stringify(planResult.error.issues, null, 2));
+          process.exit(1);
+        }
+
+        const planData = planResult.data;
+        const pendingTaskInfo = findPendingTask(planData);
+        if (!pendingTaskInfo) {
+          console.log('Plan complete!');
+          break;
+        }
+
+        console.log(
+          `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
+        );
+        const stepPreparationResult = await prepareNextStep(planFile, {
+          rmfilter: true,
+          selectSteps: false,
+        }).catch((err) => {
+          console.error('Failed to prepare next step:', err);
+          hasError = true;
+          return null;
+        });
+
+        if (!stepPreparationResult) {
+          break;
+        }
+
+        const { promptFilePath, taskIndex, stepIndex, rmfilterArgs } = stepPreparationResult;
+
+        if (!promptFilePath || !rmfilterArgs) {
+          console.error('No prompt file path provided for step execution');
+          break;
+        }
+
+        console.log('\n## Generating Context\n');
+
+        const rmfilterOutputPath = promptFilePath.replace('.md', '.xml');
+        const proc = logSpawn(['rmfilter', '--output', rmfilterOutputPath, ...rmfilterArgs], {
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+        const exitRes = await proc.exited;
+        if (exitRes !== 0) {
+          console.error(`rmfilter exited with code ${exitRes}`);
+          process.exit(exitRes ?? 1);
+        }
+
+        console.log('\n## Execution\n');
+        const applySucceeded = await runAndApplyChanges(rmfilterOutputPath).catch((err: Error) => {
+          console.error('Failed to execute step:', err);
+          hasError = true;
+          return false;
+        });
+
+        if (!applySucceeded) {
+          console.error('Step execution failed, stopping agent.');
+          hasError = true;
+          break;
+        }
+
+        let markResult;
+        try {
+          console.log('## Marking done\n');
+          markResult = await markStepDone(
+            planFile,
+            { steps: 1, commit: true },
+            { taskIndex, stepIndex }
+          );
+          console.log(`Marked step as done: ${markResult.message}`);
+          if (markResult.planComplete) {
+            console.log('Plan fully completed!');
+            break;
+          }
+        } catch (err) {
+          console.error('Failed to mark step as done:', err);
+          hasError = true;
+          break;
+        } finally {
+          try {
+            await Bun.file(promptFilePath).unlink();
+          } catch (e) {
+            console.warn('Warning: failed to clean up temp file:', promptFilePath);
+          }
+        }
+      }
+      if (hasError) {
+        console.error('Agent stopped due to error.');
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error('Unexpected error during agent execution:', err);
+      console.error('Agent stopped due to error.');
       process.exit(1);
     }
   });
