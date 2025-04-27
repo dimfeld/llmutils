@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import { debugLog } from '../logging.js';
-import { findUp } from 'find-up'; // Keep findUp import
+import { findUp } from 'find-up';
 export let debug = false;
 export let quiet = false;
 

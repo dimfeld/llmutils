@@ -22,10 +22,8 @@ interface PrepareNextStepOptions {
   rmfilterArgs?: string[];
   autofind?: boolean;
 }
-}
 
-import { findFilesCore, RmfindOptions, RmfindResult } from '../../rmfind/core.js';
-
+import { findFilesCore, type RmfindOptions, type RmfindResult } from '../rmfind/core.js';
 
 // Interface for the result of finding a pending task
 export interface PendingTaskResult {
@@ -214,8 +212,14 @@ export async function prepareNextStep(
       baseDir: gitRoot,
       query: query,
       model: process.env.RMFIND_MODEL || 'google/gemini-2.0-flash', // Use env var or default
-      classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL || 'google/gemini-2.0-flash',
-      grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL || 'google/gemini-2.0-flash',
+      classifierModel:
+        process.env.RMFIND_CLASSIFIER_MODEL ||
+        process.env.RMFIND_MODEL ||
+        'google/gemini-2.0-flash',
+      grepGeneratorModel:
+        process.env.RMFIND_GREP_GENERATOR_MODEL ||
+        process.env.RMFIND_MODEL ||
+        'google/gemini-2.0-flash',
       globs: [], // Query-based finding
       ignoreGlobs: undefined,
       grepPatterns: undefined, // Let rmfind generate them
@@ -238,7 +242,9 @@ export async function prepareNextStep(
         files = Array.from(combinedFiles).sort();
       }
     } catch (error) {
-      console.warn(`[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -286,7 +292,13 @@ export async function prepareNextStep(
       if (withImports) importCommandBlockArgs.push('--with-imports');
       else if (withAllImports) importCommandBlockArgs.push('--with-all-imports');
       // Pass base args, files (task+autofound), import block, separator, user args
-      finalRmfilterArgs = [...baseRmfilterArgs, ...relativeFiles, ...importCommandBlockArgs, '--', ...rmfilterArgs];
+      finalRmfilterArgs = [
+        ...baseRmfilterArgs,
+        ...relativeFiles,
+        ...importCommandBlockArgs,
+        '--',
+        ...rmfilterArgs,
+      ];
     } else {
       // Pass base args, files (task+autofound), separator, user args
       finalRmfilterArgs = [...baseRmfilterArgs, ...relativeFiles, '--', ...rmfilterArgs];

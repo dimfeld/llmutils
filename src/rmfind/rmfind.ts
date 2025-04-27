@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { debugLog } from '../logging.ts';
 import { setDebug, setQuiet } from '../rmfilter/utils.ts';
-import { findFilesCore, RmfindOptions, RmfindResult } from './core.ts'; // Import core elements
+import { findFilesCore, type RmfindOptions, type RmfindResult } from './core.ts'; // Import core elements
 
 const DEFAULT_MODEL = 'google/gemini-2.0-flash';
 
@@ -62,17 +62,18 @@ Options:
   process.exit(0);
 }
 
-
 setDebug(values.debug || false);
 setQuiet(values.quiet || false);
 
 async function main() {
-  try {
+  let baseDir: string;
   if (values.cwd) {
     baseDir = path.resolve(values.cwd);
   } else if (values.gitroot) {
     const gitRootResult = await $`git rev-parse --show-toplevel`.nothrow().text();
     baseDir = gitRootResult.trim() || process.cwd();
+  } else {
+    baseDir = process.cwd();
   }
   debugLog(`Using base directory: ${baseDir}`);
 
@@ -112,7 +113,8 @@ async function main() {
   // 4. Process files (with fzf if --fzf is set, otherwise use all filtered files)
   let selectedRelativeFiles: string[] = [];
   if (values.fzf) {
-    try { // Check fzf availability *only* if --fzf is used
+    try {
+      // Check fzf availability *only* if --fzf is used
       await $`which fzf`.quiet();
     } catch (error) {
       console.error('Error: fzf command not found. Please install fzf.');

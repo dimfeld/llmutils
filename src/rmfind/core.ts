@@ -5,7 +5,7 @@ import path from 'node:path';
 import { globFiles, grepFor } from '../common/file_finder.ts';
 import { debugLog } from '../logging.ts';
 import { generateGrepTermsFromQuery } from './generate_grep_terms.ts';
-import { filterFilesWithQuery, RelevantFile } from './llm_file_filter.ts';
+import { filterFilesWithQuery, type RelevantFile } from './llm_file_filter.ts';
 
 /**
  * Options for configuring the file finding process.
