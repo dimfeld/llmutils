@@ -423,7 +423,8 @@ const repomixOutput = allPaths.length
 const guidelinesTag = `<guidelines>
 <guideline>When making a change, update related tests.</guideline>
 <guideline>Leave existing comments and docstrings alone unless updating them is relevant to the change.</guideline>
-<guideline>It is ok for existing comments to seem redundant or obvious, as long as they are correct.</guideline>
+<guideline>It is ok for *existing* comments to seem redundant or obvious, as long as they are correct.</guideline>
+<guideline>New comments should explain why something is being done if it isn't obvious. They should not explain what is being done if it is obvious.</guideline>
 </guidelines>`;
 
 debugLog({
