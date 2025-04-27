@@ -8,7 +8,7 @@ import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { logSpawn, secureRm } from '../rmfilter/utils.js';
 import { markStepDone, prepareNextStep } from './actions.js';
 import { cleanupYaml } from './cleanup.js';
-import { planSchema } from './planSchema.js';
+import { planSchema, PlanSchema } from './planSchema.js';
 import { findPendingTask } from './actions.js';
 import { planPrompt } from './prompt.js';
 
@@ -243,6 +243,7 @@ program
   .command('agent <planFile>')
   .description('Automatically execute steps in a plan YAML file')
   .option('--rmfilter-arg <arg...>', 'Extra arguments to pass to rmfilter', [])
+  .allowExcessArguments(true)
   .action(async (planFile, options) => {
     try {
       while (true) {
@@ -267,6 +268,22 @@ program
           console.log('Plan complete!');
           break;
         }
+
+        console.log(
+          `Preparing Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
+        );
+        let stepPreparationResult;
+        try {
+          stepPreparationResult = await prepareNextStep(planFile, {
+            rmfilter: true,
+            selectSteps: false,
+            rmfilterArgs: options.rmfilterArg || [],
+          });
+        } catch (err) {
+          console.error('Failed to prepare next step:', err);
+          break;
+        }
+        const { promptFilePath, taskIndex, stepIndex, numStepsSelected } = stepPreparationResult;
       }
     } catch (err) {
       console.error('Failed to execute plan:', err);

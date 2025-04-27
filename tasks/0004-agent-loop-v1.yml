@@ -350,7 +350,7 @@ tasks:
           log the error and `break` the loop.
 
           6. Import `prepareNextStep` from `./actions.js`.
-        done: false
+        done: true
   - title: Add placeholder for 'rmrun' execution
     description: Define and call a placeholder function `runAndApplyChanges` within
       the agent loop. This function simulates running the prompt (using rmfilter
