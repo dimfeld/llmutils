@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import { $ } from 'bun';
 import clipboard from 'clipboardy';
-import path from 'node:path';
+import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { debugLog } from '../logging.ts';
-import { quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { findFilesCore, RmfindOptions, RmfindResult } from './core.ts'; // Import core elements
 
 const DEFAULT_MODEL = 'google/gemini-2.0-flash';
@@ -68,13 +68,6 @@ setQuiet(values.quiet || false);
 
 async function main() {
   try {
-    await $`which fzf`.quiet();
-  } catch (error) {
-    console.error('Error: fzf command not found. Please install fzf.');
-    process.exit(1);
-  }
-
-  let baseDir = process.cwd();
   if (values.cwd) {
     baseDir = path.resolve(values.cwd);
   } else if (values.gitroot) {
@@ -119,7 +112,7 @@ async function main() {
   // 4. Process files (with fzf if --fzf is set, otherwise use all filtered files)
   let selectedRelativeFiles: string[] = [];
   if (values.fzf) {
-    try {
+    try { // Check fzf availability *only* if --fzf is used
       await $`which fzf`.quiet();
     } catch (error) {
       console.error('Error: fzf command not found. Please install fzf.');

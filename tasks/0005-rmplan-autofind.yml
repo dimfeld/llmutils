@@ -130,7 +130,7 @@ tasks:
              - Implement the final output formatting logic (YAML or space-separated string to stdout and clipboard) using the list of selected relative file paths (either all files if no fzf, or the selection from fzf).
              - Ensure the `$` command execution checks (`which fzf`) remain in `rmfind.ts`.
              - Remove the core finding logic that was moved to `core.ts`.
-        done: false
+        done: true
   - title: Add --autofind Option to rmplan next
     description: Add the new command-line option to rmplan and pass it down to the
       action handler.
