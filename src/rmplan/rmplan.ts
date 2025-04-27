@@ -7,7 +7,7 @@ import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn } from '../rmfilter/utils.js';
 import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
-import { cleanupYaml } from './cleanup.js';
+import { convertMarkdownToYaml } from './cleanup.js';
 import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
 
@@ -144,48 +144,29 @@ program
 
     let validatedPlan: unknown;
 
-    function findYamlStart(inputText: string): string {
-      const match = inputText.match(/```yaml\n([\s\S]*?)\n```/i);
-      if (match) {
-        return match[1];
-      }
+    // Call the LLM conversion function first
+    const convertedYaml = await convertMarkdownToYaml(inputText);
 
-      let goal = inputText.indexOf('goal:');
-      if (goal >= 0) {
-        return inputText.slice(goal);
-      }
-
-      return inputText;
-    }
-
-    const rawYaml = findYamlStart(inputText);
+    // Now, try to parse and validate the YAML returned by the LLM
     try {
-      const parsedObject = yaml.parse(rawYaml);
-      validatedPlan = planSchema.parse(parsedObject);
-    } catch (e) {
-      // ignore since we're going to the next try
-    }
-
-    if (!validatedPlan) {
-      // Use Gemini Flash to clean up the text to valid YAML
-      console.warn('YAML parsing failed, attempting LLM cleanup...');
-      const result = await cleanupYaml(inputText);
-      const rawYaml = findYamlStart(result);
-      try {
-        const parsedObject = yaml.parse(rawYaml);
-        const result = planSchema.safeParse(parsedObject);
-        if (!result.success) {
-          console.error('Validation errors:', result.error);
-          process.exit(1);
-        }
-        validatedPlan = result.data;
-      } catch (e) {
-        await Bun.write('rmplan-clean-failure.yml', result);
-        console.error(
-          'Failed to parse YAML even after Gemini Flash cleanup. Saved cleaned output to rmplan-clean-failure.yml'
-        );
+      const parsedObject = yaml.parse(convertedYaml);
+      const result = planSchema.safeParse(parsedObject);
+      if (!result.success) {
+        console.error('Validation errors after LLM conversion:', result.error);
+        // Optionally save the failed YAML for debugging
+        await Bun.write('rmplan-validation-failure.yml', convertedYaml);
+        console.error('Invalid YAML (saved to rmplan-validation-failure.yml):', convertedYaml);
         process.exit(1);
       }
+      validatedPlan = result.data;
+    } catch (e) {
+      // Save the failed YAML for debugging
+      await Bun.write('rmplan-conversion-failure.yml', convertedYaml);
+      console.error(
+        'Failed to parse YAML output from LLM conversion. Saved raw output to rmplan-conversion-failure.yml'
+      );
+      console.error('Parsing error:', e);
+      process.exit(1);
     }
 
     const outputYaml = yaml.stringify(validatedPlan);

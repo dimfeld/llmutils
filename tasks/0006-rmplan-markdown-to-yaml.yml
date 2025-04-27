@@ -155,4 +155,4 @@ tasks:
           8.  Ensure the rest of the logic (writing to output file or stdout)
           uses the `validatedPlan` obtained after successful conversion and
           validation.
-        done: false
+        done: true
