@@ -19,7 +19,7 @@ import { select } from '@inquirer/prompts';
 import { commitAll, getGitRoot } from '../rmfilter/utils.js';
 import clipboard from 'clipboardy';
 import type { PendingTaskResult } from './actions.js';
-import { findPendingTask } from './actions.js';
+import { findPendingTask, markStepDone } from './actions.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -177,78 +177,13 @@ program
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
     try {
-      const fileContent = await Bun.file(planFile).text();
-      const parsed = yaml.parse(fileContent);
-      const result = planSchema.safeParse(parsed);
-
-      if (!result.success) {
-        console.error('Validation errors:', result.error);
-        process.exit(1);
-      }
-
-      const planData = result.data;
-
-      const pending = findPendingTask(planData);
-      if (!pending) {
-        console.log('All steps are already done.');
-        process.exit(0);
-      }
-
-      let output: string[] = [];
-
-      // Mark the appropriate steps as done
-      const task = pending.task;
-      if (options.task) {
-        const pendingSteps = task.steps.filter((step) => !step.done);
-        for (const step of pendingSteps) {
-          step.done = true;
-        }
-        console.log('Marked all steps in task done\n');
-        output.push(task.title);
-
-        for (let i = 0; i < pendingSteps.length; i++) {
-          const step = pendingSteps[i];
-          output.push(`\n## Step ${i + 1}]\n\n${step.prompt}`);
-        }
-      } else {
-        let nowDoneSteps = task.steps.slice(pending.stepIndex, pending.stepIndex + options.steps);
-        for (const step of nowDoneSteps) {
-          step.done = true;
-        }
-
-        console.log(
-          `Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`
-        );
-        if (nowDoneSteps.length > 1) {
-          output.push(
-            `${task.title} steps ${pending.stepIndex + 1}-${pending.stepIndex + nowDoneSteps.length}`
-          );
-        } else if (task.steps.length > 1) {
-          output.push(`${task.title} step ${pending.stepIndex + 1}`);
-        } else {
-          output.push(`${task.title}`);
-        }
-
-        if (nowDoneSteps.length > 1) {
-          for (const step of nowDoneSteps) {
-            output.push(`\n## Step ${task.steps.indexOf(step) + 1}\n\n${step.prompt}`);
-          }
-        } else {
-          output.push(`\n${task.steps[pending.stepIndex].prompt}`);
-        }
-      }
-
-      // Write the updated plan back to file
-      await Bun.write(planFile, yaml.stringify(planData));
-
-      const message = output.join('\n');
-      console.log(message);
-      if (options.commit) {
-        console.log('');
-        await commitAll(message);
-      }
+      await markStepDone(planFile, {
+        task: options.task,
+        steps: options.steps ? parseInt(options.steps, 10) : 1,
+        commit: options.commit,
+      });
     } catch (err) {
-      console.error('Failed to process plan file:', err);
+      console.error('Failed to mark step as done:', err);
       process.exit(1);
     }
   });

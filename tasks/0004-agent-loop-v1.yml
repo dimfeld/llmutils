@@ -127,7 +127,7 @@ tasks:
 
           5. Remove the old logic that is now inside `markStepDone`. Keep
           necessary imports like `Command`.
-        done: false
+        done: true
   - title: Refactor 'next' command logic into a reusable function
     description: Move the core logic of preparing the next step (including finding
       files, building the prompt, and optionally calling rmfilter) into a
