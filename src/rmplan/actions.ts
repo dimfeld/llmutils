@@ -361,8 +361,16 @@ export async function markStepDone(
 }
 
 // Runs rmrun with the provided prompt file and applies changes
-export async function runAndApplyChanges(promptFilePath: string): Promise<boolean> {
-  const proc = logSpawn(['rmrun', promptFilePath], {
+export async function runAndApplyChanges(
+  promptFilePath: string,
+  options?: { model?: string }
+): Promise<boolean> {
+  const args = ['rmrun', promptFilePath];
+  if (options?.model) {
+    args.push('--model', options.model);
+  }
+
+  const proc = logSpawn(args, {
     stdio: ['inherit', 'inherit', 'inherit'],
   });
   const exitCode = await proc.exited;
