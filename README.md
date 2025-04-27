@@ -165,6 +165,8 @@ rmfind src/**/*.ts --query "database migrations" --model google/gemini-2.5-flash
 
 The `rmplan` utility generates and manages step-by-step project plans for code changes using LLMs. It supports creating, validating, and executing tasks, ensuring incremental progress with detailed prompts for code generation.
 
+You can find the task plans for this repository under the "tasks" directory.
+
 ### Key Features
 - **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
 - **YAML Validation**: Extract and validate plans in YAML format, with automatic cleanup for malformed input using an LLM.
