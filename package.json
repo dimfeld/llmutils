@@ -21,9 +21,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.25.1",
+    "@types/bun": "latest",
     "@types/diff": "^7.0.2",
     "@types/js-yaml": "^4.0.9",
-    "bun-types": "latest",
     "eslint": "^9.25.1",
     "globals": "^16.0.0",
     "prettier": "^3.5.3",
