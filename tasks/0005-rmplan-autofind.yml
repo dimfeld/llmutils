@@ -201,7 +201,7 @@ tasks:
              - If `rmfindResult` is successful and contains files:
                - Get the list of absolute file paths: `rmfindResult.files`.
                - Log the found files if not `quiet`.
-        done: false
+        done: true
   - title: Integrate Autofind Results into rmplan
     description: Merge files found by --autofind into the relevant file list and
       rmfilter arguments.

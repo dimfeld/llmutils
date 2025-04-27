@@ -2,13 +2,14 @@ import yaml from 'yaml';
 import { planSchema } from './planSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { getGitRoot, logSpawn, quiet } from '../rmfilter/utils.js';
+import { debug } from '../rmfilter/utils.js'; // Import debug
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
 import { Extractor } from '../treesitter/extract.js';
 import { select } from '@inquirer/prompts';
 import clipboard from 'clipboardy';
-import os from 'os';
+import os from 'node:os';
 import path from 'path';
 import { commitAll } from '../rmfilter/utils.js';
 
@@ -21,6 +22,10 @@ interface PrepareNextStepOptions {
   rmfilterArgs?: string[];
   autofind?: boolean;
 }
+}
+
+import { findFilesCore, RmfindOptions, RmfindResult } from '../../rmfind/core.js';
+
 
 // Interface for the result of finding a pending task
 export interface PendingTaskResult {
@@ -187,6 +192,52 @@ export async function prepareNextStep(
       );
       files = [...files, ...expandedFiles.flat()];
       files = Array.from(new Set(files)).sort();
+    }
+  }
+
+  // Autofind relevant files based on task details
+  if (autofind) {
+    if (!quiet) {
+      console.log('[Autofind] Searching for relevant files based on task details...');
+    }
+    // Construct a natural language query string
+    const queryParts = [
+      `Goal: ${planData.goal}`,
+      `Details: ${planData.details}`,
+      `Task: ${activeTask.title}`,
+      `Description: ${activeTask.description}`,
+    ].filter((part) => part != null && part.trim() !== '');
+    const query = queryParts.join('\n\n');
+
+    // Define the RmfindOptions
+    const rmfindOptions: RmfindOptions = {
+      baseDir: gitRoot,
+      query: query,
+      model: process.env.RMFIND_MODEL || 'google/gemini-2.0-flash', // Use env var or default
+      classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL || 'google/gemini-2.0-flash',
+      grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL || 'google/gemini-2.0-flash',
+      globs: [], // Query-based finding
+      ignoreGlobs: undefined,
+      grepPatterns: undefined, // Let rmfind generate them
+      wholeWord: false,
+      expand: true, // Good for query generation
+      debug: debug,
+      quiet: quiet,
+    };
+
+    try {
+      const rmfindResult = await findFilesCore(rmfindOptions);
+      if (rmfindResult && rmfindResult.files.length > 0) {
+        if (!quiet) {
+          console.log(`[Autofind] Found ${rmfindResult.files.length} potentially relevant files:`);
+          rmfindResult.files.forEach((f) => console.log(`  - ${path.relative(gitRoot, f)}`));
+        }
+        // Merge and deduplicate found files with existing files
+        const combinedFiles = new Set([...files, ...rmfindResult.files]);
+        files = Array.from(combinedFiles).sort();
+      }
+    } catch (error) {
+      console.warn(`[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
