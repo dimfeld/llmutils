@@ -69,7 +69,7 @@ tasks:
               *   Remove the entire `<formatting>` section that currently specifies the YAML output format.
               *   Ensure the prompt still emphasizes breaking the plan into small, actionable steps with associated files and detailed prompts for a code-generation LLM.
               *   Keep the existing `planExampleFormatGeneric` constant as is for now; it will be used later in the conversion step.
-        done: false
+        done: true
   - title: Implement Markdown-to-YAML Conversion Function
     description: Refactor the existing cleanup function to perform Markdown-to-YAML
       conversion using Gemini Flash.
