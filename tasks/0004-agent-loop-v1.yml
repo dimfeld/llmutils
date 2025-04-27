@@ -108,7 +108,7 @@ tasks:
 
           10. Add error handling (e.g., for file reading/writing, YAML parsing).
           Throw errors or return a rejected promise on failure.
-        done: false
+        done: true
       - prompt: >
           Update the `done` command's action handler in `src/rmplan/rmplan.ts`.
 
