@@ -5,12 +5,10 @@ import os from 'os';
 import path from 'path';
 import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { logSpawn, secureRm } from '../rmfilter/utils.js';
-import { markStepDone, prepareNextStep } from './actions.js';
+import { logSpawn } from '../rmfilter/utils.js';
+import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
 import { cleanupYaml } from './cleanup.js';
-import { runAndApplyChanges } from './actions.js';
-import { planSchema, PlanSchema } from './planSchema.js';
-import { findPendingTask } from './actions.js';
+import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
 
 const program = new Command();
@@ -246,7 +244,10 @@ program
   .option('--rmfilter-arg <arg...>', 'Extra arguments to pass to rmfilter', [])
   .allowExcessArguments(true)
   .action(async (planFile, options) => {
+    console.log('Starting agent to execute plan:', planFile);
     try {
+      let hasError = false;
+
       while (true) {
         const fileContent = await Bun.file(planFile).text();
         let parsed;
@@ -273,38 +274,52 @@ program
         console.log(
           `Preparing Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
         );
-        let stepPreparationResult;
-        try {
-          stepPreparationResult = await prepareNextStep(planFile, {
-            rmfilter: true,
-            selectSteps: false,
-            rmfilterArgs: options.rmfilterArg || [],
-          });
-        } catch (err) {
+        const stepPreparationResult = await prepareNextStep(planFile, {
+          rmfilter: true,
+          selectSteps: false,
+          rmfilterArgs: options.rmfilterArg || [],
+        }).catch((err) => {
           console.error('Failed to prepare next step:', err);
+          hasError = true;
+          return null;
+        });
+
+        if (!stepPreparationResult) {
           break;
         }
+
         const { promptFilePath, taskIndex, stepIndex, numStepsSelected } = stepPreparationResult;
 
         if (promptFilePath) {
           let applySucceeded = false;
+          applySucceeded = await runAndApplyChanges(promptFilePath).catch((err: Error) => {
+            console.error('Failed to execute step:', err);
+            hasError = true;
+            return false;
+          });
+
+          if (!applySucceeded) {
+            console.error('Step execution failed, stopping agent.');
+            hasError = true;
+            break;
+          }
+
+          let markResult;
           try {
-            applySucceeded = await runAndApplyChanges(promptFilePath);
-            if (applySucceeded) {
-              const { message, planComplete } = await markStepDone(
-                planFile,
-                { steps: 1, commit: true },
-                { taskIndex, stepIndex }
-              );
-              console.log(message);
-              if (planComplete) {
-                console.log('Plan fully completed!');
-                break;
-              }
-            } else {
-              console.error('Step execution failed, stopping agent.');
+            markResult = await markStepDone(
+              planFile,
+              { steps: 1, commit: true },
+              { taskIndex, stepIndex }
+            );
+            console.log(`Marked step as done: ${markResult.message}`);
+            if (markResult.planComplete) {
+              console.log('Plan fully completed!');
               break;
             }
+          } catch (err) {
+            console.error('Failed to mark step as done:', err);
+            hasError = true;
+            break;
           } finally {
             try {
               await Bun.file(promptFilePath).unlink();
@@ -317,8 +332,13 @@ program
           break;
         }
       }
+      if (hasError) {
+        console.error('Agent stopped due to error.');
+        process.exit(1);
+      }
     } catch (err) {
-      console.error('Failed to execute plan:', err);
+      console.error('Unexpected error during agent execution:', err);
+      console.error('Agent stopped due to error.');
       process.exit(1);
     }
   });

@@ -11,7 +11,6 @@ import clipboard from 'clipboardy';
 import os from 'os';
 import path from 'path';
 import { commitAll } from '../rmfilter/utils.js';
-import { logSpawn } from '../rmfilter/utils.js';
 
 interface PrepareNextStepOptions {
   rmfilter?: boolean;

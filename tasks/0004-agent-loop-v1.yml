@@ -446,4 +446,4 @@ tasks:
 
           5. Add a final log message outside the loop if it exited due to an
           error, e.g., "Agent stopped due to error.".
-        done: false
+        done: true
