@@ -1,8 +1,9 @@
-import { test, expect } from 'bun:test';
-import { findDiffs } from './parse';
+import { test, expect, describe } from 'bun:test';
+import { doReplace, findDiffs } from './parse';
 
-test('find_diffs single hunk', () => {
-  const content = `
+describe('find_diffs', () => {
+  test('find_diffs single hunk', () => {
+    const content = `
 Some text...
 
 \`\`\`diff
@@ -13,17 +14,17 @@ Some text...
 +Modified
 \`\`\`
 `;
-  const edits = findDiffs(content);
-  console.log(edits); // Replacing dump with console.log for debugging
-  expect(edits.length).toBe(1);
+    const edits = findDiffs(content);
+    // console.log(edits); // Replacing dump with console.log for debugging
+    expect(edits.length).toBe(1);
 
-  const edit = edits[0];
-  expect(edit.filePath).toBe('file.txt');
-  expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
-});
+    const edit = edits[0];
+    expect(edit.filePath).toBe('file.txt');
+    expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
+  });
 
-test('find_diffs dev null', () => {
-  const content = `
+  test('find_diffs dev null', () => {
+    const content = `
 Some text...
 
 \`\`\`diff
@@ -34,17 +35,17 @@ Some text...
 +Modified
 \`\`\`
 `;
-  const edits = findDiffs(content);
-  console.log(edits);
-  expect(edits.length).toBe(1);
+    const edits = findDiffs(content);
+    // console.log(edits);
+    expect(edits.length).toBe(1);
 
-  const edit = edits[0];
-  expect(edit.filePath).toBe('file.txt');
-  expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
-});
+    const edit = edits[0];
+    expect(edit.filePath).toBe('file.txt');
+    expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
+  });
 
-test('find_diffs dirname with spaces', () => {
-  const content = `
+  test('find_diffs dirname with spaces', () => {
+    const content = `
 Some text...
 
 \`\`\`diff
@@ -55,33 +56,33 @@ Some text...
 +Modified
 \`\`\`
 `;
-  const edits = findDiffs(content);
-  console.log(edits);
-  expect(edits.length).toBe(1);
+    const edits = findDiffs(content);
+    // console.log(edits);
+    expect(edits.length).toBe(1);
 
-  const edit = edits[0];
-  expect(edit.filePath).toBe('dir name with spaces/file.txt');
-  expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
-});
+    const edit = edits[0];
+    expect(edit.filePath).toBe('dir name with spaces/file.txt');
+    expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
+  });
 
-test('find_diffs without fenced block', () => {
-  const content = `
+  test('find_diffs without fenced block', () => {
+    const content = `
 --- a/dir name with spaces/file.txt
 +++ b/dir name with spaces/file.txt
 @@ ... @@
 -Original
 +Modified`;
-  const edits = findDiffs(content);
-  console.log(edits);
-  expect(edits.length).toBe(1);
+    const edits = findDiffs(content);
+    // console.log(edits);
+    expect(edits.length).toBe(1);
 
-  const edit = edits[0];
-  expect(edit.filePath).toBe('dir name with spaces/file.txt');
-  expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
-});
+    const edit = edits[0];
+    expect(edit.filePath).toBe('dir name with spaces/file.txt');
+    expect(edit.hunk).toEqual(['-Original\n', '+Modified\n']);
+  });
 
-test('find multi diffs', () => {
-  const content = `
+  test('find multi diffs', () => {
+    const content = `
 To implement the \`--check-update\` option, I will make the following changes:
 
 1. Add the \`--check-update\` argument to the argument parser in \`aider/main.py\`.
@@ -121,14 +122,14 @@ Here are the diffs for those changes:
 These changes will add the \`--check-update\` option to the command-line interface and use the \`check_version\` function to determine if an update is available, exiting with status code \`0\` if no update is available and \`1\` if an update is available.
 `;
 
-  const edits = findDiffs(content);
-  console.log(edits);
-  expect(edits.length).toBe(2);
-  expect(edits[0].hunk.length).toBe(3);
-});
+    const edits = findDiffs(content);
+    // console.log(edits);
+    expect(edits.length).toBe(2);
+    expect(edits[0].hunk.length).toBe(3);
+  });
 
-test('find nested diff block', () => {
-  const content = `
+  test('find nested diff block', () => {
+    const content = `
 Example of a nested diff block:
 
 \`\`\`diff
@@ -149,18 +150,78 @@ Example of a nested diff block:
 This should extract the inner diff correctly.
 `;
 
-  const edits = findDiffs(content);
-  console.log(edits);
-  expect(edits.length).toBe(1);
-  const edit = edits[0];
-  expect(edit.filePath).toBe('src/rmplan/rmplan.ts');
-  expect(edit.hunk).toEqual([
-    "   .description('Prepare the next step(s) from a plan YAML for execution')\n",
-    "   .option('--rmfilter', 'Use rmfilter to generate the prompt')\n",
-    "   .option('--previous', 'Include information about previous completed steps')\n",
-    "+  .option('--with-imports', 'Include direct imports of files found in the prompt or task files')\n",
-    '   .allowExcessArguments(true)\n',
-    '   .allowUnknownOption(true)\n',
-    '   .action(async (planFile, options) => {\n',
-  ]);
+    const edits = findDiffs(content);
+    // console.log(edits);
+    expect(edits.length).toBe(1);
+    const edit = edits[0];
+    expect(edit.filePath).toBe('src/rmplan/rmplan.ts');
+    expect(edit.hunk).toEqual([
+      "   .description('Prepare the next step(s) from a plan YAML for execution')\n",
+      "   .option('--rmfilter', 'Use rmfilter to generate the prompt')\n",
+      "   .option('--previous', 'Include information about previous completed steps')\n",
+      "+  .option('--with-imports', 'Include direct imports of files found in the prompt or task files')\n",
+      '   .allowExcessArguments(true)\n',
+      '   .allowUnknownOption(true)\n',
+      '   .action(async (planFile, options) => {\n',
+    ]);
+  });
+});
+
+describe('doReplace', () => {
+  test('handles slightly incorrect hunks', () => {
+    let hunk = `   selectSteps?: boolean;
+   rmfilterArgs?: string[];
+   autofind?: boolean;
++}
++
++import { findFilesCore, RmfindOptions, RmfindResult } from '../../rmfind/core.js';
++
+ 
+ // Interface for the result of finding a pending task
+ export interface PendingTaskResult {`;
+
+    let existing = `interface PrepareNextStepOptions {
+  rmfilter?: boolean;
+  previous?: boolean;
+  withImports?: boolean;
+  withAllImports?: boolean;
+  selectSteps?: boolean;
+  rmfilterArgs?: string[];
+  autofind?: boolean;
+}
+
+// Interface for the result of finding a pending task
+export interface PendingTaskResult {
+  taskIndex: number;
+  stepIndex: number;
+  task: PlanSchema['tasks'][number];
+  step: PlanSchema['tasks'][number]['steps'][number];
+}`;
+
+    const result = doReplace(
+      existing,
+      hunk.split('\n').map((l) => l + '\n')
+    );
+
+    expect(result).toEqual(`interface PrepareNextStepOptions {
+  rmfilter?: boolean;
+  previous?: boolean;
+  withImports?: boolean;
+  withAllImports?: boolean;
+  selectSteps?: boolean;
+  rmfilterArgs?: string[];
+  autofind?: boolean;
+}
+
+import { findFilesCore, RmfindOptions, RmfindResult } from '../../rmfind/core.js';
+
+
+// Interface for the result of finding a pending task
+export interface PendingTaskResult {
+  taskIndex: number;
+  stepIndex: number;
+  task: PlanSchema['tasks'][number];
+  step: PlanSchema['tasks'][number]['steps'][number];
+}`);
+  });
 });

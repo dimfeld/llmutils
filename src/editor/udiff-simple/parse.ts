@@ -184,7 +184,7 @@ function normalizeHunk(hunk: string[]): string[] {
  * and replacing it with the "after" text. Handles minor whitespace variations.
  * Throws SearchTextNotUnique if the "before" text appears multiple times.
  */
-function directlyApplyHunk(content: string, hunk: string[]): string | null {
+function directlyApplyHunk(content: string, hunk: string[], log = false): string | null {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
 
   if (!beforeText.trim()) {
@@ -351,6 +351,35 @@ function applyHunk(content: string, hunk: string[]): string | null {
   return allApplied ? currentContent : null;
 }
 
+function changeLineToContext(line: string): string {
+  return line[0] === '+' || line[0] === '-' ? ' ' + line.slice(1) : line;
+}
+
+function tryConvertedContextHunk(
+  content: string,
+  precedingContext: string[],
+  changes: string[],
+  followingContext: string[],
+  convertPreceding: number,
+  convertFollowing: number
+): string | null {
+  if (convertPreceding + convertFollowing >= changes.length) {
+    return null;
+  }
+
+  const switched = [
+    ...precedingContext,
+    ...changes.slice(0, convertPreceding).map(changeLineToContext),
+    ...(convertFollowing
+      ? changes.slice(convertPreceding, -convertFollowing)
+      : changes.slice(convertPreceding)),
+    ...(convertFollowing ? changes.slice(-convertFollowing).map(changeLineToContext) : []),
+    ...followingContext,
+  ];
+
+  return directlyApplyHunk(content, switched);
+}
+
 /**
  * Tries to apply a section of changes using varying amounts of preceding
  * and following context lines to find a unique match.
@@ -365,18 +394,47 @@ function applyPartialHunk(
   const lenFoll = followingContext.length;
   const totalContext = lenPrec + lenFoll;
 
+  const convertTable = [
+    [1, 0],
+    [2, 0],
+    [0, 1],
+    [0, 2],
+    [1, 1],
+    [2, 1],
+    [1, 2],
+    [2, 2],
+  ];
+
+  for (const [convertPreceding, convertFollowing] of convertTable) {
+    const result = tryConvertedContextHunk(
+      content,
+      precedingContext,
+      changes,
+      followingContext,
+      convertPreceding,
+      convertFollowing
+    );
+    if (result !== null) {
+      return result;
+    }
+  }
+
   // Iterate dropping context lines, from most context to least
   for (let drop = 0; drop <= totalContext; drop++) {
     const useContext = totalContext - drop;
 
     // Iterate through combinations of preceding/following context to use
     for (let usePrec = Math.min(lenPrec, useContext); usePrec >= 0; usePrec--) {
+      if (usePrec > useContext) {
+        continue;
+      }
+
       const useFoll = useContext - usePrec;
       if (useFoll < 0 || useFoll > lenFoll) {
         continue;
       }
 
-      const thisPrec = usePrec > 0 ? precedingContext.slice(lenPrec - usePrec) : [];
+      const thisPrec = usePrec > 0 ? precedingContext.slice(-usePrec) : [];
       const thisFoll = followingContext.slice(0, useFoll);
 
       const currentHunk = [...thisPrec, ...changes, ...thisFoll];
@@ -410,10 +468,10 @@ function applyPartialHunk(
  * Applies the edits to the specified file content.
  * Handles creating new files.
  */
-async function doReplace(
+export function doReplace(
   content: string | null, // null if file doesn't exist
   hunk: string[]
-): Promise<string | null> {
+): string | null {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
 
   // Handle creating a new file
@@ -697,7 +755,7 @@ async function applyEdits(
     }
 
     try {
-      const newContent = await doReplace(currentContent, hunk);
+      const newContent = doReplace(currentContent, hunk);
 
       if (newContent !== null) {
         // SUCCESS!
