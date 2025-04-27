@@ -20,6 +20,7 @@ program
   .description('Generate planning prompt and context for a task')
   .option('--plan <file>', 'Plan text file to use')
   .option('--plan-editor', 'Open plan in editor')
+  .option('--autofind', 'Automatically find relevant files based on plan')
   .option('--quiet', 'Suppress informational output')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
