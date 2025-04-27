@@ -7,7 +7,8 @@ import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { logSpawn, secureRm } from '../rmfilter/utils.js';
 import { markStepDone, prepareNextStep } from './actions.js';
-import { cleanupYaml } from './cleanup.js';import { runAndApplyChanges } from './actions.js';
+import { cleanupYaml } from './cleanup.js';
+import { runAndApplyChanges } from './actions.js';
 import { planSchema, PlanSchema } from './planSchema.js';
 import { findPendingTask } from './actions.js';
 import { planPrompt } from './prompt.js';
@@ -289,9 +290,20 @@ program
           let applySucceeded = false;
           try {
             applySucceeded = await runAndApplyChanges(promptFilePath);
-            console.log(`Step execution ${applySucceeded ? 'succeeded' : 'failed'}`);
             if (applySucceeded) {
-              await markStepDone(planFile, { commit: true }, { taskIndex, stepIndex });
+              const { message, planComplete } = await markStepDone(
+                planFile,
+                { steps: 1, commit: true },
+                { taskIndex, stepIndex }
+              );
+              console.log(message);
+              if (planComplete) {
+                console.log('Plan fully completed!');
+                break;
+              }
+            } else {
+              console.error('Step execution failed, stopping agent.');
+              break;
             }
           } finally {
             try {

@@ -413,7 +413,7 @@ tasks:
              - Log an error message indicating the step failed and the agent is stopping.
              - `break` the loop.
           4. Import `markStepDone` from `./actions.js`.
-        done: false
+        done: true
   - title: Finalize 'agent' command with loop control and logging
     description: Add proper loop termination conditions (plan completion or error),
       refine error handling for file operations and function calls, and ensure
