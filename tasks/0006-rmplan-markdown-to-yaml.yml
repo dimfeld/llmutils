@@ -1,0 +1,158 @@
+goal: Update rmplan to generate plans in Markdown and convert to YAML during
+  extraction using an LLM.
+details: >
+  The current `rmplan generate` command produces YAML directly, which is hard to
+  review and edit.
+
+  This project updates the workflow:
+
+  1. `rmplan generate` will now prompt the LLM to create the plan in a
+  structured Markdown format.
+
+  2. `rmplan extract` will take this Markdown, use a second LLM call (Gemini
+  Flash) to convert it into the required YAML format, and then validate the
+  result.
+
+  This makes the initial plan generation more user-friendly while automating the
+  conversion to the structured YAML needed by downstream commands.
+tasks:
+  - title: Define Markdown Format and Update Generation Prompt
+    description: Modify the generation prompt to request Markdown output according
+      to a defined structure, instead of YAML.
+    files:
+      - src/rmplan/prompt.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/prompt.ts`:
+
+
+          1.  Define a new constant `planMarkdownExampleFormat` that clearly
+          illustrates the desired Markdown structure for the plan. This
+          structure should be easy for an LLM to generate and later
+          parse/convert. Use headings, bold text, lists, and code blocks
+          appropriately.
+
+              Example structure:
+              ```markdown
+              # Goal
+              [Project goal here]
+
+              ## Details
+              [Detailed description and analysis]
+
+              ---
+
+              ## Task: [Task 1 Title]
+              **Description:** [Task 1 Description]
+              **Files:**
+              - path/to/relevant/file1.ext
+              - path/to/another/file.ext
+              **Steps:**
+              1.  **Prompt:**
+                  ```
+                  [Multiline prompt for step 1]
+                  ```
+              2.  **Prompt:**
+                  ```
+                  [Prompt for step 2]
+                  ```
+
+              ---
+              ## Task: [Task 2 Title]
+              ... etc ...
+              ```
+              Place this constant above the `planPrompt` function.
+
+          2.  Modify the `planPrompt` function:
+              *   Change the core instruction: Instead of asking for YAML, explicitly ask the LLM to generate the plan in **Markdown format**.
+              *   Refer to the new `planMarkdownExampleFormat` constant as the desired output structure.
+              *   Remove the entire `<formatting>` section that currently specifies the YAML output format.
+              *   Ensure the prompt still emphasizes breaking the plan into small, actionable steps with associated files and detailed prompts for a code-generation LLM.
+              *   Keep the existing `planExampleFormatGeneric` constant as is for now; it will be used later in the conversion step.
+        done: false
+  - title: Implement Markdown-to-YAML Conversion Function
+    description: Refactor the existing cleanup function to perform Markdown-to-YAML
+      conversion using Gemini Flash.
+    files:
+      - src/rmplan/cleanup.ts
+      - src/rmplan/prompt.ts
+      - src/common/model_factory.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/cleanup.ts`:
+
+
+          1.  Rename the function `cleanupYaml` to `convertMarkdownToYaml`.
+
+          2.  Import `planExampleFormatGeneric` from `./prompt.js`.
+
+          3.  Replace the existing `cleanupPrompt` function or string with a new
+          prompt string variable named `markdownToYamlConversionPrompt`. This
+          prompt should instruct the LLM (specifically mentioning Gemini Flash
+          2.0 or a similar fast model) to:
+              *   Take Markdown text as input.
+              *   Convert this Markdown into YAML format.
+              *   Strictly adhere to the schema represented by `planExampleFormatGeneric` (include this example schema within the prompt).
+              *   Handle Markdown lists for `files` and `steps`.
+              *   Use the pipe character `|` for multi-line strings in step prompts (extracted from Markdown code blocks or multi-line list items).
+              *   Ensure correct YAML indentation (2 spaces).
+              *   Output *only* the raw, valid YAML string, without any introductory text, explanations, or markdown fences (like ```yaml).
+          4.  Update the `convertMarkdownToYaml` function:
+              *   It should now accept the Markdown string as input.
+              *   Use the new `markdownToYamlConversionPrompt`.
+              *   Call `generateText` using `createModel('google/gemini-flash-2.0-preview-preview')` or a similarly appropriate fast model identifier available in `model_factory.ts`. Ensure the model identifier is correct.
+              *   After getting the `text` result from `generateText`, add logic to clean it up:
+                  *   Trim leading/trailing whitespace.
+                  *   If the text starts with ```yaml` and ends with ```, remove these fences.
+                  *   If the text contains introductory lines before "goal:", attempt to find the start of the actual YAML (e.g., find the first line starting with `goal:`).
+              *   Return the cleaned YAML string.
+        done: false
+  - title: Integrate Conversion into `extract` Command
+    description: Update the `rmplan extract` command to use the new Markdown-to-YAML
+      conversion function instead of attempting direct YAML parsing or cleanup.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/cleanup.ts
+      - src/rmplan/planSchema.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.ts`:
+
+
+          1.  Import the newly renamed `convertMarkdownToYaml` function from
+          `./cleanup.js`.
+
+          2.  Locate the `extract` command's action handler
+          (`program.command('extract ...').action(...)`).
+
+          3.  **Remove** the `findYamlStart` helper function defined within the
+          action handler.
+
+          4.  **Remove** the first `try...catch` block that attempts to parse
+          the `inputText` directly using `yaml.parse(rawYaml)` and
+          `planSchema.parse`.
+
+          5.  **Remove** the line `const rawYaml = findYamlStart(inputText);`
+          just before the removed block.
+
+          6.  Inside the main logic block (where `validatedPlan` is declared):
+              *   Call `convertMarkdownToYaml(inputText)`. Use `await` as it's an async function.
+              *   Store the returned YAML string in a variable, for example, `convertedYaml`.
+              *   **Keep** the *subsequent* `try...catch` block (the one that previously contained the LLM cleanup fallback).
+              *   Inside this `try` block:
+                  *   Parse the `convertedYaml` string using `yaml.parse()`.
+                  *   Validate the resulting object using `planSchema.safeParse()`.
+                  *   If validation succeeds (`result.success`), assign `result.data` to `validatedPlan`.
+                  *   If validation fails (`!result.success`), print the validation errors (`result.error`) and exit.
+              *   Inside the `catch (e)` block (for errors during parsing `convertedYaml`):
+                  *   Update the error message to indicate failure during parsing *after* the LLM conversion step (e.g., "Failed to parse YAML output from LLM conversion.").
+                  *   Consider saving the failed `convertedYaml` to a file like `rmplan-conversion-failure.yml` for debugging.
+                  *   Exit the process.
+          7.  Remove the `console.warn('YAML parsing failed, attempting LLM
+          cleanup...');` message, as the LLM step is now the primary conversion
+          path, not a fallback cleanup.
+
+          8.  Ensure the rest of the logic (writing to output file or stdout)
+          uses the `validatedPlan` obtained after successful conversion and
+          validation.
+        done: false
