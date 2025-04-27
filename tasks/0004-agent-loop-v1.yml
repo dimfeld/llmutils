@@ -46,7 +46,7 @@ tasks:
           Update `src/rmplan/rmplan.ts` to import `PendingTaskResult` and
           `findPendingTask` from `./actions.js`. Remove the original definitions
           from `rmplan.ts`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/actions.ts`, define the signature for a new
           asynchronous function `markStepDone`.
@@ -73,7 +73,7 @@ tasks:
 
           Include necessary imports like `yaml`, `planSchema`, `PlanSchema`,
           `findPendingTask`, `commitAll`. Export the function.
-        done: false
+        done: true
       - prompt: >
           Move the core implementation logic from the `done` command's action
           handler in `src/rmplan/rmplan.ts` into the newly defined

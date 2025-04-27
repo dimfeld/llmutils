@@ -18,26 +18,8 @@ import { cleanupYaml } from './cleanup.js';
 import { select } from '@inquirer/prompts';
 import { commitAll, getGitRoot } from '../rmfilter/utils.js';
 import clipboard from 'clipboardy';
-
-interface PendingTaskResult {
-  task: PlanSchema['tasks'][number];
-  taskIndex: number;
-  stepIndex: number;
-}
-
-function findPendingTask(planData: PlanSchema): PendingTaskResult | null {
-  for (let i = 0; i < planData.tasks.length; i++) {
-    const task = planData.tasks[i];
-
-    // Find first unfinished step in task
-    for (let j = 0; j < task.steps.length; j++) {
-      if (!task.steps[j].done) {
-        return { task, taskIndex: i, stepIndex: j };
-      }
-    }
-  }
-  return null;
-}
+import type { PendingTaskResult } from './actions.js';
+import { findPendingTask } from './actions.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
