@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { logSpawn } from '../rmfilter/utils.js';
+import { logSpawn, secureRm } from '../rmfilter/utils.js';
 import { markStepDone, prepareNextStep } from './actions.js';
 import { cleanupYaml } from './cleanup.js';
 import { planSchema } from './planSchema.js';
@@ -208,7 +208,7 @@ program
         rmfilterArgs: cmdLineRmfilterArgs,
       });
 
-      if (result.promptFilePath && result.rmfilterArgs && options.rmfilter) {
+      if (options.rmfilter && result.promptFilePath && result.rmfilterArgs) {
         try {
           const proc = logSpawn(['rmfilter', '--copy', ...result.rmfilterArgs], {
             stdio: ['inherit', 'inherit', 'inherit'],
@@ -225,6 +225,12 @@ program
             console.warn('Warning: failed to clean up temp file:', result.promptFilePath);
           }
         }
+      } else {
+        console.log('\n----- LLM PROMPT -----\n');
+        console.log(result.prompt);
+        console.log('\n---------------------\n');
+        await clipboardy.write(result.prompt);
+        console.log('Prompt copied to clipboard');
       }
     } catch (err) {
       console.error('Failed to process plan file:', err);

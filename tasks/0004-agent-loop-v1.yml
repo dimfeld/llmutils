@@ -263,7 +263,7 @@ tasks:
 
           7. Remove the old logic that is now inside `prepareNextStep`. Keep
           necessary imports.
-        done: false
+        done: true
   - title: Add 'agent' command skeleton and loop structure
     description: Add the basic 'agent <planFile>' command to rmplan.ts. Implement
       the main loop structure that loads the plan and iterates using
