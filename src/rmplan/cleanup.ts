@@ -2,70 +2,59 @@ import { generateText } from 'ai';
 import { createModel } from '../common/model_factory.js';
 import { planExampleFormatGeneric } from './prompt.js';
 
-function cleanupPrompt(input: string) {
-  const exampleFormat = planExampleFormatGeneric
-    .split('\n')
-    .map((line) => '  ' + line)
-    .join('\n');
+// Define the prompt for Markdown to YAML conversion
+const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema. You should use a fast model like Gemini Flash 2.0 for this conversion.
 
-  return `You are a YAML formatting expert. Your task is to clean up and format the given text into valid YAML. Pay close attention to the structure, indentation, and proper use of quotes and multi-line string formatting.
+**Input Markdown:**
 
 Here is the text that needs to be converted to valid YAML:
 
 <input_text>
-${input}
+{markdownInput}
 </input_text>
 
-Before formatting the YAML, analyze the input and plan your approach inside yaml_analysis tags:
+**Instructions:**
 
-1. Identify and list key-value pairs from the input text
-2. Note any structural inconsistencies or formatting issues
-3. Plan how to reorganize the content to fit the required YAML structure
-4. Identify the overall structure of the YAML
-5. List any strings that need to be quoted
-6. Identify any multi-line strings that require the pipe character
-7. Note any indentation issues that need to be corrected
-8. Check if the structure matches the expected format (goal, details, tasks)
-9. Plan how to handle any missing or extra fields
-10. Count the number of tasks in the input
+1.  **Convert the Markdown input into YAML format.**
+2.  **Strictly adhere to the following YAML schema:**
+    \`\`\`yaml
+${planExampleFormatGeneric}
+    \`\`\`
+3.  **Handle Markdown lists:** Convert Markdown lists under 'Files:' and numbered lists under 'Steps:' into YAML sequences.
+4.  **Handle Multi-line Strings:** For step prompts (often found in Markdown code blocks or as multi-line list items), use the YAML pipe character (|) for multi-line strings.
+5.  **Indentation:** Use exactly 2 spaces for YAML indentation levels.
+6.  **Output Format:** Output *only* the raw, valid YAML string. Do **not** include any introductory text, explanations, comments, or Markdown fences (like \`\`\`yaml or \`\`\`).
 
-Now, format the input text into valid YAML according to the following guidelines:
+**Example Input (Markdown):**
+See the structure in the provided Markdown input text.
+**Required Output (YAML):**
+A single block of valid YAML text conforming to the schema.`;
 
-1. Ensure the YAML structure matches this format:
-   \`\`\`yaml
-${exampleFormat}
-   \`\`\`
-
-2. Use quotes for strings containing special characters or when necessary to avoid YAML parsing errors. Particularly, strings containing colons (:) should be quoted.
-
-3. For multi-line strings, use the pipe character (|) followed by the indented text on subsequent lines.
-
-4. Ensure proper indentation: Use 2 spaces for each level of indentation.
-
-5. For lists (such as 'files' and 'steps'), use a hyphen (-) followed by a space for each item.
-
-6. If any required fields are missing in the input, include them with empty values.
-
-7. Remove any fields that don't match the expected structure.
-
-Output only the cleaned and formatted YAML, without any additional explanations or comments.`;
-}
-
-export async function cleanupYaml(input: string) {
-  const prompt = cleanupPrompt(input);
+export async function convertMarkdownToYaml(markdownInput: string): Promise<string> {
+  const prompt = markdownToYamlConversionPrompt.replace('{markdownInput}', markdownInput);
   let { text } = await generateText({
-    model: createModel('google/gemini-2.5-flash-preview-04-17'),
+    model: createModel('google/gemini-flash-2.0-preview-preview'), // Using Gemini Flash as requested
     prompt,
   });
 
+  // Clean up the output
+  text = text.trim();
+
+  // Remove potential Markdown fences
+  if (text.startsWith('```yaml') && text.endsWith('```')) {
+    text = text.slice(7, -3).trim();
+  } else if (text.startsWith('```') && text.endsWith('```')) {
+    // Handle generic fences just in case
+    text = text.slice(3, -3).trim();
+  }
+
+  // Remove potential introductory lines before the actual YAML content
   const startIndex = text.indexOf('goal:');
   if (startIndex >= 0) {
     text = text.slice(startIndex);
-  }
-
-  text = text.trimEnd();
-  if (text.endsWith('```')) {
-    text = text.slice(0, -3).trimEnd();
+  } else if (startIndex < 0) {
+    // If 'goal:' is not found, return the trimmed text, maybe log a warning later
+    console.warn("YAML output from LLM doesn't start with 'goal:'. Returning trimmed output.");
   }
 
   return text;

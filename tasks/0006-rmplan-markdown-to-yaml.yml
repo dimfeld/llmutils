@@ -106,7 +106,7 @@ tasks:
                   *   If the text starts with ```yaml` and ends with ```, remove these fences.
                   *   If the text contains introductory lines before "goal:", attempt to find the start of the actual YAML (e.g., find the first line starting with `goal:`).
               *   Return the cleaned YAML string.
-        done: false
+        done: true
   - title: Integrate Conversion into `extract` Command
     description: Update the `rmplan extract` command to use the new Markdown-to-YAML
       conversion function instead of attempting direct YAML parsing or cleanup.
