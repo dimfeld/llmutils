@@ -6,6 +6,7 @@ import { parseArgs } from 'util';
 import { globFiles, grepFor } from '../common/file_finder.ts';
 import { debugLog } from '../logging.ts';
 import { quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { findFilesCore, RmfindOptions, RmfindResult } from './core.ts'; // Import core elements
 import { generateGrepTermsFromQuery } from './generate_grep_terms.ts';
 import { filterFilesWithQuery } from './llm_file_filter.ts';
 

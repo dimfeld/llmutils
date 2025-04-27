@@ -69,7 +69,7 @@ tasks:
           In `src/rmfind/rmfind.ts`, import `findFilesCore` and the
           option/result types from `./core.ts`. (Leave the main logic in
           `rmfind.ts` for now).
-        done: false
+        done: true
   - title: Move Core Finding Logic to rmfind Core
     description: Transfer the file finding logic (glob, grep, AI query) from
       rmfind.ts to core.ts.
