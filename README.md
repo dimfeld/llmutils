@@ -186,6 +186,8 @@ The general usage pattern is that you will:
 
 Then repeat steps 5 through 7 until the task is done.
 
+Alternatively, you can use the `agent` command to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
+
 Run `rmplan` with different commands to manage project plans:
 
 ```bash
@@ -213,6 +215,12 @@ rmplan done plan.yml --commit
 
 # Mark the next 2 steps as done and commit changes
 rmplan done plan.yml --commit --steps 2
+
+# Automatically execute steps in a plan, choosing a specific model
+rmplan agent plan.yml --model google/gemini-2.5-flash-preview-04-17
+
+# Execute a specific number of steps automatically
+rmplan agent plan.yml --steps 3
 ```
 
 ### Requirements
@@ -223,6 +231,7 @@ rmplan done plan.yml --commit --steps 2
 - The `--rmfilter` option requires additional arguments for `rmfilter` (passed after `--`).
 - Use `--previous` to include completed steps for context in the LLM prompt.
 - The `--commit` option supports both git and jj for version control.
+- The `agent` command automates step execution, using `rmfilter` to generate context, running the step with an LLM, and marking it as done with a commit. It stops on errors or when the plan is complete.
 
 ## Usage Examples
 
