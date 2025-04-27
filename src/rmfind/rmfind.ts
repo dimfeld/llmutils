@@ -2,13 +2,10 @@
 import { $ } from 'bun';
 import clipboard from 'clipboardy';
 import path from 'node:path';
-import { parseArgs } from 'util';
-import { globFiles, grepFor } from '../common/file_finder.ts';
+import { parseArgs } from 'node:util';
 import { debugLog } from '../logging.ts';
 import { quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { findFilesCore, RmfindOptions, RmfindResult } from './core.ts'; // Import core elements
-import { generateGrepTermsFromQuery } from './generate_grep_terms.ts';
-import { filterFilesWithQuery } from './llm_file_filter.ts';
 
 const DEFAULT_MODEL = 'google/gemini-2.0-flash';
 
@@ -65,10 +62,6 @@ Options:
   process.exit(0);
 }
 
-if (values['stop-after']) {
-  // The only reason to use stop-after is for debugging so always turn it on.
-  values.debug = true;
-}
 
 setDebug(values.debug || false);
 setQuiet(values.quiet || false);
@@ -81,10 +74,6 @@ async function main() {
     process.exit(1);
   }
 
-  let classifierModel = values['classifier-model'] || values.model;
-  let grepGeneratorModel = values['grep-generator-model'] || values.model;
-
-  // 1. Determine Base Directory
   let baseDir = process.cwd();
   if (values.cwd) {
     baseDir = path.resolve(values.cwd);
@@ -94,108 +83,36 @@ async function main() {
   }
   debugLog(`Using base directory: ${baseDir}`);
 
-  // 2. Find Initial Files (Globbing or Grepping)
-  let initialFiles: string[] = [];
-  const hasGlobs = positionals.length > 0;
-  let grep = values.grep ?? [];
-  let hasGrep = grep.length > 0;
-  const hasQuery = !!values.query;
+  // Prepare options for findFilesCore
+  const options: RmfindOptions = {
+    baseDir,
+    globs: positionals,
+    ignoreGlobs: values.ignore,
+    grepPatterns: values.grep,
+    query: values.query,
+    wholeWord: values['whole-word'],
+    expand: values.expand,
+    model: values.model ?? DEFAULT_MODEL,
+    classifierModel: values['classifier-model'] || values.model || DEFAULT_MODEL,
+    grepGeneratorModel: values['grep-generator-model'] || values.model || DEFAULT_MODEL,
+    debug: values.debug ?? false,
+    quiet: values.quiet ?? false,
+  };
 
-  if (!hasGlobs && !hasGrep && !hasQuery) {
+  if (options.globs.length === 0 && !options.grepPatterns && !options.query) {
     console.error('Error: No globs, directories, grep patterns, or query provided.');
     console.error('Use --help for usage information.');
     process.exit(1);
   }
 
-  try {
-    // Generate grep terms from query if no grep terms are provided
-    if (values.query && !hasGrep) {
-      grep = await generateGrepTermsFromQuery(grepGeneratorModel, values.query);
-      hasGrep = grep.length > 0;
+  // Call the core finding logic
+  const result: RmfindResult = await findFilesCore(options);
+  const foundFiles = result.files; // These are absolute paths
 
-      if (!quiet) {
-        console.warn(`Generated grep terms: ${grep.join(', ')}\n`);
-      }
-    }
-
-    if (values['stop-after'] === 'grep-generation') {
-      process.exit(0);
-    }
-
-    if (hasGlobs) {
-      debugLog(
-        `Globbing patterns: ${positionals.join(', ')} with ignore: ${values.ignore?.join(', ')}`
-      );
-      initialFiles = await globFiles(baseDir, positionals, values.ignore);
-      debugLog(`Found ${initialFiles.length} files via globbing.`);
-      // If grep is specified or generated, filter the globbed files
-      if (hasGrep || hasQuery) {
-        debugLog(
-          `Grepping within ${initialFiles.length} globbed files for patterns: ${grep.join(', ')}`
-        );
-        initialFiles = await grepFor(
-          baseDir,
-          grep,
-          initialFiles, // Pass globbed files as source
-          values.expand ?? false,
-          values['whole-word'] ?? false
-        );
-        debugLog(
-          `Found ${initialFiles.length} files after grep filtering: ${initialFiles.join(', ')}.`
-        );
-      }
-    } else if (hasGrep || hasQuery) {
-      // Only grep is specified or generated, search the base directory
-      debugLog(`Grepping base directory for patterns: ${grep.join(', ')}`);
-      initialFiles = await grepFor(
-        baseDir,
-        grep,
-        undefined, // Search baseDir
-        values.expand ?? false,
-        values['whole-word'] ?? false
-      );
-      debugLog(`Found ${initialFiles.length} files via grep: ${initialFiles.join(', ')}.`);
-    }
-  } catch (error) {
-    console.error(`Error finding files: ${(error as Error).toString()}`);
-    process.exit(1);
-  }
-
-  if (initialFiles.length === 0) {
+  if (foundFiles.length === 0) {
     if (!values.quiet) {
       console.log('No files found matching the criteria.');
     }
-    process.exit(0);
-  }
-
-  if (values['stop-after'] === 'grep') {
-    process.exit(0);
-  }
-
-  // 3. Filter files with natural language query if provided
-  let filteredFiles = initialFiles;
-  if (values.query) {
-    let foundFiles = await filterFilesWithQuery(
-      classifierModel,
-      values.query,
-      baseDir,
-      filteredFiles
-    );
-
-    // TODO Use the other relevance info from the classifier
-    filteredFiles = foundFiles.map((file) => file.filename);
-
-    debugLog(`Filtered to ${filteredFiles.length} files with query.`);
-  }
-
-  if (filteredFiles.length === 0) {
-    if (!values.quiet) {
-      console.log('No files matched the query.');
-    }
-    process.exit(0);
-  }
-
-  if (values['stop-after'] === 'classify') {
     process.exit(0);
   }
 
@@ -209,7 +126,7 @@ async function main() {
       process.exit(1);
     }
 
-    const fzfInput = filteredFiles.map((file) => path.relative(baseDir, file)).join('\n');
+    const fzfInput = foundFiles.map((file) => path.relative(baseDir, file)).join('\n');
     const fzfProc = Bun.spawn(
       [
         'fzf',
@@ -246,7 +163,7 @@ async function main() {
       selectedRelativeFiles = fzfOutput.trim().split('\n').filter(Boolean);
     }
   } else {
-    selectedRelativeFiles = filteredFiles.map((file) => path.relative(baseDir, file));
+    selectedRelativeFiles = foundFiles.map((file) => path.relative(baseDir, file));
   }
 
   // 5. Output Selection
@@ -258,7 +175,7 @@ async function main() {
   }
 
   if (selectedRelativeFiles.length > 0) {
-    // Output absolute paths
+    // Output relative paths (as selected or determined)
     let output: string;
     if (values.yaml) {
       output = selectedRelativeFiles.map((file) => `    - "${file}"`).join('\n');

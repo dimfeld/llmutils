@@ -102,7 +102,7 @@ tasks:
              - Return the final list of absolute file paths in the `RmfindResult` object.
           3. Make sure all necessary dependencies are imported correctly in
           `core.ts`.
-        done: false
+        done: true
   - title: Adapt rmfind CLI Wrapper
     description: Update rmfind.ts to use the new core function and handle CLI
       specific tasks like argument parsing and fzf integration.
