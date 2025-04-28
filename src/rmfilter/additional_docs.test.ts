@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, jest, spyOn } from 'bun:te
 import * as glob from 'fast-glob';
 import * as os from 'node:os';
 import path from 'node:path';
-import { getAdditionalDocs } from './additional_docs';
+import { gatherDocsInternal } from './additional_docs';
 import type { MdcFile } from './mdc';
 
 // Helper to mock Bun.file().text()
@@ -64,7 +64,7 @@ describe('getAdditionalDocs', () => {
     jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_doc.md']);
     mockFiles['/project/root/manual_doc.md'] = 'Manual doc content.';
 
-    const result = await getAdditionalDocs(baseDir, { docs: ['manual_doc.md'] });
+    const result = await gatherDocsInternal(baseDir, { docs: ['manual_doc.md'] });
 
     expect(result.docsTag).toBe(
       '<documents>\n<document><![CDATA[\nManual doc content.\n]]></document>\n</documents>'
@@ -77,7 +77,7 @@ describe('getAdditionalDocs', () => {
     mockFiles['/project/root/doc1.md'] = 'Doc 1';
     mockFiles['/project/root/doc2.md'] = 'Doc 2';
 
-    const result = await getAdditionalDocs(baseDir, { docs: ['*.md'] });
+    const result = await gatherDocsInternal(baseDir, { docs: ['*.md'] });
 
     expect(result.docsTag).toBe(
       '<documents>\n<document><![CDATA[\nDoc 1\n]]></document>\n<document><![CDATA[\nDoc 2\n]]></document>\n</documents>'
@@ -89,7 +89,7 @@ describe('getAdditionalDocs', () => {
     jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_rule.txt']);
     mockFiles['/project/root/manual_rule.txt'] = 'Manual rule content.';
 
-    const result = await getAdditionalDocs(baseDir, { rules: ['manual_rule.txt'] });
+    const result = await gatherDocsInternal(baseDir, { rules: ['manual_rule.txt'] });
 
     expect(result.rulesTag).toBe(
       '<rules>\n<rule><![CDATA[\nManual rule content.\n]]></rule>\n</rules>'
@@ -104,7 +104,7 @@ describe('getAdditionalDocs', () => {
     mockFiles['/project/root/rule1.txt'] = 'Rule 1';
     mockFiles['/project/root/rule2.txt'] = 'Rule 2';
 
-    const result = await getAdditionalDocs(baseDir, { rules: ['*.txt'] });
+    const result = await gatherDocsInternal(baseDir, { rules: ['*.txt'] });
 
     expect(result.rulesTag).toBe(
       '<rules>\n<rule><![CDATA[\nRule 1\n]]></rule>\n<rule><![CDATA[\nRule 2\n]]></rule>\n</rules>'
@@ -116,7 +116,7 @@ describe('getAdditionalDocs', () => {
     mockFiles[cursorRulesPath] = 'Cursor rule content.';
     jest.spyOn(glob, 'glob').mockResolvedValue([]); // No manual --rules
 
-    const result = await getAdditionalDocs(baseDir, {});
+    const result = await gatherDocsInternal(baseDir, {});
 
     expect(result.rulesTag).toBe(
       '<rules>\n<rule><![CDATA[\nCursor rule content.\n]]></rule>\n</rules>'
@@ -128,7 +128,7 @@ describe('getAdditionalDocs', () => {
     mockFiles[cursorRulesPath] = 'Cursor rule content.';
     jest.spyOn(glob, 'glob').mockResolvedValue([]); // No manual --rules
 
-    const result = await getAdditionalDocs(baseDir, { 'omit-cursorrules': true });
+    const result = await gatherDocsInternal(baseDir, { 'omit-cursorrules': true });
 
     expect(result.rulesTag).toBe('');
   });
@@ -156,7 +156,7 @@ describe('getAdditionalDocs', () => {
   };
 
   it('should include MDC file with type "docs" and description', async () => {
-    const result = await getAdditionalDocs(baseDir, {}, [mockMdcDoc]);
+    const result = await gatherDocsInternal(baseDir, {}, [mockMdcDoc]);
     expect(result.docsTag).toBe(
       '<documents>\n<document description="An MDC Document"><![CDATA[\nMDC Doc Content\n]]></document>\n</documents>'
     );
@@ -164,7 +164,7 @@ describe('getAdditionalDocs', () => {
   });
 
   it('should include MDC file with type "rules" and description (with escaped quotes)', async () => {
-    const result = await getAdditionalDocs(baseDir, {}, [mockMdcRule]);
+    const result = await gatherDocsInternal(baseDir, {}, [mockMdcRule]);
     expect(result.rulesTag).toBe(
       '<rules>\n<rule description="An MDC Rule with &quot;quotes&quot;"><![CDATA[\nMDC Rule Content\n]]></rule>\n</rules>'
     );
@@ -172,14 +172,14 @@ describe('getAdditionalDocs', () => {
   });
 
   it('should default MDC file type to "docs" if missing', async () => {
-    const result = await getAdditionalDocs(baseDir, {}, [mockMdcDefaultType]);
+    const result = await gatherDocsInternal(baseDir, {}, [mockMdcDefaultType]);
     expect(result.rulesTag).toBe(
       '<rules>\n<rule description="Default type is rule"><![CDATA[\nMDC Default Type Content\n]]></rule>\n</rules>'
     );
   });
 
   it('should handle MDC file with missing description', async () => {
-    const result = await getAdditionalDocs(baseDir, {}, [mockMdcNoDesc]);
+    const result = await gatherDocsInternal(baseDir, {}, [mockMdcNoDesc]);
     expect(result.docsTag).toBe(
       '<documents>\n<document><![CDATA[\nMDC No Description Content\n]]></document>\n</documents>'
     );
@@ -190,7 +190,7 @@ describe('getAdditionalDocs', () => {
     jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_doc.md']);
     mockFiles['/project/root/manual_doc.md'] = 'Manual doc.';
 
-    const result = await getAdditionalDocs(baseDir, { docs: ['manual_doc.md'] }, [
+    const result = await gatherDocsInternal(baseDir, { docs: ['manual_doc.md'] }, [
       mockMdcDoc,
       mockMdcDefaultType,
     ]);
@@ -209,7 +209,7 @@ describe('getAdditionalDocs', () => {
     jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_rule.txt']);
     mockFiles['/project/root/manual_rule.txt'] = 'Manual rule.';
 
-    const result = await getAdditionalDocs(baseDir, { rules: ['manual_rule.txt'] }, [mockMdcRule]);
+    const result = await gatherDocsInternal(baseDir, { rules: ['manual_rule.txt'] }, [mockMdcRule]);
 
     expect(result.rulesTag).toBe(
       '<rules>\n' +
@@ -223,7 +223,7 @@ describe('getAdditionalDocs', () => {
   // --- Empty/No Input Tests ---
   it('should return empty tags when no docs, rules, or MDCs are provided', async () => {
     jest.spyOn(glob, 'glob').mockResolvedValue([]);
-    const result = await getAdditionalDocs(baseDir, {}, []);
+    const result = await gatherDocsInternal(baseDir, {}, []);
     expect(result.docsTag).toBe('');
     expect(result.rulesTag).toBe('');
     expect(result.instructionsTag).toBe('');
@@ -233,7 +233,7 @@ describe('getAdditionalDocs', () => {
     jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_doc.md']);
     mockFiles['/project/root/manual_doc.md'] = 'Manual doc content.';
 
-    const result = await getAdditionalDocs(baseDir, { docs: ['manual_doc.md'] }, []); // Pass empty array
+    const result = await gatherDocsInternal(baseDir, { docs: ['manual_doc.md'] }, []); // Pass empty array
 
     expect(result.docsTag).toBe(
       '<documents>\n<document><![CDATA[\nManual doc content.\n]]></document>\n</documents>'

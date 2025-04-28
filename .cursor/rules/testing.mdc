@@ -1,0 +1,6 @@
+---
+description: Writing tests
+globs: '*.test.ts'
+---
+
+Tests use Bun test. When mocking, either use the bulit-in Bun testing imports or use `import { jest } from 'bun:test'` for Jest-compatible mocking.

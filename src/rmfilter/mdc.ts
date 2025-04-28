@@ -50,7 +50,7 @@ export async function parseMdcFile(filePath: string): Promise<MdcFile | null> {
     };
   } catch (error: any) {
     // Handle file read errors (e.g., ENOENT from Bun.file) or parsing errors from gray-matter
-    debugLog(`[MDC] Error processing file ${filePath}: ${error.message}`);
+    console.warn(`[MDC] Error processing file ${filePath}: ${error}`);
     return null;
   }
 }
@@ -110,7 +110,13 @@ export async function filterMdcFiles(
 
   const includedFiles = await Promise.all(
     mdcFiles.map(async (mdcFile) => {
-      const globPatterns = normalizeArrayInput(mdcFile.data.globs);
+      const globPatterns = normalizeArrayInput(mdcFile.data.globs).map((pattern) => {
+        if (pattern.includes('/')) {
+          return pattern;
+        } else {
+          return `**/${pattern}`;
+        }
+      });
       const grepTerms = normalizeArrayInput(mdcFile.data.grep);
 
       // 1. Default Inclusion Check: Include if no globs or grep terms are specified.
