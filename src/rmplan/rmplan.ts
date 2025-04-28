@@ -5,9 +5,9 @@ import os from 'os';
 import path from 'path';
 import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { getGitRoot, logSpawn } from '../rmfilter/utils.js';
+import { getGitRoot, logSpawn, setQuiet } from '../rmfilter/utils.js';
 import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
-import { cleanupYaml } from './cleanup.js';
+import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
 
@@ -130,9 +130,12 @@ program
 
 program
   .command('extract [inputFile]')
-  .description('Extract and validate a plan YAML from text')
+  .description('Convert a Markdown project plan into YAML')
   .option('-o, --output <outputFile>', 'Write result to a file instead of stdout')
+  .option('--quiet', 'Suppress informational output')
   .action(async (inputFile, options) => {
+    setQuiet(options.quiet);
+
     let inputText: string;
     if (inputFile) {
       inputText = await Bun.file(inputFile).text();
@@ -144,57 +147,56 @@ program
 
     let validatedPlan: unknown;
 
-    function findYamlStart(inputText: string): string {
-      const match = inputText.match(/```yaml\n([\s\S]*?)\n```/i);
-      if (match) {
-        return match[1];
-      }
-
-      let goal = inputText.indexOf('goal:');
-      if (goal >= 0) {
-        return inputText.slice(goal);
-      }
-
-      return inputText;
-    }
-
-    const rawYaml = findYamlStart(inputText);
+    let convertedYaml: string;
     try {
-      const parsedObject = yaml.parse(rawYaml);
-      validatedPlan = planSchema.parse(parsedObject);
-    } catch (e) {
-      // ignore since we're going to the next try
+      // First try to see if it's YAML already.
+      let maybeYaml = findYamlStart(inputText);
+      const parsedObject = yaml.parse(maybeYaml);
+      convertedYaml = yaml.stringify(parsedObject);
+    } catch {
+      // Print output if:
+      // - no output file was provided
+      // - --quiet was not set
+      let streamToConsole = !options.output || !options.quiet;
+      convertedYaml = await convertMarkdownToYaml(inputText, streamToConsole);
     }
 
-    if (!validatedPlan) {
-      // Use Gemini Flash to clean up the text to valid YAML
-      console.warn('YAML parsing failed, attempting LLM cleanup...');
-      const result = await cleanupYaml(inputText);
-      const rawYaml = findYamlStart(result);
-      try {
-        const parsedObject = yaml.parse(rawYaml);
-        const result = planSchema.safeParse(parsedObject);
-        if (!result.success) {
-          console.error('Validation errors:', result.error);
-          process.exit(1);
-        }
-        validatedPlan = result.data;
-      } catch (e) {
-        await Bun.write('rmplan-clean-failure.yml', result);
-        console.error(
-          'Failed to parse YAML even after Gemini Flash cleanup. Saved cleaned output to rmplan-clean-failure.yml'
-        );
+    // Now, try to parse and validate the YAML returned by the LLM
+    try {
+      const parsedObject = yaml.parse(convertedYaml);
+      const result = planSchema.safeParse(parsedObject);
+      if (!result.success) {
+        console.error('Validation errors after LLM conversion:', result.error);
+        // Optionally save the failed YAML for debugging
+        await Bun.write('rmplan-validation-failure.yml', convertedYaml);
+        console.error('Invalid YAML (saved to rmplan-validation-failure.yml):', convertedYaml);
         process.exit(1);
       }
+      validatedPlan = result.data;
+    } catch (e) {
+      // Save the failed YAML for debugging
+      await Bun.write('rmplan-conversion-failure.yml', convertedYaml);
+      console.error(
+        'Failed to parse YAML output from LLM conversion. Saved raw output to rmplan-conversion-failure.yml'
+      );
+      console.error('Parsing error:', e);
+      process.exit(1);
     }
 
     const outputYaml = yaml.stringify(validatedPlan);
+
     if (options.output) {
-      await Bun.write(options.output, outputYaml);
-      console.log(`Wrote result to ${options.output}`);
-    } else {
-      console.log(outputYaml);
+      let outputFilename = options.output;
+      if (outputFilename.endsWith('.md')) {
+        outputFilename = outputFilename.slice(0, -3);
+        outputFilename += '.yml';
+      }
+      await Bun.write(outputFilename, outputYaml);
+      if (!options.quiet) {
+        console.log(`Wrote result to ${outputFilename}`);
+      }
     }
+    // else we already wrote to the console in convertMarkdownToYaml, so don't here
   });
 
 program

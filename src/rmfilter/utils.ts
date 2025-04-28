@@ -8,12 +8,12 @@ import { findUp } from 'find-up';
 export let debug = false;
 export let quiet = false;
 
-export function setQuiet(value: boolean) {
-  quiet = value;
+export function setQuiet(value: boolean | undefined) {
+  quiet = value ?? false;
 }
 
-export function setDebug(value: boolean) {
-  debug = value;
+export function setDebug(value: boolean | undefined) {
+  debug = value ?? false;
 }
 
 // Helper function to log and execute commands

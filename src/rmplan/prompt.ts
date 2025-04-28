@@ -21,7 +21,36 @@ tasks:
     files:
       - [list of relevant file paths]
     steps:
-      - prompt: [single-line or multi-line string]`;
+      - prompt: [multi-line string using the | character]`;
+
+// Define the desired Markdown structure for the plan
+export const planMarkdownExampleFormat = `
+# Goal
+[Project goal here]
+
+## Details
+[Detailed description and analysis]
+
+---
+
+## Task: [Task 1 Title]
+**Description:** [Task 1 Description]
+**Files:**
+- path/to/relevant/file1.ext
+- path/to/another/file.ext
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    [Multiline prompt for step 1]
+    \`\`\`
+2.  **Prompt:**
+    \`\`\`
+    [Prompt for step 2]
+    \`\`\`
+---
+## Task: [Task 2 Title]
+... etc ...
+`;
 
 export function planPrompt(plan: string) {
   // This is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
@@ -44,13 +73,12 @@ The goal is to output prompts, but context, etc is important as well. Remember w
 
 When generating the final output with the prompts, output an overall goal, project details, and then a list of tasks. Each task should have a list of relevant files and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include dependencies or built-in system libraries in this list.
 
-The tool that consumes this YAML will join the data for a task together into one or more prompts.
-
-<formatting>
-Use the following YAML format for your final prompt output:
-\`\`\`yaml
-${planExampleFormatGeneric}
+Use the following Markdown format for your final prompt output:
 \`\`\`
-</formatting>
+${planMarkdownExampleFormat}
+\`\`\`
+
+
+If there are any changes requested or comments made after your create this plan, think about how to make the changes to the project plan, update the project plan appropriately, and output the entire updated plan again in the proper format.
 `;
 }
