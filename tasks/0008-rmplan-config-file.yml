@@ -335,7 +335,7 @@ tasks:
           command action that needs the config is actually run by Commander. The
           config variable needs to be accessible in the scope where the action
           handlers are defined.
-        done: false
+        done: true
   - title: Implement Post-Apply Command Execution
     description: Modify the `agent` command loop to execute the configured
       `postApplyCommands` after changes are successfully applied by
