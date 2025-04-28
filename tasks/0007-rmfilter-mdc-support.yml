@@ -223,7 +223,7 @@ tasks:
               *   Test array format for `globs` and `grep`.
               *   Test edge cases: empty `activeSourceFiles`, empty `mdcFiles`.
               *   Verify relative path conversion and matching works correctly (e.g., with files in subdirectories).
-        done: false
+        done: true
   - title: 3. Update Output Formatting for Docs and Rules
     description: Modify `getAdditionalDocs` to accept processed MDC files and
       generate the output using the new `<documents>` and `<rules>` XML

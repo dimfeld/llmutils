@@ -194,6 +194,7 @@ Content.
     let gitRoot: string;
     let sourceFilesDir: string;
     let activeSourceFilesAbs: string[];
+    let activeSourceFilesRel: string[];
     let mdcFiles: MdcFile[];
 
     beforeEach(async () => {
@@ -210,6 +211,13 @@ Content.
       await Bun.write(file3Path, '{ "setting": "value" }');
 
       activeSourceFilesAbs = [file1Path, file2Path, file3Path];
+      // Pre-calculate relative paths for easier assertion/debugging if needed
+      activeSourceFilesRel = activeSourceFilesAbs.map(absPath =>
+        path.relative(gitRoot, absPath).replace(/\\/g, '/')
+      );
+      // console.log("Git Root:", gitRoot);
+      // console.log("Active Source Files (Abs):", activeSourceFilesAbs);
+      // console.log("Active Source Files (Rel):", activeSourceFilesRel);
 
       // Create dummy MdcFile objects
       mdcFiles = [
@@ -268,6 +276,12 @@ Content.
           content: 'Whitespace rule content.',
           data: { description: 'Whitespace Rules', globs: [' ', '  '], grep: ['\t'] },
         },
+        { // 12. Glob match in root dir
+          filePath: path.resolve(gitRoot, '.cursor/rules/root_json.mdc'),
+          content: 'Root JSON rule.',
+          data: { description: 'Root JSON Glob', globs: '*.json' },
+        },
+
       ];
     });
 
@@ -278,7 +292,7 @@ Content.
     });
 
      it('should include files with empty/whitespace rules (default)', async () => {
-      const filtered = await filterMdcFiles([mdcFiles[9], mdcFiles[10]], activeSourceFilesAbs, gitRoot);
+      const filtered = await filterMdcFiles([mdcFiles[9], mdcFiles[10]], activeSourceFilesAbs, gitRoot); // Indices 9 and 10
       expect(filtered).toHaveLength(2);
       expect(filtered.map(f => f.filePath)).toEqual(expect.arrayContaining([mdcFiles[9].filePath, mdcFiles[10].filePath]));
     });
@@ -286,6 +300,7 @@ Content.
     it('should include files matching glob patterns', async () => {
       const filtered = await filterMdcFiles([mdcFiles[1], mdcFiles[2]], activeSourceFilesAbs, gitRoot);
       expect(filtered).toHaveLength(2);
+      // console.log("Filtered (Glob):", filtered.map(f => f.filePath));
       expect(filtered.map(f => f.filePath)).toEqual(expect.arrayContaining([mdcFiles[1].filePath, mdcFiles[2].filePath]));
     });
 
@@ -297,6 +312,7 @@ Content.
     it('should include files matching grep terms (case-insensitive)', async () => {
       const filtered = await filterMdcFiles([mdcFiles[4], mdcFiles[5]], activeSourceFilesAbs, gitRoot);
       expect(filtered).toHaveLength(2);
+      // console.log("Filtered (Grep):", filtered.map(f => f.filePath));
       expect(filtered.map(f => f.filePath)).toEqual(expect.arrayContaining([mdcFiles[4].filePath, mdcFiles[5].filePath]));
     });
 
@@ -308,12 +324,14 @@ Content.
     it('should include files if glob misses but grep matches', async () => {
       const filtered = await filterMdcFiles([mdcFiles[7]], activeSourceFilesAbs, gitRoot);
       expect(filtered).toHaveLength(1);
+      // console.log("Filtered (Glob Miss, Grep Match):", filtered.map(f => f.filePath));
       expect(filtered[0].filePath).toBe(mdcFiles[7].filePath);
     });
 
     it('should include files if glob matches but grep misses', async () => {
       const filtered = await filterMdcFiles([mdcFiles[8]], activeSourceFilesAbs, gitRoot);
       expect(filtered).toHaveLength(1);
+      // console.log("Filtered (Glob Match, Grep Miss):", filtered.map(f => f.filePath));
       expect(filtered[0].filePath).toBe(mdcFiles[8].filePath);
     });
 
@@ -331,6 +349,7 @@ Content.
         mdcFiles[8].filePath, // Glob match, Grep miss (json)
         mdcFiles[9].filePath, // Default (empty rules)
         mdcFiles[10].filePath, // Default (whitespace rules)
+        mdcFiles[11].filePath, // Glob match (root json)
       ];
       expect(filtered).toHaveLength(expectedPaths.length);
       expect(filtered.map(f => f.filePath)).toEqual(expect.arrayContaining(expectedPaths));
@@ -342,8 +361,15 @@ Content.
     });
 
      it('should return empty array if no active source files are provided (and no default includes)', async () => {
-       const filtered = await filterMdcFiles(mdcFiles.slice(1), [], gitRoot); // Exclude default include
+       // Filter out the default includes (index 0, 9, 10)
+       const nonDefaultMdcs = mdcFiles.filter((_, index) => ![0, 9, 10].includes(index));
+       const filtered = await filterMdcFiles(nonDefaultMdcs, [], gitRoot);
        expect(filtered).toEqual([]);
+    });
+
+    it('should return only default includes if no active source files are provided', async () => {
+       const filtered = await filterMdcFiles(mdcFiles, [], gitRoot);
+       expect(filtered.map(f => f.filePath)).toEqual(expect.arrayContaining([mdcFiles[0].filePath, mdcFiles[9].filePath, mdcFiles[10].filePath]));
     });
   });
 });
