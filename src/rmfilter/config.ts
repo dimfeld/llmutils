@@ -49,7 +49,7 @@ export const ConfigSchema = z
     'omit-instructions-tag': z.boolean().optional(),
     'with-diff': z.boolean().optional(),
     'changed-files': z.boolean().optional(),
-    'no-mdc': z.boolean().optional(),
+    'no-mdc': z.boolean().optional().describe('Disable automatic loading of .mdc rule/doc files'),
     'diff-from': z.string().optional(),
     'instructions-editor': z.boolean().optional(),
     bare: z.boolean().optional(),
@@ -157,7 +157,7 @@ export async function getCurrentConfig() {
     rules: { type: 'string', multiple: true },
     'omit-cursorrules': { type: 'boolean' },
     'with-diff': { type: 'boolean' },
-    'changed-files': { type: 'boolean' },
+    'changed-files': { type: 'boolean' }, // Added --no-mdc here
     'no-mdc': { type: 'boolean' },
     'diff-from': { type: 'string' },
     'instructions-editor': { type: 'boolean' },

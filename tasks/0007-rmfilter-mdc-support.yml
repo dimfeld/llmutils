@@ -108,7 +108,7 @@ tasks:
               *   Use `glob` from `fast-glob` to find all `.mdc` files within these directories (and their subdirectories). Search recursively (`**/*.mdc`).
               *   Ensure the function handles cases where these directories might not exist gracefully.
               *   Return an array of absolute file paths to the found `.mdc` files.
-        done: false
+        done: true
       - prompt: >
           Create a new test file `src/rmfilter/mdc.test.ts`.
 
