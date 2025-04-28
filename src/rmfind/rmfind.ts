@@ -91,9 +91,18 @@ async function main() {
   };
 
   if (options.globs.length === 0 && !options.grepPatterns && !options.query) {
-    console.error('Error: No globs, directories, grep patterns, or query provided.');
-    console.error('Use --help for usage information.');
-    process.exit(1);
+    if (!process.stdin.isTTY) {
+      const stdin = await Bun.stdin.text();
+      if (stdin) {
+        options.query = stdin;
+      }
+    }
+
+    if (!options.query) {
+      console.error('Error: No globs, directories, grep patterns, or query provided.');
+      console.error('Use --help for usage information.');
+      process.exit(1);
+    }
   }
 
   // Call the core finding logic
