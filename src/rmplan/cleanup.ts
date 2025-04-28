@@ -23,7 +23,8 @@ ${planExampleFormatGeneric}
 3.  **Handle Markdown lists:** Convert Markdown lists under 'Files:' and numbered lists under 'Steps:' into YAML sequences.
 4.  **Handle Multi-line Strings:** For step prompts, use the YAML pipe character | instead of the > character for multi-line strings.
 5.  **Indentation:** Use exactly 2 spaces for YAML indentation levels.
-6.  **Output Format:** Output *only* the raw, valid YAML string. Do **not** include any introductory text, explanations, comments, or Markdown fences (like \`\`\`yaml or \`\`\`).
+6.  **String quoting:** Use double quotes for YAML strings when necessary. Commonly you will see single-line strings with a colon ":", especially in task titles. These need to be quoted.
+7.  **Output Format:** Output *only* the raw, valid YAML string. Do **not** include any introductory text, explanations, comments, or Markdown fences (like \`\`\`yaml or \`\`\`).
 
 **Example Input (Markdown):**
 See the structure in the provided Markdown input text.
