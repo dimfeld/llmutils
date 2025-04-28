@@ -35,6 +35,7 @@ export async function convertMarkdownToYaml(markdownInput: string, quiet = false
   let result = streamText({
     model: createModel('google/gemini-2.5-flash-preview-04-17'),
     prompt,
+    temperature: 0,
   });
 
   if (!quiet) {

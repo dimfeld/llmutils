@@ -159,7 +159,11 @@ program
       // - no output file was provided
       // - --quiet was not set
       let streamToConsole = !options.output || !options.quiet;
-      convertedYaml = await convertMarkdownToYaml(inputText, streamToConsole);
+      const numLines = inputText.split('\n').length;
+      if (!options.quiet) {
+        console.warn(`\n## Converting ${numLines} lines of Markdown to YAML\n`);
+      }
+      convertedYaml = await convertMarkdownToYaml(inputText, !streamToConsole);
     }
 
     // Now, try to parse and validate the YAML returned by the LLM
