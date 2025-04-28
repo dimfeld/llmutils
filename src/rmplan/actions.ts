@@ -89,11 +89,15 @@ export async function prepareNextStep(
     throw new Error('No pending steps found in the plan.');
   }
   const activeTask = result.task;
+  // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
+  const cleanFiles = activeTask.files.map(file => 
+    file.replace(/\s*\([^)]*\)\s*$/, '').trim()
+  );
 
   const gitRoot = await getGitRoot();
   let files = (
     await Promise.all(
-      activeTask.files.map(async (file) => {
+      cleanFiles.map(async (file) => {
         const fullPath = path.resolve(gitRoot, file);
         return (await Bun.file(fullPath).exists()) ? fullPath : null;
       })
