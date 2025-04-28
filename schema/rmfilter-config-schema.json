@@ -62,6 +62,10 @@
       "type": "boolean",
       "description": "Do not wrap instructions in <instructions> tag."
     },
+    "no-mdc": {
+      "type": "boolean",
+      "description": "Skip autoloading MDC files"
+    },
     "with-diff": {
       "type": "boolean",
       "description": "Include Git diff against main/master in output."

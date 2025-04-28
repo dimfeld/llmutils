@@ -157,7 +157,7 @@ export async function getCurrentConfig() {
     rules: { type: 'string', multiple: true },
     'omit-cursorrules': { type: 'boolean' },
     'with-diff': { type: 'boolean' },
-    'changed-files': { type: 'boolean' }, // Added --no-mdc here
+    'changed-files': { type: 'boolean' },
     'no-mdc': { type: 'boolean' },
     'diff-from': { type: 'string' },
     'instructions-editor': { type: 'boolean' },

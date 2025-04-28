@@ -108,6 +108,15 @@ This loads `.rmfilter/example.yml` (or from `$HOME/.config/rmfilter/example.yml`
 
 ### Combining CLI and Config
 
+CLI arguments override YAML settings. For example:
+
+```bash
+rmfilter --preset example --edit-format diff src/extra/**/*.ts
+```
+
+This uses the `example` preset but changes the edit format to `diff` and adds an extra glob.
+
+
 ### MDC File Support
 
 `rmfilter` supports `.mdc` (Markdown Domain Configuration) files, which are used to define project-specific rules and documentation, particularly for AI-powered code editors like Cursor. These files are automatically detected and processed to provide additional context for your tasks.
@@ -120,7 +129,7 @@ This loads `.rmfilter/example.yml` (or from `$HOME/.config/rmfilter/example.yml`
 - **Type Classification**: MDC files can have a `type` field (e.g., `docs` or `rules`) to categorize them as documentation or coding rules. These are organized into `<documents>` or `<rules>` tags in the output, respectively. The default value is `rules`.
 - **Suppression Option**: Use the `--no-mdc` CLI flag to disable automatic MDC file processing if needed.
 
-MDC files with both `globs` and `grep` must match both to be included. Note that the `grep` field is unique to this tool, not part of Cursor's implementation.
+MDC files with both `globs` and `grep` must match both to be included. Note that the `grep` field is unique to this tool, not part of Cursor's implementation. An MDC file with neither `globs` nor `grep` will always be included, unless the `no-mdc` option is passed.
 
 #### MDC File Format
 
@@ -129,9 +138,9 @@ An `.mdc` file is a Markdown-based file with a YAML frontmatter header. Here's a
 ```markdown
 ---
 description: Rules for Svelte components with Superforms
-globs: "*.svelte, *.ts"
+globs: "*.svelte, *.ts" # Or a YAML array
 type: docs
-grep: superform, supervalidate
+grep: superform, supervalidate # Or a YAML array
 name: svelte-superform
 ---
 Docs for Superforms would go here
@@ -140,23 +149,6 @@ Docs for Superforms would go here
 - **Frontmatter Fields**: Includes `description` (purpose of the rule), `globs` (file patterns), `grep` (search terms), `type` (docs or rules), and optional fields like `name` or `metadata`.
 - **Body**: Contains the rules or documentation in Markdown, often with coding standards or AI instructions.
 
-#### Usage
-
-When running `rmfilter`, MDC files are automatically included unless `--no-mdc` is specified. For example:
-
-```bash
-rmfilter src/**/*.svelte --grep superform
-```
-
-This command will include any `.mdc` files that match `*.svelte` files or contain `superform` in their grep terms, adding their content to the `<documents>` or `<rules>` output.
-
-CLI arguments override YAML settings. For example:
-
-```bash
-rmfilter --preset example --edit-format diff src/extra/**/*.ts
-```
-
-This uses the `example` preset but changes the edit format to `diff` and adds an extra glob.
 
 ## rmfind
 
