@@ -356,4 +356,4 @@ tasks:
           4.  Ensure the rest of the script proceeds as normal, using the
           potentially updated `docsTag` and `rulesTag` content when assembling
           `finalOutput`.
-        done: false
+        done: true

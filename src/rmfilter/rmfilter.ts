@@ -19,6 +19,8 @@ import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { Extractor } from '../treesitter/extract.ts';
 import { getCurrentConfig, listPresets, writeSampleConfig } from './config.ts';
+// [1] Import MDC functions and type
+import { findMdcFiles, parseMdcFile, filterMdcFiles, type MdcFile } from './mdc.ts';
 import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
@@ -379,24 +381,47 @@ await Promise.all(
   })
 );
 
+// [2] Initialize filteredMdcFiles
+let filteredMdcFiles: MdcFile[] = [];
+
+// [2] Check --no-mdc flag and perform MDC processing
+if (!globalValues['no-mdc']) {
+  try {
+    debugLog('[MDC] Starting MDC processing...');
+    const mdcFilePaths = await findMdcFiles(gitRoot);
+    if (mdcFilePaths.length > 0) {
+      const parsedMdcFilesResults = await Promise.all(
+        mdcFilePaths.map(filePath => parseMdcFile(filePath))
+      );
+      // Filter out null results from parsing errors
+      const parsedMdcFiles = parsedMdcFilesResults.filter((result): result is MdcFile => result !== null);
+      debugLog(`[MDC] Parsed ${parsedMdcFiles.length} MDC files successfully.`);
+
+      if (parsedMdcFiles.length > 0) {
+        // Convert relative source paths in allFilesSet to absolute paths
+        const absoluteSourceFiles = Array.from(allFilesSet, p => path.resolve(gitRoot, p));
+        debugLog(`[MDC] Filtering against ${absoluteSourceFiles.length} active source files.`);
+
+        filteredMdcFiles = await filterMdcFiles(parsedMdcFiles, absoluteSourceFiles, gitRoot);
+        debugLog(`[MDC] Filtered MDC files included: ${filteredMdcFiles.length}`);
+      }
+    } else {
+      debugLog('[MDC] No MDC files found.');
+    }
+  } catch (error: any) {
+    console.error(`[MDC] Error during MDC processing: ${error.message}`);
+    // Log and continue, filteredMdcFiles might be empty or partially filled
+    debugLog(`[MDC] Processing error details: ${error.stack}`);
+  }
+} else {
+  debugLog('[MDC] MDC processing disabled via --no-mdc flag.');
+}
+
 // Handle output
 const outputFile = globalValues.output ?? (await getOutputPath());
 const editFormat = globalValues['edit-format'] || 'udiff-simple';
 
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
-
-const [
-  examplesTag,
-  { diffTag, changedFiles },
-  { docsTag, instructionsTag, rulesTag, rawInstructions },
-] = await Promise.all([
-  buildExamplesTag(allExamples),
-  getDiffTag(gitRoot, globalValues),
-  getAdditionalDocs(baseDir, {
-    ...globalValues,
-    instructions: (globalValues.instructions || []).concat(editorInstructions),
-  }),
-]);
 
 for (let file of changedFiles) {
   allFilesSet.add(path.resolve(gitRoot, file));
@@ -408,6 +433,21 @@ if (!allPaths.length && !globalValues['with-diff']) {
   console.error('No files found');
   process.exit(1);
 }
+
+// [3] Modify Promise.all call
+const [
+  { docsTag, instructionsTag, rulesTag, rawInstructions }, // Result from getAdditionalDocs
+  { diffTag, changedFiles },                             // Result from getDiffTag
+  examplesTag                                            // Result from buildExamplesTag
+] = await Promise.all([
+  // Pass filteredMdcFiles as the third argument
+  getAdditionalDocs(baseDir, {
+    ...globalValues,
+    instructions: (globalValues.instructions || []).concat(editorInstructions),
+  }, filteredMdcFiles), // <--- Pass filteredMdcFiles here
+  getDiffTag(gitRoot, globalValues),
+  buildExamplesTag(allExamples),
+]);
 
 const compress = globalValues.compress ? '--compress' : '';
 
@@ -438,6 +478,7 @@ debugLog({
   notBare: !globalValues.bare,
   instructionsTag: instructionsTag.length,
 });
+
 
 const notBare = !globalValues.bare;
 const finalOutput = [
