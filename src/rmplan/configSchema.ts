@@ -26,3 +26,11 @@ export const rmplanConfigSchema = z.object({
 
 export type RmplanConfig = z.infer<typeof rmplanConfigSchema>;
 export type PostApplyCommand = z.infer<typeof postApplyCommandSchema>;
+
+/**
+ * Returns a default configuration object.
+ * This is used when no configuration file is found or specified.
+ */
+export function getDefaultConfig(): RmplanConfig {
+  return { postApplyCommands: [] };
+}

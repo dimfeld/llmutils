@@ -99,7 +99,7 @@ tasks:
           `RmplanConfig` object with `postApplyCommands` being an empty array or
           undefined. This will be used when no config file is found. Ensure the
           returned object conforms to the `RmplanConfig` type.
-        done: false
+        done: true
   - title: Implement Configuration Loading Logic
     description: Create functions to locate, read, parse, and validate the
       configuration file based on the defined schema. Handle default paths,
