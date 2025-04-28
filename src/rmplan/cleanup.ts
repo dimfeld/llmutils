@@ -1,4 +1,4 @@
-import { generateText } from 'ai';
+import { generateText, streamText } from 'ai';
 import { createModel } from '../common/model_factory.js';
 import { planExampleFormatGeneric } from './prompt.js';
 
@@ -32,12 +32,17 @@ A single block of valid YAML text conforming to the schema.`;
 
 export async function convertMarkdownToYaml(markdownInput: string): Promise<string> {
   const prompt = markdownToYamlConversionPrompt.replace('{markdownInput}', markdownInput);
-  let { text } = await generateText({
+  let result = streamText({
     model: createModel('google/gemini-2.5-flash-preview-04-17'),
     prompt,
   });
 
-  return findYamlStart(text);
+  for await (const chunk of result.textStream) {
+    process.stdout.write(chunk);
+  }
+  process.stdout.write('\n');
+
+  return findYamlStart(await result.text);
 }
 
 export function findYamlStart(text: string): string {

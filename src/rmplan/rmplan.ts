@@ -186,9 +186,8 @@ program
       }
       await Bun.write(outputFilename, outputYaml);
       console.log(`Wrote result to ${outputFilename}`);
-    } else {
-      console.log(outputYaml);
     }
+    // else we already wrote to the console in convertMarkdownToYaml, so don't here
   });
 
 program
