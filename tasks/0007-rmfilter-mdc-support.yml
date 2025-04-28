@@ -285,7 +285,7 @@ tasks:
           5.  Update the return statement to use the renamed variables: `return
           { docsTag: docsOutputTag, instructionsTag, rulesTag: rulesOutputTag,
           rawInstructions };`
-        done: false
+        done: true
       - prompt: >
           Update the tests for `getAdditionalDocs` in
           `src/rmfilter/additional_docs.test.ts` (if it exists, otherwise
