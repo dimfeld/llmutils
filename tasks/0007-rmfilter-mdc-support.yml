@@ -304,7 +304,7 @@ tasks:
               *   Test MDC files with missing `description`.
               *   Test the case where both manual `--docs`/`--rules` files AND matching MDC files are present; ensure all are included in the correct format.
               *   Test the case where `filteredMdcFiles` is empty or undefined.
-        done: false
+        done: true
   - title: 4. Integrate MDC Processing into Main Workflow
     description: Modify `rmfilter.ts` to orchestrate the MDC discovery, parsing,
       filtering, and integration with the final output generation, respecting
