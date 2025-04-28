@@ -14,6 +14,7 @@
     "check": "tsc --noEmit",
     "lint": "eslint .",
     "dev-install": "pnpm add -g file://$(pwd)",
+    "format": "prettier --write .",
     "rmfilter": "src/rmfilter.ts",
     "rmfind": "src/rmfind.ts",
     "rmplan": "src/rmplan.ts",

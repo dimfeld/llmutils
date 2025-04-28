@@ -4,6 +4,8 @@ pnpm-lock.yaml
 yarn.lock
 bun.lock
 
+tasks
+
 **/dist/
 
 **/temp_*.md
