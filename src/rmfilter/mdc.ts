@@ -103,62 +103,61 @@ export async function filterMdcFiles(
   activeSourceFiles: string[],
   gitRoot: string
 ): Promise<MdcFile[]> {
-  const includedMdcFiles: MdcFile[] = [];
-
   // Convert absolute source file paths to relative paths (using POSIX separators) for glob matching.
   const relativeSourceFiles = activeSourceFiles.map((absPath) =>
     path.relative(gitRoot, absPath).replace(/\\/g, '/')
   );
 
-  for (const mdcFile of mdcFiles) {
-    let shouldInclude = false;
-    const globPatterns = normalizeArrayInput(mdcFile.data.globs);
-    const grepTerms = normalizeArrayInput(mdcFile.data.grep);
+  const includedFiles = await Promise.all(
+    mdcFiles.map(async (mdcFile) => {
+      const globPatterns = normalizeArrayInput(mdcFile.data.globs);
+      const grepTerms = normalizeArrayInput(mdcFile.data.grep);
 
-    // 1. Default Inclusion Check: Include if no globs or grep terms are specified.
-    if (globPatterns.length === 0 && grepTerms.length === 0) {
-      shouldInclude = true;
-      debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (default)`);
-    }
-
-    // 2. Glob Matching (only if not default-included)
-    if (!shouldInclude && globPatterns.length > 0) {
-      if (relativeSourceFiles.some((file) => micromatch.isMatch(file, globPatterns))) {
-        shouldInclude = true;
-        debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (glob match)`);
+      // 1. Default Inclusion Check: Include if no globs or grep terms are specified.
+      if (globPatterns.length === 0 && grepTerms.length === 0) {
+        debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (default)`);
+        return mdcFile;
       }
-    }
 
-    // 3. Grep Matching (only if not default-included or glob-included)
-    if (!shouldInclude && grepTerms.length > 0) {
-      const lowerCaseGrepTerms = grepTerms.map((term) => term.toLowerCase());
-      for (const absoluteSourceFilePath of activeSourceFiles) {
-        try {
-          const content = await Bun.file(absoluteSourceFilePath).text();
-          const lowerCaseContent = content.toLowerCase();
-          if (lowerCaseGrepTerms.some((term) => lowerCaseContent.includes(term))) {
-            shouldInclude = true;
-            debugLog(
-              `[MDC Filter] Including '${mdcFile.filePath}' (grep match in ${absoluteSourceFilePath})`
-            );
-            break; // Found a match in this source file, no need to check others for this MDC
-          }
-        } catch (error: any) {
-          // Log error reading source file but continue checking other source files for this MDC
-          debugLog(
-            `[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${error.message}`
-          );
+      // 2. Glob Matching (only if not default-included)
+      if (globPatterns.length > 0) {
+        if (!relativeSourceFiles.some((file) => micromatch.isMatch(file, globPatterns))) {
+          debugLog(`[MDC Filter] Excluding '${mdcFile.filePath}' (no glob match)`);
+          return null;
         }
       }
-    }
 
-    // Add to results if included by any rule
-    if (shouldInclude) {
-      includedMdcFiles.push(mdcFile);
-    } else {
-      debugLog(`[MDC Filter] Excluding '${mdcFile.filePath}' (no match)`);
-    }
-  }
+      // 3. Grep Matching (only if not default-included or glob-included)
+      if (grepTerms.length > 0) {
+        const lowerCaseGrepTerms = grepTerms.map((term) => term.toLowerCase());
+        let grepMatch = false;
+        for (const absoluteSourceFilePath of activeSourceFiles) {
+          try {
+            const content = await Bun.file(absoluteSourceFilePath).text();
+            const lowerCaseContent = content.toLowerCase();
+            if (lowerCaseGrepTerms.some((term) => lowerCaseContent.includes(term))) {
+              debugLog(
+                `[MDC Filter] Including '${mdcFile.filePath}' (grep match in ${absoluteSourceFilePath})`
+              );
+              grepMatch = true;
+              break;
+            }
+          } catch (error: any) {
+            // Log error reading source file but continue checking other source files for this MDC
+            debugLog(
+              `[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${error.message}`
+            );
+          }
+        }
 
-  return includedMdcFiles;
+        if (!grepMatch) {
+          return null;
+        }
+      }
+
+      return mdcFile;
+    })
+  );
+
+  return includedFiles.filter((file) => file != null);
 }
