@@ -90,7 +90,7 @@ tasks:
 
           5. Export the `postApplyCommandSchema` and its inferred type
           `PostApplyCommand` as well, as they might be useful separately.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/configSchema.ts`.
 
