@@ -108,6 +108,48 @@ This loads `.rmfilter/example.yml` (or from `$HOME/.config/rmfilter/example.yml`
 
 ### Combining CLI and Config
 
+### MDC File Support
+
+`rmfilter` supports `.mdc` (Markdown Domain Configuration) files, which are used to define project-specific rules and documentation, particularly for AI-powered code editors like Cursor. These files are automatically detected and processed to provide additional context for your tasks.
+
+#### Key Features of MDC Support
+
+- **Automatic Detection**: `rmfilter` searches for `.mdc` files in the `.cursor/rules/` directory of your project and in `~/.config/rmfilter/rules/`. It includes these files based on their relevance to the active source files.
+- **Glob-based Filtering**: MDC files can specify `globs` in their frontmatter (e.g., `*.tsx`, `app/controllers/**/*.rb`) to indicate which source files they apply to. Only MDC files matching the active source files are included.
+- **Grep-based Filtering**: MDC files can include a `grep` field (e.g., `grep: superform, supervalidate`) to match source files containing specific terms (case-insensitive). This ensures only relevant MDC files are included.
+- **Type Classification**: MDC files can have a `type` field (e.g., `docs` or `rules`) to categorize them as documentation or coding rules. These are organized into `<documents>` or `<rules>` tags in the output, respectively. The default value is `rules`.
+- **Suppression Option**: Use the `--no-mdc` CLI flag to disable automatic MDC file processing if needed.
+
+MDC files with both `globs` and `grep` must match both to be included. Note that the `grep` field is unique to this tool, not part of Cursor's implementation.
+
+#### MDC File Format
+
+An `.mdc` file is a Markdown-based file with a YAML frontmatter header. Here's an example:
+
+```markdown
+---
+description: Rules for Svelte components with Superforms
+globs: "*.svelte, *.ts"
+type: docs
+grep: superform, supervalidate
+name: svelte-superform
+---
+Docs for Superforms would go here
+```
+
+- **Frontmatter Fields**: Includes `description` (purpose of the rule), `globs` (file patterns), `grep` (search terms), `type` (docs or rules), and optional fields like `name` or `metadata`.
+- **Body**: Contains the rules or documentation in Markdown, often with coding standards or AI instructions.
+
+#### Usage
+
+When running `rmfilter`, MDC files are automatically included unless `--no-mdc` is specified. For example:
+
+```bash
+rmfilter src/**/*.svelte --grep superform
+```
+
+This command will include any `.mdc` files that match `*.svelte` files or contain `superform` in their grep terms, adding their content to the `<documents>` or `<rules>` output.
+
 CLI arguments override YAML settings. For example:
 
 ```bash
@@ -128,6 +170,7 @@ The `rmfind` utility helps you locate relevant files in your repository using a 
 - **Flexible output**: Output file paths as a space-separated list or YAML array, with automatic clipboard copying.
 
 ### Usage
+
 Run `rmfind` with various options to find and select files:
 
 ```bash
@@ -162,6 +205,7 @@ rmfind src/**/*.ts --query "database migrations" --model google/gemini-2.5-flash
 - The `--quiet` flag suppresses non-error output for cleaner scripting.
 
 ## rmplan
+
 
 The `rmplan` utility generates and manages step-by-step project plans for code changes using LLMs. It supports creating, validating, and executing tasks, ensuring incremental progress with detailed prompts for code generation.
 
@@ -295,6 +339,7 @@ rmplan agent tasks/0002-refactor-it-plan.yml
 Process LLM-generated edits from different sources:
 
 ```bash
+
 # Apply edits from clipboard
 rmfilter src/**/*.ts --copy
 apply-llm-edits
