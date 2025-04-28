@@ -21,14 +21,14 @@ export async function getAdditionalDocs(
     rules?: string[];
     'omit-cursorrules'?: boolean;
     'omit-instructions-tag'?: boolean;
-    'no-mdc'?: boolean;
+    'no-autodocs'?: boolean;
   }
 ) {
   const gitRoot = await getGitRoot();
 
   // MDC processing
   let filteredMdcFiles: MdcFile[] = [];
-  if (!values['no-mdc']) {
+  if (!values['no-autodocs']) {
     try {
       debugLog('[MDC] Starting MDC processing...');
       const mdcFilePaths = await findMdcFiles(gitRoot);
@@ -59,7 +59,7 @@ export async function getAdditionalDocs(
       debugLog(`[MDC] Processing error details: ${error.stack}`);
     }
   } else {
-    debugLog('[MDC] MDC processing disabled via --no-mdc flag.');
+    debugLog('[MDC] MDC processing disabled via --no-autodocs flag.');
   }
 
   return gatherDocsInternal(baseDir, values, filteredMdcFiles);
@@ -74,7 +74,7 @@ export async function gatherDocsInternal(
     rules?: string[];
     'omit-cursorrules'?: boolean;
     'omit-instructions-tag'?: boolean;
-    'no-mdc'?: boolean;
+    'no-autodocs'?: boolean;
   },
   filteredMdcFiles: MdcFile[] = []
 ) {

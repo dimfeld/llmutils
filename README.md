@@ -127,9 +127,9 @@ This uses the `example` preset but changes the edit format to `diff` and adds an
 - **Glob-based Filtering**: MDC files can specify `globs` in their frontmatter (e.g., `*.tsx`, `app/controllers/**/*.rb`) to indicate which source files they apply to. Only MDC files matching the active source files are included.
 - **Grep-based Filtering**: MDC files can include a `grep` field (e.g., `grep: superform, supervalidate`) to match source files containing specific terms (case-insensitive). This ensures only relevant MDC files are included.
 - **Type Classification**: MDC files can have a `type` field (e.g., `docs` or `rules`) to categorize them as documentation or coding rules. These are organized into `<documents>` or `<rules>` tags in the output, respectively. The default value is `rules`.
-- **Suppression Option**: Use the `--no-mdc` CLI flag to disable automatic MDC file processing if needed.
+- **Suppression Option**: Use the `--no-autodocs` CLI flag to disable automatic MDC file processing if needed.
 
-MDC files with both `globs` and `grep` must match both to be included. Note that the `grep` field is unique to this tool, not part of Cursor's implementation. An MDC file with neither `globs` nor `grep` will always be included, unless the `no-mdc` option is passed.
+MDC files with both `globs` and `grep` must match both to be included. Note that the `grep` field is unique to this tool, not part of Cursor's implementation. An MDC file with neither `globs` nor `grep` will always be included, unless the `no-autodocs` option is passed.
 
 #### MDC File Format
 

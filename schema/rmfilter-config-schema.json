@@ -62,9 +62,9 @@
       "type": "boolean",
       "description": "Do not wrap instructions in <instructions> tag."
     },
-    "no-mdc": {
+    "no-autodocs": {
       "type": "boolean",
-      "description": "Skip autoloading MDC files"
+      "description": "Do not autoload documentation files"
     },
     "with-diff": {
       "type": "boolean",
