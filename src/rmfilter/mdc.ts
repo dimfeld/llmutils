@@ -87,7 +87,7 @@ function normalizeArrayInput(input: string | string[] | undefined): string[] {
     return [];
   }
   const arr = Array.isArray(input) ? input : [input];
-  return arr.map(s => typeof s === 'string' ? s.trim() : '').filter(s => s.length > 0);
+  return arr.map((s) => (typeof s === 'string' ? s.trim() : '')).filter((s) => s.length > 0);
 }
 
 /**
@@ -106,7 +106,7 @@ export async function filterMdcFiles(
   const includedMdcFiles: MdcFile[] = [];
 
   // Convert absolute source file paths to relative paths (using POSIX separators) for glob matching.
-  const relativeSourceFiles = activeSourceFiles.map(absPath =>
+  const relativeSourceFiles = activeSourceFiles.map((absPath) =>
     path.relative(gitRoot, absPath).replace(/\\/g, '/')
   );
 
@@ -123,27 +123,31 @@ export async function filterMdcFiles(
 
     // 2. Glob Matching (only if not default-included)
     if (!shouldInclude && globPatterns.length > 0) {
-      if (micromatch.isMatch(relativeSourceFiles, globPatterns)) {
-         shouldInclude = true;
-         debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (glob match)`);
+      if (relativeSourceFiles.some((file) => micromatch.isMatch(file, globPatterns))) {
+        shouldInclude = true;
+        debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (glob match)`);
       }
     }
 
     // 3. Grep Matching (only if not default-included or glob-included)
     if (!shouldInclude && grepTerms.length > 0) {
-      const lowerCaseGrepTerms = grepTerms.map(term => term.toLowerCase());
+      const lowerCaseGrepTerms = grepTerms.map((term) => term.toLowerCase());
       for (const absoluteSourceFilePath of activeSourceFiles) {
         try {
           const content = await Bun.file(absoluteSourceFilePath).text();
           const lowerCaseContent = content.toLowerCase();
-          if (lowerCaseGrepTerms.some(term => lowerCaseContent.includes(term))) {
+          if (lowerCaseGrepTerms.some((term) => lowerCaseContent.includes(term))) {
             shouldInclude = true;
-            debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (grep match in ${absoluteSourceFilePath})`);
+            debugLog(
+              `[MDC Filter] Including '${mdcFile.filePath}' (grep match in ${absoluteSourceFilePath})`
+            );
             break; // Found a match in this source file, no need to check others for this MDC
           }
         } catch (error: any) {
           // Log error reading source file but continue checking other source files for this MDC
-          debugLog(`[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${error.message}`);
+          debugLog(
+            `[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${error.message}`
+          );
         }
       }
     }
@@ -152,7 +156,7 @@ export async function filterMdcFiles(
     if (shouldInclude) {
       includedMdcFiles.push(mdcFile);
     } else {
-       debugLog(`[MDC Filter] Excluding '${mdcFile.filePath}' (no match)`);
+      debugLog(`[MDC Filter] Excluding '${mdcFile.filePath}' (no match)`);
     }
   }
 
