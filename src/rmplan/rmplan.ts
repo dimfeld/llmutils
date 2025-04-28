@@ -13,6 +13,7 @@ import { planPrompt } from './prompt.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
+program.option('-c, --config <path>', 'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)');
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 
 program

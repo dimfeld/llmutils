@@ -192,7 +192,7 @@ tasks:
           4. Ensure this option is processed *before* subcommand actions are
           invoked. We will use the parsed options in the next task. Note that
           Commander typically parses options before executing command actions.
-        done: false
+        done: true
   - title: Integrate Configuration Loading
     description: Modify the `rmplan.ts` script to call the configuration loading
       logic early in the execution flow and make the loaded configuration
