@@ -3,9 +3,69 @@ import { glob } from 'fast-glob';
 import os from 'node:os';
 import path from 'node:path';
 import { debugLog } from '../logging.ts';
-import { getUsingJj } from './utils.ts';
+import { filterMdcFiles, findMdcFiles, parseMdcFile, type MdcFile } from './mdc.ts';
+import { getGitRoot, getUsingJj } from './utils.ts';
+
+// Helper function to escape XML attribute values (specifically quotes)
+function escapeXmlAttr(value: string): string {
+  return value.replace(/"/g, '&quot;');
+}
 
 export async function getAdditionalDocs(
+  baseDir: string,
+  allFilesSet: Set<string>,
+  values: {
+    instructions?: string[];
+    instruction?: string[];
+    docs?: string[];
+    rules?: string[];
+    'omit-cursorrules'?: boolean;
+    'omit-instructions-tag'?: boolean;
+    'no-mdc'?: boolean;
+  }
+) {
+  const gitRoot = await getGitRoot();
+
+  // MDC processing
+  let filteredMdcFiles: MdcFile[] = [];
+  if (!values['no-mdc']) {
+    try {
+      debugLog('[MDC] Starting MDC processing...');
+      const mdcFilePaths = await findMdcFiles(gitRoot);
+      if (mdcFilePaths.length > 0) {
+        const parsedMdcFilesResults = await Promise.all(
+          mdcFilePaths.map((filePath) => parseMdcFile(filePath))
+        );
+        // Filter out null results from parsing errors
+        const parsedMdcFiles = parsedMdcFilesResults.filter(
+          (result): result is MdcFile => result !== null
+        );
+        debugLog(`[MDC] Parsed ${parsedMdcFiles.length} MDC files successfully.`);
+
+        if (parsedMdcFiles.length > 0) {
+          // Convert relative source paths in allFilesSet to absolute paths
+          const absoluteSourceFiles = Array.from(allFilesSet, (p) => path.resolve(gitRoot, p));
+          debugLog(`[MDC] Filtering against ${absoluteSourceFiles.length} active source files.`);
+
+          filteredMdcFiles = await filterMdcFiles(parsedMdcFiles, absoluteSourceFiles, gitRoot);
+          debugLog(`[MDC] Filtered MDC files included: ${filteredMdcFiles.length}`);
+        }
+      } else {
+        debugLog('[MDC] No MDC files found.');
+      }
+    } catch (error: any) {
+      console.error(`[MDC] Error during MDC processing: ${error.message}`);
+      // Log and continue, filteredMdcFiles might be empty or partially filled
+      debugLog(`[MDC] Processing error details: ${error.stack}`);
+    }
+  } else {
+    debugLog('[MDC] MDC processing disabled via --no-mdc flag.');
+  }
+
+  return gatherDocsInternal(baseDir, values, filteredMdcFiles);
+}
+
+export async function gatherDocsInternal(
   baseDir: string,
   values: {
     instructions?: string[];
@@ -14,8 +74,11 @@ export async function getAdditionalDocs(
     rules?: string[];
     'omit-cursorrules'?: boolean;
     'omit-instructions-tag'?: boolean;
-  }
+    'no-mdc'?: boolean;
+  },
+  filteredMdcFiles: MdcFile[] = []
 ) {
+  const gitRoot = await getGitRoot();
   let instructionsTag = '';
   let rawInstructions = '';
   let instructionValues = [...(values.instructions || []), ...(values.instruction || [])];
@@ -57,11 +120,13 @@ export async function getAdditionalDocs(
     }
   }
 
-  let docsTag = '';
-  if (values.docs) {
-    let docsContent: string[] = [];
+  let docsOutputTag = '';
+  const manualDocsContent: string[] = [];
+  const docFilesPaths: string[] = [];
+  const ruleFilesPaths: string[] = [];
 
-    for (let pattern of values.docs) {
+  if (values.docs) {
+    for (const pattern of values.docs) {
       const matches = await glob(pattern);
       if (matches.length === 0) {
         console.error(`No files found matching pattern: ${pattern}`);
@@ -69,23 +134,68 @@ export async function getAdditionalDocs(
       }
       for (const file of matches) {
         try {
-          docsContent.push(await Bun.file(file).text());
+          manualDocsContent.push(await Bun.file(file).text());
+          docFilesPaths.push(path.relative(gitRoot, file));
         } catch (error) {
           console.error(`Error reading docs file: ${file}`);
           process.exit(1);
         }
       }
     }
-
-    let output = docsContent
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .join('\n\n');
-    docsTag = output ? `<docs>\n${output}\n</docs>` : '';
   }
 
-  let rulesContent: string[] = [];
+  // Initialize combined documents data
+  const allDocumentsData: { content: string; description?: string }[] = [];
 
+  // Populate from manually specified --docs files
+  manualDocsContent.forEach((content) => {
+    if (content.trim()) {
+      allDocumentsData.push({ content: content.trim() });
+    }
+  });
+
+  function isDoc(file: MdcFile) {
+    const type = file.data.type?.toLowerCase();
+    return type === 'docs' || type === 'doc' || type === 'document';
+  }
+
+  const docFiles: MdcFile[] = [];
+  const ruleFiles: MdcFile[] = [];
+
+  for (const mdcFile of filteredMdcFiles) {
+    const relativePath = path.relative(gitRoot, mdcFile.filePath);
+    if (isDoc(mdcFile)) {
+      docFiles.push(mdcFile);
+      docFilesPaths.push(relativePath);
+    } else {
+      ruleFiles.push(mdcFile);
+      ruleFilesPaths.push(relativePath);
+    }
+  }
+
+  // Populate from filtered MDC files (type 'docs' or default)
+  for (const mdcFile of docFiles) {
+    if (mdcFile.content.trim()) {
+      allDocumentsData.push({
+        content: mdcFile.content.trim(),
+        description: mdcFile.data.description,
+      });
+    }
+  }
+
+  // Generate the final <documents> tag
+  if (allDocumentsData.length > 0) {
+    const documentTags = allDocumentsData
+      .map((doc) => {
+        const descAttr = doc.description ? ` description="${escapeXmlAttr(doc.description)}"` : '';
+        return `<document${descAttr}><![CDATA[\n${doc.content}\n]]></document>`;
+      })
+      .join('\n');
+    docsOutputTag = `<documents>\n${documentTags}\n</documents>`;
+  }
+
+  // [4] Refactor Rules Processing
+  const manualRulesContent: string[] = []; // Rename rulesContent
   for (let pattern of values.rules || []) {
     // simple check, should be better
     if (pattern.startsWith('~/')) {
@@ -100,7 +210,7 @@ export async function getAdditionalDocs(
     }
     for (const file of matches) {
       try {
-        rulesContent.push(await Bun.file(file).text());
+        manualRulesContent.push(await Bun.file(file).text());
       } catch (error) {
         console.error(`Error reading rules file: ${file}`);
         process.exit(1);
@@ -112,19 +222,54 @@ export async function getAdditionalDocs(
     const cursorrulesPath = path.join(baseDir, '.cursorrules');
     try {
       const cursorrulesContent = await Bun.file(cursorrulesPath).text();
-      rulesContent.push(cursorrulesContent);
+      manualRulesContent.push(cursorrulesContent);
     } catch (error) {
       // It's ok if .cursorrules doesn't exist
     }
   }
 
-  let rulesOutput = rulesContent
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .join('\n\n');
-  let rulesTag = rulesOutput ? `<rules>\n${rulesOutput}\n</rules>` : '';
+  // Initialize combined rules data
+  const allRulesData: { content: string; description?: string }[] = [];
 
-  return { docsTag, instructionsTag, rulesTag, rawInstructions };
+  // Populate from manually specified --rules files and .cursorrules
+  manualRulesContent.forEach((content) => {
+    if (content.trim()) {
+      allRulesData.push({ content: content.trim() });
+    }
+  });
+
+  // Populate from filtered MDC files (type 'rules')
+  for (const mdcFile of ruleFiles) {
+    if (mdcFile.content.trim()) {
+      allRulesData.push({
+        content: mdcFile.content.trim(),
+        description: mdcFile.data.description,
+      });
+    }
+  }
+
+  // Generate the final <rules> tag
+  let rulesOutputTag = ''; // Rename rulesTag
+  if (allRulesData.length > 0) {
+    const ruleTags = allRulesData
+      .map((rule) => {
+        const descAttr = rule.description
+          ? ` description="${escapeXmlAttr(rule.description)}"`
+          : '';
+        return `<rule${descAttr}><![CDATA[\n${rule.content}\n]]></rule>`;
+      })
+      .join('\n');
+    rulesOutputTag = `<rules>\n${ruleTags}\n</rules>`;
+  }
+
+  return {
+    docsTag: docsOutputTag,
+    instructionsTag,
+    rulesTag: rulesOutputTag,
+    rawInstructions,
+    docFilesPaths,
+    ruleFilesPaths,
+  };
 }
 
 export async function buildExamplesTag(examples: { pattern: string; file: string }[]) {

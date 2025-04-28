@@ -19,6 +19,8 @@ import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { Extractor } from '../treesitter/extract.ts';
 import { getCurrentConfig, listPresets, writeSampleConfig } from './config.ts';
+// [1] Import MDC functions and type
+import { findMdcFiles, parseMdcFile, filterMdcFiles, type MdcFile } from './mdc.ts';
 import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
@@ -379,6 +381,8 @@ await Promise.all(
   })
 );
 
+let filteredMdcFiles: MdcFile[] = [];
+
 // Handle output
 const outputFile = globalValues.output ?? (await getOutputPath());
 const editFormat = globalValues['edit-format'] || 'udiff-simple';
@@ -386,16 +390,16 @@ const editFormat = globalValues['edit-format'] || 'udiff-simple';
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
 
 const [
-  examplesTag,
-  { diffTag, changedFiles },
-  { docsTag, instructionsTag, rulesTag, rawInstructions },
+  { docsTag, instructionsTag, rulesTag, rawInstructions, docFilesPaths, ruleFilesPaths }, // Result from getAdditionalDocs
+  { diffTag, changedFiles }, // Result from getDiffTag
+  examplesTag, // Result from buildExamplesTag
 ] = await Promise.all([
-  buildExamplesTag(allExamples),
-  getDiffTag(gitRoot, globalValues),
-  getAdditionalDocs(baseDir, {
+  getAdditionalDocs(baseDir, allFilesSet, {
     ...globalValues,
     instructions: (globalValues.instructions || []).concat(editorInstructions),
   }),
+  getDiffTag(gitRoot, globalValues),
+  buildExamplesTag(allExamples),
 ]);
 
 for (let file of changedFiles) {
@@ -465,6 +469,20 @@ if (!globalValues.quiet) {
     console.log('\n## EXAMPLES');
     for (let { pattern, file } of allExamples) {
       console.log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
+    }
+  }
+
+  if (docFilesPaths.length) {
+    console.log('\n## DOCUMENTS');
+    for (const doc of docFilesPaths) {
+      console.log(`- ${doc}`);
+    }
+  }
+
+  if (ruleFilesPaths.length) {
+    console.log('\n## RULES');
+    for (const rule of ruleFilesPaths) {
+      console.log(`- ${rule}`);
     }
   }
 
