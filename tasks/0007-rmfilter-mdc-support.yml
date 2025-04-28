@@ -196,7 +196,7 @@ tasks:
           `includedMdcFiles` array.
 
           8.  After the loop, return `includedMdcFiles`.
-        done: false
+        done: true
       - prompt: >
           Add/Update tests for the `filterMdcFiles` function in
           `src/rmfilter/mdc.test.ts`.

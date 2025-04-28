@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import glob from 'fast-glob';
 import matter from 'gray-matter';
-import micromatch from 'micromatch'; // Although not used in this file yet, it's needed for filtering later
+import micromatch from 'micromatch';
 import { debugLog } from '../logging';
 
 /**
@@ -73,4 +73,88 @@ export async function findMdcFiles(gitRoot: string): Promise<string[]> {
   const files = await glob(searchPatterns, { absolute: true, onlyFiles: true, dot: true });
   debugLog(`[MDC] Found MDC files: ${files.join(', ')}`);
   return files;
+}
+
+/**
+ * Normalizes input that can be undefined, a single string, or an array of strings
+ * into an array of non-empty, trimmed strings.
+ *
+ * @param input The input value (string | string[] | undefined).
+ * @returns An array of cleaned strings.
+ */
+function normalizeArrayInput(input: string | string[] | undefined): string[] {
+  if (!input) {
+    return [];
+  }
+  const arr = Array.isArray(input) ? input : [input];
+  return arr.map(s => typeof s === 'string' ? s.trim() : '').filter(s => s.length > 0);
+}
+
+/**
+ * Filters a list of parsed MDC files based on rules (globs, grep) matching against active source files.
+ *
+ * @param mdcFiles An array of parsed `MdcFile` objects.
+ * @param activeSourceFiles An array of *absolute paths* to the source files selected by the main `rmfilter` process.
+ * @param gitRoot The absolute path to the git repository root.
+ * @returns A promise resolving to an array of `MdcFile` objects that meet the inclusion criteria.
+ */
+export async function filterMdcFiles(
+  mdcFiles: MdcFile[],
+  activeSourceFiles: string[],
+  gitRoot: string
+): Promise<MdcFile[]> {
+  const includedMdcFiles: MdcFile[] = [];
+
+  // Convert absolute source file paths to relative paths (using POSIX separators) for glob matching.
+  const relativeSourceFiles = activeSourceFiles.map(absPath =>
+    path.relative(gitRoot, absPath).replace(/\\/g, '/')
+  );
+
+  for (const mdcFile of mdcFiles) {
+    let shouldInclude = false;
+    const globPatterns = normalizeArrayInput(mdcFile.data.globs);
+    const grepTerms = normalizeArrayInput(mdcFile.data.grep);
+
+    // 1. Default Inclusion Check: Include if no globs or grep terms are specified.
+    if (globPatterns.length === 0 && grepTerms.length === 0) {
+      shouldInclude = true;
+      debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (default)`);
+    }
+
+    // 2. Glob Matching (only if not default-included)
+    if (!shouldInclude && globPatterns.length > 0) {
+      if (micromatch.isMatch(relativeSourceFiles, globPatterns)) {
+         shouldInclude = true;
+         debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (glob match)`);
+      }
+    }
+
+    // 3. Grep Matching (only if not default-included or glob-included)
+    if (!shouldInclude && grepTerms.length > 0) {
+      const lowerCaseGrepTerms = grepTerms.map(term => term.toLowerCase());
+      for (const absoluteSourceFilePath of activeSourceFiles) {
+        try {
+          const content = await Bun.file(absoluteSourceFilePath).text();
+          const lowerCaseContent = content.toLowerCase();
+          if (lowerCaseGrepTerms.some(term => lowerCaseContent.includes(term))) {
+            shouldInclude = true;
+            debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (grep match in ${absoluteSourceFilePath})`);
+            break; // Found a match in this source file, no need to check others for this MDC
+          }
+        } catch (error: any) {
+          // Log error reading source file but continue checking other source files for this MDC
+          debugLog(`[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${error.message}`);
+        }
+      }
+    }
+
+    // Add to results if included by any rule
+    if (shouldInclude) {
+      includedMdcFiles.push(mdcFile);
+    } else {
+       debugLog(`[MDC Filter] Excluding '${mdcFile.filePath}' (no match)`);
+    }
+  }
+
+  return includedMdcFiles;
 }
