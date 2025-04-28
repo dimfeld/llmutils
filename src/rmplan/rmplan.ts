@@ -7,7 +7,7 @@ import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn } from '../rmfilter/utils.js';
 import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
-import { convertMarkdownToYaml } from './cleanup.js';
+import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
 
@@ -130,7 +130,7 @@ program
 
 program
   .command('extract [inputFile]')
-  .description('Extract and validate a plan YAML from text')
+  .description('Convert a Markdown project plan into YAML')
   .option('-o, --output <outputFile>', 'Write result to a file instead of stdout')
   .action(async (inputFile, options) => {
     let inputText: string;
@@ -144,8 +144,15 @@ program
 
     let validatedPlan: unknown;
 
-    // Call the LLM conversion function first
-    const convertedYaml = await convertMarkdownToYaml(inputText);
+    let convertedYaml: string;
+    try {
+      // First try to see if it's YAML already.
+      let maybeYaml = findYamlStart(inputText);
+      const parsedObject = yaml.parse(maybeYaml);
+      convertedYaml = yaml.stringify(parsedObject);
+    } catch {
+      convertedYaml = await convertMarkdownToYaml(inputText);
+    }
 
     // Now, try to parse and validate the YAML returned by the LLM
     try {
@@ -170,9 +177,15 @@ program
     }
 
     const outputYaml = yaml.stringify(validatedPlan);
+
     if (options.output) {
-      await Bun.write(options.output, outputYaml);
-      console.log(`Wrote result to ${options.output}`);
+      let outputFilename = options.output;
+      if (outputFilename.endsWith('.md')) {
+        outputFilename = outputFilename.slice(0, -3);
+        outputFilename += '.yml';
+      }
+      await Bun.write(outputFilename, outputYaml);
+      console.log(`Wrote result to ${outputFilename}`);
     } else {
       console.log(outputYaml);
     }

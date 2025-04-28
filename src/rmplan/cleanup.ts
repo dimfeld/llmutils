@@ -33,10 +33,14 @@ A single block of valid YAML text conforming to the schema.`;
 export async function convertMarkdownToYaml(markdownInput: string): Promise<string> {
   const prompt = markdownToYamlConversionPrompt.replace('{markdownInput}', markdownInput);
   let { text } = await generateText({
-    model: createModel('google/gemini-flash-2.5-preview-04-17'),
+    model: createModel('google/gemini-2.5-flash-preview-04-17'),
     prompt,
   });
 
+  return findYamlStart(text);
+}
+
+export function findYamlStart(text: string): string {
   // Clean up the output
   text = text.trim();
 
