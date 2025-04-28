@@ -132,7 +132,7 @@ tasks:
               - If it exists, return the absolute default path.
               - If it doesn't exist, return `null`.
               - Handle potential errors during `getGitRoot()` or file system checks appropriately (e.g., log a warning if git root isn't found and return null).
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/configLoader.ts`.
 
