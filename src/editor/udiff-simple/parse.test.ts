@@ -224,4 +224,70 @@ export interface PendingTaskResult {
   step: PlanSchema['tasks'][number]['steps'][number];
 }`);
   });
+
+  test('multiple sections', () => {
+    let hunk = `   const planData = plan.data;
+   const result = findPendingTask(planData);
+   if (!result) {
+     throw new Error('No pending steps found in the plan.');
+   }
+   const activeTask = result.task;
+
++  // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
++  const cleanFiles = activeTask.files.map(file => 
++    file.replace(/\\s*\\([^)]*\\)\\s*$/, '').trim()
++  );
++
+   const gitRoot = await getGitRoot();
+   let files = (
+     await Promise.all(
+-      activeTask.files.map(async (file) => {
++      cleanFiles.map(async (file) => {
+         const fullPath = path.resolve(gitRoot, file);
+         return (await Bun.file(fullPath).exists()) ? fullPath : null;
+       })`;
+
+    let existing = `  const planData = plan.data;
+  const result = findPendingTask(planData);
+  if (!result) {
+    throw new Error('No pending steps found in the plan.');
+  }
+  const activeTask = result.task;
+
+  const gitRoot = await getGitRoot();
+  let files = (
+    await Promise.all(
+      activeTask.files.map(async (file) => {
+        const fullPath = path.resolve(gitRoot, file);
+        return (await Bun.file(fullPath).exists()) ? fullPath : null;
+      })
+`;
+
+    const result = doReplace(
+      existing,
+      hunk.split('\n').map((l) => l + '\n')
+    );
+
+    expect(result).toEqual(
+      `  const planData = plan.data;
+  const result = findPendingTask(planData);
+  if (!result) {
+    throw new Error('No pending steps found in the plan.');
+  }
+  const activeTask = result.task;
+  // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
+  const cleanFiles = activeTask.files.map(file => 
+    file.replace(/\\s*\\([^)]*\\)\\s*$/, '').trim()
+  );
+
+  const gitRoot = await getGitRoot();
+  let files = (
+    await Promise.all(
+      cleanFiles.map(async (file) => {
+        const fullPath = path.resolve(gitRoot, file);
+        return (await Bun.file(fullPath).exists()) ? fullPath : null;
+      })
+`
+    );
+  });
 });
