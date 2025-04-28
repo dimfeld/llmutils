@@ -87,7 +87,10 @@ function normalizeArrayInput(input: string | string[] | undefined): string[] {
     return [];
   }
   const arr = Array.isArray(input) ? input : [input];
-  return arr.map((s) => (typeof s === 'string' ? s.trim() : '')).filter((s) => s.length > 0);
+  return arr
+    .flatMap((s) => s.split(','))
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter((s) => s.length > 0);
 }
 
 /**
