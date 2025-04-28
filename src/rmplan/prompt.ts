@@ -21,7 +21,7 @@ tasks:
     files:
       - [list of relevant file paths]
     steps:
-      - prompt: [single-line or multi-line string]`;
+      - prompt: [multi-line string using the | character]`;
 
 // Define the desired Markdown structure for the plan
 export const planMarkdownExampleFormat = `
@@ -77,5 +77,8 @@ Use the following Markdown format for your final prompt output:
 \`\`\`
 ${planMarkdownExampleFormat}
 \`\`\`
+
+
+If there are any changes requested or comments made after your create this plan, think about how to make the changes to the project plan, update the project plan appropriately, and output the entire updated plan again in the proper format.
 `;
 }
