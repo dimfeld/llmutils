@@ -166,7 +166,7 @@ tasks:
               - Pass the result to `loadConfig()` to get the configuration object.
               - Return the resulting `RmplanConfig` object.
               - Add comprehensive try/catch blocks to handle errors from `findConfigPath` (e.g., specified file not found) and `loadConfig` (e.g., parsing/validation errors) and log user-friendly error messages before re-throwing or exiting if appropriate.
-        done: false
+        done: true
   - title: Add Command-Line Option
     description: Add the `-c, --config` option to the main `rmplan` command using
       `commander` to allow users to specify a custom configuration file path.

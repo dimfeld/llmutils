@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
-import { getGitRoot } from '../rmfilter/utils.js';
+import { getGitRoot } from '../rmfilter/utils.js'; // Assuming logging exists
 import { debugLog } from '../logging.js';
 import { RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
 
@@ -91,4 +91,34 @@ export async function loadConfig(configPath: string | null): Promise<RmplanConfi
 
   debugLog(`Successfully loaded and validated configuration from ${configPath}`);
   return result.data;
+}
+
+/**
+ * Orchestrates finding, loading, parsing, and validating the rmplan configuration.
+ * Handles errors gracefully and logs user-friendly messages.
+ *
+ * @param overridePath - An optional path explicitly provided by the user (e.g., via CLI flag).
+ * @returns The effective RmplanConfig object (either loaded or default).
+ * @throws {Error} If configuration loading fails due to file not found (for override) or validation errors.
+ */
+export async function loadEffectiveConfig(overridePath?: string): Promise<RmplanConfig> {
+  let configPath: string | null = null;
+  try {
+    configPath = await findConfigPath(overridePath);
+  } catch (error: any) {
+    // findConfigPath only throws if overridePath is specified and not found
+    console.error(`Error finding configuration file: ${error.message}`);
+    // Re-throw to halt execution as the user explicitly requested a file that doesn't exist.
+    throw error;
+  }
+
+  try {
+    const config = await loadConfig(configPath);
+    return config;
+  } catch (error: any) {
+    // loadConfig only throws on validation errors. Read/parse errors return default config.
+    console.error(`Error loading or validating configuration: ${error.message}`);
+    // Re-throw validation errors to halt execution.
+    throw error;
+  }
 }
