@@ -24,5 +24,6 @@ test('walk imports from apply-llm-edits.ts', async () => {
   const walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
 
   const imports = await walker.getDefiningFiles(path.join(rootDir, 'src/apply-llm-edits/apply.ts'));
-  expect(Array.from(imports).sort()).toMatchSnapshot();
+  const relativeImports = imports.values().map((f) => path.relative(rootDir, f)).toArray().sort();
+  expect(relativeImports).toMatchSnapshot();
 });
