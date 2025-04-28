@@ -455,4 +455,4 @@ tasks:
 
              // ... rest of the loop ...
           ```
-        done: false
+        done: true

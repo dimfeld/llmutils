@@ -7,7 +7,13 @@ import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
-import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
+import {
+  findPendingTask,
+  markStepDone,
+  prepareNextStep,
+  runAndApplyChanges,
+  executePostApplyCommand,
+} from './actions.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import type { RmplanConfig } from './configSchema.js';
@@ -396,6 +402,23 @@ program
           break;
         }
 
+        // ---> NEW: Execute Post-Apply Commands <---
+        if (config.postApplyCommands && config.postApplyCommands.length > 0) {
+          console.log('\n## Running Post-Apply Commands\n');
+          for (const commandConfig of config.postApplyCommands) {
+            const commandSucceeded = await executePostApplyCommand(commandConfig);
+            if (!commandSucceeded) {
+              // Error logging is handled within executePostApplyCommand
+              console.error(`Agent stopping because required command "${commandConfig.title}" failed.`);
+              hasError = true;
+              break; // Exit post-apply command loop
+            }
+          }
+          if (hasError) {
+            break; // Exit main agent while loop
+          }
+        }
+        // ---> END NEW SECTION <---
         let markResult;
         try {
           console.log('## Marking done\n');
