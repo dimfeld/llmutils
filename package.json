@@ -50,6 +50,7 @@
     "glob": "^11.0.1",
     "globby": "^14.1.0",
     "gpt-tokenizer": "^2.9.0",
+    "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.0",
     "package-up": "^5.0.0",
     "resolve.exports": "^2.0.3",
