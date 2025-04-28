@@ -133,7 +133,12 @@ program
   .command('extract [inputFile]')
   .description('Convert a Markdown project plan into YAML')
   .option('-o, --output <outputFile>', 'Write result to a file instead of stdout')
+  .option(
+    '--plan <planFile>',
+    'The path of the original Markdown project description file. If set, rmplan will write the output to the same path, but with a .yml extension.'
+  )
   .option('--quiet', 'Suppress informational output')
+  .allowExcessArguments(true)
   .action(async (inputFile, options) => {
     setQuiet(options.quiet);
 
@@ -144,6 +149,13 @@ program
       inputText = await Bun.stdin.text();
     } else {
       inputText = await clipboardy.read();
+    }
+
+    if (options.plan && !options.output) {
+      options.output = path.join(
+        path.dirname(options.plan),
+        path.basename(options.plan, '.md') + '.yml'
+      );
     }
 
     let validatedPlan: unknown;
