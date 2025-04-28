@@ -3,14 +3,13 @@ import { glob } from 'fast-glob';
 import os from 'node:os';
 import path from 'node:path';
 import { debugLog } from '../logging.ts';
-import type { MdcFile } from './mdc.ts'; // [1] Import MdcFile type
+import type { MdcFile } from './mdc.ts';
 import { getUsingJj } from './utils.ts';
 
 // Helper function to escape XML attribute values (specifically quotes)
 function escapeXmlAttr(value: string): string {
   return value.replace(/"/g, '&quot;');
 }
-
 
 export async function getAdditionalDocs(
   baseDir: string,
@@ -22,7 +21,7 @@ export async function getAdditionalDocs(
     'omit-cursorrules'?: boolean;
     'omit-instructions-tag'?: boolean;
   },
-  filteredMdcFiles: MdcFile[] = [] // [2] Add filteredMdcFiles parameter
+  filteredMdcFiles: MdcFile[] = []
 ) {
   let instructionsTag = '';
   let rawInstructions = '';
@@ -65,7 +64,6 @@ export async function getAdditionalDocs(
     }
   }
 
-  // [3] Refactor Docs Processing
   let docsOutputTag = ''; // Rename docsTag
   const manualDocsContent: string[] = []; // Rename docsContent
 
@@ -85,36 +83,52 @@ export async function getAdditionalDocs(
         }
       }
     }
-
-    // Old logic for simple docs tag is removed here, handled below with MDC files.
   }
 
   // Initialize combined documents data
   const allDocumentsData: { content: string; description?: string }[] = [];
 
   // Populate from manually specified --docs files
-  manualDocsContent.forEach(content => {
+  manualDocsContent.forEach((content) => {
     if (content.trim()) {
       allDocumentsData.push({ content: content.trim() });
     }
   });
 
-  // Populate from filtered MDC files (type 'docs' or default)
+  function isDoc(file: MdcFile) {
+    const type = file.data.type?.toLowerCase();
+    return type === 'docs' || type === 'doc' || type === 'document';
+  }
+
+  const docFiles: MdcFile[] = [];
+  const ruleFiles: MdcFile[] = [];
+
   for (const mdcFile of filteredMdcFiles) {
-    const type = mdcFile.data.type?.toLowerCase();
-    if (type === 'docs' || type === undefined || type === null || type === '') {
-      if (mdcFile.content.trim()) {
-        allDocumentsData.push({ content: mdcFile.content.trim(), description: mdcFile.data.description });
-      }
+    if (isDoc(mdcFile)) {
+      docFiles.push(mdcFile);
+    } else {
+      ruleFiles.push(mdcFile);
+    }
+  }
+
+  // Populate from filtered MDC files (type 'docs' or default)
+  for (const mdcFile of docFiles) {
+    if (mdcFile.content.trim()) {
+      allDocumentsData.push({
+        content: mdcFile.content.trim(),
+        description: mdcFile.data.description,
+      });
     }
   }
 
   // Generate the final <documents> tag
   if (allDocumentsData.length > 0) {
-    const documentTags = allDocumentsData.map(doc => {
-      const descAttr = doc.description ? ` description="${escapeXmlAttr(doc.description)}"` : '';
-      return `<document${descAttr}><![CDATA[\n${doc.content}\n]]></document>`;
-    }).join('\n');
+    const documentTags = allDocumentsData
+      .map((doc) => {
+        const descAttr = doc.description ? ` description="${escapeXmlAttr(doc.description)}"` : '';
+        return `<document${descAttr}><![CDATA[\n${doc.content}\n]]></document>`;
+      })
+      .join('\n');
     docsOutputTag = `<documents>\n${documentTags}\n</documents>`;
   }
 
@@ -156,29 +170,33 @@ export async function getAdditionalDocs(
   const allRulesData: { content: string; description?: string }[] = [];
 
   // Populate from manually specified --rules files and .cursorrules
-  manualRulesContent.forEach(content => {
+  manualRulesContent.forEach((content) => {
     if (content.trim()) {
       allRulesData.push({ content: content.trim() });
     }
   });
 
   // Populate from filtered MDC files (type 'rules')
-  for (const mdcFile of filteredMdcFiles) {
-    const type = mdcFile.data.type?.toLowerCase();
-    if (type === 'rules') {
-       if (mdcFile.content.trim()) {
-        allRulesData.push({ content: mdcFile.content.trim(), description: mdcFile.data.description });
-      }
+  for (const mdcFile of ruleFiles) {
+    if (mdcFile.content.trim()) {
+      allRulesData.push({
+        content: mdcFile.content.trim(),
+        description: mdcFile.data.description,
+      });
     }
   }
 
   // Generate the final <rules> tag
   let rulesOutputTag = ''; // Rename rulesTag
   if (allRulesData.length > 0) {
-    const ruleTags = allRulesData.map(rule => {
-      const descAttr = rule.description ? ` description="${escapeXmlAttr(rule.description)}"` : '';
-      return `<rule${descAttr}><![CDATA[\n${rule.content}\n]]></rule>`;
-    }).join('\n');
+    const ruleTags = allRulesData
+      .map((rule) => {
+        const descAttr = rule.description
+          ? ` description="${escapeXmlAttr(rule.description)}"`
+          : '';
+        return `<rule${descAttr}><![CDATA[\n${rule.content}\n]]></rule>`;
+      })
+      .join('\n');
     rulesOutputTag = `<rules>\n${ruleTags}\n</rules>`;
   }
 
