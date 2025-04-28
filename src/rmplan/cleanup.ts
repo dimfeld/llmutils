@@ -21,7 +21,7 @@ Here is the text that needs to be converted to valid YAML:
 ${planExampleFormatGeneric}
     \`\`\`
 3.  **Handle Markdown lists:** Convert Markdown lists under 'Files:' and numbered lists under 'Steps:' into YAML sequences.
-4.  **Handle Multi-line Strings:** For step prompts (often found in Markdown code blocks or as multi-line list items), use the YAML pipe character (|) for multi-line strings.
+4.  **Handle Multi-line Strings:** For step prompts, use the YAML pipe character | instead of the > character for multi-line strings.
 5.  **Indentation:** Use exactly 2 spaces for YAML indentation levels.
 6.  **Output Format:** Output *only* the raw, valid YAML string. Do **not** include any introductory text, explanations, comments, or Markdown fences (like \`\`\`yaml or \`\`\`).
 
@@ -56,9 +56,6 @@ export function findYamlStart(text: string): string {
   const startIndex = text.indexOf('goal:');
   if (startIndex >= 0) {
     text = text.slice(startIndex);
-  } else if (startIndex < 0) {
-    // If 'goal:' is not found, return the trimmed text, maybe log a warning later
-    console.warn("YAML output from LLM doesn't start with 'goal:'. Returning trimmed output.");
   }
 
   return text;
