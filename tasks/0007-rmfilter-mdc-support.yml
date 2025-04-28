@@ -133,7 +133,7 @@ tasks:
               *   Ensure returned paths are absolute.
 
           (Use `bun:test` features like `beforeEach`, `afterEach`).
-        done: false
+        done: true
   - title: 2. Implement MDC Filtering Logic (Updated)
     description: Create the logic that filters parsed MDC files. Files without
       `globs` or `grep` are included by default. Otherwise, inclusion depends on
