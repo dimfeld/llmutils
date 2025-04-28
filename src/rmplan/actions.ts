@@ -1,13 +1,14 @@
 import yaml from 'yaml';
 import { planSchema } from './planSchema.js';
 import type { PlanSchema } from './planSchema.js';
-import { getGitRoot, logSpawn, quiet } from '../rmfilter/utils.js';
+import { getGitRoot, logSpawn, quiet, commitAll } from '../rmfilter/utils.js';
 import { debug } from '../rmfilter/utils.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
 import { Extractor } from '../treesitter/extract.js';
 import { select } from '@inquirer/prompts';
+import type { PostApplyCommand } from './configSchema.js';
 import clipboard from 'clipboardy';
 import os from 'node:os';
 import path from 'path';
@@ -441,4 +442,61 @@ export async function runAndApplyChanges(
     console.error(`rmrun failed with exit code ${exitCode}`);
   }
   return exitCode === 0;
+}
+
+/**
+ * Executes a single post-apply command as defined in the configuration.
+ * @param commandConfig The configuration object for the command.
+ * @returns A promise resolving to `true` if the command succeeded or if failure was allowed,
+ *          and `false` if the command failed and failure was not allowed.
+ */
+export async function executePostApplyCommand(commandConfig: PostApplyCommand): Promise<boolean> {
+  let gitRoot: string;
+  try {
+    gitRoot = await getGitRoot();
+    if (!gitRoot) {
+      // getGitRoot usually falls back to cwd, but handle defensively
+      throw new Error('Could not determine Git repository root.');
+    }
+  } catch (error) {
+    console.error(`Error getting Git root for post-apply command: ${error instanceof Error ? error.message : String(error)}`);
+    return false; // Indicate failure
+  }
+
+  const cwd = commandConfig.workingDirectory
+    ? path.resolve(gitRoot, commandConfig.workingDirectory)
+    : gitRoot;
+
+  const env = {
+    ...process.env, // Start with current environment
+    ...(commandConfig.env || {}), // Merge/override with command-specific env vars
+  };
+
+  console.log(`\nRunning post-apply command: "${commandConfig.title}"...`);
+
+  // Use sh -c or cmd /c for robust command string execution
+  const isWindows = process.platform === 'win32';
+  const shellCommand = isWindows ? 'cmd' : 'sh';
+  const shellFlag = isWindows ? '/c' : '-c';
+  const cmdArray = [shellCommand, shellFlag, commandConfig.command];
+
+  const proc = logSpawn(cmdArray, {
+    cwd: cwd,
+    env: env,
+    stdio: ['inherit', 'inherit', 'inherit'], // Show command output/errors directly
+  });
+  const exitCode = await proc.exited;
+
+  if (exitCode !== 0) {
+    console.error(`Error: Post-apply command "${commandConfig.title}" failed with exit code ${exitCode}.`);
+    if (commandConfig.allowFailure) {
+      console.warn(`Warning: Failure of command "${commandConfig.title}" is allowed according to configuration.`);
+      return true; // Indicate successful handling (failure ignored)
+    } else {
+      return false; // Indicate failure that should stop the process
+    }
+  }
+
+  console.log(`Post-apply command "${commandConfig.title}" completed successfully.`);
+  return true; // Indicate success
 }

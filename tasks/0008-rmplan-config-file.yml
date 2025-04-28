@@ -372,7 +372,7 @@ tasks:
                   - If `commandConfig.allowFailure` is `true`, log a warning that failure is ignored and return `true` (indicating successful handling despite command failure).
                   - If `commandConfig.allowFailure` is `false`, return `false` (indicating failure that should stop the process).
               - If the exit code is zero, return `true` (indicating success).
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmplan/rmplan.ts`.
 
