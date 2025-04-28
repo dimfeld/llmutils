@@ -1,6 +1,8 @@
 import * as path from 'node:path';
+import * as yaml from 'js-yaml';
 import { getGitRoot } from '../rmfilter/utils.js';
 import { debugLog } from '../logging.js';
+import { RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
 
 /**
  * Finds the absolute path to the rmplan configuration file.
@@ -38,4 +40,55 @@ export async function findConfigPath(overridePath?: string): Promise<string | nu
     debugLog(`Error finding Git root or checking default config: ${error.message}`);
     return null; // Gracefully handle errors like not being in a git repo
   }
+}
+
+/**
+ * Loads, parses, and validates the rmplan configuration from a given file path.
+ *
+ * @param configPath - The absolute path to the configuration file, or null if none was found/specified.
+ * @returns The validated configuration object. Returns default configuration if configPath is null or YAML parsing fails.
+ * @throws {Error} If the configuration file exists but fails schema validation.
+ */
+export async function loadConfig(configPath: string | null): Promise<RmplanConfig> {
+  if (configPath === null) {
+    debugLog('No configuration file specified or found. Using default configuration.');
+    return getDefaultConfig();
+  }
+
+  debugLog(`Loading configuration from: ${configPath}`);
+  let fileContent: string;
+  try {
+    fileContent = await Bun.file(configPath).text();
+  } catch (error: any) {
+    // Handle file reading errors (e.g., permissions)
+    console.error(`Error reading configuration file ${configPath}: ${error.message}`);
+    debugLog('File reading failed. Falling back to default configuration.');
+    // Return default here as the file might be inaccessible temporarily, similar to parsing errors.
+    return getDefaultConfig();
+  }
+
+  let parsedYaml: any;
+  try {
+    parsedYaml = yaml.load(fileContent);
+    // Handle cases where YAML parsing results in null or undefined for an empty file
+    if (parsedYaml === null || typeof parsedYaml === 'undefined') {
+      parsedYaml = {}; // Treat empty file as empty object for validation
+    }
+  } catch (error: any) {
+    console.error(`Error parsing YAML file ${configPath}: ${error.message}`);
+    debugLog('YAML parsing failed. Falling back to default configuration.');
+    return getDefaultConfig(); // Return default on YAML parse error as requested
+  }
+
+  const result = rmplanConfigSchema.safeParse(parsedYaml);
+
+  if (!result.success) {
+    const errorDetails = result.error.issues.map((issue) => `- ${issue.path.join('.') || 'root'}: ${issue.message}`).join('\n');
+    const errorMessage = `Invalid configuration in ${configPath}:\n${errorDetails}`;
+    // Throw an error for validation failures as requested
+    throw new Error(errorMessage);
+  }
+
+  debugLog(`Successfully loaded and validated configuration from ${configPath}`);
+  return result.data;
 }

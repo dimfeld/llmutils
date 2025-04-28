@@ -153,7 +153,7 @@ tasks:
                   - Log an error message detailing the validation errors (use `result.error.issues`).
                   - Throw an error or return the default config? Let's throw an error here to make configuration issues explicit. Indicate the file path in the error message.
               - If validation succeeds, return the validated data (`result.data`). Ensure the return type matches `RmplanConfig`.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/configLoader.ts`.
 
