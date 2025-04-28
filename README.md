@@ -167,7 +167,7 @@ The `rmplan` utility generates and manages step-by-step project plans for code c
 
 ### Key Features
 - **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
-- **YAML Validation**: Extract and validate plans in YAML format, with automatic cleanup for malformed input using an LLM.
+- **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
@@ -179,7 +179,7 @@ The general usage pattern is that you will:
 1. Use the `generate` command to generate a planning prompt.
 2. Paste the output of that into a language model. As of April 2025, Google Gemini 2.5 Pro is probably the best choice.
 3. Copy its output to the clipboard or a file.
-4. Use the `extract` command to extract the plan YAML to a file.
+4. Use the `extract` command to extract the plan Markdown to a YAML file.
 5. Use the `next` command to get the prompt for the next step(s).
 6. Run the prompt with whatever LLM or coding agent you prefer.
 7. Use the `done` command to mark the next step(s) as done and commit changes.
@@ -225,7 +225,7 @@ rmplan agent plan.yml --steps 3
 
 ### Requirements
 
-- Set the `GOOGLE_GENERATIVE_AI_API_KEY` environment variable to use the YAML cleanup feature in the extract command.
+- Set the `GOOGLE_GENERATIVE_AI_API_KEY` environment variable to use the extract command.
 
 ### Notes
 - The `--rmfilter` option requires additional arguments for `rmfilter` (passed after `--`).
@@ -272,17 +272,20 @@ rmfilter src/**/*.ts --instructions-editor --copy
 Generate and manage project plans:
 
 ```bash
-# Create a plan for adding a new feature
-rmplan generate --plan-editor -- src/api/**/*.ts
+# Read a project description, and create a detailed plan for implementing it
+rmplan generate --plan tasks/0002-refactor-it.md -- src/api/**/*.ts
 
-# Validate and clean up a plan from LLM output
-rmplan extract llm-output.txt --output plan.yml
+# Read the plan from the clipboard, convert to YAML, and write to a file
+rmplan extract --output tasks/0002-refactor-it.yml
 
 # Execute the next step with repository context
-rmplan next plan.yml --rmfilter -- src/api/**/*.ts --grep fetch
+rmplan next tasks/0002-refactor-it-plan.yml --rmfilter -- src/api/**/*.ts --grep fetch
 
 # Mark multiple steps as done and commit
-rmplan done plan.yml --steps 2 --commit
+rmplan done tasks/0002-refactor-it-plan.yml --steps 2 --commit
+
+# Or Automatically execute all the steps in a plan
+rmplan agent tasks/0002-refactor-it-plan.yml
 ```
 
 ### Applying LLM Edits
@@ -310,3 +313,5 @@ rmrun
 - [repomix](https://github.com/yamadashy/repomix) and [ripgrep](https://github.com/BurntSushi/ripgrep) provide a lot of
 the internal functionality.
 - The editor prompts and much of the code for applying edits are from [Aider](https://github.com/Aider-AI/aider).
+- The plan generation prompt is adapted from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
+
