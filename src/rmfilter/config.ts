@@ -49,6 +49,7 @@ export const ConfigSchema = z
     'omit-instructions-tag': z.boolean().optional(),
     'with-diff': z.boolean().optional(),
     'changed-files': z.boolean().optional(),
+    'no-mdc': z.boolean().optional(),
     'diff-from': z.string().optional(),
     'instructions-editor': z.boolean().optional(),
     bare: z.boolean().optional(),
@@ -157,6 +158,7 @@ export async function getCurrentConfig() {
     'omit-cursorrules': { type: 'boolean' },
     'with-diff': { type: 'boolean' },
     'changed-files': { type: 'boolean' },
+    'no-mdc': { type: 'boolean' },
     'diff-from': { type: 'string' },
     'instructions-editor': { type: 'boolean' },
     'omit-instructions-tag': { type: 'boolean' },
@@ -307,8 +309,8 @@ export async function getCurrentConfig() {
     console.log(`usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...
 
 Commands:
-  --new <file>              Create a new YAML config file at the specified path
   --list-presets            List available presets and exit
+  --new <file>              Create a new YAML config file at the specified path
 
 Global Options:
   --config <file>           Load configuration from YAML file
@@ -329,6 +331,7 @@ Global Options:
   --docs <globs>            Add documentation files
   --rules <globs>           Add rules files
   --omit-cursorrules        Skip loading .cursorrules
+  --no-mdc                  Disable automatic loading of .mdc rule/doc files
   --instructions-editor     Open editor for instructions in $EDITOR
 
 Command Options (per command):
