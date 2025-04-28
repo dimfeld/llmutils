@@ -3,7 +3,7 @@ import { createModel } from '../common/model_factory.js';
 import { planExampleFormatGeneric } from './prompt.js';
 
 // Define the prompt for Markdown to YAML conversion
-const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema. You should use a fast model like Gemini Flash 2.0 for this conversion.
+const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
 
 **Input Markdown:**
 
@@ -33,7 +33,7 @@ A single block of valid YAML text conforming to the schema.`;
 export async function convertMarkdownToYaml(markdownInput: string): Promise<string> {
   const prompt = markdownToYamlConversionPrompt.replace('{markdownInput}', markdownInput);
   let { text } = await generateText({
-    model: createModel('google/gemini-flash-2.0-preview-preview'), // Using Gemini Flash as requested
+    model: createModel('google/gemini-flash-2.5-preview-04-17'),
     prompt,
   });
 
