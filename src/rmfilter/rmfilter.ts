@@ -429,7 +429,7 @@ const guidelinesTag = `<guidelines>
 <guideline>Leave existing comments and docstrings alone unless updating them is relevant to the change.</guideline>
 <guideline>It is ok for *existing* comments to seem redundant or obvious, as long as they are correct.</guideline>
 <guideline>New comments should explain why something is being done if it isn't obvious. They should not explain what is being done if it is obvious.</guideline>
-<guideline>Pay careful attention to the scope of the user's request. Do what they ask, but no more.</guideline>
+<guideline>Pay careful attention to the scope of the user's request. Do what they ask, but no more. Feel free to add and update tests though as appropriate.</guideline>
 </guidelines>`;
 
 debugLog({

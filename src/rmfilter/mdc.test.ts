@@ -26,10 +26,11 @@ describe('MDC Utilities', () => {
       const filePath = path.join(tempDir, 'valid.mdc');
       const fileContent = `---
 description: Test Description
-globs: ["src/**/*.ts", "*.js"]
-grep: ["TODO", "FIXME"]
+globs: src/**/*.ts, *.js
+grep: TODO, FIXME
 type: rules
 name: MyRule
+alwaysApply: true
 extra: metadata
 ---
 This is the rule content.
@@ -47,6 +48,7 @@ This is the rule content.
         grep: ['TODO', 'FIXME'],
         type: 'rules',
         name: 'MyRule',
+        alwaysApply: true,
         extra: 'metadata',
       });
     });
@@ -73,35 +75,43 @@ Minimal content.
       const fileContent = `Just content here.`;
       await Bun.write(filePath, fileContent);
 
-      // gray-matter returns empty data object and full content if no frontmatter fences are found
       const result = await parseMdcFile(filePath);
 
-      expect(result).not.toBeNull(); // It should still parse successfully
+      expect(result).not.toBeNull();
       expect(result?.filePath).toBe(path.resolve(filePath));
       expect(result?.content).toBe('Just content here.');
-      expect(result?.data).toEqual({}); // Expect an empty data object
+      expect(result?.data).toEqual({});
     });
 
     it('should handle non-existent file path', async () => {
       const filePath = path.join(tempDir, 'nonexistent.mdc');
-      // Bun.file().text() throws if file doesn't exist
       const result = await parseMdcFile(filePath);
       expect(result).toBeNull();
     });
 
-    it('should handle invalid YAML frontmatter', async () => {
-      const filePath = path.join(tempDir, 'invalid-yaml.mdc');
+    it('should parse unquoted globs and mixed quoted/unquoted', async () => {
+      const filePath = path.join(tempDir, 'unquoted-globs.mdc');
       const fileContent = `---
-invalid: yaml: here
+description: Unquoted Globs
+globs: src/**/*.ts, "test/*.js", *.md
+grep: TODO, "FIXME"
+alwaysApply: false
 ---
-Content.
+Content with unquoted globs.
 `;
       await Bun.write(filePath, fileContent);
 
-      // gray-matter might throw or return malformed data depending on invalidity
-      // Our wrapper should catch this and return null
       const result = await parseMdcFile(filePath);
-      expect(result).toBeNull();
+
+      expect(result).not.toBeNull();
+      expect(result?.filePath).toBe(path.resolve(filePath));
+      expect(result?.content).toBe('Content with unquoted globs.');
+      expect(result?.data).toEqual({
+        description: 'Unquoted Globs',
+        globs: ['src/**/*.ts', 'test/*.js', '*.md'],
+        grep: ['TODO', 'FIXME'],
+        alwaysApply: false,
+      });
     });
 
     it('should handle empty file', async () => {
@@ -296,13 +306,45 @@ Content.
       ];
     });
 
-    it('should include files with no rules (default)', async () => {
+    it('should include files with alwaysApply: true', async () => {
+      const mdcFile = {
+        filePath: path.resolve(gitRoot, '.cursor/rules/always-apply.mdc'),
+        content: 'Always apply rule.',
+        data: { description: 'Always Apply', alwaysApply: true, globs: '*.md' }, // Non-matching glob
+      };
+      const filtered = await filterMdcFiles([mdcFile], activeSourceFilesAbs, gitRoot);
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].filePath).toBe(mdcFile.filePath);
+    });
+
+    it('should exclude files with alwaysApply: false and no rules', async () => {
+      const mdcFile = {
+        filePath: path.resolve(gitRoot, '.cursor/rules/no-rules-false.mdc'),
+        content: 'No rules, alwaysApply false.',
+        data: { description: 'No Rules', alwaysApply: false },
+      };
+      const filtered = await filterMdcFiles([mdcFile], activeSourceFilesAbs, gitRoot);
+      expect(filtered).toHaveLength(0);
+    });
+
+    it('should include files with alwaysApply: false and matching rules', async () => {
+      const mdcFile = {
+        filePath: path.resolve(gitRoot, '.cursor/rules/rules-false.mdc'),
+        content: 'Rules with alwaysApply false.',
+        data: { description: 'Rules False', alwaysApply: false, globs: 'src/*.ts' }, // Matching glob
+      };
+      const filtered = await filterMdcFiles([mdcFile], activeSourceFilesAbs, gitRoot);
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].filePath).toBe(mdcFile.filePath);
+    });
+
+    it('should include files with no rules and alwaysApply absent (default)', async () => {
       const filtered = await filterMdcFiles([mdcFiles[0]], activeSourceFilesAbs, gitRoot);
       expect(filtered).toHaveLength(1);
       expect(filtered[0].filePath).toBe(mdcFiles[0].filePath);
     });
 
-    it('should include files with empty/whitespace rules (default)', async () => {
+    it('should include files with empty/whitespace rules and alwaysApply absent (default)', async () => {
       const filtered = await filterMdcFiles(
         [mdcFiles[9], mdcFiles[10]],
         activeSourceFilesAbs,
@@ -312,6 +354,16 @@ Content.
       expect(filtered.map((f) => f.filePath)).toEqual(
         expect.arrayContaining([mdcFiles[9].filePath, mdcFiles[10].filePath])
       );
+    });
+
+    it('should exclude files with alwaysApply absent and non-matching rules', async () => {
+      const mdcFile = {
+        filePath: path.resolve(gitRoot, '.cursor/rules/non-matching.mdc'),
+        content: 'Non-matching rules.',
+        data: { description: 'Non-Matching', globs: '*.md' }, // Non-matching glob
+      };
+      const filtered = await filterMdcFiles([mdcFile], activeSourceFilesAbs, gitRoot);
+      expect(filtered).toHaveLength(0);
     });
 
     it('should include files matching glob patterns', async () => {

@@ -1,7 +1,6 @@
 import * as path from 'node:path';
 import * as os from 'node:os';
 import glob from 'fast-glob';
-import matter from 'gray-matter';
 import micromatch from 'micromatch';
 import { debugLog } from '../logging';
 
@@ -20,6 +19,7 @@ export interface MdcFile {
     grep?: string | string[];
     type?: 'docs' | 'rules' | string; // Allow 'docs', 'rules', or other custom types
     name?: string;
+    alwaysApply?: boolean;
     // Allow other potential metadata fields
     [key: string]: any;
   };
@@ -27,7 +27,7 @@ export interface MdcFile {
 
 /**
  * Parses a single MDC file, extracting frontmatter and content.
- * Uses Bun.file for reading.
+ * Uses a custom parser to handle unquoted globs and other fields.
  *
  * @param filePath Absolute path to the MDC file.
  * @returns A Promise resolving to the parsed MdcFile object, or null if parsing fails or the file is invalid.
@@ -35,9 +35,54 @@ export interface MdcFile {
 export async function parseMdcFile(filePath: string): Promise<MdcFile | null> {
   try {
     const fileContent = await Bun.file(filePath).text();
-    const { data, content } = matter(fileContent);
+    let data: { [key: string]: any } = {};
+    let content = fileContent;
 
-    // Basic validation: ensure data is an object (frontmatter exists)
+    // Check for frontmatter (delimited by ---)
+    const frontMatterMatch = fileContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+    if (frontMatterMatch) {
+      const frontMatter = frontMatterMatch[1];
+      content = frontMatterMatch[2].trim();
+
+      // Parse frontmatter lines
+      const lines = frontMatter.split('\n');
+      for (const line of lines) {
+        if (line.trim() === '') continue;
+        // Split on the first colon to separate key and value
+        const firstColonIndex = line.indexOf(':');
+        if (firstColonIndex === -1) {
+          debugLog(`[MDC] Invalid frontmatter line in ${filePath}: ${line}`);
+          continue;
+        }
+        const key = line.slice(0, firstColonIndex).trim();
+        let value: any = line.slice(firstColonIndex + 1).trim();
+
+        // Handle specific fields
+        if (key === 'globs' || key === 'grep') {
+          // Split comma-separated values and trim
+          value = value
+            .split(',')
+            .map((v: string) => {
+              let trimmed = v.trim();
+              // Strip leading/trailing quotes if present
+              if (
+                (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+                (trimmed.startsWith("'") && trimmed.endsWith("'"))
+              ) {
+                trimmed = trimmed.slice(1, -1);
+              }
+              return trimmed;
+            })
+            .filter((v: string) => v);
+        } else if (key === 'alwaysApply') {
+          // Convert to boolean
+          value = value.toLowerCase() === 'true';
+        }
+        data[key] = value;
+      }
+    }
+
+    // Basic validation: ensure data is an object
     if (typeof data !== 'object' || data === null) {
       debugLog(`[MDC] Invalid or missing frontmatter in ${filePath}`);
       return null;
@@ -45,11 +90,11 @@ export async function parseMdcFile(filePath: string): Promise<MdcFile | null> {
 
     return {
       filePath: path.resolve(filePath), // Ensure absolute path
-      content: content.trim(),
-      data: data,
+      content,
+      data,
     };
   } catch (error: any) {
-    // Handle file read errors (e.g., ENOENT from Bun.file) or parsing errors from gray-matter
+    // Handle file read errors (e.g., ENOENT from Bun.file)
     console.warn(`[MDC] Error processing file ${filePath}: ${error}`);
     return null;
   }
@@ -94,7 +139,7 @@ function normalizeArrayInput(input: string | string[] | undefined): string[] {
 }
 
 /**
- * Filters a list of parsed MDC files based on rules (globs, grep) matching against active source files.
+ * Filters a list of parsed MDC files based on rules (globs, grep) and alwaysApply flag.
  *
  * @param mdcFiles An array of parsed `MdcFile` objects.
  * @param activeSourceFiles An array of *absolute paths* to the source files selected by the main `rmfilter` process.
@@ -122,13 +167,26 @@ export async function filterMdcFiles(
       });
       const grepTerms = normalizeArrayInput(mdcFile.data.grep);
 
-      // 1. Default Inclusion Check: Include if no globs or grep terms are specified.
-      if (globPatterns.length === 0 && grepTerms.length === 0) {
-        debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (default)`);
+      // 1. Always Apply Check
+      if (mdcFile.data.alwaysApply === true) {
+        debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (alwaysApply: true)`);
         return mdcFile;
       }
 
-      // 2. Glob Matching (only if not default-included)
+      // 2. Handle alwaysApply: false or absent
+      const hasRules = globPatterns.length > 0 || grepTerms.length > 0;
+      if (mdcFile.data.alwaysApply === false) {
+        if (!hasRules) {
+          debugLog(`[MDC Filter] Excluding '${mdcFile.filePath}' (alwaysApply: false, no rules)`);
+          return null;
+        }
+      } else if (!hasRules) {
+        // alwaysApply absent and no rules → include by default
+        debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (no rules, default include)`);
+        return mdcFile;
+      }
+
+      // 3. Glob Matching
       if (globPatterns.length > 0) {
         if (!relativeSourceFiles.some((file) => micromatch.isMatch(file, globPatterns))) {
           debugLog(`[MDC Filter] Excluding '${mdcFile.filePath}' (no glob match)`);
@@ -136,7 +194,7 @@ export async function filterMdcFiles(
         }
       }
 
-      // 3. Grep Matching (only if not default-included or glob-included)
+      // 4. Grep Matching
       if (grepTerms.length > 0) {
         const lowerCaseGrepTerms = grepTerms.map((term) => term.toLowerCase());
         let grepMatch = false;
@@ -160,6 +218,7 @@ export async function filterMdcFiles(
         }
 
         if (!grepMatch) {
+          debugLog(`[MDC Filter] Excluding '${mdcFile.filePath}' (no grep match)`);
           return null;
         }
       }
