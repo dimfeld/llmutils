@@ -30,17 +30,19 @@ See the structure in the provided Markdown input text.
 **Required Output (YAML):**
 A single block of valid YAML text conforming to the schema.`;
 
-export async function convertMarkdownToYaml(markdownInput: string): Promise<string> {
+export async function convertMarkdownToYaml(markdownInput: string, quiet = false): Promise<string> {
   const prompt = markdownToYamlConversionPrompt.replace('{markdownInput}', markdownInput);
   let result = streamText({
     model: createModel('google/gemini-2.5-flash-preview-04-17'),
     prompt,
   });
 
-  for await (const chunk of result.textStream) {
-    process.stdout.write(chunk);
+  if (!quiet) {
+    for await (const chunk of result.textStream) {
+      process.stdout.write(chunk);
+    }
+    process.stdout.write('\n');
   }
-  process.stdout.write('\n');
 
   return findYamlStart(await result.text);
 }

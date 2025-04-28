@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { getGitRoot, logSpawn } from '../rmfilter/utils.js';
+import { getGitRoot, logSpawn, setQuiet } from '../rmfilter/utils.js';
 import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 import { planSchema } from './planSchema.js';
@@ -132,7 +132,10 @@ program
   .command('extract [inputFile]')
   .description('Convert a Markdown project plan into YAML')
   .option('-o, --output <outputFile>', 'Write result to a file instead of stdout')
+  .option('--quiet', 'Suppress informational output')
   .action(async (inputFile, options) => {
+    setQuiet(options.quiet);
+
     let inputText: string;
     if (inputFile) {
       inputText = await Bun.file(inputFile).text();
@@ -151,7 +154,11 @@ program
       const parsedObject = yaml.parse(maybeYaml);
       convertedYaml = yaml.stringify(parsedObject);
     } catch {
-      convertedYaml = await convertMarkdownToYaml(inputText);
+      // Print output if:
+      // - no output file was provided
+      // - --quiet was not set
+      let streamToConsole = !options.output || !options.quiet;
+      convertedYaml = await convertMarkdownToYaml(inputText, streamToConsole);
     }
 
     // Now, try to parse and validate the YAML returned by the LLM
@@ -185,7 +192,9 @@ program
         outputFilename += '.yml';
       }
       await Bun.write(outputFilename, outputYaml);
-      console.log(`Wrote result to ${outputFilename}`);
+      if (!options.quiet) {
+        console.log(`Wrote result to ${outputFilename}`);
+      }
     }
     // else we already wrote to the console in convertMarkdownToYaml, so don't here
   });
