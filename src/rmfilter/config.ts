@@ -197,6 +197,7 @@ export async function getCurrentConfig() {
     'list-presets': { type: 'boolean' },
     new: { type: 'string' },
     compress: { type: 'boolean' },
+    'no-save-output': { type: 'boolean' },
   } as const;
 
   // Define command-specific options
@@ -333,6 +334,20 @@ export async function getCurrentConfig() {
     }
   }
 
+  // Determine if agent output should be saved and calculate the path
+  let agentOutputPath: string | undefined;
+  const shouldSaveOutput =
+    !!yamlConfigPath && // A config or preset was used
+    !globalValues['no-save-output']; // The flag to disable saving was NOT used
+
+  if (shouldSaveOutput && yamlConfigPath) {
+    if (yamlConfigPath.endsWith('.yml')) {
+      agentOutputPath = yamlConfigPath.replace(/\.yml$/, '-agent-output.md');
+    } else if (yamlConfigPath.endsWith('.yaml')) {
+      agentOutputPath = yamlConfigPath.replace(/\.yaml$/, '-agent-output.md');
+    }
+  }
+
   // Handle help message
   if (globalValues.help) {
     console.log(`usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...
@@ -361,6 +376,7 @@ Global Options:
   --omit-cursorrules        Skip loading .cursorrules
   --no-autodocs             Disable automatic loading of .mdc rule/doc files
   --instructions-editor     Open editor for instructions in $EDITOR
+  --no-save-output          Disable automatic saving of console output when using --config or --preset
 
 Command Options (per command):
   -g, --grep <patterns>     Include files matching these patterns
@@ -413,6 +429,7 @@ Command Options (per command):
     globalValues,
     yamlConfigPath,
     yamlCommands,
+    agentOutputPath,
     commandsParsed,
   };
 }

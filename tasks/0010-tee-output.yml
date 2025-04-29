@@ -95,7 +95,7 @@ tasks:
 
           - If `yamlConfigPath` is `/path/to/config.yaml`, `agentOutputPath`
           should be `/path/to/config-agent-output.md`.
-        done: false
+        done: true
       - prompt: >
           Create a test suite for the configuration changes made in the previous
           step.

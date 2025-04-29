@@ -12,10 +12,7 @@
         "type": "object",
         "title": "Post-Apply Command",
         "description": "Schema for a single command to be executed after applying changes.",
-        "required": [
-          "title",
-          "command"
-        ],
+        "required": ["title", "command"],
         "additionalProperties": false,
         "properties": {
           "title": {
