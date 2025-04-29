@@ -267,4 +267,4 @@ tasks:
           `--preset`, the file naming convention
           (`<config-name>-agent-output.md`), and how to disable it using
           `--no-save-output`.
-        done: false
+        done: true

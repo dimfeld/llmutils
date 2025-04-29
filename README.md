@@ -108,6 +108,16 @@ rmfilter --preset example
 
 This loads `.rmfilter/example.yml` (or from `$HOME/.config/rmfilter/example.yml` if not found locally).
 
+### Automatic Output Saving
+
+When you run `rmfilter` using a configuration file (`--config`) or a preset (`--preset`), all console output (stdout and stderr) generated during the run is automatically saved to a file. This helps capture the full context of the run, including debug messages and output from underlying tools like `repomix`.
+
+- **File Location**: The output file is saved in the same directory as the YAML configuration file that was loaded.
+- **File Naming**: The output file is named after the configuration file, with the `.yml` or `.yaml` extension replaced by `-agent-output.md`. For example, if you use `--preset mytask`, and it loads `.rmfilter/mytask.yml`, the output will be saved to `.rmfilter/mytask-agent-output.md`.
+- **Disabling**: You can prevent this automatic saving, even when using a config or preset, by adding the `--no-save-output` flag to your command.
+
+This feature is particularly useful when `rmfilter` is used as part of an automated agent workflow (like with `rmplan agent`), ensuring a persistent log of the agent's actions and context gathering.
+
 ### Combining CLI and Config
 
 CLI arguments override YAML settings. For example:
