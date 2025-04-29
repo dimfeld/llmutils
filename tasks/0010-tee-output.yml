@@ -114,7 +114,7 @@ tasks:
               *   `--config` used, `--no-save-output` present: `agentOutputPath` should be null/undefined.
               *   `--preset` used, `--no-save-output` present: `agentOutputPath` should be null/undefined.
               *   Test correct handling of both `.yml` and `.yaml` extensions in the path calculation.
-        done: false
+        done: true
   - title: 2. Implement Output Capture Mechanism
     description: >
       Create a reusable function that intercepts `process.stdout.write` and
