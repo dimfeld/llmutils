@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { getGitRoot } from '../rmfilter/utils.js'; // Assuming logging exists
 import { debugLog } from '../logging.js';
-import { RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
+import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
 
 /**
  * Finds the absolute path to the rmplan configuration file.
@@ -83,7 +83,9 @@ export async function loadConfig(configPath: string | null): Promise<RmplanConfi
   const result = rmplanConfigSchema.safeParse(parsedYaml);
 
   if (!result.success) {
-    const errorDetails = result.error.issues.map((issue) => `- ${issue.path.join('.') || 'root'}: ${issue.message}`).join('\n');
+    const errorDetails = result.error.issues
+      .map((issue) => `- ${issue.path.join('.') || 'root'}: ${issue.message}`)
+      .join('\n');
     const errorMessage = `Invalid configuration in ${configPath}:\n${errorDetails}`;
     // Throw an error for validation failures as requested
     throw new Error(errorMessage);

@@ -16,15 +16,15 @@ import {
 } from './actions.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
-import type { RmplanConfig } from './configSchema.js';
 import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
 
-async function main() {
-  const program = new Command();
+const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
-program.option('-c, --config <path>', 'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)');
-import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
+program.option(
+  '-c, --config <path>',
+  'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
+);
 
 program
   .command('generate')
@@ -34,9 +34,6 @@ program
   .option('--autofind', 'Automatically find relevant files based on plan')
   .option('--quiet', 'Suppress informational output')
   .allowExcessArguments(true)
-  // Note: config is not used by 'generate' directly, but loaded for consistency
-  // and potential future use in sub-actions like autofind.
-  // The action itself doesn't need the config object passed in.
   .allowUnknownOption(true)
   .action(async (options, command) => {
     // Find '--' in process.argv to get extra args for rmfilter
@@ -153,8 +150,6 @@ program
   )
   .option('--quiet', 'Suppress informational output')
   .allowExcessArguments(true)
-  // Note: config is not used by 'extract' directly.
-  // The action itself doesn't need the config object passed in.
   .action(async (inputFile, options) => {
     setQuiet(options.quiet);
 
@@ -238,8 +233,6 @@ program
   .option('--steps <steps>', 'Number of steps to mark as done', '1')
   .option('--task', 'Mark all steps in the current task as done')
   .option('--commit', 'Commit changes to jj/git')
-  // Note: config is not used by 'done' directly.
-  // The action itself doesn't need the config object passed in.
   .action(async (planFile, options) => {
     await markStepDone(planFile, {
       task: options.task,
@@ -261,8 +254,6 @@ program
   .option('--autofind', 'Automatically run rmfind to find relevant files based on the plan task')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
-  // Note: config is not used by 'next' directly.
-  // The action itself doesn't need the config object passed in.
   .action(async (planFile, options) => {
     // Find '--' in process.argv to get extra args for rmfilter
     const doubleDashIdx = process.argv.indexOf('--');
@@ -315,13 +306,9 @@ program
   .option('-m, --model <model>', 'Model to use for LLM')
   .option('--steps <steps>', 'Number of steps to execute')
   .allowExcessArguments(true)
-  .action(async (planFile, agentOptions) => {
-    // Action now has access to the `config` variable from the outer scope
-    if (!config) {
-      // This should theoretically not happen due to the loading logic below, but acts as a safeguard.
-      console.error('Error: Configuration was not loaded before agent action.');
-      process.exit(1);
-    }
+  .action(async (planFile, options) => {
+    const config = await loadEffectiveConfig(options.config);
+
     console.log('Starting agent to execute plan:', planFile /*, 'with config:', config */); // Keep config log minimal for now
     try {
       let hasError = false;
@@ -409,7 +396,9 @@ program
             const commandSucceeded = await executePostApplyCommand(commandConfig);
             if (!commandSucceeded) {
               // Error logging is handled within executePostApplyCommand
-              console.error(`Agent stopping because required command "${commandConfig.title}" failed.`);
+              console.error(
+                `Agent stopping because required command "${commandConfig.title}" failed.`
+              );
               hasError = true;
               break; // Exit post-apply command loop
             }
@@ -455,30 +444,4 @@ program
     }
   });
 
-  // --- Configuration Loading ---
-  let config: RmplanConfig; // Declare config variable in higher scope
-
-  // Parse arguments first to get options like --config
-program.parse(process.argv);
-
-  // Get the globally parsed options
-  const options = program.opts(); // Contains { config: 'path/if/provided' }
-
-  // Load the configuration *after* parsing args, using the --config option if present
-  try {
-    config = await loadEffectiveConfig(options.config); // Pass the override path
-    // Optional: Log the loaded config for debugging if needed
-    // console.log('Loaded configuration:', JSON.stringify(config, null, 2));
-  } catch (error) {
-    console.error(`Error loading configuration: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  }
-
-  // Commander will now execute the appropriate action based on parsed arguments,
-  // and the action handlers will have access to the populated `config` variable.
-}
-
-main().catch((err) => {
-  console.error('Unhandled error in rmplan main:', err);
-  process.exit(1);
-});
+await program.parseAsync(process.argv);

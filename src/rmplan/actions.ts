@@ -1,18 +1,15 @@
-import yaml from 'yaml';
-import { planSchema } from './planSchema.js';
-import type { PlanSchema } from './planSchema.js';
-import { getGitRoot, logSpawn, quiet, commitAll } from '../rmfilter/utils.js';
-import { debug } from '../rmfilter/utils.js';
-import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
-import { Resolver } from '../dependency_graph/resolve.js';
-import { ImportWalker } from '../dependency_graph/walk_imports.js';
-import { Extractor } from '../treesitter/extract.js';
 import { select } from '@inquirer/prompts';
-import type { PostApplyCommand } from './configSchema.js';
-import clipboard from 'clipboardy';
 import os from 'node:os';
 import path from 'path';
-import { commitAll } from '../rmfilter/utils.js';
+import yaml from 'yaml';
+import { Resolver } from '../dependency_graph/resolve.js';
+import { ImportWalker } from '../dependency_graph/walk_imports.js';
+import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
+import { commitAll, getGitRoot, logSpawn, quiet } from '../rmfilter/utils.js';
+import { Extractor } from '../treesitter/extract.js';
+import type { PostApplyCommand } from './configSchema.js';
+import type { PlanSchema } from './planSchema.js';
+import { planSchema } from './planSchema.js';
 
 interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -24,7 +21,7 @@ interface PrepareNextStepOptions {
   autofind?: boolean;
 }
 
-import { findFilesCore, type RmfindOptions, type RmfindResult } from '../rmfind/core.js';
+import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 
 // Interface for the result of finding a pending task
 export interface PendingTaskResult {
@@ -459,7 +456,9 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
       throw new Error('Could not determine Git repository root.');
     }
   } catch (error) {
-    console.error(`Error getting Git root for post-apply command: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error getting Git root for post-apply command: ${error instanceof Error ? error.message : String(error)}`
+    );
     return false; // Indicate failure
   }
 
@@ -488,9 +487,13 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
   const exitCode = await proc.exited;
 
   if (exitCode !== 0) {
-    console.error(`Error: Post-apply command "${commandConfig.title}" failed with exit code ${exitCode}.`);
+    console.error(
+      `Error: Post-apply command "${commandConfig.title}" failed with exit code ${exitCode}.`
+    );
     if (commandConfig.allowFailure) {
-      console.warn(`Warning: Failure of command "${commandConfig.title}" is allowed according to configuration.`);
+      console.warn(
+        `Warning: Failure of command "${commandConfig.title}" is allowed according to configuration.`
+      );
       return true; // Indicate successful handling (failure ignored)
     } else {
       return false; // Indicate failure that should stop the process
