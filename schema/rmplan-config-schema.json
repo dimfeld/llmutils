@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "rmplan Configuration Schema",
+  "description": "Configuration for rmplan, specifying commands to run after changes are applied.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "postApplyCommands": {
+      "type": "array",
+      "description": "An array of commands to run after changes are successfully applied by the agent.",
+      "items": {
+        "type": "object",
+        "title": "Post-Apply Command",
+        "description": "Schema for a single command to be executed after applying changes.",
+        "required": [
+          "title",
+          "command"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "User-friendly title for logging purposes."
+          },
+          "command": {
+            "type": "string",
+            "description": "The command string to execute."
+          },
+          "workingDirectory": {
+            "type": "string",
+            "description": "Optional working directory for the command. Defaults to the repository root."
+          },
+          "env": {
+            "type": "object",
+            "description": "Optional environment variables for the command.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "allowFailure": {
+            "type": "boolean",
+            "description": "Whether to allow the command to fail without stopping the process. Defaults to false.",
+            "default": false
+          }
+        }
+      }
+    }
+  }
+}

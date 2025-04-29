@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
-import { getGitRoot } from '../rmfilter/utils.js'; // Assuming logging exists
+import { getGitRoot, quiet } from '../rmfilter/utils.js'; // Assuming logging exists
 import { debugLog } from '../logging.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
 
@@ -116,6 +116,9 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
 
   try {
     const config = await loadConfig(configPath);
+    if (!quiet) {
+      console.log('Loaded configuration file', configPath);
+    }
     return config;
   } catch (error: any) {
     // loadConfig only throws on validation errors. Read/parse errors return default config.
