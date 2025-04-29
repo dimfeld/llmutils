@@ -332,6 +332,7 @@ program
         );
         const stepPreparationResult = await prepareNextStep(planFile, {
           rmfilter: true,
+          previous: true,
           selectSteps: false,
         }).catch((err) => {
           console.error('Failed to prepare next step:', err);

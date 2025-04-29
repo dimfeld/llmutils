@@ -63,22 +63,23 @@ copy: true
 instructions: |
   Update all API calls to use the new endpoint format
 docs:
-  - "docs/**/*.md"
+  - 'docs/**/*.md'
 rules:
-  - ".cursorrules"
+  - '.cursorrules'
 commands:
   - globs:
-      - "src/api/**/*.ts"
+      - 'src/api/**/*.ts'
     grep:
-      - "fetch"
+      - 'fetch'
     with-imports: true
   - globs:
-      - "src/tests/api/**/*.ts"
-    grep: "test"
-    example: "apiTest"
+      - 'src/tests/api/**/*.ts'
+    grep: 'test'
+    example: 'apiTest'
 ```
 
 This config:
+
 - Sets the edit format to `diff` and copies output to the clipboard.
 - Includes instructions for updating API calls and references a file for additional instructions.
 - Includes all markdown files in `docs/` and `.cursorrules` for context.
@@ -95,6 +96,7 @@ rmfilter --config path/to/config.yml
 ### Preset System
 
 Presets are named YAML files stored in:
+
 - `.rmfilter/` directories, searched from the current directory up to the git root.
 - `$HOME/.config/rmfilter/` for user-wide presets.
 
@@ -115,7 +117,6 @@ rmfilter --preset example --edit-format diff src/extra/**/*.ts
 ```
 
 This uses the `example` preset but changes the edit format to `diff` and adds an extra glob.
-
 
 ### MDC File Support
 
@@ -138,23 +139,24 @@ An `.mdc` file is a Markdown-based file with a YAML frontmatter header. Here's a
 ```markdown
 ---
 description: Rules for Svelte components with Superforms
-globs: "*.svelte, *.ts" # Or a YAML array
+globs: '*.svelte, *.ts' # Or a YAML array
 type: docs
 grep: superform, supervalidate # Or a YAML array
 name: svelte-superform
 ---
+
 Docs for Superforms would go here
 ```
 
 - **Frontmatter Fields**: Includes `description` (purpose of the rule), `globs` (file patterns), `grep` (search terms), `type` (docs or rules), and optional fields like `name` or `metadata`.
 - **Body**: Contains the rules or documentation in Markdown, often with coding standards or AI instructions.
 
-
 ## rmfind
 
 The `rmfind` utility helps you locate relevant files in your repository using a combination of glob patterns, ripgrep patterns, and natural language queries. It integrates with `fzf` for interactive file selection, allowing you to refine your file list efficiently. The output can be copied to the clipboard and formatted as a space-separated list or YAML array.
 
 ### Key Features
+
 - **Glob-based file search**: Find files matching specific patterns (e.g., `src/**/*.ts`).
 - **Ripgrep integration**: Filter files by content using ripgrep patterns, with options for whole-word matching and case expansion (e.g., snake_case to camelCase).
 - **Natural language queries**: Use AI to filter files based on a query (e.g., "find files related to user authentication").
@@ -186,24 +188,26 @@ rmfind src/**/*.ts --query "database migrations" --model google/gemini-2.5-flash
 ```
 
 ### Requirements
+
 - `fzf`: For interactive file selection.
 - `bat`: For syntax-highlighted previews in `fzf` (optional, falls back to `cat` if unavailable).
 - `ripgrep`: For content-based filtering.
 - AI SDK: Required for natural language queries (configured with the `--model` option).
 
 ### Notes
+
 - The `--query` option requires an AI model and may incur usage costs depending on the model provider.
 - Use `--debug` to see detailed logs for troubleshooting.
 - The `--quiet` flag suppresses non-error output for cleaner scripting.
 
 ## rmplan
 
-
 The `rmplan` utility generates and manages step-by-step project plans for code changes using LLMs. It supports creating, validating, and executing tasks, ensuring incremental progress with detailed prompts for code generation.
 
 You can find the task plans for this repository under the "tasks" directory.
 
 ### Key Features
+
 - **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
@@ -241,7 +245,7 @@ rmplan extract output.txt --output plan.yml
 # Extract a plan from clipboard or stdin. Write to stdout
 rmplan extract
 
-# Prepare the next step(s) and build the context with rmfilter 
+# Prepare the next step(s) and build the context with rmfilter
 # This automatically passes the prompt output as the instructions to rmfilter
 rmplan next plan.yml --rmfilter -- src/**/*.ts
 
@@ -266,6 +270,7 @@ rmplan agent plan.yml --steps 3
 - Set the `GOOGLE_GENERATIVE_AI_API_KEY` environment variable to use the extract command.
 
 ### Notes
+
 - The `--rmfilter` option requires additional arguments for `rmfilter` (passed after `--`).
 - Use `--previous` to include completed steps for context in the LLM prompt.
 - The `--commit` option supports both git and jj for version control.
@@ -274,6 +279,7 @@ rmplan agent plan.yml --steps 3
 ## Usage Examples
 
 ### Using rmfilter
+
 Filter and process files in your repository with various options:
 
 ```bash
@@ -307,6 +313,7 @@ rmfilter src/**/*.ts --instructions-editor --copy
 ```
 
 ### Using rmplan
+
 Generate and manage project plans:
 
 ```bash
@@ -350,7 +357,6 @@ rmrun
 ## Acknowledgements
 
 - [repomix](https://github.com/yamadashy/repomix) and [ripgrep](https://github.com/BurntSushi/ripgrep) provide a lot of
-the internal functionality.
+  the internal functionality.
 - The editor prompts and much of the code for applying edits are from [Aider](https://github.com/Aider-AI/aider).
 - The plan generation prompt is adapted from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
-

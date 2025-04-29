@@ -90,9 +90,7 @@ export async function prepareNextStep(
   }
   const activeTask = result.task;
   // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
-  const cleanFiles = activeTask.files.map(file => 
-    file.replace(/\s*\([^)]*\)\s*$/, '').trim()
-  );
+  const cleanFiles = activeTask.files.map((file) => file.replace(/\s*\([^)]*\)\s*$/, '').trim());
 
   const gitRoot = await getGitRoot();
   let files = (
@@ -256,6 +254,11 @@ export async function prepareNextStep(
     files.forEach((file) => promptParts.push(`- ${path.relative(gitRoot, file)}`));
   }
   promptParts.push('\n## Selected Next Subtasks to Implement:\n');
+  // Some models (Gemini Pro 2.5 especially) will infer what the next step is and do it as part of the current step, then get confused when we
+  // start the next step and generate a bad diff when they try to make the changes again. This helps to prevent that.
+  promptParts.push(
+    `**Important**: When thinking about these tasks, consider that some part of them may have already been completed by an overeager engineer implementing the previous step. If you look at a file and it seems like a change has already been done, that is ok; just move on and don't try to make the edit again.\n`
+  );
   selectedPendingSteps.forEach((step, index) =>
     promptParts.push(`- [${index + 1}] ${step.prompt}`)
   );
