@@ -194,7 +194,7 @@ tasks:
               *   Test the case where `Bun.file(outputPath).writer()` throws an error. Verify `startOutputCapture` logs an error and returns `null`. Verify `process.stdout/stderr.write` are not overwritten.
           *   **`beforeExit` Handler (Optional but good):**
               *   Simulate the `beforeExit` event (if possible in the test environment, otherwise just check registration). Verify the registered handler calls `sink.end()`.
-        done: false
+        done: true
   - title: 3. Integrate Output Capture into Application
     description: >
       Call the `startOutputCapture` function from the main script after
