@@ -95,31 +95,31 @@ export async function findPresetFile(preset: string, gitRoot: string): Promise<s
 // Function to find all preset files
 async function findAllPresetFiles(
   gitRoot: string
-): Promise<{ name: string; description: string | undefined }[]> {
-  const presets = new Map<string, string>();
+): Promise<{ name: string; description: string | undefined; source: 'repository' | 'global' }[]> {
   let currentDir = process.cwd();
   const gitRootDir = path.resolve(gitRoot);
   const homeConfigDir = path.join(os.homedir(), '.config', 'rmfilter');
 
-  const searchDirs: string[] = [];
-
+  const projectSearchDirs: string[] = [];
   // Collect directories from current path up to git root
-  while (currentDir.startsWith(gitRootDir) || currentDir === gitRootDir) {
-    searchDirs.push(path.join(currentDir, '.rmfilter'));
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) break; // Reached root
+  const components = currentDir.split(path.sep);
+  while (currentDir.startsWith(gitRootDir)) {
+    projectSearchDirs.push(path.join(components.join(path.sep), '.rmfilter'));
+    components.pop();
+    const parentDir = components.join(path.sep);
     currentDir = parentDir;
   }
 
-  // Add home config dir
-  searchDirs.push(homeConfigDir);
+  const presetInfo = new Map<string, { path: string; source: 'repository' | 'global' }>();
 
-  // Use glob to find all .yml files in these directories
-  for (const dir of searchDirs) {
+  // Search project directories first to prioritize them
+  for (const dir of projectSearchDirs) {
     try {
       const files = await glob('*.yml', { cwd: dir, absolute: true });
       files.forEach((file) => {
-        presets.set(path.basename(file, '.yml'), file);
+        const presetName = path.basename(file, '.yml');
+        // Set (or overwrite) - implicitly prioritizes presets closer to cwd if names clash within repo
+        presetInfo.set(presetName, { path: file, source: 'repository' });
       });
     } catch (e) {
       // Ignore errors like directory not found
@@ -129,22 +129,41 @@ async function findAllPresetFiles(
     }
   }
 
-  const items = await Promise.all(
-    Array.from(presets.entries()).map(async ([presetName, path]) => {
-      const data = await Bun.file(path).text();
-      const parsedConfig = parse(data);
-      const config = ConfigSchema.safeParse(parsedConfig);
-
-      if (!config.success) {
-        console.error(`Error parsing config file ${path}: ${config.error.message}`);
-        config.error.format();
-        process.exit(1);
+  // Search global config directory
+  try {
+    const globalFiles = await glob('*.yml', { cwd: homeConfigDir, absolute: true });
+    globalFiles.forEach((file) => {
+      const presetName = path.basename(file, '.yml');
+      if (!presetInfo.has(presetName)) {
+        // Only add if not found in the repository
+        presetInfo.set(presetName, { path: file, source: 'global' });
       }
+    });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+      debugLog(`Error searching directory ${homeConfigDir}: ${(e as Error).message}`);
+    }
+  }
 
-      return {
-        name: presetName,
-        description: config.data.description,
-      };
+  const items = await Promise.all(
+    Array.from(presetInfo.entries()).map(async ([presetName, info]) => {
+      const path = info.path;
+      const data = await Bun.file(path).text();
+      let description: string | undefined;
+      try {
+        const parsedConfig = parse(data);
+        const config = ConfigSchema.safeParse(parsedConfig);
+        if (config.success) {
+          description = config.data.description;
+        } else {
+          debugLog(
+            `Could not parse description from preset ${presetName} at ${path}: ${config.error.message}`
+          );
+        }
+      } catch (parseError) {
+        debugLog(`Error parsing preset file ${path}: ${(parseError as Error).message}`);
+      }
+      return { ...info, name: presetName, description };
     })
   );
 
@@ -440,14 +459,15 @@ export async function listPresets() {
   const presets = await findAllPresetFiles(gitRoot);
   if (presets.length > 0) {
     console.log('Available presets:');
-    const longestNameLength = presets.reduce((max, preset) => Math.max(max, preset.name.length), 0);
+    const longestNameLength = presets.reduce((max, p) => Math.max(max, p.name.length), 0);
+    const sourcePadding = '(repository)'.length; // Length of the longest source string + ()
 
     presets.forEach((preset) => {
-      if (preset.description) {
-        console.log(`${preset.name.padEnd(longestNameLength, ' ')}   ${preset.description}`);
-      } else {
-        console.log(`${preset.name.padEnd(longestNameLength, ' ')}`);
-      }
+      const sourceStr = `(${preset.source})`;
+      const descriptionStr = preset.description ? ` ${preset.description}` : '';
+      console.log(
+        `${preset.name.padEnd(longestNameLength)}   ${sourceStr.padEnd(sourcePadding)} ${descriptionStr}`
+      );
     });
   } else {
     console.log('No presets found.');
