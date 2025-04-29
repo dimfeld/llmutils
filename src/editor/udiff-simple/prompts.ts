@@ -32,24 +32,16 @@ ${fence}diff
 -            return False
 -    return True
 @@ ... @@
--@app.route('/prime/<int:n>')
--def nth_prime(n):
--    count = 0
--    num = 1
--    while count < n:
--        num += 1
+ @app.route('/prime/<int:n>')
+ def nth_prime(n):
+     count = 0
+     num = 1
+     while count < n:
+         num += 1
 -        if is_prime(num):
--            count += 1
--    return str(num)
-+@app.route('/prime/<int:n>')
-+def nth_prime(n):
-+    count = 0
-+    num = 1
-+    while count < n:
-+        num += 1
 +        if sympy.isprime(num):
-+            count += 1
-+    return str(num)
+             count += 1
+     return str(num)
 ${fence}
 </formatting_example>
 
