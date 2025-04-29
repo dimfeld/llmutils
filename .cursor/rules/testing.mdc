@@ -4,3 +4,17 @@ globs: '*.test.ts'
 ---
 
 Tests use Bun test. When mocking, either use the bulit-in Bun testing imports or use `import { jest } from 'bun:test'` for Jest-compatible mocking.
+
+## Module Mocke
+
+When mocking a module, always use Bun's test library with this pattern:
+
+```
+import { test } from 'bun:test';
+
+await mock.module('path/to/module', {
+  return {
+    // mocked module
+  }
+});
+```

@@ -414,7 +414,6 @@ Content with unquoted globs.
 
     it('should handle a mix of matching and non-matching files correctly', async () => {
       const filtered = await filterMdcFiles(mdcFiles, activeSourceFilesAbs, gitRoot);
-      console.log({ filtered });
       const expectedPaths = [
         mdcFiles[0].filePath, // Default
         mdcFiles[1].filePath, // Glob match (ts)
