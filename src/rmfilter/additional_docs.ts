@@ -315,6 +315,21 @@ ${files.join('\n')}
 </examples>`;
 }
 
+/**
+ * Parses a jj diff rename line and returns the "after" path.
+ * Example input: R apps/inbox/src/{routes/inventory/inventories/[inventoryId] => lib/components/ui/inventory}/InventoryPicker.svelte
+ * Output: apps/inbox/src/lib/components/ui/inventory/InventoryPicker.svelte
+ */
+export function parseJjRename(line: string): string {
+  const match = line.match(/^R\s+(.+?)\{(.+?)\s*=>\s*(.*?)\}(.+)$/);
+  if (!match) {
+    debugLog(`[parseJjRename] Invalid rename format: ${line}`);
+    return '';
+  }
+  const [, prefix, , after, suffix] = match;
+  return `${prefix}${after || ''}${suffix}`;
+}
+
 export async function getDiffTag(
   gitRoot: string,
   values: { 'with-diff'?: boolean; 'diff-from'?: string; 'changed-files'?: boolean }
@@ -379,8 +394,14 @@ export async function getDiffTag(
         .split('\n')
         .map((line) => {
           line = line.trim();
+
+          // Ignore deleted files
           if (!line || line.startsWith('D')) {
             return '';
+          }
+
+          if (line.startsWith('R')) {
+            return parseJjRename(line);
           }
 
           // M file/name

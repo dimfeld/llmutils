@@ -5,6 +5,8 @@ import path from 'node:path';
 import { gatherDocsInternal } from './additional_docs';
 import type { MdcFile } from './mdc';
 
+import { parseJjRename } from './additional_docs';
+
 // Helper to mock Bun.file().text()
 const mockFiles: Record<string, string> = {};
 
@@ -239,5 +241,33 @@ describe('getAdditionalDocs', () => {
       '<documents>\n<document><![CDATA[\nManual doc content.\n]]></document>\n</documents>'
     );
     expect(result.rulesTag).toBe('');
+  });
+
+  // --- parseJjRename Tests ---
+  describe('parseJjRename', () => {
+    it('should correctly parse a jj diff rename line', () => {
+      const renameLine =
+        'R apps/inbox/src/{routes/inventory/inventories/[inventoryId] => lib/components/ui/inventory}/InventoryPicker.svelte';
+      const result = parseJjRename(renameLine);
+      expect(result).toBe('apps/inbox/src/lib/components/ui/inventory/InventoryPicker.svelte');
+    });
+
+    it('should handle a simple rename with no nested paths', () => {
+      const renameLine = 'R src/{old => new}/file.ts';
+      const result = parseJjRename(renameLine);
+      expect(result).toBe('src/new/file.ts');
+    });
+
+    it('should return empty string for invalid rename format', () => {
+      const renameLine = 'R src/{old => new/file.ts'; // Missing closing brace
+      const result = parseJjRename(renameLine);
+      expect(result).toEqual('');
+    });
+
+    it('should handle empty after segment', () => {
+      const renameLine = 'R src/{old/dir => }/file.ts'; // Empty after segment
+      const result = parseJjRename(renameLine);
+      expect(result).toBe('src//file.ts');
+    });
   });
 });

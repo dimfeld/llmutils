@@ -75,7 +75,7 @@ function calculateBaseDir() {
     return gitRoot;
   }
 
-  if (yamlConfigPath && yamlConfigPath.startsWith(gitRoot)) {
+  if (yamlConfigPath && yamlConfigPath.startsWith(gitRoot) && !globalValues.preset) {
     // If we use a YAML config, default to the directory of the config file
     return path.dirname(yamlConfigPath);
   }
@@ -423,23 +423,19 @@ const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.len
 // Fetch additional docs, diff tag (if requested globally), and examples tag
 const [
   { docsTag, instructionsTag, rulesTag, rawInstructions, docFilesPaths, ruleFilesPaths },
-  { diffTag }, // Only fetch diffTag globally, changedFiles are handled per command
+  { diffTag },
   examplesTag,
 ] = await Promise.all([
   getAdditionalDocs(baseDir, allFilesSet, {
     ...globalValues,
     instructions: (globalValues.instructions || []).concat(editorInstructions),
   }),
-  // Call getDiffTag only for the global --with-diff flag
   getDiffTag(gitRoot, {
     'with-diff': globalValues['with-diff'],
     'diff-from': globalValues['diff-from'],
-    // 'changed-files': false, // Explicitly false or omitted
   }),
   buildExamplesTag(allExamples),
 ]);
-
-// Changed files are already added to allFilesSet within processCommand if requested
 
 const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
 
