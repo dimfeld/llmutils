@@ -153,7 +153,7 @@ tasks:
               *   Register a listener for the `process.on('beforeExit', ...)` event. This listener should call `logSink.end()`. *Note: This listener might not be strictly necessary if cleanup is always called, but acts as a fallback.* Consider potential race conditions or abrupt exits.
               *   If any error occurs during file handle/sink creation, log an error using `console.error` (as redirection might not be set up yet) and return `null`.
               *   Return an object `{ cleanup }`.
-        done: false
+        done: true
       - prompt: >
           Create a new test file `src/rmfilter/output_capture.test.ts`.
 
