@@ -9,7 +9,7 @@ import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './confi
  *
  * It searches in the following order:
  * 1. The path specified by `overridePath` (if provided).
- * 2. The default path `.rmfilter/rmplan.yml` in the Git repository root.
+ * 2. The default path `.rmfilter/config/rmplan.yml` in the Git repository root.
  *
  * @param overridePath - An optional path explicitly provided by the user (e.g., via CLI flag).
  * @returns The absolute path to the configuration file if found, otherwise `null`.
@@ -32,7 +32,7 @@ export async function findConfigPath(overridePath?: string): Promise<string | nu
       debugLog('Could not determine Git repository root. Skipping default config search.');
       return null;
     }
-    const defaultPath = path.join(gitRoot, '.rmfilter', 'rmplan.yml');
+    const defaultPath = path.join(gitRoot, '.rmfilter', 'config', 'rmplan.yml');
     const fileExists = await Bun.file(defaultPath).exists();
     debugLog(`Checking for default configuration file at: ${defaultPath}`);
     return fileExists ? defaultPath : null;
