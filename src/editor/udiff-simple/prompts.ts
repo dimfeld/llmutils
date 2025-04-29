@@ -1,3 +1,5 @@
+import { noArtifacts } from '../fragments.ts';
+
 const fence = '```';
 
 export const udiffPrompt = `<formatting>
@@ -45,7 +47,8 @@ ${fence}diff
 ${fence}
 </formatting_example>
 
-Always use this diff format when writing files, whether they are edits to existing files or new files. Do not create "artifacts", but even if you do, the content of any artifacts must conform to this output format.
+Always use this diff format when writing files, whether they are edits to existing files or new files.
+${noArtifacts};
 
 </formatting>
 `;
