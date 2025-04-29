@@ -10,6 +10,8 @@ import { Extractor } from '../treesitter/extract.js';
 import type { PostApplyCommand } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { planSchema } from './planSchema.js';
+import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
+import { error, log, warn } from '../logging.js';
 
 interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -20,8 +22,6 @@ interface PrepareNextStepOptions {
   rmfilterArgs?: string[];
   autofind?: boolean;
 }
-
-import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 
 // Interface for the result of finding a pending task
 export interface PendingTaskResult {
@@ -114,7 +114,7 @@ export async function prepareNextStep(
     selectedPendingSteps = [pendingSteps[0]];
   } else if (pendingSteps.length === 1) {
     selectedPendingSteps = [pendingSteps[0]];
-    console.log(
+    log(
       `Automatically selected the only pending step: [1] ${pendingSteps[0].prompt.split('\n')[0]}...`
     );
   } else {
@@ -147,15 +147,13 @@ export async function prepareNextStep(
       // Ensure they are absolute paths.
       candidateFilesForImports = filesFromPrompt.map((f) => path.resolve(gitRoot, f));
       if (!quiet) {
-        console.log(
-          `Using ${candidateFilesForImports.length} files found in prompt for import analysis.`
-        );
+        log(`Using ${candidateFilesForImports.length} files found in prompt for import analysis.`);
       }
     } else {
       // Fallback to task files if prompt has no files.
       candidateFilesForImports = files.map((f) => path.resolve(gitRoot, f));
       if (!quiet) {
-        console.log(
+        log(
           `No files found in prompt, using ${candidateFilesForImports.length} task files for import analysis.`
         );
       }
@@ -183,7 +181,7 @@ export async function prepareNextStep(
               results.add(filePath);
             }
           } catch (error) {
-            console.warn(`Warning: Error processing imports for ${filePath}:`, error);
+            warn(`Warning: Error processing imports for ${filePath}:`, error);
           }
           return Array.from(results);
         })
@@ -196,7 +194,7 @@ export async function prepareNextStep(
   // Autofind relevant files based on task details
   if (autofind) {
     if (!quiet) {
-      console.log('[Autofind] Searching for relevant files based on task details...');
+      log('[Autofind] Searching for relevant files based on task details...');
     }
     // Construct a natural language query string
     const queryParts = [
@@ -221,8 +219,8 @@ export async function prepareNextStep(
       const rmfindResult = await findFilesCore(rmfindOptions);
       if (rmfindResult && rmfindResult.files.length > 0) {
         if (!quiet) {
-          console.log(`[Autofind] Found ${rmfindResult.files.length} potentially relevant files:`);
-          rmfindResult.files.forEach((f) => console.log(`  - ${path.relative(gitRoot, f)}`));
+          log(`[Autofind] Found ${rmfindResult.files.length} potentially relevant files:`);
+          rmfindResult.files.forEach((f) => log(`  - ${path.relative(gitRoot, f)}`));
         }
         // Merge and deduplicate found files with existing files
         const combinedFiles = new Set([...files, ...rmfindResult.files]);
@@ -230,7 +228,7 @@ export async function prepareNextStep(
         files = Array.from(combinedFiles).sort();
       }
     } catch (error) {
-      console.warn(
+      warn(
         `[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`
       );
     }
@@ -365,7 +363,7 @@ export async function markStepDone(
     for (const step of pendingSteps) {
       step.done = true;
     }
-    console.log('Marked all steps in task done\n');
+    log('Marked all steps in task done\n');
     output.push(task.title);
 
     for (let i = 0; i < pendingSteps.length; i++) {
@@ -379,9 +377,7 @@ export async function markStepDone(
       step.done = true;
     }
 
-    console.log(
-      `Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`
-    );
+    log(`Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`);
     if (nowDoneSteps.length > 1) {
       output.push(
         `${task.title} steps ${pending.stepIndex + 1}-${pending.stepIndex + nowDoneSteps.length}`
@@ -407,9 +403,9 @@ export async function markStepDone(
 
   // 6. Optionally commit
   const message = output.join('\n');
-  console.log(message);
+  log(message);
   if (options.commit) {
-    console.log('');
+    log('');
     await commitAll(message);
   }
 
@@ -436,7 +432,7 @@ export async function runAndApplyChanges(
   });
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
-    console.error(`rmrun failed with exit code ${exitCode}`);
+    error(`rmrun failed with exit code ${exitCode}`);
   }
   return exitCode === 0;
 }
@@ -455,9 +451,9 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
       // getGitRoot usually falls back to cwd, but handle defensively
       throw new Error('Could not determine Git repository root.');
     }
-  } catch (error) {
-    console.error(
-      `Error getting Git root for post-apply command: ${error instanceof Error ? error.message : String(error)}`
+  } catch (e) {
+    error(
+      `e getting Git root for post-apply command: ${e instanceof Error ? e.message : String(e)}`
     );
     return false; // Indicate failure
   }
@@ -471,7 +467,7 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     ...(commandConfig.env || {}), // Merge/override with command-specific env vars
   };
 
-  console.log(`\nRunning post-apply command: "${commandConfig.title}"...`);
+  log(`\nRunning post-apply command: "${commandConfig.title}"...`);
 
   // Use sh -c or cmd /c for robust command string execution
   const isWindows = process.platform === 'win32';
@@ -487,11 +483,9 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
   const exitCode = await proc.exited;
 
   if (exitCode !== 0) {
-    console.error(
-      `Error: Post-apply command "${commandConfig.title}" failed with exit code ${exitCode}.`
-    );
+    error(`Error: Post-apply command "${commandConfig.title}" failed with exit code ${exitCode}.`);
     if (commandConfig.allowFailure) {
-      console.warn(
+      warn(
         `Warning: Failure of command "${commandConfig.title}" is allowed according to configuration.`
       );
       return true; // Indicate successful handling (failure ignored)
@@ -500,6 +494,6 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     }
   }
 
-  console.log(`Post-apply command "${commandConfig.title}" completed successfully.`);
+  log(`Post-apply command "${commandConfig.title}" completed successfully.`);
   return true; // Indicate success
 }

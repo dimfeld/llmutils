@@ -12,7 +12,7 @@ import {
 import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
 import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
 import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
-import { debugLog } from '../logging.ts';
+import { debugLog, error, log } from '../logging.ts';
 import { quiet } from '../rmfilter/utils.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
@@ -32,7 +32,7 @@ const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig(
 if (globalValues.new) {
   let yamlPath = path.resolve(process.cwd(), globalValues.new);
   await writeSampleConfig(yamlPath);
-  console.log(`Created new configuration file at ${yamlPath}`);
+  log(`Created new configuration file at ${yamlPath}`);
   process.exit(0);
 }
 
@@ -51,7 +51,7 @@ if (
     globalValues['edit-format']
   )
 ) {
-  console.error(
+  error(
     `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'udiff-simple', 'whole', or 'none'`
   );
   process.exit(1);
@@ -91,7 +91,7 @@ if (globalValues['instructions-editor']) {
   editorInstructions = await getInstructionsFromEditor();
 
   if (editorInstructions.length === 0) {
-    console.error('No instructions provided');
+    error('No instructions provided');
     process.exit(1);
   }
 }
@@ -113,7 +113,7 @@ if (files.length > 0 || directories.length > 0) {
 }
 
 if (commandsParsed.length === 0) {
-  console.error('No commands provided');
+  error('No commands provided');
   process.exit(1);
 }
 debugLog({ globalValues, commandsParsed });
@@ -190,7 +190,7 @@ async function processCommand(
     if (ignore?.length) {
       cmdInfo.push(`ignore=[${ignore.join(', ')}]`);
     }
-    console.log(`Command: ${cmdInfo.join(' ')}`);
+    log(`Command: ${cmdInfo.join(' ')}`);
   }
   const allFoundExamples: { pattern: string; file: string }[] = [];
 
@@ -209,10 +209,10 @@ async function processCommand(
       );
       positionals.push(...relativeChangedFiles);
       if (!quiet) {
-        console.log(`  Command: Added ${changedFiles.length} changed files to process.`);
+        log(`  Command: Added ${changedFiles.length} changed files to process.`);
       }
     } else if (!quiet) {
-      console.log(`  Command: --changed-files specified, but no changed files found.`);
+      log(`  Command: --changed-files specified, but no changed files found.`);
     }
   }
 
@@ -220,7 +220,7 @@ async function processCommand(
   // and no other filters (grep/example), then there's nothing to do for this command.
   if (positionals.length === 0 && !cmdValues.grep?.length && !cmdValues.example?.length) {
     if (!quiet) {
-      console.log('  Command: No files, globs, grep, or example patterns specified.');
+      log('  Command: No files, globs, grep, or example patterns specified.');
     }
     return { filesSet, examples: [] };
   }
@@ -326,7 +326,7 @@ async function processCommand(
   if (files && cmdValues.largest) {
     const n = parseInt(cmdValues.largest, 10);
     if (isNaN(n) || n <= 0) {
-      console.error(`Invalid value for --largest: ${cmdValues.largest}. Must be a positive number`);
+      error(`Invalid value for --largest: ${cmdValues.largest}. Must be a positive number`);
       process.exit(1);
     }
 
@@ -444,7 +444,7 @@ const [
 const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
 
 if (!allPaths.length && !globalValues['with-diff']) {
-  console.error('No files found');
+  error('No files found');
   process.exit(1);
 }
 
@@ -501,35 +501,35 @@ await Bun.write(outputFile, finalOutput);
 
 if (!globalValues.quiet) {
   if (allExamples.length) {
-    console.log('\n## EXAMPLES');
+    log('\n## EXAMPLES');
     for (let { pattern, file } of allExamples) {
-      console.log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
+      log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
     }
   }
 
   if (docFilesPaths.length) {
-    console.log('\n## DOCUMENTS');
+    log('\n## DOCUMENTS');
     for (const doc of docFilesPaths) {
-      console.log(`- ${doc}`);
+      log(`- ${doc}`);
     }
   }
 
   if (ruleFilesPaths.length) {
-    console.log('\n## RULES');
+    log('\n## RULES');
     for (const rule of ruleFilesPaths) {
-      console.log(`- ${rule}`);
+      log(`- ${rule}`);
     }
   }
 
   if (rawInstructions) {
-    console.log('\n## INSTRUCTIONS');
-    console.log(rawInstructions);
+    log('\n## INSTRUCTIONS');
+    log(rawInstructions);
   }
 
   const tokens = encode(finalOutput);
-  console.log('\n## OUTPUT');
-  console.log(`Tokens: ${tokens.length}`);
-  console.log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+  log('\n## OUTPUT');
+  log(`Tokens: ${tokens.length}`);
+  log(`Output written to ${outputFile}, edit format: ${editFormat}`);
 }
 
 if (globalValues.copy) {
@@ -552,7 +552,7 @@ async function copyToClipboard(text: string) {
   await proc.stdin.end();
   const exitCode = await proc.exited;
   if (!globalValues.quiet) {
-    console.log(
+    log(
       exitCode === 0
         ? 'Output copied to clipboard'
         : `Failed to copy to clipboard (exit code: ${exitCode})`

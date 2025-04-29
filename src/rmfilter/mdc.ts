@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import glob from 'fast-glob';
 import micromatch from 'micromatch';
-import { debugLog } from '../logging';
+import { debugLog, warn } from '../logging';
 
 /**
  * Represents a parsed Markdown Domain Configuration (MDC) file.
@@ -93,9 +93,9 @@ export async function parseMdcFile(filePath: string): Promise<MdcFile | null> {
       content,
       data,
     };
-  } catch (error: any) {
+  } catch (err: any) {
     // Handle file read errors (e.g., ENOENT from Bun.file)
-    console.warn(`[MDC] Error processing file ${filePath}: ${error}`);
+    warn(`[MDC] Error processing file ${filePath}: ${err}`);
     return null;
   }
 }
@@ -209,10 +209,10 @@ export async function filterMdcFiles(
               grepMatch = true;
               break;
             }
-          } catch (error: any) {
+          } catch (err: any) {
             // Log error reading source file but continue checking other source files for this MDC
             debugLog(
-              `[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${error.message}`
+              `[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${err.message}`
             );
           }
         }

@@ -9,17 +9,18 @@
 import { applyLlmEdits, getWriteRoot } from './apply.js';
 import clipboard from 'clipboardy';
 import { setDebug } from '../rmfilter/utils.ts';
+import { error, log } from '../logging.ts';
 
 const args = process.argv.slice(2);
 
 if (args.includes('--help')) {
-  console.log('Usage: apply-llm-edits [options]');
-  console.log('Options:');
-  console.log('  --stdin           Read input from stdin');
-  console.log('  --cwd <path>      Write files based on the given path');
-  console.log('  --mode <mode>          Force an edit mode');
-  console.log('  --debug           Enable debug logging');
-  console.log('  --dry-run         Dry run - do not apply changes');
+  log('Usage: apply-llm-edits [options]');
+  log('Options:');
+  log('  --stdin           Read input from stdin');
+  log('  --cwd <path>      Write files based on the given path');
+  log('  --mode <mode>          Force an edit mode');
+  log('  --debug           Enable debug logging');
+  log('  --dry-run         Dry run - do not apply changes');
   process.exit(0);
 }
 
@@ -40,6 +41,6 @@ applyLlmEdits({
   dryRun,
   mode: modeValue as 'diff' | 'udiff' | 'xml' | 'whole',
 }).catch((err) => {
-  console.error('Error processing input:', err);
+  error('Error processing input:', err);
   process.exit(1);
 });

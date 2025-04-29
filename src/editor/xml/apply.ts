@@ -1,6 +1,7 @@
 // originally from github.com/mckaywrigley/o1-xml-parser
 import * as path from 'path';
 import { secureWrite, secureRm } from '../../rmfilter/utils.js';
+import { log, warn } from '../../logging.js';
 
 export interface FileChange {
   file_summary: string;
@@ -30,21 +31,21 @@ export async function applyFileChanges(
       if (!file_code) {
         throw new Error(`No file_code provided for ${file_operation} operation on ${file_path}`);
       }
-      console.log(`${dryRun ? '[Dry Run] Would write' : 'Writing'} to ${file_path}`);
+      log(`${dryRun ? '[Dry Run] Would write' : 'Writing'} to ${file_path}`);
       if (!dryRun) {
         await secureWrite(projectDirectory, file_path, file_code);
       }
       break;
 
     case 'DELETE':
-      console.log(`${dryRun ? '[Dry Run] Would delete' : 'Deleting'} ${file_path}`);
+      log(`${dryRun ? '[Dry Run] Would delete' : 'Deleting'} ${file_path}`);
       if (!dryRun) {
         await secureRm(projectDirectory, file_path);
       }
       break;
 
     default:
-      console.warn(`Warning: Unknown file_operation "${file_operation}" for file: ${file_path}`);
+      warn(`Warning: Unknown file_operation "${file_operation}" for file: ${file_path}`);
       break;
   }
 }

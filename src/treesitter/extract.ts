@@ -1,5 +1,6 @@
 import { Parser, Node, Tree, TreeCursor, type Language, Query } from 'web-tree-sitter';
 import { loadLanguage } from './load_language.ts';
+import { log } from '../logging.ts';
 
 await Parser.init();
 
@@ -81,7 +82,7 @@ export function extractExportedFunctions(tree: Tree) {
   const functions: Function[] = [];
 
   function traverse(cursor: TreeCursor) {
-    // console.log(cursor.currentNode.type, cursor.currentNode.text);
+    // log(cursor.currentNode.type, cursor.currentNode.text);
     if (
       (cursor.currentNode.type === 'function_declaration' ||
         cursor.currentNode.type === 'method_definition') &&
@@ -94,7 +95,7 @@ export function extractExportedFunctions(tree: Tree) {
       const params = paramNode?.text || '()';
 
       if (name === 'complexReturnType') {
-        // console.log(returnTypeNode?.children?.map((c) => c?.type));
+        // log(returnTypeNode?.children?.map((c) => c?.type));
       }
 
       const returnType = returnTypeNode ? getActualType(returnTypeNode)?.text : '';
@@ -129,7 +130,7 @@ export interface Variable {
 }
 
 function getActualType(typeNode: Node | null) {
-  // console.log(typeNode?.children?.map((c) => c?.type));
+  // log(typeNode?.children?.map((c) => c?.type));
   return typeNode?.children?.find(
     (c) =>
       c?.type === 'type_identifier' ||
@@ -509,7 +510,7 @@ export class Extractor {
       // Find the $props() call expression
       const propsDeclaration = await this.findPropsDeclaration(scriptTree);
       if (propsDeclaration) {
-        // console.log('Found props declaration:', propsDeclaration.text);
+        // log('Found props declaration:', propsDeclaration.text);
       }
 
       const typeAliases = extractExportedTypeAliases(tree);
@@ -553,7 +554,7 @@ export class Extractor {
       )))`
     );
     const lexicals = q.matches(rootNode);
-    console.log(lexicals.map((l) => l.captures.map((c) => c.name)));
+    log(lexicals.map((l) => l.captures.map((c) => c.name)));
     let propTypeNodes = lexicals.map(
       (l) => l.captures.find((c) => c.name === 'type-annotation')?.node.children[1]
     );
@@ -577,7 +578,7 @@ export class Extractor {
       }
     });
 
-    console.log('typedefs', propTypeDef);
+    log('typedefs', propTypeDef);
 
     function traverse(node: Node): Node | null {
       if (node.type === 'lexical_declaration') {
@@ -611,15 +612,15 @@ export class Extractor {
 // Output results with JSDoc details
 export function printJSDoc(comment: Comment, indent = '') {
   if (!comment) return;
-  console.log(`${indent}Comment: ${comment.raw}`);
+  log(`${indent}Comment: ${comment.raw}`);
   if (comment.jsdoc.params.length > 0) {
-    console.log(`${indent}JSDoc Params:`);
+    log(`${indent}JSDoc Params:`);
     comment.jsdoc.params.forEach((p) =>
-      console.log(`${indent}  - ${p.name}: ${p.type}${p.description ? ` - ${p.description}` : ''}`)
+      log(`${indent}  - ${p.name}: ${p.type}${p.description ? ` - ${p.description}` : ''}`)
     );
   }
   if (comment.jsdoc.return) {
-    console.log(
+    log(
       `${indent}JSDoc Return: ${comment.jsdoc.return.type}${comment.jsdoc.return.description ? ` - ${comment.jsdoc.return.description}` : ''}`
     );
   }

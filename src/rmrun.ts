@@ -2,6 +2,7 @@
 import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
 import { applyLlmEdits } from './apply-llm-edits/apply.ts';
+import { log } from './logging.ts';
 
 const DEFAULT_RUN_MODEL = 'gemini-2.5-pro-exp-03-25';
 const { values, positionals } = parseArgs({
@@ -15,7 +16,7 @@ const { values, positionals } = parseArgs({
 });
 
 if (values.help) {
-  console.log(`Usage: rmrun [options] [filename]
+  log(`Usage: rmrun [options] [filename]
 Options:
   -m, --model     Model to use (default: ${DEFAULT_RUN_MODEL})
   -h, --help      Print this help message
@@ -26,10 +27,10 @@ Options:
 let input: string;
 let filename = positionals[0] || 'repomix-output.xml';
 if (await Bun.file(filename).exists()) {
-  console.log(`Reading from ${filename}`);
+  log(`Reading from ${filename}`);
   input = await Bun.file(filename).text();
 } else {
-  console.log('Reading from clipboard');
+  log('Reading from clipboard');
   input = await clipboard.read();
   process.exit(1);
 }
@@ -58,8 +59,8 @@ for await (const chunk of llm.stdout) {
 await consoleWriter.stdin.end();
 await outputFile.end();
 
-console.log('\nWrote to repomix-result.txt. Applying...');
+log('\nWrote to repomix-result.txt. Applying...');
 
 const content = chunks.join('');
-console.log('Applying changes...');
+log('Applying changes...');
 await applyLlmEdits({ content });

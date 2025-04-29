@@ -1,4 +1,4 @@
-import { debugLog } from '../../logging.ts';
+import { debugLog, error, log } from '../../logging.ts';
 import type { ProcessFileOptions } from '../types.ts';
 import { secureWrite } from '../../rmfilter/utils.ts'; // Import secureWrite
 
@@ -170,9 +170,9 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
         }
         await secureWrite(writeRoot, filePath, contentStr + '\n');
       }
-      console.log(`Wrote ${contentLines.length} lines to file: ${filePath}`);
+      log(`Wrote ${contentLines.length} lines to file: ${filePath}`);
     } catch (err) {
-      console.error(`Failed to write ${filePath}: ${err as Error}`);
+      error(`Failed to write ${filePath}: ${err as Error}`);
     }
   }
 }

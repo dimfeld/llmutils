@@ -3,7 +3,7 @@
  */
 import path from 'node:path';
 import { globFiles, grepFor } from '../common/file_finder.ts';
-import { debugLog } from '../logging.ts';
+import { debugLog, error, warn } from '../logging.ts';
 import { generateGrepTermsFromQuery } from './generate_grep_terms.ts';
 import { filterFilesWithQuery, type RelevantFile } from './llm_file_filter.ts';
 
@@ -59,7 +59,7 @@ export async function findFilesCore(options: RmfindOptions): Promise<RmfindResul
 
   if (!hasGlobs && !hasGrep && !hasQuery) {
     // This case should ideally be caught by the CLI wrapper, but handle defensively
-    console.error('Error: No globs, directories, grep patterns, or query provided.');
+    error('Error: No globs, directories, grep patterns, or query provided.');
     return { files: [] };
   }
 
@@ -70,8 +70,8 @@ export async function findFilesCore(options: RmfindOptions): Promise<RmfindResul
       hasGrep = grep.length > 0;
 
       if (!quiet) {
-        // Use console.warn directly as this is user-facing info, not debug log
-        console.warn(`Generated grep terms: ${grep.join(', ')}\n`);
+        // Use warn directly as this is user-facing info, not debug log
+        warn(`Generated grep terms: ${grep.join(', ')}\n`);
       }
     }
 
@@ -93,8 +93,8 @@ export async function findFilesCore(options: RmfindOptions): Promise<RmfindResul
       foundFiles = await grepFor(baseDir, grep, undefined, expand ?? false, wholeWord ?? false);
       debugLog(`Found ${foundFiles.length} files via grep.`);
     }
-  } catch (error) {
-    console.error(`Error finding files: ${(error as Error).toString()}`);
+  } catch (e) {
+    error(`Error finding files: ${(e as Error).toString()}`);
     // Propagate the error or return empty? Let's return empty for now.
     return { files: [] };
   }

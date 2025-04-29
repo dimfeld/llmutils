@@ -3,7 +3,7 @@ import { $ } from 'bun';
 import clipboard from 'clipboardy';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
-import { debugLog } from '../logging.ts';
+import { debugLog, error, log, warn } from '../logging.ts';
 import { getGitRoot, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { findFilesCore, type RmfindOptions, type RmfindResult } from './core.ts';
 
@@ -38,7 +38,7 @@ const { values, positionals } = parseArgs({
 });
 
 if (values.help) {
-  console.log(`Usage: rmfind [options] [globs/dirs...]
+  log(`Usage: rmfind [options] [globs/dirs...]
 
 Find files using globs and/or ripgrep, then select them using fzf.
 
@@ -99,8 +99,8 @@ async function main() {
     }
 
     if (!options.query) {
-      console.error('Error: No globs, directories, grep patterns, or query provided.');
-      console.error('Use --help for usage information.');
+      error('Error: No globs, directories, grep patterns, or query provided.');
+      error('Use --help for usage information.');
       process.exit(1);
     }
   }
@@ -111,7 +111,7 @@ async function main() {
 
   if (foundFiles.length === 0) {
     if (!values.quiet) {
-      console.log('No files found matching the criteria.');
+      log('No files found matching the criteria.');
     }
     process.exit(0);
   }
@@ -122,8 +122,8 @@ async function main() {
     try {
       // Check fzf availability *only* if --fzf is used
       await $`which fzf`.quiet();
-    } catch (error) {
-      console.error('Error: fzf command not found. Please install fzf.');
+    } catch {
+      error('Error: fzf command not found. Please install fzf.');
       process.exit(1);
     }
 
@@ -156,7 +156,7 @@ async function main() {
     if (exitCode !== 0) {
       // fzf exits with 130 if user cancels (e.g., Esc or Ctrl+C)
       if (exitCode !== 130 && !values.quiet) {
-        console.error(`fzf exited with error code ${exitCode}`);
+        error(`fzf exited with error code ${exitCode}`);
       }
       // Exit silently if user cancelled or error occurred
       process.exit(exitCode === 130 ? 0 : 1);
@@ -170,7 +170,7 @@ async function main() {
   // 5. Output Selection
   if (selectedRelativeFiles.length === 0) {
     if (!values.quiet) {
-      console.warn('No files selected.');
+      warn('No files selected.');
     }
     process.exit(0);
   }
@@ -184,11 +184,11 @@ async function main() {
     }
 
     await clipboard.write(output);
-    console.log(output);
+    log(output);
   }
 }
 
 main().catch((err) => {
-  console.error('An unexpected error occurred:', err);
+  error('An unexpected error occurred:', err);
   process.exit(1);
 });

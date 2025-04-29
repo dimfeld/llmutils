@@ -2,7 +2,7 @@ import { $ } from 'bun';
 import { glob } from 'fast-glob';
 import os from 'node:os';
 import path from 'node:path';
-import { debugLog } from '../logging.ts';
+import { debugLog, error } from '../logging.ts';
 import { filterMdcFiles, findMdcFiles, parseMdcFile, type MdcFile } from './mdc.ts';
 import { getGitRoot, getUsingJj } from './utils.ts';
 
@@ -53,10 +53,10 @@ export async function getAdditionalDocs(
       } else {
         debugLog('[MDC] No MDC files found.');
       }
-    } catch (error: any) {
-      console.error(`[MDC] Error during MDC processing: ${error.message}`);
+    } catch (err: any) {
+      error(`[MDC] Error during MDC processing: ${err.message}`);
       // Log and continue, filteredMdcFiles might be empty or partially filled
-      debugLog(`[MDC] Processing error details: ${error.stack}`);
+      debugLog(`[MDC] Processing error details: ${err.stack}`);
     }
   } else {
     debugLog('[MDC] MDC processing disabled via --no-autodocs flag.');
@@ -90,14 +90,14 @@ export async function gatherDocsInternal(
         const pattern = instruction.slice(1);
         const matches = await glob(pattern);
         if (matches.length === 0) {
-          console.error(`No files found matching instructions pattern: ${pattern}`);
+          error(`No files found matching instructions pattern: ${pattern}`);
           process.exit(1);
         }
         for (const file of matches) {
           try {
             instructionsContent.push(await Bun.file(file).text());
-          } catch (error) {
-            console.error(`Error reading instructions file: ${file}`);
+          } catch (e) {
+            error(`Error reading instructions file: ${file}`);
             process.exit(1);
           }
         }
@@ -129,15 +129,15 @@ export async function gatherDocsInternal(
     for (const pattern of values.docs) {
       const matches = await glob(pattern);
       if (matches.length === 0) {
-        console.error(`No files found matching pattern: ${pattern}`);
+        error(`No files found matching pattern: ${pattern}`);
         process.exit(1);
       }
       for (const file of matches) {
         try {
           manualDocsContent.push(await Bun.file(file).text());
           docFilesPaths.push(path.relative(gitRoot, file));
-        } catch (error) {
-          console.error(`Error reading docs file: ${file}`);
+        } catch (e) {
+          error(`Error reading docs file: ${file}`);
           process.exit(1);
         }
       }
@@ -205,14 +205,14 @@ export async function gatherDocsInternal(
 
     const matches = await glob(pattern);
     if (matches.length === 0) {
-      console.error(`No files found matching pattern: ${pattern}`);
+      error(`No files found matching pattern: ${pattern}`);
       process.exit(1);
     }
     for (const file of matches) {
       try {
         manualRulesContent.push(await Bun.file(file).text());
-      } catch (error) {
-        console.error(`Error reading rules file: ${file}`);
+      } catch (e) {
+        error(`Error reading rules file: ${file}`);
         process.exit(1);
       }
     }

@@ -3,6 +3,7 @@ import * as changeCase from 'change-case';
 import { globby } from 'globby';
 import path from 'node:path';
 import { debug, logSpawn } from '../rmfilter/utils.ts';
+import { error } from '../logging.ts';
 
 /**
  * Finds files matching glob patterns.
@@ -132,7 +133,7 @@ export async function grepFor(
   if (exitCode !== 0 && exitCode !== 1) {
     // rg exits 1 if no matches found
     const stderr = await new Response(proc.stderr).text();
-    console.error(`rg command failed with exit code ${exitCode}:\n${stderr}`);
+    error(`rg command failed with exit code ${exitCode}:\n${stderr}`);
     return [];
   }
 

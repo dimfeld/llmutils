@@ -1,5 +1,6 @@
 // from github.com/mckaywrigley/o1-xml-parser + modifications
 import { DOMParser } from '@xmldom/xmldom';
+import { error } from '../../logging.ts';
 
 interface ParsedFileChange {
   file_summary: string;
@@ -69,8 +70,8 @@ export async function parseXmlString(xmlString: string): Promise<ParsedFileChang
     }
 
     return changes;
-  } catch (error: unknown) {
-    console.error('Error parsing XML:', error);
+  } catch (e: unknown) {
+    error('Error parsing XML:', error);
     return null;
   }
 }

@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
-import { debugLog } from '../logging.ts';
+import { debugLog, error, log } from '../logging.ts';
 import { getGitRoot } from './utils.ts';
 
 // Zod schemas for YAML validation
@@ -250,7 +250,7 @@ export async function getCurrentConfig() {
       if (globalValues.preset) {
         const presetPath = await findPresetFile(globalValues.preset, gitRoot);
         if (!presetPath) {
-          console.error(
+          error(
             `Preset '${globalValues.preset}' not found in .rmfilter/ directories or $HOME/.config/rmfilter/`
           );
           process.exit(1);
@@ -327,15 +327,15 @@ export async function getCurrentConfig() {
           });
         }
       }
-    } catch (error) {
-      console.error(`Failed to load YAML config: ${(error as Error).message}`);
+    } catch (e) {
+      error(`Failed to load YAML config: ${(e as Error).message}`);
       process.exit(1);
     }
   }
 
   // Handle help message
   if (globalValues.help) {
-    console.log(`usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...
+    log(`usage: rmfilter [global options] [files/globs [command options]] [-- [files/globs [command options]]] ...
 
 Commands:
   --list-presets            List available presets and exit
@@ -442,7 +442,7 @@ export async function writeSampleConfig(yamlPath: string) {
 
   try {
     await Bun.file(yamlPath).stat();
-    console.error(`File already exists at ${yamlPath}`);
+    error(`File already exists at ${yamlPath}`);
     process.exit(1);
   } catch {
     // File doesn't exist, proceed with creation
@@ -458,18 +458,18 @@ export async function listPresets() {
   const gitRoot = await getGitRoot();
   const presets = await findAllPresetFiles(gitRoot);
   if (presets.length > 0) {
-    console.log('Available presets:');
+    log('Available presets:');
     const longestNameLength = presets.reduce((max, p) => Math.max(max, p.name.length), 0);
     const sourcePadding = '(repository)'.length; // Length of the longest source string + ()
 
     presets.forEach((preset) => {
       const sourceStr = `(${preset.source})`;
       const descriptionStr = preset.description ? ` ${preset.description}` : '';
-      console.log(
+      log(
         `${preset.name.padEnd(longestNameLength)}   ${sourceStr.padEnd(sourcePadding)} ${descriptionStr}`
       );
     });
   } else {
-    console.log('No presets found.');
+    log('No presets found.');
   }
 }

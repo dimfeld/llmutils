@@ -2,6 +2,7 @@ import { $ } from 'bun';
 import path from 'node:path';
 import os from 'node:os';
 import { logSpawn } from './utils.ts';
+import { error } from '../logging.ts';
 
 function purposeString(repoName: string, instructions: string) {
   if (instructions) {
@@ -33,7 +34,7 @@ export async function callRepomix(gitRoot: string, instructions: string, args: s
   });
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
-    console.error(`repomix exited with code ${exitCode}`);
+    error(`repomix exited with code ${exitCode}`);
     process.exit(exitCode);
   }
 
@@ -63,8 +64,8 @@ export async function getOutputPath() {
     try {
       const config = await Bun.file(configPath).json();
       outputFile = config.output?.filePath;
-    } catch (error) {
-      console.error(`Error reading config file: ${configPath}`);
+    } catch (e) {
+      error(`Error reading config file: ${configPath}`);
     }
   }
   if (!outputFile) {

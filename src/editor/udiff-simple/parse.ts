@@ -1,8 +1,8 @@
 import * as path from 'path';
 import * as diff from 'diff';
 import type { ProcessFileOptions } from '../types.ts';
-
 import { secureWrite } from '../../rmfilter/utils.js';
+import { error, log, warn } from '../../logging.ts';
 
 // Custom Error for specific diff application failures
 class UnifiedDiffError extends Error {
@@ -702,7 +702,7 @@ export async function processUnifiedDiff({
     }
 
     if (!resolvedPath) {
-      console.warn('Skipping hunk with no associated file path:', hunk.join(''));
+      warn('Skipping hunk with no associated file path:', hunk.join(''));
       continue;
     }
     // Normalize path separators for consistency
@@ -748,7 +748,7 @@ async function applyEdits(
         currentContent = await file.text();
       }
     } catch (e) {
-      console.error(`Error accessing file ${filePath}: ${e as Error}`);
+      error(`Error accessing file ${filePath}: ${e as Error}`);
       errors.push(
         `Error accessing file ${filePath}: ${e instanceof Error ? e.message : String(e)}`
       );
@@ -760,7 +760,7 @@ async function applyEdits(
 
       if (newContent !== null) {
         // SUCCESS!
-        console.log(`Applying hunk to ${filePath}`);
+        log(`Applying hunk to ${filePath}`);
         if (!dryRun) {
           await secureWrite(rootDir, filePath, newContent);
         }
@@ -789,7 +789,7 @@ async function applyEdits(
         );
       } else {
         // Unexpected error during application
-        console.error(`Unexpected error applying hunk to ${filePath}:`, e);
+        error(`Unexpected error applying hunk to ${filePath}:`, e);
         errors.push(
           `Unexpected error applying hunk to ${filePath}: ${e instanceof Error ? e.message : String(e)}`
         );
@@ -813,5 +813,5 @@ async function applyEdits(
     );
   }
 
-  console.log(`Successfully applied ${hunksAppliedCount} hunks.`);
+  log(`Successfully applied ${hunksAppliedCount} hunks.`);
 }

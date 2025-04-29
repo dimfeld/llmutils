@@ -10,6 +10,7 @@ import {
 } from '../treesitter/extract.js';
 import { Resolver } from './resolve.js';
 import * as path from 'path';
+import { error } from '../logging.js';
 
 interface FileInfo {
   imports: { module: string; namedImports?: { name: string; alias?: string }[] }[];
@@ -91,8 +92,8 @@ export class ImportWalker {
       } finally {
         tree.delete();
       }
-    } catch (error) {
-      console.error(`Error parsing file ${filePath}:`, error);
+    } catch (e) {
+      error(`Error parsing file ${filePath}:`, e);
       return null;
     }
   }

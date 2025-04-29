@@ -2,7 +2,7 @@ import { generateObject } from 'ai';
 import { encode } from 'gpt-tokenizer';
 import { z } from 'zod';
 import { createModel } from '../common/model_factory.ts';
-import { debugLog } from '../logging.ts';
+import { debugLog, error } from '../logging.ts';
 import * as path from 'node:path';
 
 const baseQuery = `
@@ -248,8 +248,8 @@ Remember, the query to match is: "${query}"
       `AI filtered to ${filteredFiles.length} files: ${filteredFiles.map((f) => f.filename).join(', ')}`
     );
     return filteredFiles;
-  } catch (error) {
-    console.error(`Error processing query: ${(error as Error).toString()}`);
+  } catch (e) {
+    error(`Error processing query: ${(e as Error).toString()}`);
     process.exit(1);
   }
 }

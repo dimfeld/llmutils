@@ -5,6 +5,7 @@ import * as diff from 'diff';
 import stringComparison from 'string-comparison';
 import type { ProcessFileOptions } from '../types.ts';
 import { secureWrite } from '../../rmfilter/utils.js';
+import { error, log } from '../../logging.ts';
 
 interface Edit {
   filePath: string;
@@ -62,7 +63,7 @@ async function applyEdits(
       newContent = await doReplace(filePath, fileContent, original, updated);
     } catch (e) {
       // Handle potential read errors if necessary
-      console.error(`Error reading file ${filePath}: ${e as Error}`);
+      error(`Error reading file ${filePath}: ${e as Error}`);
       failed.push(edit); // Mark as failed if read fails
       continue;
     }
@@ -70,7 +71,7 @@ async function applyEdits(
     updatedEdits.push({ filePath, original, updated });
 
     if (newContent !== null) {
-      console.log(`Applying edit to ${filePath}`);
+      log(`Applying edit to ${filePath}`);
       if (!dryRun) {
         await secureWrite(rootDir, filePath, newContent);
       }
