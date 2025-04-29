@@ -284,7 +284,7 @@ function findSimilarLines(
 function tryDotdotdots(whole: string, part: string, replace: string): string | null {
   /**
    * See if the edit block has ... lines.
-   * If not, return empty string.
+   * If not, return null
    * If yes, try and do a perfect edit with the ... chunks.
    * If there's a mismatch or otherwise imperfect edit, throw an Error.
    * If perfect edit succeeds, return the updated whole.
@@ -300,8 +300,7 @@ function tryDotdotdots(whole: string, part: string, replace: string): string | n
   }
 
   if (partPieces.length === 1) {
-    // No dots in this edit block, return empty string
-    return '';
+    return null;
   }
 
   // Filter out the ... markers, keeping only the content pieces
