@@ -133,10 +133,17 @@ async function findAllPresetFiles(
     Array.from(presets.entries()).map(async ([presetName, path]) => {
       const data = await Bun.file(path).text();
       const parsedConfig = parse(data);
-      const config = ConfigSchema.parse(parsedConfig);
+      const config = ConfigSchema.safeParse(parsedConfig);
+
+      if (!config.success) {
+        console.error(`Error parsing config file ${path}: ${config.error.message}`);
+        config.error.format();
+        process.exit(1);
+      }
+
       return {
         name: presetName,
-        description: config.description,
+        description: config.data.description,
       };
     })
   );

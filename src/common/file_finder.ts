@@ -122,7 +122,10 @@ export async function grepFor(
     args.push('-i');
   }
 
-  const proc = logSpawn(['rg', '--files-with-matches', ...args, ...searchPaths], { cwd: baseDir });
+  const proc = logSpawn(['rg', '--files-with-matches', ...args, ...searchPaths], {
+    cwd: baseDir,
+    stdout: 'pipe',
+  });
   const stdout = await new Response(proc.stdout).text();
   const exitCode = await proc.exited;
 

@@ -90,7 +90,7 @@ tasks:
 
           5. Export the `postApplyCommandSchema` and its inferred type
           `PostApplyCommand` as well, as they might be useful separately.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/configSchema.ts`.
 
@@ -99,7 +99,7 @@ tasks:
           `RmplanConfig` object with `postApplyCommands` being an empty array or
           undefined. This will be used when no config file is found. Ensure the
           returned object conforms to the `RmplanConfig` type.
-        done: false
+        done: true
   - title: Implement Configuration Loading Logic
     description: Create functions to locate, read, parse, and validate the
       configuration file based on the defined schema. Handle default paths,
@@ -132,7 +132,7 @@ tasks:
               - If it exists, return the absolute default path.
               - If it doesn't exist, return `null`.
               - Handle potential errors during `getGitRoot()` or file system checks appropriately (e.g., log a warning if git root isn't found and return null).
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/configLoader.ts`.
 
@@ -153,7 +153,7 @@ tasks:
                   - Log an error message detailing the validation errors (use `result.error.issues`).
                   - Throw an error or return the default config? Let's throw an error here to make configuration issues explicit. Indicate the file path in the error message.
               - If validation succeeds, return the validated data (`result.data`). Ensure the return type matches `RmplanConfig`.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/configLoader.ts`.
 
@@ -166,7 +166,7 @@ tasks:
               - Pass the result to `loadConfig()` to get the configuration object.
               - Return the resulting `RmplanConfig` object.
               - Add comprehensive try/catch blocks to handle errors from `findConfigPath` (e.g., specified file not found) and `loadConfig` (e.g., parsing/validation errors) and log user-friendly error messages before re-throwing or exiting if appropriate.
-        done: false
+        done: true
   - title: Add Command-Line Option
     description: Add the `-c, --config` option to the main `rmplan` command using
       `commander` to allow users to specify a custom configuration file path.
@@ -192,7 +192,7 @@ tasks:
           4. Ensure this option is processed *before* subcommand actions are
           invoked. We will use the parsed options in the next task. Note that
           Commander typically parses options before executing command actions.
-        done: false
+        done: true
   - title: Integrate Configuration Loading
     description: Modify the `rmplan.ts` script to call the configuration loading
       logic early in the execution flow and make the loaded configuration
@@ -335,7 +335,7 @@ tasks:
           command action that needs the config is actually run by Commander. The
           config variable needs to be accessible in the scope where the action
           handlers are defined.
-        done: false
+        done: true
   - title: Implement Post-Apply Command Execution
     description: Modify the `agent` command loop to execute the configured
       `postApplyCommands` after changes are successfully applied by
@@ -372,7 +372,7 @@ tasks:
                   - If `commandConfig.allowFailure` is `true`, log a warning that failure is ignored and return `true` (indicating successful handling despite command failure).
                   - If `commandConfig.allowFailure` is `false`, return `false` (indicating failure that should stop the process).
               - If the exit code is zero, return `true` (indicating success).
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmplan/rmplan.ts`.
 
@@ -455,4 +455,4 @@ tasks:
 
              // ... rest of the loop ...
           ```
-        done: false
+        done: true

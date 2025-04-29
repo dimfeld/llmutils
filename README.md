@@ -276,6 +276,46 @@ rmplan agent plan.yml --steps 3
 - The `--commit` option supports both git and jj for version control.
 - The `agent` command automates step execution, using `rmfilter` to generate context, running the step with an LLM, and marking it as done with a commit. It stops on errors or when the plan is complete.
 
+### Configuration
+
+`rmplan` can be configured using a YAML file to customize its behavior.
+
+*   **Location**: By default, `rmplan` looks for a configuration file at `.rmfilter/config/rmplan.yml` relative to the Git repository root.
+*   **Override**: You can specify a different configuration file using the global `--config <path>` option.
+*   **Schema**: The configuration format is defined by a JSON schema, available at `https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json`. You can reference this schema in your YAML file for editor support:
+    ```yaml
+    # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+    ```
+
+#### Post-Apply Commands
+
+The primary configuration option currently available is `postApplyCommands`. This allows you to define commands that should be executed automatically by the `rmplan agent` after it successfully applies changes from the LLM but *before* it marks the step as done and commits. This is useful for tasks like code formatting or linting.
+
+**Example `.rmfilter/config/rmplan.yml`:**
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+
+postApplyCommands:
+  - title: Format Code # User-friendly title for logging
+    command: bun run format # The command string to execute
+    allowFailure: true # Optional: If true, the agent continues even if this command fails (default: false)
+    # workingDirectory: sub/dir # Optional: Run command in a specific directory relative to repo root (default: repo root)
+    # env: # Optional: Environment variables for the command
+    #   NODE_ENV: production
+
+  - title: Run Linters
+    command: bun run lint --fix
+    allowFailure: false # Default behavior: agent stops if command fails
+```
+
+**Fields:**
+*   `title`: (Required) A short description logged when the command runs.
+*   `command`: (Required) The command line string to execute.
+*   `allowFailure`: (Optional) Boolean, defaults to `false`. If `false`, the agent will stop if the command exits with a non-zero status.
+*   `workingDirectory`: (Optional) String path relative to the repository root where the command should be executed. Defaults to the repository root.
+*   `env`: (Optional) An object mapping environment variable names to string values for the command's execution context.
+
 ## Usage Examples
 
 ### Using rmfilter
@@ -331,6 +371,9 @@ rmplan done tasks/0002-refactor-it-plan.yml --steps 2 --commit
 
 # Or Automatically execute all the steps in a plan
 rmplan agent tasks/0002-refactor-it-plan.yml
+
+# Automatically execute steps using a custom configuration file
+rmplan agent tasks/0003-new-feature.yml --config path/to/my-rmplan-config.yml
 ```
 
 ### Applying LLM Edits

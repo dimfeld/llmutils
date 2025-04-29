@@ -11,7 +11,7 @@
     "rmrun": "./src/rmrun.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit -p tsconfig.build.json",
     "lint": "eslint .",
     "dev-install": "pnpm add -g file://$(pwd)",
     "format": "prettier --write .",

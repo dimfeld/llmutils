@@ -6,14 +6,25 @@ import path from 'path';
 import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn, setQuiet } from '../rmfilter/utils.js';
-import { findPendingTask, markStepDone, prepareNextStep, runAndApplyChanges } from './actions.js';
+import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
+import {
+  findPendingTask,
+  markStepDone,
+  prepareNextStep,
+  runAndApplyChanges,
+  executePostApplyCommand,
+} from './actions.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
+import { loadEffectiveConfig } from './configLoader.js';
 import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
-import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
+program.option(
+  '-c, --config <path>',
+  'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
+);
 
 program
   .command('generate')
@@ -296,7 +307,9 @@ program
   .option('--steps <steps>', 'Number of steps to execute')
   .allowExcessArguments(true)
   .action(async (planFile, options) => {
-    console.log('Starting agent to execute plan:', planFile);
+    const config = await loadEffectiveConfig(options.config);
+
+    console.log('Starting agent to execute plan:', planFile /*, 'with config:', config */); // Keep config log minimal for now
     try {
       let hasError = false;
 
@@ -376,6 +389,25 @@ program
           break;
         }
 
+        // ---> NEW: Execute Post-Apply Commands <---
+        if (config.postApplyCommands && config.postApplyCommands.length > 0) {
+          console.log('\n## Running Post-Apply Commands\n');
+          for (const commandConfig of config.postApplyCommands) {
+            const commandSucceeded = await executePostApplyCommand(commandConfig);
+            if (!commandSucceeded) {
+              // Error logging is handled within executePostApplyCommand
+              console.error(
+                `Agent stopping because required command "${commandConfig.title}" failed.`
+              );
+              hasError = true;
+              break; // Exit post-apply command loop
+            }
+          }
+          if (hasError) {
+            break; // Exit main agent while loop
+          }
+        }
+        // ---> END NEW SECTION <---
         let markResult;
         try {
           console.log('## Marking done\n');
@@ -412,4 +444,4 @@ program
     }
   });
 
-program.parse(process.argv);
+await program.parseAsync(process.argv);
