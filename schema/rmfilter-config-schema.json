@@ -70,10 +70,6 @@
       "type": "boolean",
       "description": "Include Git diff against main/master in output."
     },
-    "changed-files": {
-      "type": "boolean",
-      "description": "Include all files in the diff."
-    },
     "diff-from": {
       "type": "string",
       "description": "Diff from specified branch or revision instead of main."
@@ -108,6 +104,10 @@
           "grep": {
             "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include files matching these patterns."
+          },
+          "changed-files": {
+            "type": "boolean",
+            "description": "Include the full contents of all files in the diff."
           },
           "ignore": {
             "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],

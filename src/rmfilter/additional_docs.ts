@@ -316,7 +316,7 @@ ${files.join('\n')}
 }
 
 export async function getDiffTag(
-  baseDir: string,
+  gitRoot: string,
   values: { 'with-diff'?: boolean; 'diff-from'?: string; 'changed-files'?: boolean }
 ) {
   let baseBranch: string | undefined;
@@ -325,20 +325,28 @@ export async function getDiffTag(
   } else if (values['with-diff'] || values['changed-files']) {
     // Try to get default branch from git config
     baseBranch = (
-      await $`git config --get init.defaultBranch`.cwd(baseDir).nothrow().text()
+      await $`git config --get init.defaultBranch`.cwd(gitRoot).nothrow().text()
     ).trim();
 
     if (!baseBranch) {
       // Try to get default branch from remote
-      const defaultBranch = (await $`git branch --list main master`.cwd(baseDir).nothrow().text())
+      const defaultBranch = (await $`git branch --list main master`.cwd(gitRoot).nothrow().text())
         .replace('*', '')
         .trim();
 
-      baseBranch = defaultBranch || 'main';
+      baseBranch = defaultBranch || 'main'; // Fallback to 'main'
     }
   }
 
-  if (!baseBranch) {
+  // If a base branch is needed (for diff or changed-files) but couldn't be determined, return empty.
+  if ((values['with-diff'] || values['changed-files']) && !baseBranch) {
+    debugLog('[Diff] Could not determine base branch for diff/changed-files.');
+    return { diffTag: '', changedFiles: [] };
+  }
+
+  // If neither diff nor changed-files requested, no need to proceed further.
+  if (!values['with-diff'] && !values['changed-files']) {
+    debugLog('[Diff] Neither --with-diff nor --changed-files specified.');
     return { diffTag: '', changedFiles: [] };
   }
 
@@ -358,14 +366,15 @@ export async function getDiffTag(
       '&'
     );
 
-    const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
+    // Base branch must exist at this point if we need it
+    const from = `latest(ancestors(${baseBranch!})&ancestors(@))`;
 
     if (values['with-diff']) {
-      diff = await $`jj diff --from ${from} ${exclude}`.cwd(baseDir).nothrow().text();
+      diff = await $`jj diff --from ${from} ${exclude}`.cwd(gitRoot).nothrow().text();
     }
 
     if (values['changed-files']) {
-      let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(baseDir).nothrow().text();
+      let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(gitRoot).nothrow().text();
       changedFiles = summ
         .split('\n')
         .map((line) => {
@@ -381,13 +390,14 @@ export async function getDiffTag(
     }
   } else {
     const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
-    if (values['with-diff']) {
-      diff = await $`git diff ${baseBranch} ${exclude}`.cwd(baseDir).nothrow().text();
+    // Base branch must exist at this point if we need it
+    if (values['with-diff'] && baseBranch) {
+      diff = await $`git diff ${baseBranch} ${exclude}`.cwd(gitRoot).nothrow().text();
     }
 
-    if (values['changed-files']) {
+    if (values['changed-files'] && baseBranch) {
       let summ = await $`git diff --name-only ${baseBranch} ${exclude}`
-        .cwd(baseDir)
+        .cwd(gitRoot)
         .nothrow()
         .text();
       changedFiles = summ

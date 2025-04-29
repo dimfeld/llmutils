@@ -160,11 +160,14 @@ async function getNFilesBySize(files: string[], nLargest: number, nSmallest: num
 
 // Process each command
 async function processCommand(
-  cmdParsed: (typeof commandsParsed)[number]
+  cmdParsed: (typeof commandsParsed)[number],
+  globalVals: typeof globalValues // Pass global values for context like diff-from
 ): Promise<{ filesSet: Set<string>; examples: { pattern: string; file: string }[] }> {
   const filesSet = new Set<string>();
+  const cmdValues = cmdParsed.values;
+  let positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
-  const ignore = cmdParsed.values.ignore?.map((i) => {
+  const ignore = cmdValues.ignore?.map((i) => {
     if (!i.includes('/') && !i.includes('**')) {
       // No existing double-wildcard or slash, so make this match any path.
       return `**/${i}`;
@@ -181,16 +184,44 @@ async function processCommand(
     if (cmdParsed.values.example?.length) {
       cmdInfo.push(`example=[${cmdParsed.values.example.join(', ')}]`);
     }
+    if (cmdParsed.values['changed-files']) {
+      cmdInfo.push(`changed-files=true`);
+    }
     if (ignore?.length) {
       cmdInfo.push(`ignore=[${ignore.join(', ')}]`);
     }
     console.log(`Command: ${cmdInfo.join(' ')}`);
   }
   const allFoundExamples: { pattern: string; file: string }[] = [];
-  const cmdValues = cmdParsed.values;
-  let positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
+  if (cmdValues['changed-files']) {
+    // Get changed files for this command using the getDiffTag helper
+    const { changedFiles } = await getDiffTag(gitRoot, {
+      'changed-files': true, // Indicate we need the list
+      'diff-from': globalVals['diff-from'], // Use global diff-from if set
+    });
+
+    if (changedFiles.length > 0) {
+      // Convert absolute paths (relative to gitRoot) returned by getDiffTag
+      // to paths relative to the current baseDir for globby/grepFor
+      const relativeChangedFiles = changedFiles.map((file) =>
+        path.relative(baseDir, path.resolve(gitRoot, file))
+      );
+      positionals.push(...relativeChangedFiles);
+      if (!quiet) {
+        console.log(`  Command: Added ${changedFiles.length} changed files to process.`);
+      }
+    } else if (!quiet) {
+      console.log(`  Command: --changed-files specified, but no changed files found.`);
+    }
+  }
+
+  // If after potentially adding changed files, we still have no positionals
+  // and no other filters (grep/example), then there's nothing to do for this command.
   if (positionals.length === 0 && !cmdValues.grep?.length && !cmdValues.example?.length) {
+    if (!quiet) {
+      console.log('  Command: No files, globs, grep, or example patterns specified.');
+    }
     return { filesSet, examples: [] };
   }
 
@@ -341,7 +372,7 @@ const allFileDirs = new Set<string>();
 const allExamples: { pattern: string; file: string }[] = [];
 await Promise.all(
   commandsParsed.map(async (cmdParsed) => {
-    const cmdFiles = await processCommand(cmdParsed);
+    const cmdFiles = await processCommand(cmdParsed, globalValues);
     cmdFiles.filesSet.forEach((file) => {
       const dirname = path.dirname(file);
 
@@ -389,22 +420,26 @@ const editFormat = globalValues['edit-format'] || 'udiff-simple';
 
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
 
+// Fetch additional docs, diff tag (if requested globally), and examples tag
 const [
-  { docsTag, instructionsTag, rulesTag, rawInstructions, docFilesPaths, ruleFilesPaths }, // Result from getAdditionalDocs
-  { diffTag, changedFiles }, // Result from getDiffTag
-  examplesTag, // Result from buildExamplesTag
+  { docsTag, instructionsTag, rulesTag, rawInstructions, docFilesPaths, ruleFilesPaths },
+  { diffTag }, // Only fetch diffTag globally, changedFiles are handled per command
+  examplesTag,
 ] = await Promise.all([
   getAdditionalDocs(baseDir, allFilesSet, {
     ...globalValues,
     instructions: (globalValues.instructions || []).concat(editorInstructions),
   }),
-  getDiffTag(gitRoot, globalValues),
+  // Call getDiffTag only for the global --with-diff flag
+  getDiffTag(gitRoot, {
+    'with-diff': globalValues['with-diff'],
+    'diff-from': globalValues['diff-from'],
+    // 'changed-files': false, // Explicitly false or omitted
+  }),
   buildExamplesTag(allExamples),
 ]);
 
-for (let file of changedFiles) {
-  allFilesSet.add(path.resolve(gitRoot, file));
-}
+// Changed files are already added to allFilesSet within processCommand if requested
 
 const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
 

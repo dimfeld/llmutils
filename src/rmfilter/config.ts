@@ -22,6 +22,7 @@ export const CommandConfigSchema = z
     'no-expand-pages': z.boolean().optional(),
     'with-imports': z.boolean().optional(),
     'with-all-imports': z.boolean().optional(),
+    'changed-files': z.boolean().optional(),
     upstream: z.union([z.string(), z.string().array()]).optional(),
     downstream: z.union([z.string(), z.string().array()]).optional(),
     largest: z.string().optional(),
@@ -48,7 +49,6 @@ export const ConfigSchema = z
     'omit-cursorrules': z.boolean().optional(),
     'omit-instructions-tag': z.boolean().optional(),
     'with-diff': z.boolean().optional(),
-    'changed-files': z.boolean().optional(),
     'no-autodocs': z
       .boolean()
       .optional()
@@ -186,7 +186,6 @@ export async function getCurrentConfig() {
     rules: { type: 'string', multiple: true },
     'omit-cursorrules': { type: 'boolean' },
     'with-diff': { type: 'boolean' },
-    'changed-files': { type: 'boolean' },
     'no-autodocs': { type: 'boolean' },
     'diff-from': { type: 'string' },
     'instructions-editor': { type: 'boolean' },
@@ -205,6 +204,7 @@ export async function getCurrentConfig() {
     base: { type: 'string' },
     grep: { type: 'string', short: 'g', multiple: true },
     ignore: { type: 'string', multiple: true },
+    'changed-files': { type: 'boolean' },
     'whole-word': { type: 'boolean', short: 'w' },
     expand: { type: 'boolean', short: 'e' },
     'no-expand-pages': { type: 'boolean' },
@@ -354,7 +354,6 @@ Global Options:
   --debug                   Print executed commands
   -q, --quiet               Suppress all output from tool and spawned processes
   --with-diff               Include Git diff against main/master in output
-  --changed-files           Include all changed files
   --diff-from (<branch>|<rev>) Diff from <branch> instead of main
   -i, --instructions <text> Add instructions (prefix @ for files)
   --docs <globs>            Add documentation files
@@ -368,6 +367,7 @@ Command Options (per command):
   -w, --whole-word          Match whole words in grep
   -e, --expand              Expand grep patterns (snake_case, camelCase)
   --ignore <patterns>       Ignore files matching these patterns
+  --changed-files           Include all changed files
   --no-expand-pages         Disable inclusion of matching page/server route files
   --with-imports            Include direct imports of files
   --with-all-imports        Include entire import tree
