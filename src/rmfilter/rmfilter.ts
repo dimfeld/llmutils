@@ -20,13 +20,14 @@ import { debug, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/uti
 import { Extractor } from '../treesitter/extract.ts';
 import { getCurrentConfig, listPresets, writeSampleConfig } from './config.ts';
 // [1] Import MDC functions and type
-import { findMdcFiles, parseMdcFile, filterMdcFiles, type MdcFile } from './mdc.ts';
+import { type MdcFile } from './mdc.ts';
 import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
+import { startOutputCapture } from './output_capture.ts';
 
-const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
+const { globalValues, commandsParsed, yamlConfigPath, agentOutputPath } = await getCurrentConfig();
 
 // Handle creation of new YAML config
 if (globalValues.new) {
@@ -36,6 +37,21 @@ if (globalValues.new) {
   process.exit(0);
 }
 
+// Start output capture if an agentOutputPath was determined during config loading
+let captureCleanup: { cleanup: () => void } | null = null;
+if (typeof agentOutputPath === 'string' && agentOutputPath.length > 0) {
+  // Attempt to start capture. Errors are logged internally by startOutputCapture.
+  captureCleanup = await startOutputCapture(agentOutputPath);
+  if (!captureCleanup) {
+    // Log a warning using original stderr in case capture failed but we want to inform the user
+    process.stderr.write(
+      `[WARN] Failed to initialize output capture to ${agentOutputPath}. Continuing without saving output.\n`
+    );
+  } else {
+    // This log *will* be captured if capture started successfully
+    debugLog(`Output capture active, saving to: ${agentOutputPath}`);
+  }
+}
 const gitRoot = await getGitRoot();
 
 // Handle list-presets

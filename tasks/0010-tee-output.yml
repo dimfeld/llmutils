@@ -235,7 +235,7 @@ tasks:
           logging or process spawning (like `callRepomix` or other `logSpawn`
           calls that might use `stdio: 'inherit'`) occurs in the main script
           flow, but *after* configuration is fully parsed.
-        done: false
+        done: true
   - title: 4. Final Review and Documentation
     description: >
       Review the changes, ensure error handling is adequate, and update any
