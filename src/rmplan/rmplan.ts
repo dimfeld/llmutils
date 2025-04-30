@@ -12,6 +12,7 @@ import {
   markStepDone,
   prepareNextStep,
   executePostApplyCommand,
+  extractMarkdownToYaml,
 } from './actions.js';
 import { convertMarkdownToYaml, findYamlStart, cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
@@ -37,6 +38,10 @@ program
   .option('--plan-editor', 'Open plan in editor')
   .option('--autofind', 'Automatically find relevant files based on plan')
   .option('--quiet', 'Suppress informational output')
+  .option(
+    '--no-extract',
+    'Do not automatically run the extract command after generating the prompt'
+  )
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (options, command) => {
@@ -121,11 +126,50 @@ program
         '--',
         ...additionalFiles,
         '--bare',
+        '--copy',
         '--instructions',
         `@${tmpPromptPath}`,
       ];
       const proc = logSpawn(rmfilterFullArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
       exitRes = await proc.exited;
+
+      if (exitRes === 0 && !options.noExtract) {
+        log(
+          'Please paste the prompt into the chat interface and copy the response. Press Enter to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.'
+        );
+
+        // Wait for Enter key
+        await new Promise<void>((resolve, reject) => {
+          process.stdin.setRawMode(true);
+          process.stdin.resume();
+          process.stdin.on('data', (data) => {
+            if (data[0] === 0x0d || data[0] === 0x0a) {
+              // Enter key
+              process.stdin.setRawMode(false);
+              process.stdin.pause();
+              resolve();
+            }
+          });
+        });
+
+        let input = await clipboardy.read();
+        let outputFilename: string | undefined;
+        if (options.plan) {
+          outputFilename = path.join(
+            path.dirname(options.plan),
+            path.basename(options.plan, '.md') + '.yml'
+          );
+        }
+        const outputYaml = await extractMarkdownToYaml(input, options.quiet ?? false);
+        if (outputFilename) {
+          await Bun.write(outputFilename, outputYaml);
+          if (!options.quiet) {
+            log(`Wrote result to ${outputFilename}`);
+          }
+        } else {
+          console.log(outputYaml);
+        }
+      }
     } finally {
       if (wrotePrompt) {
         try {
@@ -171,62 +215,24 @@ program
       );
     }
 
-    let validatedPlan: unknown;
-
-    let convertedYaml: string;
     try {
-      // First try to see if it's YAML already.
-      let maybeYaml = findYamlStart(inputText);
-      const parsedObject = yaml.parse(maybeYaml);
-      convertedYaml = yaml.stringify(parsedObject);
-    } catch {
-      // Print output if:
-      // - no output file was provided
-      // - --quiet was not set
-      let streamToConsole = !options.output || !options.quiet;
-      const numLines = inputText.split('\n').length;
-      if (!options.quiet) {
-        warn(`\n## Converting ${numLines} lines of Markdown to YAML\n`);
+      const outputYaml = await extractMarkdownToYaml(inputText, options.quiet ?? false);
+      if (options.output) {
+        let outputFilename = options.output;
+        if (outputFilename.endsWith('.md')) {
+          outputFilename = outputFilename.slice(0, -3);
+          outputFilename += '.yml';
+        }
+        await Bun.write(outputFilename, outputYaml);
+        if (!options.quiet) {
+          log(`Wrote result to ${outputFilename}`);
+        }
+      } else {
+        console.log(outputYaml);
       }
-      convertedYaml = await convertMarkdownToYaml(inputText, !streamToConsole);
-    }
-
-    // Now, try to parse and validate the YAML returned by the LLM
-    try {
-      const parsedObject = yaml.parse(convertedYaml);
-      const result = planSchema.safeParse(parsedObject);
-      if (!result.success) {
-        error('Validation errors after LLM conversion:', result.error);
-        // Optionally save the failed YAML for debugging
-        await Bun.write('rmplan-validation-failure.yml', convertedYaml);
-        console.error('Invalid YAML (saved to rmplan-validation-failure.yml):', convertedYaml);
-        process.exit(1);
-      }
-      validatedPlan = result.data;
     } catch (e) {
-      // Save the failed YAML for debugging
-      await Bun.write('rmplan-conversion-failure.yml', convertedYaml);
-      error(
-        'Failed to parse YAML output from LLM conversion. Saved raw output to rmplan-conversion-failure.yml'
-      );
-      error('Parsing error:', e);
       process.exit(1);
     }
-
-    const outputYaml = yaml.stringify(validatedPlan);
-
-    if (options.output) {
-      let outputFilename = options.output;
-      if (outputFilename.endsWith('.md')) {
-        outputFilename = outputFilename.slice(0, -3);
-        outputFilename += '.yml';
-      }
-      await Bun.write(outputFilename, outputYaml);
-      if (!options.quiet) {
-        log(`Wrote result to ${outputFilename}`);
-      }
-    }
-    // else we already wrote to the console in convertMarkdownToYaml, so don't here
   });
 
 program

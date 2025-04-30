@@ -29,6 +29,7 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
+import { noArtifacts } from '../editor/fragments.ts';
 
 const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
 
@@ -477,6 +478,9 @@ const getGuidelinesTag = () => {
     guidelines.push(
       `<guideline>Pay careful attention to the scope of the user's request. Do what they ask, but no more. Feel free to add and update tests though as appropriate.</guideline>`
     );
+  }
+  if (modelSettings.noArtifacts) {
+    guidelines.push(`<guideline>${noArtifacts}</guideline>`);
   }
   return `<guidelines>\n${guidelines.join('\n')}\n</guidelines>`;
 };

@@ -1,1 +1,1 @@
-export const noArtifacts = `Do not create "artifacts", but even if you do, the content of any artifacts must conform to this output format.`;
+export const noArtifacts = `Code changes should be written as regular output. Do not create artifacts for the code output.`;

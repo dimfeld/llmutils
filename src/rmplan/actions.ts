@@ -12,6 +12,7 @@ import type { PlanSchema } from './planSchema.js';
 import { planSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { error, log, warn } from '../logging.js';
+import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 
 interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -476,4 +477,48 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
 
   log(`Post-apply command "${commandConfig.title}" completed successfully.`);
   return true; // Indicate success
+}
+
+export async function extractMarkdownToYaml(inputText: string, quiet: boolean): Promise<string> {
+  let validatedPlan: unknown;
+  let convertedYaml: string;
+
+  try {
+    // First try to see if it's YAML already.
+    let maybeYaml = findYamlStart(inputText);
+    const parsedObject = yaml.parse(maybeYaml);
+    convertedYaml = yaml.stringify(parsedObject);
+  } catch {
+    // Print output if not quiet
+    const streamToConsole = !quiet;
+    const numLines = inputText.split('\n').length;
+    if (!quiet) {
+      warn(`\n## Converting ${numLines} lines of Markdown to YAML\n`);
+    }
+    convertedYaml = await convertMarkdownToYaml(inputText, !streamToConsole);
+  }
+
+  // Parse and validate the YAML
+  try {
+    const parsedObject = yaml.parse(convertedYaml);
+    const result = planSchema.safeParse(parsedObject);
+    if (!result.success) {
+      error('Validation errors after LLM conversion:', result.error);
+      // Save the failed YAML for debugging
+      await Bun.write('rmplan-validation-failure.yml', convertedYaml);
+      console.error('Invalid YAML (saved to rmplan-validation-failure.yml):', convertedYaml);
+      throw new Error('Validation failed');
+    }
+    validatedPlan = result.data;
+  } catch (e) {
+    // Save the failed YAML for debugging
+    await Bun.write('rmplan-conversion-failure.yml', convertedYaml);
+    error(
+      'Failed to parse YAML output from LLM conversion. Saved raw output to rmplan-conversion-failure.yml'
+    );
+    error('Parsing error:', e);
+    throw e;
+  }
+
+  return yaml.stringify(validatedPlan);
 }

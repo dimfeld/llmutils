@@ -1,6 +1,7 @@
 # April 30, 2025
 
 - Show reasoning output when running code prompts for models that make it available
+- `rmplan generate` command waits for user to copy Markdown response and then runs extract
 
 # April 29, 2025
 

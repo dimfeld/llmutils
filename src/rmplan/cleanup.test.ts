@@ -1,4 +1,4 @@
-import { test, expect } from 'bun:test';
+import { test, expect, mock } from 'bun:test';
 import { cleanComments } from './cleanup';
 
 test('cleanComments removes TypeScript EOL comments', () => {
