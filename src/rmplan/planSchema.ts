@@ -8,9 +8,11 @@ export const planSchema = z.object({
       title: z.string(),
       description: z.string(),
       files: z.array(z.string()),
+      examples: z.array(z.string()).optional(),
       steps: z.array(
         z.object({
           prompt: z.string(),
+          examples: z.array(z.string()).optional(),
           done: z.boolean().default(false),
         })
       ),

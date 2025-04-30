@@ -538,6 +538,11 @@ export async function extractMarkdownToYaml(inputText: string, quiet: boolean): 
     convertedYaml = await convertMarkdownToYaml(inputText, !streamToConsole);
   }
 
+  if (!convertedYaml.startsWith('# yaml-language-server')) {
+    const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+    convertedYaml = schemaLine + '\n' + convertedYaml;
+  }
+
   // Parse and validate the YAML
   try {
     const parsedObject = yaml.parse(convertedYaml);

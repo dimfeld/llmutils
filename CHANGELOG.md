@@ -4,6 +4,7 @@
 - `rmplan generate` command waits for user to copy Markdown response and then runs extract
 - Skip writing new files that contain a space in the path. These often indicate comments from the model. (A better heuristic may be useful here.)
 - Add `hideOutputOnSuccess` option to `postApplyCommands` to only show the output on failure
+- Add JSON schema for rmplan plan files and reference it in generated YAML
 
 # April 29, 2025
 
