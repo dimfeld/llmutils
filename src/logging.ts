@@ -14,6 +14,12 @@ export async function closeLogFile(): Promise<void> {
   await logFile?.end();
 }
 
+/** Only write to the log file without outputting anywhere else.
+ * Useful when you are doing something custom. */
+export function writeLogFile(data: string) {
+  logFile?.write(data);
+}
+
 export function log(...args: any[]) {
   console.log(...args);
   logFile?.write(args.join(' ') + '\n');
@@ -31,6 +37,11 @@ export function warn(...args: any[]) {
 
 export function writeStdout(data: string) {
   process.stdout.write(data);
+  logFile?.write(data);
+}
+
+export function writeStderr(data: string) {
+  process.stderr.write(data);
   logFile?.write(data);
 }
 
