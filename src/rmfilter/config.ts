@@ -8,6 +8,22 @@ import { z } from 'zod';
 import { debugLog, error, log } from '../logging.ts';
 import { getGitRoot } from './utils.ts';
 
+export interface ModelPreset {
+  noArtifacts?: boolean;
+  defaultEditFormat?: 'diff';
+  overeager?: boolean;
+}
+
+export const modelPresets = {
+  gemini: {
+    overeager: true,
+  },
+  grok: {
+    noArtifacts: true,
+    defaultEditFormat: 'diff',
+  },
+} satisfies Record<string, ModelPreset>;
+
 // Zod schemas for YAML validation
 // Put this comment at the top of your YAML file to reference the schema:
 // # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json
@@ -197,6 +213,7 @@ export async function getCurrentConfig() {
     'list-presets': { type: 'boolean' },
     new: { type: 'string' },
     compress: { type: 'boolean' },
+    model: { type: 'string', short: 'm' },
   } as const;
 
   // Define command-specific options
@@ -361,6 +378,7 @@ Global Options:
   --omit-cursorrules        Skip loading .cursorrules
   --no-autodocs             Disable automatic loading of .mdc rule/doc files
   --instructions-editor     Open editor for instructions in $EDITOR
+  -m, --model <grok|gemini> Set presets for certain models
 
 Command Options (per command):
   -g, --grep <patterns>     Include files matching these patterns

@@ -18,13 +18,20 @@ import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/add
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { Extractor } from '../treesitter/extract.ts';
-import { getCurrentConfig, listPresets, writeSampleConfig } from './config.ts';
-// [1] Import MDC functions and type
-import { findMdcFiles, parseMdcFile, filterMdcFiles, type MdcFile } from './mdc.ts';
+import {
+  getCurrentConfig,
+  listPresets,
+  modelPresets,
+  writeSampleConfig,
+  type ModelPreset,
+} from './config.ts';
+import { type MdcFile } from './mdc.ts';
 import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
+
+import { noArtifacts } from '../editor/fragments.ts';
 
 const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
 
@@ -43,6 +50,17 @@ if (globalValues['list-presets']) {
   await listPresets();
   process.exit(0);
 }
+
+if (globalValues.model && !Object.keys(modelPresets).includes(globalValues.model)) {
+  error(
+    `Invalid model: ${globalValues.model}. Must be one of ${Object.keys(modelPresets).join(', ')}`
+  );
+  process.exit(1);
+}
+
+const modelSettings: ModelPreset = globalValues.model
+  ? modelPresets[globalValues.model as keyof typeof modelPresets] || {}
+  : {};
 
 // Validate edit-format
 if (
@@ -412,11 +430,9 @@ await Promise.all(
   })
 );
 
-let filteredMdcFiles: MdcFile[] = [];
-
 // Handle output
 const outputFile = globalValues.output ?? (await getOutputPath());
-const editFormat = globalValues['edit-format'] || 'udiff-simple';
+const editFormat = globalValues['edit-format'] || modelSettings.defaultEditFormat || 'udiff-simple';
 
 const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
 
@@ -455,13 +471,20 @@ const repomixOutput = allPaths.length
     )
   : '';
 
-const guidelinesTag = `<guidelines>
-<guideline>When making a change, update related tests.</guideline>
-<guideline>Leave existing comments and docstrings alone unless updating them is relevant to the change.</guideline>
-<guideline>It is ok for *existing* comments to seem redundant or obvious, as long as they are correct.</guideline>
-<guideline>New comments should explain why something is being done if it isn't obvious. They should not explain what is being done if it is obvious.</guideline>
-<guideline>Pay careful attention to the scope of the user's request. Do what they ask, but no more. Feel free to add and update tests though as appropriate.</guideline>
-</guidelines>`;
+const getGuidelinesTag = () => {
+  const guidelines = [
+    `<guideline>When making a change, update related tests.</guideline>`,
+    `<guideline>Leave existing comments and docstrings alone unless updating them is relevant to the change.</guideline>`,
+    `<guideline>It is ok for *existing* comments to seem redundant or obvious, as long as they are correct.</guideline>`,
+    `<guideline>New comments should explain why something is being done if it isn't obvious. They should not explain what is being done if it is obvious.</guideline>`,
+  ];
+  if (modelSettings.overeager) {
+    guidelines.push(
+      `<guideline>Pay careful attention to the scope of the user's request. Do what they ask, but no more. Feel free to add and update tests though as appropriate.</guideline>`
+    );
+  }
+  return `<guidelines>\n${guidelines.join('\n')}\n</guidelines>`;
+};
 
 debugLog({
   repomixOutput: repomixOutput.length,
@@ -481,13 +504,13 @@ const finalOutput = [
   examplesTag,
   docsTag,
   rulesTag,
-  editFormat === 'whole-xml' && notBare ? xmlFormatPrompt : '',
-  editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt : '',
-  editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt : '',
-  editFormat === 'diff-fenced' && notBare ? diffFilenameInsideFencePrompt : '',
-  editFormat === 'udiff-simple' && notBare ? udiffPrompt : '',
-  editFormat === 'whole-file' && notBare ? generateWholeFilePrompt : '',
-  notBare ? guidelinesTag : '',
+  editFormat === 'whole-xml' && notBare ? xmlFormatPrompt(modelSettings) : '',
+  editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
+  editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt(modelSettings) : '',
+  editFormat === 'diff-fenced' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
+  editFormat === 'udiff-simple' && notBare ? udiffPrompt(modelSettings) : '',
+  editFormat === 'whole-file' && notBare ? generateWholeFilePrompt(modelSettings) : '',
+  notBare ? getGuidelinesTag() : '',
   instructionsTag,
 ]
   .filter(Boolean)

@@ -26,6 +26,7 @@ assume a repository written with Typescript and PNPM workspaces.
   - [MDC File Support](#mdc-file-support)
     - [Key Features of MDC Support](#key-features-of-mdc-support)
     - [MDC File Format](#mdc-file-format)
+  - [Model Presets](#model-presets)
 - [rmfind](#rmfind)
   - [Key Features](#key-features)
   - [Usage](#usage)
@@ -45,6 +46,7 @@ assume a repository written with Typescript and PNPM workspaces.
   - [Applying LLM Edits](#applying-llm-edits)
 
 ### Notes on Links
+
 - The anchor links (`#section-name`) are generated based on GitHub's automatic heading ID creation, which converts headings to lowercase, replaces spaces with hyphens, and removes special characters.
 - Some subsections (e.g., "Scripts Overview") are implied from the content structure but not explicitly named in the README. They are included for clarity.
 - The links assume the README is viewed on GitHub at `https://github.com/dimfeld/llmutils/blob/main/README.md`.
@@ -186,6 +188,13 @@ Docs for Superforms would go here
 
 - **Frontmatter Fields**: Includes `description` (purpose of the rule), `globs` (file patterns), `grep` (search terms), `type` (docs or rules), and optional fields like `name` or `metadata`.
 - **Body**: Contains the rules or documentation in Markdown, often with coding standards or AI instructions.
+
+### Model Presets
+
+The `--model` option can be passed to `rmfilter` to configure settings for particular AI models. The supported options are:
+
+- `--model grok`: Sets the edit format to `diff` and adds an instruction to the prompt about not creating artifacts.
+- `--model gemini`: Adds an "overeager" guideline to the prompt (copied from Aider) about closely keeping to the scope of the task.
 
 ## rmfind
 
@@ -333,6 +342,7 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 ```
 
 **Notes:**
+
 - The command only removes comments that appear after code on the same line, preserving standalone comment lines and empty lines.
 - Files must exist and have a supported extension to be processed.
 - Use `--diff-from` to specify a different base branch for determining changed files when no files are provided.
@@ -352,16 +362,16 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 
 `rmplan` can be configured using a YAML file to customize its behavior.
 
-*   **Location**: By default, `rmplan` looks for a configuration file at `.rmfilter/config/rmplan.yml` relative to the Git repository root.
-*   **Override**: You can specify a different configuration file using the global `--config <path>` option.
-*   **Schema**: The configuration format is defined by a JSON schema, available at `https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json`. You can reference this schema in your YAML file for editor support:
-    ```yaml
-    # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
-    ```
+- **Location**: By default, `rmplan` looks for a configuration file at `.rmfilter/config/rmplan.yml` relative to the Git repository root.
+- **Override**: You can specify a different configuration file using the global `--config <path>` option.
+- **Schema**: The configuration format is defined by a JSON schema, available at `https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json`. You can reference this schema in your YAML file for editor support:
+  ```yaml
+  # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+  ```
 
 #### Post-Apply Commands
 
-The primary configuration option currently available is `postApplyCommands`. This allows you to define commands that should be executed automatically by the `rmplan agent` after it successfully applies changes from the LLM but *before* it marks the step as done and commits. This is useful for tasks like code formatting or linting.
+The primary configuration option currently available is `postApplyCommands`. This allows you to define commands that should be executed automatically by the `rmplan agent` after it successfully applies changes from the LLM but _before_ it marks the step as done and commits. This is useful for tasks like code formatting or linting.
 
 **Example `.rmfilter/config/rmplan.yml`:**
 
@@ -382,11 +392,12 @@ postApplyCommands:
 ```
 
 **Fields:**
-*   `title`: (Required) A short description logged when the command runs.
-*   `command`: (Required) The command line string to execute.
-*   `allowFailure`: (Optional) Boolean, defaults to `false`. If `false`, the agent will stop if the command exits with a non-zero status.
-*   `workingDirectory`: (Optional) String path relative to the repository root where the command should be executed. Defaults to the repository root.
-*   `env`: (Optional) An object mapping environment variable names to string values for the command's execution context.
+
+- `title`: (Required) A short description logged when the command runs.
+- `command`: (Required) The command line string to execute.
+- `allowFailure`: (Optional) Boolean, defaults to `false`. If `false`, the agent will stop if the command exits with a non-zero status.
+- `workingDirectory`: (Optional) String path relative to the repository root where the command should be executed. Defaults to the repository root.
+- `env`: (Optional) An object mapping environment variable names to string values for the command's execution context.
 
 ## Usage Examples
 

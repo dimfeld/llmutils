@@ -1,8 +1,9 @@
+import type { ModelPreset } from '../../rmfilter/config.ts';
 import { noArtifacts } from '../fragments.ts';
 
 const fence = '```';
 
-export const diffFilenameOutsideFencePrompt = `<formatting>
+export const diffFilenameOutsideFencePrompt = (settings: ModelPreset) => `<formatting>
 # *SEARCH/REPLACE block* Rules:
 
 Prefer to generate partial diffs of files when most of the file remains unchanged. Use SEARCH/REPLACE blocks for this.
@@ -45,7 +46,7 @@ To rename files, use shell commands at the end of your response.
 If the user just says something like "ok" or "go ahead" or "do that" they probably want you to make SEARCH/REPLACE blocks for the code changes you just proposed.
 The user will say when they've applied your edits. If they haven't explicitly confirmed the edits have been applied, they probably want proper SEARCH/REPLACE blocks.
 
-${noArtifacts};
+${settings.noArtifacts ? '\n' + noArtifacts : ''}
 
 ONLY EVER RETURN CODE IN A *SEARCH/REPLACE BLOCK*!
 
@@ -121,7 +122,7 @@ ${fence}
 
 </formatting>`;
 
-export const diffFilenameInsideFencePrompt = `<formatting>
+export const diffFilenameInsideFencePrompt = (settings: ModelPreset) => `<formatting>
 # *SEARCH/REPLACE block* Rules:
 
 Prefer to generate partial diffs of files when most of the file remains unchanged. Use SEARCH/REPLACE blocks for this.
@@ -163,8 +164,7 @@ To rename files, use shell commands at the end of your response.
 
 If the user just says something like "ok" or "go ahead" or "do that" they probably want you to make SEARCH/REPLACE blocks for the code changes you just proposed.
 The user will say when they've applied your edits. If they haven't explicitly confirmed the edits have been applied, they probably want proper SEARCH/REPLACE blocks.
-
-${noArtifacts};
+${settings.noArtifacts ? '\n' + noArtifacts : ''}
 
 ONLY EVER RETURN CODE IN A *SEARCH/REPLACE BLOCK*!
 

@@ -1,4 +1,7 @@
-export const xmlFormatPrompt = `<formatting>
+import type { ModelPreset } from '../../rmfilter/config.ts';
+import { noArtifacts } from '../fragments.ts';
+
+export const xmlFormatPrompt = (settings: ModelPreset) => `<formatting>
 At the end of your response, respond with the following XML section (if applicable).
 
 XML Section:
@@ -29,4 +32,5 @@ __FULL FILE CODE HERE__
 Other rules:
 - DO NOT add comments related to your edits
 - DO NOT remove my existing comments
+${settings.noArtifacts ? '- ' + noArtifacts : ''}
 </formatting>`;

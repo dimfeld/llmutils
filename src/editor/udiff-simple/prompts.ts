@@ -1,8 +1,9 @@
+import type { ModelPreset } from '../../rmfilter/config.ts';
 import { noArtifacts } from '../fragments.ts';
 
 const fence = '```';
 
-export const udiffPrompt = `<formatting>
+export const udiffPrompt = (settings: ModelPreset) => `<formatting>
 # File Output Rules
 
 When editing files or creating new files, generate edits similar to unified diffs that \`diff -U0\` would produce. Put these diffs inside a markdown
@@ -48,7 +49,7 @@ ${fence}
 </formatting_example>
 
 Always use this diff format when writing files, whether they are edits to existing files or new files.
-${noArtifacts};
+${settings.noArtifacts ? '\n' + noArtifacts : ''}
 
 </formatting>
 `;

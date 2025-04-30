@@ -1,4 +1,7 @@
-export const generateWholeFilePrompt = `<formatting>
+import type { ModelPreset } from '../../rmfilter/config.ts';
+import { noArtifacts } from '../fragments.ts';
+
+export const generateWholeFilePrompt = (settings: ModelPreset) => `<formatting>
 When generating file edits, print the path of the file to edit, followed by a markdown-style triple-tick code block with the full contents of the file.
 
 <format_rule>Always use the *FULL* file path, as shown to you by the user.</format_rule>
@@ -10,6 +13,7 @@ When generating file edits, print the path of the file to edit, followed by a ma
 <format_rule>Do not add comments related to your edits.</format_rule>
 <format_rule>Do not remove my existing comments.</format_rule>
 <format_rule>The <file> and </file> tags in the context are not part of the file contents and should be omitted</format_rule>
+${settings.noArtifacts ? '<format_rule>' + noArtifacts + '</format_rule>' : ''}
 
 <format_example>
 apps/web/src/lib/data/process.ts
