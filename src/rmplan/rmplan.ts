@@ -329,7 +329,7 @@ program
 
     const config = await loadEffectiveConfig(options.config);
 
-    log('Starting agent to execute plan:', planFile /*, 'with config:', config */); // Keep config log minimal for now
+    log('Starting agent to execute plan:', planFile /*, 'with config:', config */);
     try {
       let hasError = false;
 
@@ -418,11 +418,11 @@ program
               // Error logging is handled within executePostApplyCommand
               error(`Agent stopping because required command "${commandConfig.title}" failed.`);
               hasError = true;
-              break; // Exit post-apply command loop
+              break;
             }
           }
           if (hasError) {
-            break; // Exit main agent while loop
+            break;
           }
         }
         // ---> END NEW SECTION <---

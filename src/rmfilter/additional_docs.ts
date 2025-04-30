@@ -195,7 +195,7 @@ export async function gatherDocsInternal(
   }
 
   // [4] Refactor Rules Processing
-  const manualRulesContent: string[] = []; // Rename rulesContent
+  const manualRulesContent: string[] = [];
   for (let pattern of values.rules || []) {
     // simple check, should be better
     if (pattern.startsWith('~/')) {
@@ -249,7 +249,7 @@ export async function gatherDocsInternal(
   }
 
   // Generate the final <rules> tag
-  let rulesOutputTag = ''; // Rename rulesTag
+  let rulesOutputTag = '';
   if (allRulesData.length > 0) {
     const ruleTags = allRulesData
       .map((rule) => {
