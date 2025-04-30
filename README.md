@@ -218,7 +218,8 @@ You can find the task plans for this repository under the "tasks" directory.
 
 The general usage pattern is that you will:
 
-1. Use the `generate` command to generate a planning prompt.
+1. Use the `generate` command to generate a planning prompt. Pass `rmfilter` arguments after a `--` to add the appropriate files to
+   inform the generation.
 2. Paste the output of that into a language model. As of April 2025, Google Gemini 2.5 Pro is probably the best choice.
 3. Copy its output to the clipboard or a file.
 4. Use the `extract` command to extract the plan Markdown to a YAML file.
@@ -236,8 +237,8 @@ Run `rmplan` with different commands to manage project plans:
 # Generate a plan from a text file and pass extra args to rmfilter
 rmplan generate --plan plan.txt -- src/**/*.ts --grep auth
 
-# Open an editor to write a plan and generate a prompt
-rmplan generate --plan-editor
+# Open an editor to write a plan and generate a prompt, and include apps/web as context
+rmplan generate --plan-editor -- apps/web
 
 # Extract and validate a plan from a file
 rmplan extract output.txt --output plan.yml
