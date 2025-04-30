@@ -330,14 +330,14 @@ export function parseJjRename(line: string): string {
   return `${prefix}${after || ''}${suffix}`;
 }
 
-export async function getDiffTag(
+/**
+ * Gets the list of changed files compared to a base branch
+ */
+export async function getChangedFiles(
   gitRoot: string,
-  values: { 'with-diff'?: boolean; 'diff-from'?: string; 'changed-files'?: boolean }
-) {
-  let baseBranch: string | undefined;
-  if (values['diff-from']) {
-    baseBranch = values['diff-from'];
-  } else if (values['with-diff'] || values['changed-files']) {
+  baseBranch?: string
+): Promise<string[]> {
+  if (!baseBranch) {
     // Try to get default branch from git config
     baseBranch = (
       await $`git config --get init.defaultBranch`.cwd(gitRoot).nothrow().text()
@@ -348,14 +348,66 @@ export async function getDiffTag(
       const defaultBranch = (await $`git branch --list main master`.cwd(gitRoot).nothrow().text())
         .replace('*', '')
         .trim();
-
-      baseBranch = defaultBranch || 'main'; // Fallback to 'main'
+      baseBranch = defaultBranch || 'main';
     }
   }
 
+  if (!baseBranch) {
+    debugLog('[ChangedFiles] Could not determine base branch.');
+    return [];
+  }
+
+  const excludeFiles = [
+    'pnpm-lock.yaml',
+    'bun.lockb',
+    'package-lock.json',
+    'bun.lock',
+    'yarn.lock',
+    'Cargo.lock',
+  ];
+
+  let changedFiles: string[] = [];
+  if (await getUsingJj()) {
+    const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join('&');
+    const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
+    let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(gitRoot).nothrow().text();
+    changedFiles = summ
+      .split('\n')
+      .map((line) => {
+        line = line.trim();
+        if (!line || line.startsWith('D')) {
+          return '';
+        }
+        if (line.startsWith('R')) {
+          return parseJjRename(line);
+        }
+        return line.slice(2);
+      })
+      .filter((line) => !!line);
+  } else {
+    const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
+    let summ = await $`git diff --name-only ${baseBranch} ${exclude}`
+      .cwd(gitRoot)
+      .nothrow()
+      .text();
+    changedFiles = summ
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => !!line);
+  }
+
+  return changedFiles;
+}
+
+export async function getDiffTag(
+  gitRoot: string,
+  values: { 'with-diff'?: boolean; 'diff-from'?: string; 'changed-files'?: boolean }
+) {
+  let baseBranch: string | undefined = values['diff-from'];
+
   // If a base branch is needed (for diff or changed-files) but couldn't be determined, return empty.
   if ((values['with-diff'] || values['changed-files']) && !baseBranch) {
-    debugLog('[Diff] Could not determine base branch for diff/changed-files.');
+    debugLog('[Diff] Could not determine base branche for diff/changed-files.');
     return { diffTag: '', changedFiles: [] };
   }
 
@@ -389,25 +441,7 @@ export async function getDiffTag(
     }
 
     if (values['changed-files']) {
-      let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(gitRoot).nothrow().text();
-      changedFiles = summ
-        .split('\n')
-        .map((line) => {
-          line = line.trim();
-
-          // Ignore deleted files
-          if (!line || line.startsWith('D')) {
-            return '';
-          }
-
-          if (line.startsWith('R')) {
-            return parseJjRename(line);
-          }
-
-          // M file/name
-          return line.slice(2);
-        })
-        .filter((line) => !!line);
+      changedFiles = await getChangedFiles(gitRoot, baseBranch);
     }
   } else {
     const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
@@ -417,14 +451,7 @@ export async function getDiffTag(
     }
 
     if (values['changed-files'] && baseBranch) {
-      let summ = await $`git diff --name-only ${baseBranch} ${exclude}`
-        .cwd(gitRoot)
-        .nothrow()
-        .text();
-      changedFiles = summ
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => !!line);
+      changedFiles = await getChangedFiles(gitRoot, baseBranch);
     }
   }
 

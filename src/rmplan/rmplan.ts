@@ -14,7 +14,7 @@ import {
   runAndApplyChanges,
   executePostApplyCommand,
 } from './actions.js';
-import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
+import { convertMarkdownToYaml, findYamlStart, cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
@@ -295,6 +295,19 @@ program
       }
     } catch (err) {
       error('Failed to process plan file:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('cleanup [files...]')
+  .description('Remove end-of-line comments from changed files or specified files')
+  .option('--diff-from <branch>', 'Base branch for diff comparison when no files provided')
+  .action(async (files, options) => {
+    try {
+      await cleanupEolComments(options.diffFrom, files);
+    } catch (err) {
+      error('Failed to cleanup comments:', err);
       process.exit(1);
     }
   });
