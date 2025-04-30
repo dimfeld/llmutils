@@ -3,8 +3,11 @@ import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
 import { applyLlmEdits } from './apply-llm-edits/apply.ts';
 import { log } from './logging.ts';
+import { streamText } from 'ai';
+import { createModel } from './common/model_factory.ts';
+import { streamResultToConsole } from './common/llm.ts';
 
-const DEFAULT_RUN_MODEL = 'gemini-2.5-pro-exp-03-25';
+const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro-exp-03-25';
 const { values, positionals } = parseArgs({
   arg: Bun.argv,
   options: {
@@ -26,7 +29,10 @@ Options:
 
 let input: string;
 let filename = positionals[0] || 'repomix-output.xml';
-if (await Bun.file(filename).exists()) {
+if (!process.stdin.isTTY) {
+  log('Reading from stdin');
+  input = await Bun.stdin.text();
+} else if (await Bun.file(filename).exists()) {
   log(`Reading from ${filename}`);
   input = await Bun.file(filename).text();
 } else {
@@ -35,32 +41,27 @@ if (await Bun.file(filename).exists()) {
   process.exit(1);
 }
 
-const llm = Bun.spawn({
-  cmd: ['llm', '-m', values.model, '-o', 'temperature', '0'],
-  stdin: new TextEncoder().encode(input),
-  stdout: 'pipe',
+const outputFile = Bun.file('repomix-result.txt');
+// Bun won't truncate the existing content when using a file writer
+await outputFile.unlink();
+const fileWriter = outputFile.writer();
+
+const result = streamText({
+  model: createModel(values.model),
+  temperature: 0,
+  prompt: input,
 });
 
-const consoleWriter = Bun.spawn(['bat', '--language=md', '-pp'], {
-  stdin: 'pipe',
-  stdout: 'inherit',
+await streamResultToConsole(result, {
+  format: true,
+  showReasoning: true,
+  cb: (text: string) => {
+    fileWriter.write(new TextEncoder().encode(text));
+  },
 });
 
-const outputFile = Bun.file('repomix-result.txt').writer();
-
-let decoder = new TextDecoder();
-const chunks: string[] = [];
-for await (const chunk of llm.stdout) {
-  outputFile.write(chunk);
-  consoleWriter.stdin.write(chunk);
-  chunks.push(decoder.decode(chunk, { stream: true }));
-}
-
-await consoleWriter.stdin.end();
-await outputFile.end();
-
+await fileWriter.end();
 log('\nWrote to repomix-result.txt. Applying...');
 
-const content = chunks.join('');
-log('Applying changes...');
+const content = await result.text;
 await applyLlmEdits({ content });

@@ -1,5 +1,5 @@
 import type { StreamTextResult, ToolSet } from 'ai';
-import { writeStderr, writeStdout } from '../logging.ts';
+import { writeLogFile, writeStderr, writeStdout } from '../logging.ts';
 
 /** Use `bat` to format Markdown text as it streams through. We use bat instead of a JS-native solution
  * since it works better for streaming markdown. */
@@ -7,19 +7,23 @@ class MarkdownBuffer {
   push: (text: string) => void;
 
   batProcess: Bun.PipedSubprocess;
+  decoder = new TextDecoder();
+  handleStreamPromise: Promise<void>;
 
   constructor(callback: (text: string) => void, language = 'md') {
     this.push = callback;
-    this.batProcess = Bun.spawn(['bat', `--language=${language}`, '-pp'], {
+    this.batProcess = Bun.spawn(['bat', `--language=${language}`, '-pp', '--color=always'], {
       stdin: 'pipe',
       stdout: 'pipe',
       stderr: 'pipe',
     });
+
+    this.handleStreamPromise = this.handleStream(this.batProcess.stdout);
   }
 
   async handleStream(stdout: ReadableStream<Uint8Array>) {
     for await (const chunk of stdout) {
-      let str = chunk.toString();
+      let str = this.decoder.decode(chunk, { stream: true });
       this.push(str);
     }
   }
@@ -35,6 +39,7 @@ class MarkdownBuffer {
   async done() {
     await this.batProcess.stdin.end();
     await this.batProcess.exited;
+    await this.handleStreamPromise;
   }
 }
 
@@ -54,27 +59,44 @@ class PassthroughBuffer {
 export interface HandleStreamTextResultOptions {
   format?: boolean;
   showReasoning?: boolean;
+  /** An additional callback to handle the text. This gets the raw text, not the formatted text */
+  cb?: (text: string) => void;
 }
 
-/** Stream the text result to the console */
-export async function handleStreamTextResult<T extends ToolSet, U>(
+/** Stream the text result to the console and the log file.
+ *  If `format` is true, the console output is formatted as markdown.
+ * */
+export async function streamResultToConsole<T extends ToolSet, U>(
   result: StreamTextResult<T, U>,
-  { format = false, showReasoning = false }: HandleStreamTextResultOptions = {}
+  { format = false, showReasoning = false, cb }: HandleStreamTextResultOptions = {}
 ): Promise<StreamTextResult<T, U>> {
+  const stderrWriter = (text: string) => process.stderr.write(text);
+  const stdoutWriter = (text: string) => process.stdout.write(text);
+
   let reasoningRenderer: MarkdownBuffer | PassthroughBuffer | undefined =
-    format && showReasoning ? new MarkdownBuffer(writeStderr) : new PassthroughBuffer(writeStderr);
-  let textRenderer = format ? new MarkdownBuffer(writeStdout) : new PassthroughBuffer(writeStdout);
+    format && showReasoning
+      ? new MarkdownBuffer(stderrWriter)
+      : new PassthroughBuffer(stderrWriter);
+  let textRenderer = format
+    ? new MarkdownBuffer(stdoutWriter)
+    : new PassthroughBuffer(stdoutWriter);
 
   try {
     for await (const chunk of result.fullStream) {
       if (chunk.type === 'reasoning') {
         reasoningRenderer?.add(chunk.textDelta);
+        writeLogFile(chunk.textDelta);
       } else if (chunk.type === 'text-delta') {
         if (reasoningRenderer) {
+          // When we see the first text chunk, reasoning is over
+          reasoningRenderer.add('\n');
+          writeLogFile('\n');
           await reasoningRenderer.done();
           reasoningRenderer = undefined;
         }
         textRenderer.add(chunk.textDelta);
+        writeLogFile(chunk.textDelta);
+        cb?.(chunk.textDelta);
       }
     }
     textRenderer.add('\n');
