@@ -1,5 +1,5 @@
 import type { StreamTextResult, ToolSet } from 'ai';
-import { writeLogFile, writeStderr, writeStdout } from '../logging.ts';
+import { writeLogFile } from '../logging.ts';
 
 /** Use `bat` to format Markdown text as it streams through. We use bat instead of a JS-native solution
  * since it works better for streaming markdown. */
@@ -68,7 +68,7 @@ export interface HandleStreamTextResultOptions {
  * */
 export async function streamResultToConsole<T extends ToolSet, U>(
   result: StreamTextResult<T, U>,
-  { format = false, showReasoning = false, cb }: HandleStreamTextResultOptions = {}
+  { format = true, showReasoning = true, cb }: HandleStreamTextResultOptions = {}
 ): Promise<StreamTextResult<T, U>> {
   const stderrWriter = (text: string) => process.stderr.write(text);
   const stdoutWriter = (text: string) => process.stdout.write(text);
@@ -94,7 +94,9 @@ export async function streamResultToConsole<T extends ToolSet, U>(
           await reasoningRenderer.done();
           reasoningRenderer = undefined;
         }
+
         textRenderer.add(chunk.textDelta);
+        // Log file gets the unformatted text
         writeLogFile(chunk.textDelta);
         cb?.(chunk.textDelta);
       }

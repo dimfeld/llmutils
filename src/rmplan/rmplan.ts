@@ -11,7 +11,6 @@ import {
   findPendingTask,
   markStepDone,
   prepareNextStep,
-  runAndApplyChanges,
   executePostApplyCommand,
 } from './actions.js';
 import { convertMarkdownToYaml, findYamlStart, cleanupEolComments } from './cleanup.js';
@@ -19,6 +18,8 @@ import { loadEffectiveConfig } from './configLoader.js';
 import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
 import { closeLogFile, error, log, openLogFile, warn } from '../logging.js';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
+import { applyLlmEdits } from '../apply-llm-edits/apply.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -402,14 +403,18 @@ program
         }
 
         log('\n## Execution\n');
-        const applySucceeded = await runAndApplyChanges(rmfilterOutputPath).catch((err: Error) => {
-          error('Failed to execute step:', err);
-          hasError = true;
-          return false;
-        });
 
-        if (!applySucceeded) {
-          error('Step execution failed, stopping agent.');
+        try {
+          let input = await Bun.file(rmfilterOutputPath).text();
+          let result = await runStreamingPrompt({
+            input,
+            model: options.model || DEFAULT_RUN_MODEL,
+          });
+
+          let output = await result.text;
+          await applyLlmEdits({ content: output });
+        } catch (err) {
+          error('Execution step failed:', err);
           hasError = true;
           break;
         }

@@ -1,3 +1,7 @@
+# April 30, 2025
+
+- Show reasoning output when running code prompts
+
 # April 29, 2025
 
 - Add comment cleaning command `rmplan cleanup`

@@ -6,8 +6,8 @@ import { log } from './logging.ts';
 import { streamText } from 'ai';
 import { createModel } from './common/model_factory.ts';
 import { streamResultToConsole } from './common/llm.ts';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './common/run_and_apply.ts';
 
-const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro-exp-03-25';
 const { values, positionals } = parseArgs({
   arg: Bun.argv,
   options: {
@@ -46,16 +46,10 @@ const outputFile = Bun.file('repomix-result.txt');
 await outputFile.unlink();
 const fileWriter = outputFile.writer();
 
-const result = streamText({
-  model: createModel(values.model),
-  temperature: 0,
-  prompt: input,
-});
-
-await streamResultToConsole(result, {
-  format: true,
-  showReasoning: true,
-  cb: (text: string) => {
+const result = await runStreamingPrompt({
+  input,
+  model: values.model,
+  handleTextChunk: (text: string) => {
     fileWriter.write(new TextEncoder().encode(text));
   },
 });

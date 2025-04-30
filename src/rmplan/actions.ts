@@ -417,26 +417,6 @@ export async function markStepDone(
   return { planComplete, message };
 }
 
-// Runs rmrun with the provided prompt file and applies changes
-export async function runAndApplyChanges(
-  promptFilePath: string,
-  options?: { model?: string }
-): Promise<boolean> {
-  const args = ['rmrun', promptFilePath];
-  if (options?.model) {
-    args.push('--model', options.model);
-  }
-
-  const proc = logSpawn(args, {
-    stdio: ['inherit', 'inherit', 'inherit'],
-  });
-  const exitCode = await proc.exited;
-  if (exitCode !== 0) {
-    error(`rmrun failed with exit code ${exitCode}`);
-  }
-  return exitCode === 0;
-}
-
 /**
  * Executes a single post-apply command as defined in the configuration.
  * @param commandConfig The configuration object for the command.
