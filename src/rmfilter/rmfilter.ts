@@ -9,15 +9,15 @@ import {
   diffFilenameInsideFencePrompt,
   diffFilenameOutsideFencePrompt,
 } from '../editor/diff-editor/prompts.ts';
+import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
 import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
 import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
-import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
 import { debugLog, error, log } from '../logging.ts';
-import { quiet } from '../rmfilter/utils.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
-import { debug, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { debug, getGitRoot, quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { Extractor } from '../treesitter/extract.ts';
+import clipboard from 'clipboardy';
 import {
   getCurrentConfig,
   listPresets,
@@ -25,13 +25,10 @@ import {
   writeSampleConfig,
   type ModelPreset,
 } from './config.ts';
-import { type MdcFile } from './mdc.ts';
 import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-
-import { noArtifacts } from '../editor/fragments.ts';
 
 const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
 
@@ -552,29 +549,8 @@ if (!globalValues.quiet) {
 }
 
 if (globalValues.copy) {
-  await copyToClipboard(finalOutput);
-}
-
-async function copyToClipboard(text: string) {
-  const command =
-    process.platform === 'darwin'
-      ? ['pbcopy']
-      : process.platform === 'win32'
-        ? ['clip']
-        : ['xclip', '-selection', 'clipboard'];
-  const proc = logSpawn(command, {
-    stdin: 'pipe',
-    stdout: globalValues.quiet ? 'ignore' : 'inherit',
-    stderr: globalValues.quiet ? 'ignore' : 'inherit',
-  });
-  proc.stdin.write(text);
-  await proc.stdin.end();
-  const exitCode = await proc.exited;
+  await clipboard.write(finalOutput);
   if (!globalValues.quiet) {
-    log(
-      exitCode === 0
-        ? 'Output copied to clipboard'
-        : `Failed to copy to clipboard (exit code: ${exitCode})`
-    );
+    log('Output copied to clipboard');
   }
 }
