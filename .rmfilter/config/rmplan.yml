@@ -1,7 +1,8 @@
-# yaml-language-server: $schema=../schema/rmplan-config-schema.json
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
 
 postApplyCommands:
+  - title: Cleanup Extranous Comments
+    command: rmplan cleanup
   - title: Format
     command: bun run format
     allowFailure: true
