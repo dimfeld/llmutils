@@ -266,8 +266,8 @@ The general usage pattern is that you will:
 1. Use the `generate` command to generate a planning prompt. Pass `rmfilter` arguments after a `--` to add the appropriate files to
    inform the generation.
 2. Paste the output of that into a language model. As of April 2025, Google Gemini 2.5 Pro is probably the best choice.
-3. Copy its output to the clipboard or a file.
-4. Use the `extract` command to extract the plan Markdown to a YAML file.
+3. Copy its output to the clipboard.
+4. Press enter to continue, which will extract the Markdown plan and write it as YAML. (You can also run the `extract` command directly to do this.)
 5. Use the `next` command to get the prompt for the next step(s).
 6. Run the prompt with whatever LLM or coding agent you prefer.
 7. Use the `done` command to mark the next step(s) as done and commit changes.
@@ -382,6 +382,7 @@ postApplyCommands:
   - title: Format Code # User-friendly title for logging
     command: bun run format # The command string to execute
     allowFailure: true # Optional: If true, the agent continues even if this command fails (default: false)
+    showOutputOnFailure: true # Optional: Show output only if the command fails
     # workingDirectory: sub/dir # Optional: Run command in a specific directory relative to repo root (default: repo root)
     # env: # Optional: Environment variables for the command
     #   NODE_ENV: production
@@ -396,6 +397,7 @@ postApplyCommands:
 - `title`: (Required) A short description logged when the command runs.
 - `command`: (Required) The command line string to execute.
 - `allowFailure`: (Optional) Boolean, defaults to `false`. If `false`, the agent will stop if the command exits with a non-zero status.
+- `showOutputOnFailure`: (Optional) Boolean, defaults to `false`. If `true`, the command's output is displayed only if it fails.
 - `workingDirectory`: (Optional) String path relative to the repository root where the command should be executed. Defaults to the repository root.
 - `env`: (Optional) An object mapping environment variable names to string values for the command's execution context.
 
@@ -444,6 +446,7 @@ Generate and manage project plans:
 rmplan generate --plan tasks/0002-refactor-it.md -- src/api/**/*.ts
 
 # Read the plan from the clipboard, convert to YAML, and write to a file
+# The `generate` command will help you do this automatically as well.
 rmplan extract --output tasks/0002-refactor-it.yml
 
 # Execute the next step with repository context
