@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import yaml from 'yaml';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { getGitRoot, logSpawn, setQuiet } from '../rmfilter/utils.js';
+import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import {
   findPendingTask,
@@ -22,10 +22,12 @@ import { closeLogFile, error, log, openLogFile, warn } from '../logging.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
-program.option(
-  '-c, --config <path>',
-  'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
-);
+program
+  .option(
+    '-c, --config <path>',
+    'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
+  )
+  .option('--debug', 'Enable debug logging', () => setDebug(true));
 
 program
   .command('generate')
@@ -302,7 +304,10 @@ program
 program
   .command('cleanup [files...]')
   .description('Remove end-of-line comments from changed files or specified files')
-  .option('--diff-from <branch>', 'Base branch for diff comparison when no files provided')
+  .option(
+    '--diff-from <branch>',
+    'Compare to this branch/revision when no files provided. Default is current diff'
+  )
   .action(async (files, options) => {
     try {
       await cleanupEolComments(options.diffFrom, files);

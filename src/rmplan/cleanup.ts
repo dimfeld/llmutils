@@ -1,7 +1,7 @@
 import { generateText, streamText } from 'ai';
 import { createModel } from '../common/model_factory.js';
 import { planExampleFormatGeneric } from './prompt.js';
-import { getChangedFiles } from '../rmfilter/additional_docs.ts';
+import { CURRENT_DIFF, getChangedFiles } from '../rmfilter/additional_docs.ts';
 import { getGitRoot } from '../rmfilter/utils.ts';
 import { debugLog, error, log } from '../logging.ts';
 import path from 'node:path';
@@ -89,7 +89,7 @@ export async function cleanupEolComments(baseBranch?: string, files?: string[]):
   let targetFiles: string[];
   if (files && files.length > 0) {
     // Use provided files, ensuring they're resolved relative to git root
-    targetFiles = files.map((file) => path.resolve(gitRoot, file));
+    targetFiles = files.map((file) => path.resolve(process.cwd(), file));
     // Verify files exist
     targetFiles = (
       await Promise.all(
@@ -102,7 +102,7 @@ export async function cleanupEolComments(baseBranch?: string, files?: string[]):
     }
   } else {
     // Fall back to changed files
-    targetFiles = await getChangedFiles(gitRoot, baseBranch);
+    targetFiles = await getChangedFiles(gitRoot, baseBranch || CURRENT_DIFF);
     if (targetFiles.length === 0) {
       log('No changed files found');
       return;
@@ -140,6 +140,8 @@ export async function cleanupEolComments(baseBranch?: string, files?: string[]):
       debugLog(`Skipping file with unsupported extension: ${relativePath}`);
       continue;
     }
+
+    debugLog(`${relativePath}: Cleaning end-of-line comments`);
 
     let content = await Bun.file(fullPath).text();
     let lines = content.split('\n');

@@ -330,13 +330,12 @@ export function parseJjRename(line: string): string {
   return `${prefix}${after || ''}${suffix}`;
 }
 
+export const CURRENT_DIFF = `HEAD~`;
+
 /**
  * Gets the list of changed files compared to a base branch
  */
-export async function getChangedFiles(
-  gitRoot: string,
-  baseBranch?: string
-): Promise<string[]> {
+export async function getChangedFiles(gitRoot: string, baseBranch?: string): Promise<string[]> {
   if (!baseBranch) {
     // Try to get default branch from git config
     baseBranch = (
@@ -368,7 +367,14 @@ export async function getChangedFiles(
 
   let changedFiles: string[] = [];
   if (await getUsingJj()) {
-    const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join('&');
+    if (baseBranch === CURRENT_DIFF) {
+      // convert from
+      baseBranch = '@-';
+    }
+
+    const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
+      '&'
+    );
     const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
     let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(gitRoot).nothrow().text();
     changedFiles = summ
@@ -386,10 +392,7 @@ export async function getChangedFiles(
       .filter((line) => !!line);
   } else {
     const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
-    let summ = await $`git diff --name-only ${baseBranch} ${exclude}`
-      .cwd(gitRoot)
-      .nothrow()
-      .text();
+    let summ = await $`git diff --name-only ${baseBranch} ${exclude}`.cwd(gitRoot).nothrow().text();
     changedFiles = summ
       .split('\n')
       .map((line) => line.trim())

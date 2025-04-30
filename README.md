@@ -34,6 +34,7 @@ assume a repository written with Typescript and PNPM workspaces.
 - [rmplan](#rmplan)
   - [Key Features](#key-features-1)
   - [Usage](#usage-1)
+    - [Cleanup Command](#cleanup-command)
   - [Requirements](#requirements-1)
   - [Notes](#notes-1)
   - [Configuration](#configuration)
@@ -301,7 +302,40 @@ rmplan agent plan.yml --model google/gemini-2.5-flash-preview-04-17
 
 # Execute a specific number of steps automatically
 rmplan agent plan.yml --steps 3
+
+# Clean up end-of-line comments from changed files (by git diff, jj diff)
+rmplan cleanup
+
+# Cleanup end-of-line comments in all files modified compared to a base branch
+rmplan cleanup --diff-from main
+
+# Clean up end-of-line comments from specific files
+rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 ```
+
+#### Cleanup Command
+
+The `cleanup` command removes end-of-line comments (comments that appear after code on the same line) from files. It supports `.svelte`, `.js`, `.ts`, `.py`, and `.rs` files and is useful for removing redundant comments often added by LLMs, such as `// import x` after an import statement.
+
+By default, it processes all changed files in the current revision. You can use the `--diff-from` option to specify a different base for determining changed files.
+
+**Usage Examples:**
+
+```bash
+# Remove end-of-line comments from all changed files in the current revision
+rmplan cleanup
+
+# Remove end-of-line comments compared to a specific branch
+rmplan cleanup --diff-from feature-branch
+
+# Remove end-of-line comments from specific files
+rmplan cleanup src/lib/utils.ts src/components/Button.svelte
+```
+
+**Notes:**
+- The command only removes comments that appear after code on the same line, preserving standalone comment lines and empty lines.
+- Files must exist and have a supported extension to be processed.
+- Use `--diff-from` to specify a different base branch for determining changed files when no files are provided.
 
 ### Requirements
 
