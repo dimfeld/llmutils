@@ -14,8 +14,8 @@ export const postApplyCommandSchema = z.object({
   env: z.record(z.string()).optional(),
   /** Whether to allow the command to fail without stopping the process. Defaults to false. */
   allowFailure: z.boolean().optional().default(false),
-  /** Whether to show command output only if the command fails. Defaults to false. */
-  showOutputOnFailure: z.boolean().optional().default(false),
+  /** Whether to hide command output only the command succeeds. Defaults to false. */
+  hideOutputOnSuccess: z.boolean().optional().default(false),
 });
 
 /**

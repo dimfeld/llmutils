@@ -455,9 +455,9 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
   const shellCommand = isWindows ? 'cmd' : 'sh';
   const shellFlag = isWindows ? '/c' : '-c';
   const cmdArray = [shellCommand, shellFlag, commandConfig.command];
-  const showOutputOnFailure = commandConfig.showOutputOnFailure;
+  const hideOutputOnSuccess = commandConfig.hideOutputOnSuccess;
 
-  // Buffer output if showOutputOnFailure is true, otherwise inherit
+  // Buffer output if hideOutputOnSuccess is true, otherwise inherit
   const outputBuffers: string[] = [];
   const proc = Bun.spawn(cmdArray, {
     cwd: cwd,
@@ -469,7 +469,7 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     const stdoutDecoder = new TextDecoder();
     for await (const value of proc.stdout) {
       let output = stdoutDecoder.decode(value, { stream: true });
-      if (showOutputOnFailure) {
+      if (hideOutputOnSuccess) {
         outputBuffers.push(output);
       } else {
         writeStdout(output);
@@ -481,7 +481,7 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     const stderrDecoder = new TextDecoder();
     for await (const value of proc.stderr) {
       let output = stderrDecoder.decode(value, { stream: true });
-      if (showOutputOnFailure) {
+      if (hideOutputOnSuccess) {
         outputBuffers.push(output);
       } else {
         writeStderr(output);
@@ -494,8 +494,8 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
   const exitCode = await proc.exited;
 
   if (exitCode !== 0) {
-    // If command failed, show buffered output if showOutputOnFailure is true
-    if (commandConfig.showOutputOnFailure) {
+    // If command failed, show buffered output if hideOutputOnSuccess is true
+    if (commandConfig.hideOutputOnSuccess) {
       if (outputBuffers.length > 0) {
         log('Command output on failure:');
         outputBuffers.forEach((output) => writeStdout(output));

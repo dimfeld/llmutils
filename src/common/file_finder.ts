@@ -127,12 +127,12 @@ export async function grepFor(
     cwd: baseDir,
     stdout: 'pipe',
   });
-  const stdout = await new Response(proc.stdout).text();
+  const stdout = await new Response(proc.stdout as ReadableStream<Uint8Array>).text();
   const exitCode = await proc.exited;
 
   if (exitCode !== 0 && exitCode !== 1) {
     // rg exits 1 if no matches found
-    const stderr = await new Response(proc.stderr).text();
+    const stderr = await new Response(proc.stderr as ReadableStream<Uint8Array>).text();
     error(`rg command failed with exit code ${exitCode}:\n${stderr}`);
     return [];
   }

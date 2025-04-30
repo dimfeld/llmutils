@@ -382,7 +382,7 @@ postApplyCommands:
   - title: Format Code # User-friendly title for logging
     command: bun run format # The command string to execute
     allowFailure: true # Optional: If true, the agent continues even if this command fails (default: false)
-    showOutputOnFailure: true # Optional: Show output only if the command fails
+    hideOutputOnSuccess: true # Optional: Show output only if the command fails
     # workingDirectory: sub/dir # Optional: Run command in a specific directory relative to repo root (default: repo root)
     # env: # Optional: Environment variables for the command
     #   NODE_ENV: production
@@ -397,7 +397,7 @@ postApplyCommands:
 - `title`: (Required) A short description logged when the command runs.
 - `command`: (Required) The command line string to execute.
 - `allowFailure`: (Optional) Boolean, defaults to `false`. If `false`, the agent will stop if the command exits with a non-zero status.
-- `showOutputOnFailure`: (Optional) Boolean, defaults to `false`. If `true`, the command's output is displayed only if it fails.
+- `hideOutputOnSuccess`: (Optional) Boolean, defaults to `false`. If `true`, the command's output is displayed only if it fails.
 - `workingDirectory`: (Optional) String path relative to the repository root where the command should be executed. Defaults to the repository root.
 - `env`: (Optional) An object mapping environment variable names to string values for the command's execution context.
 

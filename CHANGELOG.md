@@ -3,7 +3,7 @@
 - Show reasoning output when running code prompts for models that make it available
 - `rmplan generate` command waits for user to copy Markdown response and then runs extract
 - Skip writing new files that contain a space in the path. These often indicate comments from the model. (A better heuristic may be useful here.)
-- Add `showOutputOnFailure` option to `postApplyCommands` to only show the output on failure
+- Add `hideOutputOnSuccess` option to `postApplyCommands` to only show the output on failure
 
 # April 29, 2025
 
