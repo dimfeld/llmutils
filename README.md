@@ -231,6 +231,8 @@ Then repeat steps 5 through 7 until the task is done.
 
 Alternatively, you can use the `agent` command to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
 
+When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
+
 Run `rmplan` with different commands to manage project plans:
 
 ```bash
