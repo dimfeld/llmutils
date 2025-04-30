@@ -746,6 +746,9 @@ async function applyEdits(
       const file = Bun.file(fullPathForRead);
       if (await file.exists()) {
         currentContent = await file.text();
+      } else if (filePath.includes(' ')) {
+        log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
+        continue;
       }
     } catch (e) {
       error(`Error accessing file ${filePath}: ${e as Error}`);

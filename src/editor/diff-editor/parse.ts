@@ -59,6 +59,9 @@ async function applyEdits(
       let fileContent: string | null = null;
       if (await file.exists()) {
         fileContent = await file.text();
+      } else if (filePath.includes(' ')) {
+        log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
+        continue;
       }
       newContent = await doReplace(filePath, fileContent, original, updated);
     } catch (e) {

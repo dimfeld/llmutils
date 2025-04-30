@@ -168,6 +168,10 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
         if (contentStr.endsWith('</file>')) {
           contentStr = contentStr.slice(0, -'</file>'.length);
         }
+        if (!(await Bun.file(filePath).exists()) && filePath.includes(' ')) {
+          log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
+          continue;
+        }
         await secureWrite(writeRoot, filePath, contentStr + '\n');
       }
       log(`Wrote ${contentLines.length} lines to file: ${filePath}`);
