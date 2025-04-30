@@ -1,5 +1,5 @@
 import type { StreamTextResult, ToolSet } from 'ai';
-import { writeLogFile } from '../logging.ts';
+import { error, writeLogFile } from '../logging.ts';
 
 /** Use `bat` to format Markdown text as it streams through. We use bat instead of a JS-native solution
  * since it works better for streaming markdown. */
@@ -99,6 +99,9 @@ export async function streamResultToConsole<T extends ToolSet, U>(
         // Log file gets the unformatted text
         writeLogFile(chunk.textDelta);
         cb?.(chunk.textDelta);
+      } else if (chunk.type === 'error') {
+        error(chunk.error);
+        throw new Error((chunk.error as any).toString());
       }
     }
     textRenderer.add('\n');

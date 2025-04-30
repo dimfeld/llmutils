@@ -1,4 +1,4 @@
-import { generateText, streamText } from 'ai';
+import { streamText } from 'ai';
 import { createModel } from '../common/model_factory.js';
 import { planExampleFormatGeneric } from './prompt.js';
 import { CURRENT_DIFF, getChangedFiles } from '../rmfilter/additional_docs.ts';

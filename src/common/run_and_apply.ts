@@ -1,6 +1,7 @@
 import { streamText, type StreamTextResult, type ToolSet } from 'ai';
 import { streamResultToConsole } from './llm.ts';
 import { createModel } from './model_factory.ts';
+import type { GoogleGenerativeAIProviderSettings } from '@ai-sdk/google';
 
 export const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro-exp-03-25';
 

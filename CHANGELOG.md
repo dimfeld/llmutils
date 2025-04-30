@@ -1,6 +1,6 @@
 # April 30, 2025
 
-- Show reasoning output when running code prompts
+- Show reasoning output when running code prompts for models that make it available
 
 # April 29, 2025
 
