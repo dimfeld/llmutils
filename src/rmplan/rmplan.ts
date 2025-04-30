@@ -418,6 +418,8 @@ program
           });
 
           let output = await result.text;
+          // newline between model output and apply output
+          log('');
           await applyLlmEdits({ content: output });
         } catch (err) {
           error('Execution step failed:', err);
@@ -427,7 +429,7 @@ program
 
         // ---> NEW: Execute Post-Apply Commands <---
         if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-          log('\n## Running Post-Apply Commands\n');
+          log('\n## Running Post-Apply Commands');
           for (const commandConfig of config.postApplyCommands) {
             const commandSucceeded = await executePostApplyCommand(commandConfig);
             if (!commandSucceeded) {
@@ -444,13 +446,13 @@ program
         // ---> END NEW SECTION <---
         let markResult;
         try {
-          log('## Marking done\n');
+          log('\n## Marking done\n');
           markResult = await markStepDone(
             planFile,
             { steps: 1, commit: true },
             { taskIndex, stepIndex }
           );
-          log(`Marked step as done: ${markResult.message}`);
+          log(`Marked step as done: ${markResult.message.split('\n')[0]}`);
           if (markResult.planComplete) {
             log('Plan fully completed!');
             break;
