@@ -24,6 +24,19 @@ export const modelPresets = {
   },
 } satisfies Record<string, ModelPreset>;
 
+export function resolveModelSettings(model: string | undefined): ModelPreset {
+  const defaultModelSettings: ModelPreset = { overeager: true };
+  if (!model) {
+    return defaultModelSettings;
+  }
+
+  if (model.startsWith('google/gemini')) {
+    model = 'gemini';
+  }
+
+  return modelPresets[model as keyof typeof modelPresets] || defaultModelSettings;
+}
+
 // Zod schemas for YAML validation
 // Put this comment at the top of your YAML file to reference the schema:
 // # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json

@@ -22,8 +22,8 @@ import {
   getCurrentConfig,
   listPresets,
   modelPresets,
+  resolveModelSettings,
   writeSampleConfig,
-  type ModelPreset,
 } from './config.ts';
 import {
   extractFileReferencesFromInstructions,
@@ -55,10 +55,7 @@ if (globalValues.model && !Object.keys(modelPresets).includes(globalValues.model
   process.exit(1);
 }
 
-const defaultModelSettings: ModelPreset = { overeager: true };
-const modelSettings: ModelPreset = globalValues.model
-  ? modelPresets[globalValues.model as keyof typeof modelPresets] || defaultModelSettings
-  : defaultModelSettings;
+const modelSettings = resolveModelSettings(globalValues.model);
 
 // Validate edit-format
 if (
