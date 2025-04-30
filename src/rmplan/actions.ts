@@ -5,13 +5,13 @@ import yaml from 'yaml';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
-import { commitAll, getGitRoot, logSpawn, quiet } from '../rmfilter/utils.js';
+import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
 import { Extractor } from '../treesitter/extract.js';
 import type { PostApplyCommand } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { planSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
-import { error, log, warn } from '../logging.js';
+import { error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 
 interface PrepareNextStepOptions {
@@ -455,15 +455,55 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
   const shellCommand = isWindows ? 'cmd' : 'sh';
   const shellFlag = isWindows ? '/c' : '-c';
   const cmdArray = [shellCommand, shellFlag, commandConfig.command];
+  const showOutputOnFailure = commandConfig.showOutputOnFailure;
 
-  const proc = logSpawn(cmdArray, {
+  // Buffer output if showOutputOnFailure is true, otherwise inherit
+  const outputBuffers: string[] = [];
+  const proc = Bun.spawn(cmdArray, {
     cwd: cwd,
     env: env,
-    stdio: ['inherit', 'inherit', 'inherit'], // Show command output/errors directly
+    stdio: ['inherit', 'pipe', 'pipe'],
   });
+
+  async function readStdout() {
+    const stdoutDecoder = new TextDecoder();
+    for await (const value of proc.stdout) {
+      let output = stdoutDecoder.decode(value, { stream: true });
+      if (showOutputOnFailure) {
+        outputBuffers.push(output);
+      } else {
+        writeStdout(output);
+      }
+    }
+  }
+
+  async function readStderr() {
+    const stderrDecoder = new TextDecoder();
+    for await (const value of proc.stderr) {
+      let output = stderrDecoder.decode(value, { stream: true });
+      if (showOutputOnFailure) {
+        outputBuffers.push(output);
+      } else {
+        writeStderr(output);
+      }
+    }
+  }
+
+  await Promise.all([readStdout(), readStderr()]);
+
   const exitCode = await proc.exited;
 
   if (exitCode !== 0) {
+    // If command failed, show buffered output if showOutputOnFailure is true
+    if (commandConfig.showOutputOnFailure) {
+      if (outputBuffers.length > 0) {
+        log('Command output on failure:');
+        outputBuffers.forEach((output) => writeStdout(output));
+        writeStdout('\n');
+      } else {
+        log('Command produced no output on failure.');
+      }
+    }
     error(`Error: Post-apply command "${commandConfig.title}" failed with exit code ${exitCode}.`);
     if (commandConfig.allowFailure) {
       warn(

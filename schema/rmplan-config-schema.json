@@ -38,6 +38,11 @@
             "type": "boolean",
             "description": "Whether to allow the command to fail without stopping the process. Defaults to false.",
             "default": false
+          },
+          "showOutputOnFailure": {
+            "type": "boolean",
+            "description": "Whether to show command output only if the command fails. Defaults to false.",
+            "default": false
           }
         }
       }
