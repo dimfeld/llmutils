@@ -113,23 +113,25 @@ export async function cleanupEolComments(baseBranch?: string, files?: string[]):
 
   const doubleSlash = /\/\/\s*.*$/gm;
   const hash = /#\s*.*$/gm;
+  // Gemini sometimes adds comments like {/* ... */} which are not valid syntax
+  const invalidSvelteTemplateComment = /\{\/\*([\s\S]*?)\*\/\}/g;
 
-  const commentPatterns: { [ext: string]: RegExp } = {
-    '.svelte': doubleSlash,
-    '.tsx': doubleSlash,
-    '.jsx': doubleSlash,
-    '.js': doubleSlash,
-    '.ts': doubleSlash,
-    '.py': hash,
-    '.rs': doubleSlash,
-    '.go': doubleSlash,
-    '.kt': doubleSlash,
-    '.swift': doubleSlash,
-    '.c': doubleSlash,
-    '.h': doubleSlash,
-    '.hpp': doubleSlash,
-    '.cpp': doubleSlash,
-    '.cc': doubleSlash,
+  const commentPatterns: { [ext: string]: RegExp[] } = {
+    '.svelte': [doubleSlash, invalidSvelteTemplateComment],
+    '.tsx': [doubleSlash],
+    '.jsx': [doubleSlash],
+    '.js': [doubleSlash],
+    '.ts': [doubleSlash],
+    '.py': [hash],
+    '.rs': [doubleSlash],
+    '.go': [doubleSlash],
+    '.kt': [doubleSlash],
+    '.swift': [doubleSlash],
+    '.c': [doubleSlash],
+    '.h': [doubleSlash],
+    '.hpp': [doubleSlash],
+    '.cpp': [doubleSlash],
+    '.cc': [doubleSlash],
   };
   const supportedExtensions = Object.keys(commentPatterns);
 
@@ -148,18 +150,34 @@ export async function cleanupEolComments(baseBranch?: string, files?: string[]):
     let linesCleaned = 0;
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      // Skip empty lines or lines that are only comments
-      if (!line.trim() || line.trim().startsWith(commentPatterns[ext].source.slice(0, 2))) {
+      let deletedLine = false;
+      let line = lines[i];
+      // Skip empty lines
+      let trimmed = line.trim();
+      if (!trimmed) {
         continue;
       }
 
-      // Check if line has code followed by a comment
-      const match = line.match(commentPatterns[ext]);
-      if (match && line.trim().length > match[0].length) {
-        // Remove the comment part
-        lines[i] = line.replace(commentPatterns[ext], '').trimEnd();
-        linesCleaned++;
+      // Check each pattern for this extension
+      for (const pattern of commentPatterns[ext]) {
+        // Special case for invalid Svelte template comments since they happen on standalone lines and can be fixed.
+        const match = line.match(pattern);
+        if (match && pattern === invalidSvelteTemplateComment) {
+          let startIndex = match.index;
+          lines[i] = lines[i].slice(0, startIndex) + `<!-- ${match[1]} -->`;
+          linesCleaned++;
+          deletedLine = true;
+          break;
+        }
+
+        // Check if line has code followed by a comment
+        if (match && trimmed.length > match[0].length) {
+          // Remove the comment part
+          line = line.replace(pattern, '').trimEnd();
+          lines[i] = line;
+          linesCleaned++;
+          break;
+        }
       }
     }
 
