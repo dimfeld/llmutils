@@ -121,7 +121,7 @@ async function handleNoMatchFailure(
     const { lines, startLine, score } = failure.closestMatch;
     log(
       chalk.cyan(
-        `\nClosest match found (score: ${score.toFixed(2)}) starting at line ${startLine + 1}:`
+        `\nClosest match found (score: ${score.toFixed(2)}) starting at line ${startLine}:`
       )
     );
     log(lines.join(''));
@@ -145,7 +145,7 @@ async function handleNoMatchFailure(
     });
 
     if (choice === 'apply') {
-      await applyEdit(failure, lines, startLine, writeRoot, dryRun);
+      await applyEdit(failure, lines, startLine - 1, writeRoot, dryRun);
     } else if (choice === 'diff') {
       log('Opening in Neovim diff mode...');
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'llmutils-diff-'));
