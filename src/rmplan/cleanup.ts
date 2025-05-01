@@ -84,8 +84,8 @@ export function findYamlStart(text: string): string {
   return text;
 }
 
-const doubleSlash = /\/\/\s*.*$/;
-const slashStar = /\/\*[\s\S]*?\*\
+const doubleSlash = / \/\/ \s*.*$/;
+const slashStar = / \/\*[\s\S]*?\*\/$/;
 const hash = /#\s*.*$/gm;
 // Gemini sometimes adds comments like {} which are not valid syntax
 const invalidSvelteTemplateComment = /\{\/\*([\s\S]+)\*\/\}/;
@@ -118,7 +118,8 @@ export function cleanComments(
   content: string,
   ext: string
 ): { cleanedContent: string; linesCleaned: number } | undefined {
-  if (!Object.keys(commentPatterns).includes(ext)) {
+  const patterns = commentPatterns[ext];
+  if (!patterns?.length) {
     return;
   }
 

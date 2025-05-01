@@ -278,7 +278,7 @@ export async function prepareNextStep(
     await Bun.write(promptFilePath, llmPrompt);
 
     const baseRmfilterArgs = ['--gitroot', '--instructions', `@${promptFilePath}`];
-    if(model) {
+    if (model) {
       baseRmfilterArgs.push('--model', model);
     }
 
@@ -595,7 +595,7 @@ export async function extractMarkdownToYaml(
   }
 
   if (!convertedYaml.startsWith('# yaml-language-server')) {
-    const schemaLine = `# yaml-language-server: $schema=https:
+    const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
     convertedYaml = schemaLine + '\n' + convertedYaml;
   }
 
