@@ -167,33 +167,33 @@ async function handleNoMatchFailure(
     } else if (choice === 'diff') {
       log('Opening in Neovim diff mode...');
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'llmutils-diff-'));
-      const originalPath = path.join(tempDir, 'original');
       const proposedPath = path.join(tempDir, 'proposed');
       try {
-        // Write the *current* content around the match location to original
+        // Read the current full file content
         const absoluteFilePath = validatePath(writeRoot, failure.filePath);
         const currentContent = await Bun.file(absoluteFilePath).text();
         const currentLines = splitLinesWithEndings(currentContent);
-        // Extract a reasonable context around the closest match start line
-        const context = 5;
-        const originalStart = Math.max(0, startLine - context);
-        const originalEnd = Math.min(currentLines.length, startLine + lines.length + context);
-        const originalSnippet = currentLines.slice(originalStart, originalEnd).join('');
 
-        await Bun.write(originalPath, originalSnippet);
-        await Bun.write(proposedPath, failure.updatedText);
+        // Generate the proposed full file content by applying the edit
+        const updatedLines = splitLinesWithEndings(failure.updatedText);
+        const newContentLines = [
+          ...currentLines.slice(0, startLine - 1),
+          ...updatedLines,
+          ...currentLines.slice(startLine - 1 + lines.length),
+        ];
+        const proposedContent = newContentLines.join('');
 
-        log(`Run: nvim -d ${originalPath} ${proposedPath}`);
-        log(`Note: This shows the proposed change vs. the closest match snippet.`);
-        log(
-          `      You may need to manually apply changes to the original file: ${absoluteFilePath}`
-        );
+        // Write the proposed content to a temporary file
+        await Bun.write(proposedPath, proposedContent);
 
-        const proc = Bun.spawn(['nvim', '-d', originalPath, proposedPath], {
+        log(`Run: nvim -d ${absoluteFilePath} ${proposedPath}`);
+        log(`Note: You can save changes directly to ${absoluteFilePath} in Neovim.`);
+
+        const proc = Bun.spawn(['nvim', '-d', absoluteFilePath, proposedPath], {
           stdio: ['inherit', 'inherit', 'inherit'],
         });
         await proc.exited;
-        log('Neovim closed. Please ensure you saved any intended changes to the original file.');
+        log('Neovim closed. Changes may have been saved to the original file.');
       } catch (err: any) {
         error(`Failed to open Neovim diff: ${err.message}`);
       } finally {
