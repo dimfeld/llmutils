@@ -14,7 +14,6 @@ import { planSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
-import { loadEffectiveConfig } from './configLoader.js';
 
 interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -23,6 +22,7 @@ interface PrepareNextStepOptions {
   withAllImports?: boolean;
   selectSteps?: boolean;
   rmfilterArgs?: string[];
+  model?: string;
   autofind?: boolean;
 }
 
@@ -69,6 +69,7 @@ export async function prepareNextStep(
     selectSteps = true,
     rmfilterArgs = [],
     autofind = false,
+    model,
   } = options;
 
   if (withImports && withAllImports) {
@@ -277,6 +278,10 @@ export async function prepareNextStep(
     await Bun.write(promptFilePath, llmPrompt);
 
     const baseRmfilterArgs = ['--gitroot', '--instructions', `@${promptFilePath}`];
+    if(model) {
+      baseRmfilterArgs.push('--model', model);
+    }
+
     // Convert the potentially updated 'files' list (task + autofound) to relative paths
     const relativeFiles = files.map((f) => path.relative(gitRoot, f));
 

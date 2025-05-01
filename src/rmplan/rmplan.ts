@@ -345,7 +345,7 @@ program
       openLogFile(logFilePath);
     }
 
-    log('Starting agent to execute plan:', planFile );
+    log('Starting agent to execute plan:', planFile);
     try {
       let hasError = false;
 
@@ -385,6 +385,7 @@ program
           rmfilter: true,
           previous: true,
           selectSteps: false,
+          model: executionModel,
         }).catch((err) => {
           error('Failed to prepare next step:', err);
           hasError = true;
