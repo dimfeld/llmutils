@@ -301,7 +301,7 @@ tasks:
           Make sure the `splitLinesWithEndings` function used by
           `findClosestMatches` handles newlines correctly for the tests to pass.
           You may need to copy/import it.
-        done: false
+        done: true
   - title: 2. Modify diff-editor for Structured Results
     description: Update src/editor/diff-editor/parse.ts to return EditResult[]
       instead of throwing errors, integrating findClosestMatches for failures.
