@@ -644,7 +644,7 @@ tasks:
           4.  If no good `closestMatch` exists:
               *   Log that the original text wasn't found and no close match was identified for `failure.filePath`.
               *   Offer only the "Skip" option (or maybe just log and continue automatically). Let's prompt with just "Skip". Use `select` with one choice or just log.
-        done: false
+        done: true
       - prompt: >
           Implement the logic within `resolveFailuresInteractively` in
           `src/apply-llm-edits/interactive.ts` to handle `NotUniqueFailure`.
