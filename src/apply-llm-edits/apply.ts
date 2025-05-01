@@ -6,6 +6,7 @@ import { getGitRoot } from '../rmfilter/utils.ts';
 import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
 import { resolveFailuresInteractively } from './interactive.js';
 import { log, error } from '../logging.ts';
+import { printDetailedFailures } from './failures.ts';
 
 export interface ApplyLlmEditsOptions {
   content: string;
@@ -49,16 +50,16 @@ export async function applyLlmEdits({
       dryRun,
     });
   } else if (xmlMode) {
-    log('Processing as XML...');
-    // TODO: Update processXmlContents to return EditResult[] if needed
+    log('Processing as XML Whole Files...');
+    // This is a whole-file mode so no diffs to have results
     await processXmlContents({
       content,
       writeRoot,
       dryRun,
     });
   } else {
-    log('Processing as Raw Files...');
-    // TODO: Update processRawFiles to return EditResult[] if needed
+    log('Processing as Whole Files...');
+    // This is a whole-file mode so no diffs to have results
     await processRawFiles({
       content,
       writeRoot,
@@ -76,17 +77,8 @@ export async function applyLlmEdits({
       if (interactive) {
         await resolveFailuresInteractively(failures, writeRoot, dryRun ?? false);
       } else {
-        // Non-interactive: Log errors and throw
-        error(`Encountered ${failures.length} edit application failure(s):`);
-        failures.forEach((failure) => {
-          if (failure.type === 'noMatch') {
-            error(`  - ${failure.filePath}: Edit text not found.`);
-          } else if (failure.type === 'notUnique') {
-            error(
-              `  - ${failure.filePath}: Edit text found in multiple locations (${failure.matchLocations.length}).`
-            );
-          }
-        });
+        // Non-interactive: Log detailed errors and throw
+        printDetailedFailures(failures);
         throw new Error(
           `Failed to apply ${failures.length} edits. Run with --interactive to resolve.`
         );
