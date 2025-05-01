@@ -97,7 +97,7 @@ tasks:
               ```
           5. Ensure the existing `ProcessFileOptions` interface remains in this
           file.
-        done: false
+        done: true
       - prompt: >
           Create a new file `src/editor/closest_match.ts`. Implement the
           `findClosestMatches` function as described in the project plan's
