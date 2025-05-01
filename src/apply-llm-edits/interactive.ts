@@ -126,6 +126,24 @@ async function handleNoMatchFailure(
     );
     log(lines.join(''));
 
+    // Generate diff between closest match and original text
+    const diffPatch = diff.createPatch(
+      failure.filePath,
+      lines.join(''),
+      failure.originalText,
+      'Closest Match',
+      'Expected Original',
+      { context: 9999 }
+    );
+    const diffLines = diffPatch.split('\n').slice(4).join('\n');
+    log(chalk.cyan('\nDiff between closest match and expected original:'));
+    log(
+      diffLines
+        .split('\n')
+        .map((line) => `  ${line}`)
+        .join('\n')
+    );
+
     const patchPreview = diff
       .createPatch(failure.filePath, lines.join(''), failure.updatedText, '', '', { context: 9999 })
       .split('\n')
