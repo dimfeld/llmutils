@@ -1,24 +1,14 @@
-import * as path from 'path';
 import * as diff from 'diff';
-import type {
-  ProcessFileOptions,
-  EditResult,
-  SuccessResult,
-  NoMatchFailure,
-  NotUniqueFailure,
-  MatchLocation,
-  ClosestMatchResult,
-} from '../types.ts';
-import { findClosestMatches } from '../closest_match.ts';
-import { secureWrite } from '../../rmfilter/utils.js';
+import * as path from 'path';
 import { error, log, warn } from '../../logging.ts';
-
-class SearchTextNotUnique extends Error {
-  constructor(message: string = 'Search text is not unique in the content.') {
-    super(message);
-    this.name = 'SearchTextNotUnique';
-  }
-}
+import { secureWrite } from '../../rmfilter/utils.js';
+import { findClosestMatches } from '../closest_match.ts';
+import type {
+  ClosestMatchResult,
+  EditResult,
+  MatchLocation,
+  ProcessFileOptions,
+} from '../types.ts';
 
 interface EditHunk {
   filePath: string;
@@ -199,9 +189,6 @@ function searchAndReplace(
     return null;
   }
 
-  if (matches.length > 1) {
-    throw new SearchTextNotUnique(`Search text occurs ${matches.length} times.`);
-  }
   if (matches.length > 1) {
     return findAllMatches(whole, part);
   }

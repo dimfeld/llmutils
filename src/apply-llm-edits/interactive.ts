@@ -77,9 +77,9 @@ async function applyEdit(
     // }
 
     const newContentLines = [
-      ...currentLines.slice(0, startLineIndex),
+      ...currentLines.slice(0, startLineIndex - 1),
       ...updatedLines,
-      ...currentLines.slice(startLineIndex + targetLines.length),
+      ...currentLines.slice(startLineIndex - 1 + targetLines.length),
     ];
 
     const newContent = newContentLines.join('');
@@ -223,21 +223,32 @@ async function handleNotUniqueFailure(
   log(
     `Reason: The text block to be replaced was found in ${failure.matchLocations.length} locations.`
   );
+  log(failure.originalText);
+
+  const diffPatch = diff.createPatch(
+    failure.filePath,
+    failure.originalText,
+    failure.updatedText,
+    'Proposed Change',
+    'Expected Original',
+    { context: 9999 }
+  );
+  const diffLines = diffPatch.split('\n').slice(4).join('\n');
+  log(chalk.cyan('\nDiff between proposed change and expected original:'));
   log(
-    chalk.red(
-      failure.originalText
-        .split('\n')
-        .map((l) => `- ${l}`)
-        .join('\n')
-    )
+    diffLines
+      .split('\n')
+      .map((line) => `  ${line}`)
+      .join('\n')
   );
 
   const choices = failure.matchLocations.map((match, index) => ({
-    name: `Location ${index + 1} (Line ${match.startLine + 1}):\n${chalk.gray(match.contextLines.join('').trimEnd())}`,
+    name: `Location ${index + 1} (Line ${match.startLine})`,
     value: index,
+    description: match.contextLines.join(''),
   }));
 
-  choices.push({ name: 'Skip this edit', value: -1 });
+  choices.push({ name: 'Skip this edit', value: -1, description: '' });
 
   const selectedIndex = await select({
     message: 'Select the correct location to apply the edit:',
