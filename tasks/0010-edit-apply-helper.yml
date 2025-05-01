@@ -213,7 +213,7 @@ tasks:
           }
 
           ```
-        done: false
+        done: true
       - prompt: >
           Create a new test file `src/editor/closest_match.test.ts`. Write unit
           tests for the `findClosestMatches` function implemented in the
