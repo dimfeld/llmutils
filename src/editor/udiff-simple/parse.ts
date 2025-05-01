@@ -135,16 +135,7 @@ function normalizeHunk(hunk: string[]): string[] {
     return [];
   }
 
-  // Return only the lines from @@ onwards
-  // Note: The python version returns lines *without* the @@ line,
-  // but the structure of diff.createPatch includes it, and subsequent
-  // processing in python (hunk_to_before_after) ignores it.
-  // Let's return the lines *after* @@ to match python's effective input to hunk_to_before_after.
-  // Actually, let's test if keeping @@ is better for apply_hunk logic.
-  // The python code *appends* "@@ @@" before processing, suggesting it expects it.
-  // Let's return the lines *including* @@ for now.
-  // Re-reading python: it slices `list(new_hunk)[3:]` which removes ---, +++, @@.
-  // So we should return lines *after* @@.
+  // Slice off the leading @@
   return patchLines.slice(hunkStartIndex + 1);
 }
 
@@ -342,6 +333,7 @@ function changeLineToContext(line: string): string {
   return line[0] === '+' || line[0] === '-' ? ' ' + line.slice(1) : line;
 }
 
+/** Try to handle the case where some lines that should be context are "added" instead. */
 function tryConvertedContextHunk(
   content: string,
   precedingContext: string[],
@@ -797,9 +789,6 @@ async function applyEdits(
       });
     }
   }
-
-  // Log summary (optional, could be done by caller using returned results)
-  // log(`Applied ${hunksAppliedCount} hunks successfully.`);
 
   return results;
 }
