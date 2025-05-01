@@ -152,10 +152,10 @@ function normalizeHunk(hunk: string[]): string[] {
  * Attempts to apply a hunk by directly searching for the "before" text
  * and replacing it with the "after" text. Handles minor whitespace variations.
  * Throws SearchTextNotUnique if the "before" text appears multiple times.
+ * Returns MatchLocation[] if the "before" text appears multiple times.
  */
-function directlyApplyHunk(content: string, hunk: string[], log = false): string | null {
+function directlyApplyHunk(content: string, hunk: string[]): string | null | MatchLocation[] {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
-
   if (!beforeText.trim()) {
     // If 'before' is just whitespace, it's likely an insertion.
     // This function is for replacement/deletion based on context.
@@ -179,21 +179,10 @@ function directlyApplyHunk(content: string, hunk: string[], log = false): string
   }
 
   // Try perfect match first
-  try {
-    const result = searchAndReplace(content, beforeText, afterText);
-    return result;
-  } catch (e) {
-    if (e instanceof SearchTextNotUnique) {
-      // Propagate the specific error if it's unique issue
-      throw e;
-    }
-    // Other errors during search/replace might occur, treat as no match for now.
-    // Or maybe try flexible search? Python code uses flexi_just_search_and_replace
-    // which seems to be just search_and_replace with all_preprocs.
-    // Let's stick to the simpler perfect match logic from diff-editor/parse.ts first.
-    // If perfect match fails (returns null or throws non-unique error), return null.
-    return null;
-  }
+  const result = searchAndReplace(content, beforeText, afterText);
+  // Result can be string (success), null (no match), or MatchLocation[] (not unique)
+  return result;
+
 }
 
 /**
@@ -205,13 +194,17 @@ function escapeRegExp(string: string): string {
 
 /**
  * Performs a simple, exact string replacement.
- * Throws SearchTextNotUnique if `part` appears more than once in `whole`.
+ * Returns MatchLocation[] if `part` appears more than once in `whole`.
  * Returns null if `part` is not found.
+ * Returns the replaced string if exactly one match is found.
  */
-function searchAndReplace(whole: string, part: string, replace: string): string | null {
+function searchAndReplace(
+  whole: string,
+  part: string,
+  replace: string
+): string | null | MatchLocation[] {
   const regex = new RegExp(escapeRegExp(part), 'g');
   const matches = [...whole.matchAll(regex)];
-
   if (matches.length === 0) {
     return null;
   }
@@ -219,7 +212,9 @@ function searchAndReplace(whole: string, part: string, replace: string): string 
   if (matches.length > 1) {
     throw new SearchTextNotUnique(`Search text occurs ${matches.length} times.`);
   }
-
+  if (matches.length > 1) {
+    return findAllMatches(whole, part);
+  }
   // Exactly one match found
   const index = matches[0].index;
   return whole.substring(0, index) + replace + whole.substring(index + part.length);
@@ -266,21 +261,16 @@ function findAllMatches(whole: string, part: string): MatchLocation[] {
  * Applies a hunk to the content, trying direct application first,
  * then falling back to applying partial hunks if necessary.
  */
-function applyHunk(content: string, hunk: string[]): string | null {
+function applyHunk(content: string, hunk: string[]): string | null | MatchLocation[] {
   // 1. Try direct application
-  try {
-    const directResult = directlyApplyHunk(content, hunk);
-    if (directResult !== null) {
-      return directResult;
-    }
-  } catch (e) {
-    // If direct application throws SearchTextNotUnique, propagate it
-    if (e instanceof SearchTextNotUnique) {
-      throw e;
-    }
-    // Other errors in directApply might happen, fall through to partial application
+  const directResult = directlyApplyHunk(content, hunk);
+  if (directResult !== null) {
+    // If directResult is string (success) or MatchLocation[] (not unique), return it.
+    // If it's null (no match), proceed to partial application.
+    return directResult;
   }
 
+  // directResult was null (no match), try partial application
   // TODO: Port make_new_lines_explicit if needed. Skipping for now as it seems complex.
   // hunk = make_new_lines_explicit(content, hunk)
 
@@ -324,28 +314,20 @@ function applyHunk(content: string, hunk: string[]): string | null {
       const changes = sections[i].lines;
       const followingContext =
         i + 1 < sections.length && sections[i + 1].type === 'context' ? sections[i + 1].lines : [];
+      const partialResult = applyPartialHunk(
+        currentContent,
+        precedingContext,
+        changes,
+        followingContext
+      );
 
-      try {
-        const partialResult = applyPartialHunk(
-          currentContent,
-          precedingContext,
-          changes,
-          followingContext
-        );
-        if (partialResult !== null) {
-          currentContent = partialResult;
-        } else {
-          allApplied = false;
-          break;
-        }
-      } catch (e) {
-        // If partial application throws SearchTextNotUnique, consider it a failure for this attempt
-        if (e instanceof SearchTextNotUnique) {
-          allApplied = false;
-          // Re-throw the specific error? Or just mark as failed?
-          // Python code seems to just break and return None overall if any part fails.
-          // Let's re-throw to provide specific feedback if uniqueness is the issue.
-          throw e;
+      if (typeof partialResult === 'string') {
+        currentContent = partialResult;
+      } else {
+        // Failure for this part (null for no match, MatchLocation[] for not unique)
+        allApplied = false;
+        if (Array.isArray(partialResult)) {
+          return partialResult;
         }
         // Other errors also mean failure
         allApplied = false;
@@ -367,7 +349,7 @@ function tryConvertedContextHunk(
   changes: string[],
   followingContext: string[],
   convertPreceding: number,
-  convertFollowing: number
+  convertFollowing: number,
 ): string | null {
   if (convertPreceding + convertFollowing >= changes.length) {
     return null;
@@ -395,7 +377,7 @@ function applyPartialHunk(
   precedingContext: string[],
   changes: string[],
   followingContext: string[]
-): string | null {
+): string | null | MatchLocation[] {
   const lenPrec = precedingContext.length;
   const lenFoll = followingContext.length;
   const totalContext = lenPrec + lenFoll;
@@ -421,7 +403,10 @@ function applyPartialHunk(
       convertPreceding,
       convertFollowing
     );
-    if (result !== null) {
+    if (typeof result === 'string') {
+      return result;
+    } else if (Array.isArray(result)) {
+      // Not unique, but maybe less context will work? Continue trying.
       return result;
     }
   }
@@ -447,23 +432,14 @@ function applyPartialHunk(
       const currentHunk = [...thisPrec, ...changes, ...thisFoll];
 
       // Try applying this specific combination of context + changes
-      try {
-        const result = directlyApplyHunk(content, currentHunk);
-        if (result !== null) {
-          return result;
-        }
-      } catch (e) {
-        // If this specific context combination leads to non-unique match,
-        // re-throw it, as more context might be needed (handled by outer loops).
-        // Or maybe just continue trying other combinations? Python's behavior isn't explicit here.
-        // Let's assume if directlyApplyHunk throws NotUnique, this partial attempt failed.
-        if (e instanceof SearchTextNotUnique) {
-          // Let outer loop try more/less context. If all fail, the final error will be raised.
-          // However, if *any* partial hunk attempt throws NotUnique, the whole process should fail with NotUnique.
-          // Let's re-throw immediately.
-          throw e;
-        }
-        // Ignore other errors (like no match) and continue trying combinations.
+      const result = directlyApplyHunk(content, currentHunk);
+      if (typeof result === 'string') {
+        return result;
+      } else if (Array.isArray(result)) {
+        // Not unique with this context. Propagate the failure.
+        // Trying less context is unlikely to resolve uniqueness.
+        return result;
+      }
       }
     }
   }
@@ -475,7 +451,10 @@ function applyPartialHunk(
  * Applies the edits to the specified file content.
  * Handles creating new files.
  */
-export function doReplace(content: string | null, hunk: string[]): string | null {
+export function doReplace(
+  content: string | null,
+  hunk: string[]
+): string | null | MatchLocation[] {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
 
   // Handle creating a new file
@@ -496,7 +475,7 @@ export function doReplace(content: string | null, hunk: string[]): string | null
   }
 
   // Apply the hunk using the main application logic
-  // This might throw SearchTextNotUnique
+  // This might return string (success), null (no match), or MatchLocation[] (not unique)
   return applyHunk(content, hunk);
 }
 
@@ -774,12 +753,11 @@ async function applyEdits(
       continue;
     }
 
-    try {
-      const newContent = doReplace(currentContent, hunk);
+    const result = doReplace(currentContent, hunk);
 
-      if (newContent !== null) {
-        // SUCCESS!
-        const [originalText, updatedText] = hunkToBeforeAfter(hunk);
+    if (typeof result === 'string') {
+      // SUCCESS!
+      const [originalText, updatedText] = hunkToBeforeAfter(hunk);
         results.push({
           type: 'success',
           filePath,
@@ -788,46 +766,40 @@ async function applyEdits(
         });
         log(`Applying hunk to ${filePath}`);
         if (!dryRun) {
-          await secureWrite(rootDir, filePath, newContent);
+        await secureWrite(rootDir, filePath, result);
         }
         hunksAppliedCount++;
-      } else {
-        // FAILURE: No match (doReplace returned null without throwing)
-        const [originalText, updatedText] = hunkToBeforeAfter(hunk);
+    } else if (result === null) {
+      // FAILURE: No match
+      const [originalText, updatedText] = hunkToBeforeAfter(hunk);
         let closestMatch: ClosestMatchResult | null = null;
         if (currentContent) {
           const searchLines = splitLinesWithEndings(originalText);
           const closestMatches = findClosestMatches(currentContent, searchLines, { maxMatches: 1 });
           closestMatch = closestMatches.length > 0 ? closestMatches[0] : null;
         }
-        results.push({
+      results.push({
           type: 'noMatch',
           filePath,
           originalText,
           updatedText,
           closestMatch,
         });
-      }
-    } catch (e) {
-      if (e instanceof SearchTextNotUnique) {
-        // FAILURE: Not unique (thrown by doReplace or its callees)
-        const [originalText, updatedText] = hunkToBeforeAfter(hunk);
+    } else if (Array.isArray(result)) {
+      // FAILURE: Not unique
+      const [originalText, updatedText] = hunkToBeforeAfter(hunk);
         let matchLocations: MatchLocation[] = [];
         if (currentContent) {
-          matchLocations = findAllMatches(currentContent, originalText);
+        // The result *is* the match locations
+        matchLocations = result;
         }
-        results.push({
+      results.push({
           type: 'notUnique',
           filePath,
           originalText,
           updatedText,
           matchLocations,
         });
-      } else {
-        // Unexpected error during application
-        error(`Unexpected error applying hunk to ${filePath}:`, e);
-        // TODO: Decide how to report this. For now, log and skip adding a result.
-      }
     }
   }
 

@@ -520,7 +520,7 @@ tasks:
           `applyEdits` might become simpler, checking the result type instead of
           catching the error. Adjust `applyHunk` and `applyPartialHunk`
           accordingly if they call `searchAndReplace` directly.
-        done: false
+        done: true
   - title: 4. Integrate Results into applyLlmEdits & Add Interactive Flag
     description: Update applyLlmEdits to handle the structured EditResult[] from
       processors and add the --interactive flag.
