@@ -2,6 +2,7 @@ import { select } from '@inquirer/prompts';
 import os from 'node:os';
 import path from 'path';
 import yaml from 'yaml';
+import chalk from 'chalk';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
@@ -11,7 +12,7 @@ import type { PostApplyCommand } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { planSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
-import { error, log, warn, writeStderr, writeStdout } from '../logging.js';
+import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 
 interface PrepareNextStepOptions {
@@ -116,7 +117,9 @@ export async function prepareNextStep(
   } else if (pendingSteps.length === 1) {
     selectedPendingSteps = [pendingSteps[0]];
     log(
-      `Automatically selected the only pending step: [1] ${pendingSteps[0].prompt.split('\n')[0]}...`
+      boldMarkdownHeaders(
+        `Automatically selected the only pending step: [1] ${pendingSteps[0].prompt.split('\n')[0]}...`
+      )
     );
   } else {
     const maxWidth = process.stdout.columns - 12;
@@ -404,7 +407,11 @@ export async function markStepDone(
       step.done = true;
     }
 
-    log(`Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`);
+    log(
+      chalk.bold(
+        `Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`
+      )
+    );
     if (nowDoneSteps.length > 1) {
       output.push(
         `${task.title} steps ${pending.stepIndex + 1}-${pending.stepIndex + nowDoneSteps.length}`
@@ -417,7 +424,9 @@ export async function markStepDone(
 
     if (nowDoneSteps.length > 1) {
       for (const step of nowDoneSteps) {
-        output.push(`\n## Step ${task.steps.indexOf(step) + 1}\n\n${step.prompt}`);
+        output.push(
+          boldMarkdownHeaders(`\n## Step ${task.steps.indexOf(step) + 1}\n\n${step.prompt}`)
+        );
       }
     } else {
       output.push(`\n${task.steps[pending.stepIndex].prompt}`);
@@ -430,7 +439,7 @@ export async function markStepDone(
 
   // 6. Optionally commit
   const message = output.join('\n');
-  log(message);
+  log(boldMarkdownHeaders(message));
   if (options.commit) {
     log('');
     await commitAll(message);
@@ -474,7 +483,7 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     ...(commandConfig.env || {}), // Merge/override with command-specific env vars
   };
 
-  log(`\nRunning post-apply command: "${commandConfig.title}"...`);
+  log(boldMarkdownHeaders(`\nRunning post-apply command: "${commandConfig.title}"...`));
 
   // Use sh -c or cmd /c for robust command string execution
   const isWindows = process.platform === 'win32';
@@ -559,7 +568,7 @@ export async function extractMarkdownToYaml(inputText: string, quiet: boolean): 
     const streamToConsole = !quiet;
     const numLines = inputText.split('\n').length;
     if (!quiet) {
-      warn(`\n## Converting ${numLines} lines of Markdown to YAML\n`);
+      warn(boldMarkdownHeaders(`\n## Converting ${numLines} lines of Markdown to YAML\n`));
     }
     convertedYaml = await convertMarkdownToYaml(inputText, !streamToConsole);
   }

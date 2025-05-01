@@ -18,7 +18,7 @@ import { convertMarkdownToYaml, findYamlStart, cleanupEolComments } from './clea
 import { loadEffectiveConfig } from './configLoader.js';
 import { planSchema } from './planSchema.js';
 import { planPrompt } from './prompt.js';
-import { closeLogFile, error, log, openLogFile, warn } from '../logging.js';
+import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../logging.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
 
@@ -373,7 +373,9 @@ program
         }
 
         log(
-          `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
+          boldMarkdownHeaders(
+            `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
+          )
         );
         const stepPreparationResult = await prepareNextStep(planFile, {
           rmfilter: true,
@@ -396,7 +398,7 @@ program
           break;
         }
 
-        log('\n## Generating Context\n');
+        log(boldMarkdownHeaders('\n## Generating Context\n'));
 
         const rmfilterOutputPath = promptFilePath.replace('.md', '.xml');
         const proc = logSpawn(['rmfilter', '--output', rmfilterOutputPath, ...rmfilterArgs], {
@@ -408,7 +410,7 @@ program
           process.exit(exitRes ?? 1);
         }
 
-        log('\n## Execution\n');
+        log(boldMarkdownHeaders('\n## Execution\n'));
 
         try {
           let input = await Bun.file(rmfilterOutputPath).text();
@@ -429,7 +431,7 @@ program
 
         // ---> NEW: Execute Post-Apply Commands <---
         if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-          log('\n## Running Post-Apply Commands');
+          log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
           for (const commandConfig of config.postApplyCommands) {
             const commandSucceeded = await executePostApplyCommand(commandConfig);
             if (!commandSucceeded) {
@@ -446,7 +448,7 @@ program
         // ---> END NEW SECTION <---
         let markResult;
         try {
-          log('\n## Marking done\n');
+          log(boldMarkdownHeaders('\n## Marking done\n'));
           markResult = await markStepDone(
             planFile,
             { steps: 1, commit: true },
