@@ -23,7 +23,7 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
         log(`  Closest match (score: ${score.toFixed(2)}):`);
         log(`    Line range: ${startLine + 1} to ${endLine + 1}`);
         log(`    Closest match content:`);
-        log(lines.map((line, i) => `      ${startLine + 1 + i}: ${line}`).join('\n'));
+        log(lines.map((line, i) => `      ${startLine + 1 + i}: ${line.trimEnd()}`).join('\n'));
         // Generate diff between closest match and original text
         const patch = diff.createPatch(
           failure.filePath,

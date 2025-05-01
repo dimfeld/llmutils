@@ -114,15 +114,8 @@ async function handleNoMatchFailure(
 ): Promise<void> {
   log(chalk.yellow(`\n--- Failure: No Exact Match ---`));
   log(`File: ${chalk.bold(failure.filePath)}`);
-  log(`Reason: The following text block to be replaced was not found:`);
-  log(
-    chalk.red(
-      failure.originalText
-        .split('\n')
-        .map((l) => `- ${l}`)
-        .join('\n')
-    )
-  );
+  log(`Reason: ${chalk.red('The following text block to be replaced was not found:')}`);
+  log(failure.originalText);
 
   if (failure.closestMatch) {
     const { lines, startLine, score } = failure.closestMatch;
@@ -131,7 +124,7 @@ async function handleNoMatchFailure(
         `\nClosest match found (score: ${score.toFixed(2)}) starting at line ${startLine + 1}:`
       )
     );
-    log(chalk.yellow(lines.join('')));
+    log(lines.join(''));
 
     const patchPreview = diff
       .createPatch(failure.filePath, lines.join(''), failure.updatedText, '', '', { context: 9999 })
