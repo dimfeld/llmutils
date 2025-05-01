@@ -2,11 +2,8 @@
 import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
 import { applyLlmEdits } from './apply-llm-edits/apply.ts';
-import { log } from './logging.ts';
-import { streamText } from 'ai';
-import { createModel } from './common/model_factory.ts';
-import { streamResultToConsole } from './common/llm.ts';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './common/run_and_apply.ts';
+import { log } from './logging.ts';
 
 const { values, positionals } = parseArgs({
   arg: Bun.argv,
@@ -58,4 +55,4 @@ await fileWriter.end();
 log('\nWrote to repomix-result.txt. Applying...');
 
 const content = await result.text;
-await applyLlmEdits({ content });
+await applyLlmEdits({ content, interactive: true });

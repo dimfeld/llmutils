@@ -13,7 +13,12 @@ test('walk imports from walk_imports.ts', async () => {
   const imports = await walker.getDefiningFiles(
     path.join(rootDir, 'src/dependency_graph/walk_imports.ts')
   );
-  expect(Array.from(imports).sort()).toMatchSnapshot();
+  const relativeImports = imports
+    .values()
+    .map((f) => path.relative(rootDir, f))
+    .toArray()
+    .sort();
+  expect(relativeImports).toMatchSnapshot();
 });
 
 test('walk imports from apply-llm-edits.ts', async () => {

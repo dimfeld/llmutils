@@ -3,8 +3,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as diff from 'diff';
 import stringComparison from 'string-comparison';
-import type { ProcessFileOptions } from '../types.ts';
+import type { ProcessFileOptions, EditResult, SuccessResult, NoMatchFailure } from '../types.ts';
 import { secureWrite } from '../../rmfilter/utils.js';
+import { findClosestMatches } from '../closest_match.ts';
 import { error, log } from '../../logging.ts';
 
 interface Edit {
@@ -17,14 +18,11 @@ const fence = '```';
 
 export async function processSearchReplace({ content, writeRoot, dryRun }: ProcessFileOptions) {
   const edits = getEdits(content, writeRoot);
-  await applyEdits(edits, writeRoot, dryRun);
+  return await applyEdits(edits, writeRoot, dryRun);
 }
 
 function getEdits(content: string, rootDir: string): Edit[] {
-  const edits = findOriginalUpdateBlocks(
-    content,
-    [] // TODO consider using list of files from the original prompt if we have it
-  );
+  const edits = findOriginalUpdateBlocks(content, []);
 
   return edits
     .filter((edit) => edit.filePath !== null)
@@ -39,94 +37,55 @@ async function applyEdits(
   edits: Edit[],
   rootDir: string,
   dryRun: boolean = false
-): Promise<Edit[] | void> {
-  const failed: Edit[] = [];
-  const passed: Edit[] = [];
-  const updatedEdits: Edit[] = [];
+): Promise<EditResult[]> {
+  const results: EditResult[] = [];
 
-  for (const edit of edits) {
-    if (edit.filePath.includes('mathweb/flask')) {
+  for (const { filePath, original, updated } of edits) {
+    if (filePath.includes('mathweb/flask')) {
       throw new Error(
         'Found edits from the sample prompt. Perhaps you forgot to copy the results?'
       );
     }
 
-    const { filePath, original, updated } = edit;
-    let newContent: string | null = null;
-
-    try {
-      const file = Bun.file(path.resolve(rootDir, filePath));
-      let fileContent: string | null = null;
-      if (await file.exists()) {
-        fileContent = await file.text();
-      } else if (filePath.includes(' ')) {
-        log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
-        continue;
-      }
-      newContent = await doReplace(filePath, fileContent, original, updated);
-    } catch (e) {
-      // Handle potential read errors if necessary
-      error(`Error reading file ${filePath}: ${e as Error}`);
-      failed.push(edit); // Mark as failed if read fails
+    const file = Bun.file(path.resolve(rootDir, filePath));
+    let fileContent: string | null = null;
+    if (await file.exists()) {
+      fileContent = await file.text();
+    } else if (filePath.includes(' ')) {
+      log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
       continue;
     }
-
-    updatedEdits.push({ filePath, original, updated });
+    const newContent = await doReplace(filePath, fileContent, original, updated);
 
     if (newContent !== null) {
       log(`Applying edit to ${filePath}`);
       if (!dryRun) {
         await secureWrite(rootDir, filePath, newContent);
       }
-      passed.push(edit);
+      const success: SuccessResult = {
+        type: 'success',
+        filePath,
+        originalText: original,
+        updatedText: updated,
+      };
+      results.push(success);
     } else {
-      failed.push(edit);
+      // Failure case: No exact match found by doReplace
+      const closestMatches = fileContent
+        ? findClosestMatches(fileContent, prep(original).lines, { maxMatches: 1 })
+        : [];
+      const failure: NoMatchFailure = {
+        type: 'noMatch',
+        filePath,
+        originalText: original,
+        updatedText: updated,
+        closestMatch: closestMatches.length > 0 ? closestMatches[0] : null,
+      };
+      results.push(failure);
     }
   }
 
-  if (!failed.length) {
-    return;
-  }
-
-  throw new Error(formatErrorMessage(rootDir, failed, passed));
-}
-
-function formatErrorMessage(rootDir: string, failed: Edit[], passed: Edit[]): string {
-  const blocks = failed.length === 1 ? 'block' : 'blocks';
-  let res = `# ${failed.length} SEARCH/REPLACE ${blocks} failed to match!\n`;
-
-  for (const edit of failed) {
-    const { original, updated } = edit;
-    const fullPath = path.resolve(rootDir, edit.filePath);
-    let content;
-    try {
-      content = fs.readFileSync(fullPath, 'utf-8');
-    } catch (e) {
-      content = '';
-    }
-
-    res += `
-## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines in ${fullPath}
-<<<<<<< SEARCH
-${original}=======
-${updated}>>>>>>> REPLACE
-
-`;
-    const similar = findSimilarLines(original, content);
-    if (similar) {
-      res += `Did you mean to match some of these actual lines from ${fullPath}?
-
-${fence}
-${similar}
-${fence}
-
-`;
-
-      const similarDiff = diff.createPatch('file', original, similar);
-      res += `${similarDiff}\n`;
-    }
-  }
-  return res;
+  return results;
 }
 
 async function doReplace(
@@ -245,44 +204,6 @@ function perfectReplace(
     }
   }
   return null;
-}
-
-function findSimilarLines(
-  searchLines: string,
-  contentLines: string,
-  threshold: number = 0.6
-): string {
-  const search = searchLines.split('\n');
-  const content = contentLines.split('\n');
-
-  let bestRatio = 0;
-  let bestMatch: string[] | null = null;
-  let bestMatchIndex = -1;
-
-  for (let i = 0; i <= content.length - search.length; i++) {
-    const chunk = content.slice(i, i + search.length);
-    const ratio = stringComparison.diceCoefficient.similarity(search.join('\n'), chunk.join('\n'));
-    if (ratio > bestRatio) {
-      bestRatio = ratio;
-      bestMatch = chunk;
-      bestMatchIndex = i;
-    }
-  }
-
-  if (bestRatio < threshold || !bestMatch) {
-    return '';
-  }
-
-  if (bestMatch[0] === search[0] && bestMatch[bestMatch.length - 1] === search[search.length - 1]) {
-    return bestMatch.join('\n');
-  }
-
-  const N = 5;
-  const bestMatchEnd = Math.min(content.length, bestMatchIndex + search.length + N);
-  const bestMatchStart = Math.max(0, bestMatchIndex - N);
-
-  const best = content.slice(bestMatchStart, bestMatchEnd);
-  return best.join('\n');
 }
 
 function tryDotdotdots(whole: string, part: string, replace: string): string | null {
@@ -504,7 +425,7 @@ function findOriginalUpdateBlocks(content: string, validFnames: string[] = []): 
         i++;
       }
       if (i < lines.length && lines[i].trim().startsWith('```')) {
-        i++; // Skip the closing ```
+        i++;
       }
       results.push({ filePath: null, original: null, updated: shellContent.join('') });
       continue;
@@ -669,9 +590,9 @@ function getCloseMatches(
 ): string[] {
   const matches = stringComparison.diceCoefficient.sortMatch(target, candidates);
   const topMatches = matches
-    .filter((r) => r.rating >= cutoff) // Cutoff
-    .sort((a, b) => b.rating - a.rating) // Sort by similarity
-    .slice(0, n) // Limit to n
+    .filter((r) => r.rating >= cutoff)
+    .sort((a, b) => b.rating - a.rating)
+    .slice(0, n)
     .map((r) => r.member);
   return topMatches;
 }

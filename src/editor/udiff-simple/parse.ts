@@ -1,16 +1,17 @@
 import * as path from 'path';
 import * as diff from 'diff';
-import type { ProcessFileOptions } from '../types.ts';
+import type {
+  ProcessFileOptions,
+  EditResult,
+  SuccessResult,
+  NoMatchFailure,
+  NotUniqueFailure,
+  MatchLocation,
+  ClosestMatchResult,
+} from '../types.ts';
+import { findClosestMatches } from '../closest_match.ts';
 import { secureWrite } from '../../rmfilter/utils.js';
 import { error, log, warn } from '../../logging.ts';
-
-// Custom Error for specific diff application failures
-class UnifiedDiffError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'UnifiedDiffError';
-  }
-}
 
 class SearchTextNotUnique extends Error {
   constructor(message: string = 'Search text is not unique in the content.') {
@@ -20,36 +21,9 @@ class SearchTextNotUnique extends Error {
 }
 
 interface EditHunk {
-  filePath: string; // File path is always resolved and present after initial parsing
-  hunk: string[]; // Lines of the hunk (e.g., ['--- a/file.txt', '+++ b/file.txt', '@@ ... @@', '-old', '+new'])
+  filePath: string;
+  hunk: string[];
 }
-
-const noMatchErrorTemplate = `UnifiedDiffNoMatch: hunk failed to apply!
-
-{path} does not contain lines that match the diff you provided!
-Try again.
-DO NOT skip blank lines, comments, docstrings, etc!
-The diff needs to apply cleanly to the lines in {path}!
-
-{path} does not contain these {num_lines} exact lines in a row:
-\`\`\`
-{original}\`\`\`
-`;
-
-const notUniqueErrorTemplate = `UnifiedDiffNotUnique: hunk failed to apply!
-
-{path} contains multiple sets of lines that match the diff you provided!
-Try again.
-Use additional \` \` lines to provide context that uniquely indicates which code needs to be changed.
-The diff needs to apply to a unique set of lines in {path}!
-
-{path} contains multiple copies of these {num_lines} lines:
-\`\`\`
-{original}\`\`\`
-`;
-
-const otherHunksAppliedMessage =
-  'Note: some hunks did apply successfully. See the updated source code shown above.\n\n';
 
 /**
  * Splits a string into lines, preserving the newline characters at the end of each line.
@@ -129,7 +103,7 @@ function cleanupPureWhitespaceLines(lines: string[]): string[] {
     if (trimmed === '') {
       // Extract original newline character(s)
       const match = line.match(/(\r?\n)$/);
-      return match ? match[0] : ''; // Keep only the newline if present
+      return match ? match[0] : '';
     }
     return line;
   });
@@ -148,14 +122,9 @@ function normalizeHunk(hunk: string[]): string[] {
   // Use diff library to create a new unified diff hunk
   // We need context N large enough to encompass the entire change.
   const contextSize = Math.max(cleanedBefore.length, cleanedAfter.length);
-  const patch = diff.createPatch(
-    'after', // newFileName (placeholder)
-    cleanedBefore.join(''),
-    cleanedAfter.join(''),
-    '', // oldHeader
-    '', // newHeader
-    { context: contextSize }
-  );
+  const patch = diff.createPatch('after', cleanedBefore.join(''), cleanedAfter.join(''), '', '', {
+    context: contextSize,
+  });
 
   // createPatch includes header lines (---, +++, @@). We only want the hunk content lines.
   const patchLines = splitLinesWithEndings(patch);
@@ -163,19 +132,10 @@ function normalizeHunk(hunk: string[]): string[] {
   // Find the start of the actual hunk lines (after @@)
   const hunkStartIndex = patchLines.findIndex((line) => line.startsWith('@@'));
   if (hunkStartIndex === -1) {
-    return []; // No changes found, return empty hunk
+    return [];
   }
 
-  // Return only the lines from @@ onwards
-  // Note: The python version returns lines *without* the @@ line,
-  // but the structure of diff.createPatch includes it, and subsequent
-  // processing in python (hunk_to_before_after) ignores it.
-  // Let's return the lines *after* @@ to match python's effective input to hunk_to_before_after.
-  // Actually, let's test if keeping @@ is better for apply_hunk logic.
-  // The python code *appends* "@@ @@" before processing, suggesting it expects it.
-  // Let's return the lines *including* @@ for now.
-  // Re-reading python: it slices `list(new_hunk)[3:]` which removes ---, +++, @@.
-  // So we should return lines *after* @@.
+  // Slice off the leading @@
   return patchLines.slice(hunkStartIndex + 1);
 }
 
@@ -183,10 +143,10 @@ function normalizeHunk(hunk: string[]): string[] {
  * Attempts to apply a hunk by directly searching for the "before" text
  * and replacing it with the "after" text. Handles minor whitespace variations.
  * Throws SearchTextNotUnique if the "before" text appears multiple times.
+ * Returns MatchLocation[] if the "before" text appears multiple times.
  */
-function directlyApplyHunk(content: string, hunk: string[], log = false): string | null {
+function directlyApplyHunk(content: string, hunk: string[]): string | null | MatchLocation[] {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
-
   if (!beforeText.trim()) {
     // If 'before' is just whitespace, it's likely an insertion.
     // This function is for replacement/deletion based on context.
@@ -210,71 +170,97 @@ function directlyApplyHunk(content: string, hunk: string[], log = false): string
   }
 
   // Try perfect match first
-  try {
-    const result = searchAndReplace(content, beforeText, afterText);
-    return result;
-  } catch (e) {
-    if (e instanceof SearchTextNotUnique) {
-      // Propagate the specific error if it's unique issue
-      throw e;
-    }
-    // Other errors during search/replace might occur, treat as no match for now.
-    // Or maybe try flexible search? Python code uses flexi_just_search_and_replace
-    // which seems to be just search_and_replace with all_preprocs.
-    // Let's stick to the simpler perfect match logic from diff-editor/parse.ts first.
-    // If perfect match fails (returns null or throws non-unique error), return null.
-    return null;
-  }
+  const result = searchAndReplace(content, beforeText, afterText);
+  // Result can be string (success), null (no match), or MatchLocation[] (not unique)
+  return result;
 }
 
 /**
  * Escapes special characters in a string for use in a regular expression.
  */
 function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
  * Performs a simple, exact string replacement.
- * Throws SearchTextNotUnique if `part` appears more than once in `whole`.
+ * Returns MatchLocation[] if `part` appears more than once in `whole`.
  * Returns null if `part` is not found.
+ * Returns the replaced string if exactly one match is found.
  */
-function searchAndReplace(whole: string, part: string, replace: string): string | null {
+function searchAndReplace(
+  whole: string,
+  part: string,
+  replace: string
+): string | null | MatchLocation[] {
   const regex = new RegExp(escapeRegExp(part), 'g');
   const matches = [...whole.matchAll(regex)];
-
   if (matches.length === 0) {
-    return null; // Not found
+    return null;
   }
 
   if (matches.length > 1) {
     throw new SearchTextNotUnique(`Search text occurs ${matches.length} times.`);
   }
-
+  if (matches.length > 1) {
+    return findAllMatches(whole, part);
+  }
   // Exactly one match found
   const index = matches[0].index;
   return whole.substring(0, index) + replace + whole.substring(index + part.length);
 }
 
 /**
+ * Finds all occurrences of a substring and returns their locations.
+ */
+function findAllMatches(whole: string, part: string): MatchLocation[] {
+  const locations: MatchLocation[] = [];
+  if (!part || !whole) {
+    return locations;
+  }
+
+  const regex = new RegExp(escapeRegExp(part), 'g');
+  const fileLines = splitLinesWithEndings(whole);
+
+  for (const match of whole.matchAll(regex)) {
+    const contextRadius = 2;
+    const startIndex = match.index;
+    const beforeMatch = whole.substring(0, startIndex);
+    // Count occurrences of '\n' to determine the line number (1-based)
+    const startLine = (beforeMatch.match(/\n/g) || []).length + 1;
+
+    // Calculate the end line of the match itself (1-based)
+    // Count newlines within the matched part. If part has no newlines, it's on one line.
+    const numNewlinesInPart = (part.match(/\n/g) || []).length;
+    const endLine = startLine + numNewlinesInPart;
+
+    // Calculate context start and end line indices (0-based for slicing fileLines)
+    // Context starts `contextRadius` lines before the match starts.
+    const contextStartLineIndex = Math.max(0, startLine - 1 - contextRadius);
+    // Context ends `contextRadius` lines after the match ends.
+    const contextEndLineIndex = Math.min(fileLines.length, endLine - 1 + contextRadius + 1);
+    const contextLines = fileLines.slice(contextStartLineIndex, contextEndLineIndex);
+
+    locations.push({ startIndex, startLine, contextLines });
+  }
+
+  return locations;
+}
+
+/**
  * Applies a hunk to the content, trying direct application first,
  * then falling back to applying partial hunks if necessary.
  */
-function applyHunk(content: string, hunk: string[]): string | null {
+function applyHunk(content: string, hunk: string[]): string | null | MatchLocation[] {
   // 1. Try direct application
-  try {
-    const directResult = directlyApplyHunk(content, hunk);
-    if (directResult !== null) {
-      return directResult;
-    }
-  } catch (e) {
-    // If direct application throws SearchTextNotUnique, propagate it
-    if (e instanceof SearchTextNotUnique) {
-      throw e;
-    }
-    // Other errors in directApply might happen, fall through to partial application
+  const directResult = directlyApplyHunk(content, hunk);
+  if (directResult !== null) {
+    // If directResult is string (success) or MatchLocation[] (not unique), return it.
+    // If it's null (no match), proceed to partial application.
+    return directResult;
   }
 
+  // directResult was null (no match), try partial application
   // TODO: Port make_new_lines_explicit if needed. Skipping for now as it seems complex.
   // hunk = make_new_lines_explicit(content, hunk)
 
@@ -318,28 +304,20 @@ function applyHunk(content: string, hunk: string[]): string | null {
       const changes = sections[i].lines;
       const followingContext =
         i + 1 < sections.length && sections[i + 1].type === 'context' ? sections[i + 1].lines : [];
+      const partialResult = applyPartialHunk(
+        currentContent,
+        precedingContext,
+        changes,
+        followingContext
+      );
 
-      try {
-        const partialResult = applyPartialHunk(
-          currentContent,
-          precedingContext,
-          changes,
-          followingContext
-        );
-        if (partialResult !== null) {
-          currentContent = partialResult;
-        } else {
-          allApplied = false;
-          break; // Stop if any partial hunk fails
-        }
-      } catch (e) {
-        // If partial application throws SearchTextNotUnique, consider it a failure for this attempt
-        if (e instanceof SearchTextNotUnique) {
-          allApplied = false;
-          // Re-throw the specific error? Or just mark as failed?
-          // Python code seems to just break and return None overall if any part fails.
-          // Let's re-throw to provide specific feedback if uniqueness is the issue.
-          throw e;
+      if (typeof partialResult === 'string') {
+        currentContent = partialResult;
+      } else {
+        // Failure for this part (null for no match, MatchLocation[] for not unique)
+        allApplied = false;
+        if (Array.isArray(partialResult)) {
+          return partialResult;
         }
         // Other errors also mean failure
         allApplied = false;
@@ -355,6 +333,7 @@ function changeLineToContext(line: string): string {
   return line[0] === '+' || line[0] === '-' ? ' ' + line.slice(1) : line;
 }
 
+/** Try to handle the case where some lines that should be context are "added" instead. */
 function tryConvertedContextHunk(
   content: string,
   precedingContext: string[],
@@ -362,7 +341,7 @@ function tryConvertedContextHunk(
   followingContext: string[],
   convertPreceding: number,
   convertFollowing: number
-): string | null {
+): string | MatchLocation[] | null {
   if (convertPreceding + convertFollowing >= changes.length) {
     return null;
   }
@@ -389,7 +368,7 @@ function applyPartialHunk(
   precedingContext: string[],
   changes: string[],
   followingContext: string[]
-): string | null {
+): string | null | MatchLocation[] {
   const lenPrec = precedingContext.length;
   const lenFoll = followingContext.length;
   const totalContext = lenPrec + lenFoll;
@@ -415,7 +394,10 @@ function applyPartialHunk(
       convertPreceding,
       convertFollowing
     );
-    if (result !== null) {
+    if (typeof result === 'string') {
+      return result;
+    } else if (Array.isArray(result)) {
+      // Not unique, but maybe less context will work? Continue trying.
       return result;
     }
   }
@@ -441,38 +423,25 @@ function applyPartialHunk(
       const currentHunk = [...thisPrec, ...changes, ...thisFoll];
 
       // Try applying this specific combination of context + changes
-      try {
-        const result = directlyApplyHunk(content, currentHunk);
-        if (result !== null) {
-          return result; // Success!
-        }
-      } catch (e) {
-        // If this specific context combination leads to non-unique match,
-        // re-throw it, as more context might be needed (handled by outer loops).
-        // Or maybe just continue trying other combinations? Python's behavior isn't explicit here.
-        // Let's assume if directlyApplyHunk throws NotUnique, this partial attempt failed.
-        if (e instanceof SearchTextNotUnique) {
-          // Let outer loop try more/less context. If all fail, the final error will be raised.
-          // However, if *any* partial hunk attempt throws NotUnique, the whole process should fail with NotUnique.
-          // Let's re-throw immediately.
-          throw e;
-        }
-        // Ignore other errors (like no match) and continue trying combinations.
+      const result = directlyApplyHunk(content, currentHunk);
+      if (typeof result === 'string') {
+        return result;
+      } else if (Array.isArray(result)) {
+        // Not unique with this context. Propagate the failure.
+        // Trying less context is unlikely to resolve uniqueness.
+        return result;
       }
     }
   }
 
-  return null; // No combination worked
+  return null;
 }
 
 /**
  * Applies the edits to the specified file content.
  * Handles creating new files.
  */
-export function doReplace(
-  content: string | null, // null if file doesn't exist
-  hunk: string[]
-): string | null {
+export function doReplace(content: string | null, hunk: string[]): string | null | MatchLocation[] {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
 
   // Handle creating a new file
@@ -493,7 +462,7 @@ export function doReplace(
   }
 
   // Apply the hunk using the main application logic
-  // This might throw SearchTextNotUnique
+  // This might return string (success), null (no match), or MatchLocation[] (not unique)
   return applyHunk(content, hunk);
 }
 
@@ -595,8 +564,8 @@ function processFencedBlock(
   const edits: { filePath: string | null; hunk: string[] }[] = [];
   let currentFilePath: string | null = null;
   let currentHunk: string[] = [];
-  let inHunk = false; // Are we between @@ markers?
-  let hasChanges = false; // Does the current hunk have +/- lines?
+  let inHunk = false;
+  let hasChanges = false;
 
   // Check for --- / +++ lines at the beginning
   let blockStartIndex = 0;
@@ -612,7 +581,7 @@ function processFencedBlock(
     if ((a_fname.startsWith('a/') || a_fname === '/dev/null') && b_fname.startsWith('b/')) {
       currentFilePath = b_fname.substring(2);
     } else if (a_fname === '/dev/null') {
-      currentFilePath = b_fname; // Creating new file
+      currentFilePath = b_fname;
     } else {
       // Assume b_fname is the intended path if no standard prefixes
       currentFilePath = b_fname;
@@ -655,7 +624,7 @@ function processFencedBlock(
       } else {
         currentFilePath = b_fname;
       }
-      i++; // Skip the +++ line
+      i++;
 
       currentHunk = [];
       hasChanges = false;
@@ -688,13 +657,16 @@ export async function processUnifiedDiff({
   content,
   writeRoot,
   dryRun,
-}: ProcessFileOptions): Promise<void> {
+}: ProcessFileOptions): Promise<EditResult[]> {
   const rawEdits = findDiffs(content);
 
   const edits: EditHunk[] = [];
   let lastPath: string | null = null;
   for (const { filePath, hunk } of rawEdits) {
     let resolvedPath = filePath;
+    if (resolvedPath === '/dev/null') {
+      continue;
+    }
     if (resolvedPath) {
       lastPath = resolvedPath;
     } else {
@@ -710,15 +682,25 @@ export async function processUnifiedDiff({
     edits.push({ filePath: resolvedPath, hunk });
   }
 
-  await applyEdits(edits, writeRoot, dryRun);
+  const results = await applyEdits(edits, writeRoot, dryRun);
+
+  // Log summary based on results
+  const successCount = results.filter((r) => r.type === 'success').length;
+  const noMatchCount = results.filter((r) => r.type === 'noMatch').length;
+  const notUniqueCount = results.filter((r) => r.type === 'notUnique').length;
+  log(
+    `Processing complete. Success: ${successCount}, No Match: ${noMatchCount}, Not Unique: ${notUniqueCount}`
+  );
+
+  return results;
 }
 
 async function applyEdits(
   edits: EditHunk[],
   rootDir: string,
   dryRun: boolean = false
-): Promise<void> {
-  const errors: string[] = [];
+): Promise<EditResult[]> {
+  const results: EditResult[] = [];
   const appliedHunks: Set<string> = new Set();
   const uniqueEdits: EditHunk[] = [];
 
@@ -726,7 +708,7 @@ async function applyEdits(
   for (const edit of edits) {
     const normalizedHunk = normalizeHunk(edit.hunk);
     if (normalizedHunk.length === 0) {
-      continue; // Skip empty hunks after normalization
+      continue;
     }
 
     const hunkKey = `${edit.filePath}\n${normalizedHunk.join('')}`;
@@ -752,69 +734,61 @@ async function applyEdits(
       }
     } catch (e) {
       error(`Error accessing file ${filePath}: ${e as Error}`);
-      errors.push(
-        `Error accessing file ${filePath}: ${e instanceof Error ? e.message : String(e)}`
-      );
-      continue; // Skip this edit if we can't read the file
+      // TODO: How to report file access errors? Add a new EditResult type?
+      // For now, log and skip, not adding to results.
+      // Or maybe create a generic failure? Let's skip for now.
+      continue;
     }
 
-    try {
-      const newContent = doReplace(currentContent, hunk);
+    const result = doReplace(currentContent, hunk);
 
-      if (newContent !== null) {
-        // SUCCESS!
-        log(`Applying hunk to ${filePath}`);
-        if (!dryRun) {
-          await secureWrite(rootDir, filePath, newContent);
-        }
-        hunksAppliedCount++;
-      } else {
-        // FAILURE: No match
-        const [originalText] = hunkToBeforeAfter(hunk);
-        const numLines = splitLinesWithEndings(originalText).length;
-        errors.push(
-          noMatchErrorTemplate
-            .replace(/{path}/g, filePath)
-            .replace(/{num_lines}/g, String(numLines))
-            .replace(/{original}/g, originalText)
-        );
+    if (typeof result === 'string') {
+      // SUCCESS!
+      const [originalText, updatedText] = hunkToBeforeAfter(hunk);
+      results.push({
+        type: 'success',
+        filePath,
+        originalText,
+        updatedText,
+      });
+      log(`Applying hunk to ${filePath}`);
+      if (!dryRun) {
+        await secureWrite(rootDir, filePath, result);
       }
-    } catch (e) {
-      if (e instanceof SearchTextNotUnique) {
-        // FAILURE: Not unique
-        const [originalText] = hunkToBeforeAfter(hunk);
-        const numLines = splitLinesWithEndings(originalText).length;
-        errors.push(
-          notUniqueErrorTemplate
-            .replace(/{path}/g, filePath)
-            .replace(/{num_lines}/g, String(numLines))
-            .replace(/{original}/g, originalText)
-        );
-      } else {
-        // Unexpected error during application
-        error(`Unexpected error applying hunk to ${filePath}:`, e);
-        errors.push(
-          `Unexpected error applying hunk to ${filePath}: ${e instanceof Error ? e.message : String(e)}`
-        );
+      hunksAppliedCount++;
+    } else if (result === null) {
+      // FAILURE: No match
+      const [originalText, updatedText] = hunkToBeforeAfter(hunk);
+      let closestMatch: ClosestMatchResult | null = null;
+      if (currentContent) {
+        const searchLines = splitLinesWithEndings(originalText);
+        const closestMatches = findClosestMatches(currentContent, searchLines, { maxMatches: 1 });
+        closestMatch = closestMatches.length > 0 ? closestMatches[0] : null;
       }
+      results.push({
+        type: 'noMatch',
+        filePath,
+        originalText,
+        updatedText,
+        closestMatch,
+      });
+    } else if (Array.isArray(result)) {
+      // FAILURE: Not unique
+      const [originalText, updatedText] = hunkToBeforeAfter(hunk);
+      let matchLocations: MatchLocation[] = [];
+      if (currentContent) {
+        // The result *is* the match locations
+        matchLocations = result;
+      }
+      results.push({
+        type: 'notUnique',
+        filePath,
+        originalText,
+        updatedText,
+        matchLocations,
+      });
     }
   }
 
-  if (errors.length > 0) {
-    let errorMessage = errors.join('\n\n');
-    if (hunksAppliedCount > 0 && hunksAppliedCount < uniqueEdits.length) {
-      errorMessage += '\n\n' + otherHunksAppliedMessage;
-    }
-    throw new UnifiedDiffError(errorMessage);
-  }
-
-  if (hunksAppliedCount === 0 && uniqueEdits.length > 0) {
-    // If there were hunks but none applied and no specific errors were caught, throw a generic failure.
-    // This might happen if all hunks resulted in `doReplace` returning null without throwing.
-    throw new UnifiedDiffError(
-      'Failed to apply any of the provided diff hunks. Check the diff format and context.'
-    );
-  }
-
-  log(`Successfully applied ${hunksAppliedCount} hunks.`);
+  return results;
 }
