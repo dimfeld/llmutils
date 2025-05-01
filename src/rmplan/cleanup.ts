@@ -44,8 +44,12 @@ export async function convertMarkdownToYaml(markdownInput: string, quiet = false
   });
 
   if (!quiet) {
-    for await (const chunk of result.textStream) {
-      process.stdout.write(chunk);
+    for await (const chunk of result.fullStream) {
+      if (chunk.type === 'text-delta') {
+        process.stdout.write(chunk.textDelta);
+      } else if (chunk.type === 'error') {
+        throw new Error((chunk.error as any).toString());
+      }
     }
     process.stdout.write('\n');
   }
