@@ -216,6 +216,7 @@ async function handleNoMatchFailure(
 async function handleNotUniqueFailure(
   failure: NotUniqueFailure,
   writeRoot: string,
+  appliedLocationsByFile: Map<string, Set<number>>,
   dryRun: boolean
 ): Promise<void> {
   log(chalk.yellow(`\n--- Failure: Not Unique ---`));
@@ -242,11 +243,21 @@ async function handleNotUniqueFailure(
       .join('\n')
   );
 
-  const choices = failure.matchLocations.map((match, index) => ({
-    name: `Location ${index + 1} (Line ${match.startLine})`,
-    value: index,
-    description: match.contextLines.join(''),
-  }));
+  // Get or initialize the set of applied locations for this file
+  let appliedLocations = appliedLocationsByFile.get(failure.filePath);
+  if (!appliedLocations) {
+    appliedLocations = new Set<number>();
+    appliedLocationsByFile.set(failure.filePath, appliedLocations);
+  }
+
+  // Filter out previously applied locations
+  const choices = failure.matchLocations
+    .map((match, index) => ({
+      name: `Location ${index + 1} (Line ${match.startLine})`,
+      value: index,
+      description: match.contextLines.join(''),
+    }))
+    .filter((choice) => !appliedLocations.has(failure.matchLocations[choice.value].startLine));
 
   choices.push({ name: 'Skip this edit', value: -1, description: '' });
 
@@ -257,13 +268,14 @@ async function handleNotUniqueFailure(
 
   if (selectedIndex !== -1) {
     const selectedMatch = failure.matchLocations[selectedIndex];
+    // Record the applied location
+    appliedLocations.add(selectedMatch.startLine);
     const originalLines = splitLinesWithEndings(failure.originalText);
     await applyEdit(failure, originalLines, selectedMatch.startLine, writeRoot, dryRun);
   } else {
     log(`Skipping edit for ${failure.filePath}`);
   }
 }
-
 export async function resolveFailuresInteractively(
   failures: (NoMatchFailure | NotUniqueFailure)[],
   writeRoot: string,
@@ -273,11 +285,14 @@ export async function resolveFailuresInteractively(
     chalk.bold.blue(`Entering interactive mode to resolve ${failures.length} edit failure(s)...`)
   );
 
+  // Track applied locations per file
+  const appliedLocationsByFile = new Map<string, Set<number>>();
+
   for (const failure of failures) {
     if (failure.type === 'noMatch') {
       await handleNoMatchFailure(failure, writeRoot, dryRun);
     } else if (failure.type === 'notUnique') {
-      await handleNotUniqueFailure(failure, writeRoot, dryRun);
+      await handleNotUniqueFailure(failure, writeRoot, appliedLocationsByFile, dryRun);
     }
     log(chalk.dim('---'));
   }
