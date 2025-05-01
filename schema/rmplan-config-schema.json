@@ -5,6 +5,21 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "models": {
+      "type": "object",
+      "description": "Model specifications for different rmplan operations.",
+      "additionalProperties": false,
+      "properties": {
+        "execution": {
+          "type": "string",
+          "description": "Model spec for rmplan run model."
+        },
+        "convert_yaml": {
+          "type": "string",
+          "description": "Model spec for rmplan markdown-to-yaml extraction."
+        }
+      }
+    },
     "postApplyCommands": {
       "type": "array",
       "description": "An array of commands to run after changes are successfully applied by the agent.",

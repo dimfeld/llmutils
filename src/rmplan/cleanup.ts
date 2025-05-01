@@ -5,6 +5,7 @@ import { CURRENT_DIFF, getChangedFiles } from '../rmfilter/additional_docs.ts';
 import { getGitRoot } from '../rmfilter/utils.ts';
 import { debugLog, error, log } from '../logging.ts';
 import path from 'node:path';
+import type { RmplanConfig } from './configSchema.js';
 
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
@@ -35,10 +36,15 @@ See the structure in the provided Markdown input text.
 **Required Output (YAML):**
 A single block of valid YAML text conforming to the schema.`;
 
-export async function convertMarkdownToYaml(markdownInput: string, quiet = false): Promise<string> {
+export async function convertMarkdownToYaml(
+  markdownInput: string,
+  config: RmplanConfig,
+  quiet = false
+): Promise<string> {
+  const modelSpec = config.models?.convert_yaml || 'google/gemini-2.5-flash-preview-04-17';
   const prompt = markdownToYamlConversionPrompt.replace('{markdownInput}', markdownInput);
   let result = streamText({
-    model: createModel('google/gemini-2.5-flash-preview-04-17'),
+    model: createModel(modelSpec),
     prompt,
     temperature: 0,
   });
@@ -78,10 +84,10 @@ export function findYamlStart(text: string): string {
   return text;
 }
 
-const doubleSlash = /\/\/\s*.*$/;
-const slashStar = /\/\*[\s\S]*?\*\//;
+const doubleSlash = / \/\/ \s*.*$/;
+const slashStar = / \/\*[\s\S]*?\*\/$/;
 const hash = /#\s*.*$/gm;
-// Gemini sometimes adds comments like {/* ... */} which are not valid syntax
+// Gemini sometimes adds comments like {} which are not valid syntax
 const invalidSvelteTemplateComment = /\{\/\*([\s\S]+)\*\/\}/;
 
 const commentPatterns: { [ext: string]: RegExp[] } = {
@@ -112,7 +118,8 @@ export function cleanComments(
   content: string,
   ext: string
 ): { cleanedContent: string; linesCleaned: number } | undefined {
-  if (!Object.keys(commentPatterns).includes(ext)) {
+  const patterns = commentPatterns[ext];
+  if (!patterns?.length) {
     return;
   }
 

@@ -1,3 +1,7 @@
+# May 1, 2025
+
+- Ability to set models for each task in rmplan project config
+
 # April 30, 2025
 
 - Show reasoning output when running code prompts for models that make it available
@@ -42,4 +46,3 @@
 
 - Enforce that all edit applications are inside the repository
 - Add options to include file imports in `rmplan next`
-

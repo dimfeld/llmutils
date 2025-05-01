@@ -160,7 +160,8 @@ program
             path.basename(options.plan, '.md') + '.yml'
           );
         }
-        const outputYaml = await extractMarkdownToYaml(input, options.quiet ?? false);
+        const config = await loadEffectiveConfig(options.config);
+        const outputYaml = await extractMarkdownToYaml(input, config, options.quiet ?? false);
         if (outputFilename) {
           await Bun.write(outputFilename, outputYaml);
           if (!options.quiet) {
@@ -216,7 +217,8 @@ program
     }
 
     try {
-      const outputYaml = await extractMarkdownToYaml(inputText, options.quiet ?? false);
+      const config = await loadEffectiveConfig(options.config);
+      const outputYaml = await extractMarkdownToYaml(inputText, config, options.quiet ?? false);
       if (options.output) {
         let outputFilename = options.output;
         if (outputFilename.endsWith('.md')) {
@@ -333,6 +335,9 @@ program
   .option('--no-log', 'Do not log to file')
   .allowExcessArguments(true)
   .action(async (planFile, options) => {
+    const config = await loadEffectiveConfig(options.config);
+    const executionModel = options.model || config.models?.execution || DEFAULT_RUN_MODEL;
+
     if (!options['no-log']) {
       let lastDot = planFile.lastIndexOf('.');
       let logFilePath = lastDot !== -1 ? planFile.slice(0, lastDot) : planFile;
@@ -340,9 +345,7 @@ program
       openLogFile(logFilePath);
     }
 
-    const config = await loadEffectiveConfig(options.config);
-
-    log('Starting agent to execute plan:', planFile /*, 'with config:', config */);
+    log('Starting agent to execute plan:', planFile);
     try {
       let hasError = false;
 
@@ -382,6 +385,7 @@ program
           rmfilter: true,
           previous: true,
           selectSteps: false,
+          model: executionModel,
         }).catch((err) => {
           error('Failed to prepare next step:', err);
           hasError = true;
@@ -417,7 +421,7 @@ program
           let input = await Bun.file(rmfilterOutputPath).text();
           let result = await runStreamingPrompt({
             input,
-            model: options.model || DEFAULT_RUN_MODEL,
+            model: executionModel,
           });
 
           let output = await result.text;

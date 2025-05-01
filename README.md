@@ -371,7 +371,7 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 
 #### Automatic Examples
 
-When `autoexamples` is set, rmplan will search the generated prompt 
+When `autoexamples` is set, rmplan will search the generated prompt
 for the provided values, and when it runs `rmfilter`, matching values will be automatically added
 as `--example` options to the command line for all matching strings.
 

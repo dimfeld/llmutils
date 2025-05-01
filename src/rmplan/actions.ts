@@ -14,7 +14,6 @@ import { planSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
-import { loadEffectiveConfig } from './configLoader.js';
 
 interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -23,6 +22,7 @@ interface PrepareNextStepOptions {
   withAllImports?: boolean;
   selectSteps?: boolean;
   rmfilterArgs?: string[];
+  model?: string;
   autofind?: boolean;
 }
 
@@ -69,6 +69,7 @@ export async function prepareNextStep(
     selectSteps = true,
     rmfilterArgs = [],
     autofind = false,
+    model,
   } = options;
 
   if (withImports && withAllImports) {
@@ -217,7 +218,7 @@ export async function prepareNextStep(
       query: query,
       classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL,
       grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL,
-      globs: [], // Look in the base directory
+      globs: [],
       quiet: quiet,
     };
 
@@ -277,6 +278,10 @@ export async function prepareNextStep(
     await Bun.write(promptFilePath, llmPrompt);
 
     const baseRmfilterArgs = ['--gitroot', '--instructions', `@${promptFilePath}`];
+    if (model) {
+      baseRmfilterArgs.push('--model', model);
+    }
+
     // Convert the potentially updated 'files' list (task + autofound) to relative paths
     const relativeFiles = files.map((f) => path.relative(gitRoot, f));
 
@@ -483,7 +488,7 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     error(
       `e getting Git root for post-apply command: ${e instanceof Error ? e.message : String(e)}`
     );
-    return false; // Indicate failure
+    return false;
   }
 
   const cwd = commandConfig.workingDirectory
@@ -491,8 +496,8 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     : gitRoot;
 
   const env = {
-    ...process.env, // Start with current environment
-    ...(commandConfig.env || {}), // Merge/override with command-specific env vars
+    ...process.env,
+    ...(commandConfig.env || {}),
   };
 
   log(boldMarkdownHeaders(`\nRunning post-apply command: "${commandConfig.title}"...`));
@@ -556,17 +561,21 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
       warn(
         `Warning: Failure of command "${commandConfig.title}" is allowed according to configuration.`
       );
-      return true; // Indicate successful handling (failure ignored)
+      return true;
     } else {
-      return false; // Indicate failure that should stop the process
+      return false;
     }
   }
 
   log(`Post-apply command "${commandConfig.title}" completed successfully.`);
-  return true; // Indicate success
+  return true;
 }
 
-export async function extractMarkdownToYaml(inputText: string, quiet: boolean): Promise<string> {
+export async function extractMarkdownToYaml(
+  inputText: string,
+  config: RmplanConfig,
+  quiet: boolean
+): Promise<string> {
   let validatedPlan: unknown;
   let convertedYaml: string;
 
@@ -582,7 +591,7 @@ export async function extractMarkdownToYaml(inputText: string, quiet: boolean): 
     if (!quiet) {
       warn(boldMarkdownHeaders(`\n## Converting ${numLines} lines of Markdown to YAML\n`));
     }
-    convertedYaml = await convertMarkdownToYaml(inputText, !streamToConsole);
+    convertedYaml = await convertMarkdownToYaml(inputText, config, !streamToConsole);
   }
 
   if (!convertedYaml.startsWith('# yaml-language-server')) {

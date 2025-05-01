@@ -22,6 +22,10 @@ export const modelPresets = {
     noArtifacts: true,
     defaultEditFormat: 'diff',
   },
+  claude: {
+    defaultEditFormat: 'diff',
+    overeager: true,
+  },
 } satisfies Record<string, ModelPreset>;
 
 export function resolveModelSettings(model: string | undefined): ModelPreset {
@@ -32,6 +36,8 @@ export function resolveModelSettings(model: string | undefined): ModelPreset {
 
   if (model.startsWith('google/gemini')) {
     model = 'gemini';
+  } else if (model.startsWith('anthropic/') || model.startsWith('claude')) {
+    model = 'claude';
   }
 
   return modelPresets[model as keyof typeof modelPresets] || defaultModelSettings;
