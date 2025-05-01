@@ -217,7 +217,7 @@ export async function prepareNextStep(
       query: query,
       classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL,
       grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL,
-      globs: [], // Look in the base directory
+      globs: [],
       quiet: quiet,
     };
 
@@ -483,7 +483,7 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     error(
       `e getting Git root for post-apply command: ${e instanceof Error ? e.message : String(e)}`
     );
-    return false; // Indicate failure
+    return false;
   }
 
   const cwd = commandConfig.workingDirectory
@@ -491,8 +491,8 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
     : gitRoot;
 
   const env = {
-    ...process.env, // Start with current environment
-    ...(commandConfig.env || {}), // Merge/override with command-specific env vars
+    ...process.env,
+    ...(commandConfig.env || {}),
   };
 
   log(boldMarkdownHeaders(`\nRunning post-apply command: "${commandConfig.title}"...`));
@@ -556,17 +556,21 @@ export async function executePostApplyCommand(commandConfig: PostApplyCommand): 
       warn(
         `Warning: Failure of command "${commandConfig.title}" is allowed according to configuration.`
       );
-      return true; // Indicate successful handling (failure ignored)
+      return true;
     } else {
-      return false; // Indicate failure that should stop the process
+      return false;
     }
   }
 
   log(`Post-apply command "${commandConfig.title}" completed successfully.`);
-  return true; // Indicate success
+  return true;
 }
 
-export async function extractMarkdownToYaml(inputText: string, quiet: boolean): Promise<string> {
+export async function extractMarkdownToYaml(
+  inputText: string,
+  config: RmplanConfig,
+  quiet: boolean
+): Promise<string> {
   let validatedPlan: unknown;
   let convertedYaml: string;
 
@@ -582,11 +586,11 @@ export async function extractMarkdownToYaml(inputText: string, quiet: boolean): 
     if (!quiet) {
       warn(boldMarkdownHeaders(`\n## Converting ${numLines} lines of Markdown to YAML\n`));
     }
-    convertedYaml = await convertMarkdownToYaml(inputText, !streamToConsole);
+    convertedYaml = await convertMarkdownToYaml(inputText, config, !streamToConsole);
   }
 
   if (!convertedYaml.startsWith('# yaml-language-server')) {
-    const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+    const schemaLine = `# yaml-language-server: $schema=https:
     convertedYaml = schemaLine + '\n' + convertedYaml;
   }
 

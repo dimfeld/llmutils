@@ -26,6 +26,16 @@ export const rmplanConfigSchema = z.object({
   postApplyCommands: z.array(postApplyCommandSchema).optional(),
   /** An array of strings to automatically include as examples when they appear in prompts. */
   autoexamples: z.array(z.string()).optional(),
+  /** Model specifications for different rmplan operations */
+  models: z
+    .object({
+      execution: z.string().optional().describe('Model spec for rmplan run model'),
+      convert_yaml: z
+        .string()
+        .optional()
+        .describe('Model spec for rmplan markdown-to-yaml extraction'),
+    })
+    .optional(),
 });
 
 export type RmplanConfig = z.infer<typeof rmplanConfigSchema>;
