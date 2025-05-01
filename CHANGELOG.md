@@ -5,6 +5,7 @@
 - Skip writing new files that contain a space in the path. These often indicate comments from the model. (A better heuristic may be useful here.)
 - Add `hideOutputOnSuccess` option to `postApplyCommands` to only show the output on failure
 - Add JSON schema for rmplan plan files and reference it in generated YAML
+- rmplan agent/next: Pass examples in the plan schema to `rmfilter`. These won't be automatically created yet but can be added manually.
 
 # April 29, 2025
 

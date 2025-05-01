@@ -275,23 +275,49 @@ export async function prepareNextStep(
     // Convert the potentially updated 'files' list (task + autofound) to relative paths
     const relativeFiles = files.map((f) => path.relative(gitRoot, f));
 
+    // Check for examples in task and step prompts
+    let examples: string[] = [];
+    if (activeTask.examples) {
+      examples.push(...activeTask.examples);
+    }
+    for (const step of selectedPendingSteps) {
+      if (step.examples) {
+        examples.push(...step.examples);
+      }
+    }
+
+    examples = Array.from(new Set(examples));
+
+    // Add example arguments if any examples are found
+    const exampleArgs =
+      examples.length > 0
+        ? ['--', '.', ...examples.flatMap((example) => ['--example', example])]
+        : [];
+
     if (performImportAnalysis) {
       // If import analysis is needed, construct the import command block
       const relativeCandidateFiles = candidateFilesForImports.map((f) => path.relative(gitRoot, f));
       const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
       if (withImports) importCommandBlockArgs.push('--with-imports');
       else if (withAllImports) importCommandBlockArgs.push('--with-all-imports');
-      // Pass base args, files (task+autofound), import block, separator, user args
+      // Pass base args, files (task+autofound), import block, example args, separator, user args
       finalRmfilterArgs = [
         ...baseRmfilterArgs,
         ...relativeFiles,
         ...importCommandBlockArgs,
+        ...exampleArgs,
         '--',
         ...rmfilterArgs,
       ];
     } else {
-      // Pass base args, files (task+autofound), separator, user args
-      finalRmfilterArgs = [...baseRmfilterArgs, ...relativeFiles, '--', ...rmfilterArgs];
+      // Pass base args, files (task+autofound), example args, separator, user args
+      finalRmfilterArgs = [
+        ...baseRmfilterArgs,
+        ...relativeFiles,
+        ...exampleArgs,
+        '--',
+        ...rmfilterArgs,
+      ];
     }
   }
 
