@@ -671,7 +671,7 @@ tasks:
                   *   Construct the `newContent` by replacing the `failure.originalText` specifically at the chosen `startIndex` in the `originalContent`. Use `originalContent.substring(0, selectedIndex) + failure.updatedText + originalContent.substring(selectedIndex + failure.originalText.length)`.
                   *   Use `secureWrite` to save the `newContent` (respect `dryRun`). Log action.
               *   If 'skip': Log skipping.
-        done: false
+        done: true
       - prompt: >
           Finalize the integration.
 
