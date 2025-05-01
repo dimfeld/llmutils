@@ -349,7 +349,7 @@ tasks:
           9.  Make sure `original` and `updated` text used in results preserve
           newline characters consistently (use the `prep` helper or similar if
           needed).
-        done: false
+        done: true
   - title: 3. Modify udiff-simple for Structured Results
     description: Update src/editor/udiff-simple/parse.ts to return EditResult[],
       handling both "no match" and "not unique" failures and incorporating
