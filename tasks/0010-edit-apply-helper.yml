@@ -408,7 +408,7 @@ tasks:
 
           9.  Remove the unused `UnifiedDiffError` class and the error
           templates.
-        done: false
+        done: true
       - prompt: >
           Implement the `findAllMatches` function within
           `src/editor/udiff-simple/parse.ts` as required by the previous step.
