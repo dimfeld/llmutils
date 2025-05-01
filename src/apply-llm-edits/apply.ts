@@ -3,7 +3,7 @@ import { processXmlContents } from '../editor/xml/parse_xml.ts';
 import { processSearchReplace } from '../editor/diff-editor/parse.ts';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 import { getGitRoot } from '../rmfilter/utils.ts';
-import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.ts';
+import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
 import { resolveFailuresInteractively } from './interactive.js';
 import { log, error } from '../logging.ts';
 
@@ -15,7 +15,13 @@ export interface ApplyLlmEditsOptions {
   interactive?: boolean;
 }
 
-export async function applyLlmEdits({ content, writeRoot, dryRun, mode, interactive }: ApplyLlmEditsOptions) {
+export async function applyLlmEdits({
+  content,
+  writeRoot,
+  dryRun,
+  mode,
+  interactive,
+}: ApplyLlmEditsOptions) {
   // Resolve writeRoot early as it's needed for interactive mode too
   writeRoot ??= await getWriteRoot();
   const xmlMode = mode === 'xml' || (!mode && content.includes('<code_changes>'));
@@ -76,15 +82,20 @@ export async function applyLlmEdits({ content, writeRoot, dryRun, mode, interact
           if (failure.type === 'noMatch') {
             error(`  - ${failure.filePath}: Edit text not found.`);
           } else if (failure.type === 'notUnique') {
-            error(`  - ${failure.filePath}: Edit text found in multiple locations (${failure.matchLocations.length}).`);
+            error(
+              `  - ${failure.filePath}: Edit text found in multiple locations (${failure.matchLocations.length}).`
+            );
           }
         });
-        throw new Error(`Failed to apply ${failures.length} edits. Run with --interactive to resolve.`);
+        throw new Error(
+          `Failed to apply ${failures.length} edits. Run with --interactive to resolve.`
+        );
       }
     } else {
       log('All edits applied successfully.');
     }
   }
+} // Added missing closing brace for the function
 
 export async function getWriteRoot(cwd?: string) {
   return cwd || (await getGitRoot()) || process.cwd();

@@ -18,7 +18,7 @@ const fence = '```';
 
 export async function processSearchReplace({ content, writeRoot, dryRun }: ProcessFileOptions) {
   const edits = getEdits(content, writeRoot);
-  await applyEdits(edits, writeRoot, dryRun);
+  return await applyEdits(edits, writeRoot, dryRun);
 }
 
 function getEdits(content: string, rootDir: string): Edit[] {
@@ -41,65 +41,51 @@ async function applyEdits(
   const results: EditResult[] = [];
 
   for (const { filePath, original, updated } of edits) {
-    if (edit.filePath.includes('mathweb/flask')) {
+    if (filePath.includes('mathweb/flask')) {
       throw new Error(
         'Found edits from the sample prompt. Perhaps you forgot to copy the results?'
       );
     }
 
-    const { filePath, original, updated } = edit;
+    const file = Bun.file(path.resolve(rootDir, filePath));
+    let fileContent: string | null = null;
+    if (await file.exists()) {
+      fileContent = await file.text();
+    } else if (filePath.includes(' ')) {
+      log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
+      continue;
+    }
+    const newContent = await doReplace(filePath, fileContent, original, updated);
 
-    try {
-      const file = Bun.file(path.resolve(rootDir, filePath));
-      let fileContent: string | null = null;
-      if (await file.exists()) {
-        fileContent = await file.text();
-      } else if (filePath.includes(' ')) {
-        log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
-        continue;
+    if (newContent !== null) {
+      log(`Applying edit to ${filePath}`);
+      if (!dryRun) {
+        await secureWrite(rootDir, filePath, newContent);
       }
-      const newContent = await doReplace(filePath, fileContent, original, updated);
-
-      if (newContent !== null) {
-        log(`Applying edit to ${filePath}`);
-        if (!dryRun) {
-          await secureWrite(rootDir, filePath, newContent);
-        }
-        const success: SuccessResult = {
-          type: 'success',
-          filePath,
-          originalText: original,
-          updatedText: updated,
-        };
-        results.push(success);
-      } else {
-        // Failure case: No exact match found by doReplace
-        const closestMatches = fileContent
-          ? findClosestMatches(fileContent, prep(original).lines, { maxMatches: 1 })
-          : [];
-        const failure: NoMatchFailure = {
-          type: 'noMatch',
-          filePath,
-          originalText: original,
-          updatedText: updated,
-          closestMatch: closestMatches.length > 0 ? closestMatches[0] : null,
-        };
-        results.push(failure);
-      }
-    } catch (e) {
-      // Handle potential read errors if necessary
-      error(`Error reading file ${filePath}: ${e as Error}`);
-      // TODO: Consider a specific error type for read failures? For now, treat as noMatch.
-      results.push({
+      const success: SuccessResult = {
+        type: 'success',
+        filePath,
+        originalText: original,
+        updatedText: updated,
+      };
+      results.push(success);
+    } else {
+      // Failure case: No exact match found by doReplace
+      const closestMatches = fileContent
+        ? findClosestMatches(fileContent, prep(original).lines, { maxMatches: 1 })
+        : [];
+      const failure: NoMatchFailure = {
         type: 'noMatch',
         filePath,
         originalText: original,
         updatedText: updated,
-        closestMatch: null,
-      });
+        closestMatch: closestMatches.length > 0 ? closestMatches[0] : null,
+      };
+      results.push(failure);
     }
   }
-  return res;
+
+  return results;
 }
 
 async function doReplace(

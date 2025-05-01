@@ -182,7 +182,6 @@ function directlyApplyHunk(content: string, hunk: string[]): string | null | Mat
   const result = searchAndReplace(content, beforeText, afterText);
   // Result can be string (success), null (no match), or MatchLocation[] (not unique)
   return result;
-
 }
 
 /**
@@ -234,7 +233,7 @@ function findAllMatches(whole: string, part: string): MatchLocation[] {
 
   for (const match of whole.matchAll(regex)) {
     const contextRadius = 2;
-    const startIndex = match.index!;
+    const startIndex = match.index;
     const beforeMatch = whole.substring(0, startIndex);
     // Count occurrences of '\n' to determine the line number (1-based)
     const startLine = (beforeMatch.match(/\n/g) || []).length + 1;
@@ -349,8 +348,8 @@ function tryConvertedContextHunk(
   changes: string[],
   followingContext: string[],
   convertPreceding: number,
-  convertFollowing: number,
-): string | null {
+  convertFollowing: number
+): string | MatchLocation[] | null {
   if (convertPreceding + convertFollowing >= changes.length) {
     return null;
   }
@@ -440,7 +439,6 @@ function applyPartialHunk(
         // Trying less context is unlikely to resolve uniqueness.
         return result;
       }
-      }
     }
   }
 
@@ -451,10 +449,7 @@ function applyPartialHunk(
  * Applies the edits to the specified file content.
  * Handles creating new files.
  */
-export function doReplace(
-  content: string | null,
-  hunk: string[]
-): string | null | MatchLocation[] {
+export function doReplace(content: string | null, hunk: string[]): string | null | MatchLocation[] {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
 
   // Handle creating a new file
@@ -758,48 +753,48 @@ async function applyEdits(
     if (typeof result === 'string') {
       // SUCCESS!
       const [originalText, updatedText] = hunkToBeforeAfter(hunk);
-        results.push({
-          type: 'success',
-          filePath,
-          originalText,
-          updatedText,
-        });
-        log(`Applying hunk to ${filePath}`);
-        if (!dryRun) {
+      results.push({
+        type: 'success',
+        filePath,
+        originalText,
+        updatedText,
+      });
+      log(`Applying hunk to ${filePath}`);
+      if (!dryRun) {
         await secureWrite(rootDir, filePath, result);
-        }
-        hunksAppliedCount++;
+      }
+      hunksAppliedCount++;
     } else if (result === null) {
       // FAILURE: No match
       const [originalText, updatedText] = hunkToBeforeAfter(hunk);
-        let closestMatch: ClosestMatchResult | null = null;
-        if (currentContent) {
-          const searchLines = splitLinesWithEndings(originalText);
-          const closestMatches = findClosestMatches(currentContent, searchLines, { maxMatches: 1 });
-          closestMatch = closestMatches.length > 0 ? closestMatches[0] : null;
-        }
+      let closestMatch: ClosestMatchResult | null = null;
+      if (currentContent) {
+        const searchLines = splitLinesWithEndings(originalText);
+        const closestMatches = findClosestMatches(currentContent, searchLines, { maxMatches: 1 });
+        closestMatch = closestMatches.length > 0 ? closestMatches[0] : null;
+      }
       results.push({
-          type: 'noMatch',
-          filePath,
-          originalText,
-          updatedText,
-          closestMatch,
-        });
+        type: 'noMatch',
+        filePath,
+        originalText,
+        updatedText,
+        closestMatch,
+      });
     } else if (Array.isArray(result)) {
       // FAILURE: Not unique
       const [originalText, updatedText] = hunkToBeforeAfter(hunk);
-        let matchLocations: MatchLocation[] = [];
-        if (currentContent) {
+      let matchLocations: MatchLocation[] = [];
+      if (currentContent) {
         // The result *is* the match locations
         matchLocations = result;
-        }
+      }
       results.push({
-          type: 'notUnique',
-          filePath,
-          originalText,
-          updatedText,
-          matchLocations,
-        });
+        type: 'notUnique',
+        filePath,
+        originalText,
+        updatedText,
+        matchLocations,
+      });
     }
   }
 

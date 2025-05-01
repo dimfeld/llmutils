@@ -132,7 +132,7 @@ export async function grepFor(
 
   if (exitCode !== 0 && exitCode !== 1) {
     // rg exits 1 if no matches found
-    const stderr = await new Response(proc.stderr as ReadableStream<Uint8Array>).text();
+    const stderr = await new Response(proc.stderr).text();
     error(`rg command failed with exit code ${exitCode}:\n${stderr}`);
     return [];
   }
