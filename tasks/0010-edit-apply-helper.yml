@@ -568,7 +568,7 @@ tasks:
               *   Add the `--interactive` option to the help message.
               *   Detect the `--interactive` flag from `args`.
               *   Pass the `interactive` boolean value to the `applyLlmEdits` call.
-        done: false
+        done: true
   - title: 5. Implement Interactive Resolution Logic
     description: Implement the resolveFailuresInteractively function using
       @inquirer/prompts to handle user interaction for resolving NoMatchFailure

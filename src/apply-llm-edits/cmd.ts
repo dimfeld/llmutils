@@ -20,12 +20,14 @@ if (args.includes('--help')) {
   log('  --cwd <path>      Write files based on the given path');
   log('  --mode <mode>          Force an edit mode');
   log('  --debug           Enable debug logging');
+  log('  --interactive     Enable interactive mode for resolving edit failures');
   log('  --dry-run         Dry run - do not apply changes');
   process.exit(0);
 }
 
 const useStdin = args.includes('--stdin') || !process.stdin.isTTY;
 const dryRun = args.includes('--dry-run');
+const interactive = args.includes('--interactive');
 const cwdIndex = args.findIndex((arg) => arg == '--cwd');
 const modeIndex = args.findIndex((arg) => arg == '--mode');
 const modeValue = modeIndex != -1 ? args[modeIndex + 1] : undefined;
@@ -40,6 +42,7 @@ applyLlmEdits({
   writeRoot: await getWriteRoot(cwd),
   dryRun,
   mode: modeValue as 'diff' | 'udiff' | 'xml' | 'whole',
+  interactive,
 }).catch((err) => {
   error('Error processing input:', err);
   process.exit(1);
