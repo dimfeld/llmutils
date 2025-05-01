@@ -427,7 +427,7 @@ program
           let output = await result.text;
           // newline between model output and apply output
           log('');
-          await applyLlmEdits({ content: output });
+          await applyLlmEdits({ content: output, interactive: true });
         } catch (err) {
           error('Execution step failed:', err);
           hasError = true;

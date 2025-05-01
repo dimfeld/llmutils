@@ -1,6 +1,7 @@
 # May 1, 2025
 
 - Ability to set models for each task in rmplan project config
+- Add interactive resolution of diff failures
 
 # April 30, 2025
 
