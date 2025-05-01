@@ -46,6 +46,11 @@
           }
         }
       }
+    },
+    "autoexamples": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of strings to automatically include as examples when they appear in rmplan prompts."
     }
   }
 }

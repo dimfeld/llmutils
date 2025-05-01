@@ -266,9 +266,10 @@ program
     // Find '--' in process.argv to get extra args for rmfilter
     const doubleDashIdx = process.argv.indexOf('--');
     const cmdLineRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
+    const config = await loadEffectiveConfig(options.config);
 
     try {
-      const result = await prepareNextStep(planFile, {
+      const result = await prepareNextStep(config, planFile, {
         rmfilter: options.rmfilter,
         previous: options.previous,
         withImports: options.withImports,
@@ -377,7 +378,7 @@ program
             `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
           )
         );
-        const stepPreparationResult = await prepareNextStep(planFile, {
+        const stepPreparationResult = await prepareNextStep(config, planFile, {
           rmfilter: true,
           previous: true,
           selectSteps: false,

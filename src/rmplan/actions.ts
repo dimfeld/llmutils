@@ -8,12 +8,13 @@ import { ImportWalker } from '../dependency_graph/walk_imports.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
 import { Extractor } from '../treesitter/extract.js';
-import type { PostApplyCommand } from './configSchema.js';
+import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { planSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
+import { loadEffectiveConfig } from './configLoader.js';
 
 interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -49,6 +50,7 @@ export function findPendingTask(plan: PlanSchema): PendingTaskResult | null {
 
 // Prepares the next step(s) from a plan YAML for execution
 export async function prepareNextStep(
+  config: RmplanConfig,
   planFile: string,
   options: PrepareNextStepOptions = {}
 ): Promise<{
@@ -278,7 +280,7 @@ export async function prepareNextStep(
     // Convert the potentially updated 'files' list (task + autofound) to relative paths
     const relativeFiles = files.map((f) => path.relative(gitRoot, f));
 
-    // Check for examples in task and step prompts
+    // Check for examples in task, step prompts, and autoexamples from config
     let examples: string[] = [];
     if (activeTask.examples) {
       examples.push(...activeTask.examples);
@@ -286,6 +288,16 @@ export async function prepareNextStep(
     for (const step of selectedPendingSteps) {
       if (step.examples) {
         examples.push(...step.examples);
+      }
+    }
+
+    // Check for autoexamples in config
+    if (config.autoexamples) {
+      const promptText = selectedPendingSteps.map((step) => step.prompt).join('\n');
+      for (const autoexample of config.autoexamples) {
+        if (promptText.includes(autoexample)) {
+          examples.push(autoexample);
+        }
       }
     }
 

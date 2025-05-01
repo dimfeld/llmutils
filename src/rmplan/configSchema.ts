@@ -24,6 +24,8 @@ export const postApplyCommandSchema = z.object({
 export const rmplanConfigSchema = z.object({
   /** An array of commands to run after changes are successfully applied by the agent. */
   postApplyCommands: z.array(postApplyCommandSchema).optional(),
+  /** An array of strings to automatically include as examples when they appear in prompts. */
+  autoexamples: z.array(z.string()).optional(),
 });
 
 export type RmplanConfig = z.infer<typeof rmplanConfigSchema>;

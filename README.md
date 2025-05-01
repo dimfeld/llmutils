@@ -369,9 +369,25 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
   # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
   ```
 
+#### Automatic Examples
+
+When `autoexamples` is set, rmplan will search the generated prompt 
+for the provided values, and when it runs `rmfilter`, matching values will be automatically added
+as `--example` options to the command line for all matching strings.
+
+This can help the coding model to see the proper patterns for using particular pieces of code.
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+
+autoexamples:
+  - PostgresTestEnvironment
+  - DropdownMenu
+```
+
 #### Post-Apply Commands
 
-The primary configuration option currently available is `postApplyCommands`. This allows you to define commands that should be executed automatically by the `rmplan agent` after it successfully applies changes from the LLM but _before_ it marks the step as done and commits. This is useful for tasks like code formatting or linting.
+The `postApplyCommands` setting allows you to define commands that should be executed automatically by the `rmplan agent` after it successfully applies changes from the LLM but _before_ it marks the step as done and commits. This is useful for tasks like code formatting or linting.
 
 **Example `.rmfilter/config/rmplan.yml`:**
 

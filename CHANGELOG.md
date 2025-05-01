@@ -6,6 +6,7 @@
 - Add `hideOutputOnSuccess` option to `postApplyCommands` to only show the output on failure
 - Add JSON schema for rmplan plan files and reference it in generated YAML
 - rmplan agent/next: Pass examples in the plan schema to `rmfilter`. These won't be automatically created yet but can be added manually.
+- Add `autoexamples` to rmplan project config. This searches for matching strings in the prompt and adds `--example` options to rmfilter when found.
 - bold headers when logging in agent mode
 
 # April 29, 2025

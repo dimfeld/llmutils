@@ -1,5 +1,9 @@
 import { test, expect, mock } from 'bun:test';
 import { cleanComments } from './cleanup';
+import type { RmplanConfig } from './configSchema.ts';
+import type { PlanSchema } from './planSchema.ts';
+import { prepareNextStep } from './actions.ts';
+import yaml from 'yaml';
 
 test('cleanComments removes TypeScript EOL comments', () => {
   const input = `
@@ -61,4 +65,44 @@ test('cleanComments returns unchanged content for unsupported extension', () => 
   `;
   const result = cleanComments(input, '.txt');
   expect(result).toBeUndefined();
+});
+
+test('prepareNextStep includes autoexamples when present in prompt', async () => {
+  const mockConfig: RmplanConfig = {
+    postApplyCommands: [],
+    autoexamples: ['example1', 'example2'],
+  };
+
+  const plan: PlanSchema = {
+    goal: 'Test plan',
+    details: 'Test details',
+    tasks: [
+      {
+        title: 'Test task',
+        description: 'Test description',
+        files: ['test.ts'],
+        steps: [
+          {
+            prompt: 'This step includes example1 in its prompt',
+            done: false,
+          },
+        ],
+      },
+    ],
+  };
+
+  const planFile = 'test-plan.yml';
+  await Bun.write(planFile, yaml.stringify(plan));
+
+  try {
+    const result = await prepareNextStep(mockConfig, planFile, { rmfilter: true });
+
+    expect(result.rmfilterArgs).toContain('--example');
+    expect(result.rmfilterArgs).toContain('example1');
+    expect(result.rmfilterArgs).not.toContain('example2');
+  } finally {
+    await Bun.file(planFile)
+      .unlink()
+      .catch(() => {});
+  }
 });
