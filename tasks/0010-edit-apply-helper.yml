@@ -490,7 +490,7 @@ tasks:
           callers to utilize `findAllMatches`. Consider modifying
           `searchAndReplace` to return the matches array instead of throwing,
           simplifying the `catch` block.
-        done: false
+        done: true
       - prompt: >
           Update the `searchAndReplace` function in
           `src/editor/udiff-simple/parse.ts` to return the list of matches

@@ -238,18 +238,23 @@ function findAllMatches(whole: string, part: string): MatchLocation[] {
   const fileLines = splitLinesWithEndings(whole);
 
   for (const match of whole.matchAll(regex)) {
+    const contextRadius = 2;
     const startIndex = match.index!;
     const beforeMatch = whole.substring(0, startIndex);
     // Count occurrences of '\n' to determine the line number (1-based)
     const startLine = (beforeMatch.match(/\n/g) || []).length + 1;
 
-    // Determine the lines covered by `part`
-    const partLines = splitLinesWithEndings(part);
-    const numPartLines = partLines.length;
+    // Calculate the end line of the match itself (1-based)
+    // Count newlines within the matched part. If part has no newlines, it's on one line.
+    const numNewlinesInPart = (part.match(/\n/g) || []).length;
+    const endLine = startLine + numNewlinesInPart;
 
-    // Extract the corresponding lines from the pre-split `whole` lines array
-    const endLineIndex = Math.min(startLine + numPartLines - 1, fileLines.length);
-    const contextLines = fileLines.slice(startLine - 1, endLineIndex);
+    // Calculate context start and end line indices (0-based for slicing fileLines)
+    // Context starts `contextRadius` lines before the match starts.
+    const contextStartLineIndex = Math.max(0, startLine - 1 - contextRadius);
+    // Context ends `contextRadius` lines after the match ends.
+    const contextEndLineIndex = Math.min(fileLines.length, endLine - 1 + contextRadius + 1);
+    const contextLines = fileLines.slice(contextStartLineIndex, contextEndLineIndex);
 
     locations.push({ startIndex, startLine, contextLines });
   }
