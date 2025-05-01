@@ -608,7 +608,7 @@ tasks:
 
           5.  Inside the loop, use a type guard (`if (failure.type ===
           'noMatch')`) to handle each failure type.
-        done: false
+        done: true
       - prompt: >
           Implement the logic within `resolveFailuresInteractively` in
           `src/apply-llm-edits/interactive.ts` to handle `NoMatchFailure`.

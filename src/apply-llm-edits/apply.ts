@@ -4,6 +4,7 @@ import { processSearchReplace } from '../editor/diff-editor/parse.ts';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 import { getGitRoot } from '../rmfilter/utils.ts';
 import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.ts';
+import { resolveFailuresInteractively } from './interactive.js';
 import { log, error } from '../logging.ts';
 
 export interface ApplyLlmEditsOptions {
@@ -84,20 +85,6 @@ export async function applyLlmEdits({ content, writeRoot, dryRun, mode, interact
       log('All edits applied successfully.');
     }
   }
-
-// Stub function for interactive failure resolution (Task 5)
-async function resolveFailuresInteractively(
-    failures: (NoMatchFailure | NotUniqueFailure)[],
-    writeRoot: string,
-    dryRun: boolean
-): Promise<void> {
-    log(`Entering interactive mode for ${failures.length} failure(s)... (Implementation Pending)`);
-    failures.forEach(f => {
-        log(`  - ${f.filePath}: ${f.type}`);
-    });
-    // TODO: Implement in Task 5 using @inquirer/prompts
-    // For now, just log and exit gracefully in interactive mode to avoid throwing
-}
 
 export async function getWriteRoot(cwd?: string) {
   return cwd || (await getGitRoot()) || process.cwd();
