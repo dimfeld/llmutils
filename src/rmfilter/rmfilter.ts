@@ -12,7 +12,7 @@ import {
 import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
 import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
 import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
-import { debugLog, error, log } from '../logging.ts';
+import { debugLog, error, log, warn } from '../logging.ts';
 import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, getGitRoot, quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
@@ -49,14 +49,13 @@ if (globalValues['list-presets']) {
   process.exit(0);
 }
 
-if (globalValues.model && !Object.keys(modelPresets).includes(globalValues.model)) {
-  error(
-    `Invalid model: ${globalValues.model}. Must be one of ${Object.keys(modelPresets).join(', ')}`
-  );
-  process.exit(1);
-}
-
 const modelSettings = resolveModelSettings(globalValues.model);
+if (globalValues.model && modelSettings.isDefault) {
+  // User specified an unknown model
+  warn(
+    `Unexpected --model setting: ${globalValues.model}. Supported values: ${Object.keys(modelPresets).join(', ')}`
+  );
+}
 
 // Validate edit-format
 if (

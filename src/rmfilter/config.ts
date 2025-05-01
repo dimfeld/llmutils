@@ -12,6 +12,8 @@ export interface ModelPreset {
   noArtifacts?: boolean;
   defaultEditFormat?: 'diff';
   overeager?: boolean;
+
+  isDefault?: boolean;
 }
 
 export const modelPresets = {
@@ -29,7 +31,7 @@ export const modelPresets = {
 } satisfies Record<string, ModelPreset>;
 
 export function resolveModelSettings(model: string | undefined): ModelPreset {
-  const defaultModelSettings: ModelPreset = { overeager: true };
+  const defaultModelSettings: ModelPreset = { overeager: true, isDefault: true };
   if (!model) {
     return defaultModelSettings;
   }
