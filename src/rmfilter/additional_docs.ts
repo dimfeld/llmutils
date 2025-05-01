@@ -332,6 +332,13 @@ export function parseJjRename(line: string): string {
 
 export const CURRENT_DIFF = `HEAD~`;
 
+async function getTrunkBranch(gitRoot: string): Promise<string> {
+  const defaultBranch = (await $`git branch --list main master`.cwd(gitRoot).nothrow().text())
+    .replace('*', '')
+    .trim();
+  return defaultBranch || 'main';
+}
+
 /**
  * Gets the list of changed files compared to a base branch
  */
@@ -343,11 +350,7 @@ export async function getChangedFiles(gitRoot: string, baseBranch?: string): Pro
     ).trim();
 
     if (!baseBranch) {
-      // Try to get default branch from remote
-      const defaultBranch = (await $`git branch --list main master`.cwd(gitRoot).nothrow().text())
-        .replace('*', '')
-        .trim();
-      baseBranch = defaultBranch || 'main';
+      baseBranch = await getTrunkBranch(gitRoot);
     }
   }
 
@@ -406,13 +409,7 @@ export async function getDiffTag(
   gitRoot: string,
   values: { 'with-diff'?: boolean; 'diff-from'?: string; 'changed-files'?: boolean }
 ) {
-  let baseBranch: string | undefined = values['diff-from'];
-
-  // If a base branch is needed (for diff or changed-files) but couldn't be determined, return empty.
-  if ((values['with-diff'] || values['changed-files']) && !baseBranch) {
-    debugLog('[Diff] Could not determine base branche for diff/changed-files.');
-    return { diffTag: '', changedFiles: [] };
-  }
+  let baseBranch: string | undefined = values['diff-from'] || (await getTrunkBranch(gitRoot));
 
   // If neither diff nor changed-files requested, no need to proceed further.
   if (!values['with-diff'] && !values['changed-files']) {
@@ -437,7 +434,7 @@ export async function getDiffTag(
     );
 
     // Base branch must exist at this point if we need it
-    const from = `latest(ancestors(${baseBranch!})&ancestors(@))`;
+    const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
 
     if (values['with-diff']) {
       diff = await $`jj diff --from ${from} ${exclude}`.cwd(gitRoot).nothrow().text();
