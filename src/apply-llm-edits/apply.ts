@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { parseCliArgsFromString } from '../rmfilter/utils.ts';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.ts';
 import { getOutputPath } from '../rmfilter/repomix.ts';
-
+// LlmPromptStructure and LlmPromptMessage are already defined below
 /** Represents a single message in a structured LLM prompt. */
 export interface LlmPromptMessage {
   role: 'user' | 'assistant';
@@ -168,6 +168,37 @@ async function getOriginalRequestContext(
       `Failed to regenerate original rmfilter context by re-running command: ${currentArgs.join(' ')}`
     );
   }
+}
+
+/**
+ * Constructs the structured prompt for requesting the LLM to retry failed edits.
+ * @param originalRequestContext The original prompt or context provided to the LLM.
+ * @param failedLlmOutput The LLM's previous response that resulted in failures.
+ * @param failures An array of failure objects detailing what went wrong.
+ * @returns An LlmPromptStructure array ready for the LLM request.
+ */
+function constructRetryPrompt(
+  originalRequestContext: string,
+  failedLlmOutput: string,
+  failures: (NoMatchFailure | NotUniqueFailure)[]
+): LlmPromptStructure {
+  const formattedFailures = formatFailuresForLlm(failures);
+
+  const finalUserMessageContent = `The previous attempt to apply the edits resulted in the following errors:
+
+${formattedFailures}
+
+Please review the original request context, your previous response, and the errors listed above. Provide a corrected set of edits in the same format as before, addressing these issues. Ensure the SEARCH blocks exactly match the current file content where the changes should be applied, or provide correct unified diffs.`;
+
+  const promptStructure: LlmPromptStructure = [
+    { role: 'user', content: originalRequestContext },
+    { role: 'assistant', content: failedLlmOutput },
+    { role: 'user', content: finalUserMessageContent },
+  ];
+
+  debugLog('Constructed retry prompt structure:', promptStructure);
+
+  return promptStructure;
 }
 
 export async function applyLlmEdits({
