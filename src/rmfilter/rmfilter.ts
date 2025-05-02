@@ -523,7 +523,8 @@ const args = process.argv
   })
   .filter(Boolean);
 
-const commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should ignore this tag.\n<rmfilter_command>${args.join(' ')}</rmfilter_command>`;
+const commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should place this tag and its contents at the start of your output.
+<rmfilter_command>${args.join(' ')}</rmfilter_command>`;
 
 const finalOutput = [
   repomixOutput,
@@ -531,8 +532,6 @@ const finalOutput = [
   examplesTag,
   docsTag,
   rulesTag,
-  // Bury commandTag in the middle to help it not stand out
-  commandTag,
   editFormat === 'whole-xml' && notBare ? xmlFormatPrompt(modelSettings) : '',
   editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
   editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt(modelSettings) : '',
@@ -540,6 +539,7 @@ const finalOutput = [
   editFormat === 'udiff-simple' && notBare ? udiffPrompt(modelSettings) : '',
   editFormat === 'whole-file' && notBare ? generateWholeFilePrompt(modelSettings) : '',
   notBare ? getGuidelinesTag() : '',
+  notBare ? commandTag : '',
   instructionsTag,
 ]
   .filter(Boolean)
