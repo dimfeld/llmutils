@@ -158,7 +158,7 @@ tasks:
           summary like "The following edit(s) failed to apply:".
 
           7.  Return the combined string.
-        done: false
+        done: true
       - prompt: >
           Add unit tests for the `formatFailuresForLlm` function in
           `src/apply-llm-edits/failures.ts`.

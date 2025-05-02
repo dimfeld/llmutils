@@ -1,5 +1,10 @@
 import * as diff from 'diff';
-import type { NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
+import type {
+  EditResult,
+  NoMatchFailure,
+  NotUniqueFailure,
+  ClosestMatchResult,
+} from '../editor/types.js';
 import { log } from '../logging.js';
 
 /** Function to print detailed edit failures for noninteractive mode */
@@ -57,4 +62,86 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
       });
     }
   });
+}
+
+/** Helper function to trim long text blocks for display */
+function trimLines(text: string, maxLines: number = 10, contextLines: number = 5): string {
+  const lines = text.split('\n');
+  if (lines.length > maxLines) {
+    const first = lines.slice(0, contextLines).join('\n');
+    const last = lines.slice(-contextLines).join('\n');
+    return `${first}\n... (trimmed ${lines.length - 2 * contextLines} lines) ...\n${last}`;
+  }
+  return text;
+}
+
+/**
+ * Formats edit failures into a string suitable for an LLM prompt,
+ * explaining what went wrong and providing context.
+ */
+export function formatFailuresForLlm(failures: (NoMatchFailure | NotUniqueFailure)[]): string {
+  const failureDescriptions: string[] = [];
+  const header = 'The following edit(s) failed to apply:\n';
+
+  failures.forEach((failure, index) => {
+    let description = `Failure ${index + 1}:\n`;
+    description += `  File: ${failure.filePath}\n`;
+
+    const trimmedOriginal = trimLines(failure.originalText);
+    description += `  Original text block intended for replacement:\n\`\`\`\n${trimmedOriginal}\n\`\`\`\n`;
+
+    if (failure.type === 'noMatch') {
+      description += `  Reason: No Exact Match - The specified text block was not found.\n`;
+      if (failure.closestMatch) {
+        const { startLine, endLine, lines } = failure.closestMatch;
+        const trimmedClosest = trimLines(lines.join('\n'));
+        description += `  Closest match found (lines ${startLine + 1}-${endLine + 1}):\n\`\`\`\n${trimmedClosest}\n\`\`\`\n`;
+
+        // Generate and format diff
+        const patch = diff.createPatch(
+          failure.filePath,
+          lines.join('\n'),
+          failure.originalText,
+          'Closest Match In File',
+          'Expected Original Text',
+          { context: 9999 }
+        );
+
+        // Format the patch for readability in the prompt
+        const diffLines = patch
+          .split('\n')
+          .slice(4)
+          .filter((line) => !line.startsWith('@@'))
+          .map((line) => `    ${line}`)
+          .join('\n');
+
+        if (diffLines.trim()) {
+          description += `  Diff between closest match and expected original text:\n\`\`\`diff\n${diffLines}\n\`\`\`\n`;
+        } else {
+          description += `  Note: Closest match appears identical to expected text, but failed application (possibly due to whitespace or line ending differences).\n`;
+        }
+      } else {
+        description += `  No close match could be identified in the file.\n`;
+      }
+    } else if (failure.type === 'notUnique') {
+      description += `  Reason: Not Unique - The specified text block was found in ${failure.matchLocations.length} locations.\n`;
+      failure.matchLocations.forEach((loc, locIndex) => {
+        description += `    Match ${locIndex + 1} starting at line ${loc.startLine + 1}:\n`;
+        // Indent context lines for clarity
+        const context = loc.contextLines
+          .map((line, i) => `      ${loc.startLine + 1 + i}: ${line}`)
+          .join('\n');
+        description += `      Context:\n${context}\n`;
+      });
+      description += `  The edit was ambiguous because the same original text appeared multiple times.\n`;
+    }
+
+    failureDescriptions.push(description);
+  });
+
+  if (failureDescriptions.length === 0) {
+    return 'No failures to report.';
+  }
+
+  return header + failureDescriptions.join('\n---\n');
 }
