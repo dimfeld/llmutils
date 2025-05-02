@@ -317,6 +317,14 @@ export async function resolveFailuresInteractively(
     if (result && result.success && result.lineDelta !== 0) {
       const currentDelta = lineDeltasByFile.get(failure.filePath) || 0;
       lineDeltasByFile.set(failure.filePath, currentDelta + result.lineDelta);
+
+      const appliedLocations = appliedLocationsByFile.get(failure.filePath);
+      if (appliedLocations) {
+        appliedLocationsByFile.set(
+          failure.filePath,
+          new Set(appliedLocations.values().map((v) => v + result.lineDelta))
+        );
+      }
     }
 
     log(chalk.dim('---'));
