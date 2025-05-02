@@ -354,3 +354,347 @@ More new code
     expect(mockFormatFailuresForLlm).toHaveBeenCalledWith(mockFailures);
   });
 });
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { applyLlmEdits, getWriteRoot } from './apply';
+import * as applyInternal from './apply';
+import * as interactive from './interactive';
+import * as failures from './failures';
+import * as logging from '../logging';
+import * as utils from '../rmfilter/utils';
+import type { EditResult, Failure, LlmRequester } from './apply';
+
+// --- Mocks ---
+
+vi.mock('./apply', async (importOriginal) => {
+  const actual = await importOriginal<typeof applyInternal>();
+  return {
+    ...actual,
+    applyEditsInternal: vi.fn(),
+    getOriginalRequestContext: vi.fn(),
+    constructRetryPrompt: vi.fn(),
+    getWriteRoot: vi.fn(),
+  };
+});
+vi.mock('./interactive');
+vi.mock('./failures');
+vi.mock('../logging');
+vi.mock('../rmfilter/utils');
+
+const mockApplyEditsInternal = vi.mocked(applyInternal.applyEditsInternal);
+const mockGetOriginalRequestContext = vi.mocked(applyInternal.getOriginalRequestContext);
+const mockConstructRetryPrompt = vi.mocked(applyInternal.constructRetryPrompt);
+const mockResolveFailuresInteractively = vi.mocked(interactive.resolveFailuresInteractively);
+const mockPrintDetailedFailures = vi.mocked(failures.printDetailedFailures);
+const mockLog = vi.mocked(logging.log);
+const mockWarn = vi.mocked(logging.warn);
+const mockError = vi.mocked(logging.error);
+const mockGetGitRoot = vi.mocked(utils.getGitRoot);
+const mockGetWriteRoot = vi.mocked(getWriteRoot);
+
+// --- Test Data ---
+
+const sampleContent = '<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE\n';
+const sampleCorrectedContent =
+  '<<<<<<< SEARCH\nold line corrected\n=======\nnew line corrected\n>>>>>>> REPLACE\n';
+const sampleOriginalContext =
+  '<rmfilter_command>rmfilter file.ts</rmfilter_command>\nOriginal context';
+const sampleFailure: Failure = {
+  type: 'noMatch',
+  filePath: 'file.ts',
+  originalText: 'old line',
+  updatedText: 'new line',
+  reason: 'No match found',
+  closestMatch: null,
+};
+const sampleSuccess: EditResult = {
+  type: 'success',
+  filePath: 'file.ts',
+  originalText: 'old line',
+  updatedText: 'new line',
+};
+
+const mockSuccessfulLlmRequester: LlmRequester = vi.fn().mockResolvedValue(sampleCorrectedContent);
+const mockFailingLlmRequester: LlmRequester = vi.fn().mockRejectedValue(new Error('LLM API Error'));
+
+// --- Test Suite ---
+
+describe('applyLlmEdits', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default mocks for successful execution paths
+    mockGetGitRoot.mockResolvedValue('/fake/git/root');
+    mockGetWriteRoot.mockResolvedValue('/fake/write/root');
+    mockGetOriginalRequestContext.mockResolvedValue(sampleOriginalContext);
+    mockConstructRetryPrompt.mockReturnValue([{ role: 'user', content: 'retry prompt' }]);
+  });
+
+  it('should apply edits successfully on the first try and not trigger retry', async () => {
+    mockApplyEditsInternal.mockResolvedValueOnce([sampleSuccess]);
+
+    await applyLlmEdits({ content: sampleContent });
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(1);
+    expect(mockApplyEditsInternal).toHaveBeenCalledWith({
+      content: sampleContent,
+      writeRoot: '/fake/write/root',
+      dryRun: false,
+      mode: undefined,
+    });
+    expect(mockGetOriginalRequestContext).not.toHaveBeenCalled();
+    expect(mockConstructRetryPrompt).not.toHaveBeenCalled();
+    expect(mockSuccessfulLlmRequester).not.toHaveBeenCalled();
+    expect(mockResolveFailuresInteractively).not.toHaveBeenCalled();
+    expect(mockPrintDetailedFailures).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith('All edits applied successfully.');
+  });
+
+  it('should retry on failure, succeed on retry, and log success', async () => {
+    mockApplyEditsInternal
+      .mockResolvedValueOnce([sampleFailure])
+      .mockResolvedValueOnce([sampleSuccess]);
+
+    await applyLlmEdits({
+      content: sampleContent,
+      llmRequester: mockSuccessfulLlmRequester,
+    });
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(2);
+    expect(mockApplyEditsInternal).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ content: sampleContent })
+    );
+    expect(mockApplyEditsInternal).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ content: sampleCorrectedContent })
+    );
+    expect(mockGetOriginalRequestContext).toHaveBeenCalledTimes(1);
+    expect(mockConstructRetryPrompt).toHaveBeenCalledTimes(1);
+    expect(mockConstructRetryPrompt).toHaveBeenCalledWith(sampleOriginalContext, sampleContent, [
+      sampleFailure,
+    ]);
+    expect(mockSuccessfulLlmRequester).toHaveBeenCalledTimes(1);
+    expect(mockSuccessfulLlmRequester).toHaveBeenCalledWith([
+      { role: 'user', content: 'retry prompt' },
+    ]);
+    expect(mockResolveFailuresInteractively).not.toHaveBeenCalled();
+    expect(mockPrintDetailedFailures).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Attempting automatic retry'));
+    expect(mockLog).toHaveBeenCalledWith('Sending request to LLM for corrections...');
+    expect(mockLog).toHaveBeenCalledWith('Received retry response from LLM.');
+    expect(mockLog).toHaveBeenCalledWith('Applying edits from LLM retry response...');
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Retry attempt finished. 1 edits applied successfully, 0 failures remain.'
+      )
+    );
+    expect(mockLog).toHaveBeenCalledWith('All edits applied successfully.');
+  });
+
+  it('should retry, fail again, and throw error when non-interactive', async () => {
+    mockApplyEditsInternal
+      .mockResolvedValueOnce([sampleFailure])
+      .mockResolvedValueOnce([sampleFailure]);
+
+    await expect(
+      applyLlmEdits({
+        content: sampleContent,
+        llmRequester: mockSuccessfulLlmRequester,
+        interactive: false,
+      })
+    ).rejects.toThrow('Failed to apply 1 edits. Run with --interactive to resolve.');
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(2);
+    expect(mockGetOriginalRequestContext).toHaveBeenCalledTimes(1);
+    expect(mockConstructRetryPrompt).toHaveBeenCalledTimes(1);
+    expect(mockSuccessfulLlmRequester).toHaveBeenCalledTimes(1);
+    expect(mockPrintDetailedFailures).toHaveBeenCalledTimes(1);
+    expect(mockPrintDetailedFailures).toHaveBeenCalledWith([sampleFailure]);
+    expect(mockResolveFailuresInteractively).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Retry attempt finished. 0 edits applied successfully, 1 failures remain.'
+      )
+    );
+  });
+
+  it('should retry, fail again, and call interactive resolver when interactive', async () => {
+    mockApplyEditsInternal
+      .mockResolvedValueOnce([sampleFailure])
+      .mockResolvedValueOnce([sampleFailure]);
+
+    await applyLlmEdits({
+      content: sampleContent,
+      llmRequester: mockSuccessfulLlmRequester,
+      interactive: true,
+    });
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(2);
+    expect(mockGetOriginalRequestContext).toHaveBeenCalledTimes(1);
+    expect(mockConstructRetryPrompt).toHaveBeenCalledTimes(1);
+    expect(mockSuccessfulLlmRequester).toHaveBeenCalledTimes(1);
+    expect(mockPrintDetailedFailures).not.toHaveBeenCalled();
+    expect(mockResolveFailuresInteractively).toHaveBeenCalledTimes(1);
+    expect(mockResolveFailuresInteractively).toHaveBeenCalledWith(
+      [sampleFailure],
+      '/fake/write/root',
+      false
+    );
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Retry attempt finished. 0 edits applied successfully, 1 failures remain.'
+      )
+    );
+  });
+
+  it('should not retry, fail, and throw error when non-interactive and no requester', async () => {
+    mockApplyEditsInternal.mockResolvedValueOnce([sampleFailure]);
+
+    await expect(
+      applyLlmEdits({
+        content: sampleContent,
+        interactive: false,
+        llmRequester: undefined,
+      })
+    ).rejects.toThrow('Failed to apply 1 edits. Run with --interactive to resolve.');
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(1);
+    expect(mockGetOriginalRequestContext).not.toHaveBeenCalled();
+    expect(mockConstructRetryPrompt).not.toHaveBeenCalled();
+    expect(mockPrintDetailedFailures).toHaveBeenCalledTimes(1);
+    expect(mockPrintDetailedFailures).toHaveBeenCalledWith([sampleFailure]);
+    expect(mockResolveFailuresInteractively).not.toHaveBeenCalled();
+  });
+
+  it('should not retry, fail, and call interactive resolver when interactive and no requester', async () => {
+    mockApplyEditsInternal.mockResolvedValueOnce([sampleFailure]);
+
+    await applyLlmEdits({
+      content: sampleContent,
+      interactive: true,
+      llmRequester: undefined,
+    });
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(1);
+    expect(mockGetOriginalRequestContext).not.toHaveBeenCalled();
+    expect(mockConstructRetryPrompt).not.toHaveBeenCalled();
+    expect(mockPrintDetailedFailures).not.toHaveBeenCalled();
+    expect(mockResolveFailuresInteractively).toHaveBeenCalledTimes(1);
+    expect(mockResolveFailuresInteractively).toHaveBeenCalledWith(
+      [sampleFailure],
+      '/fake/write/root',
+      false
+    );
+  });
+
+  it('should abort retry and fallback if getOriginalRequestContext fails (non-interactive)', async () => {
+    const contextError = new Error('Failed to get context');
+    mockApplyEditsInternal.mockResolvedValueOnce([sampleFailure]);
+    mockGetOriginalRequestContext.mockRejectedValue(contextError);
+
+    await expect(
+      applyLlmEdits({
+        content: sampleContent,
+        llmRequester: mockSuccessfulLlmRequester,
+        interactive: false,
+      })
+    ).rejects.toThrow('Failed to apply 1 edits. Run with --interactive to resolve.');
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(1);
+    expect(mockGetOriginalRequestContext).toHaveBeenCalledTimes(1);
+    expect(mockConstructRetryPrompt).not.toHaveBeenCalled();
+    expect(mockSuccessfulLlmRequester).not.toHaveBeenCalled();
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to retrieve original context'),
+      contextError.message
+    );
+    expect(mockWarn).toHaveBeenCalledWith('Proceeding without LLM retry.');
+    expect(mockPrintDetailedFailures).toHaveBeenCalledTimes(1);
+    expect(mockPrintDetailedFailures).toHaveBeenCalledWith([sampleFailure]);
+    expect(mockResolveFailuresInteractively).not.toHaveBeenCalled();
+  });
+
+  it('should abort retry and fallback if getOriginalRequestContext fails (interactive)', async () => {
+    const contextError = new Error('Failed to get context');
+    mockApplyEditsInternal.mockResolvedValueOnce([sampleFailure]);
+    mockGetOriginalRequestContext.mockRejectedValue(contextError);
+
+    await applyLlmEdits({
+      content: sampleContent,
+      llmRequester: mockSuccessfulLlmRequester,
+      interactive: true,
+    });
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(1);
+    expect(mockGetOriginalRequestContext).toHaveBeenCalledTimes(1);
+    expect(mockConstructRetryPrompt).not.toHaveBeenCalled();
+    expect(mockSuccessfulLlmRequester).not.toHaveBeenCalled();
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to retrieve original context'),
+      contextError.message
+    );
+    expect(mockWarn).toHaveBeenCalledWith('Proceeding without LLM retry.');
+    expect(mockPrintDetailedFailures).not.toHaveBeenCalled();
+    expect(mockResolveFailuresInteractively).toHaveBeenCalledTimes(1);
+    expect(mockResolveFailuresInteractively).toHaveBeenCalledWith(
+      [sampleFailure],
+      '/fake/write/root',
+      false
+    );
+  });
+
+  it('should abort retry and fallback if llmRequester fails (non-interactive)', async () => {
+    const llmError = new Error('LLM API Error');
+    mockApplyEditsInternal.mockResolvedValueOnce([sampleFailure]);
+    mockFailingLlmRequester.mockRejectedValueOnce(llmError);
+
+    await expect(
+      applyLlmEdits({
+        content: sampleContent,
+        llmRequester: mockFailingLlmRequester,
+        interactive: false,
+      })
+    ).rejects.toThrow('Failed to apply 1 edits. Run with --interactive to resolve.');
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(1);
+    expect(mockGetOriginalRequestContext).toHaveBeenCalledTimes(1);
+    expect(mockConstructRetryPrompt).toHaveBeenCalledTimes(1);
+    expect(mockFailingLlmRequester).toHaveBeenCalledTimes(1);
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining('LLM request for retry failed:'),
+      llmError.message
+    );
+    expect(mockWarn).toHaveBeenCalledWith('Proceeding without applying LLM retry response.');
+    expect(mockPrintDetailedFailures).toHaveBeenCalledTimes(1);
+    expect(mockPrintDetailedFailures).toHaveBeenCalledWith([sampleFailure]);
+    expect(mockResolveFailuresInteractively).not.toHaveBeenCalled();
+  });
+
+  it('should abort retry and fallback if llmRequester fails (interactive)', async () => {
+    const llmError = new Error('LLM API Error');
+    mockApplyEditsInternal.mockResolvedValueOnce([sampleFailure]);
+    mockFailingLlmRequester.mockRejectedValueOnce(llmError);
+
+    await applyLlmEdits({
+      content: sampleContent,
+      llmRequester: mockFailingLlmRequester,
+      interactive: true,
+    });
+
+    expect(mockApplyEditsInternal).toHaveBeenCalledTimes(1);
+    expect(mockGetOriginalRequestContext).toHaveBeenCalledTimes(1);
+    expect(mockConstructRetryPrompt).toHaveBeenCalledTimes(1);
+    expect(mockFailingLlmRequester).toHaveBeenCalledTimes(1);
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining('LLM request for retry failed:'),
+      llmError.message
+    );
+    expect(mockWarn).toHaveBeenCalledWith('Proceeding without applying LLM retry response.');
+    expect(mockPrintDetailedFailures).not.toHaveBeenCalled();
+    expect(mockResolveFailuresInteractively).toHaveBeenCalledTimes(1);
+    expect(mockResolveFailuresInteractively).toHaveBeenCalledWith(
+      [sampleFailure],
+      '/fake/write/root',
+      false
+    );
+  });
+});

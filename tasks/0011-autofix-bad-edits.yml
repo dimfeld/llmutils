@@ -593,7 +593,7 @@ tasks:
               *   Scenario: `getOriginalRequestContext` throws an error during retry. Verify retry is aborted and fallback (interactive/throw) occurs.
               *   Scenario: `llmRequester` throws an error during retry. Verify retry is aborted and fallback occurs.
               *   Scenario: Initial application succeeds. Verify no retry logic is triggered.
-        done: false
+        done: true
   - title: 9 - CLI Integration (Optional)
     description: >
       Update the CLI command (`cmd.ts`) to potentially support the new retry
