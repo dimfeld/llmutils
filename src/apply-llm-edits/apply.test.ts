@@ -1,201 +1,278 @@
-import { test, expect, describe, jest, mock } from 'bun:test';
-import type { EditResult } from '../editor/types';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'bun:test';
+import { getOriginalRequestContext, extractRmfilterCommandArgs } from './apply';
+import type { ApplyLlmEditsOptions } from './apply';
+import { getOutputPath } from '../rmfilter/repomix';
+import { runRmfilterProgrammatically } from '../rmfilter/rmfilter';
+import { getGitRoot } from '../rmfilter/utils';
 
-// Mock the underlying processors
-const mockProcessUnifiedDiff = jest.fn();
-const mockProcessSearchReplace = jest.fn();
-const mockProcessXmlContents = jest.fn();
-const mockProcessRawFiles = jest.fn();
+// --- Mocking Dependencies ---
 
-mock.module('../editor/udiff-simple/parse.ts', () => ({
-  processUnifiedDiff: mockProcessUnifiedDiff,
-}));
-mock.module('../editor/diff-editor/parse.ts', () => ({
-  processSearchReplace: mockProcessSearchReplace,
-}));
-mock.module('../editor/xml/parse_xml.ts', () => ({
-  processXmlContents: mockProcessXmlContents,
-}));
-mock.module('../editor/whole-file/parse_raw_edits.ts', () => ({
-  processRawFiles: mockProcessRawFiles,
-}));
-
-// Import the function under test *after* setting up mocks
-import { applyEditsInternal } from './apply';
-
-// Sample EditResult for testing diff modes
-const mockEditResults: EditResult[] = [
-  { type: 'success', filePath: 'test.txt', originalText: 'a', updatedText: 'b' },
-];
-
-describe('applyEditsInternal', () => {
-  const defaultArgs = {
-    content: 'some content',
-    writeRoot: '/path/to/root',
-    dryRun: false,
+// Mock extractRmfilterCommandArgs from the same module
+vi.mock('./apply', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./apply')>();
+  return {
+    ...original,
+    extractRmfilterCommandArgs: vi.fn(),
   };
+});
 
+// Mock functions from other modules
+vi.mock('../rmfilter/repomix', () => ({
+  getOutputPath: vi.fn(),
+}));
+
+vi.mock('../rmfilter/rmfilter', () => ({
+  runRmfilterProgrammatically: vi.fn(),
+}));
+
+// Mock Bun.file().text()
+// Store mock file contents and errors here
+const mockFileStore: Record<string, { content?: string; error?: any }> = {};
+vi.mock('bun', async (importOriginal) => {
+  const original = await importOriginal<typeof import('bun')>();
+  return {
+    ...original,
+    file: (path: string) => ({
+      text: async () => {
+        const entry = mockFileStore[path];
+        if (entry?.error) {
+          throw entry.error;
+        }
+        if (entry?.content !== undefined) {
+          return entry.content;
+        }
+        // Default behavior if path not in store: throw ENOENT
+        const err = new Error(`ENOENT: no such file or directory, open '${path}'`);
+        (err as any).code = 'ENOENT';
+        throw err;
+      },
+      // Add other Bun.file methods if needed by the tested function
+    }),
+  };
+});
+
+// --- Test Suite ---
+
+describe('getOriginalRequestContext', () => {
+  const mockGitRoot = '/fake/git/root';
+  const mockBaseDir = '/fake/base/dir';
+  const mockCachePath = '/fake/git/root/repomix_output.txt';
+  const mockContentWithCommand =
+    '<rmfilter_command>rmfilter file1.ts --grep "foo"</rmfilter_command> Some other content';
+  const mockContentWithoutCommand = 'Some other content without the tag';
+  const mockCommandArgs = ['rmfilter', 'file1.ts', '--grep', 'foo'];
+  const mockDifferentCommandArgs = ['rmfilter', 'file2.ts', '--grep', 'bar'];
+  const mockCachedContent =
+    '<rmfilter_command>rmfilter file1.ts --grep "foo"</rmfilter_command> Cached context';
+  const mockRerunContent =
+    '<rmfilter_command>rmfilter file1.ts --grep "foo"</rmfilter_command> Rerun context';
+
+  // Helper to reset mocks and file store before each test
   beforeEach(() => {
-    // Reset mocks before each test
-    mockProcessUnifiedDiff.mockReset();
-    mockProcessSearchReplace.mockReset();
-    mockProcessXmlContents.mockReset();
-    mockProcessRawFiles.mockReset();
+    vi.resetAllMocks();
+    // Clear the mock file store
+    for (const key in mockFileStore) {
+      delete mockFileStore[key];
+    }
 
     // Default mock implementations
-    mockProcessUnifiedDiff.mockResolvedValue(mockEditResults);
-    mockProcessSearchReplace.mockResolvedValue(mockEditResults);
-    mockProcessXmlContents.mockResolvedValue(undefined);
-    mockProcessRawFiles.mockResolvedValue(undefined);
+    vi.mocked(getOutputPath).mockResolvedValue('repomix_output.txt');
+    vi.mocked(runRmfilterProgrammatically).mockResolvedValue(mockRerunContent);
   });
 
-  // --- Explicit Mode Tests ---
-
-  test('should call processUnifiedDiff when mode is "udiff"', async () => {
-    const result = await applyEditsInternal({ ...defaultArgs, mode: 'udiff' });
-    expect(mockProcessUnifiedDiff).toHaveBeenCalledTimes(1);
-    expect(mockProcessUnifiedDiff).toHaveBeenCalledWith(defaultArgs);
-    expect(mockProcessSearchReplace).not.toHaveBeenCalled();
-    expect(mockProcessXmlContents).not.toHaveBeenCalled();
-    expect(mockProcessRawFiles).not.toHaveBeenCalled();
-    expect(result).toEqual(mockEditResults);
-  });
-
-  test('should call processSearchReplace when mode is "diff"', async () => {
-    const result = await applyEditsInternal({ ...defaultArgs, mode: 'diff' });
-    expect(mockProcessSearchReplace).toHaveBeenCalledTimes(1);
-    expect(mockProcessSearchReplace).toHaveBeenCalledWith(defaultArgs);
-    expect(mockProcessUnifiedDiff).not.toHaveBeenCalled();
-    expect(mockProcessXmlContents).not.toHaveBeenCalled();
-    expect(mockProcessRawFiles).not.toHaveBeenCalled();
-    expect(result).toEqual(mockEditResults);
-  });
-
-  test('should call processXmlContents when mode is "xml"', async () => {
-    const result = await applyEditsInternal({ ...defaultArgs, mode: 'xml' });
-    expect(mockProcessXmlContents).toHaveBeenCalledTimes(1);
-    expect(mockProcessXmlContents).toHaveBeenCalledWith(defaultArgs);
-    expect(mockProcessUnifiedDiff).not.toHaveBeenCalled();
-    expect(mockProcessSearchReplace).not.toHaveBeenCalled();
-    expect(mockProcessRawFiles).not.toHaveBeenCalled();
-    expect(result).toBeUndefined();
-  });
-
-  test('should call processRawFiles when mode is "whole"', async () => {
-    const result = await applyEditsInternal({ ...defaultArgs, mode: 'whole' });
-    expect(mockProcessRawFiles).toHaveBeenCalledTimes(1);
-    expect(mockProcessRawFiles).toHaveBeenCalledWith(defaultArgs);
-    expect(mockProcessUnifiedDiff).not.toHaveBeenCalled();
-    expect(mockProcessSearchReplace).not.toHaveBeenCalled();
-    expect(mockProcessXmlContents).not.toHaveBeenCalled();
-    expect(result).toBeUndefined();
-  });
-
-  // --- Automatic Mode Detection Tests ---
-
-  test('should detect udiff mode from content (--- and @@)', async () => {
-    const content = '--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-old\n+new';
-    const result = await applyEditsInternal({ ...defaultArgs, content });
-    expect(mockProcessUnifiedDiff).toHaveBeenCalledTimes(1);
-    expect(mockProcessUnifiedDiff).toHaveBeenCalledWith({ ...defaultArgs, content });
-    expect(result).toEqual(mockEditResults);
-  });
-
-  test('should detect udiff mode from content (```diff and @@)', async () => {
-    const content = '```diff\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-old\n+new\n```';
-    const result = await applyEditsInternal({ ...defaultArgs, content });
-    expect(mockProcessUnifiedDiff).toHaveBeenCalledTimes(1);
-    expect(mockProcessUnifiedDiff).toHaveBeenCalledWith({ ...defaultArgs, content });
-    expect(result).toEqual(mockEditResults);
-  });
-
-  test('should detect diff mode from content (<<<<<<< SEARCH)', async () => {
-    const content = '<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE';
-    const result = await applyEditsInternal({ ...defaultArgs, content });
-    expect(mockProcessSearchReplace).toHaveBeenCalledTimes(1);
-    expect(mockProcessSearchReplace).toHaveBeenCalledWith({ ...defaultArgs, content });
-    expect(result).toEqual(mockEditResults);
-  });
-
-  test('should detect xml mode from content (<code_changes>)', async () => {
-    const content = '<code_changes><change>...</change></code_changes>';
-    const result = await applyEditsInternal({ ...defaultArgs, content });
-    expect(mockProcessXmlContents).toHaveBeenCalledTimes(1);
-    expect(mockProcessXmlContents).toHaveBeenCalledWith({ ...defaultArgs, content });
-    expect(result).toBeUndefined();
-  });
-
-  test('should default to whole file mode for unrecognized content', async () => {
-    const content = 'Just some plain text or code without specific markers.';
-    const result = await applyEditsInternal({ ...defaultArgs, content });
-    expect(mockProcessRawFiles).toHaveBeenCalledTimes(1);
-    expect(mockProcessRawFiles).toHaveBeenCalledWith({ ...defaultArgs, content });
-    expect(result).toBeUndefined();
-  });
-
-  // --- Argument Passing Test ---
-
-  test('should pass dryRun and writeRoot correctly', async () => {
-    const specificArgs = {
-      content: '--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-old\n+new',
-      writeRoot: '/specific/root',
-      dryRun: true,
+  it('should return options.originalPrompt if provided', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: mockContentWithCommand,
+      originalPrompt: 'Explicit original prompt',
     };
-    await applyEditsInternal(specificArgs);
-    expect(mockProcessUnifiedDiff).toHaveBeenCalledWith(specificArgs);
-  });
-});
-import { describe, it, expect } from 'bun:test';
-import { extractRmfilterCommandArgs } from './apply.ts';
-
-describe('extractRmfilterCommandArgs', () => {
-  it('should return null if the tag is not present', () => {
-    const content = 'Some content without the tag.';
-    expect(extractRmfilterCommandArgs(content)).toBeNull();
+    const context = await getOriginalRequestContext(options, mockGitRoot, mockBaseDir);
+    expect(context).toBe('Explicit original prompt');
+    expect(vi.mocked(extractRmfilterCommandArgs)).not.toHaveBeenCalled();
+    expect(vi.mocked(getOutputPath)).not.toHaveBeenCalled();
   });
 
-  it('should return null if the tag is empty', () => {
-    const content = 'Content with <rmfilter_command></rmfilter_command> empty tag.';
-    expect(extractRmfilterCommandArgs(content)).toBeNull();
+  it('should throw if originalPrompt is not provided and rmfilter_command is missing', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: mockContentWithoutCommand,
+    };
+    // Mock extractRmfilterCommandArgs to return null for the input content
+    vi.mocked(extractRmfilterCommandArgs).mockReturnValue(null);
+
+    await expect(getOriginalRequestContext(options, mockGitRoot, mockBaseDir)).rejects.toThrow(
+      'Cannot retry: Original prompt not provided and <rmfilter_command> tag not found or empty in the LLM response content.'
+    );
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledWith(options.content);
   });
 
-  it('should return null if the tag contains only whitespace', () => {
-    const content = 'Content with <rmfilter_command>   \n \t </rmfilter_command> whitespace tag.';
-    expect(extractRmfilterCommandArgs(content)).toBeNull();
+  it('should return cached content if cache file exists and arguments match', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: mockContentWithCommand,
+    };
+    // Mock command extraction for input content
+    vi.mocked(extractRmfilterCommandArgs).mockImplementation((content) => {
+      if (content === options.content) return mockCommandArgs;
+      if (content === mockCachedContent) return mockCommandArgs;
+      return null;
+    });
+    // Mock file read for cache file
+    mockFileStore[mockCachePath] = { content: mockCachedContent };
+
+    const context = await getOriginalRequestContext(options, mockGitRoot, mockBaseDir);
+
+    expect(context).toBe(mockCachedContent);
+    expect(vi.mocked(getOutputPath)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledWith(options.content);
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledWith(mockCachedContent);
+    expect(vi.mocked(runRmfilterProgrammatically)).not.toHaveBeenCalled();
   });
 
-  it('should extract and parse simple arguments', () => {
-    const content =
-      'Some preamble <rmfilter_command>--arg1 value1 --arg2</rmfilter_command> some postamble';
-    expect(extractRmfilterCommandArgs(content)).toEqual(['--arg1', 'value1', '--arg2']);
+  it('should return cached content if cache file exists and arguments match (different order)', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: '<rmfilter_command>rmfilter --grep "foo" file1.ts</rmfilter_command> Content',
+    };
+    const currentArgsOutOfOrder = ['rmfilter', '--grep', 'foo', 'file1.ts'];
+    const cachedArgs = ['rmfilter', 'file1.ts', '--grep', 'foo'];
+    const cachedContentWithCommand = `<rmfilter_command>rmfilter file1.ts --grep "foo"</rmfilter_command> Cached context`;
+
+    vi.mocked(extractRmfilterCommandArgs).mockImplementation((content) => {
+      if (content === options.content) return currentArgsOutOfOrder;
+      if (content === cachedContentWithCommand) return cachedArgs;
+      return null;
+    });
+    mockFileStore[mockCachePath] = { content: cachedContentWithCommand };
+
+    const context = await getOriginalRequestContext(options, mockGitRoot, mockBaseDir);
+
+    expect(context).toBe(cachedContentWithCommand);
+    expect(vi.mocked(runRmfilterProgrammatically)).not.toHaveBeenCalled();
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledTimes(2);
   });
 
-  it('should extract and parse arguments with quotes', () => {
-    const content =
-      '<rmfilter_command>command --path "path/with spaces" --message \'hello world\'</rmfilter_command>';
-    expect(extractRmfilterCommandArgs(content)).toEqual([
-      'command',
-      '--path',
-      'path/with spaces',
-      '--message',
-      'hello world',
-    ]);
+  it('should re-run rmfilter if cache file exists but arguments do not match', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: mockContentWithCommand,
+    };
+    const cachedContentDifferentArgs = `<rmfilter_command>rmfilter file2.ts --grep "bar"</rmfilter_command> Stale cached context`;
+
+    // Mock command extraction
+    vi.mocked(extractRmfilterCommandArgs).mockImplementation((content) => {
+      if (content === options.content) return mockCommandArgs;
+      if (content === cachedContentDifferentArgs) return mockDifferentCommandArgs;
+      return null;
+    });
+    // Mock file read for cache file
+    mockFileStore[mockCachePath] = { content: cachedContentDifferentArgs };
+
+    const context = await getOriginalRequestContext(options, mockGitRoot, mockBaseDir);
+
+    expect(context).toBe(mockRerunContent);
+    expect(vi.mocked(getOutputPath)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledWith(
+      mockCommandArgs,
+      mockGitRoot,
+      mockBaseDir
+    );
   });
 
-  it('should handle escaped quotes within arguments', () => {
-    const content =
-      '<rmfilter_command>--arg "value with \\"escaped quotes\\"" --another \'single \\\' quote\'</rmfilter_command>';
-    expect(extractRmfilterCommandArgs(content)).toEqual([
-      '--arg',
-      'value with "escaped quotes"',
-      '--another',
-      "single ' quote",
-    ]);
+  it('should re-run rmfilter if cache file does not exist', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: mockContentWithCommand,
+    };
+    // Mock command extraction for input content
+    vi.mocked(extractRmfilterCommandArgs).mockReturnValue(mockCommandArgs);
+    // No entry in mockFileStore for mockCachePath simulates ENOENT
+
+    const context = await getOriginalRequestContext(options, mockGitRoot, mockBaseDir);
+
+    expect(context).toBe(mockRerunContent);
+    expect(vi.mocked(getOutputPath)).toHaveBeenCalledTimes(1);
+    // extractRmfilterCommandArgs only called once because cache read fails before parsing cache
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledWith(options.content);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledWith(
+      mockCommandArgs,
+      mockGitRoot,
+      mockBaseDir
+    );
   });
 
-  it('should only parse the first tag if multiple exist', () => {
-    const content =
-      '<rmfilter_command>first --tag</rmfilter_command> some text <rmfilter_command>second --tag</rmfilter_command>';
-    expect(extractRmfilterCommandArgs(content)).toEqual(['first', '--tag']);
+  it('should re-run rmfilter if cache file exists but rmfilter_command is missing in cache', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: mockContentWithCommand,
+    };
+    const cachedContentNoCommand = `Just some text, no command tag`;
+
+    vi.mocked(extractRmfilterCommandArgs).mockImplementation((content) => {
+      if (content === options.content) return mockCommandArgs;
+      if (content === cachedContentNoCommand) return null;
+      return null;
+    });
+    mockFileStore[mockCachePath] = { content: cachedContentNoCommand };
+
+    const context = await getOriginalRequestContext(options, mockGitRoot, mockBaseDir);
+
+    expect(context).toBe(mockRerunContent);
+    expect(vi.mocked(getOutputPath)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledWith(
+      mockCommandArgs,
+      mockGitRoot,
+      mockBaseDir
+    );
+  });
+
+  it('should throw if runRmfilterProgrammatically throws an error', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: mockContentWithCommand,
+    };
+    const runError = new Error('rmfilter failed');
+    // Mock command extraction for input content
+    vi.mocked(extractRmfilterCommandArgs).mockReturnValue(mockCommandArgs);
+    // Mock cache file not existing
+    // Mock runRmfilterProgrammatically to throw
+    vi.mocked(runRmfilterProgrammatically).mockRejectedValue(runError);
+
+    await expect(getOriginalRequestContext(options, mockGitRoot, mockBaseDir)).rejects.toThrow(
+      `Failed to regenerate original rmfilter context by re-running command: ${mockCommandArgs.join(' ')}`
+    );
+
+    expect(vi.mocked(getOutputPath)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledWith(
+      mockCommandArgs,
+      mockGitRoot,
+      mockBaseDir
+    );
+  });
+
+  it('should handle errors during cache file reading gracefully and re-run rmfilter', async () => {
+    const options: ApplyLlmEditsOptions = {
+      content: mockContentWithCommand,
+    };
+    const readError = new Error('Permission denied');
+    (readError as any).code = 'EACCES';
+
+    vi.mocked(extractRmfilterCommandArgs).mockReturnValue(mockCommandArgs);
+    mockFileStore[mockCachePath] = { error: readError };
+
+    // We expect it to log a warning (can't easily test console output here)
+    // and then proceed to re-run rmfilter
+    const context = await getOriginalRequestContext(options, mockGitRoot, mockBaseDir);
+
+    expect(context).toBe(mockRerunContent);
+    expect(vi.mocked(getOutputPath)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractRmfilterCommandArgs)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runRmfilterProgrammatically)).toHaveBeenCalledWith(
+      mockCommandArgs,
+      mockGitRoot,
+      mockBaseDir
+    );
   });
 });

@@ -398,7 +398,7 @@ tasks:
               *   Test case where cache file *doesn't* exist (should call `runRmfilterProgrammatically` and return its result).
               *   Test case where `runRmfilterProgrammatically` throws an error.
               *   Test argument comparison logic (ensure it handles different ordering if necessary, or assumes fixed order).
-        done: false
+        done: true
   - title: 6 - Define LLM Requester Interface
     description: >
       Define a clear interface for how `applyLlmEdits` will request completions
