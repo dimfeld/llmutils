@@ -209,7 +209,7 @@ tasks:
           quote"`).
 
           4.  Return the parsed array of arguments.
-        done: false
+        done: true
       - prompt: >
           Add unit tests for the `parseCliArgsFromString` function in
           `src/rmfilter/utils.ts`.
