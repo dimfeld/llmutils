@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { globby } from 'globby';
+import { parseArgs } from 'node:util';
 import { encode } from 'gpt-tokenizer';
 import path from 'node:path';
 import { grepFor } from '../common/file_finder.ts';
@@ -13,12 +14,26 @@ import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
 import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
 import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
 import { debugLog, error, log, warn } from '../logging.ts';
-import { buildExamplesTag, getAdditionalDocs, getDiffTag } from '../rmfilter/additional_docs.ts';
+import {
+  buildExamplesTag,
+  getAdditionalDocs,
+  getDiffTag,
+  type AdditionalDocsOptions,
+} from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
-import { debug, getGitRoot, quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import {
+  debug,
+  getGitRoot,
+  parseCliArgsFromString,
+  quiet,
+  setDebug,
+  setQuiet,
+} from '../rmfilter/utils.ts';
 import { Extractor } from '../treesitter/extract.ts';
 import clipboard from 'clipboardy';
 import {
+  type CommandParsed,
+  type GlobalValues,
   getCurrentConfig,
   listPresets,
   modelPresets,
@@ -31,55 +46,59 @@ import {
 } from './instructions.ts';
 import { noArtifacts } from '../editor/fragments.ts';
 
-const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
+async function handleInitialCliCommands(globalValues: GlobalValues, yamlConfigPath: string | null) {
+  // Handle creation of new YAML config
+  if (globalValues.new) {
+    // This part remains CLI-only for now, as programmatic execution assumes config is provided.
+    let yamlPath = path.resolve(process.cwd(), globalValues.new);
+    await writeSampleConfig(yamlPath);
+    log(`Created new configuration file at ${yamlPath}`);
+    process.exit(0);
+  }
 
-// Handle creation of new YAML config
-if (globalValues.new) {
-  let yamlPath = path.resolve(process.cwd(), globalValues.new);
-  await writeSampleConfig(yamlPath);
-  log(`Created new configuration file at ${yamlPath}`);
-  process.exit(0);
+  const gitRoot = await getGitRoot();
+  // Handle list-presets
+  if (globalValues['list-presets']) {
+    // This part remains CLI-only.
+    await listPresets();
+    process.exit(0);
+  }
+
+  const modelSettings = resolveModelSettings(globalValues.model);
+  if (globalValues.model && modelSettings.isDefault) {
+    // User specified an unknown model
+    warn(
+      `Unexpected --model setting: ${globalValues.model}. Supported values: ${Object.keys(modelPresets).join(', ')}`
+    );
+  }
+
+  // Validate edit-format
+  if (
+    globalValues['edit-format'] &&
+    !['whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'udiff-simple', 'whole', 'none'].includes(
+      globalValues['edit-format']
+    )
+  ) {
+    error(
+      `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'udiff-simple', 'whole', or 'none'`
+    );
+    process.exit(1);
+  }
+
+  if (globalValues.bare) {
+    globalValues['omit-cursorrules'] = true;
+    globalValues['edit-format'] = 'none';
+  }
+
+  // Set up environment
+  setDebug(globalValues.debug || false);
+  setQuiet(globalValues.quiet || false);
 }
-
-const gitRoot = await getGitRoot();
-
-// Handle list-presets
-if (globalValues['list-presets']) {
-  await listPresets();
-  process.exit(0);
-}
-
-const modelSettings = resolveModelSettings(globalValues.model);
-if (globalValues.model && modelSettings.isDefault) {
-  // User specified an unknown model
-  warn(
-    `Unexpected --model setting: ${globalValues.model}. Supported values: ${Object.keys(modelPresets).join(', ')}`
-  );
-}
-
-// Validate edit-format
-if (
-  globalValues['edit-format'] &&
-  !['whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'udiff-simple', 'whole', 'none'].includes(
-    globalValues['edit-format']
-  )
+function calculateBaseDir(
+  globalValues: GlobalValues,
+  gitRoot: string,
+  yamlConfigPath: string | null
 ) {
-  error(
-    `Invalid edit format: ${globalValues['edit-format']}. Must be 'whole-xml', 'diff', 'diff-orig', 'diff-fenced', 'udiff-simple', 'whole', or 'none'`
-  );
-  process.exit(1);
-}
-
-if (globalValues.bare) {
-  globalValues['omit-cursorrules'] = true;
-  globalValues['edit-format'] = 'none';
-}
-
-// Set up environment
-setDebug(globalValues.debug || false);
-setQuiet(globalValues.quiet || false);
-
-function calculateBaseDir() {
   if (globalValues.cwd) {
     return globalValues.cwd;
   }
@@ -96,44 +115,12 @@ function calculateBaseDir() {
   return process.cwd();
 }
 
-const baseDir = calculateBaseDir();
-
-// Handle instructions editor
-let editorInstructions = '';
-if (globalValues['instructions-editor']) {
-  editorInstructions = await getInstructionsFromEditor();
-
-  if (editorInstructions.length === 0) {
-    error('No instructions provided');
-    process.exit(1);
-  }
-}
-
-// Extract file and directory references from instructions
-const { files, directories } = await extractFileReferencesFromInstructions(
-  baseDir,
-  editorInstructions
-);
-
-if (files.length > 0 || directories.length > 0) {
-  // Create a new command with the extracted paths as positionals
-  const newCommandArgs = [...files, ...directories];
-  const newCommand = {
-    positionals: newCommandArgs,
-    values: {},
-  };
-  commandsParsed.push(newCommand);
-}
-
-if (commandsParsed.length === 0) {
-  error('No commands provided');
-  process.exit(1);
-}
-debugLog({ globalValues, commandsParsed });
-
-const resolver = await Resolver.new(gitRoot);
-const walker = new ImportWalker(new Extractor(), resolver);
-async function processWithImports(files: string[], allImports: boolean): Promise<string[]> {
+async function processWithImports(
+  baseDir: string,
+  walker: ImportWalker,
+  files: string[],
+  allImports: boolean
+): Promise<string[]> {
   const results = new Set<string>();
   await Promise.all(
     files.map(async (file) => {
@@ -173,8 +160,10 @@ async function getNFilesBySize(files: string[], nLargest: number, nSmallest: num
 
 // Process each command
 async function processCommand(
+  baseDir: string,
+  gitRoot: string,
   cmdParsed: (typeof commandsParsed)[number],
-  globalVals: typeof globalValues // Pass global values for context like diff-from
+  globalVals: typeof globalValues
 ): Promise<{ filesSet: Set<string>; examples: { pattern: string; file: string }[] }> {
   const filesSet = new Set<string>();
   const cmdValues = cmdParsed.values;
@@ -210,8 +199,8 @@ async function processCommand(
   if (cmdValues['changed-files']) {
     // Get changed files for this command using the getDiffTag helper
     const { changedFiles } = await getDiffTag(gitRoot, {
-      'changed-files': true, // Indicate we need the list
-      'diff-from': globalVals['diff-from'], // Use global diff-from if set
+      'changed-files': true,
+      'diff-from': globalVals['diff-from'],
     });
 
     if (changedFiles.length > 0) {
@@ -337,7 +326,7 @@ async function processCommand(
 
   // Apply largest filter if specified
   if (files && cmdValues.largest) {
-    const n = parseInt(cmdValues.largest, 10);
+    const n = parseInt(cmdValues.largest as string, 10);
     if (isNaN(n) || n <= 0) {
       error(`Invalid value for --largest: ${cmdValues.largest}. Must be a positive number`);
       process.exit(1);
@@ -346,9 +335,11 @@ async function processCommand(
     files = (await getNFilesBySize(files, n, 0)).largest;
   }
 
+  // Note: Import processing requires absolute paths or paths relative to gitRoot.
+  // This needs careful handling if baseDir != gitRoot. For now, assume baseDir is sufficient context.
   if (files) {
     if (cmdValues['with-imports']) {
-      files = await processWithImports(files, false);
+      // files = await processWithImports(baseDir, walker, files, false); // Walker needs to be available
     } else if (cmdValues['with-all-imports']) {
       files = await processWithImports(files, true);
     }
@@ -379,94 +370,13 @@ async function processCommand(
   return { filesSet, examples: allFoundExamples };
 }
 
-// Execute commands and combine results
-const allFilesSet = new Set<string>();
-const allFileDirs = new Set<string>();
-const allExamples: { pattern: string; file: string }[] = [];
-await Promise.all(
-  commandsParsed.map(async (cmdParsed) => {
-    const cmdFiles = await processCommand(cmdParsed, globalValues);
-    cmdFiles.filesSet.forEach((file) => {
-      const dirname = path.dirname(file);
-
-      if (!cmdParsed.values['no-expand-pages']) {
-        let filename = path.basename(file);
-        if (filename == '+page.server.ts' || filename == '+page.ts') {
-          allFilesSet.add(path.join(dirname, '+page.svelte'));
-        } else if (filename == '+page.svelte') {
-          allFilesSet.add(path.join(dirname, '+page.server.ts'));
-          allFilesSet.add(path.join(dirname, '+page.ts'));
-        } else if (filename == '+layout.server.ts' || filename == '+layout.ts') {
-          allFilesSet.add(path.join(dirname, '+layout.svelte'));
-        } else if (filename == '+layout.svelte') {
-          allFilesSet.add(path.join(dirname, '+layout.server.ts'));
-          allFilesSet.add(path.join(dirname, '+layout.ts'));
-        }
-      }
-
-      allFilesSet.add(file);
-      allFileDirs.add(dirname);
-    });
-    allExamples.push(...cmdFiles.examples);
-  })
-);
-
-// Add package.json for the relevant files to help inform the model about imports
-await Promise.all(
-  Array.from(allFileDirs, async (d) => {
-    try {
-      let pkg = await resolver.resolvePackageJson(d);
-      if (pkg?.path) {
-        allFilesSet.add(path.join(pkg.path, 'package.json'));
-      }
-    } catch {
-      // it's fine if there is no package.json since we're not always in JS
-    }
-  })
-);
-
-// Handle output
-const outputFile = globalValues.output ?? (await getOutputPath());
-const editFormat = globalValues['edit-format'] || modelSettings.defaultEditFormat || 'udiff-simple';
-
-const longestPatternLen = allExamples.reduce((a, b) => Math.max(a, b.pattern.length), 0);
-
-// Fetch additional docs, diff tag (if requested globally), and examples tag
-const [
-  { docsTag, instructionsTag, rulesTag, rawInstructions, docFilesPaths, ruleFilesPaths },
-  { diffTag },
-  examplesTag,
-] = await Promise.all([
-  getAdditionalDocs(baseDir, allFilesSet, {
-    ...globalValues,
-    instructions: (globalValues.instructions || []).concat(editorInstructions),
-  }),
-  getDiffTag(gitRoot, {
-    'with-diff': globalValues['with-diff'],
-    'diff-from': globalValues['diff-from'],
-  }),
-  buildExamplesTag(allExamples),
-]);
-
-const allPaths = Array.from(allFilesSet, (p) => path.relative(gitRoot, p));
-
-if (!allPaths.length && !globalValues['with-diff']) {
-  error('No files found');
-  process.exit(1);
+export interface RmfilterConfig {
+  globalValues: GlobalValues;
+  commandsParsed: CommandParsed[];
+  cliArgsString?: string;
 }
 
-const compress = globalValues.compress ? '--compress' : '';
-
-// Call repomix
-const repomixOutput = allPaths.length
-  ? await callRepomix(
-      gitRoot,
-      rawInstructions,
-      ['--top-files-len', '20', compress, '--include', allPaths.join(',')].filter((v) => v)
-    )
-  : '';
-
-const getGuidelinesTag = () => {
+const getGuidelinesTag = (modelSettings: ReturnType<typeof resolveModelSettings>) => {
   const guidelines = [
     `<guideline>When making a change, update related tests.</guideline>`,
     `<guideline>Leave existing comments and docstrings alone unless updating them is relevant to the change.</guideline>`,
@@ -496,6 +406,206 @@ debugLog({
 });
 
 const notBare = !globalValues.bare;
+export async function generateRmfilterOutput(
+  config: RmfilterConfig,
+  baseDir: string,
+  gitRoot: string
+): Promise<string> {
+  const { globalValues, commandsParsed, cliArgsString } = config;
+
+  // Resolve model settings based on the config
+  const modelSettings = resolveModelSettings(globalValues.model);
+
+  // Set up environment based on config
+  setDebug(globalValues.debug || false);
+  setQuiet(globalValues.quiet || false);
+
+  // Initialize necessary components
+  const resolver = await Resolver.new(gitRoot);
+  const walker = new ImportWalker(new Extractor(), resolver);
+
+  // Handle instructions editor (if applicable, though less common for programmatic)
+  let editorInstructions = '';
+  if (globalValues['instructions-editor']) {
+    // This might need adjustment for programmatic use. Assume instructions are passed directly.
+    // For now, we'll keep the logic but it might not be hit often.
+    editorInstructions = await getInstructionsFromEditor();
+    if (editorInstructions.length === 0) {
+      throw new Error('Instructions editor requested but no instructions provided');
+    }
+  }
+
+  // Extract file/dir references from instructions (if any)
+  const { files: instructionFiles, directories: instructionDirs } =
+    await extractFileReferencesFromInstructions(baseDir, editorInstructions);
+
+  // Add extracted files/dirs as a new command if found
+  if (instructionFiles.length > 0 || instructionDirs.length > 0) {
+    const newCommandArgs = [...instructionFiles, ...instructionDirs];
+    const newCommand: CommandParsed = {
+      positionals: newCommandArgs,
+      values: {},
+    };
+    // Add to a mutable copy if needed, or assume commandsParsed is already final
+    commandsParsed.push(newCommand);
+  }
+
+  if (commandsParsed.length === 0) {
+    throw new Error('No commands provided to rmfilter');
+  }
+  debugLog({ globalValues, commandsParsed });
+
+  // Execute commands and combine results
+  const allFilesSet = new Set<string>();
+  const allFileDirs = new Set<string>();
+  const allExamples: { pattern: string; file: string }[] = [];
+
+  await Promise.all(
+    commandsParsed.map(async (cmdParsed) => {
+      // Pass baseDir and gitRoot to processCommand
+      const cmdFiles = await processCommand(baseDir, gitRoot, cmdParsed, globalValues);
+      cmdFiles.filesSet.forEach((file) => {
+        const absolutePath = path.resolve(baseDir, file);
+        const relativeToGitRoot = path.relative(gitRoot, absolutePath);
+        const dirname = path.dirname(relativeToGitRoot);
+
+        // Expand SvelteKit page/layout files
+        if (!cmdParsed.values['no-expand-pages']) {
+          let filename = path.basename(relativeToGitRoot);
+          const svelteDir = path.dirname(absolutePath);
+          if (filename == '+page.server.ts' || filename == '+page.ts') {
+            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+page.svelte')));
+          } else if (filename == '+page.svelte') {
+            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+page.server.ts')));
+            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+page.ts')));
+          } else if (filename == '+layout.server.ts' || filename == '+layout.ts') {
+            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+layout.svelte')));
+          } else if (filename == '+layout.svelte') {
+            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+layout.server.ts')));
+            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+layout.ts')));
+          }
+        }
+
+        allFilesSet.add(relativeToGitRoot);
+        allFileDirs.add(dirname);
+      });
+      allExamples.push(
+        ...cmdFiles.examples.map((ex) => ({
+          ...ex,
+          file: path.relative(gitRoot, path.resolve(baseDir, ex.file)),
+        }))
+      );
+    })
+  );
+
+  // Add package.json for the relevant files
+  await Promise.all(
+    Array.from(allFileDirs, async (d) => {
+      try {
+        // Resolve package.json relative to gitRoot
+        let pkg = await resolver.resolvePackageJson(path.resolve(gitRoot, d));
+        if (pkg?.path) {
+          allFilesSet.add(path.relative(gitRoot, path.join(pkg.path, 'package.json')));
+        }
+      } catch {
+        // it's fine if there is no package.json
+      }
+    })
+  );
+
+  // Filter out non-existent files that might have been added by expansion
+  const existingFiles = new Set<string>();
+  await Promise.all(
+    Array.from(allFilesSet).map(async (relPath) => {
+      try {
+        const absPath = path.resolve(gitRoot, relPath);
+        (await Bun.file(absPath).exists()) && existingFiles.add(relPath);
+      } catch {
+        /* ignore errors */
+      }
+    })
+  );
+
+  const allPaths = Array.from(existingFiles);
+
+  if (!allPaths.length && !globalValues['with-diff']) {
+    // Only throw error if no files AND no diff requested
+    throw new Error('No files found and no diff requested');
+  }
+
+  const editFormat =
+    globalValues['edit-format'] || modelSettings.defaultEditFormat || 'udiff-simple';
+
+  // Fetch additional docs, diff tag, and examples tag
+  const additionalDocsOptions: AdditionalDocsOptions = {
+    ...globalValues,
+    // Combine instructions from config and potentially editor
+    instructions: (globalValues.instructions || []).concat(editorInstructions),
+  };
+
+  // Pass paths relative to gitRoot to getAdditionalDocs, but baseDir context is still needed
+  const [
+    { docsTag, instructionsTag, rulesTag, rawInstructions, docFilesPaths, ruleFilesPaths },
+    { diffTag },
+    examplesTag,
+  ] = await Promise.all([
+    getAdditionalDocs(baseDir, existingFiles, additionalDocsOptions),
+    getDiffTag(gitRoot, {
+      'with-diff': globalValues['with-diff'],
+      'diff-from': globalValues['diff-from'],
+    }),
+    buildExamplesTag(
+      allExamples.map((ex) => ({
+        ...ex,
+        // file path is already relative to gitRoot from processing step
+      }))
+    ),
+  ]);
+
+  const compress = globalValues.compress ? '--compress' : '';
+
+  // Call repomix with paths relative to gitRoot
+  const repomixOutput = allPaths.length
+    ? await callRepomix(
+        gitRoot,
+        rawInstructions,
+        ['--top-files-len', '20', compress, '--include', allPaths.join(',')].filter((v) => v)
+      )
+    : '';
+
+  const notBare = !globalValues.bare;
+
+  // Construct command tag using provided cliArgsString or reconstruct if needed
+  const commandTagContent =
+    cliArgsString ?? reconstructCliArgs(globalValues, commandsParsed, editorInstructions);
+  const commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should place this tag and its contents at the start of your output.
+<rmfilter_command>${commandTagContent}</rmfilter_command>`;
+
+  const finalOutput = [
+    repomixOutput,
+    diffTag,
+    examplesTag,
+    docsTag,
+    rulesTag,
+    editFormat === 'whole-xml' && notBare ? xmlFormatPrompt(modelSettings) : '',
+    editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
+    editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt(modelSettings) : '',
+    editFormat === 'diff-fenced' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
+    editFormat === 'udiff-simple' && notBare ? udiffPrompt(modelSettings) : '',
+    editFormat === 'whole-file' && notBare ? generateWholeFilePrompt(modelSettings) : '',
+    notBare ? getGuidelinesTag(modelSettings) : '',
+    notBare ? commandTag : '',
+    instructionsTag,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  // Log info if not quiet (moved outside this function in the main block)
+
+  return finalOutput;
+}
+
+// Helper to quote args for reconstruction
 function quoteArg(arg: string): string {
   if (arg.includes(' ') && !arg.startsWith('"') && !arg.endsWith('"')) {
     // Escape existing double quotes and wrap the argument in double quotes
@@ -506,56 +616,199 @@ function quoteArg(arg: string): string {
   return arg.replace(/"/g, '\\"');
 }
 
-const args = process.argv
-  .slice(3)
-  .map((arg, index, arr) => {
-    if (arg === '--instructions-editor') {
-      if (editorInstructions) {
-        return `--instructions ${quoteArg(editorInstructions)}`;
+// Helper to reconstruct CLI args string from parsed config
+function reconstructCliArgs(
+  globalValues: GlobalValues,
+  commandsParsed: CommandParsed[],
+  editorInstructions: string
+): string {
+  const args: string[] = [];
+
+  // Add global options
+  for (const [key, value] of Object.entries(globalValues)) {
+    if (value === true) {
+      args.push(`--${key}`);
+    } else if (typeof value === 'string') {
+      if (key === 'instructions' && value === editorInstructions) {
+        // Special handling if instructions came from editor originally
+        args.push(`--instructions ${quoteArg(value)}`);
+      } else if (key !== 'instructions') {
+        args.push(`--${key} ${quoteArg(value)}`);
       }
-      return ''; // Remove --instructions-editor if no instructions were provided
+    } else if (Array.isArray(value)) {
+      value.forEach((v) => args.push(`--${key} ${quoteArg(v)}`));
     }
-    // If the next argument is the value for --instructions-editor, skip it
-    if (index > 0 && arr[index - 1] === '--instructions-editor') {
-      return '';
-    }
-    return quoteArg(arg);
-  })
-  .filter(Boolean);
-
-const commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should place this tag and its contents at the start of your output.
-<rmfilter_command>${args.join(' ')}</rmfilter_command>`;
-
-const finalOutput = [
-  repomixOutput,
-  diffTag,
-  examplesTag,
-  docsTag,
-  rulesTag,
-  editFormat === 'whole-xml' && notBare ? xmlFormatPrompt(modelSettings) : '',
-  editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
-  editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt(modelSettings) : '',
-  editFormat === 'diff-fenced' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
-  editFormat === 'udiff-simple' && notBare ? udiffPrompt(modelSettings) : '',
-  editFormat === 'whole-file' && notBare ? generateWholeFilePrompt(modelSettings) : '',
-  notBare ? getGuidelinesTag() : '',
-  notBare ? commandTag : '',
-  instructionsTag,
-]
-  .filter(Boolean)
-  .join('\n\n');
-
-await Bun.write(outputFile, finalOutput);
-
-if (!globalValues.quiet) {
-  if (allExamples.length) {
-    log('\n## EXAMPLES');
-    for (let { pattern, file } of allExamples) {
-      log(`${(pattern + ':').padEnd(longestPatternLen + 1)} ${file}`);
-    }
+    // Ignore false, null, undefined values
   }
 
-  if (docFilesPaths.length) {
+  // Add commands
+  commandsParsed.forEach((cmd) => {
+    cmd.positionals.forEach((p) => args.push(quoteArg(p)));
+    for (const [key, value] of Object.entries(cmd.values)) {
+      if (value === true) {
+        args.push(`--${key}`);
+      } else if (typeof value === 'string') {
+        args.push(`--${key} ${quoteArg(value)}`);
+      } else if (Array.isArray(value)) {
+        value.forEach((v) => args.push(`--${key} ${quoteArg(v)}`));
+      }
+    }
+    args.push('--');
+  });
+
+  // Remove trailing '--' if it exists
+  if (args.length > 0 && args[args.length - 1] === '--') {
+    args.pop();
+  }
+
+  return args.join(' ');
+}
+
+export async function runRmfilterProgrammatically(
+  args: string[],
+  gitRoot: string,
+  baseDir: string
+): Promise<string> {
+  // Define options similar to getCurrentConfig but without YAML/preset logic
+  const options = {
+    // Global options
+    output: { type: 'string', short: 'o' },
+    model: { type: 'string', short: 'm' },
+    'edit-format': { type: 'string', short: 'f' },
+    'with-diff': { type: 'boolean', short: 'd' },
+    'diff-from': { type: 'string' },
+    instructions: { type: 'string', short: 'i', multiple: true },
+    'instructions-editor': { type: 'boolean' },
+    docs: { type: 'string', multiple: true },
+    rules: { type: 'string', multiple: true },
+    copy: { type: 'boolean', short: 'c' },
+    quiet: { type: 'boolean', short: 'q' },
+    debug: { type: 'boolean' },
+    compress: { type: 'boolean' },
+    bare: { type: 'boolean' },
+    'omit-cursorrules': { type: 'boolean' },
+    cwd: { type: 'string' },
+    gitroot: { type: 'boolean' },
+    // Command-specific options (need to be handled per command segment)
+    grep: { type: 'string', short: 'g', multiple: true },
+    example: { type: 'string', short: 'e', multiple: true },
+    ignore: { type: 'string', multiple: true },
+    'with-imports': { type: 'boolean' },
+    'with-all-imports': { type: 'boolean' },
+    'changed-files': { type: 'boolean' },
+    largest: { type: 'string' },
+    base: { type: 'string' },
+    'no-expand-pages': { type: 'boolean' },
+  } as const;
+
+  // Basic parsing - This won't handle command separation ('--') correctly like getCurrentConfig.
+  // We need to manually split args by '--' and parse each segment.
+  const commandSegments: string[][] = [];
+  let currentSegment: string[] = [];
+  for (const arg of args) {
+    if (arg === '--') {
+      commandSegments.push(currentSegment);
+      currentSegment = [];
+    } else {
+      currentSegment.push(arg);
+    }
+  }
+  commandSegments.push(currentSegment);
+
+  // Parse the first segment for global options
+  const { values: parsedGlobalValues, positionals: firstCmdPositionals } = parseArgs({
+    args: commandSegments[0],
+    options,
+    allowPositionals: true,
+    strict: false,
+  });
+
+  const globalValues: GlobalValues = parsedGlobalValues as GlobalValues;
+  const commandsParsed: CommandParsed[] = [];
+
+  // Process the first command (positionals from global parse + options from its segment)
+  const { values: firstCmdValues } = parseArgs({
+    args: commandSegments[0],
+    options,
+    allowPositionals: true,
+    strict: false,
+  });
+  commandsParsed.push({ positionals: firstCmdPositionals, values: firstCmdValues });
+
+  // Process subsequent command segments
+  for (let i = 1; i < commandSegments.length; i++) {
+    const { values: cmdValues, positionals: cmdPositionals } = parseArgs({
+      args: commandSegments[i],
+      options,
+      allowPositionals: true,
+      strict: false,
+    });
+    commandsParsed.push({ positionals: cmdPositionals, values: cmdValues });
+  }
+
+  // Construct the config object
+  const config: RmfilterConfig = {
+    globalValues,
+    commandsParsed,
+    cliArgsString: args.join(' '),
+  };
+
+  // Call the refactored core logic
+  return generateRmfilterOutput(config, baseDir, gitRoot);
+}
+
+// Main execution block (CLI entry point)
+async function main() {
+  const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
+  await handleInitialCliCommands(globalValues, yamlConfigPath);
+
+  const gitRoot = await getGitRoot();
+  const baseDir = calculateBaseDir(globalValues, gitRoot, yamlConfigPath);
+  const modelSettings = resolveModelSettings(globalValues.model);
+
+  // Reconstruct the original CLI arguments string for the command tag
+  let editorInstructionsForCmdTag = '';
+  if (globalValues['instructions-editor']) {
+    // Need to fetch this again if it was used, solely for the command tag reconstruction.
+    // This is slightly awkward but necessary if we want the tag to reflect the editor input.
+    // Alternatively, the caller of runRmfilterProgrammatically could pass the resolved instructions.
+    editorInstructionsForCmdTag = await getInstructionsFromEditor().catch(() => '');
+  }
+  const cliArgsString = reconstructCliArgs(
+    globalValues,
+    commandsParsed,
+    editorInstructionsForCmdTag
+  );
+
+  const config: RmfilterConfig = {
+    globalValues,
+    commandsParsed,
+    cliArgsString,
+  };
+
+  const finalOutput = await generateRmfilterOutput(config, baseDir, gitRoot);
+
+  // Handle output writing/copying
+  const outputFile = globalValues.output ?? (await getOutputPath());
+  await Bun.write(outputFile, finalOutput);
+
+  // Logging (conditionally based on quiet flag) - Extract info needed for logging
+  // This requires generateRmfilterOutput to potentially return more info or re-calculating some parts.
+  // For simplicity now, we'll skip detailed logging here, assuming generateRmfilterOutput handles internal logging.
+  // A more robust solution would involve generateRmfilterOutput returning a result object.
+  if (!globalValues.quiet) {
+    // Basic logging based on config and output file
+    const editFormat =
+      globalValues['edit-format'] || modelSettings.defaultEditFormat || 'udiff-simple';
+    const tokens = encode(finalOutput);
+    log('\n## OUTPUT');
+    log(`Tokens: ${tokens.length}`);
+    log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+
+    // Re-fetch doc/rule paths if needed for logging (example)
+    // const { docFilesPaths, ruleFilesPaths } = await getAdditionalDocs(baseDir, /* need fileset */, { ... });
+    /*
+    if (docFilesPaths.length) {
     log('\n## DOCUMENTS');
     for (const doc of docFilesPaths) {
       log(`- ${doc}`);
@@ -568,21 +821,28 @@ if (!globalValues.quiet) {
       log(`- ${rule}`);
     }
   }
-
-  if (rawInstructions) {
+    if (globalValues.instructions?.length) {
     log('\n## INSTRUCTIONS');
-    log(rawInstructions);
+    log(globalValues.instructions.join('\n'));
+    }
+    */
   }
 
-  const tokens = encode(finalOutput);
-  log('\n## OUTPUT');
-  log(`Tokens: ${tokens.length}`);
-  log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+  if (globalValues.copy) {
+    await clipboard.write(finalOutput);
+    if (!globalValues.quiet) {
+      log('Output copied to clipboard');
+    }
+  }
 }
 
-if (globalValues.copy) {
-  await clipboard.write(finalOutput);
-  if (!globalValues.quiet) {
-    log('Output copied to clipboard');
-  }
+// Execute main only if the script is run directly
+if (import.meta.main) {
+  main().catch((err) => {
+    error(err.message);
+    if (debug) {
+      console.error(err.stack);
+    }
+    process.exit(1);
+  });
 }

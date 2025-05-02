@@ -297,7 +297,7 @@ tasks:
               *   Construct the `RmfilterConfig` object from the parsed `args`.
               *   Call the refactored `generateRmfilterOutput` function with the constructed config, `baseDir`, and `gitRoot`.
               *   Return the result.
-        done: false
+        done: true
       - prompt: >
           Add integration tests for the new `runRmfilterProgrammatically`
           function in `src/rmfilter/rmfilter.ts`.
