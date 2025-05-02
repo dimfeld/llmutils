@@ -628,4 +628,4 @@ tasks:
               *   Pass the determined `baseDir`.
               *   Pass `originalPromptContent` (or `undefined`) as the `originalPrompt` option.
               *   Pass `undefined` for the `llmRequester` option for now. The `--retry` flag currently serves only to indicate intent, but doesn't activate the LLM call from the CLI itself. Add a comment explaining this limitation.
-        done: false
+        done: true
