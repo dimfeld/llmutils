@@ -2,11 +2,12 @@ import { processRawFiles } from '../editor/whole-file/parse_raw_edits.ts';
 import { processXmlContents } from '../editor/xml/parse_xml.ts';
 import { processSearchReplace } from '../editor/diff-editor/parse.ts';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
-import { getGitRoot } from '../rmfilter/utils.ts';
+import { getGitRoot, secureWrite } from '../rmfilter/utils.ts';
 import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
 import { resolveFailuresInteractively } from './interactive.js';
 import { log, error } from '../logging.ts';
 import { printDetailedFailures } from './failures.ts';
+import * as path from 'node:path';
 
 export interface ApplyLlmEditsOptions {
   content: string;
@@ -73,21 +74,100 @@ export async function applyLlmEdits({
       (r): r is NoMatchFailure | NotUniqueFailure => r.type === 'noMatch' || r.type === 'notUnique'
     );
 
-    if (failures.length > 0) {
+    // Check for not unique failures where the number of edits matches the number of match locations
+    const notUniqueFailures = failures.filter((r): r is NotUniqueFailure => r.type === 'notUnique');
+    const groupedByEdit = new Map<string, NotUniqueFailure[]>();
+    for (const failure of notUniqueFailures) {
+      const key = `${failure.filePath}:${failure.originalText}:${failure.updatedText}`;
+      const group = groupedByEdit.get(key) || [];
+      group.push(failure);
+      groupedByEdit.set(key, group);
+    }
+
+    const autoApplied: EditResult[] = [];
+    for (const group of groupedByEdit.values()) {
+      const totalLocations = group[0].matchLocations.length;
+      if (group.length === totalLocations) {
+        // Apply the same edit to all match locations
+        for (const failure of group) {
+          // Sort match locations by start line in descending so we
+          // don't have to specially account for deltas.
+          failure.matchLocations.sort((a, b) => b.startLine - a.startLine);
+
+          const fileContent = await Bun.file(path.resolve(writeRoot, failure.filePath)).text();
+          let lines = fileContent.split('\n');
+          for (const loc of failure.matchLocations) {
+            const beforeLines = failure.originalText.split('\n');
+            const afterLines = failure.updatedText.split('\n');
+            const startLine = loc.startLine - 1; // Convert to 0-based
+            const endLine = startLine + beforeLines.length;
+
+            // Verify the text at the location still matches
+            const currentText = lines.slice(startLine, endLine).join('\n');
+            if (currentText === failure.originalText) {
+              lines.splice(startLine, beforeLines.length, ...afterLines);
+              log(`Applied edit to ${failure.filePath} at line ${loc.startLine}`);
+              autoApplied.push({
+                type: 'success',
+                filePath: failure.filePath,
+                originalText: failure.originalText,
+                updatedText: failure.updatedText,
+              });
+            } else {
+              log(
+                `Skipped edit to ${failure.filePath} at line ${loc.startLine}: Text no longer matches`
+              );
+            }
+          }
+
+          if (!dryRun) {
+            await secureWrite(writeRoot, failure.filePath, lines.join('\n'));
+          }
+        }
+      }
+    }
+
+    // Filter out failures that were auto-applied
+    const remainingFailures = failures.filter(
+      (f) =>
+        !autoApplied.some(
+          (a) =>
+            a.filePath === f.filePath &&
+            a.originalText === f.originalText &&
+            a.updatedText === f.updatedText
+        )
+    );
+
+    if (remainingFailures.length > 0) {
       if (interactive) {
-        await resolveFailuresInteractively(failures, writeRoot, dryRun ?? false);
+        await resolveFailuresInteractively(remainingFailures, writeRoot, dryRun ?? false);
       } else {
         // Non-interactive: Log detailed errors and throw
-        printDetailedFailures(failures);
+        printDetailedFailures(remainingFailures);
         throw new Error(
-          `Failed to apply ${failures.length} edits. Run with --interactive to resolve.`
+          `Failed to apply ${remainingFailures.length} edits. Run with --interactive to resolve.`
         );
       }
     } else {
       log('All edits applied successfully.');
     }
+
+    // Combine auto-applied results with original results, excluding auto-applied failures
+    results = [
+      ...results.filter(
+        (r) =>
+          r.type === 'success' ||
+          !autoApplied.some(
+            (a) =>
+              a.filePath === r.filePath &&
+              a.originalText === r.originalText &&
+              a.updatedText === r.updatedText
+          )
+      ),
+      ...autoApplied,
+    ];
   }
-} // Added missing closing brace for the function
+}
 
 export async function getWriteRoot(cwd?: string) {
   return cwd || (await getGitRoot()) || process.cwd();
