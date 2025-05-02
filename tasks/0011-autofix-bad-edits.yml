@@ -114,7 +114,7 @@ tasks:
               *   Verify that the function returns the `EditResult[]` from the mocked diff processors.
               *   Verify that it returns `undefined` for whole-file modes.
               *   Ensure `dryRun` and `writeRoot` are passed correctly to the mocked processors.
-        done: false
+        done: true
   - title: 2 - Format Failures for LLM Prompt
     description: >
       Create a function that takes the list of failed edits and generates a

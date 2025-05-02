@@ -22,7 +22,7 @@ export interface ApplyLlmEditsOptions {
  * Detects the mode and calls the appropriate processor.
  * Returns edit results for diff-based modes, undefined otherwise.
  */
-async function applyEditsInternal({
+export async function applyEditsInternal({
   content,
   writeRoot,
   dryRun,
