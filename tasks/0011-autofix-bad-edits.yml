@@ -326,7 +326,7 @@ tasks:
               *   Pass arguments including `--grep`, `--docs`, etc. Verify the core logic receives the correct configuration.
               *   Check that the function returns the expected output string assembled by the (mocked) core logic.
               *   Test error handling if argument parsing fails (if applicable within the function).
-        done: false
+        done: true
   - title: 5 - Retrieve Original Prompt Context
     description: >
       Implement the logic within `applyLlmEdits` to determine the original
