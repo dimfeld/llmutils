@@ -231,7 +231,7 @@ tasks:
               *   Arguments with special characters.
           4.  Assert that the function returns the expected array of arguments
           for each case.
-        done: false
+        done: true
       - prompt: >
           In `src/apply-llm-edits/apply.ts`:
 
