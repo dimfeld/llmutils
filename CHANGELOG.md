@@ -2,6 +2,7 @@
 
 - Ability to set models for each task in rmplan project config
 - Add interactive resolution of diff failures
+- Embed CLI arguments in the prompt so it can be reproduced. This sets up for automated edit fixing later.
 
 # April 30, 2025
 
