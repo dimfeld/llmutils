@@ -118,12 +118,7 @@ export class Resolver {
     baseDir: string,
     importSpecifier: string
   ): Promise<string | null> {
-    let resolvedPath: string;
-    try {
-      resolvedPath = path.resolve(baseDir, importSpecifier);
-    } catch {
-      return null;
-    }
+    let resolvedPath = path.resolve(baseDir, importSpecifier);
     const extensions = ['.ts', '.tsx', '.js', '.jsx'];
 
     // Check if it's a directory with an index file
@@ -218,14 +213,18 @@ export class Resolver {
 
     // Check export maps using resolve.exports
     if (pkg.packageJson.exports) {
-      const resolvedExport = resolveExports(pkg.packageJson, depSubpath || '.', {
-        conditions: ['import', 'require', 'node', 'default'],
-        unsafe: true, // Allow falling back to main/module fields
-      });
+      try {
+        const resolvedExport = resolveExports(pkg.packageJson, depSubpath || '.', {
+          conditions: ['import', 'require', 'node', 'default'],
+          unsafe: true, // Allow falling back to main/module fields
+        });
 
-      if (resolvedExport) {
-        const exportPath = Array.isArray(resolvedExport) ? resolvedExport[0] : resolvedExport;
-        return path.resolve(pkg.path, exportPath);
+        if (resolvedExport) {
+          const exportPath = Array.isArray(resolvedExport) ? resolvedExport[0] : resolvedExport;
+          return path.resolve(pkg.path, exportPath);
+        }
+      } catch (e) {
+        // resolve.exports will throw on invalid paths, we can ignore it
       }
     } else if (depSubpath) {
       return path.join(pkg.path, depSubpath);
