@@ -562,7 +562,7 @@ tasks:
           `baseDir?: string`. Update `applyLlmEdits` signature. Calculate
           `baseDir` in `cmd.ts` using the logic from `rmfilter.ts`
           (`calculateBaseDir`) and pass it.
-        done: false
+        done: true
       - prompt: >
           Update integration tests in `src/apply-llm-edits/apply.test.ts` to
           cover the retry logic in `applyLlmEdits`.

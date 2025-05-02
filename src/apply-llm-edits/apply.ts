@@ -3,14 +3,15 @@ import { processXmlContents } from '../editor/xml/parse_xml.ts';
 import { processSearchReplace } from '../editor/diff-editor/parse.js';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 import { getGitRoot, secureWrite } from '../rmfilter/utils.ts';
-import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
+import type { EditResult, Failure, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
 import { resolveFailuresInteractively } from './interactive.ts';
 import { log, error, warn, debugLog } from '../logging.ts';
-import { printDetailedFailures } from './failures.ts';
+import { printDetailedFailures, formatFailuresForLlm } from './failures.ts';
 import * as path from 'node:path';
 import { parseCliArgsFromString } from '../rmfilter/utils.ts';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.ts';
 import { getOutputPath } from '../rmfilter/repomix.ts';
+import chalk from 'chalk';
 // LlmPromptStructure and LlmPromptMessage are already defined below
 /** Represents a single message in a structured LLM prompt. */
 export interface LlmPromptMessage {
@@ -31,6 +32,7 @@ export interface ApplyLlmEditsOptions {
   interactive?: boolean;
   originalPrompt?: string;
   llmRequester?: LlmRequester;
+  baseDir?: string;
 }
 
 /**
@@ -201,6 +203,135 @@ Please review the original request context, your previous response, and the erro
   return promptStructure;
 }
 
+/**
+ * Handles the auto-application of "not unique" failures when the number of
+ * specified edits matches the number of found locations.
+ */
+async function handleAutoApplyNotUnique(
+  results: EditResult[] | undefined,
+  writeRoot: string,
+  dryRun: boolean
+): Promise<{ remainingFailures: Failure[]; autoApplied: EditResult[] }> {
+  if (!results) {
+    return { remainingFailures: [], autoApplied: [] };
+  }
+
+  const failures = results.filter((r): r is Failure => r.type !== 'success');
+  const notUniqueFailures = failures.filter((r): r is NotUniqueFailure => r.type === 'notUnique');
+
+  // Group failures by the exact edit content and file path
+  const groupedByEdit = new Map<string, NotUniqueFailure[]>();
+  for (const failure of notUniqueFailures) {
+    const key = `${failure.filePath}:${failure.originalText}:${failure.updatedText}`;
+    const group = groupedByEdit.get(key) || [];
+    group.push(failure);
+    groupedByEdit.set(key, group);
+  }
+
+  const autoApplied: EditResult[] = [];
+  for (const group of groupedByEdit.values()) {
+    if (group.length === 0) continue;
+
+    // All failures in a group should have the same matchLocations list if they represent the same intended edit
+    const totalLocations = group[0].matchLocations.length;
+
+    // Check if the number of *failure objects* for this specific edit matches the number of locations found.
+    // This implies the LLM provided one edit instruction per location it found for this change.
+    if (group.length === totalLocations && totalLocations > 0) {
+      log(
+        `Auto-applying edit for "${group[0].filePath}" as it was specified ${group.length} times for ${totalLocations} locations.`
+      );
+      const representativeFailure = group[0];
+      // Sort match locations by start line in descending order to avoid index shifts during modification
+      const sortedLocations = [...representativeFailure.matchLocations].sort(
+        (a, b) => b.startLine - a.startLine
+      );
+
+      try {
+        const absoluteFilePath = path.resolve(writeRoot, representativeFailure.filePath);
+        const fileContent = await Bun.file(absoluteFilePath).text();
+        let lines = fileContent.split('\n');
+        let appliedCount = 0;
+
+        for (const loc of sortedLocations) {
+          const beforeLines = representativeFailure.originalText.split('\n');
+          const afterLines = representativeFailure.updatedText.split('\n');
+          const startLine = loc.startLine - 1;
+          const endLine = startLine + beforeLines.length;
+
+          if (startLine < 0 || endLine > lines.length) {
+            warn(
+              `Skipped auto-apply for ${representativeFailure.filePath} at line ${loc.startLine}: Invalid line range.`
+            );
+            continue;
+          }
+          const currentText = lines.slice(startLine, endLine).join('\n');
+          if (currentText === representativeFailure.originalText) {
+            lines.splice(startLine, beforeLines.length, ...afterLines);
+            appliedCount++;
+            debugLog(
+              `Auto-applying diff to ${representativeFailure.filePath} at line ${loc.startLine}`
+            );
+          } else {
+            warn(
+              `Skipped auto-apply for ${representativeFailure.filePath} at line ${loc.startLine}: Text no longer matches.`
+            );
+            // If one location doesn't match, abort auto-apply for this group to avoid partial application.
+            appliedCount = 0;
+            break;
+          }
+        }
+
+        if (appliedCount === totalLocations) {
+          if (!dryRun) {
+            await secureWrite(writeRoot, representativeFailure.filePath, lines.join('\n'));
+            log(
+              chalk.green(
+                `Auto-applied ${appliedCount} instances of the edit to ${representativeFailure.filePath}`
+              )
+            );
+          } else {
+            log(
+              chalk.blue(
+                `[Dry Run] Would auto-apply ${appliedCount} instances of the edit to ${representativeFailure.filePath}`
+              )
+            );
+          }
+          // Mark all failures in this group as auto-applied (represented as success)
+          for (const failure of group) {
+            autoApplied.push({
+              type: 'success',
+              filePath: failure.filePath,
+              originalText: failure.originalText,
+              updatedText: failure.updatedText,
+            });
+          }
+        } else if (appliedCount > 0) {
+          // This case (some applied, some skipped due to mismatch) means we aborted.
+          warn(
+            `Auto-apply for ${representativeFailure.filePath} aborted due to mismatch at one or more locations. No changes written.`
+          );
+        }
+      } catch (err: any) {
+        error(`Error during auto-apply for ${representativeFailure.filePath}: ${err.message}`);
+      }
+    }
+  }
+
+  // Filter out failures that were successfully auto-applied
+  const remainingFailures = failures.filter(
+    (f) =>
+      !autoApplied.some(
+        (a) =>
+          a.filePath === f.filePath &&
+          a.originalText === f.originalText &&
+          a.updatedText === f.updatedText
+      )
+  );
+
+  return { remainingFailures, autoApplied };
+}
+
 export async function applyLlmEdits({
   content,
   writeRoot,
@@ -208,93 +339,112 @@ export async function applyLlmEdits({
   mode,
   interactive,
   originalPrompt,
+  baseDir,
   llmRequester,
 }: ApplyLlmEditsOptions) {
   // Resolve writeRoot early as it's needed for interactive mode too
   writeRoot ??= await getWriteRoot();
+  const effectiveDryRun = dryRun ?? false;
+  const effectiveBaseDir = baseDir ?? process.cwd();
 
   // Call the internal function to apply edits
-  const results = await applyEditsInternal({
+  let results = await applyEditsInternal({
     content,
     writeRoot,
-    dryRun: dryRun ?? false,
-    // originalPrompt, // Not used by applyEditsInternal directly
+    dryRun: effectiveDryRun,
     mode,
   });
 
+  let remainingFailures: Failure[] = [];
+  let allAppliedResults: EditResult[] = [];
+
   // Handle results if available (currently only from udiff and diff modes)
   if (results) {
-    const failures = results.filter(
-      (r): r is NoMatchFailure | NotUniqueFailure => r.type === 'noMatch' || r.type === 'notUnique'
-    );
+    const initialApplication = await handleAutoApplyNotUnique(results, writeRoot, effectiveDryRun);
+    remainingFailures = initialApplication.remainingFailures;
+    allAppliedResults = results
+      .filter((r) => r.type === 'success')
+      .concat(initialApplication.autoApplied);
 
-    // Check for not unique failures where the number of edits matches the number of match locations
-    const notUniqueFailures = failures.filter((r): r is NotUniqueFailure => r.type === 'notUnique');
-    const groupedByEdit = new Map<string, NotUniqueFailure[]>();
-    for (const failure of notUniqueFailures) {
-      const key = `${failure.filePath}:${failure.originalText}:${failure.updatedText}`;
-      const group = groupedByEdit.get(key) || [];
-      group.push(failure);
-      groupedByEdit.set(key, group);
-    }
+    // --- Retry Logic ---
+    if (remainingFailures.length > 0 && llmRequester) {
+      log(
+        chalk.yellow(
+          `Initial application failed for ${remainingFailures.length} edits. Attempting automatic retry via LLM...`
+        )
+      );
 
-    const autoApplied: EditResult[] = [];
-    for (const group of groupedByEdit.values()) {
-      const totalLocations = group[0].matchLocations.length;
-      if (group.length === totalLocations) {
-        // Apply the same edit to all match locations
-        for (const failure of group) {
-          // Sort match locations by start line in descending so we
-          // don't have to specially account for deltas.
-          failure.matchLocations.sort((a, b) => b.startLine - a.startLine);
+      let originalContext: string | null = null;
+      try {
+        originalContext = await getOriginalRequestContext(
+          { content, originalPrompt },
+          await getGitRoot(effectiveBaseDir),
+          effectiveBaseDir
+        );
+      } catch (err: any) {
+        error(chalk.red('Failed to retrieve original context for retry:'), err.message);
+        warn('Proceeding without LLM retry.');
+      }
 
-          const fileContent = await Bun.file(path.resolve(writeRoot, failure.filePath)).text();
-          let lines = fileContent.split('\n');
-          for (const loc of failure.matchLocations) {
-            const beforeLines = failure.originalText.split('\n');
-            const afterLines = failure.updatedText.split('\n');
-            const startLine = loc.startLine - 1;
-            const endLine = startLine + beforeLines.length;
+      if (originalContext) {
+        const retryPrompt = constructRetryPrompt(originalContext, content, remainingFailures);
+        let retryResponseContent: string | null = null;
+        try {
+          log('Sending request to LLM for corrections...');
+          retryResponseContent = await llmRequester(retryPrompt);
+          log('Received retry response from LLM.');
+        } catch (err: any) {
+          error(chalk.red('LLM request for retry failed:'), err.message);
+          warn('Proceeding without applying LLM retry response.');
+        }
 
-            // Verify the text at the location still matches
-            const currentText = lines.slice(startLine, endLine).join('\n');
-            if (currentText === failure.originalText) {
-              lines.splice(startLine, beforeLines.length, ...afterLines);
-              log(`Applying diff to ${failure.filePath}`);
-              autoApplied.push({
-                type: 'success',
-                filePath: failure.filePath,
-                originalText: failure.originalText,
-                updatedText: failure.updatedText,
-              });
-            } else {
-              log(
-                `Skipped diff for ${failure.filePath}: Text no longer matches at line ${loc.startLine}`
-              );
-            }
-          }
+        if (retryResponseContent) {
+          log('Applying edits from LLM retry response...');
+          const retryResults = await applyEditsInternal({
+            content: retryResponseContent,
+            writeRoot,
+            dryRun: effectiveDryRun,
+            mode,
+          });
 
-          if (!dryRun) {
-            await secureWrite(writeRoot, failure.filePath, lines.join('\n'));
+          if (retryResults) {
+            const retryApplication = await handleAutoApplyNotUnique(
+              retryResults,
+              writeRoot,
+              effectiveDryRun
+            );
+            const finalFailures = retryApplication.remainingFailures;
+            const retrySuccessCount = retryResults.length - finalFailures.length;
+
+            log(
+              `Retry attempt finished. ${retrySuccessCount} edits applied successfully, ${finalFailures.length} failures remain.`
+            );
+            remainingFailures = finalFailures;
+            // Add successfully applied retry results to the overall list
+            allAppliedResults = allAppliedResults.concat(
+              retryResults.filter((r) => r.type === 'success'),
+              retryApplication.autoApplied
+            );
+          } else {
+            log('Retry response did not yield processable results (e.g., whole file mode).');
+            // Keep the original remainingFailures
           }
         }
       }
     }
-
-    // Filter out failures that were auto-applied
-    const remainingFailures = failures.filter(
-      (f) =>
-        !autoApplied.some(
-          (a) =>
-            a.filePath === f.filePath &&
-            a.originalText === f.originalText &&
-            a.updatedText === f.updatedText
-        )
-    );
+    // --- End Retry Logic ---
 
     if (remainingFailures.length > 0) {
       if (interactive) {
-        await resolveFailuresInteractively(remainingFailures, writeRoot, dryRun ?? false);
+        // Cast needed because resolveFailuresInteractively expects specific failure types
+        await resolveFailuresInteractively(
+          remainingFailures.filter(
+            (f): f is NoMatchFailure | NotUniqueFailure =>
+              f.type === 'noMatch' || f.type === 'notUnique'
+          ),
+          writeRoot,
+          effectiveDryRun
+        );
       } else {
         // Non-interactive: Log detailed errors and throw
         printDetailedFailures(remainingFailures);
@@ -305,26 +455,15 @@ export async function applyLlmEdits({
     } else {
       log('All edits applied successfully.');
     }
-
-    // Combine auto-applied results with original results, excluding auto-applied failures
-    const finalResults = [
-      ...results.filter(
-        (r) =>
-          r.type === 'success' ||
-          !autoApplied.some(
-            (a) =>
-              a.filePath === r.filePath &&
-              a.originalText === r.originalText &&
-              a.updatedText === r.updatedText
-          )
-      ),
-      ...autoApplied,
-    ];
-    // TODO: Return finalResults or use them somehow? Currently unused.
+    // TODO: Return allAppliedResults or use them somehow? Currently unused.
   } else {
     // Handle cases where applyEditsInternal returned undefined (whole file modes)
     // Currently, these modes don't produce results to check for failures in the same way.
     // If future whole-file modes need failure handling, it would go here.
+    // The initial call to applyEditsInternal already handled the application for these modes.
+    log('Processed whole file edits. No detailed results to report.');
+    // If retry is desired for whole file modes, logic would need to be added here.
+    /*
     await processRawFiles({
       content,
       // Note: processRawFiles doesn't currently use originalPrompt,
@@ -334,6 +473,7 @@ export async function applyLlmEdits({
       writeRoot,
       dryRun,
     });
+    */
   }
 }
 
