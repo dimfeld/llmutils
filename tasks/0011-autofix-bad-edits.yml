@@ -184,7 +184,7 @@ tasks:
               *   Test with a single `NotUniqueFailure`. Verify the output format, including locations and context.
               *   Test with a mix of failure types. Verify all are included correctly.
               *   Test the trimming logic for long text blocks.
-        done: false
+        done: true
   - title: 3 - Parse rmfilter_command Tag
     description: >
       Implement functionality to extract the command-line arguments from the
