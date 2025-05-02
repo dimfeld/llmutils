@@ -16,16 +16,18 @@ const args = process.argv.slice(2);
 if (args.includes('--help')) {
   log('Usage: apply-llm-edits [options]');
   log('Options:');
-  log('  --stdin           Read input from stdin');
+  log('  --stdin           Read input from stdin. This happens by default input is being piped in');
+  log('  --clipboard       Read input from the clipboard even if stdin is available');
   log('  --cwd <path>      Write files based on the given path');
-  log('  --mode <mode>          Force an edit mode');
+  log('  --mode <mode>     Force an edit mode');
   log('  --debug           Enable debug logging');
   log('  --interactive     Enable interactive mode for resolving edit failures');
   log('  --dry-run         Dry run - do not apply changes');
   process.exit(0);
 }
 
-const useStdin = args.includes('--stdin') || !process.stdin.isTTY;
+const useClipboard = args.includes('--clipboard');
+const useStdin = !useClipboard && (args.includes('--stdin') || !process.stdin.isTTY);
 const dryRun = args.includes('--dry-run');
 const interactive = args.includes('--interactive');
 const cwdIndex = args.findIndex((arg) => arg == '--cwd');
@@ -35,7 +37,10 @@ const cwd = cwdIndex != -1 ? args[cwdIndex + 1] : undefined;
 
 setDebug(args.includes('--debug'));
 
-const content = useStdin ? await Bun.stdin.text() : await clipboard.read();
+let content = useStdin ? await Bun.stdin.text() : await clipboard.read();
+if (!content) {
+  content = await clipboard.read();
+}
 
 applyLlmEdits({
   content,
