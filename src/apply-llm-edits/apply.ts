@@ -1,6 +1,6 @@
 import { processRawFiles } from '../editor/whole-file/parse_raw_edits.ts';
 import { processXmlContents } from '../editor/xml/parse_xml.ts';
-import { processSearchReplace } from '../editor/diff-editor/parse.ts';
+import { processSearchReplace } from '../editor/diff-editor/parse.js';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 import { getGitRoot, secureWrite } from '../rmfilter/utils.ts';
 import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
@@ -8,6 +8,7 @@ import { resolveFailuresInteractively } from './interactive.js';
 import { log, error } from '../logging.ts';
 import { printDetailedFailures } from './failures.ts';
 import * as path from 'node:path';
+import { parseCliArgsFromString } from '../rmfilter/utils.ts';
 
 export interface ApplyLlmEditsOptions {
   content: string;
@@ -15,6 +16,27 @@ export interface ApplyLlmEditsOptions {
   dryRun?: boolean;
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
   interactive?: boolean;
+}
+
+/**
+ * Extracts the command-line arguments from the first <rmfilter_command> tag found in the content.
+ * @param content The string content potentially containing the tag.
+ * @returns An array of parsed arguments, or null if the tag is not found or empty.
+ */
+export function extractRmfilterCommandArgs(content: string): string[] | null {
+  const match = content.match(/<rmfilter_command>(.*?)<\/rmfilter_command>/s);
+  if (match && match[1]) {
+    const commandString = match[1].trim();
+    if (commandString) {
+      try {
+        return parseCliArgsFromString(commandString);
+      } catch (e) {
+        error(`Error parsing rmfilter_command content: "${commandString}"`, e);
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 /**

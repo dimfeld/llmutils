@@ -145,3 +145,57 @@ describe('applyEditsInternal', () => {
     expect(mockProcessUnifiedDiff).toHaveBeenCalledWith(specificArgs);
   });
 });
+import { describe, it, expect } from 'bun:test';
+import { extractRmfilterCommandArgs } from './apply.ts';
+
+describe('extractRmfilterCommandArgs', () => {
+  it('should return null if the tag is not present', () => {
+    const content = 'Some content without the tag.';
+    expect(extractRmfilterCommandArgs(content)).toBeNull();
+  });
+
+  it('should return null if the tag is empty', () => {
+    const content = 'Content with <rmfilter_command></rmfilter_command> empty tag.';
+    expect(extractRmfilterCommandArgs(content)).toBeNull();
+  });
+
+  it('should return null if the tag contains only whitespace', () => {
+    const content = 'Content with <rmfilter_command>   \n \t </rmfilter_command> whitespace tag.';
+    expect(extractRmfilterCommandArgs(content)).toBeNull();
+  });
+
+  it('should extract and parse simple arguments', () => {
+    const content =
+      'Some preamble <rmfilter_command>--arg1 value1 --arg2</rmfilter_command> some postamble';
+    expect(extractRmfilterCommandArgs(content)).toEqual(['--arg1', 'value1', '--arg2']);
+  });
+
+  it('should extract and parse arguments with quotes', () => {
+    const content =
+      '<rmfilter_command>command --path "path/with spaces" --message \'hello world\'</rmfilter_command>';
+    expect(extractRmfilterCommandArgs(content)).toEqual([
+      'command',
+      '--path',
+      'path/with spaces',
+      '--message',
+      'hello world',
+    ]);
+  });
+
+  it('should handle escaped quotes within arguments', () => {
+    const content =
+      '<rmfilter_command>--arg "value with \\"escaped quotes\\"" --another \'single \\\' quote\'</rmfilter_command>';
+    expect(extractRmfilterCommandArgs(content)).toEqual([
+      '--arg',
+      'value with "escaped quotes"',
+      '--another',
+      "single ' quote",
+    ]);
+  });
+
+  it('should only parse the first tag if multiple exist', () => {
+    const content =
+      '<rmfilter_command>first --tag</rmfilter_command> some text <rmfilter_command>second --tag</rmfilter_command>';
+    expect(extractRmfilterCommandArgs(content)).toEqual(['first', '--tag']);
+  });
+});

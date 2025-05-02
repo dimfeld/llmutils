@@ -258,7 +258,7 @@ tasks:
           `src/apply-llm-edits/apply.test.ts` (or a new file if preferred),
           mocking `parseCliArgsFromString` or testing the regex extraction
           logic. Test cases: tag present, tag absent, tag empty.
-        done: false
+        done: true
   - title: 4 - Re-run rmfilter Programmatically
     description: >
       Create a function to execute the `rmfilter` script with specified
