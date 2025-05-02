@@ -496,12 +496,43 @@ debugLog({
 });
 
 const notBare = !globalValues.bare;
+function quoteArg(arg: string): string {
+  if (arg.includes(' ') && !arg.startsWith('"') && !arg.endsWith('"')) {
+    // Escape existing double quotes and wrap the argument in double quotes
+    const escapedArg = arg.replace(/"/g, '\\"');
+    return `"${escapedArg}"`;
+  }
+  // Escape double quotes in the argument even if it doesn't need wrapping
+  return arg.replace(/"/g, '\\"');
+}
+
+const args = process.argv
+  .slice(3)
+  .map((arg, index, arr) => {
+    if (arg === '--instructions-editor') {
+      if (editorInstructions) {
+        return `--instructions ${quoteArg(editorInstructions)}`;
+      }
+      return ''; // Remove --instructions-editor if no instructions were provided
+    }
+    // If the next argument is the value for --instructions-editor, skip it
+    if (index > 0 && arr[index - 1] === '--instructions-editor') {
+      return '';
+    }
+    return quoteArg(arg);
+  })
+  .filter(Boolean);
+
+const commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should ignore this tag.\n<rmfilter_command>${args.join(' ')}</rmfilter_command>`;
+
 const finalOutput = [
   repomixOutput,
   diffTag,
   examplesTag,
   docsTag,
   rulesTag,
+  // Bury commandTag in the middle to help it not stand out
+  commandTag,
   editFormat === 'whole-xml' && notBare ? xmlFormatPrompt(modelSettings) : '',
   editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
   editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt(modelSettings) : '',
