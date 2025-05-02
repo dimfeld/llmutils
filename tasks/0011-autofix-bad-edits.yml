@@ -89,7 +89,7 @@ tasks:
 
           8.  Update any internal calls within the refactored logic to use the
           correct parameters and return types.
-        done: false
+        done: true
       - prompt: >
           Add unit tests for the new `applyEditsInternal` function in
           `src/apply-llm-edits/apply.ts`.

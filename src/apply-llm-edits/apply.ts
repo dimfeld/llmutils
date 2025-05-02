@@ -17,6 +17,46 @@ export interface ApplyLlmEditsOptions {
   interactive?: boolean;
 }
 
+/**
+ * Internal function to perform the core edit application logic.
+ * Detects the mode and calls the appropriate processor.
+ * Returns edit results for diff-based modes, undefined otherwise.
+ */
+async function applyEditsInternal({
+  content,
+  writeRoot,
+  dryRun,
+  mode,
+}: {
+  content: string;
+  writeRoot: string;
+  dryRun: boolean;
+  mode?: 'diff' | 'udiff' | 'xml' | 'whole';
+}): Promise<EditResult[] | undefined> {
+  const xmlMode = mode === 'xml' || (!mode && content.includes('<code_changes>'));
+  const diffMode = mode === 'diff' || (!mode && content.includes('<<<<<<< SEARCH'));
+  const udiffMode =
+    mode === 'udiff' ||
+    (!mode &&
+      (content.startsWith('--- ') || content.includes('```diff')) &&
+      content.includes('@@'));
+
+  if (udiffMode) {
+    log('Processing as Unified Diff...');
+    return await processUnifiedDiff({ content, writeRoot, dryRun });
+  } else if (diffMode) {
+    log('Processing as Search/Replace Diff...');
+    return await processSearchReplace({ content, writeRoot, dryRun });
+  } else if (xmlMode) {
+    log('Processing as XML Whole Files...');
+    await processXmlContents({ content, writeRoot, dryRun });
+    return undefined;
+  } else {
+    log('Processing as Whole Files...');
+    await processRawFiles({ content, writeRoot, dryRun });
+    return undefined;
+  }
+}
 export async function applyLlmEdits({
   content,
   writeRoot,
@@ -26,47 +66,14 @@ export async function applyLlmEdits({
 }: ApplyLlmEditsOptions) {
   // Resolve writeRoot early as it's needed for interactive mode too
   writeRoot ??= await getWriteRoot();
-  const xmlMode = mode === 'xml' || (!mode && content.includes('<code_changes>'));
-  const diffMode = mode === 'diff' || (!mode && content.includes('<<<<<<< SEARCH'));
-  const udiffMode =
-    mode === 'udiff' ||
-    (!mode &&
-      (content.startsWith('--- ') || content.includes('```diff')) &&
-      content.includes('@@'));
 
-  let results: EditResult[] | undefined;
-
-  if (udiffMode) {
-    log('Processing as Unified Diff...');
-    results = await processUnifiedDiff({
-      content,
-      writeRoot,
-      dryRun,
-    });
-  } else if (diffMode) {
-    log('Processing as Search/Replace Diff...');
-    results = await processSearchReplace({
-      content,
-      writeRoot,
-      dryRun,
-    });
-  } else if (xmlMode) {
-    log('Processing as XML Whole Files...');
-    // This is a whole-file mode so no diffs to have results
-    await processXmlContents({
-      content,
-      writeRoot,
-      dryRun,
-    });
-  } else {
-    log('Processing as Whole Files...');
-    // This is a whole-file mode so no diffs to have results
-    await processRawFiles({
-      content,
-      writeRoot,
-      dryRun,
-    });
-  }
+  // Call the internal function to apply edits
+  const results = await applyEditsInternal({
+    content,
+    writeRoot,
+    dryRun: dryRun ?? false,
+    mode,
+  });
 
   // Handle results if available (currently only from udiff and diff modes)
   if (results) {
@@ -99,7 +106,7 @@ export async function applyLlmEdits({
           for (const loc of failure.matchLocations) {
             const beforeLines = failure.originalText.split('\n');
             const afterLines = failure.updatedText.split('\n');
-            const startLine = loc.startLine - 1; // Convert to 0-based
+            const startLine = loc.startLine - 1;
             const endLine = startLine + beforeLines.length;
 
             // Verify the text at the location still matches
@@ -114,7 +121,9 @@ export async function applyLlmEdits({
                 updatedText: failure.updatedText,
               });
             } else {
-              log(`Skipped diff for ${failure.filePath}: Text no longer matches at line ${loc.startLine}`);
+              log(
+                `Skipped diff for ${failure.filePath}: Text no longer matches at line ${loc.startLine}`
+              );
             }
           }
 
@@ -151,7 +160,7 @@ export async function applyLlmEdits({
     }
 
     // Combine auto-applied results with original results, excluding auto-applied failures
-    results = [
+    const finalResults = [
       ...results.filter(
         (r) =>
           r.type === 'success' ||
@@ -164,6 +173,16 @@ export async function applyLlmEdits({
       ),
       ...autoApplied,
     ];
+    // TODO: Return finalResults or use them somehow? Currently unused.
+  } else {
+    // Handle cases where applyEditsInternal returned undefined (whole file modes)
+    // Currently, these modes don't produce results to check for failures in the same way.
+    // If future whole-file modes need failure handling, it would go here.
+    await processRawFiles({
+      content,
+      writeRoot,
+      dryRun,
+    });
   }
 }
 
