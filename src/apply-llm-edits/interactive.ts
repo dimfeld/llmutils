@@ -51,7 +51,7 @@ async function applyEdit(
   startLineIndex: number,
   writeRoot: string,
   dryRun: boolean
-): Promise<boolean> {
+): Promise<{ success: boolean; lineDelta: number }> {
   const absoluteFilePath = validatePath(writeRoot, failure.filePath);
   try {
     const currentContent = await Bun.file(absoluteFilePath).text();
@@ -64,17 +64,11 @@ async function applyEdit(
       error(
         `Error applying edit to ${failure.filePath}: Line range ${startLineIndex + 1}-${startLineIndex + targetLines.length + 1} is out of bounds (file has ${currentLines.length} lines). Edit may be stale.`
       );
-      return false;
+      return { success: false, lineDelta: 0 };
     }
 
-    // Verify content match (optional but recommended)
-    // for (let i = 0; i < targetLines.length; i++) {
-    //     if (currentLines[startLineIndex + i] !== targetLines[i]) {
-    //         warn(`Warning: Content mismatch at line ${startLineIndex + i + 1} in ${failure.filePath}. Applying anyway.`);
-    //         // Optionally, add a stricter check or prompt again
-    //         break;
-    //     }
-    // }
+    // Calculate line delta: lines added minus lines removed
+    const lineDelta = updatedLines.length - targetLines.length;
 
     const newContentLines = [
       ...currentLines.slice(0, startLineIndex - 1),
@@ -95,15 +89,19 @@ async function applyEdit(
         context: 3,
       });
       log(patch);
-      return true;
+      return {
+        success: true,
+        // Since we're not actually writing the file, line delta remains 0
+        lineDelta: 0,
+      };
     } else {
       await secureWrite(writeRoot, failure.filePath, newContent);
       log(chalk.green(`Applied edit to ${failure.filePath} at line ${startLineIndex + 1}`));
-      return true;
+      return { success: true, lineDelta };
     }
   } catch (err: any) {
     error(`Failed to apply edit to ${failure.filePath}: ${err.message}`);
-    return false;
+    return { success: false, lineDelta: 0 };
   }
 }
 
@@ -111,7 +109,7 @@ async function handleNoMatchFailure(
   failure: NoMatchFailure,
   writeRoot: string,
   dryRun: boolean
-): Promise<void> {
+): Promise<{ success: boolean; lineDelta: number } | undefined> {
   log(chalk.yellow(`\n--- Failure: No Exact Match ---`));
   log(`File: ${chalk.bold(failure.filePath)}`);
   log(`Reason: ${chalk.red('The following text block to be replaced was not found:')}`);
@@ -163,7 +161,7 @@ async function handleNoMatchFailure(
     });
 
     if (choice === 'apply') {
-      await applyEdit(failure, lines, startLine - 1, writeRoot, dryRun);
+      return await applyEdit(failure, lines, startLine - 1, writeRoot, dryRun);
     } else if (choice === 'diff') {
       log('Opening in Neovim diff mode...');
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'llmutils-diff-'));
@@ -218,7 +216,7 @@ async function handleNotUniqueFailure(
   writeRoot: string,
   appliedLocationsByFile: Map<string, Set<number>>,
   dryRun: boolean
-): Promise<void> {
+): Promise<{ success: boolean; lineDelta: number } | undefined> {
   log(chalk.yellow(`\n--- Failure: Not Unique ---`));
   log(`File: ${chalk.bold(failure.filePath)}`);
   log(
@@ -271,9 +269,10 @@ async function handleNotUniqueFailure(
     // Record the applied location
     appliedLocations.add(selectedMatch.startLine);
     const originalLines = splitLinesWithEndings(failure.originalText);
-    await applyEdit(failure, originalLines, selectedMatch.startLine, writeRoot, dryRun);
+    return await applyEdit(failure, originalLines, selectedMatch.startLine, writeRoot, dryRun);
   } else {
     log(`Skipping edit for ${failure.filePath}`);
+    return undefined;
   }
 }
 export async function resolveFailuresInteractively(
@@ -288,12 +287,38 @@ export async function resolveFailuresInteractively(
   // Track applied locations per file
   const appliedLocationsByFile = new Map<string, Set<number>>();
 
-  for (const failure of failures) {
-    if (failure.type === 'noMatch') {
-      await handleNoMatchFailure(failure, writeRoot, dryRun);
-    } else if (failure.type === 'notUnique') {
-      await handleNotUniqueFailure(failure, writeRoot, appliedLocationsByFile, dryRun);
+  // Track cumulative line deltas per file
+  const lineDeltasByFile = new Map<string, number>();
+
+  for (let i = 0; i < failures.length; i++) {
+    const failure = failures[i];
+
+    // Apply any cumulative line delta for this file to the failure's line numbers
+    const cumulativeDelta = lineDeltasByFile.get(failure.filePath) || 0;
+    if (cumulativeDelta !== 0) {
+      if (failure.type === 'noMatch' && failure.closestMatch) {
+        failure.closestMatch.startLine += cumulativeDelta;
+        failure.closestMatch.endLine += cumulativeDelta;
+      } else if (failure.type === 'notUnique') {
+        for (const match of failure.matchLocations) {
+          match.startLine += cumulativeDelta;
+        }
+      }
     }
+
+    let result;
+    if (failure.type === 'noMatch') {
+      result = await handleNoMatchFailure(failure, writeRoot, dryRun);
+    } else if (failure.type === 'notUnique') {
+      result = await handleNotUniqueFailure(failure, writeRoot, appliedLocationsByFile, dryRun);
+    }
+
+    // Update line deltas for subsequent failures if the edit was applied
+    if (result && result.success && result.lineDelta !== 0) {
+      const currentDelta = lineDeltasByFile.get(failure.filePath) || 0;
+      lineDeltasByFile.set(failure.filePath, currentDelta + result.lineDelta);
+    }
+
     log(chalk.dim('---'));
   }
 
