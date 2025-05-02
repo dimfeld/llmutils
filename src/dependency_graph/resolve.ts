@@ -118,7 +118,12 @@ export class Resolver {
     baseDir: string,
     importSpecifier: string
   ): Promise<string | null> {
-    let resolvedPath = path.resolve(baseDir, importSpecifier);
+    let resolvedPath: string;
+    try {
+      resolvedPath = path.resolve(baseDir, importSpecifier);
+    } catch {
+      return null;
+    }
     const extensions = ['.ts', '.tsx', '.js', '.jsx'];
 
     // Check if it's a directory with an index file
