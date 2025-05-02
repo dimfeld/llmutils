@@ -3,7 +3,12 @@ import { processXmlContents } from '../editor/xml/parse_xml.ts';
 import { processSearchReplace } from '../editor/diff-editor/parse.js';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 import { getGitRoot, secureWrite } from '../rmfilter/utils.ts';
-import type { EditResult, Failure, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
+import type {
+  EditResult,
+  FailureResult,
+  NoMatchFailure,
+  NotUniqueFailure,
+} from '../editor/types.js';
 import { resolveFailuresInteractively } from './interactive.ts';
 import { log, error, warn, debugLog } from '../logging.ts';
 import { printDetailedFailures, formatFailuresForLlm } from './failures.ts';
@@ -211,12 +216,12 @@ async function handleAutoApplyNotUnique(
   results: EditResult[] | undefined,
   writeRoot: string,
   dryRun: boolean
-): Promise<{ remainingFailures: Failure[]; autoApplied: EditResult[] }> {
+): Promise<{ remainingFailures: FailureResult[]; autoApplied: EditResult[] }> {
   if (!results) {
     return { remainingFailures: [], autoApplied: [] };
   }
 
-  const failures = results.filter((r): r is Failure => r.type !== 'success');
+  const failures = results.filter((r): r is FailureResult => r.type !== 'success');
   const notUniqueFailures = failures.filter((r): r is NotUniqueFailure => r.type === 'notUnique');
 
   // Group failures by the exact edit content and file path
@@ -355,16 +360,17 @@ export async function applyLlmEdits({
     mode,
   });
 
-  let remainingFailures: Failure[] = [];
+  let remainingFailures: FailureResult[] = [];
   let allAppliedResults: EditResult[] = [];
 
   // Handle results if available (currently only from udiff and diff modes)
   if (results) {
     const initialApplication = await handleAutoApplyNotUnique(results, writeRoot, effectiveDryRun);
     remainingFailures = initialApplication.remainingFailures;
-    allAppliedResults = results
-      .filter((r) => r.type === 'success')
-      .concat(initialApplication.autoApplied);
+    allAppliedResults = [
+      ...results.filter((r) => r.type === 'success'),
+      ...initialApplication.autoApplied,
+    ];
 
     // --- Retry Logic ---
     if (remainingFailures.length > 0 && llmRequester) {
@@ -455,25 +461,11 @@ export async function applyLlmEdits({
     } else {
       log('All edits applied successfully.');
     }
-    // TODO: Return allAppliedResults or use them somehow? Currently unused.
-  } else {
-    // Handle cases where applyEditsInternal returned undefined (whole file modes)
-    // Currently, these modes don't produce results to check for failures in the same way.
-    // If future whole-file modes need failure handling, it would go here.
-    // The initial call to applyEditsInternal already handled the application for these modes.
-    log('Processed whole file edits. No detailed results to report.');
-    // If retry is desired for whole file modes, logic would need to be added here.
-    /*
-    await processRawFiles({
-      content,
-      // Note: processRawFiles doesn't currently use originalPrompt,
-      // but passing it for consistency if needed later.
-      // originalPrompt,
-      // TODO: Decide if raw file processing needs retry logic / original context
-      writeRoot,
-      dryRun,
-    });
-    */
+
+    return {
+      allAppliedResults,
+      remainingFailures,
+    };
   }
 }
 

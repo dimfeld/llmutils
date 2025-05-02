@@ -71,17 +71,23 @@ export async function cachePromise<T extends Promise<any>>(
 
 export type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
 
-let cachedGitRoot: string | undefined;
-export async function getGitRoot(): Promise<string> {
-  if (cachedGitRoot) {
-    return cachedGitRoot;
+let cachedGitRoot = new Map<string, string>();
+export async function getGitRoot(cwd = process.cwd()): Promise<string> {
+  const cachedValue = cachedGitRoot.get(cwd);
+  if (cachedValue) {
+    return cachedValue;
   }
 
-  let value = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim();
+  let value = (
+    await $`git rev-parse --show-toplevel`
+      .cwd(cwd || process.cwd())
+      .nothrow()
+      .text()
+  ).trim();
 
   if (!value) {
     // jj workspaces won't have a git root
-    let jjDir = await findUp('.jj', { type: 'directory' });
+    let jjDir = await findUp('.jj', { type: 'directory', cwd: cwd || process.cwd() });
     if (jjDir) {
       const components = jjDir.split(path.sep);
       components.pop();
@@ -89,7 +95,7 @@ export async function getGitRoot(): Promise<string> {
     }
   }
 
-  cachedGitRoot = value || process.cwd();
+  cachedGitRoot.set(cwd, value || process.cwd());
   return value;
 }
 

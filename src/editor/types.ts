@@ -50,4 +50,5 @@ export interface NotUniqueFailure extends BaseEditResult {
   matchLocations: MatchLocation[];
 }
 
-export type EditResult = SuccessResult | NoMatchFailure | NotUniqueFailure;
+export type FailureResult = NoMatchFailure | NotUniqueFailure;
+export type EditResult = SuccessResult | FailureResult;
