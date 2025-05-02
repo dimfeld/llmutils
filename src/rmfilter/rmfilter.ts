@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
+import clipboard from 'clipboardy';
 import { globby } from 'globby';
-import { parseArgs } from 'node:util';
 import { encode } from 'gpt-tokenizer';
 import path from 'node:path';
 import { grepFor } from '../common/file_finder.ts';
@@ -10,6 +10,7 @@ import {
   diffFilenameInsideFencePrompt,
   diffFilenameOutsideFencePrompt,
 } from '../editor/diff-editor/prompts.ts';
+import { noArtifacts } from '../editor/fragments.ts';
 import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
 import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
 import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
@@ -21,32 +22,23 @@ import {
   type AdditionalDocsOptions,
 } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
-import {
-  debug,
-  getGitRoot,
-  parseCliArgsFromString,
-  quiet,
-  setDebug,
-  setQuiet,
-} from '../rmfilter/utils.ts';
+import { debug, getGitRoot, quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { Extractor } from '../treesitter/extract.ts';
-import clipboard from 'clipboardy';
 import {
-  type CommandParsed,
-  type GlobalValues,
   getCurrentConfig,
   listPresets,
   modelPresets,
   resolveModelSettings,
   writeSampleConfig,
+  type CommandParsed,
+  type GlobalValues,
 } from './config.ts';
 import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-import { noArtifacts } from '../editor/fragments.ts';
 
-async function handleInitialCliCommands(globalValues: GlobalValues, yamlConfigPath: string | null) {
+async function handleInitialCliCommands(globalValues: GlobalValues) {
   // Handle creation of new YAML config
   if (globalValues.new) {
     // This part remains CLI-only for now, as programmatic execution assumes config is provided.
@@ -56,10 +48,8 @@ async function handleInitialCliCommands(globalValues: GlobalValues, yamlConfigPa
     process.exit(0);
   }
 
-  const gitRoot = await getGitRoot();
   // Handle list-presets
   if (globalValues['list-presets']) {
-    // This part remains CLI-only.
     await listPresets();
     process.exit(0);
   }
@@ -94,10 +84,11 @@ async function handleInitialCliCommands(globalValues: GlobalValues, yamlConfigPa
   setDebug(globalValues.debug || false);
   setQuiet(globalValues.quiet || false);
 }
+
 function calculateBaseDir(
   globalValues: GlobalValues,
   gitRoot: string,
-  yamlConfigPath: string | null
+  yamlConfigPath: string | undefined
 ) {
   if (globalValues.cwd) {
     return globalValues.cwd;
@@ -160,10 +151,11 @@ async function getNFilesBySize(files: string[], nLargest: number, nSmallest: num
 
 // Process each command
 async function processCommand(
+  walker: ImportWalker,
   baseDir: string,
   gitRoot: string,
-  cmdParsed: (typeof commandsParsed)[number],
-  globalVals: typeof globalValues
+  cmdParsed: CommandParsed,
+  globalVals: GlobalValues
 ): Promise<{ filesSet: Set<string>; examples: { pattern: string; file: string }[] }> {
   const filesSet = new Set<string>();
   const cmdValues = cmdParsed.values;
@@ -326,7 +318,7 @@ async function processCommand(
 
   // Apply largest filter if specified
   if (files && cmdValues.largest) {
-    const n = parseInt(cmdValues.largest as string, 10);
+    const n = parseInt(cmdValues.largest, 10);
     if (isNaN(n) || n <= 0) {
       error(`Invalid value for --largest: ${cmdValues.largest}. Must be a positive number`);
       process.exit(1);
@@ -339,9 +331,9 @@ async function processCommand(
   // This needs careful handling if baseDir != gitRoot. For now, assume baseDir is sufficient context.
   if (files) {
     if (cmdValues['with-imports']) {
-      // files = await processWithImports(baseDir, walker, files, false); // Walker needs to be available
+      files = await processWithImports(baseDir, walker, files, false);
     } else if (cmdValues['with-all-imports']) {
-      files = await processWithImports(files, true);
+      files = await processWithImports(baseDir, walker, files, true);
     }
   }
 
@@ -394,18 +386,6 @@ const getGuidelinesTag = (modelSettings: ReturnType<typeof resolveModelSettings>
   return `<guidelines>\n${guidelines.join('\n')}\n</guidelines>`;
 };
 
-debugLog({
-  repomixOutput: repomixOutput.length,
-  diffTag: diffTag.length,
-  examplesTag: examplesTag.length,
-  docsTag: docsTag.length,
-  rulesTag: rulesTag.length,
-  editFormat: editFormat,
-  notBare: !globalValues.bare,
-  instructionsTag: instructionsTag.length,
-});
-
-const notBare = !globalValues.bare;
 export async function generateRmfilterOutput(
   config: RmfilterConfig,
   baseDir: string,
@@ -463,7 +443,7 @@ export async function generateRmfilterOutput(
   await Promise.all(
     commandsParsed.map(async (cmdParsed) => {
       // Pass baseDir and gitRoot to processCommand
-      const cmdFiles = await processCommand(baseDir, gitRoot, cmdParsed, globalValues);
+      const cmdFiles = await processCommand(walker, baseDir, gitRoot, cmdParsed, globalValues);
       cmdFiles.filesSet.forEach((file) => {
         const absolutePath = path.resolve(baseDir, file);
         const relativeToGitRoot = path.relative(gitRoot, absolutePath);
@@ -517,11 +497,13 @@ export async function generateRmfilterOutput(
   const existingFiles = new Set<string>();
   await Promise.all(
     Array.from(allFilesSet).map(async (relPath) => {
-      try {
-        const absPath = path.resolve(gitRoot, relPath);
-        (await Bun.file(absPath).exists()) && existingFiles.add(relPath);
-      } catch {
-        /* ignore errors */
+      const absPath = path.resolve(gitRoot, relPath);
+      if (
+        await Bun.file(absPath)
+          .exists()
+          .catch(() => false)
+      ) {
+        existingFiles.add(relPath);
       }
     })
   );
@@ -669,82 +651,7 @@ export async function runRmfilterProgrammatically(
   gitRoot: string,
   baseDir: string
 ): Promise<string> {
-  // Define options similar to getCurrentConfig but without YAML/preset logic
-  const options = {
-    // Global options
-    output: { type: 'string', short: 'o' },
-    model: { type: 'string', short: 'm' },
-    'edit-format': { type: 'string', short: 'f' },
-    'with-diff': { type: 'boolean', short: 'd' },
-    'diff-from': { type: 'string' },
-    instructions: { type: 'string', short: 'i', multiple: true },
-    'instructions-editor': { type: 'boolean' },
-    docs: { type: 'string', multiple: true },
-    rules: { type: 'string', multiple: true },
-    copy: { type: 'boolean', short: 'c' },
-    quiet: { type: 'boolean', short: 'q' },
-    debug: { type: 'boolean' },
-    compress: { type: 'boolean' },
-    bare: { type: 'boolean' },
-    'omit-cursorrules': { type: 'boolean' },
-    cwd: { type: 'string' },
-    gitroot: { type: 'boolean' },
-    // Command-specific options (need to be handled per command segment)
-    grep: { type: 'string', short: 'g', multiple: true },
-    example: { type: 'string', short: 'e', multiple: true },
-    ignore: { type: 'string', multiple: true },
-    'with-imports': { type: 'boolean' },
-    'with-all-imports': { type: 'boolean' },
-    'changed-files': { type: 'boolean' },
-    largest: { type: 'string' },
-    base: { type: 'string' },
-    'no-expand-pages': { type: 'boolean' },
-  } as const;
-
-  // Basic parsing - This won't handle command separation ('--') correctly like getCurrentConfig.
-  // We need to manually split args by '--' and parse each segment.
-  const commandSegments: string[][] = [];
-  let currentSegment: string[] = [];
-  for (const arg of args) {
-    if (arg === '--') {
-      commandSegments.push(currentSegment);
-      currentSegment = [];
-    } else {
-      currentSegment.push(arg);
-    }
-  }
-  commandSegments.push(currentSegment);
-
-  // Parse the first segment for global options
-  const { values: parsedGlobalValues, positionals: firstCmdPositionals } = parseArgs({
-    args: commandSegments[0],
-    options,
-    allowPositionals: true,
-    strict: false,
-  });
-
-  const globalValues: GlobalValues = parsedGlobalValues as GlobalValues;
-  const commandsParsed: CommandParsed[] = [];
-
-  // Process the first command (positionals from global parse + options from its segment)
-  const { values: firstCmdValues } = parseArgs({
-    args: commandSegments[0],
-    options,
-    allowPositionals: true,
-    strict: false,
-  });
-  commandsParsed.push({ positionals: firstCmdPositionals, values: firstCmdValues });
-
-  // Process subsequent command segments
-  for (let i = 1; i < commandSegments.length; i++) {
-    const { values: cmdValues, positionals: cmdPositionals } = parseArgs({
-      args: commandSegments[i],
-      options,
-      allowPositionals: true,
-      strict: false,
-    });
-    commandsParsed.push({ positionals: cmdPositionals, values: cmdValues });
-  }
+  const { globalValues, commandsParsed } = await getCurrentConfig({ args, gitRoot });
 
   // Construct the config object
   const config: RmfilterConfig = {
@@ -760,7 +667,7 @@ export async function runRmfilterProgrammatically(
 // Main execution block (CLI entry point)
 async function main() {
   const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
-  await handleInitialCliCommands(globalValues, yamlConfigPath);
+  await handleInitialCliCommands(globalValues);
 
   const gitRoot = await getGitRoot();
   const baseDir = calculateBaseDir(globalValues, gitRoot, yamlConfigPath);

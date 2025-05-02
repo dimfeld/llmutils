@@ -207,7 +207,7 @@ async function findAllPresetFiles(
   return items.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function getCurrentConfig() {
+export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: string }) {
   // Define global options
   const globalOptions = {
     'edit-format': { type: 'string', short: 'f' },
@@ -255,7 +255,7 @@ export async function getCurrentConfig() {
   } as const;
 
   // Parse global options and collect all positionals
-  const allArgs = process.argv.slice(2);
+  const allArgs = options?.args || process.argv.slice(2);
   const globalAllArgs = allArgs.filter((arg) => {
     if (arg === '--') {
       return false;
@@ -278,7 +278,7 @@ export async function getCurrentConfig() {
     args: globalAllArgs,
   });
   let globalValues = parsedGlobal.values;
-  const gitRoot = await getGitRoot();
+  const gitRoot = options?.gitRoot || (await getGitRoot());
 
   // Load YAML config if provided
   let yamlCommands: string[][] = [];
@@ -455,6 +455,9 @@ Command Options (per command):
     commandsParsed,
   };
 }
+
+export type CommandParsed = Awaited<ReturnType<typeof getCurrentConfig>>['commandsParsed'][number];
+export type GlobalValues = Awaited<ReturnType<typeof getCurrentConfig>>['globalValues'];
 
 export async function writeSampleConfig(yamlPath: string) {
   const defaultConfig: z.infer<typeof ConfigSchema> = {

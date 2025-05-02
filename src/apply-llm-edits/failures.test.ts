@@ -65,7 +65,8 @@ console.log(slightlyDifferentVar);
     +console.log(oldVar);
 \`\`\`
 `;
-    expect(formatFailuresForLlm([failure])).toBe(expectedOutput);
+    const result = formatFailuresForLlm([failure]);
+    expect(result).toBe(expectedOutput);
   });
 
   test('should format a single NotUniqueFailure', () => {

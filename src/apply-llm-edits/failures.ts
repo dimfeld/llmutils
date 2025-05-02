@@ -111,9 +111,10 @@ export function formatFailuresForLlm(failures: (NoMatchFailure | NotUniqueFailur
         const diffLines = patch
           .split('\n')
           .slice(4)
-          .filter((line) => !line.startsWith('@@'))
+          .filter((line) => !line.startsWith('@@') && line !== '\\ No newline at end of file')
           .map((line) => `    ${line}`)
-          .join('\n');
+          .join('\n')
+          .trimEnd();
 
         if (diffLines.trim()) {
           description += `  Diff between closest match and expected original text:\n\`\`\`diff\n${diffLines}\n\`\`\`\n`;
