@@ -1,12 +1,10 @@
 // This is a port of Aider's edit_block coder
 import * as path from 'path';
-import * as fs from 'fs';
-import * as diff from 'diff';
 import stringComparison from 'string-comparison';
-import type { ProcessFileOptions, EditResult, SuccessResult, NoMatchFailure } from '../types.ts';
+import { log } from '../../logging.ts';
 import { secureWrite } from '../../rmfilter/utils.js';
 import { findClosestMatches } from '../closest_match.ts';
-import { error, log } from '../../logging.ts';
+import type { EditResult, NoMatchFailure, ProcessFileOptions, SuccessResult } from '../types.ts';
 
 interface Edit {
   filePath: string;
@@ -58,7 +56,7 @@ async function applyEdits(
     const newContent = await doReplace(filePath, fileContent, original, updated);
 
     if (newContent !== null) {
-      log(`Applying edit to ${filePath}`);
+      log(`Applying diff to ${filePath}`);
       if (!dryRun) {
         await secureWrite(rootDir, filePath, newContent);
       }

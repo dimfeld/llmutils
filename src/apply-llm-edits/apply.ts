@@ -106,7 +106,7 @@ export async function applyLlmEdits({
             const currentText = lines.slice(startLine, endLine).join('\n');
             if (currentText === failure.originalText) {
               lines.splice(startLine, beforeLines.length, ...afterLines);
-              log(`Applied edit to ${failure.filePath} at line ${loc.startLine}`);
+              log(`Applying diff to ${failure.filePath}`);
               autoApplied.push({
                 type: 'success',
                 filePath: failure.filePath,
@@ -114,9 +114,7 @@ export async function applyLlmEdits({
                 updatedText: failure.updatedText,
               });
             } else {
-              log(
-                `Skipped edit to ${failure.filePath} at line ${loc.startLine}: Text no longer matches`
-              );
+              log(`Skipped diff for ${failure.filePath}: Text no longer matches at line ${loc.startLine}`);
             }
           }
 

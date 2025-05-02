@@ -79,11 +79,7 @@ async function applyEdit(
     const newContent = newContentLines.join('');
 
     if (dryRun) {
-      log(
-        chalk.cyan(
-          `[Dry Run] Would apply edit to ${failure.filePath} at line ${startLineIndex + 1}`
-        )
-      );
+      log(`[Dry Run] Applying diff to ${failure.filePath}`);
       // Optionally show a diff preview in dry run
       const patch = diff.createPatch(failure.filePath, currentContent, newContent, '', '', {
         context: 3,
@@ -96,11 +92,11 @@ async function applyEdit(
       };
     } else {
       await secureWrite(writeRoot, failure.filePath, newContent);
-      log(chalk.green(`Applied edit to ${failure.filePath} at line ${startLineIndex + 1}`));
+      log(chalk.green(`Applying diff to ${failure.filePath}`));
       return { success: true, lineDelta };
     }
   } catch (err: any) {
-    error(`Failed to apply edit to ${failure.filePath}: ${err.message}`);
+    error(`Failed to apply diff to ${failure.filePath}: ${err.message}`);
     return { success: false, lineDelta: 0 };
   }
 }
@@ -154,9 +150,9 @@ async function handleNoMatchFailure(
     const choice = await select({
       message: 'How would you like to proceed?',
       choices: [
-        { name: 'Apply edit at closest match location', value: 'apply' },
+        { name: 'Apply diff at closest match location', value: 'apply' },
         { name: 'Open in Neovim diff mode (nvim -d)', value: 'diff' },
-        { name: 'Skip this edit', value: 'skip' },
+        { name: 'Skip this diff', value: 'skip' },
       ],
     });
 
@@ -199,7 +195,7 @@ async function handleNoMatchFailure(
       }
       // After diff, we consider the manual step done, effectively skipping automatic application.
     } else {
-      log(`Skipping edit for ${failure.filePath}`);
+      log(`Skipping diff for ${failure.filePath}`);
     }
   } else {
     log(chalk.magenta('No close match could be found.'));

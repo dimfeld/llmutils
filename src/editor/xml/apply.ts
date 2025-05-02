@@ -31,21 +31,21 @@ export async function applyFileChanges(
       if (!file_code) {
         throw new Error(`No file_code provided for ${file_operation} operation on ${file_path}`);
       }
-      log(`${dryRun ? '[Dry Run] Would write' : 'Writing'} to ${file_path}`);
+      log(`Applying diff to ${file_path}`);
       if (!dryRun) {
         await secureWrite(projectDirectory, file_path, file_code);
       }
       break;
 
     case 'DELETE':
-      log(`${dryRun ? '[Dry Run] Would delete' : 'Deleting'} ${file_path}`);
+      log(`Applying diff to ${file_path}: Deleting file`);
       if (!dryRun) {
         await secureRm(projectDirectory, file_path);
       }
       break;
 
     default:
-      warn(`Warning: Unknown file_operation "${file_operation}" for file: ${file_path}`);
+      warn(`Skipping diff for ${file_path}: Unknown file_operation "${file_operation}"`);
       break;
   }
 }

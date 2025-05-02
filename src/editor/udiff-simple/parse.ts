@@ -716,7 +716,7 @@ async function applyEdits(
       if (await file.exists()) {
         currentContent = await file.text();
       } else if (filePath.includes(' ')) {
-        log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
+        log(`Skipping diff for ${filePath}: Nonexistent file looks like a comment`);
         continue;
       }
     } catch (e) {
@@ -738,7 +738,7 @@ async function applyEdits(
         originalText,
         updatedText,
       });
-      log(`Applying hunk to ${filePath}`);
+      log(`Applying diff to ${filePath}`);
       if (!dryRun) {
         await secureWrite(rootDir, filePath, result);
       }
