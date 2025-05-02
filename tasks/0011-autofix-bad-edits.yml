@@ -506,7 +506,7 @@ tasks:
               *   Verify that the returned `LlmPromptStructure` has the correct length (3 messages).
               *   Verify the `role` and `content` of each message match the expected structure (user/assistant/user).
               *   Verify that the content of the final user message includes the mocked output from `formatFailuresForLlm` and the instructional text.
-        done: false
+        done: true
   - title: 8 - Implement Retry Loop in applyLlmEdits
     description: >
       Integrate all the previous steps into the main `applyLlmEdits` function to

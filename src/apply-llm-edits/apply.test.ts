@@ -276,3 +276,81 @@ describe('getOriginalRequestContext', () => {
     );
   });
 });
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { constructRetryPrompt } from './apply.js';
+import type { LlmPromptStructure, LlmPromptMessage } from './apply.js';
+import type { NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
+import { formatFailuresForLlm } from './failures.js';
+
+// Mock the failures module
+vi.mock('./failures.js', () => ({
+  formatFailuresForLlm: vi.fn(),
+}));
+
+describe('constructRetryPrompt', () => {
+  const mockFormatFailuresForLlm = vi.mocked(formatFailuresForLlm);
+
+  beforeEach(() => {
+    // Reset mocks before each test
+    mockFormatFailuresForLlm.mockClear();
+  });
+
+  it('should construct the correct prompt structure for retrying failed edits', () => {
+    // Arrange
+    const originalRequestContext = 'Original user prompt asking for changes.';
+    const failedLlmOutput = `<<<<<<< SEARCH
+Some original code
+=======
+Some new code
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+Another piece of code
+=======
+More new code
+>>>>>>> REPLACE`;
+
+    const mockFailures: (NoMatchFailure | NotUniqueFailure)[] = [
+      {
+        type: 'noMatch',
+        filePath: 'src/file1.ts',
+        originalText: 'Some original code',
+        updatedText: 'Some new code',
+        closestMatch: null,
+      },
+      {
+        type: 'notUnique',
+        filePath: 'src/file2.js',
+        originalText: 'Another piece of code',
+        updatedText: 'More new code',
+        matchLocations: [
+          { startLine: 10, endLine: 10, contextLines: ['line 10 context'] },
+          { startLine: 25, endLine: 25, contextLines: ['line 25 context'] },
+        ],
+      },
+    ];
+
+    const expectedFormattedFailures = `Formatted failure details:\nFailure 1: No match in src/file1.ts\nFailure 2: Not unique in src/file2.js`;
+    mockFormatFailuresForLlm.mockReturnValue(expectedFormattedFailures);
+
+    const expectedInstructionalText = `Please review the original request context, your previous response, and the errors listed above. Provide a corrected set of edits in the same format as before, addressing these issues. Ensure the SEARCH blocks exactly match the current file content where the changes should be applied, or provide correct unified diffs.`;
+
+    // Act
+    const result: LlmPromptStructure = constructRetryPrompt(
+      originalRequestContext,
+      failedLlmOutput,
+      mockFailures
+    );
+
+    // Assert
+    expect(result).toBeInstanceOf(Array);
+    expect(result).toHaveLength(3);
+
+    expect(result[0]).toEqual({ role: 'user', content: originalRequestContext });
+    expect(result[1]).toEqual({ role: 'assistant', content: failedLlmOutput });
+    expect(result[2].role).toBe('user');
+    expect(result[2].content).toContain(expectedFormattedFailures);
+    expect(result[2].content).toContain(expectedInstructionalText);
+    expect(mockFormatFailuresForLlm).toHaveBeenCalledWith(mockFailures);
+  });
+});
