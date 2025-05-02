@@ -4,11 +4,13 @@ import { processSearchReplace } from '../editor/diff-editor/parse.js';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 import { getGitRoot, secureWrite } from '../rmfilter/utils.ts';
 import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
-import { resolveFailuresInteractively } from './interactive.js';
-import { log, error } from '../logging.ts';
+import { resolveFailuresInteractively } from './interactive.ts';
+import { log, error, warn, debugLog } from '../logging.ts';
 import { printDetailedFailures } from './failures.ts';
 import * as path from 'node:path';
 import { parseCliArgsFromString } from '../rmfilter/utils.ts';
+import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.ts';
+import { getOutputPath } from '../rmfilter/repomix.ts';
 
 export interface ApplyLlmEditsOptions {
   content: string;
@@ -16,6 +18,7 @@ export interface ApplyLlmEditsOptions {
   dryRun?: boolean;
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
   interactive?: boolean;
+  originalPrompt?: string;
 }
 
 /**
@@ -79,12 +82,89 @@ export async function applyEditsInternal({
     return undefined;
   }
 }
+
+/**
+ * Retrieves the original context (prompt) used to generate the LLM response.
+ * It prioritizes the explicitly provided prompt, then tries to use a cached
+ * rmfilter output if the command matches, and finally re-runs rmfilter if necessary.
+ */
+async function getOriginalRequestContext(
+  options: ApplyLlmEditsOptions,
+  gitRoot: string,
+  baseDir: string
+): Promise<string> {
+  if (options.originalPrompt) {
+    debugLog('Using provided original prompt.');
+    return options.originalPrompt;
+  }
+
+  debugLog('Attempting to retrieve original context via rmfilter command.');
+  const currentArgs = extractRmfilterCommandArgs(options.content);
+  if (!currentArgs) {
+    throw new Error(
+      'Cannot retry: Original prompt not provided and <rmfilter_command> tag not found or empty in the LLM response content.'
+    );
+  }
+
+  const outputPath = path.resolve(gitRoot, await getOutputPath());
+  let cachedContent: string | null = null;
+  let cachedArgs: string[] | null = null;
+
+  try {
+    cachedContent = await Bun.file(outputPath).text();
+    cachedArgs = extractRmfilterCommandArgs(cachedContent);
+    debugLog(`Found cached rmfilter output at: ${outputPath}`);
+  } catch (e: any) {
+    if (e.code !== 'ENOENT') {
+      warn(`Error reading cached rmfilter output at ${outputPath}:`, e.message);
+    } else {
+      debugLog(`No cached rmfilter output found at: ${outputPath}`);
+    }
+  }
+
+  let argsMatch = false;
+  if (cachedArgs && currentArgs) {
+    // Compare arguments ignoring order
+    const currentSet = new Set(currentArgs);
+    const cachedSet = new Set(cachedArgs);
+    if (currentSet.size === cachedSet.size && [...currentSet].every((arg) => cachedSet.has(arg))) {
+      argsMatch = true;
+    }
+  }
+
+  if (cachedContent && argsMatch) {
+    debugLog('Using cached rmfilter output as original context (arguments match).');
+    return cachedContent;
+  }
+
+  if (cachedContent && !argsMatch) {
+    warn(
+      `Cached rmfilter output at ${outputPath} is stale (command arguments mismatch). Re-running rmfilter.`
+    );
+  } else if (!cachedContent) {
+    debugLog('No matching cached rmfilter output found. Re-running rmfilter.');
+  }
+
+  debugLog('Running rmfilter programmatically with args:', currentArgs);
+  try {
+    const regeneratedOutput = await runRmfilterProgrammatically(currentArgs, gitRoot, baseDir);
+    // TODO: Consider caching the regenerated output?
+    return regeneratedOutput;
+  } catch (err) {
+    error('Error running rmfilter programmatically to regenerate context:', err);
+    throw new Error(
+      `Failed to regenerate original rmfilter context by re-running command: ${currentArgs.join(' ')}`
+    );
+  }
+}
+
 export async function applyLlmEdits({
   content,
   writeRoot,
   dryRun,
   mode,
   interactive,
+  originalPrompt,
 }: ApplyLlmEditsOptions) {
   // Resolve writeRoot early as it's needed for interactive mode too
   writeRoot ??= await getWriteRoot();
@@ -94,6 +174,7 @@ export async function applyLlmEdits({
     content,
     writeRoot,
     dryRun: dryRun ?? false,
+    originalPrompt,
     mode,
   });
 
@@ -202,6 +283,10 @@ export async function applyLlmEdits({
     // If future whole-file modes need failure handling, it would go here.
     await processRawFiles({
       content,
+      // Note: processRawFiles doesn't currently use originalPrompt,
+      // but passing it for consistency if needed later.
+      // originalPrompt,
+      // TODO: Decide if raw file processing needs retry logic / original context
       writeRoot,
       dryRun,
     });

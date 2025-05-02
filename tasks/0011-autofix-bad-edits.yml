@@ -376,7 +376,7 @@ tasks:
               *   Handle potential errors during file reading or `runRmfilterProgrammatically` execution.
           5.  This function `getOriginalRequestContext` will be called later
           within the retry logic (Task 8). For now, just define it.
-        done: false
+        done: true
       - prompt: >
           Add/update tests in `src/apply-llm-edits/apply.test.ts` for the
           `getOriginalRequestContext` function.
