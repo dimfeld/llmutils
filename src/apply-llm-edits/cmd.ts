@@ -43,6 +43,7 @@ applyLlmEdits({
   dryRun,
   mode: modeValue as 'diff' | 'udiff' | 'xml' | 'whole',
   interactive,
+  llmRequester: undefined,
 }).catch((err) => {
   error('Error processing input:', err);
   process.exit(1);

@@ -441,7 +441,7 @@ tasks:
           1.  Update the call to `applyLlmEdits` to pass `undefined` for the new
           `llmRequester` option for now. We are not implementing the CLI's LLM
           connection in this step.
-        done: false
+        done: true
   - title: 7 - Construct Retry Prompt Structure
     description: >
       Create a function that assembles the structured prompt

@@ -12,6 +12,17 @@ import { parseCliArgsFromString } from '../rmfilter/utils.ts';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.ts';
 import { getOutputPath } from '../rmfilter/repomix.ts';
 
+/** Represents a single message in a structured LLM prompt. */
+export interface LlmPromptMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** Represents the structured prompt format for LLM interaction. */
+export type LlmPromptStructure = LlmPromptMessage[];
+
+/** Type definition for the callback function used to request LLM completions. */
+export type LlmRequester = (prompt: LlmPromptStructure) => Promise<string>;
 export interface ApplyLlmEditsOptions {
   content: string;
   writeRoot?: string;
@@ -19,6 +30,7 @@ export interface ApplyLlmEditsOptions {
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
   interactive?: boolean;
   originalPrompt?: string;
+  llmRequester?: LlmRequester;
 }
 
 /**
@@ -165,6 +177,7 @@ export async function applyLlmEdits({
   mode,
   interactive,
   originalPrompt,
+  llmRequester,
 }: ApplyLlmEditsOptions) {
   // Resolve writeRoot early as it's needed for interactive mode too
   writeRoot ??= await getWriteRoot();
@@ -174,7 +187,7 @@ export async function applyLlmEdits({
     content,
     writeRoot,
     dryRun: dryRun ?? false,
-    originalPrompt,
+    // originalPrompt, // Not used by applyEditsInternal directly
     mode,
   });
 
