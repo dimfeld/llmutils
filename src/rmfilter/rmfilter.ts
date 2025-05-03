@@ -180,6 +180,20 @@ async function processCommand(
   const cmdValues = cmdParsed.values;
   let positionals = cmdParsed.positionals.flatMap((p) => p.split(','));
 
+  // Process repo: and pkg:/package: prefixes
+  positionals = await Promise.all(
+    positionals.map(async (p) => {
+      if (p.startsWith('repo:')) {
+        return path.join(gitRoot, p.slice(5));
+      } else if (p.startsWith('pkg:') || p.startsWith('package:')) {
+        const prefixLength = p.startsWith('pkg:') ? 4 : 8;
+        const pkgPath = await resolver.resolvePackageJson(baseDir);
+        return path.join(pkgPath.path, p.slice(prefixLength));
+      }
+      return p;
+    })
+  );
+
   const ignore = cmdValues.ignore?.map((i) => {
     if (!i.includes('/') && !i.includes('**')) {
       // No existing double-wildcard or slash, so make this match any path.

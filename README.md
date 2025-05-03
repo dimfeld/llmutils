@@ -421,11 +421,14 @@ Filter and process files in your repository with various options:
 # Basic file filtering with multiple globs
 rmfilter src/**/*.ts tests/**/*.ts
 
-# Get relevant files that include the words 'users' or 'email', and the files
-# they import.
-rmfilter src/routes/admin src/lib/auth.ts src/lib/server/auth \
+# Use repo: prefix to specify paths relative to the git root
+rmfilter repo:src/lib/auth.ts repo:src/routes/admin \
   --grep users --grep email --with-imports \
-   --instructions 'Add a checkbox to the "add a user" sheet that determines whether or not a verification email is sent. Set verified=true and skip sendign the email when the checkbox is not set. It shouldbe set by default' --copy
+  --instructions 'Add a checkbox to the "add a user" sheet that determines whether or not a verification email is sent. Set verified=true and skip sending the email when the checkbox is not set. It should be set by default' --copy
+
+# Use pkg: prefix in a monorepo to specify paths relative to the package, if the CWD is inside a package
+rmfilter pkg:lib/utils.ts package:tests/utils.test.ts \
+  --grep "util" --copy
 
 # Filter with multiple grep patterns and case expansion
 rmfilter --grep "function" --grep "class" --expand src/**/*.ts

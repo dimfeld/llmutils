@@ -1,3 +1,8 @@
+# May 3, 2025
+
+- Prefix paths with `repo:` to interpret them as relative to the repo root, or `pkg:` to interpret them as relative to
+the closest package root, when running from a directory that is not the repo root.
+
 # May 1, 2025
 
 - Ability to set models for each task in rmplan project config
