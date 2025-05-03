@@ -627,7 +627,10 @@ function reconstructCliArgs(
   commandsParsed.forEach((cmd) => {
     cmd.positionals.forEach((p) => args.push(quoteArg(p)));
     for (const [key, value] of Object.entries(cmd.values)) {
-      if (value === true) {
+      if (globalValues[key as keyof GlobalValues] !== undefined) {
+        // Don't double up global options
+        continue;
+      } else if (value === true) {
         args.push(`--${key}`);
       } else if (typeof value === 'string') {
         args.push(`--${key} ${quoteArg(value)}`);
@@ -676,9 +679,6 @@ async function main() {
   // Reconstruct the original CLI arguments string for the command tag
   let editorInstructionsForCmdTag = '';
   if (globalValues['instructions-editor']) {
-    // Need to fetch this again if it was used, solely for the command tag reconstruction.
-    // This is slightly awkward but necessary if we want the tag to reflect the editor input.
-    // Alternatively, the caller of runRmfilterProgrammatically could pass the resolved instructions.
     editorInstructionsForCmdTag = await getInstructionsFromEditor().catch(() => '');
   }
   const cliArgsString = reconstructCliArgs(
