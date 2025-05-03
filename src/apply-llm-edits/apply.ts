@@ -260,26 +260,29 @@ async function handleAutoApplyNotUnique(
 
         for (const loc of sortedLocations) {
           const beforeLines = representativeFailure.originalText.split('\n');
+          if (beforeLines.at(-1) == '') beforeLines.pop();
           const afterLines = representativeFailure.updatedText.split('\n');
+          if (afterLines.at(-1) == '') afterLines.pop();
           const startLine = loc.startLine - 1;
           const endLine = startLine + beforeLines.length;
 
-          if (startLine < 0 || endLine > lines.length) {
+          if (startLine < 0 || endLine >= lines.length) {
             warn(
               `Skipped auto-apply for ${representativeFailure.filePath} at line ${loc.startLine}: Invalid line range.`
             );
             continue;
           }
           const currentText = lines.slice(startLine, endLine).join('\n');
-          if (currentText === representativeFailure.originalText) {
+          const original = beforeLines.join('\n');
+          if (currentText === original) {
             lines.splice(startLine, beforeLines.length, ...afterLines);
             appliedCount++;
             debugLog(
-              `Auto-applying diff to ${representativeFailure.filePath} at line ${loc.startLine}`
+              `Auto-applying diff to ${representativeFailure.filePath} at line ${loc.startLine}-${endLine + 1}`
             );
           } else {
             warn(
-              `Skipped auto-apply for ${representativeFailure.filePath} at line ${loc.startLine}: Text no longer matches.`
+              `Skipped auto-apply for ${representativeFailure.filePath} at line ${loc.startLine}-${endLine + 1}: Text no longer matches.`
             );
             // If one location doesn't match, abort auto-apply for this group to avoid partial application.
             appliedCount = 0;

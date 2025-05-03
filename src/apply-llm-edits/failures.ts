@@ -17,7 +17,7 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
     log(
       failure.originalText
         .split('\n')
-        .map((line) => `    ${line}`)
+        .map((line) => `    ${line.trimEnd()}`)
         .join('\n')
     );
 
@@ -26,9 +26,9 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
       if (failure.closestMatch) {
         const { startLine, endLine, lines, score } = failure.closestMatch;
         log(`  Closest match (score: ${score.toFixed(2)}):`);
-        log(`    Line range: ${startLine + 1} to ${endLine + 1}`);
+        log(`    Line range: ${startLine} to ${endLine}`);
         log(`    Closest match content:`);
-        log(lines.map((line, i) => `      ${startLine + 1 + i}: ${line.trimEnd()}`).join('\n'));
+        log(lines.map((line, i) => `      ${startLine + i}: ${line.trimEnd()}`).join('\n'));
         // Generate diff between closest match and original text
         const patch = diff.createPatch(
           failure.filePath,
@@ -44,7 +44,7 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
         log(
           diffLines
             .split('\n')
-            .map((line) => `      ${line}`)
+            .map((line) => `      ${line.trimEnd()}`)
             .join('\n')
         );
       } else {
@@ -54,10 +54,12 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
       log(`  Reason: Text found in multiple locations (${failure.matchLocations.length}).`);
       failure.matchLocations.forEach((loc, locIndex) => {
         log(`    Match ${locIndex + 1}:`);
-        log(`      Starting at line: ${loc.startLine + 1}`);
+        log(`      Starting at line: ${loc.startLine}`);
         log(`      Context:`);
         log(
-          loc.contextLines.map((line, i) => `        ${loc.startLine + 1 + i}: ${line}`).join('\n')
+          loc.contextLines
+            .map((line, i) => `        ${loc.startLine + i}: ${line.trimEnd()}`)
+            .join('\n')
         );
       });
     }
@@ -127,10 +129,10 @@ export function formatFailuresForLlm(failures: (NoMatchFailure | NotUniqueFailur
     } else if (failure.type === 'notUnique') {
       description += `  Reason: Not Unique - The specified text block was found in ${failure.matchLocations.length} locations.\n`;
       failure.matchLocations.forEach((loc, locIndex) => {
-        description += `    Match ${locIndex + 1} starting at line ${loc.startLine + 1}:\n`;
+        description += `    Match ${locIndex + 1} starting at line ${loc.startLine}:\n`;
         // Indent context lines for clarity
         const context = loc.contextLines
-          .map((line, i) => `      ${loc.startLine + 1 + i}: ${line}`)
+          .map((line, i) => `      ${loc.startLine + i}: ${line}`)
           .join('\n');
         description += `      Context:\n${context}\n`;
       });

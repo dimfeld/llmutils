@@ -76,8 +76,8 @@ console.log(slightlyDifferentVar);
       originalText: 'return value;',
       updatedText: 'return processedValue;',
       matchLocations: [
-        { startLine: 10, startIndex: 4, contextLines: ['function A() {', '  return value;', '}'] },
-        { startLine: 25, startIndex: 4, contextLines: ['function B() {', '  return value;', '}'] },
+        { startLine: 11, startIndex: 4, contextLines: ['function A() {', '  return value;', '}'] },
+        { startLine: 26, startIndex: 4, contextLines: ['function B() {', '  return value;', '}'] },
       ],
     };
     const expectedOutput = `The following edit(s) failed to apply:
@@ -119,7 +119,7 @@ return value;
         updatedText: 'return processedValue;',
         matchLocations: [
           {
-            startLine: 10,
+            startLine: 11,
             startIndex: 4,
             contextLines: ['function A() {', '  return value;', '}'],
           },

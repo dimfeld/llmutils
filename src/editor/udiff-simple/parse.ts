@@ -688,26 +688,23 @@ async function applyEdits(
   dryRun: boolean = false
 ): Promise<EditResult[]> {
   const results: EditResult[] = [];
-  const appliedHunks: Set<string> = new Set();
-  const uniqueEdits: EditHunk[] = [];
 
-  // Deduplicate hunks based on path + content
-  for (const edit of edits) {
-    const normalizedHunk = normalizeHunk(edit.hunk);
-    if (normalizedHunk.length === 0) {
-      continue;
-    }
+  const cleanedEdits = edits
+    .map((edit) => {
+      const normalizedHunk = normalizeHunk(edit.hunk);
+      if (normalizedHunk.length === 0) {
+        return;
+      }
 
-    const hunkKey = `${edit.filePath}\n${normalizedHunk.join('')}`;
-    if (appliedHunks.has(hunkKey)) {
-      continue;
-    }
-    appliedHunks.add(hunkKey);
-    uniqueEdits.push({ filePath: edit.filePath, hunk: normalizedHunk });
-  }
+      return {
+        ...edit,
+        hunk: normalizedHunk,
+      };
+    })
+    .filter((edit) => edit !== undefined);
 
   let hunksAppliedCount = 0;
-  for (const { filePath, hunk } of uniqueEdits) {
+  for (const { filePath, hunk } of cleanedEdits) {
     const fullPathForRead = path.resolve(rootDir, filePath);
     let currentContent: string | null = null;
 
