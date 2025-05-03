@@ -300,8 +300,14 @@ export async function prepareNextStep(
     if (config.autoexamples) {
       const promptText = selectedPendingSteps.map((step) => step.prompt).join('\n');
       for (const autoexample of config.autoexamples) {
-        if (promptText.includes(autoexample)) {
-          examples.push(autoexample);
+        if (typeof autoexample === 'string') {
+          if (promptText.includes(autoexample)) {
+            examples.push(autoexample);
+          }
+        } else {
+          if (promptText.includes(autoexample.find)) {
+            examples.push(autoexample.example);
+          }
         }
       }
     }

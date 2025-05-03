@@ -376,7 +376,9 @@ This can help the coding model to see the proper patterns for using particular p
 
 autoexamples:
   - PostgresTestEnvironment
-  - DropdownMenu
+  # Find Select, but pass "<Select" to rmfilter so that we will be sure to get a component tag
+  - find: Select
+    example: <Select
 ```
 
 #### Post-Apply Commands

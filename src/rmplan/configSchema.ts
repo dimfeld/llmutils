@@ -24,8 +24,20 @@ export const postApplyCommandSchema = z.object({
 export const rmplanConfigSchema = z.object({
   /** An array of commands to run after changes are successfully applied by the agent. */
   postApplyCommands: z.array(postApplyCommandSchema).optional(),
-  /** An array of strings to automatically include as examples when they appear in prompts. */
-  autoexamples: z.array(z.string()).optional(),
+  /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */
+  autoexamples: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({
+          find: z.string().describe('String to search for in the prompt to trigger this example.'),
+          example: z
+            .string()
+            .describe('Example string to pass as --example argument when find matches.'),
+        }),
+      ])
+    )
+    .optional(),
   /** Model specifications for different rmplan operations */
   models: z
     .object({
