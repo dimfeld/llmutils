@@ -1,7 +1,6 @@
 # May 3, 2025
 
-- Prefix paths with `repo:` to interpret them as relative to the repo root, or `pkg:` to interpret them as relative to
-the closest package root, when running from a directory that is not the repo root.
+- Prefix paths with `repo:` to interpret them as relative to the repo root, or `pkg:` to interpret them as relative to the closest package root, when running from a directory that is not the repo root.
 - Add ability to apply a "not unique" edit failure to all matching locations
 - autoexamples: Allow the search term and the --example argument to be different
 - Add `--with-tests` command option to include test files matching each source file
