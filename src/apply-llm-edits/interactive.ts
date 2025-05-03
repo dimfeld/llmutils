@@ -180,10 +180,10 @@ async function handleNoMatchFailure(
         // Write the proposed content to a temporary file
         await Bun.write(proposedPath, proposedContent);
 
-        log(`Run: nvim -d ${absoluteFilePath} ${proposedPath}`);
+        log(`Run: nvim -d ${proposedPath} ${absoluteFilePath}`);
         log(`Note: You can save changes directly to ${absoluteFilePath} in Neovim.`);
 
-        const proc = Bun.spawn(['nvim', '-d', absoluteFilePath, proposedPath], {
+        const proc = Bun.spawn(['nvim', '-d', proposedPath, absoluteFilePath], {
           stdio: ['inherit', 'inherit', 'inherit'],
         });
         await proc.exited;
