@@ -107,7 +107,7 @@ export async function applyEditsInternal({
  * It prioritizes the explicitly provided prompt, then tries to use a cached
  * rmfilter output if the command matches, and finally re-runs rmfilter if necessary.
  */
-async function getOriginalRequestContext(
+export async function getOriginalRequestContext(
   options: ApplyLlmEditsOptions,
   gitRoot: string,
   baseDir: string
