@@ -2,6 +2,7 @@
 
 - Prefix paths with `repo:` to interpret them as relative to the repo root, or `pkg:` to interpret them as relative to
 the closest package root, when running from a directory that is not the repo root.
+- Add ability to apply a "not unique" edit failure to all matching locations
 
 # May 1, 2025
 

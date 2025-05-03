@@ -211,13 +211,29 @@ async function handleNotUniqueFailure(
   failure: NotUniqueFailure,
   writeRoot: string,
   appliedLocationsByFile: Map<string, Set<number>>,
-  dryRun: boolean
-): Promise<{ success: boolean; lineDelta: number } | undefined> {
+  dryRun: boolean,
+  allFailures: (NoMatchFailure | NotUniqueFailure)[],
+  currentIndex: number
+): Promise<{ success: boolean; lineDelta: number; obsoleted?: NotUniqueFailure[] } | undefined> {
+  // Count remaining duplicate 'not unique' failures
+  const duplicates = allFailures
+    .slice(currentIndex + 1)
+    .filter(
+      (f): f is NotUniqueFailure =>
+        f.type === 'notUnique' &&
+        f.filePath === failure.filePath &&
+        f.originalText === failure.originalText &&
+        f.updatedText === failure.updatedText
+    );
+
   log(chalk.yellow(`\n--- Failure: Not Unique ---`));
   log(`File: ${chalk.bold(failure.filePath)}`);
   log(
     `Reason: The text block to be replaced was found in ${failure.matchLocations.length} locations.`
   );
+  if (duplicates.length > 0) {
+    log(chalk.cyan(`Remaining duplicate edits with same change: ${duplicates.length}`));
+  }
   log(failure.originalText);
 
   const diffPatch = diff.createPatch(
@@ -253,6 +269,7 @@ async function handleNotUniqueFailure(
     }))
     .filter((choice) => !appliedLocations.has(failure.matchLocations[choice.value].startLine));
 
+  choices.push({ name: 'Apply to all matching locations', value: -2, description: '' });
   choices.push({ name: 'Skip this edit', value: -1, description: '' });
 
   const selectedIndex = await select({
@@ -260,7 +277,25 @@ async function handleNotUniqueFailure(
     choices: choices,
   });
 
-  if (selectedIndex !== -1) {
+  if (selectedIndex === -2) {
+    // Apply to all matching locations
+    let totalLineDelta = 0;
+    let success = true;
+    for (const match of failure.matchLocations) {
+      if (!appliedLocations.has(match.startLine)) {
+        appliedLocations.add(match.startLine);
+        const originalLines = splitLinesWithEndings(failure.originalText);
+        const result = await applyEdit(failure, originalLines, match.startLine, writeRoot, dryRun);
+        if (result.success) {
+          totalLineDelta += result.lineDelta;
+        } else {
+          success = false;
+        }
+      }
+    }
+
+    return { success, lineDelta: totalLineDelta, obsoleted: duplicates };
+  } else if (selectedIndex !== -1) {
     const selectedMatch = failure.matchLocations[selectedIndex];
     // Record the applied location
     appliedLocations.add(selectedMatch.startLine);
@@ -306,7 +341,20 @@ export async function resolveFailuresInteractively(
     if (failure.type === 'noMatch') {
       result = await handleNoMatchFailure(failure, writeRoot, dryRun);
     } else if (failure.type === 'notUnique') {
-      result = await handleNotUniqueFailure(failure, writeRoot, appliedLocationsByFile, dryRun);
+      let r = await handleNotUniqueFailure(
+        failure,
+        writeRoot,
+        appliedLocationsByFile,
+        dryRun,
+        failures,
+        i
+      );
+
+      if (r?.obsoleted?.length) {
+        failures = failures.filter((f) => !r.obsoleted?.includes(f));
+      }
+
+      result = r;
     }
 
     // Update line deltas for subsequent failures if the edit was applied
