@@ -606,9 +606,15 @@ function reconstructCliArgs(
 ): string {
   const args: string[] = [];
 
+  debugLog('globalValues', globalValues);
+  debugLog('commandsParsed', commandsParsed);
+
   // Add global options
   for (const [key, value] of Object.entries(globalValues)) {
-    if (value === true) {
+    if (key === 'commands') {
+      // This happens when loading a preset
+      continue;
+    } else if (value === true) {
       args.push(`--${key}`);
     } else if (typeof value === 'string') {
       if (key === 'instructions' && value === editorInstructions) {
