@@ -45,12 +45,6 @@ assume a repository written with Typescript and PNPM workspaces.
   - [Using rmplan](#using-rmplan)
   - [Applying LLM Edits](#applying-llm-edits)
 
-### Notes on Links
-
-- The anchor links (`#section-name`) are generated based on GitHub's automatic heading ID creation, which converts headings to lowercase, replaces spaces with hyphens, and removes special characters.
-- Some subsections (e.g., "Scripts Overview") are implied from the content structure but not explicitly named in the README. They are included for clarity.
-- The links assume the README is viewed on GitHub at `https://github.com/dimfeld/llmutils/blob/main/README.md`.
-
 ## Installation
 
 This project assumes you have these tools installed:
