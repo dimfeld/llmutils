@@ -71,17 +71,23 @@ export async function cachePromise<T extends Promise<any>>(
 
 export type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
 
-let cachedGitRoot: string | undefined;
-export async function getGitRoot(): Promise<string> {
-  if (cachedGitRoot) {
-    return cachedGitRoot;
+let cachedGitRoot = new Map<string, string>();
+export async function getGitRoot(cwd = process.cwd()): Promise<string> {
+  const cachedValue = cachedGitRoot.get(cwd);
+  if (cachedValue) {
+    return cachedValue;
   }
 
-  let value = (await $`git rev-parse --show-toplevel`.nothrow().text()).trim();
+  let value = (
+    await $`git rev-parse --show-toplevel`
+      .cwd(cwd || process.cwd())
+      .nothrow()
+      .text()
+  ).trim();
 
   if (!value) {
     // jj workspaces won't have a git root
-    let jjDir = await findUp('.jj', { type: 'directory' });
+    let jjDir = await findUp('.jj', { type: 'directory', cwd: cwd || process.cwd() });
     if (jjDir) {
       const components = jjDir.split(path.sep);
       components.pop();
@@ -89,7 +95,7 @@ export async function getGitRoot(): Promise<string> {
     }
   }
 
-  cachedGitRoot = value || process.cwd();
+  cachedGitRoot.set(cwd, value || process.cwd());
   return value;
 }
 
@@ -133,13 +139,13 @@ export function validatePath(baseDir: string, relativePath: string): string {
   // Check if the normalized target path is within the normalized base directory
   if (
     !normalizedTargetPath.startsWith(normalizedBaseDir + path.sep) &&
-    normalizedTargetPath !== normalizedBaseDir // Allow operations on the base directory itself (e.g., creating a file directly in root)
+    normalizedTargetPath !== normalizedBaseDir
   ) {
     throw new Error(
       `Security Error: Attempted file operation outside of the base directory "${normalizedBaseDir}". Target: "${normalizedTargetPath}"`
     );
   }
-  return normalizedTargetPath; // Return the validated absolute path
+  return normalizedTargetPath;
 }
 
 export async function secureWrite(
@@ -160,4 +166,63 @@ export async function secureRm(baseDir: string, relativePath: string): Promise<v
   // Use force: true to mimic `rm -f`, avoiding errors if the file doesn't exist.
   // Keep recursive: false as we typically expect to remove files, not directories here.
   await fs.rm(absoluteTargetPath, { force: true, recursive: false });
+}
+
+/**
+ * Parses a command string into an array of arguments, handling quotes and escapes.
+ * Mimics shell argument parsing behavior.
+ * @param commandString The command string to parse.
+ * @returns An array of parsed arguments.
+ */
+export function parseCliArgsFromString(commandString: string): string[] {
+  const args: string[] = [];
+  let i = 0;
+  const n = commandString.length;
+
+  while (i < n) {
+    // Skip leading whitespace
+    while (i < n && /\s/.test(commandString[i])) {
+      i++;
+    }
+    if (i === n) break;
+
+    const start = i;
+    let currentArg = '';
+    const quoteChar = commandString[i];
+
+    if (quoteChar === '"' || quoteChar === "'") {
+      i++;
+      while (i < n) {
+        if (commandString[i] === '\\' && i + 1 < n) {
+          // Handle escaped characters: only escape the quote char itself or a backslash
+          if (commandString[i + 1] === quoteChar || commandString[i + 1] === '\\') {
+            currentArg += commandString[i + 1];
+            i += 2;
+          } else {
+            // Keep other escaped characters as is (e.g., \n)
+            currentArg += commandString[i] + commandString[i + 1];
+            i += 2;
+          }
+        } else if (commandString[i] === quoteChar) {
+          i++;
+          break;
+        } else {
+          currentArg += commandString[i];
+          i++;
+        }
+      }
+    } else {
+      // Unquoted argument
+      while (i < n && !/\s/.test(commandString[i])) {
+        // Note: Unquoted arguments don't typically handle escapes in the same way shell does,
+        // but we'll treat backslash literally here unless followed by space (which terminates).
+        // This simple parser doesn't aim for full shell compatibility.
+        currentArg += commandString[i];
+        i++;
+      }
+    }
+    args.push(currentArg);
+  }
+
+  return args;
 }

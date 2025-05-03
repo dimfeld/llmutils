@@ -18,6 +18,8 @@ exports[`walk imports from apply-llm-edits.ts 1`] = `
   "src/editor/whole-file/parse_raw_edits.ts",
   "src/editor/xml/parse_xml.ts",
   "src/logging.ts",
+  "src/rmfilter/repomix.ts",
+  "src/rmfilter/rmfilter.ts",
   "src/rmfilter/utils.ts",
 ]
 `;

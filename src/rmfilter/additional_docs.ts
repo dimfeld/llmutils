@@ -11,18 +11,20 @@ function escapeXmlAttr(value: string): string {
   return value.replace(/"/g, '&quot;');
 }
 
+export interface AdditionalDocsOptions {
+  instructions?: string[];
+  instruction?: string[];
+  docs?: string[];
+  rules?: string[];
+  'omit-cursorrules'?: boolean;
+  'omit-instructions-tag'?: boolean;
+  'no-autodocs'?: boolean;
+}
+
 export async function getAdditionalDocs(
   baseDir: string,
   allFilesSet: Set<string>,
-  values: {
-    instructions?: string[];
-    instruction?: string[];
-    docs?: string[];
-    rules?: string[];
-    'omit-cursorrules'?: boolean;
-    'omit-instructions-tag'?: boolean;
-    'no-autodocs'?: boolean;
-  }
+  values: AdditionalDocsOptions
 ) {
   const gitRoot = await getGitRoot();
 

@@ -1,6 +1,6 @@
 // from github.com/mckaywrigley/o1-xml-parser + modifications
 import { DOMParser } from '@xmldom/xmldom';
-import { error } from '../../logging.ts';
+import { error, warn } from '../../logging.ts';
 
 interface ParsedFileChange {
   file_summary: string;
@@ -30,43 +30,38 @@ export async function parseXmlString(xmlString: string): Promise<ParsedFileChang
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlString, 'text/xml');
 
-    const changedFilesNodes = doc.getElementsByTagName('changed_files');
-    if (!changedFilesNodes?.length) {
-      return null;
-    }
-
     const changes: ParsedFileChange[] = [];
-    for (let changedFileNode of changedFilesNodes) {
-      const fileNodes = changedFileNode.getElementsByTagName('file');
+    const fileNodes = doc.getElementsByTagName('file');
 
-      for (let i = 0; i < fileNodes.length; i++) {
-        const fileNode = fileNodes[i];
+    for (let i = 0; i < fileNodes.length; i++) {
+      const fileNode = fileNodes[i];
 
-        const fileSummaryNode = fileNode.getElementsByTagName('file_summary')[0];
-        const fileOperationNode = fileNode.getElementsByTagName('file_operation')[0];
-        const filePathNode = fileNode.getElementsByTagName('file_path')[0];
-        const fileCodeNode = fileNode.getElementsByTagName('file_code')[0];
+      const fileSummaryNode = fileNode.getElementsByTagName('file_summary')[0];
+      const fileOperationNode = fileNode.getElementsByTagName('file_operation')[0];
+      const filePathNode = fileNode.getElementsByTagName('file_path')[0];
+      const fileCodeNode = fileNode.getElementsByTagName('file_code')[0];
 
-        if (!fileOperationNode || !filePathNode) {
-          continue;
-        }
-
-        const file_summary = fileSummaryNode?.textContent?.trim() ?? '';
-        const file_operation = fileOperationNode.textContent?.trim() ?? '';
-        const file_path = filePathNode.textContent?.trim() ?? '';
-
-        let file_code: string | undefined = undefined;
-        if (fileCodeNode && fileCodeNode.firstChild) {
-          file_code = fileCodeNode.textContent?.trim() ?? '';
-        }
-
-        changes.push({
-          file_summary,
-          file_operation,
-          file_path,
-          file_code,
-        });
+      if (!fileOperationNode || !filePathNode) {
+        warn('Skipping file change: Missing file_operation or file_path');
+        continue;
       }
+
+      const file_summary = fileSummaryNode?.textContent?.trim() ?? '';
+      const file_operation = fileOperationNode.textContent?.trim() ?? '';
+      const file_path = filePathNode.textContent?.trim() ?? '';
+
+      let file_code: string | undefined = undefined;
+      if (fileCodeNode && fileCodeNode.firstChild) {
+        file_code = fileCodeNode.textContent?.trim() ?? '';
+        file_code += '\n';
+      }
+
+      changes.push({
+        file_summary,
+        file_operation,
+        file_path,
+        file_code,
+      });
     }
 
     return changes;
