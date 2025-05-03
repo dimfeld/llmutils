@@ -148,6 +148,10 @@
           "example": {
             "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include the largest file matching the pattern."
+          },
+          "with-tests": {
+            "type": "boolean",
+            "description": "Include corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
           }
         }
       },

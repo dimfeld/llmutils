@@ -349,6 +349,26 @@ async function processCommand(
     } else if (cmdValues['with-all-imports']) {
       files = await processWithImports(baseDir, walker, files, true);
     }
+
+    // Handle --with-tests: for each file NAME.EXT, try to add NAME.test.EXT
+    if (cmdValues['with-tests']) {
+      const testFiles = (
+        await Promise.all(
+          files.map(async (file) => {
+            const parsed = path.parse(file);
+            const testFileName = `${parsed.name}.test${parsed.ext}`;
+            const testFilePath = path.join(parsed.dir, testFileName);
+            // Check if test file exists
+            const exists = await Bun.file(path.resolve(baseDir, testFilePath)).exists();
+            return exists ? testFilePath : null;
+          })
+        )
+      ).filter((file): file is string => file !== null);
+      files.push(...testFiles);
+      if (!quiet && testFiles.length > 0) {
+        log(`  Command: Added ${testFiles.length} test files with --with-tests.`);
+      }
+    }
   }
 
   let foundExamples = await (exampleFiles ?? []);

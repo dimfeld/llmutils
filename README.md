@@ -104,6 +104,7 @@ commands:
     grep:
       - 'fetch'
     with-imports: true
+    with-tests: true
   - globs:
       - 'src/tests/api/**/*.ts'
     grep: 'test'
@@ -438,8 +439,8 @@ rmfilter --grep "function" --grep "class" --expand src/**/*.ts
 # Include full import tree and limit to largest files
 rmfilter --with-all-imports --largest 5 src/lib/*.ts
 
-# Filter with examples and custom output
-rmfilter --example "fetchData" --example "processResponse" --output filtered.txt src/**/*.ts
+# Filter with examples, test files, and custom output
+rmfilter --example "fetchData" --example "processResponse" --with-tests --output filtered.txt src/**/*.ts
 
 # Process files with diff and custom instructions
 rmfilter --with-diff --instructions "Optimize all functions" src/**/*.ts

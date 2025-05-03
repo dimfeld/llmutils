@@ -64,6 +64,7 @@ export const CommandConfigSchema = z
     downstream: z.union([z.string(), z.string().array()]).optional(),
     largest: z.string().optional(),
     example: z.union([z.string(), z.string().array()]).optional(),
+    'with-tests': z.boolean().optional(),
   })
   .strict();
 
@@ -252,6 +253,7 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     downstream: { type: 'string', multiple: true },
     largest: { type: 'string', short: 'l' },
     example: { type: 'string', multiple: true },
+    'with-tests': { type: 'boolean' },
   } as const;
 
   // Parse global options and collect all positionals

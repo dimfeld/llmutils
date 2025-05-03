@@ -4,6 +4,7 @@
 the closest package root, when running from a directory that is not the repo root.
 - Add ability to apply a "not unique" edit failure to all matching locations
 - autoexamples: Allow the search term and the --example argument to be different
+- Add `--with-tests` command option to include test files matching each source file
 
 # May 1, 2025
 
