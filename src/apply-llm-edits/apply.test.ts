@@ -470,18 +470,16 @@ describe('applyLlmEdits', () => {
  Second line
 `;
 
-    const result = await applyLlmEdits({
-      content: diffContent,
-      writeRoot: tempDir,
-      dryRun: false,
-      mode: 'udiff',
-      interactive: false,
-      applyPartial: true,
-    });
-
-    expect(result).toBeDefined();
-    expect(result?.successes.length).toBe(1);
-    expect(result?.failures.length).toBe(1);
+    await expect(
+      applyLlmEdits({
+        content: diffContent,
+        writeRoot: tempDir,
+        dryRun: false,
+        mode: 'udiff',
+        interactive: false,
+        applyPartial: true,
+      })
+    ).rejects.toThrow(/Failed to apply 1 edits/);
 
     const updatedContent1 = await Bun.file(testFile1).text();
     expect(updatedContent1).toBe('Modified content\nSecond line\n');
@@ -510,9 +508,16 @@ describe('applyLlmEdits', () => {
  Second line
 `;
 
-    // Mock stdin to simulate user input 'y'
-    const mockStdin = mock(() => Promise.resolve('y'));
-    Bun.stdin.text = mockStdin;
+    let calledConfirm = false;
+    await mock.module('@inquirer/prompts', () => ({
+      confirm: () => {
+        calledConfirm = true;
+        return Promise.resolve(true);
+      },
+      select: () => {
+        return Promise.resolve(-1);
+      },
+    }));
 
     const result = await applyLlmEdits({
       content: diffContent,
@@ -525,7 +530,7 @@ describe('applyLlmEdits', () => {
     expect(result).toBeDefined();
     expect(result?.successes.length).toBe(1);
     expect(result?.failures.length).toBe(1);
-    expect(mockStdin).toHaveBeenCalled();
+    expect(calledConfirm).toBe(true);
 
     const updatedContent1 = await Bun.file(testFile1).text();
     expect(updatedContent1).toBe('Modified content\nSecond line\n');
@@ -555,8 +560,16 @@ describe('applyLlmEdits', () => {
 `;
 
     // Mock stdin to simulate user input 'n'
-    const mockStdin = mock(() => Promise.resolve('n'));
-    Bun.stdin.text = mockStdin;
+    let calledConfirm = false;
+    await mock.module('@inquirer/prompts', () => ({
+      confirm: () => {
+        calledConfirm = true;
+        return Promise.resolve(false);
+      },
+      select: () => {
+        return Promise.resolve(-1);
+      },
+    }));
 
     const result = await applyLlmEdits({
       content: diffContent,
@@ -567,7 +580,7 @@ describe('applyLlmEdits', () => {
     });
 
     expect(result).toBeUndefined();
-    expect(mockStdin).toHaveBeenCalled();
+    expect(calledConfirm).toBe(true);
 
     const updatedContent1 = await Bun.file(testFile1).text();
     expect(updatedContent1).toBe('Original content\nSecond line\n');

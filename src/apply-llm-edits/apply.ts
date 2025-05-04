@@ -62,7 +62,6 @@ export function extractRmfilterCommandArgs(content: string): string[] | null {
   }
   return null;
 }
-
 /**
  * Internal function to perform the core edit application logic.
  * Detects the mode and calls the appropriate processor.
@@ -72,8 +71,8 @@ export async function applyEditsInternal({
   content,
   writeRoot,
   dryRun,
-  mode,
   suppressLogging = false,
+  mode,
 }: {
   content: string;
   writeRoot: string;
@@ -91,18 +90,18 @@ export async function applyEditsInternal({
 
   let results: EditResult[];
   if (udiffMode) {
-    log('Processing as Unified Diff...');
-    results = await processUnifiedDiff({ content, writeRoot, dryRun });
+    if (!suppressLogging) log('Processing as Unified Diff...');
+    results = await processUnifiedDiff({ content, writeRoot, dryRun, suppressLogging });
   } else if (diffMode) {
-    log('Processing as Search/Replace Diff...');
-    results = await processSearchReplace({ content, writeRoot, dryRun });
+    if (!suppressLogging) log('Processing as Search/Replace Diff...');
+    results = await processSearchReplace({ content, writeRoot, dryRun, suppressLogging });
   } else if (xmlMode) {
-    log('Processing as XML Whole Files...');
-    await processXmlContents({ content, writeRoot, dryRun });
+    if (!suppressLogging) log('Processing as XML Whole Files...');
+    await processXmlContents({ content, writeRoot, dryRun, suppressLogging });
     return undefined;
   } else {
-    log('Processing as Whole Files...');
-    await processRawFiles({ content, writeRoot, dryRun });
+    if (!suppressLogging) log('Processing as Whole Files...');
+    await processRawFiles({ content, writeRoot, dryRun, suppressLogging });
     return undefined;
   }
 
@@ -509,8 +508,7 @@ export async function applyLlmEdits({
       if (applyPartial && !appliedInitialSuccesses && successes.length > 0) {
         log(`Applying ${successes.length} successful edits...`);
         appliedInitialSuccesses = true;
-        if (!dryRun && !appliedInitialSuccesses) {
-          appliedInitialSuccesses = true;
+        if (!dryRun) {
           await applyEditsInternal({
             content,
             writeRoot,

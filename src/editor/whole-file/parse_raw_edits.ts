@@ -46,7 +46,12 @@ function findFilenameOnFirstLine(line: string) {
   }
 }
 
-export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFileOptions) {
+export async function processRawFiles({
+  content,
+  writeRoot,
+  dryRun,
+  suppressLogging = false,
+}: ProcessFileOptions) {
   // Split content into lines
   const lines = content.split('\n');
   let state:
@@ -169,12 +174,13 @@ export async function processRawFiles({ content, writeRoot, dryRun }: ProcessFil
           contentStr = contentStr.slice(0, -'</file>'.length);
         }
         if (!(await Bun.file(filePath).exists()) && filePath.includes(' ')) {
-          log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
+          if (!suppressLogging)
+            log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
           continue;
         }
         await secureWrite(writeRoot, filePath, contentStr + '\n');
       }
-      log(`Wrote ${contentLines.length} lines to file: ${filePath}`);
+      if (!suppressLogging) log(`Wrote ${contentLines.length} lines to file: ${filePath}`);
     } catch (err) {
       error(`Failed to write ${filePath}: ${err as Error}`);
     }
