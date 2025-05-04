@@ -24,6 +24,7 @@ if (args.includes('--help')) {
   log('  --debug           Enable debug logging');
   log('  --interactive     Enable interactive mode for resolving edit failures');
   log('  --retry           Enable automatic retry via LLM on failure (CLI support limited)');
+  log('  --partial-apply   Apply successes even if there are failures');
   log('  --original-prompt <file> Path to the original prompt file for retry context');
   log('  --dry-run         Dry run - do not apply changes');
   process.exit(0);

@@ -16,6 +16,7 @@ import * as path from 'node:path';
 import { parseCliArgsFromString } from '../rmfilter/utils.ts';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.ts';
 import { getOutputPath } from '../rmfilter/repomix.ts';
+import { confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 // LlmPromptStructure and LlmPromptMessage are already defined below
 /** Represents a single message in a structured LLM prompt. */
@@ -35,6 +36,7 @@ export interface ApplyLlmEditsOptions {
   dryRun?: boolean;
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
   interactive?: boolean;
+  applyPartial?: boolean;
   originalPrompt?: string;
   llmRequester?: LlmRequester;
   baseDir?: string;
@@ -357,6 +359,7 @@ export async function applyLlmEdits({
   content,
   writeRoot,
   dryRun,
+  applyPartial,
   mode,
   interactive,
   originalPrompt,
@@ -367,24 +370,47 @@ export async function applyLlmEdits({
   writeRoot ??= await getWriteRoot();
   const effectiveDryRun = dryRun ?? false;
   const effectiveBaseDir = baseDir ?? process.cwd();
+  const effectiveApplyPartial = applyPartial ?? false;
 
-  // Call the internal function to apply edits
+  // Apply in dry run mode first to count up successes and failures
   let results = await applyEditsInternal({
     content,
     writeRoot,
-    dryRun: effectiveDryRun,
+    dryRun: true,
     mode,
   });
 
   if (!results) {
+    // For modes that don't return results (xml, whole), apply directly if no errors detected
+    if (!effectiveDryRun) {
+      await applyEditsInternal({
+        content,
+        writeRoot,
+        dryRun: false,
+        mode,
+      });
+    }
     return;
   }
 
-  // Handle results if available (currently only from udiff and diff modes)
+  // Handle results from dry un (currently only from udiff and diff modes)
   let { successes, failures: remainingFailures } = results;
+  let appliedInitialSuccesses = false;
 
   // --- Retry Logic ---
   if (remainingFailures.length > 0 && llmRequester) {
+    // Right now we always apply initial successes first when retry is enabled
+    log(`Applying ${successes.length} successful edits...`);
+    appliedInitialSuccesses = true;
+    if (!effectiveDryRun) {
+      await applyEditsInternal({
+        content,
+        writeRoot,
+        dryRun: false,
+        mode,
+      });
+    }
+
     log(
       chalk.yellow(
         `Initial application failed for ${remainingFailures.length} edits. Attempting automatic retry via LLM...`
@@ -440,25 +466,76 @@ export async function applyLlmEdits({
   }
   // --- End Retry Logic ---
 
+  // If there are failures, handle according to mode and options
   if (remainingFailures.length > 0) {
     if (interactive) {
-      // Cast needed because resolveFailuresInteractively expects specific failure types
-      await resolveFailuresInteractively(
-        remainingFailures.filter(
-          (f): f is NoMatchFailure | NotUniqueFailure =>
-            f.type === 'noMatch' || f.type === 'notUnique'
-        ),
-        writeRoot,
-        effectiveDryRun
+      log(
+        chalk.yellow(
+          `Found ${successes.length} proper edits and ${remainingFailures.length} errors in the proposed edits.`
+        )
       );
+
+      const applySuccesses = await confirm({
+        message: `Would you like to apply the successful edits before resolving errors?`,
+      });
+
+      if (applySuccesses) {
+        // Apply successful edits
+        if (!effectiveDryRun && successes.length > 0) {
+          log('Applying successful edits...');
+          await applyEditsInternal({
+            content,
+            writeRoot,
+            dryRun: false,
+            mode,
+          });
+        }
+
+        // Proceed to interactive error resolution
+        await resolveFailuresInteractively(
+          remainingFailures.filter(
+            (f): f is NoMatchFailure | NotUniqueFailure =>
+              f.type === 'noMatch' || f.type === 'notUnique'
+          ),
+          writeRoot,
+          effectiveDryRun
+        );
+      } else {
+        log('Exiting without applying any edits.');
+        return;
+      }
     } else {
-      // Non-interactive: Log detailed errors and throw
+      // Non-interactive mode
       printDetailedFailures(remainingFailures);
+      if (effectiveApplyPartial && !appliedInitialSuccesses && successes.length > 0) {
+        log(`Applying ${successes.length} successful edits...`);
+        appliedInitialSuccesses = true;
+        if (!effectiveDryRun && !appliedInitialSuccesses) {
+          appliedInitialSuccesses = true;
+          await applyEditsInternal({
+            content,
+            writeRoot,
+            dryRun: false,
+            mode,
+          });
+        }
+      }
+
       throw new Error(
-        `Failed to apply ${remainingFailures.length} edits. Run with --interactive to resolve.`
+        `Failed to apply ${remainingFailures.length} edits. Run with --interactive to resolve or use --apply-partial to apply successful edits.`
       );
     }
   } else {
+    // No failures, apply all edits if not in dry run
+    if (!effectiveDryRun && successes.length > 0 && !appliedInitialSuccesses) {
+      appliedInitialSuccesses = true;
+      await applyEditsInternal({
+        content,
+        writeRoot,
+        dryRun: false,
+        mode,
+      });
+    }
     log('All edits applied successfully.');
   }
 
