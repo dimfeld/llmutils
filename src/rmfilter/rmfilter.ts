@@ -2,6 +2,7 @@
 import clipboard from 'clipboardy';
 import { globby } from 'globby';
 import { encode } from 'gpt-tokenizer';
+import micromatch from 'micromatch';
 import path from 'node:path';
 import { grepFor } from '../common/file_finder.ts';
 import { Resolver } from '../dependency_graph/resolve.ts';
@@ -110,7 +111,8 @@ async function processWithImports(
   baseDir: string,
   walker: ImportWalker,
   files: string[],
-  allImports: boolean
+  allImports: boolean,
+  ignoreGlobs?: string[]
 ): Promise<string[]> {
   const results = new Set<string>();
   await Promise.all(
@@ -128,7 +130,17 @@ async function processWithImports(
   for (let f of files) {
     results.add(f);
   }
-  return Array.from(results);
+
+  let filteredResults = Array.from(results);
+  if (ignoreGlobs?.length) {
+    // Convert absolute paths to relative paths for micromatch
+    const relativePaths = filteredResults.map((file) => path.relative(baseDir, file));
+    const filteredRelativePaths = micromatch.not(relativePaths, ignoreGlobs);
+    // Convert back to absolute paths
+    filteredResults = filteredRelativePaths.map((file) => path.resolve(baseDir, file));
+  }
+
+  return filteredResults;
 }
 
 async function getNFilesBySize(files: string[], nLargest: number, nSmallest: number) {
@@ -168,7 +180,7 @@ async function processCommand(
         return path.join(gitRoot, p.slice(5));
       } else if (p.startsWith('pkg:') || p.startsWith('package:')) {
         const prefixLength = p.startsWith('pkg:') ? 4 : 8;
-        const pkgPath = await resolver.resolvePackageJson(baseDir);
+        const pkgPath = await walker.resolver.resolvePackageJson(baseDir);
         return path.join(pkgPath.path, p.slice(prefixLength));
       }
       return p;
@@ -245,6 +257,18 @@ async function processCommand(
     positionals = positionals.map((p) => path.join(globBase, p));
   }
 
+  let ignoreGlobs = await Promise.all(
+    ignore?.map(async (p) => {
+      let isDir = await Bun.file(p)
+        .stat()
+        .then((d) => d.isDirectory())
+        .catch(() => false);
+
+      let replaced = p.replaceAll(/\[|\]/g, '\\$&');
+      return isDir ? `${replaced}/**` : replaced;
+    }) || []
+  );
+
   let hasGlobs = positionals.some((p) => p.includes('*') || p.includes('?')) || ignore?.length;
   if (hasGlobs) {
     if (positionals.length === 0) {
@@ -262,18 +286,6 @@ async function processCommand(
         let replaced = p.replaceAll(/\[|\]/g, '\\$&');
         return isDir ? `${replaced}/**` : replaced;
       })
-    );
-
-    let ignoreGlobs = await Promise.all(
-      ignore?.map(async (p) => {
-        let isDir = await Bun.file(p)
-          .stat()
-          .then((d) => d.isDirectory())
-          .catch(() => false);
-
-        let replaced = p.replaceAll(/\[|\]/g, '\\$&');
-        return isDir ? `${replaced}/**` : replaced;
-      }) || []
     );
 
     files = await globby(withDirGlobs, {
@@ -345,9 +357,9 @@ async function processCommand(
   // This needs careful handling if baseDir != gitRoot. For now, assume baseDir is sufficient context.
   if (files) {
     if (cmdValues['with-imports']) {
-      files = await processWithImports(baseDir, walker, files, false);
+      files = await processWithImports(baseDir, walker, files, false, ignoreGlobs);
     } else if (cmdValues['with-all-imports']) {
-      files = await processWithImports(baseDir, walker, files, true);
+      files = await processWithImports(baseDir, walker, files, true, ignoreGlobs);
     }
 
     // Handle --with-tests: for each file NAME.EXT, try to add NAME.test.EXT

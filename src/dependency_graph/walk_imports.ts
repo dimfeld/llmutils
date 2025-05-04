@@ -20,7 +20,7 @@ interface FileInfo {
 
 export class ImportWalker {
   private extractor: Extractor;
-  private resolver: Resolver;
+  resolver: Resolver;
   private fileInfoCache: Map<string, FileInfo> = new Map();
 
   constructor(extractor: Extractor, resolver: Resolver) {

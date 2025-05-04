@@ -4,6 +4,7 @@
 - Add ability to apply a "not unique" edit failure to all matching locations
 - autoexamples: Allow the search term and the --example argument to be different
 - Add `--with-tests` command option to include test files matching each source file
+- Apply ignore globs to files brought in by import analysis
 
 # May 1, 2025
 
