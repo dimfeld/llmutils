@@ -644,6 +644,7 @@ export async function processUnifiedDiff({
   content,
   writeRoot,
   dryRun,
+  suppressLogging = false,
 }: ProcessFileOptions): Promise<EditResult[]> {
   const rawEdits = findDiffs(content);
 
@@ -661,7 +662,9 @@ export async function processUnifiedDiff({
     }
 
     if (!resolvedPath) {
-      warn('Skipping hunk with no associated file path:', hunk.join(''));
+      if (!suppressLogging) {
+        warn('Skipping hunk with no associated file path:', hunk.join(''));
+      }
       continue;
     }
     // Normalize path separators for consistency
@@ -669,15 +672,17 @@ export async function processUnifiedDiff({
     edits.push({ filePath: resolvedPath, hunk });
   }
 
-  const results = await applyEdits(edits, writeRoot, dryRun);
+  const results = await applyEdits(edits, writeRoot, dryRun, suppressLogging);
 
   // Log summary based on results
   const successCount = results.filter((r) => r.type === 'success').length;
   const noMatchCount = results.filter((r) => r.type === 'noMatch').length;
   const notUniqueCount = results.filter((r) => r.type === 'notUnique').length;
-  log(
-    `Processing complete. Success: ${successCount}, No Match: ${noMatchCount}, Not Unique: ${notUniqueCount}`
-  );
+  if (!suppressLogging) {
+    log(
+      `Processing complete. Success: ${successCount}, No Match: ${noMatchCount}, Not Unique: ${notUniqueCount}`
+    );
+  }
 
   return results;
 }
@@ -685,7 +690,8 @@ export async function processUnifiedDiff({
 async function applyEdits(
   edits: EditHunk[],
   rootDir: string,
-  dryRun: boolean = false
+  dryRun: boolean = false,
+  suppressLogging: boolean = false
 ): Promise<EditResult[]> {
   const results: EditResult[] = [];
 
@@ -713,11 +719,13 @@ async function applyEdits(
       if (await file.exists()) {
         currentContent = await file.text();
       } else if (filePath.includes(' ')) {
-        log(`Skipping diff for ${filePath}: Nonexistent file looks like a comment`);
+        if (!suppressLogging) {
+          log(`Skipping diff for ${filePath}: Nonexistent file looks like a comment`);
+        }
         continue;
       }
     } catch (e) {
-      error(`Error accessing file ${filePath}: ${e as Error}`);
+      if (!suppressLogging) error(`Error accessing file ${filePath}: ${e as Error}`);
       // TODO: How to report file access errors? Add a new EditResult type?
       // For now, log and skip, not adding to results.
       // Or maybe create a generic failure? Let's skip for now.
@@ -735,7 +743,7 @@ async function applyEdits(
         originalText,
         updatedText,
       });
-      log(`Applying diff to ${filePath}`);
+      if (!suppressLogging) log(`Applying diff to ${filePath}`);
       if (!dryRun) {
         await secureWrite(rootDir, filePath, result);
       }

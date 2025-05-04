@@ -125,8 +125,7 @@ describe('applyEditsInternal', () => {
     });
 
     expect(results).toBeDefined();
-    expect(results?.length).toBeGreaterThan(0);
-    expect(results?.[0].type).toBe('success');
+    expect(results?.successes.length).toBeGreaterThan(0);
 
     const updatedContent = await Bun.file(testFile).text();
     expect(updatedContent).toBe('Modified content\nSecond line\n');
@@ -153,8 +152,7 @@ Modified content
     });
 
     expect(results).toBeDefined();
-    expect(results?.length).toBeGreaterThan(0);
-    expect(results?.[0].type).toBe('success');
+    expect(results?.successes.length).toBeGreaterThan(0);
 
     const updatedContent = await Bun.file(testFile).text();
     expect(updatedContent).toBe('Modified content\nSecond line\n');
@@ -232,7 +230,7 @@ Second line
     });
 
     expect(results).toBeDefined();
-    expect(results?.length).toBeGreaterThan(0);
+    expect(results?.successes.length).toBeGreaterThan(0);
 
     const updatedContent = await Bun.file(testFile).text();
     expect(updatedContent).toBe('Modified content\nSecond line\n');
@@ -259,7 +257,7 @@ Modified content
     });
 
     expect(results).toBeDefined();
-    expect(results?.length).toBeGreaterThan(0);
+    expect(results?.successes.length).toBeGreaterThan(0);
 
     const updatedContent = await Bun.file(testFile).text();
     expect(updatedContent).toBe('Modified content\nSecond line\n');
@@ -361,8 +359,8 @@ Some other content
 
     // Verify we have the expected not unique failures
     expect(initialResults).toBeDefined();
-    expect(initialResults?.length).toBeGreaterThan(0);
-    expect(initialResults?.some((r) => r.type === 'notUnique')).toBe(true);
+    expect(initialResults?.failures.length).toBeGreaterThan(0);
+    expect(initialResults?.failures.some((r) => r.type === 'notUnique')).toBe(true);
 
     // Now apply the same diff two more times to match the number of locations
     const diffContent2 = diffContent + '\n\n' + diffContent + '\n\n' + diffContent;
@@ -373,18 +371,10 @@ Some other content
       mode: 'udiff',
     });
 
-    // Now we should have 3 not unique failures (one for each location)
+    // Now they should all be successful because of the resolution.
     expect(results).toBeDefined();
-    expect(results?.filter((r) => r.type === 'notUnique').length).toBe(3);
-
-    // Apply the full applyLlmEdits function which should auto-handle the not unique failures
-    await applyLlmEdits({
-      content: diffContent2,
-      writeRoot: tempDir,
-      dryRun: false,
-      mode: 'udiff',
-      interactive: false,
-    });
+    expect(results?.successes.length).toEqual(3);
+    expect(results?.failures.length).toEqual(0);
 
     // Check that all instances were updated
     const updatedContent = await Bun.file(testFile).text();
@@ -427,8 +417,8 @@ describe('applyLlmEdits', () => {
     });
 
     expect(result).toBeDefined();
-    expect(result?.allAppliedResults.length).toBe(1);
-    expect(result?.remainingFailures.length).toBe(0);
+    expect(result?.successes.length).toBe(1);
+    expect(result?.failures.length).toBe(0);
 
     const updatedContent = await Bun.file(testFile).text();
     expect(updatedContent).toBe('Modified content\nSecond line\n');
@@ -456,7 +446,146 @@ describe('applyLlmEdits', () => {
         mode: 'udiff',
         interactive: false,
       })
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Failed to apply 1 edits/);
+  });
+
+  test('applies successful edits with --apply-partial despite failures', async () => {
+    const testFile1 = path.join(tempDir, 'test1.txt');
+    const testFile2 = path.join(tempDir, 'test2.txt');
+    await writeFile(testFile1, 'Original content\nSecond line\n');
+    await writeFile(testFile2, 'Different content\nSecond line\n');
+
+    const diffContent = `
+--- test1.txt
++++ test1.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+--- test2.txt
++++ test2.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+`;
+
+    await expect(
+      applyLlmEdits({
+        content: diffContent,
+        writeRoot: tempDir,
+        dryRun: false,
+        mode: 'udiff',
+        interactive: false,
+        applyPartial: true,
+      })
+    ).rejects.toThrow(/Failed to apply 1 edits/);
+
+    const updatedContent1 = await Bun.file(testFile1).text();
+    expect(updatedContent1).toBe('Modified content\nSecond line\n');
+    const updatedContent2 = await Bun.file(testFile2).text();
+    expect(updatedContent2).toBe('Different content\nSecond line\n');
+  });
+
+  test('prompts to apply successful edits in interactive mode', async () => {
+    const testFile1 = path.join(tempDir, 'test1.txt');
+    const testFile2 = path.join(tempDir, 'test2.txt');
+    await writeFile(testFile1, 'Original content\nSecond line\n');
+    await writeFile(testFile2, 'Different content\nSecond line\n');
+
+    const diffContent = `
+--- test1.txt
++++ test1.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+--- test2.txt
++++ test2.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+`;
+
+    let calledConfirm = false;
+    await mock.module('@inquirer/prompts', () => ({
+      confirm: () => {
+        calledConfirm = true;
+        return Promise.resolve(true);
+      },
+      select: () => {
+        return Promise.resolve(-1);
+      },
+    }));
+
+    const result = await applyLlmEdits({
+      content: diffContent,
+      writeRoot: tempDir,
+      dryRun: false,
+      mode: 'udiff',
+      interactive: true,
+    });
+
+    expect(result).toBeDefined();
+    expect(result?.successes.length).toBe(1);
+    expect(result?.failures.length).toBe(1);
+    expect(calledConfirm).toBe(true);
+
+    const updatedContent1 = await Bun.file(testFile1).text();
+    expect(updatedContent1).toBe('Modified content\nSecond line\n');
+    const updatedContent2 = await Bun.file(testFile2).text();
+    expect(updatedContent2).toBe('Different content\nSecond line\n');
+  });
+
+  test('exits without applying edits in interactive mode if user declines', async () => {
+    const testFile1 = path.join(tempDir, 'test1.txt');
+    const testFile2 = path.join(tempDir, 'test2.txt');
+    await writeFile(testFile1, 'Original content\nSecond line\n');
+    await writeFile(testFile2, 'Different content\nSecond line\n');
+
+    const diffContent = `
+--- test1.txt
++++ test1.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+--- test2.txt
++++ test2.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+`;
+
+    // Mock stdin to simulate user input 'n'
+    let calledConfirm = false;
+    await mock.module('@inquirer/prompts', () => ({
+      confirm: () => {
+        calledConfirm = true;
+        return Promise.resolve(false);
+      },
+      select: () => {
+        return Promise.resolve(-1);
+      },
+    }));
+
+    const result = await applyLlmEdits({
+      content: diffContent,
+      writeRoot: tempDir,
+      dryRun: false,
+      mode: 'udiff',
+      interactive: true,
+    });
+
+    expect(result).toBeUndefined();
+    expect(calledConfirm).toBe(true);
+
+    const updatedContent1 = await Bun.file(testFile1).text();
+    expect(updatedContent1).toBe('Original content\nSecond line\n');
+    const updatedContent2 = await Bun.file(testFile2).text();
+    expect(updatedContent2).toBe('Different content\nSecond line\n');
   });
 
   test('attempts LLM retry when provided with llmRequester', async () => {
@@ -501,11 +630,12 @@ describe('applyLlmEdits', () => {
       llmRequester: mockLlmRequester,
       originalPrompt,
       baseDir: tempDir,
+      applyPartial: true,
     });
 
     expect(result).toBeDefined();
-    expect(result?.allAppliedResults.length).toBe(1);
-    expect(result?.remainingFailures.length).toBe(0);
+    expect(result?.successes.length).toBe(1);
+    expect(result?.failures.length).toBe(0);
     expect(mockLlmRequester).toHaveBeenCalled();
 
     const updatedContent = await Bun.file(testFile).text();

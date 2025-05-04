@@ -24,6 +24,7 @@ if (args.includes('--help')) {
   log('  --debug           Enable debug logging');
   log('  --interactive     Enable interactive mode for resolving edit failures');
   log('  --retry           Enable automatic retry via LLM on failure (CLI support limited)');
+  log('  --partial-apply   Apply successes even if there are failures');
   log('  --original-prompt <file> Path to the original prompt file for retry context');
   log('  --dry-run         Dry run - do not apply changes');
   process.exit(0);
@@ -33,6 +34,7 @@ const useClipboard = args.includes('--clipboard');
 const useStdin = !useClipboard && (args.includes('--stdin') || !process.stdin.isTTY);
 const dryRun = args.includes('--dry-run');
 const interactive = args.includes('--interactive');
+const applyPartial = args.includes('--partial-apply');
 const retry = args.includes('--retry');
 const cwdIndex = args.findIndex((arg) => arg == '--cwd');
 const modeIndex = args.findIndex((arg) => arg == '--mode');
@@ -71,6 +73,7 @@ applyLlmEdits({
   dryRun,
   mode: modeValue as 'diff' | 'udiff' | 'xml' | 'whole',
   interactive,
+  applyPartial,
   originalPrompt: originalPromptContent,
   llmRequester: undefined,
   // The --retry flag enables the *logic* in applyLlmEdits, but without an llmRequester, it can't call the LLM.

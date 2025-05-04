@@ -2,6 +2,7 @@ export interface ProcessFileOptions {
   content: string;
   writeRoot: string;
   dryRun?: boolean;
+  suppressLogging?: boolean;
 }
 
 export interface MatchLocation {

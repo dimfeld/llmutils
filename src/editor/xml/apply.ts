@@ -13,7 +13,8 @@ export interface FileChange {
 export async function applyFileChanges(
   change: FileChange,
   projectDirectory: string,
-  dryRun: boolean = false
+  dryRun: boolean = false,
+  suppressLogging: boolean = false
 ) {
   const { file_operation, file_path, file_code } = change;
   // file_path should be relative to projectDirectory
@@ -31,21 +32,22 @@ export async function applyFileChanges(
       if (!file_code) {
         throw new Error(`No file_code provided for ${file_operation} operation on ${file_path}`);
       }
-      log(`Applying diff to ${file_path}`);
+      if (!suppressLogging) log(`Applying diff to ${file_path}`);
       if (!dryRun) {
         await secureWrite(projectDirectory, file_path, file_code);
       }
       break;
 
     case 'DELETE':
-      log(`Applying diff to ${file_path}: Deleting file`);
+      if (!suppressLogging) log(`Applying diff to ${file_path}: Deleting file`);
       if (!dryRun) {
         await secureRm(projectDirectory, file_path);
       }
       break;
 
     default:
-      warn(`Skipping diff for ${file_path}: Unknown file_operation "${file_operation}"`);
+      if (!suppressLogging)
+        warn(`Skipping diff for ${file_path}: Unknown file_operation "${file_operation}"`);
       break;
   }
 }

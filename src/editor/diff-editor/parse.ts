@@ -14,9 +14,14 @@ interface Edit {
 
 const fence = '```';
 
-export async function processSearchReplace({ content, writeRoot, dryRun }: ProcessFileOptions) {
+export async function processSearchReplace({
+  content,
+  writeRoot,
+  dryRun,
+  suppressLogging = false,
+}: ProcessFileOptions) {
   const edits = getEdits(content, writeRoot);
-  return await applyEdits(edits, writeRoot, dryRun);
+  return await applyEdits(edits, writeRoot, dryRun, suppressLogging);
 }
 
 function getEdits(content: string, rootDir: string): Edit[] {
@@ -34,7 +39,8 @@ function getEdits(content: string, rootDir: string): Edit[] {
 async function applyEdits(
   edits: Edit[],
   rootDir: string,
-  dryRun: boolean = false
+  dryRun: boolean = false,
+  suppressLogging: boolean = false
 ): Promise<EditResult[]> {
   const results: EditResult[] = [];
 
@@ -50,13 +56,15 @@ async function applyEdits(
     if (await file.exists()) {
       fileContent = await file.text();
     } else if (filePath.includes(' ')) {
-      log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
+      if (!suppressLogging) {
+        log(`Skipping nonexistent file that looks more like a comment: ${filePath}`);
+      }
       continue;
     }
     const newContent = await doReplace(filePath, fileContent, original, updated);
 
     if (newContent !== null) {
-      log(`Applying diff to ${filePath}`);
+      if (!suppressLogging) log(`Applying diff to ${filePath}`);
       if (!dryRun) {
         await secureWrite(rootDir, filePath, newContent);
       }
