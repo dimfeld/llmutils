@@ -30,6 +30,8 @@ export type LlmPromptStructure = LlmPromptMessage[];
 
 /** Type definition for the callback function used to request LLM completions. */
 export type LlmRequester = (prompt: LlmPromptStructure) => Promise<string>;
+import clipboard from 'clipboardy';
+
 export interface ApplyLlmEditsOptions {
   content: string;
   writeRoot?: string;
@@ -40,6 +42,7 @@ export interface ApplyLlmEditsOptions {
   originalPrompt?: string;
   llmRequester?: LlmRequester;
   baseDir?: string;
+  copyRetryPrompt?: boolean;
 }
 
 /**
@@ -193,6 +196,18 @@ export async function getOriginalRequestContext(
   }
 }
 
+function constructRetryMessage(failures: (NoMatchFailure | NotUniqueFailure)[]): string {
+  const formattedFailures = formatFailuresForLlm(failures);
+
+  const finalUserMessageContent = `The previous attempt to apply the edits resulted in the following errors:
+
+${formattedFailures}
+
+Please review the original request context, your previous response, and the errors listed above. Provide a corrected set of edits in the same format as before, addressing these issues. Ensure the SEARCH blocks exactly match the current file content where the changes should be applied, or provide correct unified diffs.`;
+
+  return finalUserMessageContent;
+}
+
 /**
  * Constructs the structured prompt for requesting the LLM to retry failed edits.
  * @param originalRequestContext The original prompt or context provided to the LLM.
@@ -205,18 +220,12 @@ function constructRetryPrompt(
   failedLlmOutput: string,
   failures: (NoMatchFailure | NotUniqueFailure)[]
 ): LlmPromptStructure {
-  const formattedFailures = formatFailuresForLlm(failures);
-
-  const finalUserMessageContent = `The previous attempt to apply the edits resulted in the following errors:
-
-${formattedFailures}
-
-Please review the original request context, your previous response, and the errors listed above. Provide a corrected set of edits in the same format as before, addressing these issues. Ensure the SEARCH blocks exactly match the current file content where the changes should be applied, or provide correct unified diffs.`;
+  const retryMessage = constructRetryMessage(failures);
 
   const promptStructure: LlmPromptStructure = [
     { role: 'user', content: originalRequestContext },
     { role: 'assistant', content: failedLlmOutput },
-    { role: 'user', content: finalUserMessageContent },
+    { role: 'user', content: retryMessage },
   ];
 
   debugLog('Constructed retry prompt structure:', promptStructure);
@@ -366,7 +375,10 @@ export async function applyLlmEdits({
   originalPrompt,
   baseDir = process.cwd(),
   llmRequester,
-}: ApplyLlmEditsOptions) {
+  copyRetryPrompt = false,
+}: ApplyLlmEditsOptions): Promise<
+  { successes: EditResult[]; failures: FailureResult[] } | undefined
+> {
   writeRoot ??= await getWriteRoot();
 
   // Apply in dry run mode first to count up successes and failures
@@ -505,6 +517,7 @@ export async function applyLlmEdits({
     } else {
       // Non-interactive mode
       printDetailedFailures(remainingFailures);
+
       if (applyPartial && !appliedInitialSuccesses && successes.length > 0) {
         log(`Applying ${successes.length} successful edits...`);
         appliedInitialSuccesses = true;
@@ -518,9 +531,19 @@ export async function applyLlmEdits({
         }
       }
 
-      throw new Error(
-        `Failed to apply ${remainingFailures.length} edits. Run with --interactive to resolve or use --apply-partial to apply successful edits.`
-      );
+      log(chalk.red(`Failed to apply ${remainingFailures.length} edits.`));
+      if (copyRetryPrompt) {
+        const retryMessage = constructRetryMessage(remainingFailures);
+        await clipboard.write(retryMessage);
+        log(chalk.green('Retry prompt copied to clipboard.'));
+      } else {
+        log(`Resolution options:`);
+        log(`  --interactive: Interactively resolve errors`);
+        log(`  --apply-partial: Apply successful edits before resolving errors`);
+        log(`  --copy-retry-prompt, --cr: Copy the retry prompt to the clipboard`);
+      }
+
+      throw new Error(`Failed to apply ${remainingFailures.length} edits.`);
     }
   } else {
     // No failures, apply all edits if not in dry run
