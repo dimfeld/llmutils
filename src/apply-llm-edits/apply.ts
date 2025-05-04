@@ -76,7 +76,7 @@ export async function applyEditsInternal({
   writeRoot: string;
   dryRun: boolean;
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
-}): Promise<EditResult[] | undefined> {
+}): Promise<{ successes: EditResult[]; failures: FailureResult[] } | undefined> {
   const xmlMode = mode === 'xml' || (!mode && content.includes('<code_changes>'));
   const diffMode = mode === 'diff' || (!mode && content.includes('<<<<<<< SEARCH'));
   const udiffMode =
@@ -85,12 +85,13 @@ export async function applyEditsInternal({
       (content.startsWith('--- ') || content.includes('```diff')) &&
       content.includes('@@'));
 
+  let results: EditResult[];
   if (udiffMode) {
     log('Processing as Unified Diff...');
-    return await processUnifiedDiff({ content, writeRoot, dryRun });
+    results = await processUnifiedDiff({ content, writeRoot, dryRun });
   } else if (diffMode) {
     log('Processing as Search/Replace Diff...');
-    return await processSearchReplace({ content, writeRoot, dryRun });
+    results = await processSearchReplace({ content, writeRoot, dryRun });
   } else if (xmlMode) {
     log('Processing as XML Whole Files...');
     await processXmlContents({ content, writeRoot, dryRun });
@@ -100,6 +101,18 @@ export async function applyEditsInternal({
     await processRawFiles({ content, writeRoot, dryRun });
     return undefined;
   }
+
+  const initialApplication = await handleAutoApplyNotUnique(results, writeRoot, dryRun);
+  let failures = initialApplication.remainingFailures;
+  let successes = [
+    ...results.filter((r) => r.type === 'success'),
+    ...initialApplication.autoApplied,
+  ];
+
+  return {
+    successes,
+    failures,
+  };
 }
 
 /**
@@ -363,113 +376,96 @@ export async function applyLlmEdits({
     mode,
   });
 
-  let remainingFailures: FailureResult[] = [];
-  let allAppliedResults: EditResult[] = [];
+  if (!results) {
+    return;
+  }
 
   // Handle results if available (currently only from udiff and diff modes)
-  if (results) {
-    const initialApplication = await handleAutoApplyNotUnique(results, writeRoot, effectiveDryRun);
-    remainingFailures = initialApplication.remainingFailures;
-    allAppliedResults = [
-      ...results.filter((r) => r.type === 'success'),
-      ...initialApplication.autoApplied,
-    ];
+  let { successes, failures: remainingFailures } = results;
 
-    // --- Retry Logic ---
-    if (remainingFailures.length > 0 && llmRequester) {
-      log(
-        chalk.yellow(
-          `Initial application failed for ${remainingFailures.length} edits. Attempting automatic retry via LLM...`
-        )
+  // --- Retry Logic ---
+  if (remainingFailures.length > 0 && llmRequester) {
+    log(
+      chalk.yellow(
+        `Initial application failed for ${remainingFailures.length} edits. Attempting automatic retry via LLM...`
+      )
+    );
+
+    let originalContext: string | null = null;
+    try {
+      originalContext = await getOriginalRequestContext(
+        { content, originalPrompt },
+        await getGitRoot(effectiveBaseDir),
+        effectiveBaseDir
       );
+    } catch (err: any) {
+      error(chalk.red('Failed to retrieve original context for retry:'), err.message);
+      warn('Proceeding without LLM retry.');
+    }
 
-      let originalContext: string | null = null;
+    if (originalContext) {
+      const retryPrompt = constructRetryPrompt(originalContext, content, remainingFailures);
+      let retryResponseContent: string | null = null;
       try {
-        originalContext = await getOriginalRequestContext(
-          { content, originalPrompt },
-          await getGitRoot(effectiveBaseDir),
-          effectiveBaseDir
-        );
+        log('Sending request to LLM for corrections...');
+        retryResponseContent = await llmRequester(retryPrompt);
+        log('Received retry response from LLM.');
       } catch (err: any) {
-        error(chalk.red('Failed to retrieve original context for retry:'), err.message);
-        warn('Proceeding without LLM retry.');
+        error(chalk.red('LLM request for retry failed:'), err.message);
+        warn('Proceeding without applying LLM retry response.');
       }
 
-      if (originalContext) {
-        const retryPrompt = constructRetryPrompt(originalContext, content, remainingFailures);
-        let retryResponseContent: string | null = null;
-        try {
-          log('Sending request to LLM for corrections...');
-          retryResponseContent = await llmRequester(retryPrompt);
-          log('Received retry response from LLM.');
-        } catch (err: any) {
-          error(chalk.red('LLM request for retry failed:'), err.message);
-          warn('Proceeding without applying LLM retry response.');
-        }
-
-        if (retryResponseContent) {
-          log('Applying edits from LLM retry response...');
-          const retryResults = await applyEditsInternal({
-            content: retryResponseContent,
-            writeRoot,
-            dryRun: effectiveDryRun,
-            mode,
-          });
-
-          if (retryResults) {
-            const retryApplication = await handleAutoApplyNotUnique(
-              retryResults,
-              writeRoot,
-              effectiveDryRun
-            );
-            const finalFailures = retryApplication.remainingFailures;
-            const retrySuccessCount = retryResults.length - finalFailures.length;
-
-            log(
-              `Retry attempt finished. ${retrySuccessCount} edits applied successfully, ${finalFailures.length} failures remain.`
-            );
-            remainingFailures = finalFailures;
-            // Add successfully applied retry results to the overall list
-            allAppliedResults = allAppliedResults.concat(
-              retryResults.filter((r) => r.type === 'success'),
-              retryApplication.autoApplied
-            );
-          } else {
-            log('Retry response did not yield processable results (e.g., whole file mode).');
-            // Keep the original remainingFailures
-          }
-        }
-      }
-    }
-    // --- End Retry Logic ---
-
-    if (remainingFailures.length > 0) {
-      if (interactive) {
-        // Cast needed because resolveFailuresInteractively expects specific failure types
-        await resolveFailuresInteractively(
-          remainingFailures.filter(
-            (f): f is NoMatchFailure | NotUniqueFailure =>
-              f.type === 'noMatch' || f.type === 'notUnique'
-          ),
+      if (retryResponseContent) {
+        log('Applying edits from LLM retry response...');
+        const retryResults = await applyEditsInternal({
+          content: retryResponseContent,
           writeRoot,
-          effectiveDryRun
-        );
-      } else {
-        // Non-interactive: Log detailed errors and throw
-        printDetailedFailures(remainingFailures);
-        throw new Error(
-          `Failed to apply ${remainingFailures.length} edits. Run with --interactive to resolve.`
-        );
-      }
-    } else {
-      log('All edits applied successfully.');
-    }
+          dryRun: effectiveDryRun,
+          mode,
+        });
 
-    return {
-      allAppliedResults,
-      remainingFailures,
-    };
+        if (retryResults) {
+          const finalFailures = retryResults.failures;
+          const retrySuccessCount = retryResults.successes.length;
+
+          log(
+            `Retry attempt finished. ${retrySuccessCount} edits applied successfully, ${finalFailures.length} failures remain.`
+          );
+          remainingFailures = finalFailures;
+          // Add successfully applied retry results to the overall list
+          successes.push(...retryResults.successes);
+        }
+      }
+    }
   }
+  // --- End Retry Logic ---
+
+  if (remainingFailures.length > 0) {
+    if (interactive) {
+      // Cast needed because resolveFailuresInteractively expects specific failure types
+      await resolveFailuresInteractively(
+        remainingFailures.filter(
+          (f): f is NoMatchFailure | NotUniqueFailure =>
+            f.type === 'noMatch' || f.type === 'notUnique'
+        ),
+        writeRoot,
+        effectiveDryRun
+      );
+    } else {
+      // Non-interactive: Log detailed errors and throw
+      printDetailedFailures(remainingFailures);
+      throw new Error(
+        `Failed to apply ${remainingFailures.length} edits. Run with --interactive to resolve.`
+      );
+    }
+  } else {
+    log('All edits applied successfully.');
+  }
+
+  return {
+    successes,
+    failures: remainingFailures,
+  };
 }
 
 export async function getWriteRoot(cwd?: string) {
