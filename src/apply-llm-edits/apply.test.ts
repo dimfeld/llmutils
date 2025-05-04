@@ -446,7 +446,133 @@ describe('applyLlmEdits', () => {
         mode: 'udiff',
         interactive: false,
       })
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Failed to apply 1 edits/);
+  });
+
+  test('applies successful edits with --apply-partial despite failures', async () => {
+    const testFile1 = path.join(tempDir, 'test1.txt');
+    const testFile2 = path.join(tempDir, 'test2.txt');
+    await writeFile(testFile1, 'Original content\nSecond line\n');
+    await writeFile(testFile2, 'Different content\nSecond line\n');
+
+    const diffContent = `
+--- test1.txt
++++ test1.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+--- test2.txt
++++ test2.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+`;
+
+    const result = await applyLlmEdits({
+      content: diffContent,
+      writeRoot: tempDir,
+      dryRun: false,
+      mode: 'udiff',
+      interactive: false,
+      applyPartial: true,
+    });
+
+    expect(result).toBeDefined();
+    expect(result?.successes.length).toBe(1);
+    expect(result?.failures.length).toBe(1);
+
+    const updatedContent1 = await Bun.file(testFile1).text();
+    expect(updatedContent1).toBe('Modified content\nSecond line\n');
+    const updatedContent2 = await Bun.file(testFile2).text();
+    expect(updatedContent2).toBe('Different content\nSecond line\n');
+  });
+
+  test('prompts to apply successful edits in interactive mode', async () => {
+    const testFile1 = path.join(tempDir, 'test1.txt');
+    const testFile2 = path.join(tempDir, 'test2.txt');
+    await writeFile(testFile1, 'Original content\nSecond line\n');
+    await writeFile(testFile2, 'Different content\nSecond line\n');
+
+    const diffContent = `
+--- test1.txt
++++ test1.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+--- test2.txt
++++ test2.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+`;
+
+    // Mock stdin to simulate user input 'y'
+    const mockStdin = mock(() => Promise.resolve('y'));
+    Bun.stdin.text = mockStdin;
+
+    const result = await applyLlmEdits({
+      content: diffContent,
+      writeRoot: tempDir,
+      dryRun: false,
+      mode: 'udiff',
+      interactive: true,
+    });
+
+    expect(result).toBeDefined();
+    expect(result?.successes.length).toBe(1);
+    expect(result?.failures.length).toBe(1);
+    expect(mockStdin).toHaveBeenCalled();
+
+    const updatedContent1 = await Bun.file(testFile1).text();
+    expect(updatedContent1).toBe('Modified content\nSecond line\n');
+    const updatedContent2 = await Bun.file(testFile2).text();
+    expect(updatedContent2).toBe('Different content\nSecond line\n');
+  });
+
+  test('exits without applying edits in interactive mode if user declines', async () => {
+    const testFile1 = path.join(tempDir, 'test1.txt');
+    const testFile2 = path.join(tempDir, 'test2.txt');
+    await writeFile(testFile1, 'Original content\nSecond line\n');
+    await writeFile(testFile2, 'Different content\nSecond line\n');
+
+    const diffContent = `
+--- test1.txt
++++ test1.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+--- test2.txt
++++ test2.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+`;
+
+    // Mock stdin to simulate user input 'n'
+    const mockStdin = mock(() => Promise.resolve('n'));
+    Bun.stdin.text = mockStdin;
+
+    const result = await applyLlmEdits({
+      content: diffContent,
+      writeRoot: tempDir,
+      dryRun: false,
+      mode: 'udiff',
+      interactive: true,
+    });
+
+    expect(result).toBeUndefined();
+    expect(mockStdin).toHaveBeenCalled();
+
+    const updatedContent1 = await Bun.file(testFile1).text();
+    expect(updatedContent1).toBe('Original content\nSecond line\n');
+    const updatedContent2 = await Bun.file(testFile2).text();
+    expect(updatedContent2).toBe('Different content\nSecond line\n');
   });
 
   test('attempts LLM retry when provided with llmRequester', async () => {
@@ -491,6 +617,7 @@ describe('applyLlmEdits', () => {
       llmRequester: mockLlmRequester,
       originalPrompt,
       baseDir: tempDir,
+      applyPartial: true,
     });
 
     expect(result).toBeDefined();

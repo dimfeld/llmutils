@@ -73,10 +73,12 @@ export async function applyEditsInternal({
   writeRoot,
   dryRun,
   mode,
+  suppressLogging = false,
 }: {
   content: string;
   writeRoot: string;
   dryRun: boolean;
+  suppressLogging?: boolean;
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
 }): Promise<{ successes: EditResult[]; failures: FailureResult[] } | undefined> {
   const xmlMode = mode === 'xml' || (!mode && content.includes('<code_changes>'));
@@ -358,31 +360,28 @@ async function handleAutoApplyNotUnique(
 export async function applyLlmEdits({
   content,
   writeRoot,
-  dryRun,
-  applyPartial,
+  dryRun = false,
+  applyPartial = false,
   mode,
-  interactive,
+  interactive = false,
   originalPrompt,
-  baseDir,
+  baseDir = process.cwd(),
   llmRequester,
 }: ApplyLlmEditsOptions) {
-  // Resolve writeRoot early as it's needed for interactive mode too
   writeRoot ??= await getWriteRoot();
-  const effectiveDryRun = dryRun ?? false;
-  const effectiveBaseDir = baseDir ?? process.cwd();
-  const effectiveApplyPartial = applyPartial ?? false;
 
   // Apply in dry run mode first to count up successes and failures
   let results = await applyEditsInternal({
     content,
     writeRoot,
     dryRun: true,
+    suppressLogging: true,
     mode,
   });
 
   if (!results) {
     // For modes that don't return results (xml, whole), apply directly if no errors detected
-    if (!effectiveDryRun) {
+    if (!dryRun) {
       await applyEditsInternal({
         content,
         writeRoot,
@@ -402,7 +401,7 @@ export async function applyLlmEdits({
     // Right now we always apply initial successes first when retry is enabled
     log(`Applying ${successes.length} successful edits...`);
     appliedInitialSuccesses = true;
-    if (!effectiveDryRun) {
+    if (!dryRun) {
       await applyEditsInternal({
         content,
         writeRoot,
@@ -421,8 +420,8 @@ export async function applyLlmEdits({
     try {
       originalContext = await getOriginalRequestContext(
         { content, originalPrompt },
-        await getGitRoot(effectiveBaseDir),
-        effectiveBaseDir
+        await getGitRoot(baseDir),
+        baseDir
       );
     } catch (err: any) {
       error(chalk.red('Failed to retrieve original context for retry:'), err.message);
@@ -446,7 +445,7 @@ export async function applyLlmEdits({
         const retryResults = await applyEditsInternal({
           content: retryResponseContent,
           writeRoot,
-          dryRun: effectiveDryRun,
+          dryRun: dryRun,
           mode,
         });
 
@@ -481,7 +480,7 @@ export async function applyLlmEdits({
 
       if (applySuccesses) {
         // Apply successful edits
-        if (!effectiveDryRun && successes.length > 0) {
+        if (!dryRun && successes.length > 0) {
           log('Applying successful edits...');
           await applyEditsInternal({
             content,
@@ -498,7 +497,7 @@ export async function applyLlmEdits({
               f.type === 'noMatch' || f.type === 'notUnique'
           ),
           writeRoot,
-          effectiveDryRun
+          dryRun
         );
       } else {
         log('Exiting without applying any edits.');
@@ -507,10 +506,10 @@ export async function applyLlmEdits({
     } else {
       // Non-interactive mode
       printDetailedFailures(remainingFailures);
-      if (effectiveApplyPartial && !appliedInitialSuccesses && successes.length > 0) {
+      if (applyPartial && !appliedInitialSuccesses && successes.length > 0) {
         log(`Applying ${successes.length} successful edits...`);
         appliedInitialSuccesses = true;
-        if (!effectiveDryRun && !appliedInitialSuccesses) {
+        if (!dryRun && !appliedInitialSuccesses) {
           appliedInitialSuccesses = true;
           await applyEditsInternal({
             content,
@@ -527,7 +526,7 @@ export async function applyLlmEdits({
     }
   } else {
     // No failures, apply all edits if not in dry run
-    if (!effectiveDryRun && successes.length > 0 && !appliedInitialSuccesses) {
+    if (!dryRun && successes.length > 0 && !appliedInitialSuccesses) {
       appliedInitialSuccesses = true;
       await applyEditsInternal({
         content,

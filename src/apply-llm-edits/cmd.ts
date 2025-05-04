@@ -34,6 +34,7 @@ const useClipboard = args.includes('--clipboard');
 const useStdin = !useClipboard && (args.includes('--stdin') || !process.stdin.isTTY);
 const dryRun = args.includes('--dry-run');
 const interactive = args.includes('--interactive');
+const applyPartial = args.includes('--partial-apply');
 const retry = args.includes('--retry');
 const cwdIndex = args.findIndex((arg) => arg == '--cwd');
 const modeIndex = args.findIndex((arg) => arg == '--mode');
@@ -72,6 +73,7 @@ applyLlmEdits({
   dryRun,
   mode: modeValue as 'diff' | 'udiff' | 'xml' | 'whole',
   interactive,
+  applyPartial,
   originalPrompt: originalPromptContent,
   llmRequester: undefined,
   // The --retry flag enables the *logic* in applyLlmEdits, but without an llmRequester, it can't call the LLM.
