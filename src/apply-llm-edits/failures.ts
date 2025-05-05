@@ -13,13 +13,6 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
   failures.forEach((failure, index) => {
     log(`\nFailure ${index + 1}:`);
     log(`  File: ${failure.filePath}`);
-    log(`  Original text to replace:`);
-    log(
-      failure.originalText
-        .split('\n')
-        .map((line) => `    ${line.trimEnd()}`)
-        .join('\n')
-    );
 
     if (failure.type === 'noMatch') {
       log(`  Reason: Text not found in file.`);
@@ -27,8 +20,6 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
         const { startLine, endLine, lines, score } = failure.closestMatch;
         log(`  Closest match (score: ${score.toFixed(2)}):`);
         log(`    Line range: ${startLine} to ${endLine}`);
-        log(`    Closest match content:`);
-        log(lines.map((line, i) => `      ${startLine + i}: ${line.trimEnd()}`).join('\n'));
         // Generate diff between closest match and original text
         const patch = diff.createPatch(
           failure.filePath,
@@ -51,6 +42,13 @@ export function printDetailedFailures(failures: (NoMatchFailure | NotUniqueFailu
         log(`  No close match found.`);
       }
     } else if (failure.type === 'notUnique') {
+      log(`  Original text to replace:`);
+      log(
+        failure.originalText
+          .split('\n')
+          .map((line) => `    ${line.trimEnd()}`)
+          .join('\n')
+      );
       log(`  Reason: Text found in multiple locations (${failure.matchLocations.length}).`);
       failure.matchLocations.forEach((loc, locIndex) => {
         log(`    Match ${locIndex + 1}:`);
