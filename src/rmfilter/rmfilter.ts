@@ -435,7 +435,8 @@ const getGuidelinesTag = (modelSettings: ReturnType<typeof resolveModelSettings>
 export async function generateRmfilterOutput(
   config: RmfilterConfig,
   baseDir: string,
-  gitRoot: string
+  gitRoot: string,
+  editorInstructions: string = ''
 ): Promise<string> {
   const { globalValues, commandsParsed, cliArgsString } = config;
 
@@ -449,17 +450,6 @@ export async function generateRmfilterOutput(
   // Initialize necessary components
   const resolver = await Resolver.new(gitRoot);
   const walker = new ImportWalker(new Extractor(), resolver);
-
-  // Handle instructions editor (if applicable, though less common for programmatic)
-  let editorInstructions = '';
-  if (globalValues['instructions-editor']) {
-    // This might need adjustment for programmatic use. Assume instructions are passed directly.
-    // For now, we'll keep the logic but it might not be hit often.
-    editorInstructions = await getInstructionsFromEditor();
-    if (editorInstructions.length === 0) {
-      throw new Error('Instructions editor requested but no instructions provided');
-    }
-  }
 
   // Extract file/dir references from instructions (if any)
   const { files: instructionFiles, directories: instructionDirs } =
@@ -729,15 +719,11 @@ async function main() {
   const modelSettings = resolveModelSettings(globalValues.model);
 
   // Reconstruct the original CLI arguments string for the command tag
-  let editorInstructionsForCmdTag = '';
+  let editorInstructions = '';
   if (globalValues['instructions-editor']) {
-    editorInstructionsForCmdTag = await getInstructionsFromEditor().catch(() => '');
+    editorInstructions = await getInstructionsFromEditor().catch(() => '');
   }
-  const cliArgsString = reconstructCliArgs(
-    globalValues,
-    commandsParsed,
-    editorInstructionsForCmdTag
-  );
+  const cliArgsString = reconstructCliArgs(globalValues, commandsParsed, editorInstructions);
 
   const config: RmfilterConfig = {
     globalValues,
@@ -745,7 +731,7 @@ async function main() {
     cliArgsString,
   };
 
-  const finalOutput = await generateRmfilterOutput(config, baseDir, gitRoot);
+  const finalOutput = await generateRmfilterOutput(config, baseDir, gitRoot, editorInstructions);
 
   // Handle output writing/copying
   const outputFile = globalValues.output ?? (await getOutputPath());
