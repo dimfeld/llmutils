@@ -18,9 +18,13 @@ export async function extractFileReferencesFromInstructions(baseDir: string, ins
   const fileReferences: string[] = [];
   const dirReferences: string[] = [];
 
+  const gitRoot = await getGitRoot();
+
   // Regular expression to match potential file or directory paths
   // Matches patterns like src/file.ts, ./folder/, /path/to/something
-  const pathRegex = /(?:\.\/|\.\.\/|\/)?(?:[\w-]+\/)*[\w-]+\.?[\w-]*(?:\/)?/g;
+  // Also matches paths wrapped in quotes, backticks, parentheses, or square brackets
+  const pathRegex =
+    /(?:"|'|`|\(|\{)(?:\.\/|\.\.\/|\/)?(?:[\w-[\]]+\/)*[\w-[\]]+\.?[\w-[\]]*(?:\/)?(?:"|'|`|\)|\})|(?:\.\/|\.\.\/|\/)?(?:[\w-[\]]+\/)*[\w-[\]]+\.?[\w-[\]]*(?:\/)?/g;
 
   const matches = instructions.match(pathRegex) || [];
   const results = await Promise.all(
@@ -38,13 +42,23 @@ export async function extractFileReferencesFromInstructions(baseDir: string, ins
         return { path: normalizedPath, isDir };
       } catch (e) {
         // Ignore errors (e.g., permission issues or invalid paths)
-        return null;
+      }
+
+      if (gitRoot !== baseDir) {
+        const gitRootPath = path.normalize(path.join(gitRoot, match));
+        try {
+          const stats = await Bun.file(gitRootPath).stat();
+          const isDir = stats.isDirectory();
+          return { path: gitRootPath, isDir };
+        } catch (e) {
+          // Ignore errors (e.g., permission issues or invalid paths)
+        }
       }
     })
   );
 
   for (const result of results) {
-    if (result !== null) {
+    if (result) {
       const { path: currentPath, isDir } = result;
       if (isDir && !dirReferences.includes(currentPath)) {
         dirReferences.push(currentPath);
