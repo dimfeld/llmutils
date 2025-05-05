@@ -317,10 +317,34 @@ async function processCommand(
   }
 
   let exampleFiles: Promise<{ pattern: string; files: string[] }[]> | undefined;
-  if (cmdValues.example?.length) {
-    let values = cmdValues.example.flatMap((p) => p.split(','));
-    exampleFiles = Promise.all(
-      values.map(async (p) => {
+  if (cmdValues.example?.length || cmdValues['example-file']?.length) {
+    let exampleFilePromises: Promise<{ pattern: string; files: string[] }>[] = [];
+
+    // Process --example-file TERM=PATH pairs
+    let exampleFileValues = cmdValues['example-file']?.flatMap((p) => p.split(',')) || [];
+    for (const pair of exampleFileValues) {
+      const [term, filePath] = pair.split('=', 2);
+      if (!term || !filePath) {
+        throw new Error(`Invalid --example-file syntax: ${pair}. Expected TERM=PATH`);
+      }
+      // Validate file existence
+      const absolutePath = path.resolve(baseDir, filePath);
+      const exists = await Bun.file(absolutePath).exists();
+      if (!exists) {
+        throw new Error(`Example file not found: ${filePath} for term ${term}`);
+      }
+      exampleFilePromises.push(
+        Promise.resolve({
+          pattern: term,
+          files: [absolutePath],
+        })
+      );
+    }
+
+    // Process --example patterns
+    let exampleValues = cmdValues.example?.flatMap((p) => p.split(',')) || [];
+    exampleFilePromises.push(
+      ...exampleValues.map(async (p) => {
         let matching = await grepFor(baseDir, [p], files || positionals, false, false);
 
         if (!matching.length) {
@@ -340,6 +364,8 @@ async function processCommand(
         };
       })
     );
+
+    exampleFiles = Promise.all(exampleFilePromises);
   }
 
   // Apply largest filter if specified

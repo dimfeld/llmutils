@@ -63,6 +63,12 @@ describe('parseCliArgsFromString', () => {
     expect(parseCliArgsFromString(input)).toEqual(expected);
   });
 
+  it('should parse arguments with equals signs correctly', () => {
+    const input = '--example-file TERM=src/file.ts';
+    const expected = ['--example-file', 'TERM=src/file.ts'];
+    expect(parseCliArgsFromString(input)).toEqual(expected);
+  });
+
   it('should parse arguments with double quotes', () => {
     const input = 'arg1 "arg 2 with spaces" arg3';
     const expected = ['arg1', 'arg 2 with spaces', 'arg3'];

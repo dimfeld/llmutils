@@ -253,6 +253,7 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     downstream: { type: 'string', multiple: true },
     largest: { type: 'string', short: 'l' },
     example: { type: 'string', multiple: true },
+    'example-file': { type: 'string', multiple: true },
     'with-tests': { type: 'boolean' },
   } as const;
 
@@ -416,6 +417,7 @@ Command Options (per command):
   --downstream <pkgs>       Include downstream dependents
   -l, --largest <number>    Keep only the N largest files
   --example <pattern>       Include the largest file that matches the pattern.
+  --example-file <term=path> Specify a particular example file for a pattern.
 `);
 
     process.exit(0);
