@@ -148,6 +148,10 @@ program
               process.stdin.setRawMode(false);
               process.stdin.pause();
               resolve();
+            } else if (data[0] === 0x03) {
+              // ctrl-c
+              console.warn('Cancelled');
+              process.exit(1);
             }
           });
         });
