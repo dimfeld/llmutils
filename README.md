@@ -1,3 +1,4 @@
+
 # llmutils
 
 Command-line utilities for managing context with chat-oriented programming, and applying edits back.
@@ -105,6 +106,7 @@ commands:
       - 'fetch'
     with-imports: true
     with-tests: true
+    example-file: 'fetch=src/api/fetchData.ts'
   - globs:
       - 'src/tests/api/**/*.ts'
     grep: 'test'
@@ -116,7 +118,7 @@ This config:
 - Sets the edit format to `diff` and copies output to the clipboard.
 - Includes instructions for updating API calls and references a file for additional instructions.
 - Includes all markdown files in `docs/` and `.cursorrules` for context.
-- Defines two commands: one for API source files with `fetch`, including their imports, and another for test files with an example pattern.
+- Defines two commands: one for API source files with `fetch`, including their imports, test files, and a specific example file, and another for test files with an example pattern.
 
 ### Using Config Files
 
@@ -440,7 +442,7 @@ rmfilter --grep "function" --grep "class" --expand src/**/*.ts
 rmfilter --with-all-imports --largest 5 src/lib/*.ts
 
 # Filter with examples, test files, and custom output
-rmfilter --example "fetchData" --example "processResponse" --with-tests --output filtered.txt src/**/*.ts
+rmfilter --example "fetchData" --example-file "fetch=src/api/fetchData.ts" --with-tests --output filtered.txt src/**/*.ts
 
 # Process files with diff and custom instructions
 rmfilter --with-diff --instructions "Optimize all functions" src/**/*.ts

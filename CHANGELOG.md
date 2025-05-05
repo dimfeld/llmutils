@@ -1,3 +1,7 @@
+# May 4, 2025
+- Less verbose edit failure messages
+- Add `--example-file TERM=FILE` option to explicitly set a specific example file
+
 # May 3, 2025
 
 - Prefix paths with `repo:` to interpret them as relative to the repo root, or `pkg:` to interpret them as relative to the closest package root, when running from a directory that is not the repo root.
