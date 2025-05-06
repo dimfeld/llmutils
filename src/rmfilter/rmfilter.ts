@@ -161,6 +161,17 @@ async function getNFilesBySize(files: string[], nLargest: number, nSmallest: num
   return { largest, smallest };
 }
 
+async function normalizePath(gitRoot: string, baseDir: string, walker: ImportWalker, p: string) {
+  if (p.startsWith('repo:')) {
+    return path.join(gitRoot, p.slice(5));
+  } else if (p.startsWith('pkg:') || p.startsWith('package:')) {
+    const prefixLength = p.startsWith('pkg:') ? 4 : 8;
+    const pkgPath = await walker.resolver.resolvePackageJson(baseDir);
+    return path.join(pkgPath.path, p.slice(prefixLength));
+  }
+  return p;
+}
+
 // Process each command
 async function processCommand(
   walker: ImportWalker,
@@ -175,16 +186,7 @@ async function processCommand(
 
   // Process repo: and pkg:/package: prefixes
   positionals = await Promise.all(
-    positionals.map(async (p) => {
-      if (p.startsWith('repo:')) {
-        return path.join(gitRoot, p.slice(5));
-      } else if (p.startsWith('pkg:') || p.startsWith('package:')) {
-        const prefixLength = p.startsWith('pkg:') ? 4 : 8;
-        const pkgPath = await walker.resolver.resolvePackageJson(baseDir);
-        return path.join(pkgPath.path, p.slice(prefixLength));
-      }
-      return p;
-    })
+    positionals.map((p) => normalizePath(gitRoot, baseDir, walker, p))
   );
 
   const ignore = cmdValues.ignore?.map((i) => {
@@ -463,7 +465,16 @@ export async function generateRmfilterOutput(
   baseDir: string,
   gitRoot: string,
   editorInstructions: string = ''
-): Promise<string> {
+): Promise<{
+  finalOutput: string;
+  instructions: string;
+  docFilesPaths: string[];
+  ruleFilesPaths: string[];
+  examples: {
+    pattern: string;
+    file: string;
+  }[];
+}> {
   const { globalValues, commandsParsed, cliArgsString } = config;
 
   // Resolve model settings based on the config
@@ -513,7 +524,7 @@ export async function generateRmfilterOutput(
 
         // Expand SvelteKit page/layout files
         if (!cmdParsed.values['no-expand-pages']) {
-          let filename = path.basename(relativeToGitRoot);
+          let filename = path.parse(relativeToGitRoot).base;
           const svelteDir = path.dirname(absolutePath);
           if (filename == '+page.server.ts' || filename == '+page.ts') {
             allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+page.svelte')));
@@ -598,12 +609,7 @@ export async function generateRmfilterOutput(
       'with-diff': globalValues['with-diff'],
       'diff-from': globalValues['diff-from'],
     }),
-    buildExamplesTag(
-      allExamples.map((ex) => ({
-        ...ex,
-        // file path is already relative to gitRoot from processing step
-      }))
-    ),
+    buildExamplesTag(gitRoot, allExamples),
   ]);
 
   const compress = globalValues.compress ? '--compress' : '';
@@ -644,9 +650,13 @@ export async function generateRmfilterOutput(
     .filter(Boolean)
     .join('\n\n');
 
-  // Log info if not quiet (moved outside this function in the main block)
-
-  return finalOutput;
+  return {
+    finalOutput,
+    instructions: rawInstructions,
+    docFilesPaths,
+    ruleFilesPaths,
+    examples: allExamples,
+  };
 }
 
 // Helper to quote args for reconstruction
@@ -732,7 +742,8 @@ export async function runRmfilterProgrammatically(
   };
 
   // Call the refactored core logic
-  return generateRmfilterOutput(config, baseDir, gitRoot);
+  const { finalOutput } = await generateRmfilterOutput(config, baseDir, gitRoot);
+  return finalOutput;
 }
 
 // Main execution block (CLI entry point)
@@ -757,16 +768,13 @@ async function main() {
     cliArgsString,
   };
 
-  const finalOutput = await generateRmfilterOutput(config, baseDir, gitRoot, editorInstructions);
+  const { finalOutput, instructions, docFilesPaths, ruleFilesPaths, examples } =
+    await generateRmfilterOutput(config, baseDir, gitRoot, editorInstructions);
 
   // Handle output writing/copying
   const outputFile = globalValues.output ?? (await getOutputPath());
   await Bun.write(outputFile, finalOutput);
 
-  // Logging (conditionally based on quiet flag) - Extract info needed for logging
-  // This requires generateRmfilterOutput to potentially return more info or re-calculating some parts.
-  // For simplicity now, we'll skip detailed logging here, assuming generateRmfilterOutput handles internal logging.
-  // A more robust solution would involve generateRmfilterOutput returning a result object.
   if (!globalValues.quiet) {
     // Basic logging based on config and output file
     const editFormat =
@@ -776,27 +784,31 @@ async function main() {
     log(`Tokens: ${tokens.length}`);
     log(`Output written to ${outputFile}, edit format: ${editFormat}`);
 
-    // Re-fetch doc/rule paths if needed for logging (example)
-    // const { docFilesPaths, ruleFilesPaths } = await getAdditionalDocs(baseDir, /* need fileset */, { ... });
-    /*
-    if (docFilesPaths.length) {
-    log('\n## DOCUMENTS');
-    for (const doc of docFilesPaths) {
-      log(`- ${doc}`);
+    if (examples.length) {
+      log('\n## EXAMPLES');
+      examples.sort((a, b) => a.pattern.localeCompare(b.pattern));
+      for (const example of examples) {
+        log(`- ${example.pattern}: ${example.file}`);
+      }
     }
-  }
 
-  if (ruleFilesPaths.length) {
-    log('\n## RULES');
-    for (const rule of ruleFilesPaths) {
-      log(`- ${rule}`);
+    if (docFilesPaths.length) {
+      log('\n## DOCUMENTS');
+      for (const doc of docFilesPaths) {
+        log(`- ${doc}`);
+      }
     }
-  }
-    if (globalValues.instructions?.length) {
-    log('\n## INSTRUCTIONS');
-    log(globalValues.instructions.join('\n'));
+
+    if (ruleFilesPaths.length) {
+      log('\n## RULES');
+      for (const rule of ruleFilesPaths) {
+        log(`- ${rule}`);
+      }
     }
-    */
+    if (instructions.length) {
+      log('\n## INSTRUCTIONS');
+      log(instructions);
+    }
   }
 
   if (globalValues.copy) {

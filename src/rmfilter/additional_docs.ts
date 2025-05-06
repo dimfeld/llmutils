@@ -274,7 +274,10 @@ export async function gatherDocsInternal(
   };
 }
 
-export async function buildExamplesTag(examples: { pattern: string; file: string }[]) {
+export async function buildExamplesTag(
+  gitRoot: string,
+  examples: { pattern: string; file: string }[]
+) {
   if (!examples.length) {
     return '';
   }
@@ -293,7 +296,7 @@ export async function buildExamplesTag(examples: { pattern: string; file: string
         return `for="${pattern}"`;
       });
 
-      let content = await Bun.file(file).text();
+      let content = await Bun.file(path.resolve(gitRoot, file)).text();
       // This isn't really valid XML but the LLM doesn't care.
       let patternAttr = patterns.join(' ');
 
