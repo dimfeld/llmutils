@@ -21,6 +21,7 @@ import { planPrompt } from './prompt.js';
 import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../logging.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
+import chalk from 'chalk';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -135,7 +136,9 @@ program
 
       if (exitRes === 0 && !options.noExtract) {
         log(
-          'Please paste the prompt into the chat interface and copy the response. Press Enter to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.'
+          chalk.bold(
+            '\nPlease paste the prompt into the chat interface and copy the response. Press Enter to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.'
+          )
         );
 
         // Wait for Enter key
