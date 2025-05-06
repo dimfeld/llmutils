@@ -76,8 +76,6 @@ export async function prepareNextStep(
     throw new Error('Cannot use both --with-imports and --with-all-imports. Please choose one.');
   }
 
-  const performImportAnalysis = withImports || withAllImports;
-
   // 1. Load and parse the plan file
   const fileContent = await Bun.file(planFile).text();
   const parsed = yaml.parse(fileContent);
@@ -92,6 +90,8 @@ export async function prepareNextStep(
     throw new Error('No pending steps found in the plan.');
   }
   const activeTask = result.task;
+  const performImportAnalysis = withImports || withAllImports || activeTask.include_imports;
+
   // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
   const cleanFiles = activeTask.files.map((file) => file.replace(/\s*\([^)]*\)\s*$/, '').trim());
 
@@ -324,8 +324,11 @@ export async function prepareNextStep(
       // If import analysis is needed, construct the import command block
       const relativeCandidateFiles = candidateFilesForImports.map((f) => path.relative(gitRoot, f));
       const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
-      if (withImports) importCommandBlockArgs.push('--with-imports');
-      else if (withAllImports) importCommandBlockArgs.push('--with-all-imports');
+      if (withAllImports) {
+        importCommandBlockArgs.push('--with-all-imports');
+      } else if (withImports || activeTask.include_imports) {
+        importCommandBlockArgs.push('--with-imports');
+      }
       // Pass base args, files (task+autofound), import block, example args, separator, user args
       finalRmfilterArgs = [
         ...baseRmfilterArgs,

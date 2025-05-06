@@ -7,6 +7,7 @@ tasks:
     files:
       - src/index.ts
       - other files
+    include_imports: true
     steps:
       - prompt: |
           This is a multiline prompt
@@ -20,6 +21,7 @@ tasks:
     description: [single-line or multi-line string]
     files:
       - [list of relevant file paths]
+    include_imports: [boolean]
     steps:
       - prompt: [multi-line string using the | character]`;
 
@@ -38,6 +40,9 @@ export const planMarkdownExampleFormat = `
 **Files:**
 - path/to/relevant/file1.ext
 - path/to/another/file.ext
+
+Include Imports: Yes
+
 **Steps:**
 1.  **Prompt:**
     \`\`\`
@@ -53,7 +58,7 @@ export const planMarkdownExampleFormat = `
 `;
 
 export function planPrompt(plan: string) {
-  // This is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
+  // The first half of this prompt is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
   return `This is a project plan for an upcoming feature.
 
 # Project Plan
@@ -71,7 +76,11 @@ From here you should have the foundation to provide a series of prompts for a co
 
 The goal is to output prompts, but context, etc is important as well. Remember when creating a prompt that the model executing it may not have all the context you have and will not be as smart as you, so you need to be very detailed and include plenty of information about which files to edit, what to do and how to do it.
 
-When generating the final output with the prompts, output an overall goal, project details, and then a list of tasks. Each task should have a list of relevant files and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include dependencies or built-in system libraries in this list.
+When generating the final output with the prompts, output an overall goal, project details, and then a list of tasks.
+
+Each task should have a list of relevant files, a "include imports" flag, and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
+
+The "include imports" flag on a task indicates whether or not it will be useful to look at not only the files in the list, but the files that those files import. Self-contained edits may not need this flag to be set, but it should be enabled when you think it is useful to bring in extra function or type definitions that aren't in the files list.
 
 Use the following Markdown format for your final prompt output:
 \`\`\`

@@ -1,3 +1,6 @@
+# May 6, 2025
+- Ask the planning model to suggest when --with-imports should be passed to rmfilter for a task
+
 # May 4, 2025
 - Less verbose edit failure messages
 - Add `--example-file TERM=FILE` option to explicitly set a specific example file

@@ -25,6 +25,10 @@
               "type": "string"
             }
           },
+          "include_imports": {
+            "type": "boolean",
+            "default": false
+          },
           "examples": {
             "type": "array",
             "items": {
