@@ -125,6 +125,10 @@
             "type": "boolean",
             "description": "Disable inclusion of matching page/server route files."
           },
+          "no-tests": {
+            "type": "boolean",
+            "description": "Disable automatic inclusion of corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
+          },
           "with-imports": {
             "type": "boolean",
             "description": "Include direct imports of files."
@@ -150,15 +154,8 @@
             "description": "Include the largest file matching the pattern."
           },
           "example-file": {
-            "anyOf": [
-              { "type": "string" },
-              { "type": "array", "items": { "type": "string" } }
-            ],
+            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Specify a particular example file for a pattern using TERM=PATH syntax."
-          },
-          "with-tests": {
-            "type": "boolean",
-            "description": "Include corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
           }
         }
       },

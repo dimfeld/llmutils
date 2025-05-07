@@ -57,6 +57,7 @@ export const CommandConfigSchema = z
     'whole-word': z.boolean().optional(),
     expand: z.boolean().optional(),
     'no-expand-pages': z.boolean().optional(),
+    'no-tests': z.boolean().optional(),
     'with-imports': z.boolean().optional(),
     'with-all-imports': z.boolean().optional(),
     'changed-files': z.boolean().optional(),
@@ -64,7 +65,6 @@ export const CommandConfigSchema = z
     downstream: z.union([z.string(), z.string().array()]).optional(),
     largest: z.string().optional(),
     example: z.union([z.string(), z.string().array()]).optional(),
-    'with-tests': z.boolean().optional(),
   })
   .strict();
 
@@ -247,6 +247,7 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     'whole-word': { type: 'boolean', short: 'w' },
     expand: { type: 'boolean', short: 'e' },
     'no-expand-pages': { type: 'boolean' },
+    'no-tests': { type: 'boolean' },
     'with-imports': { type: 'boolean' },
     'with-all-imports': { type: 'boolean' },
     upstream: { type: 'string', multiple: true },
@@ -254,7 +255,6 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     largest: { type: 'string', short: 'l' },
     example: { type: 'string', multiple: true },
     'example-file': { type: 'string', multiple: true },
-    'with-tests': { type: 'boolean' },
   } as const;
 
   // Parse global options and collect all positionals

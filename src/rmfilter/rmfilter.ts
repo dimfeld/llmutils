@@ -391,7 +391,7 @@ async function processCommand(
     }
 
     // Handle --with-tests: for each file NAME.EXT, try to add NAME.test.EXT
-    if (cmdValues['with-tests']) {
+    if (!cmdValues['no-tests']) {
       const testFiles = (
         await Promise.all(
           files.map(async (file) => {
@@ -406,7 +406,7 @@ async function processCommand(
       ).filter((file): file is string => file !== null);
       files.push(...testFiles);
       if (!quiet && testFiles.length > 0) {
-        log(`  Command: Added ${testFiles.length} test files with --with-tests.`);
+        log(`  Command: Auto-Added ${testFiles.length} test files`);
       }
     }
   }
