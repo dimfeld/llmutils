@@ -9,8 +9,9 @@ import {
 import { packageUp } from 'package-up';
 import { findUp } from 'find-up';
 import { cachePromise, type FnCache } from '../rmfilter/utils.ts';
+import { importCandidates, jsExtensions } from './filenames.ts';
 
-interface Package {
+export interface Package {
   name: string;
   path: string;
   packageJson: PackageJson;
@@ -119,7 +120,6 @@ export class Resolver {
     importSpecifier: string
   ): Promise<string | null> {
     let resolvedPath = path.resolve(baseDir, importSpecifier);
-    const extensions = ['.ts', '.tsx', '.js', '.jsx'];
 
     // Check if it's a directory with an index file
     if (
@@ -128,7 +128,7 @@ export class Resolver {
         .then((stats) => stats.isDirectory())
         .catch(() => false)
     ) {
-      for (const ext of extensions) {
+      for (const ext of jsExtensions) {
         const indexPath = path.join(resolvedPath, `index${ext}`);
         if (await Bun.file(indexPath).exists()) {
           return indexPath;
@@ -137,22 +137,7 @@ export class Resolver {
     }
 
     // Check with extensions
-    const existingExt = path.extname(resolvedPath);
-    let candidates: string[];
-    if (!existingExt) {
-      candidates = extensions.map((ext) => resolvedPath + ext);
-    } else if (existingExt === '.js') {
-      candidates = [resolvedPath, resolvedPath.replace('.js', '.ts')];
-    } else if (existingExt === '.ts') {
-      candidates = [resolvedPath, resolvedPath.replace('.ts', '.js')];
-    } else if (existingExt === '.mjs') {
-      candidates = [resolvedPath, resolvedPath.replace('.mjs', '.mts')];
-    } else if (existingExt === '.mts') {
-      candidates = [resolvedPath, resolvedPath.replace('.mts', '.mjs')];
-    } else {
-      candidates = [resolvedPath];
-    }
-
+    const candidates = importCandidates(resolvedPath);
     let exists = await Promise.all(
       candidates.map((candidate) =>
         Bun.file(candidate)
@@ -180,27 +165,33 @@ export class Resolver {
   ): Promise<string | null> {
     const thisPkg = await this.resolvePackageJson(baseDir);
 
-    let subpathIndex = -1;
-    if (importSpecifier.startsWith('@')) {
-      // @namespace/name/subpath
-      let firstSlash = importSpecifier.indexOf('/', 1);
-      if (firstSlash > 0) {
-        subpathIndex = importSpecifier.indexOf('/', firstSlash + 1);
+    // See if we know about this package.
+    // The package path could be a single name or it could be something like
+    // @repo/package-name.
+    const slashComponents = importSpecifier.split('/');
+    let pkg: Package | undefined;
+    for (let i = 0; i < slashComponents.length; i++) {
+      const potentialPackageName = slashComponents.slice(0, i + 1).join('/');
+      pkg = this.packages.get(potentialPackageName);
+      if (pkg) {
+        break;
       }
+    }
+
+    let subpathIndex = -1;
+    if (pkg) {
+      // namespace/name/subpath
+      subpathIndex = pkg.name.length;
     } else {
+      // This isn't totally right since node_modules dependencies can have slashes
+      // in their names too.
       subpathIndex = importSpecifier.indexOf('/');
     }
 
     let depName = subpathIndex > 0 ? importSpecifier.substring(0, subpathIndex) : importSpecifier;
     let depSubpath = subpathIndex > 0 ? importSpecifier.slice(subpathIndex + 1) : '';
 
-    let depVersion =
-      thisPkg.packageJson.dependencies?.[depName] ?? thisPkg.packageJson.devDependencies?.[depName];
-
-    let pkg: Package | undefined;
-    if (depVersion?.startsWith('workspace:')) {
-      pkg = this.packages.get(depName);
-    } else if (this.resolveNodeModules) {
+    if (!pkg && this.resolveNodeModules) {
       const nodeModulesPath = path.join(thisPkg.path, 'node_modules', depName);
       const pkgJsonPath = path.join(nodeModulesPath, 'package.json');
       const pkgData = await Bun.file(pkgJsonPath).json();
@@ -275,7 +266,7 @@ export class Resolver {
     const packageMap = new Map<string, Package>();
     const workspaceRoot = path.dirname(pnpmWorkspaceYamlPath);
     for (const pattern of workspacePatterns) {
-      const workspaceDir = path.join(workspaceRoot, pattern.replace('/*', ''));
+      const workspaceDir = path.join(workspaceRoot, pattern.replace('*', ''));
       const packages = await fs.readdir(workspaceDir).catch(() => []);
       for (const pkg of packages) {
         const pkgJsonPath = path.join(workspaceDir, pkg, 'package.json');
