@@ -58,9 +58,10 @@ describe('findImporters', () => {
       `
     import { util } from './utils'; // Relative import
     import { feature } from 'pkg-b/feature'; // Package import via export map
+    import { helper } from 'pkg-b/utils/helper'; // Wildcard export
     import { anotherUtil } from "./anotherDir/anotherUtil";
 
-    console.log(util(), feature(), anotherUtil());
+    console.log(util(), feature(), helper(), anotherUtil());
   `
     );
     await Bun.write(path.join(tempDir, 'pkg-a', 'utils.ts'), `export const util = () => 'util';`);
@@ -80,14 +81,21 @@ describe('findImporters', () => {
         exports: {
           '.': './main.ts', // Export for pkg-b itself
           './feature': './src/feature.ts', // Export for pkg-b/feature
+          './utils/*': './src/utils/*.ts', // Wildcard export
         },
       })
+    );
+    await fs.mkdir(path.join(tempDir, 'pkg-b', 'src', 'utils'), {
+      recursive: true,
+    });
+    await Bun.write(
+      path.join(tempDir, 'pkg-b', 'src', 'utils', 'helper.ts'),
+      `export const helper = () => 'helper';`
     );
     await Bun.write(
       path.join(tempDir, 'pkg-b', 'main.ts'),
       `export const mainFunc = () => 'main from b';`
     );
-    await fs.mkdir(path.join(tempDir, 'pkg-b', 'src'));
     await Bun.write(
       path.join(tempDir, 'pkg-b', 'src', 'feature.ts'),
       `export const feature = () => 'feature';`
@@ -168,6 +176,17 @@ describe('findImporters', () => {
         path.join('pkg-b', 'internal-consumer.ts'), // Imports './src/feature'
       ].sort()
     );
+  });
+
+  test('findImporters for a wildcard exported file (pkg-b/src/utils/helper.ts)', async () => {
+    const walker = new ImportWalker(new Extractor(), await Resolver.new(tempImporterTestDir));
+    const targetFile = path.join(tempImporterTestDir, 'pkg-b', 'src', 'utils', 'helper.ts');
+    const importers = await walker.findImporters(targetFile);
+
+    const relativeImporters = Array.from(importers)
+      .map((f) => path.relative(tempImporterTestDir, f))
+      .sort();
+    expect(relativeImporters).toEqual([path.join('pkg-a', 'importer.ts')].sort());
   });
 
   test('findImporters for a package root export (pkg-b/main.ts)', async () => {

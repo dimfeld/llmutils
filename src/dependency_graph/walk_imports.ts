@@ -359,6 +359,21 @@ export class ImportWalker {
       (s) => targetPackage?.name && s.split('/')[0] === targetPackage.name
     );
 
+    // Handle wildcard (*) exports in package.json
+    if (targetPackage?.packageJson.exports) {
+      for (const key of Object.keys(targetPackage.packageJson.exports)) {
+        if (key.includes('*')) {
+          // Convert wildcard to a grep-compatible pattern (e.g., './*.ts' -> './[^/]+\.ts')
+          const wildcardPattern = key.replace(/\*/g, '[^/]+');
+          const specifierPrefix = targetPackage.name ? `${targetPackage.name}/` : '';
+          const wildcardSpecifier = wildcardPattern
+            .replace(/^\.\//, specifierPrefix)
+            .replace(/\.[jt]sx?$/, ''); // Remove file extensions for import specifiers
+          exportMapSpecifiers.push(wildcardSpecifier);
+        }
+      }
+    }
+
     if (
       exportMapSpecifiers.length > 0 &&
       this.resolver.pnpmWorkspacePath &&
