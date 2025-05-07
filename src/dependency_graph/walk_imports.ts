@@ -154,18 +154,34 @@ export class ImportWalker {
     return null;
   }
 
-  async getDefiningFiles(filePath: string): Promise<Set<string>> {
+  /** For each import in the file, resolve the path it actually references. */
+  async resolveImports(filePath: string) {
     const fileInfo = await this.getFileInfo(filePath);
     if (!fileInfo) {
-      return new Set();
+      return;
     }
 
-    const definingFiles = new Set<string>();
-
-    const allResolved = await this.resolver.resolveImportPaths(
+    const resolved = await this.resolver.resolveImportPaths(
       filePath,
       fileInfo.imports.map((i) => i.module)
     );
+
+    return {
+      fileInfo,
+      resolved,
+    };
+  }
+
+  /** For each import in the file, find the file it is defined in, following reexports as needed */
+  async getDefiningFiles(filePath: string): Promise<Set<string>> {
+    const result = await this.resolveImports(filePath);
+    const definingFiles = new Set<string>();
+
+    if (!result?.resolved.length) {
+      return definingFiles;
+    }
+
+    const { fileInfo, resolved: allResolved } = result;
     for (let i = 0; i < allResolved.length; i++) {
       let resolved = allResolved[i];
       if (!resolved.resolved) {
