@@ -460,7 +460,14 @@ async function processCommand(
   importFiles?.forEach((file) => filesSet.add(file));
 
   if (filesSet.size === 0) {
-    throw new Error(`No files found for file set: ${positionals.join(', ')}`);
+    let errorMsg = `No files found for file set: ${positionals.join(', ')}`;
+    if (cmdValues.grep?.length) {
+      errorMsg += `, grep pattern: ${cmdValues.grep.join(', ')}`;
+    }
+    if (cmdValues.ignore?.length) {
+      errorMsg += `, ignore pattern: ${cmdValues.ignore.join(', ')}`;
+    }
+    throw new Error(errorMsg);
   }
 
   return { filesSet, examples: allFoundExamples };
