@@ -414,6 +414,7 @@ Command Options (per command):
   --changed-files           Include all changed files
   --with-imports            Include direct imports of files
   --with-all-imports        Include entire import tree
+  --with-importers          Include files that import the given files
   --no-expand-pages         Disable inclusion of matching page/server route files
   --no-tests                Disable automatic inclusion of corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
   -l, --largest <number>    Keep only the N largest files

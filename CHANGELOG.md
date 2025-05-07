@@ -1,5 +1,6 @@
 # May 6, 2025
 - Ask the planning model to suggest when --with-imports should be passed to rmfilter for a task
+- Add --with-importers option to include all files that import the given files
 
 # May 4, 2025
 - Less verbose edit failure messages
