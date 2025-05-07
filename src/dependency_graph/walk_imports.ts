@@ -11,7 +11,7 @@ import { Resolver, type Package } from './resolve.js';
 import * as path from 'path';
 import { error, debugLog } from '../logging.js';
 import { grepFor } from '../common/file_finder.js';
-import { importCandidates } from './filenames.js';
+import { importCandidates, isCodeFile } from './filenames.js';
 
 interface FileInfo {
   imports: { module: string; namedImports?: { name: string; alias?: string }[] }[];
@@ -32,6 +32,10 @@ export class ImportWalker {
   private async getFileInfo(filePath: string): Promise<FileInfo | null> {
     if (this.fileInfoCache.has(filePath)) {
       return this.fileInfoCache.get(filePath)!;
+    }
+
+    if (!isCodeFile(filePath)) {
+      return null;
     }
 
     try {

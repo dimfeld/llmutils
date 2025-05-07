@@ -1,6 +1,12 @@
 import * as path from 'path';
 
 export const jsExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.mts'];
+/** A nonexhaustive list of non-code extensions */
+export const nonCodeExtensions = ['.css', '.json', '.png', '.jpg', '.svg', '.yml', '.yaml', '.md'];
+
+export function isCodeFile(filename: string): boolean {
+  return !nonCodeExtensions.includes(path.extname(filename));
+}
 
 export function importCandidates(filename: string): string[] {
   const existingExt = path.extname(filename);
