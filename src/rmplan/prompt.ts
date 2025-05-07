@@ -8,6 +8,7 @@ tasks:
       - src/index.ts
       - other files
     include_imports: true
+    include_importers: false
     steps:
       - prompt: |
           This is a multiline prompt
@@ -22,6 +23,7 @@ tasks:
     files:
       - [list of relevant file paths]
     include_imports: [boolean]
+    include_importers: [boolean]
     steps:
       - prompt: [multi-line string using the | character]`;
 
@@ -78,9 +80,11 @@ The goal is to output prompts, but context, etc is important as well. Remember w
 
 When generating the final output with the prompts, output an overall goal, project details, and then a list of tasks.
 
-Each task should have a list of relevant files, a "include imports" flag, and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
+Each task should have a list of relevant files, flags for "include imports" and "include importers", and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
 
-The "include imports" flag on a task indicates whether or not it will be useful to look at not only the files in the list, but the files that those files import. Self-contained edits may not need this flag to be set, but it should be enabled when you think it is useful to bring in extra function or type definitions that aren't in the files list.
+The "include imports" flag on a task indicates if we should look at files imported by the files in the list. Self-contained edits may not need this flag to be set, but it should be enabled when you think it will be useful to look at extra function or type definitions in imported files to make correct changes.
+
+The "include importers" flag on a task indicates if we should look at the files that import the files in the list. This is useful, for example, when a function or object signature is going to change and we want to make sure we don't break any code that uses it.
 
 Use the following Markdown format for your final prompt output:
 \`\`\`

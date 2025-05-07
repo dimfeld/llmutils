@@ -9,6 +9,7 @@ export const planSchema = z.object({
       description: z.string(),
       files: z.array(z.string()),
       include_imports: z.boolean().default(false),
+      include_importers: z.boolean().default(false),
       examples: z.array(z.string()).optional(),
       steps: z.array(
         z.object({

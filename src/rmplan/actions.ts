@@ -20,6 +20,7 @@ interface PrepareNextStepOptions {
   previous?: boolean;
   withImports?: boolean;
   withAllImports?: boolean;
+  withImporters?: boolean;
   selectSteps?: boolean;
   rmfilterArgs?: string[];
   model?: string;
@@ -66,6 +67,7 @@ export async function prepareNextStep(
     previous = false,
     withImports = false,
     withAllImports = false,
+    withImporters = false,
     selectSteps = true,
     rmfilterArgs = [],
     autofind = false,
@@ -90,7 +92,12 @@ export async function prepareNextStep(
     throw new Error('No pending steps found in the plan.');
   }
   const activeTask = result.task;
-  const performImportAnalysis = withImports || withAllImports || activeTask.include_imports;
+  const performImportAnalysis =
+    withImports ||
+    withAllImports ||
+    withImporters ||
+    activeTask.include_imports ||
+    activeTask.include_importers;
 
   // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
   const cleanFiles = activeTask.files.map((file) => file.replace(/\s*\([^)]*\)\s*$/, '').trim());
@@ -329,6 +336,11 @@ export async function prepareNextStep(
       } else if (withImports || activeTask.include_imports) {
         importCommandBlockArgs.push('--with-imports');
       }
+
+      if (withImporters || activeTask.include_importers) {
+        importCommandBlockArgs.push('--with-importers');
+      }
+
       // Pass base args, files (task+autofound), import block, example args, separator, user args
       finalRmfilterArgs = [
         ...baseRmfilterArgs,
