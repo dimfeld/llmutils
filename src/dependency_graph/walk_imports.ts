@@ -9,7 +9,6 @@ import {
 } from '../treesitter/extract.js';
 import { Resolver, type Package } from './resolve.js';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 import { error, debugLog } from '../logging.js';
 import { grepFor } from '../common/file_finder.js';
 import { importCandidates } from './filenames.js';
@@ -403,12 +402,35 @@ export class ImportWalker {
       }
 
       const analysis = await this.resolveImports(resolvedPotentialFile);
-      debugLog(analysis);
       if (analysis?.resolved) {
         for (const imp of analysis.resolved) {
           if (imp.resolved && path.resolve(imp.resolved) === normalizedTargetFilePath) {
             importers.add(resolvedPotentialFile);
             break; // Found an import, this file is an importer
+          }
+        }
+      }
+
+      // Check for reexports from this file
+      const fileInfo = analysis?.fileInfo;
+      if (fileInfo) {
+        const resolvedReexports = await this.resolver.resolveImportPaths(
+          potentialFile,
+          fileInfo.reexports.map((re) => re.module)
+        );
+        if (
+          resolvedReexports.some(
+            (re) =>
+              re.resolved === normalizedTargetFilePath ||
+              (re.resolved && this._arePathsEquivalent(re.resolved, normalizedTargetFilePath))
+          )
+        ) {
+          debugLog(
+            `File ${resolvedPotentialFile} reexports ${targetFilePath}, adding as an importer.`
+          );
+          const reexportImporters = await this.findImporters(resolvedPotentialFile);
+          for (const reexportImporter of reexportImporters) {
+            importers.add(reexportImporter);
           }
         }
       }

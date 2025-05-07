@@ -204,6 +204,36 @@ describe('findImporters', () => {
     );
   });
 
+  test('findImporters for a reexported file (pkg-b/src/utils/helper.ts reexported)', async () => {
+    // Create a reexport file in pkg-b
+    await Bun.write(
+      path.join(tempImporterTestDir, 'pkg-b', 'src', 'utils', 'reexport.ts'),
+      `export { helper } from './helper';`
+    );
+    // Create a file in pkg-c that imports the reexport
+    await Bun.write(
+      path.join(tempImporterTestDir, 'pkg-c', 'reexport-consumer.ts'),
+      `
+    import { helper } from 'pkg-b/utils/reexport';
+    console.log(helper());
+  `
+    );
+
+    const walker = new ImportWalker(new Extractor(), await Resolver.new(tempImporterTestDir));
+    const targetFile = path.join(tempImporterTestDir, 'pkg-b', 'src', 'utils', 'helper.ts');
+    const importers = await walker.findImporters(targetFile);
+
+    const relativeImporters = Array.from(importers)
+      .map((f) => path.relative(tempImporterTestDir, f))
+      .sort();
+    expect(relativeImporters).toEqual(
+      [
+        path.join('pkg-a', 'importer.ts'), // Direct import
+        path.join('pkg-c', 'reexport-consumer.ts'), // Via reexport
+      ].sort()
+    );
+  });
+
   test('findImporters for a file with no importers', async () => {
     const lonelyFilePath = path.join(tempImporterTestDir, 'pkg-a', 'lonely.ts');
     await Bun.write(lonelyFilePath, 'export const lonely = true;');
