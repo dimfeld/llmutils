@@ -381,13 +381,41 @@ async function processCommand(
     files = (await getNFilesBySize(files, n, 0)).largest;
   }
 
+  // Store these separately for now so they don't interact with the tests and examples flags.
+  let importFiles: string[] = [];
+  let importerFiles: string[] = [];
+
   // Note: Import processing requires absolute paths or paths relative to gitRoot.
   // This needs careful handling if baseDir != gitRoot. For now, assume baseDir is sufficient context.
   if (files) {
     if (cmdValues['with-imports']) {
-      files = await processWithImports(baseDir, walker, files, false, ignoreGlobs);
+      importFiles = await processWithImports(baseDir, walker, files, false, ignoreGlobs);
     } else if (cmdValues['with-all-imports']) {
-      files = await processWithImports(baseDir, walker, files, true, ignoreGlobs);
+      importFiles = await processWithImports(baseDir, walker, files, true, ignoreGlobs);
+    }
+    files.push(...importFiles);
+
+    // Handle --with-importers
+    if (cmdValues['with-importers']) {
+      const filesToFindImportersFor = files.map((file) => path.resolve(baseDir, file)); // Convert current relative paths to absolute
+      const allImportersRelative = new Set<string>();
+
+      for (const absFilePath of filesToFindImportersFor) {
+        const importers = await walker.findImporters(absFilePath); // Returns absolute paths
+        importers.forEach((importerAbsPath) => {
+          // Ensure the importer is not the file itself to avoid self-loops if findImporters could return that
+          if (importerAbsPath !== absFilePath) {
+            allImportersRelative.add(path.relative(baseDir, importerAbsPath)); // Convert to relative and add
+          }
+        });
+      }
+
+      let finalImportersToAdd = Array.from(allImportersRelative);
+      if (ignoreGlobs?.length && finalImportersToAdd.length > 0) {
+        finalImportersToAdd = micromatch.not(finalImportersToAdd, ignoreGlobs);
+      }
+
+      importerFiles = Array.from(finalImportersToAdd);
     }
 
     // Handle --with-tests: for each file NAME.EXT, try to add NAME.test.EXT
@@ -428,6 +456,8 @@ async function processCommand(
   }
 
   files?.forEach((file) => filesSet.add(file));
+  importerFiles?.forEach((file) => filesSet.add(file));
+  importFiles?.forEach((file) => filesSet.add(file));
 
   if (filesSet.size === 0) {
     throw new Error(`No files found for file set: ${positionals.join(', ')}`);

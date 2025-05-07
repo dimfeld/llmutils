@@ -60,6 +60,7 @@ export const CommandConfigSchema = z
     'no-tests': z.boolean().optional(),
     'with-imports': z.boolean().optional(),
     'with-all-imports': z.boolean().optional(),
+    'with-importers': z.boolean().optional(),
     'changed-files': z.boolean().optional(),
     upstream: z.union([z.string(), z.string().array()]).optional(),
     downstream: z.union([z.string(), z.string().array()]).optional(),
@@ -250,6 +251,7 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     'no-tests': { type: 'boolean' },
     'with-imports': { type: 'boolean' },
     'with-all-imports': { type: 'boolean' },
+    'with-importers': { type: 'boolean' },
     upstream: { type: 'string', multiple: true },
     downstream: { type: 'string', multiple: true },
     largest: { type: 'string', short: 'l' },
@@ -410,11 +412,10 @@ Command Options (per command):
   -e, --expand              Expand grep patterns (snake_case, camelCase)
   --ignore <patterns>       Ignore files matching these patterns
   --changed-files           Include all changed files
-  --no-expand-pages         Disable inclusion of matching page/server route files
   --with-imports            Include direct imports of files
   --with-all-imports        Include entire import tree
-  --upstream <pkgs>         Include upstream dependencies
-  --downstream <pkgs>       Include downstream dependents
+  --no-expand-pages         Disable inclusion of matching page/server route files
+  --no-tests                Disable automatic inclusion of corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
   -l, --largest <number>    Keep only the N largest files
   --example <pattern>       Include the largest file that matches the pattern.
   --example-file <term=path> Specify a particular example file for a pattern.

@@ -137,6 +137,10 @@
             "type": "boolean",
             "description": "Include entire import tree."
           },
+          "with-importers": {
+            "type": "boolean",
+            "description": "Include files that import the files found by previous filters/options."
+          },
           "upstream": {
             "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
             "description": "Include upstream dependencies."
