@@ -186,7 +186,6 @@ export async function getOriginalRequestContext(
   debugLog('Running rmfilter programmatically with args:', currentArgs);
   try {
     const regeneratedOutput = await runRmfilterProgrammatically(currentArgs, gitRoot, baseDir);
-    // TODO: Consider caching the regenerated output?
     return regeneratedOutput;
   } catch (err) {
     error('Error running rmfilter programmatically to regenerate context:', err);

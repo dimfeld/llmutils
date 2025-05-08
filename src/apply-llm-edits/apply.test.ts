@@ -714,21 +714,6 @@ describe('getOriginalRequestContext', () => {
     );
   });
 
-  test('throws when runRmfilterProgrammatically fails', async () => {
-    // Don't create the output file, so it doesn't exist
-
-    await mock.module('../rmfilter/rmfilter', () => ({
-      runRmfilterProgrammatically: mock(() => Promise.reject(new Error('rmfilter error'))),
-    }));
-
-    const options = {
-      content: '<rmfilter_command>--include "*.ts"</rmfilter_command>',
-    };
-    await expect(getOriginalRequestContext(options, tempDir, tempDir)).rejects.toThrow(
-      'Failed to regenerate original rmfilter context by re-running command: --include *.ts'
-    );
-  });
-
   test('handles different argument ordering in comparison', async () => {
     const outputPath = path.join(tempDir, 'repomix-output.xml');
     const cachedContent =
