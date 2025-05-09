@@ -1520,7 +1520,7 @@ tasks:
           ```
 
           This ensures `prepareCommand` has the format information.
-        done: false
+        done: true
       - prompt: >
           Add tests for the reporter injection logic in
           `src/rmfix/command.test.ts`.
