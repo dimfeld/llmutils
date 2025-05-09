@@ -189,6 +189,26 @@ describe('prepareCommand', () => {
     expect(result).toEqual({ finalCommand: 'jest', finalArgs: ['--json', '--ci'] });
   });
 
+  it('should inject --json for direct jest command if format is json', async () => {
+    const result = await prepareCommand('jest', ['--ci'], 'json');
+    expect(result).toEqual({ finalCommand: 'jest', finalArgs: ['--json', '--ci'] });
+  });
+
+  it('should not inject for direct jest if --reporters=some-json.js is present', async () => {
+    const result = await prepareCommand('jest', ['--reporters=some-json.js', '--ci'], 'auto');
+    expect(result).toEqual({
+      finalCommand: 'jest',
+      finalArgs: ['--reporters=some-json.js', '--ci'],
+    });
+  });
+
+  it('should not inject for direct jest if --reporters ... some-json.js is present', async () => {
+    const result = await prepareCommand('jest', ['--reporters', 'some-json.js', '--ci'], 'auto');
+    expect(result).toEqual({
+      finalCommand: 'jest',
+      finalArgs: ['--reporters', 'some-json.js', '--ci'],
+    });
+  });
   it('should not inject --json for direct jest command if --json is already present', async () => {
     const result = await prepareCommand('jest', ['--json', '--ci'], 'auto');
     expect(result).toEqual({ finalCommand: 'jest', finalArgs: ['--json', '--ci'] });
@@ -208,6 +228,11 @@ describe('prepareCommand', () => {
     expect(result).toEqual({ finalCommand: 'vitest', finalArgs: ['--reporter=json', '--run'] });
   });
 
+  it('should inject --reporter=json for direct vitest command if format is json', async () => {
+    const result = await prepareCommand('vitest', ['--run'], 'json');
+    expect(result).toEqual({ finalCommand: 'vitest', finalArgs: ['--reporter=json', '--run'] });
+  });
+
   it('should not inject --reporter=json for direct vitest command if --reporter=json is present', async () => {
     const result = await prepareCommand('vitest', ['--reporter=json', '--run'], 'auto');
     expect(result).toEqual({ finalCommand: 'vitest', finalArgs: ['--reporter=json', '--run'] });
@@ -216,6 +241,26 @@ describe('prepareCommand', () => {
   it('should not inject --reporter=json for direct vitest command if --reporter json is present', async () => {
     const result = await prepareCommand('vitest', ['--reporter', 'json', '--run'], 'auto');
     expect(result).toEqual({ finalCommand: 'vitest', finalArgs: ['--reporter', 'json', '--run'] });
+  });
+
+  it('should not inject for direct vitest if --reporter=custom-json.js is present', async () => {
+    const result = await prepareCommand('vitest', ['--reporter=custom-json.js', '--run'], 'auto');
+    expect(result).toEqual({
+      finalCommand: 'vitest',
+      finalArgs: ['--reporter=custom-json.js', '--run'],
+    });
+  });
+
+  it('should not inject for direct vitest if --reporter custom-json.js is present', async () => {
+    const result = await prepareCommand(
+      'vitest',
+      ['--reporter', 'custom-json.js', '--run'],
+      'auto'
+    );
+    expect(result).toEqual({
+      finalCommand: 'vitest',
+      finalArgs: ['--reporter', 'custom-json.js', '--run'],
+    });
   });
 
   // NPM Scripts with Test Runners
@@ -273,6 +318,74 @@ describe('prepareCommand', () => {
     dpmSpy.mockRestore();
   });
 
+  it('should not inject if npm script for jest already has --reporters=some-json.js', async () => {
+    const mockFile = {
+      exists: async () => true,
+      json: async () => ({ scripts: { test: 'jest --reporters=some-json.js --ci' } }),
+    };
+    const bunFileSpy = spyOn(Bun, 'file').mockReturnValue(mockFile as any);
+    const dpmSpy = spyOn(CommandModule, 'detectPackageManager').mockResolvedValue('npm');
+
+    const result = await prepareCommand('test', [], 'auto');
+    expect(result).toEqual({
+      finalCommand: 'npm',
+      finalArgs: ['run', 'test', '--', 'jest', '--reporters=some-json.js', '--ci'],
+    });
+    bunFileSpy.mockRestore();
+    dpmSpy.mockRestore();
+  });
+
+  it('should not inject if npm script for vitest already has --reporter=custom-json.js', async () => {
+    const mockFile = {
+      exists: async () => true,
+      json: async () => ({ scripts: { test: 'vitest --reporter=custom-json.js --run' } }),
+    };
+    const bunFileSpy = spyOn(Bun, 'file').mockReturnValue(mockFile as any);
+    const dpmSpy = spyOn(CommandModule, 'detectPackageManager').mockResolvedValue('npm');
+
+    const result = await prepareCommand('test', [], 'auto');
+    expect(result).toEqual({
+      finalCommand: 'npm',
+      finalArgs: ['run', 'test', '--', 'vitest', '--reporter=custom-json.js', '--run'],
+    });
+    bunFileSpy.mockRestore();
+    dpmSpy.mockRestore();
+  });
+
+  it('should not inject if user args for npm jest script provide --json', async () => {
+    const mockFile = {
+      exists: async () => true,
+      json: async () => ({ scripts: { test: 'jest --ci' } }),
+    };
+    const bunFileSpy = spyOn(Bun, 'file').mockReturnValue(mockFile as any);
+    const dpmSpy = spyOn(CommandModule, 'detectPackageManager').mockResolvedValue('npm');
+
+    const result = await prepareCommand('test', ['--json'], 'auto');
+    expect(result).toEqual({
+      finalCommand: 'npm',
+      finalArgs: ['run', 'test', '--', 'jest', '--json', '--ci'],
+    });
+    bunFileSpy.mockRestore();
+    dpmSpy.mockRestore();
+  });
+
+  it('should not inject if user args for npm vitest script provide --reporter=json', async () => {
+    const mockFile = {
+      exists: async () => true,
+      json: async () => ({ scripts: { test: 'vitest --run' } }),
+    };
+    const bunFileSpy = spyOn(Bun, 'file').mockReturnValue(mockFile as any);
+    const dpmSpy = spyOn(CommandModule, 'detectPackageManager').mockResolvedValue('npm');
+
+    const result = await prepareCommand('test', ['--reporter=json'], 'auto');
+    expect(result).toEqual({
+      finalCommand: 'npm',
+      finalArgs: ['run', 'test', '--', 'vitest', '--reporter=json', '--run'],
+    });
+    bunFileSpy.mockRestore();
+    dpmSpy.mockRestore();
+  });
+
   // Commands via npx/pnpm/yarn dlx
   it('should inject --json for `npx jest` command', async () => {
     const result = await prepareCommand('npx', ['jest', '--watchAll'], 'auto');
@@ -299,6 +412,18 @@ describe('prepareCommand', () => {
   it('should not inject for `npx jest --json` command', async () => {
     const result = await prepareCommand('npx', ['jest', '--json', '--watchAll'], 'auto');
     expect(result).toEqual({ finalCommand: 'npx', finalArgs: ['jest', '--json', '--watchAll'] });
+  });
+
+  it('should not inject for `npx jest --reporters=custom-json.js` command', async () => {
+    const result = await prepareCommand(
+      'npx',
+      ['jest', '--reporters=custom-json.js', '--watchAll'],
+      'auto'
+    );
+    expect(result).toEqual({
+      finalCommand: 'npx',
+      finalArgs: ['jest', '--reporters=custom-json.js', '--watchAll'],
+    });
   });
 
   it('should handle npm script that runs npx jest', async () => {
@@ -367,6 +492,23 @@ describe('prepareCommand', () => {
     expect(result).toEqual({
       finalCommand: 'npm',
       finalArgs: ['run', 'test', '--', 'jest', '--coverage', '--watch'],
+    });
+    bunFileSpy.mockRestore();
+    dpmSpy.mockRestore();
+  });
+
+  it('should NOT inject --reporter=json into npm script for vitest if currentFormat is "tap"', async () => {
+    const mockFile = {
+      exists: async () => true,
+      json: async () => ({ scripts: { test: 'vitest --coverage' } }),
+    };
+    const bunFileSpy = spyOn(Bun, 'file').mockReturnValue(mockFile as any);
+    const dpmSpy = spyOn(CommandModule, 'detectPackageManager').mockResolvedValue('npm');
+
+    const result = await prepareCommand('test', ['--watch'], 'tap');
+    expect(result).toEqual({
+      finalCommand: 'npm',
+      finalArgs: ['run', 'test', '--', 'vitest', '--coverage', '--watch'],
     });
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();

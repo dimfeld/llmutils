@@ -1560,4 +1560,4 @@ tasks:
             The `argsToExecute` for `npm run` should be `['run', 'test', '--', '--reporter=json', '--user-arg']` if `vitest --coverage` itself doesn't have a json reporter.
             This means the `effectiveScriptArgs` in `prepareCommand` (which combines `scriptBaseArgs` and `initialCommandArgs` from user) should be what `npm run` passes after `--`.
             The current logic for `argsToExecute = ['run', initialCommand]; if (argsForNpmScript.length > 0) { argsToExecute.push('--', ...argsForNpmScript); }` where `argsForNpmScript` has been modified by injection seems correct.
-        done: false
+        done: true
