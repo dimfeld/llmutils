@@ -1096,7 +1096,7 @@ tasks:
           failed):
               // Placeholder for text/regex parsing - return [] for now
           4. If no failures found or no parser matched, return an empty array.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmfix/cli.ts` to include the `--format <type>` option:
 

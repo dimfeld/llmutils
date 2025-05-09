@@ -1,4 +1,4 @@
-import type { ParsedTestFailure } from './types';
+import type { ParsedTestFailure, RmfixRunResult, OutputFormat } from './types';
 import { debugLog } from '../logging';
 
 // Minimal interfaces for Jest/Vitest JSON structure
@@ -92,4 +92,54 @@ export function parseJestJsonOutput(jsonString: string, baseDir: string): Parsed
   }
 
   return failures;
+}
+
+/**
+ * General parsing function to determine the format and parse the output.
+ * @param output The result of the command execution.
+ * @param format The desired output format, or 'auto' to attempt auto-detection.
+ * @param baseDir The base directory of the project.
+ * @returns An array of ParsedTestFailure objects, or an empty array if no failures are found or parsing fails.
+ */
+export function parseOutput(
+  output: RmfixRunResult,
+  format: OutputFormat | 'auto',
+  baseDir: string
+): ParsedTestFailure[] {
+  // 1. If format is 'json' or ('auto'):
+  if (format === 'json' || format === 'auto') {
+    const jsonSource = output.stdout.trim() ? output.stdout : output.fullOutput;
+    try {
+      // a. Try to parse output.stdout (or output.fullOutput if stdout is empty) as JSON.
+      const parsedJson = JSON.parse(jsonSource);
+      // b. If successful and isJestJson returns true, call parseJestJsonOutput and return its result.
+      if (isJestJson(parsedJson)) {
+        debugLog('[rmfix-parsers] Detected Jest/Vitest JSON format.');
+        return parseJestJsonOutput(jsonSource, baseDir);
+      }
+    } catch (error) {
+      if (format === 'json') {
+        // If specifically requested JSON and it failed, log it.
+        debugLog(
+          `[rmfix-parsers] Failed to parse as JSON: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+      // If 'auto' or JSON parsing failed, will fall through to next parsers.
+    }
+  }
+
+  // 2. If format is 'tap' or ('auto' and JSON parsing failed):
+  if (format === 'tap' || (format === 'auto' && format !== 'json')) {
+    // Placeholder for TAP parsing
+    debugLog('[rmfix-parsers] TAP parsing not yet implemented.');
+  }
+
+  // 3. If format is 'text' or ('auto' and other parsers failed):
+  if (format === 'text' || (format === 'auto' && format !== 'json' && format !== 'tap')) {
+    // Placeholder for text/regex parsing
+    debugLog('[rmfix-parsers] Text/regex parsing not yet implemented.');
+  }
+
+  // 4. If no failures found or no parser matched, return an empty array.
+  return [];
 }
