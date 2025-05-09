@@ -1,5 +1,5 @@
 import { spawn } from 'bun';
-import type { RmfixCoreOptions, RmfixRunResult, ParsedTestFailure } from './types.ts';
+import type { RmfixCoreOptions, RmfixRunResult, ParsedTestFailure, OutputFormat } from './types.ts';
 import { prepareCommand } from './command.ts';
 import { Buffer } from 'node:buffer';
 import { generateRmfilterOutput } from '../rmfilter/rmfilter.ts';
@@ -111,9 +111,15 @@ export async function executeCoreCommand(
  * @returns A promise that resolves to the exit code of the executed command.
  */
 export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
-  const { command: initialCommand, commandArgs: initialCommandArgs } = options;
+  const { command: initialCommand, commandArgs: initialCommandArgs, cliOptions } = options;
 
-  const { finalCommand, finalArgs } = await prepareCommand(initialCommand, initialCommandArgs);
+  const currentOutputFormat = (cliOptions.format || 'auto') as OutputFormat | 'auto';
+
+  const { finalCommand, finalArgs } = await prepareCommand(
+    initialCommand,
+    initialCommandArgs,
+    currentOutputFormat
+  );
 
   const result = await executeCoreCommand(finalCommand, finalArgs);
 
@@ -129,7 +135,7 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
     const rmfixCwd = process.cwd();
     const gitRoot = await getGitRoot(rmfixCwd);
 
-    const parsedFailures = parseOutput(result, options.cliOptions.format || 'auto', rmfixCwd);
+    const parsedFailures = parseOutput(result, currentOutputFormat, rmfixCwd);
 
     let mainInstructionString: string;
     const allFilePathsForRmfilter = new Set<string>();

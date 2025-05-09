@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 /**
  * Detects the package manager used in the current project based on lockfile presence.
  *
@@ -24,24 +26,29 @@ function parseScriptString(script: string): string[] {
   return script.trim().split(/\s+/).filter(s => s.length > 0);
 }
 
-// Helper to check for Jest JSON reporter (--json)
-function hasJestJsonReporter(args: string[]): boolean {
-  // Prioritize stdout: if no --json flag, add it.
-  // Even if --outputFile is present, the task specifies to add --json if it's missing.
-  return args.includes('--json');
-}
+// Define OutputFormat type (can be moved to types.ts later)
+export type OutputFormat = 'auto' | 'json' | 'tap' | 'text';
 
-// Helper to check for Vitest JSON reporters (--reporter=json or --reporter json)
-function hasVitestJsonReporter(args: string[]): boolean {
-  if (args.includes('--reporter=json')) {
-    return true;
-  }
-  const reporterIndex = args.indexOf('--reporter');
-  if (reporterIndex !== -1 && args.length > reporterIndex + 1 && args[reporterIndex + 1] === 'json') {
-    return true;
+// Helper function to check for existing JSON reporters
+function hasReporterArg(args: string[], runner: 'jest' | 'vitest'): boolean {
+  if (runner === 'jest') {
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--reporters' && i + 1 < args.length && args[i+1].includes('json')) return true;
+      if (args[i].startsWith('--reporters=') && args[i].includes('json')) return true;
+    }
+  } else if (runner === 'vitest') {
+    // Checks for --reporter=json or --reporter json
+    if (args.includes('--reporter=json')) return true;
+    const reporterIndex = args.indexOf('--reporter');
+    if (reporterIndex !== -1 && args.length > reporterIndex + 1 && args[reporterIndex + 1].includes('json')) {
+      return true;
+    }
+    // Also check for --reporter=some-json-variant or --reporter some-json-variant
+    return args.some(arg => (arg.startsWith('--reporter=') || arg.startsWith('--reporter ')) && arg.includes('json'));
   }
   return false;
 }
+
 
 /**
  * Prepares the command and arguments for execution, detecting npm scripts
@@ -49,11 +56,13 @@ function hasVitestJsonReporter(args: string[]): boolean {
  *
  * @param commandOrScriptName The command to execute or npm script name (e.g., 'test', 'jest', 'npx').
  * @param userProvidedArgs Additional arguments for the command/script (e.g., ['--watch'] or ['jest', '--ci']).
+ * @param currentFormat The desired output format, influencing reporter injection.
  * @returns A promise that resolves to an object containing the final command and arguments.
  */
 export async function prepareCommand(
-  commandOrScriptName: string,
-  userProvidedArgs: string[]
+  initialCommand: string,
+  initialCommandArgs: string[],
+  currentFormat: OutputFormat | 'auto' = 'auto'
 ): Promise<{ finalCommand: string; finalArgs: string[] }> {
   let scriptExecutable: string;
   let scriptBaseArgs: string[];
@@ -67,38 +76,38 @@ export async function prepareCommand(
 
   if (await packageJsonFile.exists()) {
     try {
-      const packageJsonContent = await packageJsonFile.json();
-      if (packageJsonContent?.scripts?.[commandOrScriptName]) {
+      const packageJsonContent = await packageJsonFile.json() as { scripts?: Record<string, string> };
+      if (packageJsonContent?.scripts?.[initialCommand]) {
         isNpmScriptContext = true;
-        const scriptString = packageJsonContent.scripts[commandOrScriptName];
+        const scriptString = packageJsonContent.scripts[initialCommand];
         const parsedScript = parseScriptString(scriptString);
         scriptExecutable = parsedScript[0];
         scriptBaseArgs = parsedScript.slice(1);
 
         finalPackageManagerCommand = await detectPackageManager();
-        finalPackageManagerArgsPrefix = ['run', commandOrScriptName];
+        finalPackageManagerArgsPrefix = ['run', initialCommand];
       } else {
         // Not an npm script in package.json, treat commandOrScriptName as the direct executable
-        scriptExecutable = commandOrScriptName;
+        scriptExecutable = initialCommand;
         scriptBaseArgs = [];
       }
     } catch (error) {
       console.warn(
         `[rmfix] Warning: Could not parse ${packageJsonPath}. Error: ${error instanceof Error ? error.message : String(error)}`
       );
-      scriptExecutable = commandOrScriptName;
+      scriptExecutable = initialCommand;
       scriptBaseArgs = [];
     }
   } else {
     // No package.json, treat commandOrScriptName as the direct executable
-    scriptExecutable = commandOrScriptName;
+    scriptExecutable = initialCommand;
     scriptBaseArgs = [];
   }
 
   // `currentCommand` is the command we are analyzing (e.g., "jest", "vitest", or "npx").
   // `currentArgs` are the arguments associated with `currentCommand` (e.g. ["--coverage", "--watch"] for "vitest", or ["jest", "--ci"] for "npx").
   let currentCommand = scriptExecutable;
-  let currentArgs = [...scriptBaseArgs, ...userProvidedArgs];
+  let currentArgs = [...scriptBaseArgs, ...initialCommandArgs];
 
   // Args that will be modified by reporter injection.
   // These are the args for the `runnerToAnalyze` if it's the runner itself,
@@ -106,7 +115,7 @@ export async function prepareCommand(
   let runnerToAnalyze = currentCommand;
   let argsForRunner = currentArgs; 
   let isSubCommandRunner = false; 
-  let subCommandPrefixArgs: string[] = [];
+  let subCommandPrefixParts: string[] = [];
   let subCommandName = "";
 
   const lowerCaseCurrentCommand = currentCommand.toLowerCase();
@@ -114,11 +123,11 @@ export async function prepareCommand(
       (lowerCaseCurrentCommand === 'yarn' && currentArgs[0]?.toLowerCase() === 'dlx')) {
 
     let potentialRunnerNameIndexInArgs = 0;
-    subCommandPrefixArgs = [currentCommand];
+    subCommandPrefixParts = [currentCommand];
 
     if (lowerCaseCurrentCommand === 'yarn' && currentArgs[0]?.toLowerCase() === 'dlx') {
         potentialRunnerNameIndexInArgs = 1; 
-        subCommandPrefixArgs.push(currentArgs[0]);
+        subCommandPrefixParts.push(currentArgs[0]);
     }
 
     if (currentArgs.length > potentialRunnerNameIndexInArgs) {
@@ -132,17 +141,22 @@ export async function prepareCommand(
     }
   }
 
-  // Perform injection on `argsForRunner`
-  if (runnerToAnalyze.includes('jest')) {
-    if (!hasJestJsonReporter(argsForRunner)) {
-      argsForRunner.unshift('--json');
-    }
-  } else if (runnerToAnalyze.includes('vitest')) {
-    if (!hasVitestJsonReporter(argsForRunner)) {
-      argsForRunner.unshift('--reporter=json');
+  // Reporter Injection Logic
+  if (currentFormat === 'auto' || currentFormat === 'json') {
+    const runnerId = runnerToAnalyze.toLowerCase();
+
+    if (runnerId.includes('jest')) {
+      // Check for --json flag OR --reporters flag with json
+      const alreadyHasJson = argsForRunner.includes('--json') || hasReporterArg(argsForRunner, 'jest');
+      if (!alreadyHasJson) {
+        argsForRunner.unshift('--json');
+      }
+    } else if (runnerId.includes('vitest')) {
+      if (!hasReporterArg(argsForRunner, 'vitest')) {
+        argsForRunner.unshift('--reporter=json');
+      }
     }
   }
-
   // Reconstruct `currentArgs` if injection happened for a sub-command
   if (isSubCommandRunner) {
     currentArgs = [subCommandName, ...argsForRunner];
@@ -166,8 +180,8 @@ export async function prepareCommand(
     // currentCommand is the command (e.g. "jest", "npx")
     // currentArgs are its (potentially modified) args (e.g. ["--json", "--watch"] or ["jest", "--json", "--watch"])
     if (isSubCommandRunner) {
-        // The command to run is the prefix (e.g. "npx"), and its args are currentArgs
-        return { finalCommand: subCommandPrefixArgs.join(' '), finalArgs: currentArgs };
+        // The command to run is the prefix (e.g. "npx" or "yarn dlx"), and its args are currentArgs
+        return { finalCommand: subCommandPrefixParts.join(' '), finalArgs: currentArgs };
     }
     return { finalCommand: currentCommand, finalArgs: currentArgs };
   }

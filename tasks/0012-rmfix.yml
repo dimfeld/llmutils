@@ -1499,7 +1499,7 @@ tasks:
           needed.
 
           Path import for `path.join` and `path.basename`.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmfix/rmfix.ts`'s `runRmfix` function.
 
