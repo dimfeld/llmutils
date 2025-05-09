@@ -9,4 +9,3 @@ When writing to console, use the functions in 'src/logging.ts' instead. They can
 `debugLog` can be used for debug-only logs.
 
 `import { log, warn, error, debugLog } from './logging.ts';`
-

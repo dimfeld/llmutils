@@ -83,7 +83,7 @@ tasks:
           }
 
           ```
-        done: false
+        done: true
       - prompt: >
           In `src/rmfix/rmfix.ts`, create an asynchronous function
           `executeCoreCommand` that takes `command: string` and `commandArgs:
