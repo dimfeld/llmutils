@@ -2,6 +2,7 @@
 import { program } from 'commander';
 import { runRmfix } from './rmfix';
 import type { RmfixCoreOptions, RmfixCliOptions } from './types';
+import { setDebug, setQuiet } from '../rmfilter/utils';
 
 program
   .name('rmfix')
@@ -41,6 +42,9 @@ program
       debug: rmfixOwnOptions.debug,
       quiet: rmfixOwnOptions.quiet,
     };
+
+    setDebug(cliOptions.debug);
+    setQuiet(cliOptions.quiet);
 
     const options: RmfixCoreOptions = {
       command,

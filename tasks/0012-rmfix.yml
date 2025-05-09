@@ -710,7 +710,7 @@ tasks:
           `rmfix`'s own logging (e.g. by setting global vars or passing them
           around). For now, `debugLog` in `rmfix.ts` uses `console.log`. We can
           refine this later.
-        done: false
+        done: true
       - prompt: >
           Refine the `rmfilter` integration in `src/rmfix/rmfix.ts`'s `runRmfix`
           function.
