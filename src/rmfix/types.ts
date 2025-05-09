@@ -1,8 +1,14 @@
+export interface RmfixCliOptions {
+  debug?: boolean;
+  quiet?: boolean;
+  // ... other rmfix specific flags will go here
+}
+
 export interface RmfixCoreOptions {
   command: string;
   commandArgs: string[];
   rmfilterArgs: string[];
-  // Add other core options as they become clear
+  cliOptions: RmfixCliOptions;
 }
 
 export interface RmfixRunResult {

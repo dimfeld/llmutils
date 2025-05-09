@@ -629,7 +629,7 @@ tasks:
           `RmfixCoreOptions`.
 
           The `cli.ts` will need to parse `rmfix`'s own options too.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmfix/cli.ts` to:
 

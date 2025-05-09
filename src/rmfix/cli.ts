@@ -1,15 +1,18 @@
 #!/usr/bin/env bun
 import { program } from 'commander';
 import { runRmfix } from './rmfix';
-import type { RmfixCoreOptions } from './types';
+import type { RmfixCoreOptions, RmfixCliOptions } from './types';
 
 program
   .name('rmfix')
   .description(
     'Run a command, capture its output, and if it fails, use rmfilter to help fix the issue.'
   )
+  .option('--debug', 'Enable debug logging for rmfix itself')
+  .option('--quiet', 'Suppress rmfix informational logging (not the command output)')
   .arguments('<command_with_args...>')
   .action(async (commandWithArgs: string[]) => {
+    const rmfixOwnOptions = program.opts();
     let commandToRunAndItsArgs: string[];
     let rmfilterArgs: string[] = [];
 
@@ -34,10 +37,16 @@ program
     const command = commandToRunAndItsArgs[0];
     const commandArgs = commandToRunAndItsArgs.slice(1);
 
+    const cliOptions: RmfixCliOptions = {
+      debug: rmfixOwnOptions.debug,
+      quiet: rmfixOwnOptions.quiet,
+    };
+
     const options: RmfixCoreOptions = {
       command,
       commandArgs,
       rmfilterArgs,
+      cliOptions,
     };
 
     try {
