@@ -1001,7 +1001,7 @@ tasks:
           This seems more consistent. `rmfilter` will receive paths relative to
           `rmfixCwd` (which it uses as its `baseDir`), and it internally handles
           conversions to `gitRoot` where necessary.
-        done: false
+        done: true
   - title: 5. Structured Output Parsing - JSON (Jest/Vitest)
     description: Implement parsing for JSON output from test runners like Jest and
       Vitest. Define a standardized structure for test failures. Add a `--format

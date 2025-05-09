@@ -121,25 +121,23 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
   debugLog(`[rmfix] exitCode: ${result.exitCode}`);
 
   if (result.exitCode !== 0) {
-    log(
       `[rmfix] Command failed with exit code ${result.exitCode}. Assembling context with rmfilter...`
     );
 
-    // baseDir and gitRoot are defined later, but used here conceptually for path context.
-    // extractFileReferencesFromInstructions uses baseDir (process.cwd()) to resolve relative paths in output
-    // and returns absolute paths.
-    const { files: extractedFiles, directories: extractedDirs } =
-      await extractFileReferencesFromInstructions(process.cwd(), result.fullOutput);
+    const rmfixCwd = process.cwd();
+    const gitRoot = await getGitRoot(rmfixCwd);
 
-    // Convert absolute paths from extractFileReferences to paths relative to baseDir (process.cwd())
-    // for rmfilter's positionals. Filter out paths that end up outside baseDir.
-    const relativeExtractedPaths = [...extractedFiles, ...extractedDirs]
-      .map((p) => path.relative(process.cwd(), p))
-      .filter((p) => !p.startsWith('..') && !path.isAbsolute(p));
+    const { files: extractedAbsFiles, directories: extractedAbsDirs } =
+      await extractFileReferencesFromInstructions(rmfixCwd, result.fullOutput);
 
-    if (relativeExtractedPaths.length > 0) {
+    // Convert absolute paths from extractFileReferences to paths relative to rmfixCwd.
+    // Paths starting with '..' are now allowed, as rmfilter can handle them relative to its baseDir.
+    const extractedPathsRelativeToRmfixCwd = [...extractedAbsFiles, ...extractedAbsDirs]
+      .map(p => path.relative(rmfixCwd, p));
+
+    if (extractedPathsRelativeToRmfixCwd.length > 0) {
       debugLog(
-        `[rmfix] Extracted paths from command output for rmfilter context: ${relativeExtractedPaths.join(', ')}`
+        `[rmfix] Extracted paths from command output for rmfilter context: ${extractedPathsRelativeToRmfixCwd.join(', ')}`
       );
     }
 
@@ -154,34 +152,40 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
     };
 
     const rmfilterCommandsParsed: CommandParsed[] = [];
+    const effectiveRmfilterPositionals = [...options.rmfilterArgs];
+    const rmfilterValues: CommandParsed['values'] = {};
 
-    const initialPositionals = [...options.rmfilterArgs];
-    const initialValues: CommandParsed['values'] = {};
-
-    if (relativeExtractedPaths.length > 0) {
-      initialPositionals.push(...relativeExtractedPaths);
-      initialValues['with-imports'] = true;
+    if (extractedPathsRelativeToRmfixCwd.length > 0) {
+      effectiveRmfilterPositionals.push(...extractedPathsRelativeToRmfixCwd);
+      rmfilterValues['with-imports'] = true;
     }
 
+    // Note: The current implementation assumes options.rmfilterArgs are purely positionals.
+    // If options.rmfilterArgs could contain flags (e.g., "--with-imports" itself, or other rmfilter flags),
+    // those flags would need to be parsed and merged into rmfilterValues.
+    // For example, if options.rmfilterArgs included "--with-imports", rmfilterValues['with-imports']
+    // should be true, which is consistent with the logic above.
+    // This parsing is a potential future enhancement for rmfix.
+
     // If there are any positionals (either from CLI or extracted) or specific values to set
-    if (initialPositionals.length > 0 || Object.keys(initialValues).length > 0) {
+    if (effectiveRmfilterPositionals.length > 0 || Object.keys(rmfilterValues).length > 0) {
       const rmfilterCmdParsed: CommandParsed = {
-        positionals: initialPositionals,
-        values: initialValues,
+        positionals: effectiveRmfilterPositionals,
+        values: rmfilterValues,
       };
       rmfilterCommandsParsed.push(rmfilterCmdParsed);
     }
     // else: rmfilterCommandsParsed remains empty if no CLI args and no extracted files.
-
-    const baseDir = process.cwd();
-    const gitRoot = await getGitRoot(baseDir);
+    // generateRmfilterOutput will throw an error if rmfilterCommandsParsed is empty and
+    // no other context (like --with-diff) is provided, which is appropriate.
 
     try {
       const { finalOutput: rmfilterOutput } = await generateRmfilterOutput(
         { globalValues: rmfilterGlobalValues, commandsParsed: rmfilterCommandsParsed },
-        baseDir,
+        rmfixCwd,
         gitRoot,
         constructedInstructionString
+      );
       );
       log('\n--- rmfilter context ---');
       log(rmfilterOutput);
