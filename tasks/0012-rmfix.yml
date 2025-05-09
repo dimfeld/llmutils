@@ -1116,7 +1116,7 @@ tasks:
           The `RmfixCliOptions` type in `types.ts` already has `format`.
 
           Ensure the default value is `'auto'`.
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmfix/rmfix.ts`'s `runRmfix` function:
 

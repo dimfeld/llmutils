@@ -11,6 +11,7 @@ program
   )
   .option('--debug', 'Enable debug logging for rmfix itself')
   .option('--quiet', 'Suppress rmfix informational logging (not the command output)')
+  .option('--format <type>', 'Specify output format (json, tap, text, auto)', 'auto')
   .arguments('<command_with_args...>')
   .action(async (commandWithArgs: string[]) => {
     const rmfixOwnOptions = program.opts();
@@ -41,6 +42,7 @@ program
     const cliOptions: RmfixCliOptions = {
       debug: rmfixOwnOptions.debug,
       quiet: rmfixOwnOptions.quiet,
+      format: rmfixOwnOptions.format,
     };
 
     setDebug(cliOptions.debug);
