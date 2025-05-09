@@ -117,7 +117,7 @@ tasks:
 
           Import `logSpawn` from `../rmfilter/utils.ts` and `RmfixRunResult`
           from `./types.ts`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmfix/rmfix.ts`, create a main asynchronous function
           `runRmfix` that will orchestrate the utility's logic.
