@@ -1077,7 +1077,7 @@ tasks:
 
           Add a helper `isJestJson(data: any): boolean` to quickly check if
           parsed JSON looks like Jest/Vitest output.
-        done: false
+        done: true
       - prompt: >
           In `src/rmfix/parsers.ts`, create a general parsing function:
 
