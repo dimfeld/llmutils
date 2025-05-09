@@ -1,5 +1,6 @@
 import { spawn } from 'bun';
 import type { RmfixCoreOptions, RmfixRunResult } from './types.ts';
+import { prepareCommand } from './command.ts';
 import { Buffer } from 'node:buffer';
 
 /**
@@ -104,9 +105,11 @@ export async function executeCoreCommand(
  * @returns A promise that resolves to the exit code of the executed command.
  */
 export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
-  const { command, commandArgs } = options;
+  const { command: initialCommand, commandArgs: initialCommandArgs } = options;
 
-  const result = await executeCoreCommand(command, commandArgs);
+  const { finalCommand, finalArgs } = await prepareCommand(initialCommand, initialCommandArgs);
+
+  const result = await executeCoreCommand(finalCommand, finalArgs);
 
   // TODO: Replace with proper debugLog from src/logging.ts
   console.log('[DEBUG_RMFix]', `[rmfix] stdout:\n${result.stdout}`);

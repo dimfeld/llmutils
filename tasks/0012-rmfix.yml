@@ -499,7 +499,7 @@ tasks:
 
           Handle potential errors like `package.json` not found or being
           unparseable gracefully (treat as not an npm script).
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmfix/rmfix.ts`:
 
