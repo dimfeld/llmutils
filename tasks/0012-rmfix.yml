@@ -1165,7 +1165,7 @@ tasks:
           absolute paths. `parseJestJsonOutput` should preserve them as
           absolute. The conversion to relative paths for `rmfilter` happens in
           `runRmfix`.
-        done: false
+        done: true
   - title: 6. Test Runner Detection and Reporter Injection
     description: Detect if the command to be run is Jest or Vitest. If so, and if
       the user hasn't already specified a JSON reporter, automatically inject
