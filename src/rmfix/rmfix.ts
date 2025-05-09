@@ -4,6 +4,8 @@ import { prepareCommand } from './command.ts';
 import { Buffer } from 'node:buffer';
 import { generateRmfilterOutput } from '../rmfilter/rmfilter.ts';
 import type { GlobalValues, CommandParsed } from '../rmfilter/config.ts';
+import path from 'node:path';
+import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.ts';
 import { getGitRoot } from '../rmfilter/utils.ts';
 import { log, debugLog } from '../logging.ts';
 
@@ -123,6 +125,24 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
       `[rmfix] Command failed with exit code ${result.exitCode}. Assembling context with rmfilter...`
     );
 
+    // baseDir and gitRoot are defined later, but used here conceptually for path context.
+    // extractFileReferencesFromInstructions uses baseDir (process.cwd()) to resolve relative paths in output
+    // and returns absolute paths.
+    const { files: extractedFiles, directories: extractedDirs } =
+      await extractFileReferencesFromInstructions(process.cwd(), result.fullOutput);
+
+    // Convert absolute paths from extractFileReferences to paths relative to baseDir (process.cwd())
+    // for rmfilter's positionals. Filter out paths that end up outside baseDir.
+    const relativeExtractedPaths = [...extractedFiles, ...extractedDirs]
+      .map((p) => path.relative(process.cwd(), p))
+      .filter((p) => !p.startsWith('..') && !path.isAbsolute(p));
+
+    if (relativeExtractedPaths.length > 0) {
+      debugLog(
+        `[rmfix] Extracted paths from command output for rmfilter context: ${relativeExtractedPaths.join(', ')}`
+      );
+    }
+
     const constructedInstructionString = `The command "${options.command} ${options.commandArgs.join(' ')}" failed with exit code ${result.exitCode}.\n\nOutput:\n${result.fullOutput}\n\nPlease help fix the issue.`;
 
     const rmfilterGlobalValues: GlobalValues = {
@@ -134,13 +154,24 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
     };
 
     const rmfilterCommandsParsed: CommandParsed[] = [];
-    if (options.rmfilterArgs && options.rmfilterArgs.length > 0) {
-      const parsedRmfilterCmd: CommandParsed = {
-        positionals: options.rmfilterArgs,
-        values: {},
-      };
-      rmfilterCommandsParsed.push(parsedRmfilterCmd);
+
+    const initialPositionals = [...options.rmfilterArgs];
+    const initialValues: CommandParsed['values'] = {};
+
+    if (relativeExtractedPaths.length > 0) {
+      initialPositionals.push(...relativeExtractedPaths);
+      initialValues['with-imports'] = true;
     }
+
+    // If there are any positionals (either from CLI or extracted) or specific values to set
+    if (initialPositionals.length > 0 || Object.keys(initialValues).length > 0) {
+      const rmfilterCmdParsed: CommandParsed = {
+        positionals: initialPositionals,
+        values: initialValues,
+      };
+      rmfilterCommandsParsed.push(rmfilterCmdParsed);
+    }
+    // else: rmfilterCommandsParsed remains empty if no CLI args and no extracted files.
 
     const baseDir = process.cwd();
     const gitRoot = await getGitRoot(baseDir);

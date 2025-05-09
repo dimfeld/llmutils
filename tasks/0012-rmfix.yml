@@ -895,7 +895,7 @@ tasks:
           So, `extractFileReferencesFromInstructions` returns absolute paths.
           Convert them to be relative to `baseDir` for `rmfilter`'s
           `positionals`.
-        done: false
+        done: true
       - prompt: >
           Refine path handling for `extractFileReferencesFromInstructions` and
           `rmfilter` integration in `src/rmfix/rmfix.ts`.
