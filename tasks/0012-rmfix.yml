@@ -133,7 +133,7 @@ tasks:
           purposes, using `console.log` for now).
 
           4. Return the `exitCode` from `executeCoreCommand`.
-        done: false
+        done: true
       - prompt: >
           Create `src/rmfix/cli.ts`. This file will use `commander` to set up
           the CLI for `rmfix`.

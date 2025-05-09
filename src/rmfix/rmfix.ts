@@ -1,5 +1,5 @@
 import { logSpawn } from '../rmfilter/utils.ts';
-import type { RmfixRunResult } from './types.ts';
+import type { RmfixCoreOptions, RmfixRunResult } from './types.ts';
 import { Buffer } from 'node:buffer';
 
 /**
@@ -89,4 +89,26 @@ export async function executeCoreCommand(
       fullOutput: errorMessage,
     };
   }
+}
+
+/**
+ * Main orchestrator for the rmfix utility.
+ * Currently, it executes the command and logs its output.
+ *
+ * @param options The core options for running rmfix.
+ * @returns A promise that resolves to the exit code of the executed command.
+ */
+export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
+  const { command, commandArgs } = options;
+
+  const result = await executeCoreCommand(command, commandArgs);
+
+  // Log captured output for debugging (temporary)
+  console.log(`[rmfix-debug] stdout:\n${result.stdout}`);
+  console.log(`[rmfix-debug] stderr:\n${result.stderr}`);
+  console.log(`[rmfix-debug] exitCode: ${result.exitCode}`);
+
+  // TODO: Implement further logic: failure detection, rmfilter integration, etc.
+
+  return result.exitCode;
 }
