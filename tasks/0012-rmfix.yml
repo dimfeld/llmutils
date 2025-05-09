@@ -1279,7 +1279,7 @@ tasks:
           - Return `{ finalCommand: executable, finalArgs: argsForExecutable }`.
           This means `prepareCommand` handles both npm script resolution AND
           reporter injection.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmfix/command.ts`'s `prepareCommand` function.
 
