@@ -556,7 +556,7 @@ tasks:
 
           A simpler approach for `detectPackageManager` tests: spy on
           `Bun.file().exists()` directly.
-        done: false
+        done: true
   - title: 3. Basic `rmfilter` Integration on Failure
     description: If the executed command fails (non-zero exit code), `rmfix` should
       use `rmfilter`'s `generateRmfilterOutput` function to assemble a context
