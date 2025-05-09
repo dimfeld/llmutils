@@ -126,31 +126,34 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
     const constructedInstructionString = `The command "${options.command} ${options.commandArgs.join(' ')}" failed with exit code ${result.exitCode}.\n\nOutput:\n${result.fullOutput}\n\nPlease help fix the issue.`;
 
     const rmfilterGlobalValues: GlobalValues = {
-      // instructions: [constructedInstructionString], // Instructions will be passed via editorInstructions
-      debug: false,
-      quiet: false,
+      instructions: [constructedInstructionString],
+      debug: options.cliOptions.debug ?? false,
+      quiet: options.cliOptions.quiet ?? false,
       model: undefined,
+      // editFormat is undefined, rmfilter will use its default
     };
 
-    const rmfilterCommandsParsed: CommandParsed[] = [
-      {
+    const rmfilterCommandsParsed: CommandParsed[] = [];
+    if (options.rmfilterArgs && options.rmfilterArgs.length > 0) {
+      const parsedRmfilterCmd: CommandParsed = {
         positionals: options.rmfilterArgs,
         values: {},
-      },
-    ];
+      };
+      rmfilterCommandsParsed.push(parsedRmfilterCmd);
+    }
 
     const baseDir = process.cwd();
     const gitRoot = await getGitRoot(baseDir);
 
     try {
-      const rmfilterResult = await generateRmfilterOutput(
+      const { finalOutput: rmfilterOutput } = await generateRmfilterOutput(
         { globalValues: rmfilterGlobalValues, commandsParsed: rmfilterCommandsParsed },
         baseDir,
         gitRoot,
         constructedInstructionString
       );
       log('\n--- rmfilter context ---');
-      log(rmfilterResult.finalOutput);
+      log(rmfilterOutput);
     } catch (rmfilterError) {
       log(
         `[rmfix] Error running rmfilter: ${rmfilterError instanceof Error ? rmfilterError.message : String(rmfilterError)}`

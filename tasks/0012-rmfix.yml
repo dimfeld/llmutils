@@ -767,7 +767,7 @@ tasks:
           mainInstructionString);`
 
           Then log `rmfilterOutput`.
-        done: false
+        done: true
   - title: 4. Filename Extraction and Enhanced `rmfilter` Context
     description: Parse the failed command's output (stdout/stderr) to find
       references to source code filenames. These filenames will be added to the
