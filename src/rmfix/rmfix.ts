@@ -1,6 +1,7 @@
-import { logSpawn } from '../rmfilter/utils.ts';
+import { spawn } from 'bun';
 import type { RmfixCoreOptions, RmfixRunResult } from './types.ts';
 import { Buffer } from 'node:buffer';
+import { debugLog } from '../logging.ts';
 
 /**
  * Executes a specified command and captures its output.
@@ -16,10 +17,11 @@ export async function executeCoreCommand(
 ): Promise<RmfixRunResult> {
   const stdoutChunks: Buffer[] = [];
   const stderrChunks: Buffer[] = [];
-  const fullOutputParts: string[] = [];
+
+  debugLog(`[rmfix] Executing: ${command} ${commandArgs.join(' ')}`);
 
   try {
-    const proc = logSpawn([command, ...commandArgs], {
+    const proc = spawn([command, ...commandArgs], {
       stdio: ['inherit', 'pipe', 'pipe'],
     });
 
@@ -35,7 +37,6 @@ export async function executeCoreCommand(
         const bufferChunk = Buffer.from(chunk);
         consoleStream.write(bufferChunk);
         chunksArray.push(bufferChunk);
-        fullOutputParts.push(bufferChunk.toString('utf-8'));
       }
     };
 
@@ -51,13 +52,13 @@ export async function executeCoreCommand(
 
     const stdoutStr = Buffer.concat(stdoutChunks).toString('utf-8');
     const stderrStr = Buffer.concat(stderrChunks).toString('utf-8');
-    const fullOutputStr = fullOutputParts.join('');
+    const fullOutput = `STDOUT:\n${stdoutStr}\n\nSTDERR:\n${stderrStr}`;
 
     return {
       stdout: stdoutStr,
       stderr: stderrStr,
       exitCode: exitCode,
-      fullOutput: fullOutputStr,
+      fullOutput: fullOutput,
     };
   } catch (error: any) {
     // This catch block handles errors primarily from Bun.spawn() itself,
@@ -82,11 +83,13 @@ export async function executeCoreCommand(
       failureExitCode = 127;
     }
 
+    const stdoutOutput = '';
+    const stderrOutput = errorMessage;
     return {
-      stdout: '',
-      stderr: errorMessage,
+      stdout: stdoutOutput,
+      stderr: stderrOutput,
       exitCode: failureExitCode,
-      fullOutput: errorMessage,
+      fullOutput: `STDOUT:\n${stdoutOutput}\n\nSTDERR:\n${stderrOutput}`,
     };
   }
 }
@@ -103,10 +106,9 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
 
   const result = await executeCoreCommand(command, commandArgs);
 
-  // Log captured output for debugging (temporary)
-  console.log(`[rmfix-debug] stdout:\n${result.stdout}`);
-  console.log(`[rmfix-debug] stderr:\n${result.stderr}`);
-  console.log(`[rmfix-debug] exitCode: ${result.exitCode}`);
+  debugLog(`[rmfix] stdout:\n${result.stdout}`);
+  debugLog(`[rmfix] stderr:\n${result.stderr}`);
+  debugLog(`[rmfix] exitCode: ${result.exitCode}`);
 
   // TODO: Implement further logic: failure detection, rmfilter integration, etc.
 

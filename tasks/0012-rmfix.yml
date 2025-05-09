@@ -342,7 +342,7 @@ tasks:
           Let's simplify: `Bun.spawn` directly in `executeCoreCommand` for now,
           to have full control over stdio, and add our own debug logging for the
           command.
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmfix/rmfix.ts`'s `executeCoreCommand` to use `Bun.spawn`
           directly for more control over stdio, instead of `logSpawn`. This is
