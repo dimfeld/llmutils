@@ -473,7 +473,7 @@ tasks:
           4. If none are found, default to `'npm'`.
 
           Use `Bun.file().exists()` for checking file existence.
-        done: false
+        done: true
       - prompt: >
           In `src/rmfix/command.ts`, implement an asynchronous function
           `prepareCommand(command: string, commandArgs: string[]): Promise<{
