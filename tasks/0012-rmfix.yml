@@ -209,7 +209,7 @@ tasks:
           --target bun` might be a build step. If using `bun run
           src/rmfix/cli.ts` directly, the shebang `#!/usr/bin/env bun` should be
           at the top of `cli.ts`. Add this shebang.
-        done: false
+        done: true
       - prompt: >
           Refine `executeCoreCommand` in `src/rmfix/rmfix.ts` for output
           handling.
