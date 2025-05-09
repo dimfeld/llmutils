@@ -817,9 +817,6 @@ async function main() {
     const editFormat =
       globalValues['edit-format'] || modelSettings.defaultEditFormat || 'udiff-simple';
     const tokens = encode(finalOutput);
-    log('\n## OUTPUT');
-    log(`Tokens: ${tokens.length}`);
-    log(`Output written to ${outputFile}, edit format: ${editFormat}`);
 
     if (examples.length) {
       log('\n## EXAMPLES');
@@ -846,6 +843,10 @@ async function main() {
       log('\n## INSTRUCTIONS');
       log(instructions);
     }
+
+    log('\n## OUTPUT');
+    log(`Tokens: ${tokens.length}`);
+    log(`Output written to ${outputFile}, edit format: ${editFormat}`);
   }
 
   if (globalValues.copy) {
