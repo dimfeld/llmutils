@@ -2,6 +2,10 @@ import { spawn } from 'bun';
 import type { RmfixCoreOptions, RmfixRunResult } from './types.ts';
 import { prepareCommand } from './command.ts';
 import { Buffer } from 'node:buffer';
+import { generateRmfilterOutput } from '../rmfilter/rmfilter.ts';
+import type { GlobalValues, CommandParsed } from '../rmfilter/config.ts';
+import { getGitRoot } from '../rmfilter/utils.ts';
+import { log, debugLog } from '../logging.ts';
 
 /**
  * Executes a specified command and captures its output.
@@ -18,8 +22,7 @@ export async function executeCoreCommand(
   const stdoutChunks: Buffer[] = [];
   const stderrChunks: Buffer[] = [];
 
-  // TODO: Replace with proper debugLog from src/logging.ts
-  console.log('[DEBUG_RMFix]', `[rmfix] Executing: ${command} ${commandArgs.join(' ')}`);
+  debugLog(`[rmfix] Executing: ${command} ${commandArgs.join(' ')}`);
 
   try {
     const proc = spawn([command, ...commandArgs], {
@@ -111,14 +114,49 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
 
   const result = await executeCoreCommand(finalCommand, finalArgs);
 
-  // TODO: Replace with proper debugLog from src/logging.ts
-  console.log('[DEBUG_RMFix]', `[rmfix] stdout:\n${result.stdout}`);
-  // TODO: Replace with proper debugLog from src/logging.ts
-  console.log('[DEBUG_RMFix]', `[rmfix] stderr:\n${result.stderr}`);
-  // TODO: Replace with proper debugLog from src/logging.ts
-  console.log('[DEBUG_RMFix]', `[rmfix] exitCode: ${result.exitCode}`);
+  debugLog(`[rmfix] stdout:\n${result.stdout}`);
+  debugLog(`[rmfix] stderr:\n${result.stderr}`);
+  debugLog(`[rmfix] exitCode: ${result.exitCode}`);
 
-  // TODO: Implement further logic: failure detection, rmfilter integration, etc.
+  if (result.exitCode !== 0) {
+    log(
+      `[rmfix] Command failed with exit code ${result.exitCode}. Assembling context with rmfilter...`
+    );
+
+    const constructedInstructionString = `The command "${options.command} ${options.commandArgs.join(' ')}" failed with exit code ${result.exitCode}.\n\nOutput:\n${result.fullOutput}\n\nPlease help fix the issue.`;
+
+    const rmfilterGlobalValues: GlobalValues = {
+      // instructions: [constructedInstructionString], // Instructions will be passed via editorInstructions
+      debug: false,
+      quiet: false,
+      model: undefined,
+    };
+
+    const rmfilterCommandsParsed: CommandParsed[] = [
+      {
+        positionals: options.rmfilterArgs,
+        values: {},
+      },
+    ];
+
+    const baseDir = process.cwd();
+    const gitRoot = await getGitRoot(baseDir);
+
+    try {
+      const rmfilterResult = await generateRmfilterOutput(
+        { globalValues: rmfilterGlobalValues, commandsParsed: rmfilterCommandsParsed },
+        baseDir,
+        gitRoot,
+        constructedInstructionString
+      );
+      log('\n--- rmfilter context ---');
+      log(rmfilterResult.finalOutput);
+    } catch (rmfilterError) {
+      log(
+        `[rmfix] Error running rmfilter: ${rmfilterError instanceof Error ? rmfilterError.message : String(rmfilterError)}`
+      );
+    }
+  }
 
   return result.exitCode;
 }

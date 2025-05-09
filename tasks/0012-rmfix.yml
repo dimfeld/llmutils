@@ -598,7 +598,7 @@ tasks:
                   v. Call `generateRmfilterOutput({ globalValues, commandsParsed }, baseDir, gitRoot, constructedInstructionString)`.
                       Note: `generateRmfilterOutput` takes `editorInstructions` as its last arg, which is concatenated. We can pass our constructed string there. The `globalValues.instructions` can be an array.
                   vi. Log the `finalOutput` from `generateRmfilterOutput` to the console.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmfix/types.ts`:
 
