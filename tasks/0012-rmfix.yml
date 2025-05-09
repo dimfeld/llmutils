@@ -173,7 +173,7 @@ tasks:
 
           Make sure to import `program` from `commander` and `runRmfix` from
           `./rmfix.ts`.
-        done: false
+        done: true
       - prompt: >
           Update `package.json` to include a `bin` entry for `rmfix` pointing to
           `dist/rmfix/cli.js` (assuming TypeScript output goes to `dist`).
