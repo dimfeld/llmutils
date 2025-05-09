@@ -1,9 +1,10 @@
 import { spawn } from 'bun';
-import type { RmfixCoreOptions, RmfixRunResult } from './types.ts';
+import type { RmfixCoreOptions, RmfixRunResult, ParsedTestFailure } from './types.ts';
 import { prepareCommand } from './command.ts';
 import { Buffer } from 'node:buffer';
 import { generateRmfilterOutput } from '../rmfilter/rmfilter.ts';
 import type { GlobalValues, CommandParsed } from '../rmfilter/config.ts';
+import { parseOutput } from './parsers.ts';
 import path from 'node:path';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.ts';
 import { getGitRoot } from '../rmfilter/utils.ts';
@@ -121,44 +122,74 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
   debugLog(`[rmfix] exitCode: ${result.exitCode}`);
 
   if (result.exitCode !== 0) {
+    log(
       `[rmfix] Command failed with exit code ${result.exitCode}. Assembling context with rmfilter...`
     );
 
     const rmfixCwd = process.cwd();
     const gitRoot = await getGitRoot(rmfixCwd);
 
-    const { files: extractedAbsFiles, directories: extractedAbsDirs } =
+    const parsedFailures = parseOutput(result, options.cliOptions.format || 'auto', rmfixCwd);
+
+    let mainInstructionString: string;
+    const allFilePathsForRmfilter = new Set<string>();
+
+    // Collect paths from extractFileReferencesFromInstructions (from raw output)
+    const { files: rawExtractedAbsFiles, directories: rawExtractedAbsDirs } =
       await extractFileReferencesFromInstructions(rmfixCwd, result.fullOutput);
 
-    // Convert absolute paths from extractFileReferences to paths relative to rmfixCwd.
-    // Paths starting with '..' are now allowed, as rmfilter can handle them relative to its baseDir.
-    const extractedPathsRelativeToRmfixCwd = [...extractedAbsFiles, ...extractedAbsDirs]
-      .map(p => path.relative(rmfixCwd, p));
+    const rawExtractedRelativePaths = [...rawExtractedAbsFiles, ...rawExtractedAbsDirs]
+      .map((p) => path.relative(rmfixCwd, p))
+      .filter((p) => p && p !== '.');
 
-    if (extractedPathsRelativeToRmfixCwd.length > 0) {
+    if (rawExtractedRelativePaths.length > 0) {
       debugLog(
-        `[rmfix] Extracted paths from command output for rmfilter context: ${extractedPathsRelativeToRmfixCwd.join(', ')}`
+        `[rmfix] Extracted paths from raw command output: ${rawExtractedRelativePaths.join(', ')}`
       );
     }
+    rawExtractedRelativePaths.forEach((p) => allFilePathsForRmfilter.add(p));
 
-    const constructedInstructionString = `The command "${options.command} ${options.commandArgs.join(' ')}" failed with exit code ${result.exitCode}.\n\nOutput:\n${result.fullOutput}\n\nPlease help fix the issue.`;
+    if (parsedFailures.length > 0) {
+      debugLog(`[rmfix] Parsed ${parsedFailures.length} failures from structured output.`);
+      const failureDetails = parsedFailures
+        .map((failure) => {
+          const relativeTestFilePath = failure.testFilePath
+            ? path.relative(rmfixCwd, failure.testFilePath)
+            : 'Unknown file';
+
+          if (failure.testFilePath) {
+            const relPath = path.relative(rmfixCwd, failure.testFilePath);
+            if (relPath && relPath !== '.') {
+              allFilePathsForRmfilter.add(relPath);
+            }
+          }
+
+          let detail = `The test '${failure.testName || 'Unknown test'}' in file '${relativeTestFilePath}' failed with message: ${failure.errorMessage}.`;
+          if (failure.rawFailureDetails) {
+            detail += `\nRaw details:\n${failure.rawFailureDetails}`;
+          }
+          return detail;
+        })
+        .join('\n\n');
+
+      mainInstructionString = `The command "${options.command} ${options.commandArgs.join(' ')}" failed. Please help fix the following ${parsedFailures.length} test failure(s):\n\n${failureDetails}`;
+    } else {
+      debugLog(
+        '[rmfix] No structured failures parsed, using generic failure message based on full output.'
+      );
+      mainInstructionString = `The command "${options.command} ${options.commandArgs.join(' ')}" failed with exit code ${result.exitCode}.\n\nOutput:\n${result.fullOutput}\n\nPlease help fix the issue.`;
+    }
 
     const rmfilterGlobalValues: GlobalValues = {
-      instructions: [constructedInstructionString],
+      instructions: [mainInstructionString],
       debug: options.cliOptions.debug ?? false,
       quiet: options.cliOptions.quiet ?? false,
       model: undefined,
-      // editFormat is undefined, rmfilter will use its default
     };
 
     const rmfilterCommandsParsed: CommandParsed[] = [];
     const effectiveRmfilterPositionals = [...options.rmfilterArgs];
     const rmfilterValues: CommandParsed['values'] = {};
-
-    if (extractedPathsRelativeToRmfixCwd.length > 0) {
-      effectiveRmfilterPositionals.push(...extractedPathsRelativeToRmfixCwd);
-      rmfilterValues['with-imports'] = true;
-    }
 
     // Note: The current implementation assumes options.rmfilterArgs are purely positionals.
     // If options.rmfilterArgs could contain flags (e.g., "--with-imports" itself, or other rmfilter flags),
@@ -166,6 +197,15 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
     // For example, if options.rmfilterArgs included "--with-imports", rmfilterValues['with-imports']
     // should be true, which is consistent with the logic above.
     // This parsing is a potential future enhancement for rmfix.
+
+    const uniqueFilePathsArray = Array.from(allFilePathsForRmfilter);
+    if (uniqueFilePathsArray.length > 0) {
+      debugLog(
+        `[rmfix] Adding unique files to rmfilter context: ${uniqueFilePathsArray.join(', ')}`
+      );
+      effectiveRmfilterPositionals.push(...uniqueFilePathsArray);
+      rmfilterValues['with-imports'] = true;
+    }
 
     // If there are any positionals (either from CLI or extracted) or specific values to set
     if (effectiveRmfilterPositionals.length > 0 || Object.keys(rmfilterValues).length > 0) {
@@ -184,8 +224,7 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
         { globalValues: rmfilterGlobalValues, commandsParsed: rmfilterCommandsParsed },
         rmfixCwd,
         gitRoot,
-        constructedInstructionString
-      );
+        mainInstructionString
       );
       log('\n--- rmfilter context ---');
       log(rmfilterOutput);

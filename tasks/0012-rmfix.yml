@@ -1145,7 +1145,7 @@ tasks:
 
           - Combine them (unique, relative to `rmfixCwd`), and if any exist, add
           to `rmfilter` positionals and set `--with-imports`.
-        done: false
+        done: true
       - prompt: >
           Add tests for `parseJestJsonOutput` in `src/rmfix/parsers.test.ts`.
 
