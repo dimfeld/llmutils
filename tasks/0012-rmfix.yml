@@ -439,7 +439,7 @@ tasks:
 
           Replace `debugLog` with `console.log` prefixed with `[DEBUG_RMFix]`
           for now.
-        done: false
+        done: true
   - title: 2. NPM Script Detection
     description: Enhance the command execution logic to detect if the provided
       command is an npm script defined in `package.json`. If it is, the command

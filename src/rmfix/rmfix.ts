@@ -1,7 +1,6 @@
 import { spawn } from 'bun';
 import type { RmfixCoreOptions, RmfixRunResult } from './types.ts';
 import { Buffer } from 'node:buffer';
-import { debugLog } from '../logging.ts';
 
 /**
  * Executes a specified command and captures its output.
@@ -18,11 +17,14 @@ export async function executeCoreCommand(
   const stdoutChunks: Buffer[] = [];
   const stderrChunks: Buffer[] = [];
 
-  debugLog(`[rmfix] Executing: ${command} ${commandArgs.join(' ')}`);
+  // TODO: Replace with proper debugLog from src/logging.ts
+  console.log('[DEBUG_RMFix]', `[rmfix] Executing: ${command} ${commandArgs.join(' ')}`);
 
   try {
     const proc = spawn([command, ...commandArgs], {
       stdio: ['inherit', 'pipe', 'pipe'],
+      env: process.env,
+      cwd: process.cwd(),
     });
 
     // Helper function to process a stream (stdout or stderr)
@@ -106,9 +108,12 @@ export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
 
   const result = await executeCoreCommand(command, commandArgs);
 
-  debugLog(`[rmfix] stdout:\n${result.stdout}`);
-  debugLog(`[rmfix] stderr:\n${result.stderr}`);
-  debugLog(`[rmfix] exitCode: ${result.exitCode}`);
+  // TODO: Replace with proper debugLog from src/logging.ts
+  console.log('[DEBUG_RMFix]', `[rmfix] stdout:\n${result.stdout}`);
+  // TODO: Replace with proper debugLog from src/logging.ts
+  console.log('[DEBUG_RMFix]', `[rmfix] stderr:\n${result.stderr}`);
+  // TODO: Replace with proper debugLog from src/logging.ts
+  console.log('[DEBUG_RMFix]', `[rmfix] exitCode: ${result.exitCode}`);
 
   // TODO: Implement further logic: failure detection, rmfilter integration, etc.
 
