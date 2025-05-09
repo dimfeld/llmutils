@@ -517,7 +517,7 @@ tasks:
 
           The `executeCoreCommand` function itself doesn't need to change, as it
           just runs whatever command and args it's given.
-        done: false
+        done: true
       - prompt: >
           Add tests for `prepareCommand` in a new file
           `src/rmfix/command.test.ts`.
