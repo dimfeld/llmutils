@@ -7,6 +7,7 @@
     "apply-llm-edits": "./src/apply-llm-edits/cmd.ts",
     "rmfilter": "./src/rmfilter/rmfilter.ts",
     "rmfind": "./src/rmfind/rmfind.ts",
+    "rmfix": "./src/rmfix/cli.ts",
     "rmplan": "./src/rmplan/rmplan.ts",
     "rmrun": "./src/rmrun.ts"
   },
