@@ -98,7 +98,6 @@ export class ImportWalker {
         tree.delete();
       }
     } catch (e) {
-      error(`Error parsing file ${filePath}:`, e);
       return null;
     }
   }

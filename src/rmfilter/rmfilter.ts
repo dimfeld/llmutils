@@ -388,6 +388,29 @@ async function processCommand(
   // Note: Import processing requires absolute paths or paths relative to gitRoot.
   // This needs careful handling if baseDir != gitRoot. For now, assume baseDir is sufficient context.
   if (files) {
+    if (!cmdParsed.values['no-expand-pages']) {
+      let expandSet = new Set<string>(files);
+      for (const file of files) {
+        const { base: filename, dir } = path.parse(file);
+        debugLog('expanding page', {
+          filename,
+          dir,
+        });
+        if (filename == '+page.server.ts' || filename == '+page.ts') {
+          expandSet.add(path.join(dir, '+page.svelte'));
+        } else if (filename == '+page.svelte') {
+          expandSet.add(path.join(dir, '+page.server.ts'));
+          expandSet.add(path.join(dir, '+page.ts'));
+        } else if (filename == '+layout.server.ts' || filename == '+layout.ts') {
+          expandSet.add(path.join(dir, '+layout.svelte'));
+        } else if (filename == '+layout.svelte') {
+          expandSet.add(path.join(dir, '+layout.server.ts'));
+          expandSet.add(path.join(dir, '+layout.ts'));
+        }
+      }
+      files = Array.from(expandSet);
+    }
+
     if (cmdValues['with-imports']) {
       importFiles = await processWithImports(baseDir, walker, files, false, ignoreGlobs);
     } else if (cmdValues['with-all-imports']) {
@@ -554,31 +577,16 @@ export async function generateRmfilterOutput(
     commandsParsed.map(async (cmdParsed) => {
       // Pass baseDir and gitRoot to processCommand
       const cmdFiles = await processCommand(walker, baseDir, gitRoot, cmdParsed, globalValues);
+
       cmdFiles.filesSet.forEach((file) => {
         const absolutePath = path.resolve(baseDir, file);
         const relativeToGitRoot = path.relative(gitRoot, absolutePath);
         const dirname = path.dirname(relativeToGitRoot);
 
-        // Expand SvelteKit page/layout files
-        if (!cmdParsed.values['no-expand-pages']) {
-          let filename = path.parse(relativeToGitRoot).base;
-          const svelteDir = path.dirname(absolutePath);
-          if (filename == '+page.server.ts' || filename == '+page.ts') {
-            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+page.svelte')));
-          } else if (filename == '+page.svelte') {
-            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+page.server.ts')));
-            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+page.ts')));
-          } else if (filename == '+layout.server.ts' || filename == '+layout.ts') {
-            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+layout.svelte')));
-          } else if (filename == '+layout.svelte') {
-            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+layout.server.ts')));
-            allFilesSet.add(path.relative(gitRoot, path.join(svelteDir, '+layout.ts')));
-          }
-        }
-
         allFilesSet.add(relativeToGitRoot);
         allFileDirs.add(dirname);
       });
+
       allExamples.push(
         ...cmdFiles.examples.map((ex) => ({
           ...ex,
