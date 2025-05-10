@@ -23,7 +23,10 @@ export async function detectPackageManager(): Promise<'npm' | 'bun' | 'yarn'> {
 
 // Helper to parse a script string like "cmd --arg1 val1 --arg2" into [cmd, --arg1, val1, --arg2]
 function parseScriptString(script: string): string[] {
-  return script.trim().split(/\s+/).filter(s => s.length > 0);
+  return script
+    .trim()
+    .split(/\s+/)
+    .filter((s) => s.length > 0);
 }
 
 // Define OutputFormat type (can be moved to types.ts later)
@@ -33,22 +36,29 @@ export type OutputFormat = 'auto' | 'json' | 'tap' | 'text';
 function hasReporterArg(args: string[], runner: 'jest' | 'vitest'): boolean {
   if (runner === 'jest') {
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--reporters' && i + 1 < args.length && args[i+1].includes('json')) return true;
+      if (args[i] === '--reporters' && i + 1 < args.length && args[i + 1].includes('json'))
+        return true;
       if (args[i].startsWith('--reporters=') && args[i].includes('json')) return true;
     }
   } else if (runner === 'vitest') {
     // Checks for --reporter=json or --reporter json
     if (args.includes('--reporter=json')) return true;
     const reporterIndex = args.indexOf('--reporter');
-    if (reporterIndex !== -1 && args.length > reporterIndex + 1 && args[reporterIndex + 1].includes('json')) {
+    if (
+      reporterIndex !== -1 &&
+      args.length > reporterIndex + 1 &&
+      args[reporterIndex + 1].includes('json')
+    ) {
       return true;
     }
     // Also check for --reporter=some-json-variant or --reporter some-json-variant
-    return args.some(arg => (arg.startsWith('--reporter=') || arg.startsWith('--reporter ')) && arg.includes('json'));
+    return args.some(
+      (arg) =>
+        (arg.startsWith('--reporter=') || arg.startsWith('--reporter ')) && arg.includes('json')
+    );
   }
   return false;
 }
-
 
 /**
  * Prepares the command and arguments for execution, detecting npm scripts
@@ -76,7 +86,9 @@ export async function prepareCommand(
 
   if (await packageJsonFile.exists()) {
     try {
-      const packageJsonContent = await packageJsonFile.json() as { scripts?: Record<string, string> };
+      const packageJsonContent = (await packageJsonFile.json()) as {
+        scripts?: Record<string, string>;
+      };
       if (packageJsonContent?.scripts?.[initialCommand]) {
         isNpmScriptContext = true;
         const scriptString = packageJsonContent.scripts[initialCommand];
@@ -113,21 +125,22 @@ export async function prepareCommand(
   // These are the args for the `runnerToAnalyze` if it's the runner itself,
   // or for the sub-command if `currentCommand` is like `npx`.
   let runnerToAnalyze = currentCommand;
-  let argsForRunner = currentArgs; 
-  let isSubCommandRunner = false; 
+  let argsForRunner = currentArgs;
+  let isSubCommandRunner = false;
   let subCommandPrefixParts: string[] = [];
-  let subCommandName = "";
+  let subCommandName = '';
 
   const lowerCaseCurrentCommand = currentCommand.toLowerCase();
-  if (['npx', 'pnpm', 'pnpx'].includes(lowerCaseCurrentCommand) || 
-      (lowerCaseCurrentCommand === 'yarn' && currentArgs[0]?.toLowerCase() === 'dlx')) {
-
+  if (
+    ['npx', 'pnpm', 'pnpx'].includes(lowerCaseCurrentCommand) ||
+    (lowerCaseCurrentCommand === 'yarn' && currentArgs[0]?.toLowerCase() === 'dlx')
+  ) {
     let potentialRunnerNameIndexInArgs = 0;
     subCommandPrefixParts = [currentCommand];
 
     if (lowerCaseCurrentCommand === 'yarn' && currentArgs[0]?.toLowerCase() === 'dlx') {
-        potentialRunnerNameIndexInArgs = 1; 
-        subCommandPrefixParts.push(currentArgs[0]);
+      potentialRunnerNameIndexInArgs = 1;
+      subCommandPrefixParts.push(currentArgs[0]);
     }
 
     if (currentArgs.length > potentialRunnerNameIndexInArgs) {
@@ -147,7 +160,8 @@ export async function prepareCommand(
 
     if (runnerId.includes('jest')) {
       // Check for --json flag OR --reporters flag with json
-      const alreadyHasJson = argsForRunner.includes('--json') || hasReporterArg(argsForRunner, 'jest');
+      const alreadyHasJson =
+        argsForRunner.includes('--json') || hasReporterArg(argsForRunner, 'jest');
       if (!alreadyHasJson) {
         argsForRunner.unshift('--json');
       }
@@ -180,10 +194,9 @@ export async function prepareCommand(
     // currentCommand is the command (e.g. "jest", "npx")
     // currentArgs are its (potentially modified) args (e.g. ["--json", "--watch"] or ["jest", "--json", "--watch"])
     if (isSubCommandRunner) {
-        // The command to run is the prefix (e.g. "npx" or "yarn dlx"), and its args are currentArgs
-        return { finalCommand: subCommandPrefixParts.join(' '), finalArgs: currentArgs };
+      // The command to run is the prefix (e.g. "npx" or "yarn dlx"), and its args are currentArgs
+      return { finalCommand: subCommandPrefixParts.join(' '), finalArgs: currentArgs };
     }
     return { finalCommand: currentCommand, finalArgs: currentArgs };
   }
-}
 }
