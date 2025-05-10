@@ -22,6 +22,7 @@ import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
 import chalk from 'chalk';
+import { createRetryRequester } from '../apply-llm-edits/retry.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -346,6 +347,7 @@ program
   .action(async (planFile, options) => {
     const config = await loadEffectiveConfig(options.config);
     const executionModel = options.model || config.models?.execution || DEFAULT_RUN_MODEL;
+    const retryRequester = createRetryRequester(executionModel);
 
     if (!options['no-log']) {
       let lastDot = planFile.lastIndexOf('.');
@@ -436,7 +438,11 @@ program
           let output = await result.text;
           // newline between model output and apply output
           log('');
-          await applyLlmEdits({ content: output, interactive: true });
+          await applyLlmEdits({
+            content: output,
+            interactive: true,
+            retryRequester: retryRequester,
+          });
         } catch (err) {
           error('Execution step failed:', err);
           hasError = true;
