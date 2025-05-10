@@ -34,9 +34,14 @@ export const directCallExecutor: Executor<typeof directCallOptionsSchema> = {
   },
 
   prepareStepOptions(executorOptions, sharedOptions, rmplanConfig) {
-    if (executorOptions.executionModel) {
+    const executionModel =
+      rmplanConfig.models?.execution ??
+      executorOptions.executionModel ??
+      sharedOptions.model ??
+      DEFAULT_RUN_MODEL;
+    if (executionModel) {
       return {
-        model: executorOptions.executionModel,
+        model: executionModel,
       };
     } else {
       return {};
@@ -50,7 +55,11 @@ export const directCallExecutor: Executor<typeof directCallOptionsSchema> = {
     rmplanConfig,
     baseApplyLlmEditsOptions
   ) => {
-    const executionModel = options.executionModel ?? sharedOptions.model ?? DEFAULT_RUN_MODEL;
+    const executionModel =
+      rmplanConfig.models?.execution ??
+      options.executionModel ??
+      sharedOptions.model ??
+      DEFAULT_RUN_MODEL;
 
     const retryRequester = createRetryRequester(executionModel);
     const result = await runStreamingPrompt({
