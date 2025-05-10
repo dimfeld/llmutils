@@ -588,7 +588,7 @@ describe('applyLlmEdits', () => {
     expect(updatedContent2).toBe('Different content\nSecond line\n');
   });
 
-  test('attempts LLM retry when provided with llmRequester', async () => {
+  test('attempts LLM retry when provided with retryRequester', async () => {
     const testFile = path.join(tempDir, 'test.txt');
     await writeFile(testFile, 'Different content\nSecond line\n');
 
@@ -603,7 +603,7 @@ describe('applyLlmEdits', () => {
 `;
 
     // Mock LLM requester that returns a corrected diff
-    const mockLlmRequester = mock(() => {
+    const mockRetryRequester = mock(() => {
       return Promise.resolve(`
 --- test.txt
 +++ test.txt
@@ -627,7 +627,7 @@ describe('applyLlmEdits', () => {
       dryRun: false,
       mode: 'udiff',
       interactive: false,
-      llmRequester: mockLlmRequester,
+      retryRequester: mockRetryRequester,
       originalPrompt,
       baseDir: tempDir,
       applyPartial: true,
@@ -636,7 +636,7 @@ describe('applyLlmEdits', () => {
     expect(result).toBeDefined();
     expect(result?.successes.length).toBe(1);
     expect(result?.failures.length).toBe(0);
-    expect(mockLlmRequester).toHaveBeenCalled();
+    expect(mockRetryRequester).toHaveBeenCalled();
 
     const updatedContent = await Bun.file(testFile).text();
     expect(updatedContent).toBe('Modified content\nSecond line\n');

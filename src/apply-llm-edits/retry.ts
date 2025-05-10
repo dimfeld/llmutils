@@ -19,9 +19,9 @@ export interface LlmPromptMessage {
 export type LlmPromptStructure = LlmPromptMessage[];
 
 /** Type definition for the callback function used to request LLM completions. */
-export type LlmRequester = (prompt: LlmPromptStructure) => Promise<string>;
+export type RetryRequester = (prompt: LlmPromptStructure) => Promise<string>;
 
-export function createRetryRequester(modelId: string): LlmRequester {
+export function createRetryRequester(modelId: string): RetryRequester {
   const model = createModel(modelId);
   return async (messages: LlmPromptStructure) => {
     const result = streamText({
