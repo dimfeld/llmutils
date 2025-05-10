@@ -18,7 +18,11 @@ program
     let commandToRunAndItsArgs: string[];
     let rmfilterArgs: string[] = [];
 
-    const separatorIndex = commandWithArgs.findIndex((arg) => arg === '--' || arg === '///');
+    // Look for triple dash first, as a way to handle when the command we are running has its own double slash
+    let separatorIndex = commandWithArgs.findIndex((arg) => arg === '---');
+    if (separatorIndex === -1) {
+      separatorIndex = commandWithArgs.findIndex((arg) => arg === '--');
+    }
 
     if (separatorIndex === -1) {
       commandToRunAndItsArgs = commandWithArgs;
@@ -33,7 +37,6 @@ program
       // For more control or custom message before help:
       program.outputHelp();
       process.exit(1);
-      return;
     }
 
     const command = commandToRunAndItsArgs[0];

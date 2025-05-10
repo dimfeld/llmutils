@@ -7,19 +7,19 @@ import { findUp } from 'find-up';
  * @returns A promise that resolves to 'bun', 'yarn', or 'npm'.
  */
 export async function detectPackageManager(): Promise<'npm' | 'pnpm' | 'bun' | 'yarn'> {
-  if (await Bun.file('bun.lockb').exists()) {
+  if ((await findUp('bun.lockb')) !== undefined || (await findUp('bun.lock')) !== undefined) {
     return 'bun';
   }
 
-  if (await Bun.file('pnpm-lock.yaml').exists()) {
+  if ((await findUp('pnpm-lock.yaml')) !== undefined) {
     return 'pnpm';
   }
 
-  if (await Bun.file('yarn.lock').exists()) {
+  if ((await findUp('yarn.lock')) !== undefined) {
     return 'yarn';
   }
 
-  if (await Bun.file('package-lock.json').exists()) {
+  if ((await findUp('package-lock.json')) !== undefined) {
     return 'npm';
   }
 
