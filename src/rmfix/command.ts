@@ -1,13 +1,18 @@
 import path from 'node:path';
+import { findUp } from 'find-up';
 
 /**
  * Detects the package manager used in the current project based on lockfile presence.
  *
  * @returns A promise that resolves to 'bun', 'yarn', or 'npm'.
  */
-export async function detectPackageManager(): Promise<'npm' | 'bun' | 'yarn'> {
+export async function detectPackageManager(): Promise<'npm' | 'pnpm' | 'bun' | 'yarn'> {
   if (await Bun.file('bun.lockb').exists()) {
     return 'bun';
+  }
+
+  if (await Bun.file('pnpm-lock.yaml').exists()) {
+    return 'pnpm';
   }
 
   if (await Bun.file('yarn.lock').exists()) {
@@ -81,12 +86,11 @@ export async function prepareCommand(
   let finalPackageManagerCommand = '';
   let finalPackageManagerArgsPrefix: string[] = [];
 
-  const packageJsonPath = './package.json';
-  const packageJsonFile = Bun.file(packageJsonPath);
+  const packageJsonPath = await findUp('package.json');
 
-  if (await packageJsonFile.exists()) {
+  if (packageJsonPath) {
     try {
-      const packageJsonContent = (await packageJsonFile.json()) as {
+      const packageJsonContent = (await Bun.file(packageJsonPath).json()) as {
         scripts?: Record<string, string>;
       };
       if (packageJsonContent?.scripts?.[initialCommand]) {
@@ -119,36 +123,38 @@ export async function prepareCommand(
   // `currentCommand` is the command we are analyzing (e.g., "jest", "vitest", or "npx").
   // `currentArgs` are the arguments associated with `currentCommand` (e.g. ["--coverage", "--watch"] for "vitest", or ["jest", "--ci"] for "npx").
   let currentCommand = scriptExecutable;
-  let currentArgs = [...scriptBaseArgs, ...initialCommandArgs];
+  let currentArgs = [...initialCommandArgs];
+
+  // To analyze the full command line.
+  let fullArgs = [...scriptBaseArgs, ...initialCommandArgs];
 
   // Args that will be modified by reporter injection.
   // These are the args for the `runnerToAnalyze` if it's the runner itself,
   // or for the sub-command if `currentCommand` is like `npx`.
   let runnerToAnalyze = currentCommand;
-  let argsForRunner = currentArgs;
   let isSubCommandRunner = false;
   let subCommandPrefixParts: string[] = [];
   let subCommandName = '';
 
   const lowerCaseCurrentCommand = currentCommand.toLowerCase();
+  const firstSubcommand = fullArgs[0];
   if (
-    ['npx', 'pnpm', 'pnpx'].includes(lowerCaseCurrentCommand) ||
-    (lowerCaseCurrentCommand === 'yarn' && currentArgs[0]?.toLowerCase() === 'dlx')
+    ['npx', 'pnpm', 'pnpx', 'bunx'].includes(lowerCaseCurrentCommand) ||
+    (lowerCaseCurrentCommand === 'yarn' && firstSubcommand?.toLowerCase() === 'dlx')
   ) {
     let potentialRunnerNameIndexInArgs = 0;
     subCommandPrefixParts = [currentCommand];
 
-    if (lowerCaseCurrentCommand === 'yarn' && currentArgs[0]?.toLowerCase() === 'dlx') {
+    if (lowerCaseCurrentCommand === 'yarn' && firstSubcommand?.toLowerCase() === 'dlx') {
       potentialRunnerNameIndexInArgs = 1;
-      subCommandPrefixParts.push(currentArgs[0]);
+      subCommandPrefixParts.push(firstSubcommand);
     }
 
-    if (currentArgs.length > potentialRunnerNameIndexInArgs) {
-      const potentialRunnerName = currentArgs[potentialRunnerNameIndexInArgs];
+    if (fullArgs.length > potentialRunnerNameIndexInArgs) {
+      const potentialRunnerName = fullArgs[potentialRunnerNameIndexInArgs];
       if (potentialRunnerName.includes('jest') || potentialRunnerName.includes('vitest')) {
         runnerToAnalyze = potentialRunnerName;
         subCommandName = potentialRunnerName;
-        argsForRunner = currentArgs.slice(potentialRunnerNameIndexInArgs + 1);
         isSubCommandRunner = true;
       }
     }
@@ -160,43 +166,41 @@ export async function prepareCommand(
 
     if (runnerId.includes('jest')) {
       // Check for --json flag OR --reporters flag with json
-      const alreadyHasJson =
-        argsForRunner.includes('--json') || hasReporterArg(argsForRunner, 'jest');
+      const alreadyHasJson = fullArgs.includes('--json') || hasReporterArg(fullArgs, 'jest');
       if (!alreadyHasJson) {
-        argsForRunner.unshift('--json');
+        currentArgs.push('--json');
       }
     } else if (runnerId.includes('vitest')) {
-      if (!hasReporterArg(argsForRunner, 'vitest')) {
-        argsForRunner.unshift('--reporter=json');
+      if (!hasReporterArg(fullArgs, 'vitest')) {
+        currentArgs.push('--reporter=json');
       }
     }
   }
-  // Reconstruct `currentArgs` if injection happened for a sub-command
-  if (isSubCommandRunner) {
-    currentArgs = [subCommandName, ...argsForRunner];
-  } else {
-    currentArgs = argsForRunner;
-  }
 
+  // console.log({
+  //   runnerToAnalyze,
+  //   scriptExecutable,
+  //   scriptBaseArgs,
+  //   initialCommand,
+  //   initialCommandArgs,
+  //   isNpmScriptContext,
+  //   finalPackageManagerCommand,
+  //   isSubCommandRunner,
+  //   subCommandName,
+  // });
   if (isNpmScriptContext) {
     const finalArgs = [...finalPackageManagerArgsPrefix];
     // The arguments to pass to the script (after '--') are composed of the script's executable (if not part of package manager like npx)
     // and its (now modified) arguments.
     // scriptExecutable was the first part of the script string (e.g. "vitest" or "npx")
     // currentArgs are the modified args for that scriptExecutable (e.g. ["--reporter=json", "--coverage"] or ["jest", "--json", "--ci"])
-    const fullScriptExecutionParts = [scriptExecutable, ...currentArgs];
-    if (fullScriptExecutionParts.length > 0) {
-      finalArgs.push('--', ...fullScriptExecutionParts);
+    if (currentArgs.length > 0) {
+      finalArgs.push('--', ...currentArgs);
     }
     return { finalCommand: finalPackageManagerCommand, finalArgs: finalArgs };
   } else {
     // Not an npm script.
     // currentCommand is the command (e.g. "jest", "npx")
-    // currentArgs are its (potentially modified) args (e.g. ["--json", "--watch"] or ["jest", "--json", "--watch"])
-    if (isSubCommandRunner) {
-      // The command to run is the prefix (e.g. "npx" or "yarn dlx"), and its args are currentArgs
-      return { finalCommand: subCommandPrefixParts.join(' '), finalArgs: currentArgs };
-    }
     return { finalCommand: currentCommand, finalArgs: currentArgs };
   }
 }

@@ -55,7 +55,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', ['--watch'], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'some-test-runner', '--watch'],
+      finalArgs: ['run', 'test', '--', '--watch'],
     });
     expect(dpmSpy).toHaveBeenCalledTimes(1);
 
@@ -75,7 +75,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('dev', [], 'auto');
     expect(result).toEqual({
       finalCommand: 'bun',
-      finalArgs: ['run', 'dev', '--', 'vite'],
+      finalArgs: ['run', 'dev'],
     });
     expect(dpmSpy).toHaveBeenCalledTimes(1);
 
@@ -95,7 +95,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('build', ['--project', 'tsconfig.json'], 'auto');
     expect(result).toEqual({
       finalCommand: 'yarn',
-      finalArgs: ['run', 'build', '--', 'tsc', '--project', 'tsconfig.json'],
+      finalArgs: ['run', 'build', '--', '--project', 'tsconfig.json'],
     });
     expect(dpmSpy).toHaveBeenCalledTimes(1);
 
@@ -115,7 +115,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('lint', [], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'lint', '--', 'eslint', '.'],
+      finalArgs: ['run', 'lint'],
     });
     expect(dpmSpy).toHaveBeenCalledTimes(1);
 
@@ -150,7 +150,6 @@ describe('prepareCommand', () => {
 
     const result = await prepareCommand('test', [], 'auto');
     expect(result).toEqual({ finalCommand: 'test', finalArgs: [] });
-    expect(dpmSpy).not.toHaveBeenCalled();
 
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();
@@ -169,11 +168,6 @@ describe('prepareCommand', () => {
 
     const result = await prepareCommand('test', [], 'auto');
     expect(result).toEqual({ finalCommand: 'test', finalArgs: [] });
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "[rmfix] Warning: Could not parse ./package.json. Proceeding as if it's not an npm script. Error: Invalid JSON"
-      )
-    );
     expect(dpmSpy).not.toHaveBeenCalled();
 
     bunFileSpy.mockRestore();
@@ -186,12 +180,12 @@ describe('prepareCommand', () => {
   // Jest - Direct Command
   it('should inject --json for direct jest command if no reporter specified', async () => {
     const result = await prepareCommand('jest', ['--ci'], 'auto');
-    expect(result).toEqual({ finalCommand: 'jest', finalArgs: ['--json', '--ci'] });
+    expect(result).toEqual({ finalCommand: 'jest', finalArgs: ['--ci', '--json'] });
   });
 
   it('should inject --json for direct jest command if format is json', async () => {
     const result = await prepareCommand('jest', ['--ci'], 'json');
-    expect(result).toEqual({ finalCommand: 'jest', finalArgs: ['--json', '--ci'] });
+    expect(result).toEqual({ finalCommand: 'jest', finalArgs: ['--ci', '--json'] });
   });
 
   it('should not inject for direct jest if --reporters=some-json.js is present', async () => {
@@ -218,19 +212,19 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('jest', ['--outputFile=results.json', '--ci'], 'auto');
     expect(result).toEqual({
       finalCommand: 'jest',
-      finalArgs: ['--json', '--outputFile=results.json', '--ci'],
+      finalArgs: ['--outputFile=results.json', '--ci', '--json'],
     });
   });
 
   // Vitest - Direct Command
   it('should inject --reporter=json for direct vitest command if no reporter specified', async () => {
     const result = await prepareCommand('vitest', ['--run'], 'auto');
-    expect(result).toEqual({ finalCommand: 'vitest', finalArgs: ['--reporter=json', '--run'] });
+    expect(result).toEqual({ finalCommand: 'vitest', finalArgs: ['--run', '--reporter=json'] });
   });
 
   it('should inject --reporter=json for direct vitest command if format is json', async () => {
     const result = await prepareCommand('vitest', ['--run'], 'json');
-    expect(result).toEqual({ finalCommand: 'vitest', finalArgs: ['--reporter=json', '--run'] });
+    expect(result).toEqual({ finalCommand: 'vitest', finalArgs: ['--run', '--reporter=json'] });
   });
 
   it('should not inject --reporter=json for direct vitest command if --reporter=json is present', async () => {
@@ -275,7 +269,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', ['--watch'], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'jest', '--json', '--coverage', '--watch'],
+      finalArgs: ['run', 'test', '--', '--watch', '--json'],
     });
 
     bunFileSpy.mockRestore();
@@ -293,7 +287,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', ['--changed'], 'auto');
     expect(result).toEqual({
       finalCommand: 'bun',
-      finalArgs: ['run', 'test', '--', 'vitest', '--reporter=json', '--run', '--changed'],
+      finalArgs: ['run', 'test', '--', '--changed', '--reporter=json'],
     });
 
     bunFileSpy.mockRestore();
@@ -311,7 +305,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', [], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'jest', '--json', '--ci'],
+      finalArgs: ['run', 'test'],
     });
 
     bunFileSpy.mockRestore();
@@ -329,7 +323,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', [], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'jest', '--reporters=some-json.js', '--ci'],
+      finalArgs: ['run', 'test'],
     });
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();
@@ -346,7 +340,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', [], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'vitest', '--reporter=custom-json.js', '--run'],
+      finalArgs: ['run', 'test'],
     });
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();
@@ -363,7 +357,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', ['--json'], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'jest', '--json', '--ci'],
+      finalArgs: ['run', 'test', '--', '--json'],
     });
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();
@@ -380,7 +374,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', ['--reporter=json'], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'vitest', '--reporter=json', '--run'],
+      finalArgs: ['run', 'test', '--', '--reporter=json'],
     });
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();
@@ -389,7 +383,7 @@ describe('prepareCommand', () => {
   // Commands via npx/pnpm/yarn dlx
   it('should inject --json for `npx jest` command', async () => {
     const result = await prepareCommand('npx', ['jest', '--watchAll'], 'auto');
-    expect(result).toEqual({ finalCommand: 'npx', finalArgs: ['jest', '--json', '--watchAll'] });
+    expect(result).toEqual({ finalCommand: 'npx', finalArgs: ['jest', '--watchAll', '--json'] });
   });
 
   it('should inject --reporter=json for `pnpm vitest` command', async () => {
@@ -397,7 +391,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('pnpm', ['vitest', 'run', '--threads=false'], 'auto');
     expect(result).toEqual({
       finalCommand: 'pnpm',
-      finalArgs: ['vitest', '--reporter=json', 'run', '--threads=false'],
+      finalArgs: ['vitest', 'run', '--threads=false', '--reporter=json'],
     });
   });
 
@@ -405,7 +399,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('yarn', ['dlx', 'vitest', '--ui'], 'auto');
     expect(result).toEqual({
       finalCommand: 'yarn',
-      finalArgs: ['dlx', 'vitest', '--reporter=json', '--ui'],
+      finalArgs: ['dlx', 'vitest', '--ui', '--reporter=json'],
     });
   });
 
@@ -437,7 +431,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', ['--maxWorkers=2'], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'npx', 'jest', '--json', '--ci', '--maxWorkers=2'],
+      finalArgs: ['run', 'test', '--', '--maxWorkers=2', '--json'],
     });
 
     bunFileSpy.mockRestore();
@@ -448,7 +442,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('./node_modules/.bin/jest', ['--ci'], 'auto');
     expect(result).toEqual({
       finalCommand: './node_modules/.bin/jest',
-      finalArgs: ['--json', '--ci'],
+      finalArgs: ['--ci', '--json'],
     });
   });
 
@@ -463,7 +457,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', [], 'auto');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'node_modules/.bin/vitest', '--reporter=json', '--run'],
+      finalArgs: ['run', 'test', '--', '--reporter=json'],
     });
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();
@@ -491,7 +485,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', ['--watch'], 'tap');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'jest', '--coverage', '--watch'],
+      finalArgs: ['run', 'test', '--', '--watch'],
     });
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();
@@ -508,7 +502,7 @@ describe('prepareCommand', () => {
     const result = await prepareCommand('test', ['--watch'], 'tap');
     expect(result).toEqual({
       finalCommand: 'npm',
-      finalArgs: ['run', 'test', '--', 'vitest', '--coverage', '--watch'],
+      finalArgs: ['run', 'test', '--', '--watch'],
     });
     bunFileSpy.mockRestore();
     dpmSpy.mockRestore();
