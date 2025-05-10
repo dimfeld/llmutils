@@ -20,7 +20,7 @@ import {
   constructRetryPrompt,
   constructRetryMessage,
   getOriginalRequestContext,
-  type LlmRequester,
+  type RetryRequester,
 } from './retry.ts';
 
 export interface ApplyLlmEditsOptions {
@@ -31,7 +31,7 @@ export interface ApplyLlmEditsOptions {
   interactive?: boolean;
   applyPartial?: boolean;
   originalPrompt?: string;
-  llmRequester?: LlmRequester;
+  retryRequester?: RetryRequester;
   baseDir?: string;
   copyRetryPrompt?: boolean;
 }
@@ -253,7 +253,7 @@ export async function applyLlmEdits({
   interactive = false,
   originalPrompt,
   baseDir = process.cwd(),
-  llmRequester,
+  retryRequester,
   copyRetryPrompt = false,
 }: ApplyLlmEditsOptions): Promise<
   { successes: EditResult[]; failures: FailureResult[] } | undefined
@@ -287,7 +287,7 @@ export async function applyLlmEdits({
   let appliedInitialSuccesses = false;
 
   // --- Retry Logic ---
-  if (remainingFailures.length > 0 && llmRequester) {
+  if (remainingFailures.length > 0 && retryRequester) {
     // Right now we always apply initial successes first when retry is enabled
     log(`Applying ${successes.length} successful edits...`);
     appliedInitialSuccesses = true;
@@ -323,7 +323,7 @@ export async function applyLlmEdits({
       let retryResponseContent: string | null = null;
       try {
         log('Sending request to LLM for corrections...');
-        retryResponseContent = await llmRequester(retryPrompt);
+        retryResponseContent = await retryRequester(retryPrompt);
         log('Received retry response from LLM.');
       } catch (err: any) {
         error(chalk.red('LLM request for retry failed:'), err.message);

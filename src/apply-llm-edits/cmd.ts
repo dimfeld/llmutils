@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { error, log } from '../logging.ts';
 import { setDebug } from '../rmfilter/utils.ts';
 import { applyLlmEdits, getWriteRoot } from './apply.js';
-import { createRetryRequester, type LlmRequester } from './retry.ts';
+import { createRetryRequester, type RetryRequester } from './retry.ts';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';
 
 const args = process.argv.slice(2);
@@ -75,9 +75,9 @@ if (originalPromptPath) {
   }
 }
 
-let llmRequester: LlmRequester | undefined;
+let retryRequester: RetryRequester | undefined;
 if (retry) {
-  llmRequester = createRetryRequester(modelValue || DEFAULT_RUN_MODEL);
+  retryRequester = createRetryRequester(modelValue || DEFAULT_RUN_MODEL);
 }
 
 applyLlmEdits({
@@ -90,7 +90,7 @@ applyLlmEdits({
   applyPartial,
   originalPrompt: originalPromptContent,
   copyRetryPrompt,
-  llmRequester,
+  retryRequester,
 }).catch((err) => {
   error('Error processing input:', err);
   process.exit(1);
