@@ -1,3 +1,5 @@
+import { streamText } from 'ai';
+import { createModel } from '../common/model_factory.ts';
 import type { NoMatchFailure, NotUniqueFailure } from '../editor/types.ts';
 import { debugLog, warn, error } from '../logging.ts';
 import { getOutputPath } from '../rmfilter/repomix.ts';
@@ -5,6 +7,7 @@ import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.ts';
 import { extractRmfilterCommandArgs, type ApplyLlmEditsOptions } from './apply.ts';
 import { formatFailuresForLlm } from './failures.ts';
 import * as path from 'path';
+import { streamResultToConsole } from '../common/llm.ts';
 
 /** Represents a single message in a structured LLM prompt. */
 export interface LlmPromptMessage {
@@ -18,7 +21,19 @@ export type LlmPromptStructure = LlmPromptMessage[];
 /** Type definition for the callback function used to request LLM completions. */
 export type LlmRequester = (prompt: LlmPromptStructure) => Promise<string>;
 
-export async function retry() {}
+export function createRetryRequester(modelId: string): LlmRequester {
+  const model = createModel(modelId);
+  return async (messages: LlmPromptStructure) => {
+    const result = streamText({
+      model,
+      messages,
+    });
+
+    await streamResultToConsole(result);
+
+    return result.text;
+  };
+}
 
 /**
  * Retrieves the original context (prompt) used to generate the LLM response.

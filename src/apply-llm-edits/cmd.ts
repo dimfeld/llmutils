@@ -11,6 +11,8 @@ import * as path from 'node:path';
 import { error, log } from '../logging.ts';
 import { setDebug } from '../rmfilter/utils.ts';
 import { applyLlmEdits, getWriteRoot } from './apply.js';
+import { createRetryRequester, type LlmRequester } from './retry.ts';
+import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';
 
 const args = process.argv.slice(2);
 
@@ -24,6 +26,7 @@ Options:
   --mode <mode>                  Force an edit mode
   -i. --interactive              Enable interactive mode for resolving edit failures
   --retry                        Do an automatic retry via LLM on failure (CLI support limited)
+  -m, --model <model>            AI model to use for prompt fixing (default: ${DEFAULT_RUN_MODEL})
   --pa, --partial-apply          Apply successes even if there are failures
   --cr, --copy-retry-prompt      Copy a retry prompt to clipboard on failure
   --op, --original-prompt <file> Path to the original prompt file for retry context
@@ -46,6 +49,8 @@ const originalPromptIndex = args.findIndex((arg) => arg == '--original-prompt' |
 const modeValue = modeIndex != -1 ? args[modeIndex + 1] : undefined;
 const cwd = cwdIndex != -1 ? args[cwdIndex + 1] : undefined;
 const originalPromptPath = originalPromptIndex != -1 ? args[originalPromptIndex + 1] : undefined;
+const modelIndex = args.findIndex((arg) => arg == '--model' || arg == '-m');
+const modelValue = modelIndex != -1 ? args[modelIndex + 1] : undefined;
 
 setDebug(args.includes('--debug'));
 
@@ -70,6 +75,11 @@ if (originalPromptPath) {
   }
 }
 
+let llmRequester: LlmRequester | undefined;
+if (retry) {
+  llmRequester = createRetryRequester(modelValue || DEFAULT_RUN_MODEL);
+}
+
 applyLlmEdits({
   content,
   writeRoot: baseDir,
@@ -80,8 +90,7 @@ applyLlmEdits({
   applyPartial,
   originalPrompt: originalPromptContent,
   copyRetryPrompt,
-  llmRequester: undefined,
-  // The --retry flag enables the *logic* in applyLlmEdits, but without an llmRequester, it can't call the LLM.
+  llmRequester,
 }).catch((err) => {
   error('Error processing input:', err);
   process.exit(1);
