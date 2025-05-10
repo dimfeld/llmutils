@@ -19,7 +19,7 @@ interface PrepareNextStepOptions {
   rmfilter?: boolean;
   previous?: boolean;
   withImports?: boolean;
-  withAllImports?: boolean;
+  withAllImports?: boolean; // Used by 'next' command, agent uses prepareNextStep with selectSteps: false
   withImporters?: boolean;
   selectSteps?: boolean;
   rmfilterArgs?: string[];
@@ -69,7 +69,7 @@ export async function prepareNextStep(
     withAllImports = false,
     withImporters = false,
     selectSteps = true,
-    rmfilterArgs = [],
+    rmfilterArgs: initialRmfilterArgs = [], // Renamed to avoid conflict
     autofind = false,
     model,
   } = options;
@@ -347,8 +347,7 @@ export async function prepareNextStep(
         ...relativeFiles,
         ...importCommandBlockArgs,
         ...exampleArgs,
-        '--',
-        ...rmfilterArgs,
+        ...(initialRmfilterArgs.length > 0 ? ['--', ...initialRmfilterArgs] : []),
       ];
     } else {
       // Pass base args, files (task+autofound), example args, separator, user args
@@ -356,8 +355,7 @@ export async function prepareNextStep(
         ...baseRmfilterArgs,
         ...relativeFiles,
         ...exampleArgs,
-        '--',
-        ...rmfilterArgs,
+        ...(initialRmfilterArgs.length > 0 ? ['--', ...initialRmfilterArgs] : []),
       ];
     }
   }
