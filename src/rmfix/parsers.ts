@@ -35,9 +35,9 @@ export function isJestJson(data: any): boolean {
   // Check for the presence of testResults array and at least one other common top-level field.
   return (
     Array.isArray(data.testResults) &&
-    (data.hasOwnProperty('numTotalTests') ||
-      data.hasOwnProperty('success') ||
-      data.hasOwnProperty('startTime'))
+    (Object.hasOwn(data, 'numTotalTests') ||
+      Object.hasOwn(data, 'success') ||
+      Object.hasOwn(data, 'startTime'))
   );
 }
 
@@ -129,13 +129,13 @@ export function parseOutput(
   }
 
   // 2. If format is 'tap' or ('auto' and JSON parsing failed):
-  if (format === 'tap' || (format === 'auto' && format !== 'json')) {
+  if (format === 'tap' || format === 'auto') {
     // Placeholder for TAP parsing
     debugLog('[rmfix-parsers] TAP parsing not yet implemented.');
   }
 
   // 3. If format is 'text' or ('auto' and other parsers failed):
-  if (format === 'text' || (format === 'auto' && format !== 'json' && format !== 'tap')) {
+  if (format === 'text' || format === 'auto') {
     // Placeholder for text/regex parsing
     debugLog('[rmfix-parsers] Text/regex parsing not yet implemented.');
   }

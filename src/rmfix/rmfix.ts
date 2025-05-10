@@ -113,7 +113,7 @@ export async function executeCoreCommand(
 export async function runRmfix(options: RmfixCoreOptions): Promise<number> {
   const { command: initialCommand, commandArgs: initialCommandArgs, cliOptions } = options;
 
-  const currentOutputFormat = (cliOptions.format || 'auto') as OutputFormat | 'auto';
+  const currentOutputFormat = cliOptions.format || 'auto';
 
   const { finalCommand, finalArgs } = await prepareCommand(
     initialCommand,
