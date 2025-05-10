@@ -1,16 +1,20 @@
 import { z } from 'zod';
 import type { Executor } from './types';
-import { runStreamingPrompt } from '../../common/run_and_apply';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../../common/run_and_apply';
 import { applyLlmEdits } from '../../apply-llm-edits/apply';
 import { log } from '../../logging';
+import { createRetryRequester } from '../../apply-llm-edits/retry.ts';
 
 /**
  * Schema for the 'direct-call' executor's options.
  * It expects a model string for the LLM.
  */
-const directCallOptionsSchema = z
-  .string()
-  .describe("The model string for LLM execution, e.g., 'openai/gpt-4o'.");
+const directCallOptionsSchema = z.object({
+  executionModel: z
+    .string()
+    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro-preview-05-23'.")
+    .optional(),
+});
 
 export type DirectCallExecutorOptions = z.infer<typeof directCallOptionsSchema>;
 
@@ -29,20 +33,30 @@ export const directCallExecutor: Executor<typeof directCallOptionsSchema> = {
     runRmfilter: true, // This executor relies on rmfilter to generate the context
   },
 
+  prepareStepOptions(executorOptions, sharedOptions, rmplanConfig) {
+    if (executorOptions.executionModel) {
+      return {
+        model: executorOptions.executionModel,
+      };
+    } else {
+      return {};
+    }
+  },
+
   execute: async (
     contextContent, // This will be the output from rmfilter
-    executionModel, // Parsed from optionsSchema (the model string)
+    options,
     sharedOptions,
     rmplanConfig,
-    retryRequester,
     baseApplyLlmEditsOptions
   ) => {
-    // The 'contextContent' is the input for the LLM.
-    // 'executionModel' is the specific model string for this executor.
+    const executionModel = options.executionModel ?? sharedOptions.model ?? DEFAULT_RUN_MODEL;
 
+    const retryRequester = createRetryRequester(executionModel);
     const result = await runStreamingPrompt({
       input: contextContent,
       model: executionModel,
+      temperature: 0,
       // Temperature and other LLM params could be configurable here or via rmplanConfig/executorOptions in future
     });
 

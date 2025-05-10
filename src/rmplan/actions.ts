@@ -15,7 +15,7 @@ import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 
-interface PrepareNextStepOptions {
+export interface PrepareNextStepOptions {
   rmfilter?: boolean;
   previous?: boolean;
   withImports?: boolean;

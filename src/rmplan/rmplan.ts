@@ -28,11 +28,10 @@ import { createRetryRequester } from '../apply-llm-edits/retry.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
-program
-  .option(
-    '-c, --config <path>',
-    'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
-  );
+program.option(
+  '-c, --config <path>',
+  'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
+);
 
 program // Add debug globally, but it's set via setDebug
   .option('--debug', 'Enable debug logging', () => setDebug(true));
@@ -353,8 +352,7 @@ program
     const globalCliOptions = program.opts();
     const config = await loadEffectiveConfig(globalCliOptions.config);
 
-    const agentExecutionModel = options.model || config.models?.execution || DEFAULT_RUN_MODEL;
-    const retryRequester = createRetryRequester(executionModel);
+    const agentExecutionModel = options.model || config.models?.execution;
 
     if (!options['no-log']) {
       let lastDot = planFile.lastIndexOf('.');
@@ -372,33 +370,17 @@ program
     }
     log(`Using executor: ${executor.name} - ${executor.description}`);
 
-    let parsedExecutorOptions: any;
-    if (executor.optionsSchema instanceof z.ZodString) {
-      const validationResult = executor.optionsSchema.safeParse(agentExecutionModel);
-      if (!validationResult.success) {
-        error(
-          `Invalid model string "${agentExecutionModel}" for executor "${executor.name}":`,
-          validationResult.error.format()
-        );
-        process.exit(1);
-      }
-      parsedExecutorOptions = validationResult.data;
-    } else {
-      // Attempt to parse with an empty object for non-string schemas
-      // This part would need enhancement if executors with complex options are added
-      // and those options are to be provided via CLI.
-      const validationResult = executor.optionsSchema.safeParse({});
-      if (!validationResult.success) {
-        error(
-          `Executor "${executor.name}" has an options schema that could not be satisfied with default values. Complex options may need a dedicated --executor-options flag. Schema error:`,
-          validationResult.error.format()
-        );
-        process.exit(1);
-      }
-      parsedExecutorOptions = validationResult.data;
+    // This part needs enhancement to allow specifying executor options on the CLI.
+    const validationResult = executor.optionsSchema.safeParse({});
+    if (!validationResult.success) {
+      error(
+        `Executor "${executor.name}" has an options schema that could not be satisfied with default values. Complex options may need a dedicated --executor-options flag. Schema error:`,
+        validationResult.error.format()
+      );
+      process.exit(1);
     }
+    let parsedExecutorOptions = validationResult.data;
 
-    const retryRequester = createRetryRequester(executor.optionsSchema instanceof z.ZodString ? parsedExecutorOptions : agentExecutionModel);
     log('Starting agent to execute plan:', planFile);
     try {
       let hasError = false;
@@ -430,6 +412,11 @@ program
           break;
         }
 
+        const sharedExecutorOptions: AgentCommandSharedOptions = {
+          planFile,
+          model: agentExecutionModel,
+        };
+
         log(
           boldMarkdownHeaders(
             `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
@@ -440,6 +427,8 @@ program
           previous: true,
           selectSteps: false,
           model: agentExecutionModel, // Model for rmfilter context generation if executor.contextConfig.runRmfilter is true
+          ...(executor.prepareStepOptions?.(parsedExecutorOptions, sharedExecutorOptions, config) ??
+            {}),
         }).catch((err) => {
           error('Failed to prepare next step:', err);
           hasError = true;
@@ -482,9 +471,6 @@ program
         }
 
         try {
-          const sharedExecutorOptions: AgentCommandSharedOptions = {
-            planFile: planFile,
-          };
           const baseApplyLlmEditsOptions = {
             interactive: true,
             baseDir: gitRoot,
@@ -493,7 +479,13 @@ program
           };
 
           log(boldMarkdownHeaders('\n## Execution\n'));
-          await executor.execute(contextContent, parsedExecutorOptions, sharedExecutorOptions, config, retryRequester, baseApplyLlmEditsOptions);
+          await executor.execute(
+            contextContent,
+            parsedExecutorOptions,
+            sharedExecutorOptions,
+            config,
+            baseApplyLlmEditsOptions
+          );
         } catch (err) {
           error('Execution step failed:', err);
           hasError = true;
@@ -535,10 +527,13 @@ program
           hasError = true;
           break;
         } finally {
-          if (promptFilePath && executor.contextConfig.runRmfilter) { // Only unlink if rmfilter was supposed to use it
-            await Bun.file(promptFilePath).unlink();
-          } catch (e) {
-            warn('Warning: failed to clean up temp file:', promptFilePath);
+          if (promptFilePath && executor.contextConfig.runRmfilter) {
+            // Only unlink if rmfilter was supposed to use it
+            try {
+              await Bun.file(promptFilePath).unlink();
+            } catch (e) {
+              warn('Warning: failed to clean up temp file:', promptFilePath);
+            }
           }
         }
       }

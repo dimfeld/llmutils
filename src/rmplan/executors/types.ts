@@ -1,14 +1,14 @@
 import type { z } from 'zod';
 import type { RmplanConfig } from '../configSchema';
-import type { RetryRequester } from '../../apply-llm-edits/retry';
 import type { ApplyLlmEditsOptions } from '../../apply-llm-edits/apply';
+import type { PrepareNextStepOptions } from '../actions.ts';
 
 /**
  * Shared options/state from the agent command, passed to the executor.
  */
 export interface AgentCommandSharedOptions {
   planFile: string; // The plan file being executed
-  // Potentially other shared things like baseDir, gitRoot if needed by all executors
+  model?: string;
 }
 
 /**
@@ -33,6 +33,12 @@ export interface Executor<ExecutorSpecificOptionsSchema extends z.ZodType = z.Zo
     runRmfilter: boolean;
   };
 
+  prepareStepOptions?: (
+    executorOptions: z.infer<ExecutorSpecificOptionsSchema>,
+    sharedOptions: AgentCommandSharedOptions,
+    rmplanConfig: RmplanConfig
+  ) => Partial<PrepareNextStepOptions>;
+
   /**
    * The asynchronous function that executes the generated context.
    * @param contextContent - The string content for execution (output from `rmfilter` or direct prompt).
@@ -48,7 +54,9 @@ export interface Executor<ExecutorSpecificOptionsSchema extends z.ZodType = z.Zo
     executorOptions: z.infer<ExecutorSpecificOptionsSchema>,
     sharedOptions: AgentCommandSharedOptions,
     rmplanConfig: RmplanConfig,
-    retryRequester: RetryRequester,
-    baseApplyLlmEditsOptions: Omit<ApplyLlmEditsOptions, 'content' | 'retryRequester' | 'baseDir'> & { baseDir: string }
+    baseApplyLlmEditsOptions: Omit<
+      ApplyLlmEditsOptions,
+      'content' | 'retryRequester' | 'baseDir'
+    > & { baseDir: string }
   ) => Promise<void>;
 }
