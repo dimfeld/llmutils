@@ -7,6 +7,7 @@
     "apply-llm-edits": "./src/apply-llm-edits/cmd.ts",
     "rmfilter": "./src/rmfilter/rmfilter.ts",
     "rmfind": "./src/rmfind/rmfind.ts",
+    "rmfix": "./src/rmfix/cli.ts",
     "rmplan": "./src/rmplan/rmplan.ts",
     "rmrun": "./src/rmrun.ts"
   },
@@ -60,6 +61,7 @@
     "resolve.exports": "^2.0.3",
     "string-comparison": "^1.3.0",
     "strip-ansi": "^7.1.0",
+    "tap-parser": "^18.0.0",
     "tree-sitter": "^0.22.4",
     "tree-sitter-python": "^0.23.6",
     "tree-sitter-rust": "^0.23.3",
