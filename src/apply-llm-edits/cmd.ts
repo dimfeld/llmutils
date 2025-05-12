@@ -8,15 +8,37 @@
 
 import clipboard from 'clipboardy';
 import * as path from 'node:path';
+import { parseArgs } from 'util';
 import { error, log } from '../logging.ts';
 import { setDebug } from '../rmfilter/utils.ts';
 import { applyLlmEdits, getWriteRoot } from './apply.js';
 import { createRetryRequester, type RetryRequester } from './retry.ts';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';
 
-const args = process.argv.slice(2);
+const { values } = parseArgs({
+  options: {
+    stdin: { type: 'boolean' },
+    clipboard: { type: 'boolean' },
+    cwd: { type: 'string' },
+    mode: { type: 'string' },
+    interactive: { type: 'boolean', short: 'i' },
+    retry: { type: 'boolean' },
+    model: { type: 'string', short: 'm' },
+    'partial-apply': { type: 'boolean' },
+    pa: { type: 'boolean' },
+    'copy-retry-prompt': { type: 'boolean' },
+    cr: { type: 'boolean' },
+    'original-prompt': { type: 'string' },
+    op: { type: 'string' },
+    debug: { type: 'boolean' },
+    'dry-run': { type: 'boolean' },
+    help: { type: 'boolean', short: 'h' },
+  },
+  strict: true,
+  allowPositionals: false,
+});
 
-if (args.includes('--help')) {
+if (values.help) {
   log(
     `Usage: apply-llm-edits [options]
 Options:
@@ -24,7 +46,7 @@ Options:
   --clipboard                    Read from the clipboard even if stdin is available
   --cwd <path>                   Write files based on the given path
   --mode <mode>                  Force an edit mode
-  -i. --interactive              Enable interactive mode for resolving edit failures
+  -i, --interactive              Enable interactive mode for resolving edit failures
   --retry                        Do an automatic retry via LLM on failure (CLI support limited)
   -m, --model <model>            AI model to use for prompt fixing (default: ${DEFAULT_RUN_MODEL})
   --pa, --partial-apply          Apply successes even if there are failures
@@ -36,23 +58,19 @@ Options:
   process.exit(0);
 }
 
-const useClipboard = args.includes('--clipboard');
-const useStdin = !useClipboard && (args.includes('--stdin') || !process.stdin.isTTY);
-const dryRun = args.includes('--dry-run');
-const interactive = args.includes('--interactive') || args.includes('-i');
-const applyPartial = args.includes('--partial-apply') || args.includes('--pa');
-const retry = args.includes('--retry');
-const copyRetryPrompt = args.includes('--copy-retry-prompt') || args.includes('--cr');
-const cwdIndex = args.findIndex((arg) => arg == '--cwd');
-const modeIndex = args.findIndex((arg) => arg == '--mode');
-const originalPromptIndex = args.findIndex((arg) => arg == '--original-prompt' || arg == '--op');
-const modeValue = modeIndex != -1 ? args[modeIndex + 1] : undefined;
-const cwd = cwdIndex != -1 ? args[cwdIndex + 1] : undefined;
-const originalPromptPath = originalPromptIndex != -1 ? args[originalPromptIndex + 1] : undefined;
-const modelIndex = args.findIndex((arg) => arg == '--model' || arg == '-m');
-const modelValue = modelIndex != -1 ? args[modelIndex + 1] : undefined;
+const useClipboard = values.clipboard || false;
+const useStdin = !useClipboard && (values.stdin || !process.stdin.isTTY);
+const dryRun = values['dry-run'] || false;
+const interactive = values.interactive || false;
+const applyPartial = values['partial-apply'] || values.pa || false;
+const retry = values.retry || false;
+const copyRetryPrompt = values['copy-retry-prompt'] || values.cr || false;
+const cwd = values.cwd;
+const modeValue = values.mode;
+const originalPromptPath = values['original-prompt'] || values.op;
+const modelValue = values.model;
 
-setDebug(args.includes('--debug'));
+setDebug(values.debug || false);
 
 let content = useStdin ? await Bun.stdin.text() : await clipboard.read();
 if (!content) {
