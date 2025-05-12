@@ -1,5 +1,5 @@
 import { Octokit } from 'octokit';
-import { checkbox, type Choice } from '@inquirer/prompts';
+import { checkbox } from '@inquirer/prompts';
 import { singleLineWithPrefix } from '../formatting.ts';
 
 export async function fetchIssueAndComments(owner: string, repo: string, issueNumber: number) {

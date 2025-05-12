@@ -5,11 +5,11 @@ import chalk from 'chalk';
 
 let logFile: FileSink | undefined;
 
-export function openLogFile(path: string) {
+export function openLogFile(logPath: string) {
   if (logFile) {
     throw new Error('Log file already open');
   }
-  logFile = Bun.file(path).writer();
+  logFile = Bun.file(logPath).writer();
 }
 
 export async function closeLogFile(): Promise<void> {

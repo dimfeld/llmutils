@@ -1,3 +1,4 @@
+import * as path from 'path';
 import yaml from 'yaml';
 import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../logging.ts';
 import { getGitRoot, logSpawn } from '../rmfilter/utils.ts';
@@ -18,9 +19,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const agentExecutionModel = options.model || config.models?.execution;
 
   if (!options['no-log']) {
-    let lastDot = planFile.lastIndexOf('.');
-    let logFilePath = lastDot !== -1 ? planFile.slice(0, lastDot) : planFile;
-    logFilePath += '-agent-output.md';
+    let parsed = path.parse(planFile);
+    let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
     openLogFile(logFilePath);
   }
 
