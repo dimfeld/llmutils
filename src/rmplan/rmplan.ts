@@ -14,6 +14,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { findConfigPath, loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
 import { fetchIssueAndComments, getInstructionsFromGithubIssue } from '../common/github/issues.js';
+import { input } from '@inquirer/prompts';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -41,7 +42,8 @@ program
   .allowUnknownOption(true)
   .action(async (options, command) => {
     const globalOpts = program.opts();
-    const config = loadEffectiveConfig(globalOpts.config);
+    const config = await loadEffectiveConfig(globalOpts.config);
+    const gitRoot = (await getGitRoot()) || process.cwd();
 
     // Find '--' in process.argv to get extra args for rmfilter
     const doubleDashIdx = process.argv.indexOf('--');
@@ -82,7 +84,29 @@ program
       }
     } else if (options.issue) {
       const gitRepo = await getGitRepository();
-      planText = await getInstructionsFromGithubIssue(gitRepo, options.issue);
+      let issueResult = await getInstructionsFromGithubIssue(gitRepo, options.issue);
+      planText = issueResult.plan;
+
+      let tasksDir = config.paths?.tasks;
+      let suggestedFilename = tasksDir
+        ? path.join(tasksDir, issueResult.suggestedFileName)
+        : issueResult.suggestedFileName;
+
+      let savePath = await input({
+        message: 'Save plan to this file (or clear the line to skip): ',
+        required: false,
+        default: suggestedFilename,
+      });
+
+      if (savePath) {
+        try {
+          await Bun.write(savePath, planText);
+          log('Plan saved to:', savePath);
+        } catch (err) {
+          error('Failed to save plan to file:', err);
+          process.exit(1);
+        }
+      }
     }
 
     // planText now contains the loaded plan
@@ -99,7 +123,6 @@ program
       let additionalFiles: string[] = [];
       if (options.autofind) {
         log('[Autofind] Searching for relevant files based on plan...');
-        const gitRoot = (await getGitRoot()) || process.cwd();
         const query = planText!;
 
         const rmfindOptions: RmfindOptions = {

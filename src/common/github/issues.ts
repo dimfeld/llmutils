@@ -96,5 +96,13 @@ export async function getInstructionsFromGithubIssue(gitRepo: string, issueSpec:
   const data = await fetchIssueAndComments(owner, repo, issueNumber);
   const selected = await selectIssueComments(data);
 
-  return selected.join('\n\n');
+  const plan = selected.join('\n\n');
+
+  const suggestedFileName = `issue-${issueNumber}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`;
+
+  return {
+    suggestedFileName,
+    issue: data.issue,
+    plan,
+  };
 }
