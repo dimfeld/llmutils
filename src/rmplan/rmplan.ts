@@ -64,9 +64,12 @@ program
 
     let planText: string | undefined;
 
+    let planFile = options.plan;
+
     if (options.plan) {
       try {
         planText = await Bun.file(options.plan).text();
+        planFile = options.plan;
       } catch (err) {
         error(`Failed to read plan file: ${options.plan}`);
         process.exit(1);
@@ -101,6 +104,7 @@ program
       if (savePath) {
         try {
           await Bun.write(savePath, planText);
+          planFile = savePath;
           log('Plan saved to:', savePath);
         } catch (err) {
           error('Failed to save plan to file:', err);
@@ -191,21 +195,20 @@ program
 
         let input = await clipboardy.read();
         let outputFilename: string | undefined;
-        if (options.plan) {
+        if (planFile) {
           outputFilename = path.join(
-            path.dirname(options.plan),
-            path.basename(options.plan, '.md') + '.yml'
+            path.dirname(planFile),
+            path.basename(planFile, '.md') + '.yml'
           );
         }
         const config = await loadEffectiveConfig(options.config);
         const outputYaml = await extractMarkdownToYaml(input, config, options.quiet ?? false);
         if (outputFilename) {
+          // no need to print otherwise, extractMarkdownToYaml already did
           await Bun.write(outputFilename, outputYaml);
           if (!options.quiet) {
             log(`Wrote result to ${outputFilename}`);
           }
-        } else {
-          console.log(outputYaml);
         }
       }
     } finally {
