@@ -6,13 +6,14 @@ import os from 'os';
 import path from 'path';
 import { error, log, warn } from '../logging.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
+import { getGitRepository, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { extractMarkdownToYaml, markStepDone, prepareNextStep } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
-import { loadEffectiveConfig } from './configLoader.js';
+import { findConfigPath, loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
+import { fetchIssueAndComments, getInstructionsFromGithubIssue } from '../common/github/issues.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -29,6 +30,7 @@ program
   .description('Generate planning prompt and context for a task')
   .option('--plan <file>', 'Plan text file to use')
   .option('--plan-editor', 'Open plan in editor')
+  .option('--issue <url|number>', 'Issue URL or number to use for the plan text')
   .option('--autofind', 'Automatically find relevant files based on plan')
   .option('--quiet', 'Suppress informational output')
   .option(
@@ -38,13 +40,23 @@ program
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (options, command) => {
+    const globalOpts = program.opts();
+    const config = loadEffectiveConfig(globalOpts.config);
+
     // Find '--' in process.argv to get extra args for rmfilter
     const doubleDashIdx = process.argv.indexOf('--');
     const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
 
+    let planOptionsSet = [options.plan, options.planEditor, options.issue].reduce(
+      (acc, val) => acc + (val ? 1 : 0),
+      0
+    );
+
     // Manual conflict check for --plan and --plan-editor
-    if ((options.plan && options.planEditor) || (!options.plan && !options.planEditor)) {
-      error('You must provide either --plan <file> or --plan-editor (but not both).');
+    if (planOptionsSet !== 1) {
+      error(
+        'You must provide one and only one of --plan <file>, --plan-editor, or --issue <url|number>'
+      );
       process.exit(1);
     }
 
@@ -68,6 +80,9 @@ program
         error('Failed to get plan from editor:', err);
         process.exit(1);
       }
+    } else if (options.issue) {
+      const gitRepo = await getGitRepository();
+      planText = await getInstructionsFromGithubIssue(gitRepo, options.issue);
     }
 
     // planText now contains the loaded plan

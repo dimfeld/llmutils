@@ -24,6 +24,11 @@ export const postApplyCommandSchema = z.object({
 export const rmplanConfigSchema = z.object({
   /** An array of commands to run after changes are successfully applied by the agent. */
   postApplyCommands: z.array(postApplyCommandSchema).optional(),
+  paths: z
+    .object({
+      tasks: z.string().optional().describe('Path to directory containing task definitions'),
+    })
+    .optional(),
   /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */
   autoexamples: z
     .array(
