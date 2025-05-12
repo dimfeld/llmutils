@@ -4,6 +4,7 @@ import { google } from '@ai-sdk/google';
 import { groq } from '@ai-sdk/groq';
 import { openai } from '@ai-sdk/openai';
 import { xai } from '@ai-sdk/xai';
+import { vertex } from '@ai-sdk/google-vertex';
 import { openrouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
 
@@ -41,6 +42,9 @@ export function createModel(modelString: string): LanguageModel {
       return cerebras(modelName);
     case 'groq':
       return groq(modelName);
+    case 'vertex':
+    case 'google-vertex':
+      return vertex(modelName);
     default:
       throw new Error(`Unsupported provider: ${provider}`);
   }
