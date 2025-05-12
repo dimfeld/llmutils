@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { logSpawn } from './utils.ts';
 import { error } from '../logging.ts';
+import type { GlobalValues } from './config.ts';
 
 function purposeString(repoName: string, instructions: string) {
   if (instructions) {
@@ -16,7 +17,12 @@ This is a relevant subset of the files in the repository, not the entire thing.`
   }
 }
 
-export async function callRepomix(gitRoot: string, instructions: string, args: string[]) {
+export async function callRepomix(
+  gitRoot: string,
+  instructions: string,
+  args: string[],
+  globalValues: GlobalValues = {}
+) {
   let repoOrigin = await $`git config --get remote.origin.url`.cwd(gitRoot).nothrow().text();
 
   if (repoOrigin) {
@@ -49,7 +55,7 @@ export async function callRepomix(gitRoot: string, instructions: string, args: s
   const withoutFirstLine = repomixOutput.slice(repomixOutput.indexOf('\n') + 1);
 
   const output = `<purpose>
-  ${purposeString(repoName, instructions)}
+  ${purposeString(repoName, globalValues['omit-top-instructions'] ? '' : instructions)}
 </purpose>
 
 ${withoutFirstLine}`;

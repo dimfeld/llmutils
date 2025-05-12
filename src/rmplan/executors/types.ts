@@ -8,36 +8,31 @@ import type { PrepareNextStepOptions } from '../actions.ts';
  */
 export interface AgentCommandSharedOptions {
   planFile: string; // The plan file being executed
+  baseDir: string;
   model?: string;
+}
+
+export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {
+  new (
+    executorOptions: z.infer<SCHEMA>,
+    sharedOptions: AgentCommandSharedOptions,
+    rmplanConfig: RmplanConfig
+  ): E | Promise<E>;
+
+  /** Unique name for the executor. */
+  name: string;
+  /** A brief description of what the executor does. */
+  description: string;
+
+  optionsSchema: SCHEMA;
 }
 
 /**
  * Defines the structure for an rmplan executor.
  * @template ExecutorSpecificOptionsSchema - Zod schema for executor-specific options.
  */
-export interface Executor<ExecutorSpecificOptionsSchema extends z.ZodType = z.ZodType> {
-  /** Unique name for the executor. */
-  name: string;
-  /** A brief description of what the executor does. */
-  description: string;
-  /** Zod schema for validating and parsing executor-specific options. */
-  optionsSchema: ExecutorSpecificOptionsSchema;
-
-  /** Configuration for how the execution context is generated. */
-  contextConfig: {
-    /**
-     * If true, `rmfilter` is used to generate the context.
-     * The prompt from `prepareNextStep` will be passed to `rmfilter` via `--instructions @file`.
-     * If false, the prompt from `prepareNextStep` is used directly as the context content.
-     */
-    runRmfilter: boolean;
-  };
-
-  prepareStepOptions?: (
-    executorOptions: z.infer<ExecutorSpecificOptionsSchema>,
-    sharedOptions: AgentCommandSharedOptions,
-    rmplanConfig: RmplanConfig
-  ) => Partial<PrepareNextStepOptions>;
+export interface Executor {
+  prepareStepOptions?: () => Partial<PrepareNextStepOptions>;
 
   /**
    * The asynchronous function that executes the generated context.
@@ -49,14 +44,5 @@ export interface Executor<ExecutorSpecificOptionsSchema extends z.ZodType = z.Zo
    * @param baseApplyLlmEditsOptions - Base options for `applyLlmEdits`, which the executor can extend or override.
    *                                   Does not include `content` or `retryRequester`.
    */
-  execute: (
-    contextContent: string,
-    executorOptions: z.infer<ExecutorSpecificOptionsSchema>,
-    sharedOptions: AgentCommandSharedOptions,
-    rmplanConfig: RmplanConfig,
-    baseApplyLlmEditsOptions: Omit<
-      ApplyLlmEditsOptions,
-      'content' | 'retryRequester' | 'baseDir'
-    > & { baseDir: string }
-  ) => Promise<void>;
+  execute: (contextContent: string) => Promise<void>;
 }

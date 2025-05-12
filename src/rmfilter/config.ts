@@ -94,6 +94,10 @@ export const ConfigSchema = z
       .describe('Disable automatic loading of .mdc rule/doc files'),
     'diff-from': z.string().optional(),
     'instructions-editor': z.boolean().optional(),
+    'omit-top-instructions': z
+      .boolean()
+      .optional()
+      .describe('Omit instructions from the start of the prompt'),
     bare: z.boolean().optional(),
     compress: z.boolean().optional(),
     commands: CommandConfigSchema.array().optional(),
@@ -229,6 +233,7 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     'diff-from': { type: 'string' },
     'instructions-editor': { type: 'boolean' },
     'omit-instructions-tag': { type: 'boolean' },
+    'omit-top-instructions': { type: 'boolean' },
     bare: { type: 'boolean' },
     config: { type: 'string' },
     preset: { type: 'string' },
