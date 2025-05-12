@@ -98,7 +98,8 @@ export async function getInstructionsFromGithubIssue(gitRepo: string, issueSpec:
 
   const plan = selected.join('\n\n');
 
-  const suggestedFileName = `issue-${issueNumber}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`;
+  const suggestedFileName =
+    `issue-${issueNumber}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase();
 
   return {
     suggestedFileName,
