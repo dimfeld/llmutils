@@ -1,6 +1,5 @@
 import type { z } from 'zod';
 import type { RmplanConfig } from '../configSchema';
-import type { ApplyLlmEditsOptions } from '../../apply-llm-edits/apply';
 import type { PrepareNextStepOptions } from '../actions.ts';
 
 /**

@@ -1,16 +1,16 @@
 import type { RmplanConfig } from '../configSchema.ts';
-import { DirectCallExecutor } from './direct-call';
+import { OneCallExecutor } from './one-call';
 import type { AgentCommandSharedOptions, Executor, ExecutorFactory } from './types';
 
 /**
  * A map of available executors, keyed by their names.
  */
 export const executors = new Map<string, ExecutorFactory<any>>([
-  [DirectCallExecutor.name, DirectCallExecutor],
+  [OneCallExecutor.name, OneCallExecutor],
 ]);
 
 // Optionally, export individual executors if they need to be imported directly elsewhere.
-export { DirectCallExecutor };
+export { OneCallExecutor };
 
 export function createExecutor(
   name: string,
