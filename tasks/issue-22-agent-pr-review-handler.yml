@@ -267,7 +267,7 @@ tasks:
 
           Ensure these functions correctly resolve paths relative to the git
           root.
-        done: false
+        done: true
       - prompt: >
           Write tests for the functions in `src/rmpr/git_utils.ts`.
 
