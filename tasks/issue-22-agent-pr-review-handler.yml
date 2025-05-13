@@ -226,7 +226,7 @@ tasks:
 
           Ensure `GITHUB_TOKEN` environment variable usage is clear (it's used
           by Octokit internally).
-        done: false
+        done: true
   - title: 3. Git Utilities for File Content and Diffs
     description: >
       Create utility functions to fetch file content at a specific Git ref and
