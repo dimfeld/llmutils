@@ -197,7 +197,7 @@ tasks:
               - It should accept `DetailedReviewComment[]`.
               - The `choices` for the `checkbox` prompt should display more context, e.g., `[${comment.path}:${comment.originalLine}] ${comment.authorLogin}: ${comment.body.substring(0, 80)}...`.
               - It should return the selected `DetailedReviewComment[]`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmpr/main.ts`, within `handleRmprCommand`:
 

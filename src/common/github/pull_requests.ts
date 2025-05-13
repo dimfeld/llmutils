@@ -1,6 +1,7 @@
 import { Octokit } from 'octokit';
 import { checkbox } from '@inquirer/prompts';
 import { singleLineWithPrefix } from '../formatting.ts';
+import type { DetailedReviewComment } from '../../rmpr/types.ts';
 
 interface CommentAuthor {
   login: string;
@@ -140,6 +141,36 @@ export function getUnresolvedComments(
     }));
 }
 
+export function getDetailedUnresolvedReviewComments(
+  reviewThreads: ReviewThreadNode[]
+): DetailedReviewComment[] {
+  const detailedComments: DetailedReviewComment[] = [];
+
+  for (const thread of reviewThreads) {
+    if (thread.isResolved || thread.isOutdated) {
+      continue;
+    }
+
+    for (const comment of thread.comments.nodes) {
+      // Assuming 'ACTIVE' or similar states are the ones we care about,
+      // but the task doesn't specify filtering by comment.state.
+      // GitHub usually only shows active comments in unresolved threads.
+      detailedComments.push({
+        threadId: thread.id,
+        commentId: comment.id,
+        body: comment.body,
+        path: thread.path,
+        line: thread.line,
+        originalLine: thread.originalLine,
+        originalStartLine: thread.originalStartLine,
+        diffHunk: comment.diffHunk,
+        authorLogin: comment.author?.login,
+      });
+    }
+  }
+  return detailedComments;
+}
+
 export async function selectUnresolvedComments(
   data: Awaited<ReturnType<typeof fetchPullRequestAndComments>>
 ): Promise<string[]> {
@@ -174,4 +205,35 @@ export async function selectUnresolvedComments(
       return unresolvedThreads[threadIndex].comments[commentIndex].body?.trim() ?? '';
     })
     .filter((s) => s !== '');
+}
+
+export async function selectDetailedReviewComments(
+  comments: DetailedReviewComment[],
+  prNumber: number,
+  prTitle: string
+): Promise<DetailedReviewComment[]> {
+  const LINE_PADDING = 4;
+
+  if (comments.length === 0) {
+    return [];
+  }
+
+  const choices = comments.map((comment, index) => {
+    const prefix = `[${comment.path}:${comment.originalLine}] ${comment.authorLogin || 'unknown'}: `;
+    const displayName = singleLineWithPrefix(prefix, comment.body, LINE_PADDING);
+    return {
+      name: displayName,
+      value: index,
+      short: `${comment.path}:${comment.originalLine}`,
+    };
+  });
+
+  const selectedIndices = await checkbox({
+    message: `Select comments to address for PR #${prNumber} - ${prTitle}`,
+    required: false,
+    pageSize: 10,
+    choices: choices,
+  });
+
+  return selectedIndices.map((index) => comments[index]);
 }
