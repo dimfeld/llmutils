@@ -61,6 +61,7 @@ export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchI
         ),
         checked: false,
         description: limitLines(comment.body ?? '', MAX_HEIGHT),
+        value: comment.body,
       };
     }),
   ];
@@ -79,7 +80,7 @@ export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchI
 
   return chosen
     .sort((a, b) => a - b)
-    .map((a) => items[a].description?.trim() ?? '')
+    .map((a) => items[a].value?.trim() ?? '')
     .filter((s) => s != '');
 }
 
