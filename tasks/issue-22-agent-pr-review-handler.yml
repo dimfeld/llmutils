@@ -302,7 +302,7 @@ tasks:
               b. Use `getDiff` from `src/rmpr/git_utils.ts` to get its diff between `baseRefName` and `headRefName`. Store these as `Map<filePath, diff>`.
           3. For now, log a summary of fetched contents and diffs (e.g.,
           "Fetched content for X files, diffs for Y files").
-        done: false
+        done: true
   - title: 4. Implement "AI Comments" Mode Logic
     description: >
       Develop the logic for the "AI Comments" mode. This includes inserting

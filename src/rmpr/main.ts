@@ -7,6 +7,7 @@ import {
   type FileNode,
 } from '../common/github/pull_requests.js';
 import type { DetailedReviewComment } from './types.js';
+import { getFileContentAtRef, getDiff } from './git_utils.js';
 
 export function parsePrIdentifier(identifier: string): PrIdentifier | null {
   // Try parsing as full URL: https://github.com/owner/repo/pull/123
@@ -129,6 +130,41 @@ export async function handleRmprCommand(
     log(`     Body: "${comment.body.split('\n')[0]}..."`);
     log(`     Diff Hunk: "${comment.diffHunk.split('\n')[0]}..."`);
   });
+
+  // 1. Identify unique file paths from selected comments
+  const uniqueFilePaths = Array.from(new Set(selectedComments.map((comment) => comment.path)));
+
+  log(`Identified ${uniqueFilePaths.length} unique file paths from selected comments.`);
+
+  const fileContents = new Map<string, string>();
+  const fileDiffs = new Map<string, string>();
+
+  // 2. For each unique file path, fetch content and diff
+  for (const filePath of uniqueFilePaths) {
+    try {
+      log(`Fetching content for ${filePath} at ${headRefName}...`);
+      const content = await getFileContentAtRef(filePath, headRefName);
+      fileContents.set(filePath, content);
+    } catch (e: any) {
+      error(`Failed to fetch content for ${filePath} at ${headRefName}: ${e.message}`);
+      // Decide if we should continue or exit. For now, let's log and continue.
+    }
+
+    try {
+      log(`Fetching diff for ${filePath} between ${baseRefName} and ${headRefName}...`);
+      const diff = await getDiff(filePath, baseRefName, headRefName);
+      fileDiffs.set(filePath, diff);
+    } catch (e: any) {
+      error(
+        `Failed to fetch diff for ${filePath} between ${baseRefName} and ${headRefName}: ${e.message}`
+      );
+      // Decide if we should continue or exit. For now, let's log and continue.
+    }
+  }
+
+  // 3. Log summary
+  log(`Fetched content for ${fileContents.size} files and diffs for ${fileDiffs.size} files.`);
+  // TODO: For debugging, can log the actual content/diffs if small or a summary
 
   // Further implementation will continue here
 }
