@@ -13,6 +13,7 @@ import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { findConfigPath, loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
+import { handleRmprCommand } from '../rmpr/main.js';
 import { fetchIssueAndComments, getInstructionsFromGithubIssue } from '../common/github/issues.js';
 import { input } from '@inquirer/prompts';
 
@@ -23,7 +24,7 @@ program.option(
   'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
 );
 
-program // Add debug globally, but it's set via setDebug
+program
   .option('--debug', 'Enable debug logging', () => setDebug(true));
 
 program
@@ -378,5 +379,22 @@ program
   .option('--no-log', 'Do not log to file')
   .allowExcessArguments(true)
   .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
+
+program
+  .command('rmpr <prIdentifier>')
+  .description('Address Pull Request review comments using an LLM.')
+  .option(
+    '--mode <mode>',
+    "Editing mode ('ai-comments' or 'separate-context')",
+    'ai-comments'
+  )
+  .option('--yes', 'Skip interactive prompts (e.g., for editing files)', false)
+  .option('-m, --model <model>', 'LLM model to use')
+  .action(async (prIdentifier, options) => {
+    // Pass global options (like --debug) along with command-specific options
+    const globalOpts = program.opts();
+    await handleRmprCommand(prIdentifier, options, globalOpts);
+  });
+
 
 await program.parseAsync(process.argv);

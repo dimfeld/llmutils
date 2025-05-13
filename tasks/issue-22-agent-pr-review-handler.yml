@@ -126,7 +126,7 @@ tasks:
 
           Create `src/rmpr/types.ts` and define an interface `PrIdentifier` for
           the return type of `parsePrIdentifier`.
-        done: false
+        done: true
       - prompt: >
           Write tests for the `parsePrIdentifier` function in
           `src/rmpr/main.ts`.
