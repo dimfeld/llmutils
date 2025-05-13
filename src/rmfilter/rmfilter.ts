@@ -168,8 +168,10 @@ async function normalizePath(gitRoot: string, baseDir: string, walker: ImportWal
     const prefixLength = p.startsWith('pkg:') ? 4 : 8;
     const pkgPath = await walker.resolver.resolvePackageJson(baseDir);
     return path.join(pkgPath.path, p.slice(prefixLength));
+  } else {
+    // Map everything to an absolute path
+    return path.resolve(baseDir, p);
   }
-  return p;
 }
 
 // Process each command
@@ -189,14 +191,17 @@ async function processCommand(
     positionals.map((p) => normalizePath(gitRoot, baseDir, walker, p))
   );
 
-  const ignore = cmdValues.ignore?.map((i) => {
-    if (!i.includes('/') && !i.includes('**')) {
-      // No existing double-wildcard or slash, so make this match any path.
-      return `**/${i}`;
-    } else {
-      return i;
-    }
-  });
+  console.log({ positionals });
+
+  const ignore = await Promise.all(
+    cmdValues.ignore?.map((i) => {
+      if (!i.includes('/') && !i.includes('**')) {
+        // No existing double-wildcard or slash, so make this match any path.
+        i = `**/${i}`;
+      }
+      return normalizePath(gitRoot, baseDir, walker, i);
+    }) || []
+  );
 
   if (!quiet) {
     const cmdInfo: string[] = [`positionals=[${cmdParsed.positionals.join(', ')}]`];
@@ -224,12 +229,7 @@ async function processCommand(
     });
 
     if (changedFiles.length > 0) {
-      // Convert absolute paths (relative to gitRoot) returned by getDiffTag
-      // to paths relative to the current baseDir for globby/grepFor
-      const relativeChangedFiles = changedFiles.map((file) =>
-        path.relative(baseDir, path.resolve(gitRoot, file))
-      );
-      positionals.push(...relativeChangedFiles);
+      positionals.push(...changedFiles);
       if (!quiet) {
         log(`  Command: Added ${changedFiles.length} changed files to process.`);
       }
@@ -260,22 +260,24 @@ async function processCommand(
   }
 
   let ignoreGlobs = await Promise.all(
-    ignore?.map(async (p) => {
-      let isDir = await Bun.file(p)
-        .stat()
-        .then((d) => d.isDirectory())
-        .catch(() => false);
+    ignore
+      ?.flatMap((p) => p.split(','))
+      .map(async (p) => {
+        let isDir = await Bun.file(p)
+          .stat()
+          .then((d) => d.isDirectory())
+          .catch(() => false);
 
-      let replaced = p.replaceAll(/\[|\]/g, '\\$&');
-      return isDir ? `${replaced}/**` : replaced;
-    }) || []
+        let replaced = p.replaceAll(/\[|\]/g, '\\$&');
+        return isDir ? `${replaced}/**` : replaced;
+      }) || []
   );
 
   let hasGlobs = positionals.some((p) => p.includes('*') || p.includes('?')) || ignore?.length;
   if (hasGlobs) {
     if (positionals.length === 0) {
       // This happens when we have no positionals but we do have an ignore
-      positionals = ['**'];
+      positionals = [path.join(baseDir, '**')];
     }
 
     let withDirGlobs = await Promise.all(
@@ -291,7 +293,7 @@ async function processCommand(
     );
 
     files = await globby(withDirGlobs, {
-      cwd: baseDir,
+      cwd: gitRoot,
       onlyFiles: true,
       absolute: false,
       dot: false,
@@ -302,16 +304,17 @@ async function processCommand(
 
     if (cmdValues.grep && files.length) {
       files = await grepFor(
-        baseDir,
+        gitRoot,
         cmdValues.grep,
-        files,
+        files.map((p) => path.relative(gitRoot, p)),
         cmdValues.expand ?? false,
         cmdValues['whole-word'] ?? false
       );
     }
   } else if (!onlyExamples) {
     let searchTerms = cmdValues.grep?.length ? cmdValues.grep : ['.'];
-    files = await grepFor(baseDir, searchTerms, positionals, false, false);
+    let grepFiles = positionals.length ? positionals : [baseDir];
+    files = await grepFor(gitRoot, searchTerms, grepFiles, false, false);
   }
 
   if (debug) {
@@ -392,10 +395,6 @@ async function processCommand(
       let expandSet = new Set<string>(files);
       for (const file of files) {
         const { base: filename, dir } = path.parse(file);
-        debugLog('expanding page', {
-          filename,
-          dir,
-        });
         if (filename == '+page.server.ts' || filename == '+page.ts') {
           expandSet.add(path.join(dir, '+page.svelte'));
         } else if (filename == '+page.svelte') {
