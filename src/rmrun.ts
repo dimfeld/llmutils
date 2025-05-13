@@ -46,6 +46,7 @@ const fileWriter = outputFile.writer();
 const result = await runStreamingPrompt({
   input,
   model: values.model,
+
   handleTextChunk: (text: string) => {
     fileWriter.write(new TextEncoder().encode(text));
   },
@@ -54,5 +55,5 @@ const result = await runStreamingPrompt({
 await fileWriter.end();
 log('\nWrote to repomix-result.txt. Applying...');
 
-const content = await result.text;
+const content = result.text;
 await applyLlmEdits({ content, interactive: true });

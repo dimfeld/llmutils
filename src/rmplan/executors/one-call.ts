@@ -60,14 +60,12 @@ export class OneCallExecutor implements Executor {
 
   async execute(contextContent: string) {
     const retryRequester = createRetryRequester(this.executionModel);
-    const result = await runStreamingPrompt({
+    const { text: llmOutput } = await runStreamingPrompt({
       input: contextContent,
       model: this.executionModel,
       temperature: 0,
       // Temperature and other LLM params could be configurable here or via rmplanConfig/executorOptions in future
     });
-
-    const llmOutput = await result.text;
 
     // Add a newline for better separation in logs if streaming to console
     if (!process.stdout.isTTY) {

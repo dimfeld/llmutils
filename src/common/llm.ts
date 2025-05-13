@@ -69,7 +69,7 @@ export interface HandleStreamTextResultOptions {
 export async function streamResultToConsole<T extends ToolSet, U>(
   result: StreamTextResult<T, U>,
   { format = true, showReasoning = true, cb }: HandleStreamTextResultOptions = {}
-): Promise<StreamTextResult<T, U>> {
+): Promise<{ text: string; result: StreamTextResult<T, U> }> {
   const stderrWriter = (text: string) => process.stderr.write(text);
   const stdoutWriter = (text: string) => process.stdout.write(text);
 
@@ -80,6 +80,8 @@ export async function streamResultToConsole<T extends ToolSet, U>(
   let textRenderer = format
     ? new MarkdownBuffer(stdoutWriter)
     : new PassthroughBuffer(stdoutWriter);
+
+  let textResult = [];
 
   try {
     for await (const chunk of result.fullStream) {
@@ -96,6 +98,7 @@ export async function streamResultToConsole<T extends ToolSet, U>(
         }
 
         textRenderer.add(chunk.textDelta);
+        textResult.push(chunk.textDelta);
         // Log file gets the unformatted text
         writeLogFile(chunk.textDelta);
         cb?.(chunk.textDelta);
@@ -110,5 +113,5 @@ export async function streamResultToConsole<T extends ToolSet, U>(
     await textRenderer.done();
   }
 
-  return result;
+  return { text: textResult.join(''), result };
 }

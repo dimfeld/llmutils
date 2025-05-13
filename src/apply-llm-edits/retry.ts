@@ -7,16 +7,7 @@ import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.ts';
 import { extractRmfilterCommandArgs, type ApplyLlmEditsOptions } from './apply.ts';
 import { formatFailuresForLlm } from './failures.ts';
 import * as path from 'path';
-import { streamResultToConsole } from '../common/llm.ts';
-
-/** Represents a single message in a structured LLM prompt. */
-export interface LlmPromptMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-/** Represents the structured prompt format for LLM interaction. */
-export type LlmPromptStructure = LlmPromptMessage[];
+import { runStreamingPrompt, type LlmPromptStructure } from '../common/run_and_apply.ts';
 
 /** Type definition for the callback function used to request LLM completions. */
 export type RetryRequester = (prompt: LlmPromptStructure) => Promise<string>;
@@ -24,14 +15,14 @@ export type RetryRequester = (prompt: LlmPromptStructure) => Promise<string>;
 export function createRetryRequester(modelId: string): RetryRequester {
   const model = createModel(modelId);
   return async (messages: LlmPromptStructure) => {
-    const result = streamText({
+    const { text } = await runStreamingPrompt({
       model,
       messages,
+      // Give it a little more temperature when retrying
+      temperature: 0.1,
     });
 
-    await streamResultToConsole(result);
-
-    return result.text;
+    return text;
   };
 }
 
