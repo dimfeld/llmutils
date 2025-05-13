@@ -290,4 +290,38 @@ export interface PendingTaskResult {
 `
     );
   });
+
+  test('addition to end of file', () => {
+    const hunk = `export type ItemBatch = InferSelectModel<typeof itemBatches>;
+ export type ItemBatchItem = InferSelectModel<typeof itemBatchItems>;
+ 
++// Represents a line item in the variance report, detailing a specific item's discrepancy.
++export interface VarianceReportDisplayItem {
++  // Identifying fields for the item
++  snapshotLocationValue: string | null; // Raw location value from the snapshot file
++  mappedLocationId?: string | null;    // Mapped RealWorldLocation.id (UUID) if available
++  locationName?: string | null;        // Name of the location (from DB or snapshot)`;
+
+    const existing = `export type ItemBatch = InferSelectModel<typeof itemBatches>;
+export type ItemBatchItem = InferSelectModel<typeof itemBatchItems>;
+`;
+
+    const result = doReplace(
+      existing,
+      hunk.split('\n').map((l) => l + '\n')
+    );
+
+    expect(result).toEqual(
+      `export type ItemBatch = InferSelectModel<typeof itemBatches>;
+export type ItemBatchItem = InferSelectModel<typeof itemBatchItems>;
+
+// Represents a line item in the variance report, detailing a specific item's discrepancy.
+export interface VarianceReportDisplayItem {
+  // Identifying fields for the item
+  snapshotLocationValue: string | null; // Raw location value from the snapshot file
+  mappedLocationId?: string | null;    // Mapped RealWorldLocation.id (UUID) if available
+  locationName?: string | null;        // Name of the location (from DB or snapshot)
+`
+    );
+  });
 });

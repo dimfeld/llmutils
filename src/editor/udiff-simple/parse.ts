@@ -136,7 +136,7 @@ function normalizeHunk(hunk: string[]): string[] {
  * Returns MatchLocation[] if the "before" text appears multiple times.
  */
 function directlyApplyHunk(content: string, hunk: string[]): string | null | MatchLocation[] {
-  const [beforeText, afterText] = hunkToBeforeAfter(hunk);
+  let [beforeText, afterText] = hunkToBeforeAfter(hunk);
   if (!beforeText.trim()) {
     // If 'before' is just whitespace, it's likely an insertion.
     // This function is for replacement/deletion based on context.
@@ -144,6 +144,11 @@ function directlyApplyHunk(content: string, hunk: string[]): string | null | Mat
     // However, the python code *does* proceed if beforeText is not empty string.
     // Let's refine: if beforeText is empty or only whitespace, we can't reliably search/replace.
     return null;
+  }
+
+  // At the end of a file, sometimes the beforeText gets an extra newline, so try without it.
+  if (beforeText.at(-1) == '\n' && content.endsWith(beforeText.slice(0, -1))) {
+    beforeText = beforeText.slice(0, -1);
   }
 
   const [beforeLines] = hunkToBeforeAfter(hunk, true);
@@ -154,8 +159,6 @@ function directlyApplyHunk(content: string, hunk: string[]): string | null | Mat
   const occurrences = (content.match(new RegExp(escapeRegExp(beforeText), 'g')) || []).length;
 
   if (beforeLineNonWhitespace.length < 10 && occurrences > 1) {
-    // The python code returns None here, indicating failure for this direct method.
-    // It doesn't throw the NotUnique error yet.
     return null;
   }
 
