@@ -84,7 +84,7 @@ Each task should have a list of relevant files, flags for "include imports" and 
 
 The "include imports" flag on a task indicates if we should look at files imported by the files in the list. Self-contained edits may not need this flag to be set, but it should be enabled when you think it will be useful to look at extra function or type definitions in imported files to make correct changes.
 
-The "include importers" flag on a task indicates if we should look at the files that import the files in the list. This is useful, for example, when a function or object signature is going to change and we want to make sure we don't break any code that uses it.
+The "include importers" flag on a task indicates if we should look at the files that import the files in the list. This is useful, for example, when a function or object signature is going to change and we want to make sure we don't break any code that uses it. This brings in a lot of extra files that may not be relevant, so use sparingly.
 
 Use the following Markdown format for your final prompt output:
 \`\`\`

@@ -1,6 +1,6 @@
 import { Octokit } from 'octokit';
 import { checkbox } from '@inquirer/prompts';
-import { singleLineWithPrefix } from '../formatting.ts';
+import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 
 export async function fetchIssueAndComments(owner: string, repo: string, issueNumber: number) {
   // Initialize Octokit with GitHub token
@@ -33,23 +33,34 @@ export async function fetchIssueAndComments(owner: string, repo: string, issueNu
 
 export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchIssueAndComments>>) {
   const LINE_PADDING = 4;
+  const MAX_HEIGHT = process.stdout.rows - data.comments.length - 10;
   const items = [
     {
       name: singleLineWithPrefix('Title: ', data.issue.title, LINE_PADDING),
-      description: `This project is designed to implement the feature: ${data.issue.title}`,
+      descriptiopn: `Title: ${data.issue.title}`,
       checked: true,
+      value: `This project is designed to implement the feature: ${data.issue.title}`,
     },
     {
-      name: singleLineWithPrefix('Body: ', data.issue.body ?? '', LINE_PADDING),
+      name: singleLineWithPrefix(
+        'Body: ',
+        data.issue.body?.replaceAll(/\n+/g, '  ') ?? '',
+        LINE_PADDING
+      ),
       checked: true,
-      description: data.issue.body ?? undefined,
+      description: limitLines(data.issue.body ?? '', MAX_HEIGHT),
+      value: data.issue.body,
     },
     ...data.comments.map((comment, i) => {
-      const name = `#${comment.id} - ${comment.user?.name ?? comment.user?.login}: `;
+      const name = `${comment.user?.name ?? comment.user?.login}: `;
       return {
-        name: singleLineWithPrefix(name, comment.body ?? '', LINE_PADDING),
+        name: singleLineWithPrefix(
+          name,
+          comment.body?.replaceAll(/\n+/g, '  ') ?? '',
+          LINE_PADDING
+        ),
         checked: false,
-        description: comment.body ?? undefined,
+        description: limitLines(comment.body ?? '', MAX_HEIGHT),
       };
     }),
   ];

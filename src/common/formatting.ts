@@ -8,3 +8,11 @@ export function singleLineWithPrefix(prefix: string, text: string, padding = 0) 
   }
   return output;
 }
+
+export function limitLines(text: string, maxLines: number) {
+  const lines = text.split('\n');
+  if (lines.length > maxLines) {
+    return lines.slice(0, maxLines).join('\n') + '\n…';
+  }
+  return text;
+}
