@@ -283,6 +283,12 @@ rmplan generate --plan plan.txt -- src/**/*.ts --grep auth
 # Open an editor to write a plan and generate a prompt, and include apps/web as context
 rmplan generate --plan-editor -- apps/web
 
+# Generate a plan from a GitHub issue. This assumes you have a GitHub token set in the GITHUB_TOKEN environment variable
+rmplan generate --issue https://github.com/dimfeld/llmutils/issues/28
+
+# Generate a plan from the GitHub issue for this repository with this number
+rmplan generate --issue 28
+
 # Extract and validate a plan from a file
 rmplan extract output.txt --output plan.yml
 
@@ -364,6 +370,11 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
   ```yaml
   # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
   ```
+
+#### Paths
+
+The `paths.tasks` setting allows you to specify the directory where the task documents are locations. This is used when automatically
+writing a plan from a GitHub issue.
 
 #### Automatic Examples
 
@@ -462,8 +473,11 @@ Generate and manage project plans:
 # Read a project description, and create a detailed plan for implementing it
 rmplan generate --plan tasks/0002-refactor-it.md -- src/api/**/*.ts
 
+# Or read the plan from a Github issue
+rmplan generate --issue 28 -- src/api/**/*.ts
+
 # Read the plan from the clipboard, convert to YAML, and write to a file
-# The `generate` command will help you do this automatically as well.
+# Note: The `generate` command will do this automatically if you want.
 rmplan extract --output tasks/0002-refactor-it.yml
 
 # Execute the next step with repository context

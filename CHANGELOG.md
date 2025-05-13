@@ -1,3 +1,8 @@
+# May 12, 2025
+
+- Add `rmplan generate --issue <issue number>` to generate a plan from a GitHub issue description
+- Internal changes to rmplan agent that allow for pluggable plan execution
+
 # May 6, 2025
 
 - Ask the planning model to suggest when --with-imports should be passed to rmfilter for a task
