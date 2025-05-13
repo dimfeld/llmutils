@@ -9,19 +9,38 @@ interface CommentAuthor {
 interface CommentNode {
   id: string;
   body: string;
+  diffHunk: string;
+  state: string;
   author: CommentAuthor | null;
 }
 
 interface ReviewThreadNode {
   id: string;
   isResolved: boolean;
+  isOutdated: boolean;
+  line: number | null;
+  originalLine: number;
+  originalStartLine: number;
+  path: string;
+  diffSide: 'LEFT' | 'RIGHT';
+  startDiffSide: 'LEFT' | 'RIGHT';
+  startLine: number | null;
+  subjectType: 'LINE';
   comments: { nodes: CommentNode[] };
+}
+
+export interface FileNode {
+  path: string;
+  changeType: 'ADDED' | 'DELETED' | 'MODIFIED';
 }
 
 interface PullRequest {
   number: number;
   title: string;
+  body: string;
   baseRefName: string;
+  headRefName: string;
+  files: { nodes: FileNode[] };
   reviewThreads: { nodes: ReviewThreadNode[] };
 }
 
@@ -42,15 +61,33 @@ export async function fetchPullRequestAndComments(owner: string, repo: string, p
         pullRequest(number: $prNumber) {
           number
           title
+          body
           baseRefName
+          headRefName
+          files(first:100) {
+            nodes {
+              path
+              changeType
+            }
+          }
           reviewThreads(first: 100) {
             nodes {
               id
               isResolved
+              isOutdated
+              line
+              originalLine
+              originalStartLine
+              path
+              startDiffSide
+              startLine
+              subjectType
               comments(first: 100) {
                 nodes {
                   id
                   body
+                  diffHunk
+                  state
                   author {
                     login
                   }
