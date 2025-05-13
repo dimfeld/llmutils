@@ -14,7 +14,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { findConfigPath, loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
 import { handleRmprCommand } from '../rmpr/main.js';
-import { fetchIssueAndComments, getInstructionsFromGithubIssue } from '../common/github/issues.js';
+import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
 import { input } from '@inquirer/prompts';
 
 const program = new Command();
@@ -381,14 +381,31 @@ program
 
 program
   .command('rmpr <prIdentifier>')
-  .description('Address Pull Request review comments using an LLM.')
-  .option('--mode <mode>', "Editing mode ('ai-comments' or 'separate-context')", 'ai-comments')
-  .option('--yes', 'Skip interactive prompts (e.g., for editing files)', false)
-  .option('-m, --model <model>', 'LLM model to use')
+  .description('Address Pull Request (PR) review comments using an LLM.')
+  .option(
+    '--mode <mode>',
+    "Specify the editing mode. 'ai-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",
+    'ai-comments'
+  )
+  .option(
+    '--yes',
+    'Automatically proceed without interactive prompts (e.g., for reviewing AI comments in files).',
+    false
+  )
+  .option(
+    '-m, --model <model>',
+    'Specify the LLM model to use. Overrides model from rmplan config.'
+  )
+  .option(
+    '--dry-run',
+    'Prepare and print the LLM prompt, but do not call the LLM or apply edits.',
+    false
+  )
   .action(async (prIdentifier, options) => {
     // Pass global options (like --debug) along with command-specific options
     const globalOpts = program.opts();
-    await handleRmprCommand(prIdentifier, options, globalOpts);
+    const config = await loadEffectiveConfig(globalOpts.config);
+    await handleRmprCommand(prIdentifier, options, globalOpts, config);
   });
 
 await program.parseAsync(process.argv);

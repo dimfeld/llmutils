@@ -663,7 +663,7 @@ tasks:
 
           This step is primarily about refinement and preparing for manual
           testing. No new core logic, but focus on usability and robustness.
-        done: false
+        done: true
       - prompt: >
           Manual Testing Plan (Conceptual - to be executed by the developer):
 

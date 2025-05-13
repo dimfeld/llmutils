@@ -21,6 +21,7 @@ import readline from 'node:readline';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
+import type { RmPlanConfig } from '../rmplan/configLoader.js';
 
 export function parsePrIdentifier(identifier: string): PrIdentifier | null {
   // Try parsing as full URL: https://github.com/owner/repo/pull/123
@@ -71,9 +72,13 @@ async function promptEnterToContinue(): Promise<void> {
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
-  options: any,
-  globalCliOptions: any
+  options: { mode: string; yes: boolean; model?: string; dryRun: boolean },
+  globalCliOptions: { debug?: boolean },
+  config: RmPlanConfig
 ) {
+  const effectiveModel =
+    options.model || config?.models?.default || config?.defaultModel || DEFAULT_RUN_MODEL;
+
   const parsedIdentifier = parsePrIdentifier(prIdentifierArg);
 
   if (!process.env.GITHUB_TOKEN) {
@@ -90,14 +95,25 @@ export async function handleRmprCommand(
     process.exit(1);
   }
 
-  log(`Parsed PR Identifier:
-  Owner: ${parsedIdentifier.owner}
-  Repo: ${parsedIdentifier.repo}
-  PR Number: ${parsedIdentifier.prNumber}
-  Mode: ${options.mode}
-  Yes: ${options.yes}
-  Model: ${options.model || 'default/not specified'}
-  Debug: ${globalCliOptions.debug || false}`);
+  log(
+    `Processing PR: ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.prNumber}`
+  );
+  log(`  Mode: ${options.mode}`);
+  log(`  Model: ${effectiveModel}`);
+  if (globalCliOptions.debug) {
+    debugLog(`    Model Source Breakdown:`);
+    debugLog(`      CLI --model: ${options.model || 'not set'}`);
+    debugLog(`      Config (models.default): ${config?.models?.default || 'not set'}`);
+    debugLog(`      Config (defaultModel): ${config?.defaultModel || 'not set'}`);
+    debugLog(
+      `      Default Fallback: ${options.model || config?.models?.default || config?.defaultModel ? 'not used' : DEFAULT_RUN_MODEL}`
+    );
+  }
+  log(`  Auto-confirm (--yes): ${options.yes}`);
+  log(`  Dry Run (--dry-run): ${options.dryRun}`);
+  if (globalCliOptions.debug) {
+    debugLog(`  Global Debug Flag: true`);
+  }
 
   let prData;
   try {
@@ -213,7 +229,7 @@ export async function handleRmprCommand(
       }
     }
 
-    if (!options.yes && filesActuallyModifiedWithAiComments.size > 0) {
+    if (!options.yes && filesActuallyModifiedWithAiComments.size > 0 && !options.dryRun) {
       log(
         '\nAI comments have been prepared in the following files. Please review and make any desired edits before proceeding:'
       );
@@ -240,6 +256,17 @@ export async function handleRmprCommand(
           // Potentially exit or use previous content
         }
       }
+    } else if (!options.yes && filesActuallyModifiedWithAiComments.size > 0 && options.dryRun) {
+      log('\n--- DRY RUN INFO ---');
+      log(
+        'In AI Comments mode, if not a dry run, AI comments would be written to the following files for your review before generating the final prompt:'
+      );
+      for (const filePath of filesActuallyModifiedWithAiComments) {
+        log(`  - ${filePath}`);
+      }
+      log('These files have NOT been modified on disk due to --dry-run.');
+      log('The prompt will be generated using the in-memory versions with AI comments.');
+      debugLog('Skipping file writing and user prompt for AI comment review due to --dry-run.');
     }
     llmPrompt = createAiCommentsPrompt(filesToProcessWithAiComments, fileDiffs);
   } else {
@@ -249,10 +276,25 @@ export async function handleRmprCommand(
     llmPrompt = createSeparateContextPrompt(originalFilesContent, fileDiffs, formattedComments);
   }
 
-  if (globalCliOptions.debug) {
+  if (globalCliOptions.debug || options.dryRun) {
     const promptLines = llmPrompt.split('\n');
-    debugLog('Generated LLM Prompt (first 10 lines):');
-    debugLog(promptLines.slice(0, 10).join('\n') + (promptLines.length > 10 ? '\n...' : ''));
+    if (options.dryRun) {
+      log('\n--- DRY RUN MODE: LLM PROMPT ---');
+      // Using console.log for the potentially very long prompt to avoid log prefixing
+      console.log(llmPrompt);
+      log('--- END OF DRY RUN PROMPT ---');
+    } else {
+      debugLog('Generated LLM Prompt (first 10 lines):');
+      debugLog(promptLines.slice(0, 10).join('\n') + (promptLines.length > 10 ? '\n...' : ''));
+      // Consider logging the full prompt to a file or if a specific verbose flag is set
+    }
+  }
+
+  if (options.dryRun) {
+    log(
+      'Exiting due to --dry-run. No LLM call will be made, and no files will be modified by the LLM.'
+    );
+    process.exit(0);
   }
 
   log('Invoking LLM...');
@@ -260,7 +302,7 @@ export async function handleRmprCommand(
   try {
     const { text } = await runStreamingPrompt({
       messages: [{ role: 'user', content: llmPrompt }],
-      model: options.model || DEFAULT_RUN_MODEL,
+      model: effectiveModel,
       temperature: 0,
     });
     llmOutputText = text;
@@ -277,7 +319,7 @@ export async function handleRmprCommand(
       baseDir: gitRoot,
       content: llmOutputText,
       originalPrompt: llmPrompt,
-      retryRequester: createRetryRequester(options.model || DEFAULT_RUN_MODEL),
+      retryRequester: createRetryRequester(effectiveModel),
       writeRoot: gitRoot,
     });
   } catch (e: any) {
