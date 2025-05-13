@@ -447,7 +447,7 @@ tasks:
               - Test removing start/end markers.
               - Test content with no markers (should remain unchanged).
               - Test content where markers might be slightly malformed by LLM (if possible to anticipate).
-        done: false
+        done: true
   - title: 5. Implement "Separate Context" Mode Logic
     description: >
       Develop the logic for the "Separate Context" mode. This involves
