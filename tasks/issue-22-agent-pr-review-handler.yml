@@ -693,4 +693,4 @@ tasks:
 
           (No code output needed for this step, it's a guide for the developer
           implementing the plan).
-        done: false
+        done: true
