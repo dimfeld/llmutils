@@ -431,7 +431,7 @@ tasks:
               - Lines starting with "AI: " (and any leading whitespace before "AI:").
               - Lines that are `<!-- AI_COMMENT_START_... -->` or `<!-- AI_COMMENT_END_... -->` (and similar language-specific markers if you introduced them).
           - This is a cleanup step, in case the LLM doesn't remove all markers.
-        done: false
+        done: true
       - prompt: >
           Write tests for `insertAiCommentsIntoFileContent` and
           `removeAiCommentMarkers` in `src/rmpr/modes.test.ts`.

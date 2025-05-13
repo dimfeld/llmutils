@@ -151,11 +151,11 @@ export function createAiCommentsPrompt(
   return promptParts.join('\n');
 }
 
-export function cleanupAiComments(content: string): string {
-  const lines = content.split('\n');
+export function removeAiCommentMarkers(fileContent: string): string {
+  const lines = fileContent.split('\n');
   const cleanedLines = lines.filter((line) => {
-    // Check for AI comment body lines. Assumes "AI: " is at the start of the line.
-    if (line.startsWith('AI: ')) {
+    // Remove lines starting with "AI: " (and any leading whitespace before "AI:")
+    if (line.trim().startsWith('AI: ')) {
       return false;
     }
     // Check for AI comment markers. Allow for potential leading/trailing whitespace on the line itself.
