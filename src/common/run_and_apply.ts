@@ -3,7 +3,7 @@ import { streamText, type LanguageModel, type StreamTextResult, type ToolSet } f
 import { streamResultToConsole } from './llm.ts';
 import { createModel } from './model_factory.ts';
 
-export const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro-exp-03-25';
+export const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro-preview-05-06';
 
 /** Represents a single message in a structured LLM prompt. */
 export interface LlmPromptMessage {
