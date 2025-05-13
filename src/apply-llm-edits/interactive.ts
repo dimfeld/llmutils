@@ -195,6 +195,23 @@ async function handleNoMatchFailure(
     }
   } else {
     log(chalk.magenta('No close match could be found.'));
+    // print the original diff
+    const diffPatch = diff.createPatch(
+      failure.filePath,
+      failure.originalText,
+      failure.updatedText,
+      'Expected Original',
+      'Proposed Change',
+      { context: 9999 }
+    );
+    const diffLines = diffPatch.split('\n').slice(4).join('\n');
+    log(chalk.magenta('Proposed change:'));
+    log(
+      diffLines
+        .split('\n')
+        .map((line) => `  ${line}`)
+        .join('\n')
+    );
     const choice = await select({
       message: 'How would you like to proceed?',
       choices: [{ name: 'Skip this edit', value: 'skip' }],
