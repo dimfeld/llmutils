@@ -553,7 +553,7 @@ tasks:
             Review Comments to Address:
             ${formattedReviewComments}
             ```
-        done: false
+        done: true
       - prompt: >
           Write tests for `formatReviewCommentsForSeparateContext` in
           `src/rmpr/modes.test.ts`.
