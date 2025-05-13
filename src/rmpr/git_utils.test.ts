@@ -1,0 +1,177 @@
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import ** as fs from 'node:fs/promises';
+import ** as path from 'node:path';
+import { tmpdir } from 'node:os';
+import { getFileContentAtRef, getDiff } from './git_utils';
+import { $ } from 'bun';
+
+describe('Git Utilities', () => {
+  let tmpRepoPath: string;
+  let originalCwd: string;
+  let commit1Sha: string;
+  let commit2Sha: string;
+  let commit3Sha: string;
+  let commit4Sha: string;
+
+  beforeAll(async () => {
+    originalCwd = process.cwd();
+    tmpRepoPath = await fs.mkdtemp(path.join(tmpdir(), 'rmpr-git-utils-test-'));
+    process.chdir(tmpRepoPath);
+
+    // Initialize Git repo
+    await $`git init -b main`.cwd(tmpRepoPath);
+    await $`git config user.email test@example.com`.cwd(tmpRepoPath);
+    await $`git config user.name "Test User"`.cwd(tmpRepoPath);
+    await $`git config commit.gpgsign false`.cwd(tmpRepoPath);
+
+    // Commit 1: Add file1.txt
+    await fs.writeFile(path.join(tmpRepoPath, 'file1.txt'), 'Initial content for file1');
+    await $`git add file1.txt`.cwd(tmpRepoPath);
+    await $`git commit -m "Add file1.txt"`.cwd(tmpRepoPath);
+    commit1Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+
+    // Commit 2: Modify file1.txt
+    await fs.writeFile(path.join(tmpRepoPath, 'file1.txt'), 'Modified content for file1');
+    await $`git add file1.txt`.cwd(tmpRepoPath);
+    await $`git commit -m "Modify file1.txt"`.cwd(tmpRepoPath);
+    commit2Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+
+    // Commit 3: Add file2.txt (file1.txt remains as in commit2Sha)
+    await fs.writeFile(path.join(tmpRepoPath, 'file2.txt'), 'Content for file2');
+    await $`git add file2.txt`.cwd(tmpRepoPath);
+    await $`git commit -m "Add file2.txt"`.cwd(tmpRepoPath);
+    commit3Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+
+    // Commit 4: Delete file1.txt (file2.txt remains as in commit3Sha)
+    await $`git rm file1.txt`.cwd(tmpRepoPath);
+    await $`git commit -m "Delete file1.txt"`.cwd(tmpRepoPath);
+    commit4Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+  });
+
+  afterAll(async () => {
+    process.chdir(originalCwd);
+    if (tmpRepoPath) {
+      await fs.rm(tmpRepoPath, { recursive: true, force: true });
+    }
+  });
+
+  describe('getFileContentAtRef', () => {
+    test('should fetch content of an existing file at a specific commit', async () => {
+      const content = await getFileContentAtRef('file1.txt', commit1Sha);
+      expect(content).toBe('Initial content for file1');
+    });
+
+    test('should fetch content of a modified file at a later commit', async () => {
+      const content = await getFileContentAtRef('file1.txt', commit2Sha);
+      expect(content).toBe('Modified content for file1');
+    });
+
+    test('should fetch content of a newly added file', async () => {
+      const content = await getFileContentAtRef('file2.txt', commit3Sha);
+      expect(content).toBe('Content for file2');
+    });
+
+    test('should throw an error when fetching a non-existent file', async () => {
+      await expect(getFileContentAtRef('nonexistent.txt', commit1Sha)).rejects.toThrow(
+        new RegExp(
+          `Failed to get file content for 'nonexistent\\.txt' at ref '${commit1Sha}'\\. ` +
+            `Git command: 'git show ${commit1Sha}:nonexistent\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
+            `Stderr: fatal: path 'nonexistent\\.txt' does not exist in '${commit1Sha}'`,
+        ),
+      );
+    });
+
+    test('should throw an error when fetching a deleted file at a commit after its deletion', async () => {
+      await expect(getFileContentAtRef('file1.txt', commit4Sha)).rejects.toThrow(
+        new RegExp(
+          `Failed to get file content for 'file1\\.txt' at ref '${commit4Sha}'\\. ` +
+            `Git command: 'git show ${commit4Sha}:file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
+            `Stderr: fatal: path 'file1\\.txt' does not exist in '${commit4Sha}'`,
+        ),
+      );
+    });
+
+    test('should fetch content of a file using "HEAD" as ref', async () => {
+      const content = await getFileContentAtRef('file2.txt', 'HEAD');
+      expect(content).toBe('Content for file2');
+    });
+
+    test('should fetch content of a file using a branch name as ref (main)', async () => {
+      const content = await getFileContentAtRef('file2.txt', 'main');
+      expect(content).toBe('Content for file2');
+    });
+  });
+
+  describe('getDiff', () => {
+    test('should get a diff for a modified file', async () => {
+      const diff = await getDiff('file1.txt', commit1Sha, commit2Sha);
+      expect(diff).toMatch(
+        new RegExp(
+          `^diff --git a\\/file1\\.txt b\\/file1\\.txt\\nindex [0-9a-f]+\\.\\.[0-9a-f]+ \\d+\\n--- a\\/file1\\.txt\\n\\+\\+\\+ b\\/file1\\.txt\\n@@ -1 \\+1 @@\\n-Initial content for file1\\n\\+Modified content for file1$`,
+          'm',
+        ),
+      );
+    });
+
+    test('should get a diff for an added file', async () => {
+      const diff = await getDiff('file2.txt', commit2Sha, commit3Sha);
+      expect(diff).toMatch(
+        new RegExp(
+          `^diff --git a\\/file2\\.txt b\\/file2\\.txt\\nnew file mode \\d+\\nindex 0000000\\.\\.[0-9a-f]+\\n--- \\/dev\\/null\\n\\+\\+\\+ b\\/file2\\.txt\\n@@ -0,0 \\+1 @@\\n\\+Content for file2$`,
+          'm',
+        ),
+      );
+    });
+
+    test('should get a diff for a deleted file', async () => {
+      const diff = await getDiff('file1.txt', commit3Sha, commit4Sha);
+      expect(diff).toMatch(
+        new RegExp(
+          `^diff --git a\\/file1\\.txt b\\/file1\\.txt\\ndeleted file mode \\d+\\nindex [0-9a-f]+\\.\\.0000000\\n--- a\\/file1\\.txt\\n\\+\\+\\+ \\/dev\\/null\\n@@ -1 \\+0,0 @@\\n-Modified content for file1$`,
+          'm',
+        ),
+      );
+    });
+
+    test('should return an empty string for an unchanged file between two refs', async () => {
+      const diff = await getDiff('file2.txt', commit3Sha, commit4Sha);
+      expect(diff).toBe('');
+    });
+
+    test('should return an empty string for a file diffed against the same ref', async () => {
+      const diff = await getDiff('file1.txt', commit1Sha, commit1Sha);
+      expect(diff).toBe('');
+    });
+
+    test('should throw an error if one of the refs is invalid for diff', async () => {
+      const invalidRef = 'nonexistentref';
+      await expect(getDiff('file1.txt', invalidRef, commit2Sha)).rejects.toThrow(
+        new RegExp(
+          `Failed to get diff for 'file1\\.txt' between '${invalidRef}' and '${commit2Sha}'\\. ` +
+            `Git command: 'git diff --patch ${invalidRef}\\.\\.${commit2Sha} -- file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
+            `Stderr: fatal: (bad revision '${invalidRef}'|ambiguous argument '${invalidRef}\\.\\.${commit2Sha}|bad object '${invalidRef}')`,
+        ),
+      );
+    });
+
+    test('should get a diff for a file that does not exist in baseRef but exists in headRef (overall addition)', async () => {
+      const diff = await getDiff('file2.txt', commit1Sha, commit3Sha);
+      expect(diff).toMatch(
+        new RegExp(
+          `^diff --git a\\/file2\\.txt b\\/file2\\.txt\\nnew file mode \\d+\\nindex 0000000\\.\\.[0-9a-f]+\\n--- \\/dev\\/null\\n\\+\\+\\+ b\\/file2\\.txt\\n@@ -0,0 \\+1 @@\\n\\+Content for file2$`,
+          'm',
+        ),
+      );
+    });
+
+    test('should get a diff for a file that exists in baseRef but not in headRef (overall deletion)', async () => {
+      const diff = await getDiff('file1.txt', commit1Sha, commit4Sha);
+      expect(diff).toMatch(
+        new RegExp(
+          `^diff --git a\\/file1\\.txt b\\/file1\\.txt\\ndeleted file mode \\d+\\nindex [0-9a-f]+\\.\\.0000000\\n--- a\\/file1\\.txt\\n\\+\\+\\+ \\/dev\\/null\\n@@ -1 \\+0,0 @@\\n-Initial content for file1$`,
+          'm',
+        ),
+      );
+    });
+  });
+});

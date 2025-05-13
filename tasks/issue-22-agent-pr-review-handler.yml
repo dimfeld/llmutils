@@ -290,7 +290,7 @@ tasks:
           the temporary Git repository.
 
           Remember to clean up the temporary directory after tests.
-        done: false
+        done: true
       - prompt: >
           In `src/rmpr/main.ts`, within `handleRmprCommand`:
 
