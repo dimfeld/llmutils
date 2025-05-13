@@ -1,3 +1,7 @@
+# May 13, 2025
+
+- Improve udiff edit application for edits and the end of a file
+
 # May 12, 2025
 
 - Add `rmplan generate --issue <issue number>` to generate a plan from a GitHub issue description
