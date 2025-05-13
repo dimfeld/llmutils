@@ -1,4 +1,5 @@
 import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
+import type { OpenRouterProviderOptions } from '@openrouter/ai-sdk-provider';
 import { streamText, type LanguageModel, type StreamTextResult, type ToolSet } from 'ai';
 import { streamResultToConsole } from './llm.ts';
 import { createModel } from './model_factory.ts';
@@ -31,6 +32,9 @@ export async function runStreamingPrompt(options: {
     temperature: options.temperature ?? 0,
     prompt: options.input,
     messages: options.messages,
+    headers: {
+      'X-Title': 'rmplan',
+    },
     providerOptions: {
       google: {
         thinkingConfig: {

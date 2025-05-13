@@ -413,7 +413,7 @@ tasks:
             \`\`\`
             ---
             ```
-        done: false
+        done: true
       - prompt: >
           In `src/rmpr/modes.ts`, implement `removeAiCommentMarkers`:
 
