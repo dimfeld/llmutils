@@ -1,4 +1,5 @@
-import { error, log } from '../logging.js';
+import { error, log, debugLog } from '../logging.js';
+import * as path from 'node:path';
 import type { PrIdentifier } from './types.js';
 import {
   fetchPullRequestAndComments,
@@ -8,6 +9,18 @@ import {
 } from '../common/github/pull_requests.js';
 import type { DetailedReviewComment } from './types.js';
 import { getFileContentAtRef, getDiff } from './git_utils.js';
+import {
+  createAiCommentsPrompt,
+  createSeparateContextPrompt,
+  formatReviewCommentsForSeparateContext,
+  insertAiCommentsIntoFileContent,
+  removeAiCommentMarkers,
+} from './modes.js';
+import { getGitRoot, secureWrite } from '../rmfilter/utils.js';
+import readline from 'node:readline';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
+import { applyLlmEdits } from '../apply-llm-edits/apply.js';
+import { createRetryRequester } from '../apply-llm-edits/retry.js';
 
 export function parsePrIdentifier(identifier: string): PrIdentifier | null {
   // Try parsing as full URL: https://github.com/owner/repo/pull/123
@@ -41,6 +54,19 @@ export function parsePrIdentifier(identifier: string): PrIdentifier | null {
   }
 
   return null;
+}
+
+async function promptEnterToContinue(): Promise<void> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question('Press Enter to continue...', () => {
+      rl.close();
+      resolve();
+    });
+  });
 }
 
 export async function handleRmprCommand(
@@ -136,35 +162,146 @@ export async function handleRmprCommand(
 
   log(`Identified ${uniqueFilePaths.length} unique file paths from selected comments.`);
 
-  const fileContents = new Map<string, string>();
+  const originalFilesContent = new Map<string, string>();
   const fileDiffs = new Map<string, string>();
 
   // 2. For each unique file path, fetch content and diff
   for (const filePath of uniqueFilePaths) {
     try {
-      log(`Fetching content for ${filePath} at ${headRefName}...`);
+      debugLog(`Fetching content for ${filePath} at ${headRefName}...`);
       const content = await getFileContentAtRef(filePath, headRefName);
-      fileContents.set(filePath, content);
+      originalFilesContent.set(filePath, content);
     } catch (e: any) {
       error(`Failed to fetch content for ${filePath} at ${headRefName}: ${e.message}`);
       // Decide if we should continue or exit. For now, let's log and continue.
     }
 
     try {
-      log(`Fetching diff for ${filePath} between ${baseRefName} and ${headRefName}...`);
+      debugLog(`Fetching diff for ${filePath} between ${baseRefName} and ${headRefName}...`);
       const diff = await getDiff(filePath, baseRefName, headRefName);
       fileDiffs.set(filePath, diff);
     } catch (e: any) {
       error(
         `Failed to fetch diff for ${filePath} between ${baseRefName} and ${headRefName}: ${e.message}`
       );
-      // Decide if we should continue or exit. For now, let's log and continue.
     }
   }
 
-  // 3. Log summary
-  log(`Fetched content for ${fileContents.size} files and diffs for ${fileDiffs.size} files.`);
-  // TODO: For debugging, can log the actual content/diffs if small or a summary
+  log(
+    `Fetched content for ${originalFilesContent.size} files and diffs for ${fileDiffs.size} files.`
+  );
 
-  // Further implementation will continue here
+  let llmPrompt: string;
+  const filesToProcessWithAiComments = new Map<string, string>();
+  const filesActuallyModifiedWithAiComments = new Set<string>();
+  const gitRoot = await getGitRoot();
+
+  if (options.mode === 'ai-comments') {
+    log('Preparing context in AI Comments mode...');
+    for (const [filePath, originalContent] of originalFilesContent.entries()) {
+      const commentsForThisFile = selectedComments.filter((c) => c.path === filePath);
+      if (commentsForThisFile.length > 0) {
+        const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+          originalContent,
+          commentsForThisFile,
+          filePath
+        );
+        filesToProcessWithAiComments.set(filePath, contentWithAiComments);
+        filesActuallyModifiedWithAiComments.add(filePath);
+      } else {
+        filesToProcessWithAiComments.set(filePath, originalContent);
+      }
+    }
+
+    if (!options.yes && filesActuallyModifiedWithAiComments.size > 0) {
+      log(
+        '\nAI comments have been prepared in the following files. Please review and make any desired edits before proceeding:'
+      );
+      for (const filePath of filesActuallyModifiedWithAiComments) {
+        log(`  - ${filePath}`);
+        try {
+          const contentToWrite = filesToProcessWithAiComments.get(filePath)!;
+          await secureWrite(gitRoot, filePath, contentToWrite);
+        } catch (e: any) {
+          error(`Failed to write AI comments to ${filePath}: ${e.message}`);
+          // Potentially exit or allow user to fix manually
+        }
+      }
+      await promptEnterToContinue();
+
+      log('Re-reading files after user review...');
+      for (const filePath of filesActuallyModifiedWithAiComments) {
+        try {
+          const absolutePath = path.resolve(gitRoot, filePath);
+          const updatedContent = await Bun.file(absolutePath).text();
+          filesToProcessWithAiComments.set(filePath, updatedContent);
+        } catch (e: any) {
+          error(`Failed to re-read ${filePath} after edits: ${e.message}`);
+          // Potentially exit or use previous content
+        }
+      }
+    }
+    llmPrompt = createAiCommentsPrompt(filesToProcessWithAiComments, fileDiffs);
+  } else {
+    // Default to "separate-context" mode
+    log('Preparing context in Separate Context mode...');
+    const formattedComments = formatReviewCommentsForSeparateContext(selectedComments);
+    llmPrompt = createSeparateContextPrompt(originalFilesContent, fileDiffs, formattedComments);
+  }
+
+  if (globalCliOptions.debug) {
+    const promptLines = llmPrompt.split('\n');
+    debugLog('Generated LLM Prompt (first 10 lines):');
+    debugLog(promptLines.slice(0, 10).join('\n') + (promptLines.length > 10 ? '\n...' : ''));
+  }
+
+  log('Invoking LLM...');
+  let llmOutputText = '';
+  try {
+    const { text } = await runStreamingPrompt({
+      messages: [{ role: 'user', content: llmPrompt }],
+      model: options.model || DEFAULT_RUN_MODEL,
+      temperature: 0,
+    });
+    llmOutputText = text;
+  } catch (e: any) {
+    error(`LLM invocation failed: ${e.message}`);
+    if (globalCliOptions.debug) console.error(e);
+    process.exit(1);
+  }
+
+  log('Applying LLM suggestions...');
+  try {
+    await applyLlmEdits({
+      interactive: !options.yes,
+      baseDir: gitRoot,
+      content: llmOutputText,
+      originalPrompt: llmPrompt,
+      retryRequester: createRetryRequester(options.model || DEFAULT_RUN_MODEL),
+      writeRoot: gitRoot,
+    });
+  } catch (e: any) {
+    error(`Failed to apply LLM edits: ${e.message}`);
+    // The error from applyLlmEdits might already be user-friendly.
+    // If not, add more context here.
+    if (globalCliOptions.debug) console.error(e);
+    process.exit(1);
+  }
+
+  if (options.mode === 'ai-comments' && filesActuallyModifiedWithAiComments.size > 0) {
+    log('Cleaning up AI comment markers...');
+    for (const filePath of filesActuallyModifiedWithAiComments) {
+      try {
+        const absolutePath = path.resolve(gitRoot, filePath);
+        const currentContentAfterLlm = await Bun.file(absolutePath).text();
+        const cleanedContent = removeAiCommentMarkers(currentContentAfterLlm);
+        await secureWrite(gitRoot, filePath, cleanedContent);
+      } catch (e: any) {
+        error(`Failed to clean AI comment markers from ${filePath}: ${e.message}`);
+      }
+    }
+    log('AI comment markers cleaned up.');
+  }
+
+  log('Successfully addressed selected PR comments.');
 }

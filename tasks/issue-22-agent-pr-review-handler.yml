@@ -627,7 +627,7 @@ tasks:
 
           Handle errors throughout this process. Use logging functions from
           `src/logging.ts`.
-        done: false
+        done: true
   - title: 7. Final Touches and Testing
     description: >
       Perform end-to-end testing of the `rmpr` command with both modes. Refine
