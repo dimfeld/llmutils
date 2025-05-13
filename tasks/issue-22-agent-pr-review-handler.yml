@@ -564,7 +564,7 @@ tasks:
 
           - Ensure the formatting is as expected, including correct diff hunk
           inclusion.
-        done: false
+        done: true
   - title: 6. Orchestrate Mode Logic, User Review, LLM Call, and Edit Application
     description: >
       Integrate the mode-specific logic into `src/rmpr/main.ts`. Implement the
