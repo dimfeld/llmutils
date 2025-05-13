@@ -146,7 +146,7 @@ tasks:
           - URLs from different GitHub instances (e.g., GitHub Enterprise -
           though parsing might assume github.com for simplicity unless specified
           otherwise). For now, assume github.com.
-        done: false
+        done: true
   - title: 2. Fetch PR Data and Enhance Comment Selection
     description: >
       Integrate GitHub API calls to fetch PR details and review comments.

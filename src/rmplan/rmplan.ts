@@ -24,8 +24,7 @@ program.option(
   'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
 );
 
-program
-  .option('--debug', 'Enable debug logging', () => setDebug(true));
+program.option('--debug', 'Enable debug logging', () => setDebug(true));
 
 program
   .command('generate')
@@ -383,11 +382,7 @@ program
 program
   .command('rmpr <prIdentifier>')
   .description('Address Pull Request review comments using an LLM.')
-  .option(
-    '--mode <mode>',
-    "Editing mode ('ai-comments' or 'separate-context')",
-    'ai-comments'
-  )
+  .option('--mode <mode>', "Editing mode ('ai-comments' or 'separate-context')", 'ai-comments')
   .option('--yes', 'Skip interactive prompts (e.g., for editing files)', false)
   .option('-m, --model <model>', 'LLM model to use')
   .action(async (prIdentifier, options) => {
@@ -395,6 +390,5 @@ program
     const globalOpts = program.opts();
     await handleRmprCommand(prIdentifier, options, globalOpts);
   });
-
 
 await program.parseAsync(process.argv);

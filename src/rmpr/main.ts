@@ -35,11 +35,17 @@ export function parsePrIdentifier(identifier: string): PrIdentifier | null {
   return null;
 }
 
-export async function handleRmprCommand(prIdentifierArg: string, options: any, globalCliOptions: any) {
+export async function handleRmprCommand(
+  prIdentifierArg: string,
+  options: any,
+  globalCliOptions: any
+) {
   const parsedIdentifier = parsePrIdentifier(prIdentifierArg);
 
   if (!parsedIdentifier) {
-    error(`Invalid PR identifier format: ${prIdentifierArg}. Expected URL (e.g., https://github.com/owner/repo/pull/123), owner/repo#123, or owner/repo/123.`);
+    error(
+      `Invalid PR identifier format: ${prIdentifierArg}. Expected URL (e.g., https://github.com/owner/repo/pull/123), owner/repo#123, or owner/repo/123.`
+    );
     process.exit(1);
   }
 
