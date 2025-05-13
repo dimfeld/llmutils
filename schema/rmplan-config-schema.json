@@ -20,6 +20,17 @@
         }
       }
     },
+    "paths": {
+      "type": "object",
+      "description": "Relevent paths in the repository",
+      "additionalProperties": false,
+      "properties": {
+        "tasks": {
+          "type": "string",
+          "description": "Path to the directory containing task definitions"
+        }
+      }
+    },
     "postApplyCommands": {
       "type": "array",
       "description": "An array of commands to run after changes are successfully applied by the agent.",

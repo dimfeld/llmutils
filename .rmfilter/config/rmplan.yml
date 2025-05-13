@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
 
+paths:
+  tasks: tasks
 postApplyCommands:
   - title: Cleanup Extranous Comments
     command: rmplan cleanup
