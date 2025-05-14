@@ -7,4 +7,5 @@ export interface DetailedReviewComment {
   >;
   comment: Pick<CommentNode, 'id' | 'body' | 'diffHunk' | 'author'>;
   diffForContext: DiffLine[];
+  cleanedComment?: string;
 }

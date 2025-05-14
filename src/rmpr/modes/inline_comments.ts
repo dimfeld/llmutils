@@ -169,7 +169,8 @@ export function insertAiCommentsIntoFileContent(
       }
     }
 
-    const aiPrefixedBodyLines = comment.comment.body
+    const commentBody = comment.cleanedComment || comment.comment.body;
+    const aiPrefixedBodyLines = commentBody
       .split('\n')
       .map((line) => currentPrefixer(`AI: ${line}`));
 

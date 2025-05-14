@@ -22,7 +22,8 @@ export function formatReviewCommentsForSeparateContext(
     }
 
     // Prefix each line of the comment body with 'Comment: '
-    const prefixedCommentBody = comment.comment.body.split('\n').map((line) => `Comment: ${line}`);
+    const commentBody = comment.cleanedComment || comment.comment.body;
+    const prefixedCommentBody = commentBody.split('\n').map((line) => `Comment: ${line}`);
 
     // Format diffForContext with injected comments
     const targetLine =

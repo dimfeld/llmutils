@@ -120,14 +120,15 @@ export async function handleRmprCommand(
       comments: [],
       options: {},
     };
-    commentsForThisFile.comments.push(comment);
-    commentsByFilePath.set(comment.thread.path, commentsForThisFile);
 
-    const rmprOptions = parseRmprOptions(comment.comment.body);
+    const { options: rmprOptions, cleanedComment } = parseRmprOptions(comment.comment.body);
     if (rmprOptions) {
       commentsForThisFile.options = combineRmprOptions(commentsForThisFile.options, rmprOptions);
       debugLog(`Parsed --rmpr options for comment ${comment.comment.id}:`, rmprOptions);
     }
+
+    commentsForThisFile.comments.push({ ...comment, cleanedComment });
+    commentsByFilePath.set(comment.thread.path, commentsForThisFile);
   });
 
   log(`Identified ${commentsByFilePath.size} unique file paths from selected comments.`);

@@ -12,6 +12,12 @@ export interface RmprOptions {
   rmfilter?: string[];
 }
 
+/** Result of parsing rmpr options, including cleaned comment */
+export interface ParseRmprResult {
+  options: RmprOptions | null;
+  cleanedComment: string;
+}
+
 export function combineRmprOptions(a: RmprOptions, b: RmprOptions): RmprOptions {
   return {
     includeAll: a.includeAll || b.includeAll,
@@ -55,18 +61,25 @@ export function argsFromRmprOptions(pr: PullRequest, options: RmprOptions): stri
 }
 
 /**
- * Parses --rmpr options from a comment body.
+ * Parses --rmpr options from a comment body and returns cleaned comment.
  * @param commentBody The comment body text
- * @returns Parsed RmprOptions or null if no valid --rmpr options are found
+ * @returns Parsed options (or null if none) and comment with rmpr lines removed
  */
-export function parseRmprOptions(commentBody: string): RmprOptions | null {
+export function parseRmprOptions(commentBody: string): ParseRmprResult {
   const lines = commentBody.split('\n');
   const rmprLines = lines.filter((line) => {
     line = line.trim();
     return line.startsWith('--rmpr') || line.startsWith('rmpr: ');
   });
+  // Keep non-rmpr lines for the cleaned comment
+  const cleanedLines = lines.filter((line) => {
+    line = line.trim();
+    return !line.startsWith('--rmpr') && !line.startsWith('rmpr: ');
+  });
+  const cleanedComment = cleanedLines.join('\n').trim();
+
   if (rmprLines.length === 0) {
-    return null;
+    return { options: null, cleanedComment };
   }
 
   const options: RmprOptions = {};
@@ -107,5 +120,8 @@ export function parseRmprOptions(commentBody: string): RmprOptions | null {
     }
   }
 
-  return Object.keys(options).length > 0 ? options : null;
+  return {
+    options: Object.keys(options).length > 0 ? options : null,
+    cleanedComment,
+  };
 }
