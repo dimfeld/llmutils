@@ -16,6 +16,7 @@ import { planPrompt } from './prompt.js';
 import { handleRmprCommand } from '../rmpr/main.js';
 import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
 import { input } from '@inquirer/prompts';
+import { waitForEnter } from '../common/terminal.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -86,8 +87,7 @@ program
         process.exit(1);
       }
     } else if (options.issue) {
-      const gitRepo = await getGitRepository();
-      let issueResult = await getInstructionsFromGithubIssue(gitRepo, options.issue);
+      let issueResult = await getInstructionsFromGithubIssue(options.issue);
       planText = issueResult.plan;
 
       let tasksDir = config.paths?.tasks;
@@ -175,23 +175,7 @@ program
           )
         );
 
-        // Wait for Enter key
-        await new Promise<void>((resolve, reject) => {
-          process.stdin.setRawMode(true);
-          process.stdin.resume();
-          process.stdin.on('data', (data) => {
-            if (data[0] === 0x0d || data[0] === 0x0a) {
-              // Enter key
-              process.stdin.setRawMode(false);
-              process.stdin.pause();
-              resolve();
-            } else if (data[0] === 0x03) {
-              // ctrl-c
-              console.warn('Cancelled');
-              process.exit(1);
-            }
-          });
-        });
+        await waitForEnter();
 
         let input = await clipboardy.read();
         let outputFilename: string | undefined;

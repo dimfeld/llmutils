@@ -1,14 +1,18 @@
-import { error, log, debugLog } from '../logging.js';
 import * as path from 'node:path';
-import type { PrIdentifier } from './types.js';
+import { applyLlmEdits } from '../apply-llm-edits/apply.js';
+import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import {
   fetchPullRequestAndComments,
   getDetailedUnresolvedReviewComments,
   selectDetailedReviewComments,
   type FileNode,
 } from '../common/github/pull_requests.js';
-import type { DetailedReviewComment } from './types.js';
-import { getFileContentAtRef, getDiff } from './git_utils.js';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
+import { waitForEnter } from '../common/terminal.js';
+import { debugLog, error, log } from '../logging.js';
+import { getGitRoot, secureWrite } from '../rmfilter/utils.js';
+import type { RmplanConfig } from '../rmplan/configSchema.js';
+import { getDiff, getFileContentAtRef } from './git_utils.js';
 import {
   createAiCommentsPrompt,
   createSeparateContextPrompt,
@@ -16,70 +20,18 @@ import {
   insertAiCommentsIntoFileContent,
   removeAiCommentMarkers,
 } from './modes.js';
-import { getGitRoot, secureWrite } from '../rmfilter/utils.js';
-import readline from 'node:readline';
-import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
-import { applyLlmEdits } from '../apply-llm-edits/apply.js';
-import { createRetryRequester } from '../apply-llm-edits/retry.js';
-import type { RmPlanConfig } from '../rmplan/configLoader.js';
-
-export function parsePrIdentifier(identifier: string): PrIdentifier | null {
-  // Try parsing as full URL: https://github.com/owner/repo/pull/123
-  const urlMatch = identifier.match(/^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)$/);
-  if (urlMatch) {
-    return {
-      owner: urlMatch[1],
-      repo: urlMatch[2],
-      prNumber: parseInt(urlMatch[3], 10),
-    };
-  }
-
-  // Try parsing as short format: owner/repo#123
-  const shortMatch = identifier.match(/^([^\/]+)\/([^\/#]+)#(\d+)$/);
-  if (shortMatch) {
-    return {
-      owner: shortMatch[1],
-      repo: shortMatch[2],
-      prNumber: parseInt(shortMatch[3], 10),
-    };
-  }
-
-  // Try parsing as alternative short format: owner/repo/123
-  const altShortMatch = identifier.match(/^([^\/]+)\/([^\/]+)\/(\d+)$/);
-  if (altShortMatch) {
-    return {
-      owner: altShortMatch[1],
-      repo: altShortMatch[2],
-      prNumber: parseInt(altShortMatch[3], 10),
-    };
-  }
-
-  return null;
-}
-
-async function promptEnterToContinue(): Promise<void> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise((resolve) => {
-    rl.question('Press Enter to continue...', () => {
-      rl.close();
-      resolve();
-    });
-  });
-}
+import type { DetailedReviewComment } from './types.js';
+import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
   options: { mode: string; yes: boolean; model?: string; dryRun: boolean },
   globalCliOptions: { debug?: boolean },
-  config: RmPlanConfig
+  config: RmplanConfig
 ) {
-  const effectiveModel =
-    options.model || config?.models?.default || config?.defaultModel || DEFAULT_RUN_MODEL;
+  const effectiveModel = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
 
-  const parsedIdentifier = parsePrIdentifier(prIdentifierArg);
+  const parsedIdentifier = await parsePrOrIssueNumber(prIdentifierArg);
 
   if (!process.env.GITHUB_TOKEN) {
     error(
@@ -96,19 +48,10 @@ export async function handleRmprCommand(
   }
 
   log(
-    `Processing PR: ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.prNumber}`
+    `Processing PR: ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`
   );
   log(`  Mode: ${options.mode}`);
   log(`  Model: ${effectiveModel}`);
-  if (globalCliOptions.debug) {
-    debugLog(`    Model Source Breakdown:`);
-    debugLog(`      CLI --model: ${options.model || 'not set'}`);
-    debugLog(`      Config (models.default): ${config?.models?.default || 'not set'}`);
-    debugLog(`      Config (defaultModel): ${config?.defaultModel || 'not set'}`);
-    debugLog(
-      `      Default Fallback: ${options.model || config?.models?.default || config?.defaultModel ? 'not used' : DEFAULT_RUN_MODEL}`
-    );
-  }
   log(`  Auto-confirm (--yes): ${options.yes}`);
   log(`  Dry Run (--dry-run): ${options.dryRun}`);
   if (globalCliOptions.debug) {
@@ -121,7 +64,7 @@ export async function handleRmprCommand(
     prData = await fetchPullRequestAndComments(
       parsedIdentifier.owner,
       parsedIdentifier.repo,
-      parsedIdentifier.prNumber
+      parsedIdentifier.number
     );
   } catch (e: any) {
     error(`Failed to fetch PR data: ${e.message}`);
@@ -243,7 +186,11 @@ export async function handleRmprCommand(
           // Potentially exit or allow user to fix manually
         }
       }
-      await promptEnterToContinue();
+
+      if (!options.yes) {
+        log('Examine and edit the comments if you would like, then press Enter to continue');
+        await waitForEnter();
+      }
 
       log('Re-reading files after user review...');
       for (const filePath of filesActuallyModifiedWithAiComments) {
