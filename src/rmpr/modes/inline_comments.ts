@@ -107,7 +107,7 @@ function getLinePrefixerForFile(filePath: string, firstLineOfFile?: string): Lin
   }
 }
 
-export function createAiCommentsPrompt(
+export function createInlineCommentsPrompt(
   filesWithAiComments: Map<string, string>,
   fileDiffs: Map<string, string>
 ): string {
@@ -184,42 +184,21 @@ export function insertAiCommentsIntoFileContent(
   const svelteJsPrefixer = (text: string) => `// ${text}`;
   const svelteHtmlPrefixer = (text: string) => `<!-- ${text} -->`;
 
+  const useScriptTag = path.extname(filePath).toLowerCase() === '.svelte';
+  const scriptEndTagIndex = useScriptTag
+    ? lines.findIndex((line) => line.includes('</script>'))
+    : -1;
+
   for (const comment of sortedComments) {
     let currentPrefixer: LinePrefixer = defaultPrefixer;
 
-    if (path.extname(filePath).toLowerCase() === '.svelte') {
-      const scriptEndTagIndex = originalContent.lastIndexOf('</script>');
+    if (useScriptTag) {
+      // For Svelte files we do a dumb check to see if we're in the script or the template.
       const relevantLine1Based = comment.thread.originalStartLine ?? comment.thread.originalLine;
       const relevantLine0Based = relevantLine1Based - 1;
 
-      let commentActualStartCharOffset = 0;
-      if (relevantLine0Based >= 0) {
-        let currentLineIdx = 0;
-        let charIdx = 0;
-        while (charIdx < originalContent.length) {
-          if (currentLineIdx === relevantLine0Based) {
-            commentActualStartCharOffset = charIdx;
-            break;
-          }
-          if (originalContent[charIdx] === '\n') {
-            currentLineIdx++;
-          }
-          charIdx++;
-          // If loop is about to end and we haven't found the line, it means the line is effectively at EOF
-          if (charIdx === originalContent.length && currentLineIdx < relevantLine0Based) {
-            commentActualStartCharOffset = originalContent.length;
-            break;
-          }
-        }
-        // If relevantLine0Based is 0, commentActualStartCharOffset remains 0 if loop doesn't run (empty content) or breaks immediately.
-        if (relevantLine0Based === 0 && originalContent.length === 0)
-          commentActualStartCharOffset = 0;
-        else if (relevantLine0Based === 0 && originalContent.length > 0)
-          commentActualStartCharOffset = 0; // Start of first line
-      }
-
       // If no </script> tag, or comment is after it, use HTML style. Otherwise JS style.
-      if (scriptEndTagIndex === -1 || commentActualStartCharOffset >= scriptEndTagIndex) {
+      if (scriptEndTagIndex === -1 || relevantLine0Based >= scriptEndTagIndex) {
         currentPrefixer = svelteHtmlPrefixer;
       } else {
         currentPrefixer = svelteJsPrefixer;
