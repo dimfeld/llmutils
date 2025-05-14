@@ -12,6 +12,7 @@ import type {
 } from '../editor/types.js';
 import { secureWrite, validatePath } from '../rmfilter/utils.js';
 import { log, warn, error, debugLog } from '../logging.js';
+import { findClosestMatches } from '../editor/closest_match.js';
 
 // Helper function to split lines while preserving line endings
 function splitLinesWithEndings(text: string): string[] {
@@ -111,7 +112,7 @@ async function handleNoMatchFailure(
   log(`Reason: ${chalk.red('The text block to be replaced was not found.')}`);
 
   if (failure.closestMatch) {
-    // Read the current file content to find the closest match again
+    // Read the current file content to find the closest match again, since a previous edit may have moved it
     const absoluteFilePath = validatePath(writeRoot, failure.filePath);
     let currentContent: string;
     try {
@@ -123,26 +124,9 @@ async function handleNoMatchFailure(
     const currentLines = splitLinesWithEndings(currentContent);
 
     // Search for the closest match lines in the current file content
-    let bestMatch: { lines: string[]; startLine: number; score: number } | null = null;
-    const targetLines = failure.closestMatch.lines;
-    const targetLength = targetLines.length;
-
-    for (let i = 0; i <= currentLines.length - targetLength; i++) {
-      const candidate = currentLines.slice(i, i + targetLength);
-      const candidateText = candidate.join('');
-      const targetText = targetLines.join('');
-      // Simple similarity score based on diff changes
-      const changes = diff.diffLines(candidateText, targetText);
-      const score =
-        changes.reduce((acc, change) => {
-          return acc - (change.added || change.removed ? change.value.length : 0);
-        }, candidateText.length) / candidateText.length;
-
-      if (!bestMatch || score > bestMatch.score) {
-        bestMatch = { lines: candidate, startLine: i + 1, score };
-      }
-    }
-
+    const [bestMatch] = findClosestMatches(currentContent, failure.closestMatch.lines, {
+      maxMatches: 1,
+    });
     if (!bestMatch) {
       log(chalk.magenta('No close match could be found in the current file.'));
       return undefined;

@@ -43,9 +43,17 @@ export interface ApplyLlmEditsOptions {
  */
 export function extractRmfilterCommandArgs(content: string): string[] | null {
   const match = content.match(/<rmfilter_command>(.*?)<\/rmfilter_command>/s);
+  const instructionsMatch = content.match(/<instructions>(.*?)<\/instructions>/s);
   if (match && match[1]) {
-    const commandString = match[1].trim();
+    let commandString = match[1].trim();
     if (commandString) {
+      if (instructionsMatch) {
+        const instructions = instructionsMatch[1].trim().replaceAll('"', '\\"');
+        if (instructions) {
+          commandString += ` --instructions "${instructions}"`;
+        }
+      }
+
       try {
         return parseCliArgsFromString(commandString);
       } catch (e) {
@@ -429,7 +437,7 @@ export async function applyLlmEdits({
     }
   } else {
     // No failures, apply all edits if not in dry run
-    if (!dryRun && successes.length > 0 && !appliedInitialSuccesses) {
+    if (!dryRun && !appliedInitialSuccesses) {
       appliedInitialSuccesses = true;
       await applyEditsInternal({
         content,

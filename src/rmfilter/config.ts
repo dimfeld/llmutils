@@ -36,6 +36,11 @@ export function resolveModelSettings(model: string | undefined): ModelPreset {
     return defaultModelSettings;
   }
 
+  if (model.startsWith('openrouter/')) {
+    // remove openrouter prefix if present
+    model = model.slice('openrouter/'.length);
+  }
+
   if (model.startsWith('google/gemini')) {
     model = 'gemini';
   } else if (model.startsWith('anthropic/') || model.startsWith('claude')) {

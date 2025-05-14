@@ -1,8 +1,17 @@
 import { Octokit } from 'octokit';
 import { checkbox } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
+import { parsePrOrIssueNumber } from './identifiers.ts';
 
-export async function fetchIssueAndComments(owner: string, repo: string, issueNumber: number) {
+export async function fetchIssueAndComments({
+  owner,
+  repo,
+  number,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
   // Initialize Octokit with GitHub token
   const octokit = new Octokit({
     auth: process.env.GITHUB_TOKEN,
@@ -13,12 +22,12 @@ export async function fetchIssueAndComments(owner: string, repo: string, issueNu
     octokit.rest.issues.get({
       owner,
       repo,
-      issue_number: issueNumber,
+      issue_number: number,
     }),
     octokit.rest.issues.listComments({
       owner,
       repo,
-      issue_number: issueNumber,
+      issue_number: number,
       per_page: 100,
     }),
   ]);
@@ -86,32 +95,19 @@ export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchI
 
 /** Based on a Github issue number or URL, fetches the issue and its comments, and allows selecting which
  * parts of the issue to include in the prompt. */
-export async function getInstructionsFromGithubIssue(gitRepo: string, issueSpec: string) {
-  let owner: string;
-  let repo: string;
-  let issueNumber: number;
-  // If it's a URL, just use the owner and repo from the URL
-  try {
-    const url = new URL(issueSpec);
-    [owner, repo] = url.pathname.split('/')[1];
-    issueNumber = parseInt(url.pathname.split('/')[4]);
-  } catch (err) {
-    // If it's not a URL, assume it's an issue number
-    [owner, repo] = gitRepo.split('/');
-    issueNumber = parseInt(issueSpec);
-
-    if (Number.isNaN(issueNumber)) {
-      throw new Error(`Issue number must be a Github URL or number, got ${issueSpec}`);
-    }
+export async function getInstructionsFromGithubIssue(issueSpec: string) {
+  const issue = await parsePrOrIssueNumber(issueSpec);
+  if (!issue) {
+    throw new Error(`Invalid issue spec: ${issueSpec}`);
   }
 
-  const data = await fetchIssueAndComments(owner, repo, issueNumber);
+  const data = await fetchIssueAndComments(issue);
   const selected = await selectIssueComments(data);
 
   const plan = selected.join('\n\n');
 
   const suggestedFileName =
-    `issue-${issueNumber}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase();
+    `issue-${issue.number}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase();
 
   return {
     suggestedFileName,

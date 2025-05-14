@@ -13,8 +13,10 @@ import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { findConfigPath, loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
-import { fetchIssueAndComments, getInstructionsFromGithubIssue } from '../common/github/issues.js';
+import { handleRmprCommand } from '../rmpr/main.js';
+import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
 import { input } from '@inquirer/prompts';
+import { waitForEnter } from '../common/terminal.js';
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -23,8 +25,7 @@ program.option(
   'Specify path to the rmplan configuration file (default: .rmfilter/rmplan.yml)'
 );
 
-program // Add debug globally, but it's set via setDebug
-  .option('--debug', 'Enable debug logging', () => setDebug(true));
+program.option('--debug', 'Enable debug logging', () => setDebug(true));
 
 program
   .command('generate')
@@ -86,8 +87,7 @@ program
         process.exit(1);
       }
     } else if (options.issue) {
-      const gitRepo = await getGitRepository();
-      let issueResult = await getInstructionsFromGithubIssue(gitRepo, options.issue);
+      let issueResult = await getInstructionsFromGithubIssue(options.issue);
       planText = issueResult.plan;
 
       let tasksDir = config.paths?.tasks;
@@ -175,23 +175,7 @@ program
           )
         );
 
-        // Wait for Enter key
-        await new Promise<void>((resolve, reject) => {
-          process.stdin.setRawMode(true);
-          process.stdin.resume();
-          process.stdin.on('data', (data) => {
-            if (data[0] === 0x0d || data[0] === 0x0a) {
-              // Enter key
-              process.stdin.setRawMode(false);
-              process.stdin.pause();
-              resolve();
-            } else if (data[0] === 0x03) {
-              // ctrl-c
-              console.warn('Cancelled');
-              process.exit(1);
-            }
-          });
-        });
+        await waitForEnter();
 
         let input = await clipboardy.read();
         let outputFilename: string | undefined;
@@ -378,5 +362,36 @@ program
   .option('--no-log', 'Do not log to file')
   .allowExcessArguments(true)
   .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
+
+program
+  .command('answer-pr <prIdentifier>')
+  .description('Address Pull Request (PR) review comments using an LLM.')
+  .option(
+    '--mode <mode>',
+    "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",
+    'inline-comments'
+  )
+  .option(
+    '--yes',
+    'Automatically proceed without interactive prompts (e.g., for reviewing AI comments in files).',
+    false
+  )
+  .option(
+    '-m, --model <model>',
+    'Specify the LLM model to use. Overrides model from rmplan config.'
+  )
+  .option(
+    '--dry-run',
+    'Prepare and print the LLM prompt, but do not call the LLM or apply edits.',
+    false
+  )
+  .option('--run', 'Send the context straight to an LLM and apply the results', false)
+  .option('--commit', 'Commit changes to jj/git if --run is also set', false)
+  .action(async (prIdentifier, options) => {
+    // Pass global options (like --debug) along with command-specific options
+    const globalOpts = program.opts();
+    const config = await loadEffectiveConfig(globalOpts.config);
+    await handleRmprCommand(prIdentifier, options, globalOpts, config);
+  });
 
 await program.parseAsync(process.argv);
