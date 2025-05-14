@@ -29,7 +29,9 @@ describe('Separate Context Mode Logic', () => {
       originalStartLine,
       id: `thread-${id}`,
     },
-    diffForContext: diffHunk,
+    diffForContext: [
+      { content: diffHunk, oldLineNumber: originalLine, newLineNumber: originalLine },
+    ],
   });
 
   describe('formatReviewCommentsForSeparateContext', () => {

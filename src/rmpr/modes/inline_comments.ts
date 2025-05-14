@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as crypto from 'crypto';
 import type { DetailedReviewComment } from '../types.ts';
 
 export interface AiCommentInsertionResult {

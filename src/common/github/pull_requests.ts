@@ -148,9 +148,7 @@ export async function selectReviewComments(
 
     const contextStart = Math.max(1, start - 3);
     const contextEnd = end + 3;
-    const diffForContext = filterDiffToRange(diff?.changes, contextStart, contextEnd)
-      .map((c) => c.content)
-      .join('\n');
+    const diffForContext = filterDiffToRange(diff?.changes, contextStart, contextEnd);
 
     const comments = thread.comments.nodes.map((comment) => ({
       name: singleLineWithPrefix(
@@ -198,9 +196,10 @@ export async function selectReviewComments(
   return selected;
 }
 
-interface DiffLine {
+export interface DiffLine {
   content: string;
-  lineNumber: number;
+  oldLineNumber: number;
+  newLineNumber: number;
 }
 
 function filterDiffToRange(changes: DiffLine[] | undefined, rangeStart: number, rangeEnd: number) {
@@ -217,7 +216,7 @@ function filterDiffToRange(changes: DiffLine[] | undefined, rangeStart: number, 
   }
 
   return (changes || []).filter(
-    (change) => change.lineNumber >= rangeStart && change.lineNumber <= rangeEnd
+    (change) => change.newLineNumber >= rangeStart && change.newLineNumber <= rangeEnd
   );
 }
 
@@ -258,6 +257,7 @@ function parseDiff(diff: string) {
 
       return {
         content: line,
+        oldLineNumber: currentOldLine,
         lineNumber: currentNewLine,
       };
     });
