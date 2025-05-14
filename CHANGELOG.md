@@ -1,6 +1,7 @@
 # May 13, 2025
 
 - Improve udiff edit application for edits and the end of a file
+- Fix edit application line ranges in interactive mode
 
 # May 12, 2025
 

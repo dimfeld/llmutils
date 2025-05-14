@@ -364,9 +364,12 @@ export async function applyLlmEdits({
         )
       );
 
-      const applySuccesses = await confirm({
-        message: `Would you like to apply the successful edits before resolving errors?`,
-      });
+      const applySuccesses =
+        successes.length > 0
+          ? await confirm({
+              message: `Would you like to apply the successful edits before resolving errors?`,
+            })
+          : false;
 
       if (applySuccesses) {
         // Apply successful edits

@@ -11,7 +11,7 @@ import type {
   ClosestMatchResult,
 } from '../editor/types.js';
 import { secureWrite, validatePath } from '../rmfilter/utils.js';
-import { log, warn, error } from '../logging.js';
+import { log, warn, error, debugLog } from '../logging.js';
 
 // Helper function to split lines while preserving line endings
 function splitLinesWithEndings(text: string): string[] {
@@ -60,9 +60,9 @@ async function applyEdit(
 
     // Basic check: ensure the lines we intend to replace still exist at the expected location
     // This is a simplified check; more robust checks might compare content.
-    if (startLineIndex + targetLines.length > currentLines.length) {
+    if (startLineIndex + targetLines.length >= currentLines.length) {
       error(
-        `Error applying edit to ${failure.filePath}: Line range ${startLineIndex + 1}-${startLineIndex + targetLines.length + 1} is out of bounds (file has ${currentLines.length} lines). Edit may be stale.`
+        `Error applying edit to ${failure.filePath}: Line range ${startLineIndex}-${startLineIndex + targetLines.length} is out of bounds (file has ${currentLines.length} lines). Edit may be stale.`
       );
       return { success: false, lineDelta: 0 };
     }
@@ -71,9 +71,9 @@ async function applyEdit(
     const lineDelta = updatedLines.length - targetLines.length;
 
     const newContentLines = [
-      ...currentLines.slice(0, startLineIndex - 1),
+      ...currentLines.slice(0, startLineIndex),
       ...updatedLines,
-      ...currentLines.slice(startLineIndex - 1 + targetLines.length),
+      ...currentLines.slice(startLineIndex + targetLines.length),
     ];
 
     const newContent = newContentLines.join('');
@@ -111,7 +111,44 @@ async function handleNoMatchFailure(
   log(`Reason: ${chalk.red('The text block to be replaced was not found.')}`);
 
   if (failure.closestMatch) {
-    const { lines, startLine, score } = failure.closestMatch;
+    // Read the current file content to find the closest match again
+    const absoluteFilePath = validatePath(writeRoot, failure.filePath);
+    let currentContent: string;
+    try {
+      currentContent = await Bun.file(absoluteFilePath).text();
+    } catch (err: any) {
+      error(`Failed to read file ${failure.filePath}: ${err.message}`);
+      return undefined;
+    }
+    const currentLines = splitLinesWithEndings(currentContent);
+
+    // Search for the closest match lines in the current file content
+    let bestMatch: { lines: string[]; startLine: number; score: number } | null = null;
+    const targetLines = failure.closestMatch.lines;
+    const targetLength = targetLines.length;
+
+    for (let i = 0; i <= currentLines.length - targetLength; i++) {
+      const candidate = currentLines.slice(i, i + targetLength);
+      const candidateText = candidate.join('');
+      const targetText = targetLines.join('');
+      // Simple similarity score based on diff changes
+      const changes = diff.diffLines(candidateText, targetText);
+      const score =
+        changes.reduce((acc, change) => {
+          return acc - (change.added || change.removed ? change.value.length : 0);
+        }, candidateText.length) / candidateText.length;
+
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = { lines: candidate, startLine: i + 1, score };
+      }
+    }
+
+    if (!bestMatch) {
+      log(chalk.magenta('No close match could be found in the current file.'));
+      return undefined;
+    }
+
+    const { lines, startLine, score } = bestMatch;
     log(
       chalk.cyan(`\nClosest match found (score: ${score.toFixed(2)}) starting at line ${startLine}`)
     );
@@ -159,11 +196,6 @@ async function handleNoMatchFailure(
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'llmutils-diff-'));
       const proposedPath = path.join(tempDir, 'proposed');
       try {
-        // Read the current full file content
-        const absoluteFilePath = validatePath(writeRoot, failure.filePath);
-        const currentContent = await Bun.file(absoluteFilePath).text();
-        const currentLines = splitLinesWithEndings(currentContent);
-
         // Generate the proposed full file content by applying the edit
         const updatedLines = splitLinesWithEndings(failure.updatedText);
         const newContentLines = [
@@ -183,7 +215,6 @@ async function handleNoMatchFailure(
           stdio: ['inherit', 'inherit', 'inherit'],
         });
         await proc.exited;
-        log('Neovim closed. Changes may have been saved to the original file.');
       } catch (err: any) {
         error(`Failed to open Neovim diff: ${err.message}`);
       } finally {

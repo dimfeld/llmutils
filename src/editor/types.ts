@@ -13,6 +13,7 @@ export interface MatchLocation {
 
 export interface ClosestMatchResult {
   lines: string[];
+  // 1-indexed line number
   startLine: number;
   endLine: number;
   score: number;
