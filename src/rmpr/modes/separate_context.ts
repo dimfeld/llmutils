@@ -3,7 +3,11 @@ import type { DetailedReviewComment } from '../types.ts';
 export function formatReviewCommentsForSeparateContext(
   selectedComments: DetailedReviewComment[]
 ): string {
-  const formattedComments: string[] = [];
+  if (selectedComments.length === 0) {
+    return '<reviews></reviews>';
+  }
+
+  const reviewElements: string[] = [];
 
   for (const comment of selectedComments) {
     let lineInfo: string;
@@ -11,9 +15,9 @@ export function formatReviewCommentsForSeparateContext(
       comment.thread.originalStartLine &&
       comment.thread.originalStartLine !== comment.thread.originalLine
     ) {
-      lineInfo = `Lines ${comment.thread.originalStartLine}-${comment.thread.originalLine}`;
+      lineInfo = `${comment.thread.originalStartLine}-${comment.thread.originalLine}`;
     } else {
-      lineInfo = `Line ${comment.thread.originalLine}`;
+      lineInfo = `${comment.thread.originalLine}`;
     }
 
     // Prefix each line of the comment body with 'Comment: '
@@ -27,12 +31,6 @@ export function formatReviewCommentsForSeparateContext(
     let spliceBeforeIndex = comment.diffForContext.findLastIndex(
       (line) => line[diffKey] > targetLine
     );
-
-    console.log({
-      targetLine,
-      diffKey,
-      spliceBeforeIndex,
-    });
 
     let diffContentLines: string[];
     if (spliceBeforeIndex === -1) {
@@ -49,17 +47,12 @@ export function formatReviewCommentsForSeparateContext(
       ];
     }
 
-    const parts: string[] = [
-      `File: ${comment.thread.path} (${lineInfo})`,
-      `Diff and Comment:`,
-      '```diff',
-      diffContentLines.join('\n'),
-      '```',
-    ];
-    formattedComments.push(parts.join('\n'));
+    const reviewContent = diffContentLines.join('\n');
+    const reviewElement = `<review file="${comment.thread.path}" lines="${lineInfo}">\n${reviewContent}\n</review>`;
+    reviewElements.push(reviewElement);
   }
 
-  return formattedComments.join('\n---\n');
+  return `<reviews>\n${reviewElements.join('\n')}\n</reviews>`;
 }
 
 export function createSeparateContextPrompt(formattedReviewComments: string): string {

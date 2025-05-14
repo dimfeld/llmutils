@@ -44,18 +44,17 @@ describe('Separate Context Mode Logic', () => {
       const comments = [
         mockComment('c1', 'src/file1.ts', 'This is a comment body.\nAnd another line', 7, 6),
       ];
-      console.dir(comments, { depth: null });
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
-        'File: src/file1.ts (Lines 6-7)',
-        'Diff and Comment:',
-        '```diff',
+        '<reviews>',
+        `<review file="src/file1.ts" lines="6-7">`,
         '-old line',
         '+new line',
         'Comment: This is a comment body.',
         'Comment: And another line',
         ' context',
-        '```',
+        '</review>',
+        '</reviews>',
       ].join('\n');
       expect(result).toBe(expected);
     });
@@ -64,14 +63,14 @@ describe('Separate Context Mode Logic', () => {
       const comments = [mockComment('c2', 'src/file2.py', 'Another comment.', 7, null)];
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
-        'File: src/file2.py (Line 7)',
-        'Diff and Comment:',
-        '```diff',
+        '<reviews>',
+        `<review file="src/file2.py" lines="7">`,
         '-old line',
         '+new line',
         'Comment: Another comment.',
         ' context',
-        '```',
+        '</review>',
+        '</reviews>',
       ].join('\n');
       expect(result).toBe(expected);
     });
@@ -83,31 +82,28 @@ describe('Separate Context Mode Logic', () => {
       ];
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
-        'File: src/file1.ts (Lines 6-7)',
-        'Diff and Comment:',
-        '```diff',
+        '<reviews>',
+        `<review file="src/file1.ts" lines="6-7">`,
         '-old line',
         '+new line',
         'Comment: Comment 1',
         'Comment: line',
         ' context',
-        '```',
-        '---',
-        'File: src/file2.py (Line 12)',
-        'Diff and Comment:',
-        '```diff',
+        '</review>',
+        `<review file="src/file2.py" lines="12">`,
         '-old line 2',
         '+new line 2',
         'Comment: Comment 2',
         ' context 2',
-        '```',
+        '</review>',
+        '</reviews>',
       ].join('\n');
       expect(result).toBe(expected);
     });
 
     test('should return an empty string if no comments are provided', () => {
       const result = formatReviewCommentsForSeparateContext([]);
-      expect(result).toBe('');
+      expect(result).toBe('<reviews></reviews>');
     });
   });
 });
