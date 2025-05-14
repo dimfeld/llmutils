@@ -69,13 +69,36 @@ function findBestMatchLine(
     }
   }
 
-  // Now that we found the best match for the context, we need to adjust the line numbers to account for where the
-  // comments actually start inside the code diff.
-  // TODO do this
+  // Adjust line numbers based on the comment's position within the diff context
+  // Find the index of the target line in afterStateLines by matching newLineNumber
+  let targetIndex = -1;
+  for (let i = 0; i < diffForContext.length; i++) {
+    if (diffForContext[i].newLineNumber === originalReferenceLine) {
+      targetIndex = i;
+      break;
+    }
+  }
+
+  // If no exact match, fallback to using the original line numbers relative to the match
+  if (targetIndex === -1) {
+    error(`No matching newLineNumber found for line ${originalReferenceLine} in diffForContext`);
+    return {
+      startLine: bestMatch.startLine,
+      endLine: bestMatch.endLine,
+    };
+  }
+
+  // Calculate the offset from the start of the matched context
+  const lineOffset = targetIndex;
+  const adjustedStartLine = bestMatch.startLine + lineOffset;
+  const adjustedEndLine =
+    originalStartLine && originalStartLine !== originalLine
+      ? adjustedStartLine + (originalLine - originalStartLine)
+      : adjustedStartLine;
 
   return {
-    startLine: bestMatch.startLine,
-    endLine: bestMatch.endLine,
+    startLine: adjustedStartLine,
+    endLine: adjustedEndLine,
   };
 }
 

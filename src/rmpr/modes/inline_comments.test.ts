@@ -159,6 +159,36 @@ describe('AI Comments Mode Logic', () => {
       const expected = ['const a = 1;', 'const b = 2;', 'const c = 3;'].join('\n');
       expect(contentWithAiComments).toEqual(expected);
     });
+
+    test('should adjust comment insertion based on diff context offset', () => {
+      const originalContent = [
+        'const a = 1;',
+        'const b = 2;',
+        'const x = 10;',
+        'const c = 3;',
+        'const d = 4;',
+      ].join('\n');
+      const diffForContext = [
+        { content: ' const b = 2;', oldLineNumber: 2, newLineNumber: 2 },
+        { content: ' const x = 10;', oldLineNumber: 3, newLineNumber: 3 },
+        { content: ' const c = 3;', oldLineNumber: 4, newLineNumber: 4 },
+      ];
+      const comments = [mockCommentBase('c1', 'Update c to 5', 4, null, diffForContext)];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      const expected = [
+        'const a = 1;',
+        'const b = 2;',
+        'const x = 10;',
+        '// AI: Update c to 5',
+        'const c = 3;',
+        'const d = 4;',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
   });
 
   describe('insertAiCommentsIntoFileContent - TypeScript (.ts)', () => {
