@@ -1,3 +1,4 @@
+import { basePrPrompt } from '../prompts.ts';
 import type { DetailedReviewComment } from '../types.ts';
 
 export function formatReviewCommentsForSeparateContext(
@@ -59,12 +60,19 @@ export function createSeparateContextPrompt(formattedReviewComments: string): st
   const promptParts: string[] = [];
 
   promptParts.push(
-    `Please review the following code files and address the provided review comments. Use the diffs from the parent branch for additional context on recent changes.`
+    `Please review the given code files and address the provided review comments. Use the diffs from the parent branch for additional context on recent changes.`
   );
   promptParts.push('');
 
   promptParts.push('Review Comments to Address:');
   promptParts.push(formattedReviewComments);
 
-  return promptParts.join('\n');
+  return `${basePrPrompt}
+
+The review comments are provided below in the <reviews> element. Inside each <review> is the
+relevant diff being commented on, as well as the comment itself, starting with "Comment: ".
+You should analyze the entire file referenced in the review to see what other pieces of code may need to be updated in response.
+
+${formattedReviewComments}
+`;
 }

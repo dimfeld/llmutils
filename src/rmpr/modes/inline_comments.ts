@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DetailedReviewComment } from '../types.ts';
+import { basePrPrompt } from '../prompts.ts';
 
 export interface AiCommentInsertionResult {
   contentWithAiComments: string;
@@ -237,10 +238,13 @@ export function createInlineCommentsPrompt(filesWithAiComments: string[]): strin
     .sort((a, b) => a.localeCompare(b))
     .map((filePath) => `- ${filePath}`)
     .join('\n');
-  const prompt = `You will be provided with source code files that include special 'AI comments'. These comments are prefixed with 'AI:' and may be enclosed in markers like '<!-- AI_COMMENT_START_XYZ -->' and '<!-- AI_COMMENT_END_XYZ -->'. Your task is to address the instructions in these AI comments by modifying the code.
-- Make the necessary code changes to satisfy the AI comment.
-- After addressing a comment, **remove the AI comment itself and its markers**. Do not add any new comments like 'addressed' or 'fixed'. Simply make the change.
-- The diff from the parent branch is provided for context on recent changes.
+  const prompt = `${basePrPrompt}
+
+### Review Format
+
+The review comments are injected into the code files as special 'AI comments'. These comments are prefixed with 'AI:' and may be enclosed in markers like '// AI_COMMENT_START_XYZ' and '// AI_COMMENT_END_XYZ'. The code lines in between the start and end markers are the specific lines being commented on in the review, but you should analyze the entire file to see what other pieces of code may need to be updated in response.
+
+After addressing a comment, remove the AI comment itself and its markers.
 
 Files with AI Comments:
 ${fileList}

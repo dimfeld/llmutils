@@ -191,8 +191,6 @@ async function processCommand(
     positionals.map((p) => normalizePath(gitRoot, baseDir, walker, p))
   );
 
-  console.log({ positionals });
-
   const ignore = await Promise.all(
     cmdValues.ignore?.map((i) => {
       if (!i.includes('/') && !i.includes('**')) {
@@ -670,8 +668,7 @@ export async function generateRmfilterOutput(
   const notBare = !globalValues.bare;
 
   // Construct command tag using provided cliArgsString or reconstruct if needed
-  const commandTagContent =
-    cliArgsString ?? reconstructCliArgs(globalValues, commandsParsed, editorInstructions);
+  const commandTagContent = cliArgsString ?? reconstructCliArgs(globalValues, commandsParsed);
   const commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should place this tag and its contents at the start of your output.
 <rmfilter_command>${commandTagContent}</rmfilter_command>`;
 
@@ -715,11 +712,7 @@ function quoteArg(arg: string): string {
 }
 
 // Helper to reconstruct CLI args string from parsed config
-function reconstructCliArgs(
-  globalValues: GlobalValues,
-  commandsParsed: CommandParsed[],
-  editorInstructions: string
-): string {
+function reconstructCliArgs(globalValues: GlobalValues, commandsParsed: CommandParsed[]): string {
   const args: string[] = [];
 
   debugLog('globalValues', globalValues);
@@ -727,18 +720,14 @@ function reconstructCliArgs(
 
   // Add global options
   for (const [key, value] of Object.entries(globalValues)) {
-    if (key === 'commands') {
-      // This happens when loading a preset
+    if (key === 'commands' || key === 'instructions') {
+      // commands happens when loading a preset
+      // Skip instructions since we just pull it from the instructions tag
       continue;
     } else if (value === true) {
       args.push(`--${key}`);
     } else if (typeof value === 'string') {
-      if (key === 'instructions' && value === editorInstructions) {
-        // Special handling if instructions came from editor originally
-        args.push(`--instructions ${quoteArg(value)}`);
-      } else if (key !== 'instructions') {
-        args.push(`--${key} ${quoteArg(value)}`);
-      }
+      args.push(`--${key} ${quoteArg(value)}`);
     } else if (Array.isArray(value)) {
       value.forEach((v) => args.push(`--${key} ${quoteArg(v)}`));
     }
@@ -790,9 +779,9 @@ export async function runRmfilterProgrammatically(
   return finalOutput;
 }
 
-// Main execution block (CLI entry point)
-async function main() {
-  const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig();
+// CLI entry point
+export async function fullRmfilterRun(options?: { args?: string[]; gitRoot?: string }) {
+  const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig(options);
   await handleInitialCliCommands(globalValues);
 
   const gitRoot = await getGitRoot();
@@ -804,7 +793,7 @@ async function main() {
   if (globalValues['instructions-editor']) {
     editorInstructions = await getInstructionsFromEditor().catch(() => '');
   }
-  const cliArgsString = reconstructCliArgs(globalValues, commandsParsed, editorInstructions);
+  const cliArgsString = reconstructCliArgs(globalValues, commandsParsed);
 
   const config: RmfilterConfig = {
     globalValues,
@@ -866,7 +855,7 @@ async function main() {
 
 // Execute main only if the script is run directly
 if (import.meta.main) {
-  main().catch((err) => {
+  fullRmfilterRun().catch((err) => {
     error(err.message);
     if (debug) {
       console.error(err.stack);

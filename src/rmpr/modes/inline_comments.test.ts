@@ -43,6 +43,9 @@ describe('AI Comments Mode Logic', () => {
         path: 'test.ts',
         originalLine,
         originalStartLine,
+        line: originalLine,
+        startLine: originalStartLine,
+        diffSide: 'RIGHT',
       },
       diffForContext: [
         {
@@ -230,6 +233,9 @@ describe('AI Comments Mode Logic', () => {
         originalLine,
         originalStartLine,
         id: `thread-${id}`,
+        line: originalLine,
+        startLine: originalStartLine,
+        diffSide: 'RIGHT',
       },
       diffForContext: [
         {

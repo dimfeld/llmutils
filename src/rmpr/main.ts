@@ -24,7 +24,7 @@ import {
 } from './modes/separate_context.js';
 import type { DetailedReviewComment } from './types.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
-import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
+import { fullRmfilterRun, runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
@@ -175,13 +175,16 @@ export async function handleRmprCommand(
     headRefName,
     '--instructions',
     instructions,
+    '--model',
+    effectiveModel,
+    '--debug',
   ];
 
   if (!options.run) {
     rmFilterArgs.push('--copy');
   }
 
-  const llmPrompt = await runRmfilterProgrammatically(rmFilterArgs, gitRoot, gitRoot);
+  const llmPrompt = await fullRmfilterRun({ args: rmFilterArgs, gitRoot });
 
   if (options.dryRun) {
     log(
