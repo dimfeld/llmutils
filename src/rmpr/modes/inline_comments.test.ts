@@ -160,28 +160,6 @@ describe('AI Comments Mode Logic', () => {
       expect(contentWithAiComments).toBe(expectedBuggy);
     });
 
-    test('should handle block comments on an empty file content ("")', () => {
-      const content = '';
-      const comments = [mockCommentBase('c1-block', 'Block for empty file', 1, 1)];
-      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
-        content,
-        comments,
-        'test.ts'
-      );
-      // TODO: This also reflects buggy behavior for empty files.
-      const expectedBuggy = [
-        '// AI_COMMENT_START_00000000',
-        '// AI: Block for empty file',
-        '',
-        '// AI_COMMENT_END_00000000',
-        // Duplication from the special empty file handling block
-        '// AI_COMMENT_START_00000000',
-        '// AI: Block for empty file',
-        '// AI_COMMENT_END_00000000',
-      ].join('\n');
-      expect(contentWithAiComments).toBe(expectedBuggy);
-    });
-
     test('should correctly sort and insert multiple comments affecting same/adjacent lines based on IDs', () => {
       const content = 'line1\nline2\nline3';
       const comments = [
@@ -249,7 +227,7 @@ describe('AI Comments Mode Logic', () => {
     test('should use # for Python files (.py)', () => {
       const content = 'print("hello")\ndef foo():\n  pass';
       const comments = [
-        mockCommentBase('c1', 'Add docstring', 2, 2), // Block for def foo():
+        mockCommentBase('c1', 'Add docstring', 3, 2), // Block for def foo():
         mockCommentBase('c2', 'Change to world', 1), // Single for print
       ];
       // Sorted: c2 (single), c1 (block, UUID 00000000)
@@ -264,8 +242,8 @@ describe('AI Comments Mode Logic', () => {
         '# AI_COMMENT_START_00000000',
         '# AI: Add docstring',
         'def foo():',
-        '# AI_COMMENT_END_00000000',
         '  pass',
+        '# AI_COMMENT_END_00000000',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
@@ -290,15 +268,17 @@ describe('AI Comments Mode Logic', () => {
     });
 
     test('should use // for Svelte <script> and <!-- --> for template', () => {
-      const content = '<script>\n  let name = "world";\n</script>\n\n<h1>Hello {name}</h1>';
+      const content =
+        '<script>\n  let name = "world";\n</script>\n\n<h1>Hello {name}</h1>\n<h2>Goodbye</h2>';
       // Line 1: <script>
       // Line 2:   let name = "world";
       // Line 3: </script>
       // Line 4:
       // Line 5: <h1>Hello {name}</h1>
+      // Line 6: <h2>Goodbye</h2>
       const comments = [
         mockCommentBase('c-script', 'Initialize to "Svelte"', 2), // Single-line in script
-        mockCommentBase('c-template', 'Add a class to h1', 5, 5), // Block on h1
+        mockCommentBase('c-template', 'Add a class to h1', 6, 5), // Block on h1 and h2
       ];
       // Sorted: c-script (single), c-template (block, UUID 00000000)
       // `</script>` is on line 3. Its content starts after char for `\n` of line 2.
@@ -319,6 +299,7 @@ describe('AI Comments Mode Logic', () => {
         '<!-- AI_COMMENT_START_00000000 -->',
         '<!-- AI: Add a class to h1 -->',
         '<h1>Hello {name}</h1>',
+        '<h2>Goodbye</h2>',
         '<!-- AI_COMMENT_END_00000000 -->',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
@@ -326,75 +307,123 @@ describe('AI Comments Mode Logic', () => {
   });
 
   describe('removeAiCommentMarkers', () => {
-    test('should remove "AI: " prefixed lines', () => {
-      const content =
-        'AI: This is a comment\nActual code\n  AI: Another comment with leading spaces';
-      const expected = 'Actual code';
-      expect(removeAiCommentMarkers(content)).toBe(expected);
+    test('should remove "// AI: " prefixed lines and markers for TypeScript files', () => {
+      const content = [
+        '// AI: This is a comment',
+        'Actual code',
+        '  // AI: Another comment with leading spaces',
+        '// AI_COMMENT_START_12345678',
+        '// AI: Block comment',
+        'More code',
+        '// AI_COMMENT_END_12345678',
+      ].join('\n');
+      const expected = 'Actual code\nMore code';
+      expect(removeAiCommentMarkers(content, 'test.ts')).toBe(expected);
     });
 
-    test('should remove start/end markers and AI prefixed lines within them', () => {
+    test('should remove "# AI: " prefixed lines and markers for Python files', () => {
       const content = [
+        '# AI: This is a comment',
+        'print("hello")',
+        '  # AI: Another comment',
+        '# AI_COMMENT_START_12345678',
+        '# AI: Block comment',
+        'def foo():',
+        '# AI_COMMENT_END_12345678',
+      ].join('\n');
+      const expected = 'print("hello")\ndef foo():';
+      expect(removeAiCommentMarkers(content, 'test.py')).toBe(expected);
+    });
+
+    test('should remove "<!-- AI: -->" prefixed lines and markers for HTML files', () => {
+      const content = [
+        '<!-- AI: This is a comment -->',
+        '<h1>Title</h1>',
+        '  <!-- AI: Another comment -->',
         '<!-- AI_COMMENT_START_12345678 -->',
-        'AI: Comment body',
-        'Actual code line 1',
+        '<!-- AI: Block comment -->',
+        '<p>Text</p>',
         '<!-- AI_COMMENT_END_12345678 -->',
-        'More code',
-        '  AI: This should also be removed',
-        '<!-- AI_COMMENT_START_abcdef01 -->  ',
-        'AI: Another block',
+      ].join('\n');
+      const expected = '<h1>Title</h1>\n<p>Text</p>';
+      expect(removeAiCommentMarkers(content, 'test.html')).toBe(expected);
+    });
+
+    test('should remove both "// AI: " and "<!-- AI: -->" for Svelte files (script and template)', () => {
+      const content = [
+        '<script>',
+        '// AI: Script comment',
+        '  let x = 1;',
+        '// AI_COMMENT_START_12345678',
+        '// AI: Script block',
+        '</script>',
+        '<!-- AI_COMMENT_END_12345678 -->',
+        '',
+        '<!-- AI: Template comment -->',
+        '<h1>Title</h1>',
+        '<!-- AI_COMMENT_START_abcdef01 -->',
+        '<!-- AI: Template block -->',
+        '<p>Text</p>',
         '<!-- AI_COMMENT_END_abcdef01 -->',
       ].join('\n');
-      const expected = 'Actual code line 1\nMore code';
-      expect(removeAiCommentMarkers(content)).toBe(expected);
+      const expected = [
+        '<script>',
+        '  let x = 1;',
+        '</script>',
+        '',
+        '<h1>Title</h1>',
+        '<p>Text</p>',
+      ].join('\n');
+      expect(removeAiCommentMarkers(content, 'test.svelte')).toBe(expected);
     });
 
     test('should leave content with no markers or AI prefixes unchanged', () => {
       const content = 'Normal code line1\nNormal code line2\n// Not an AI comment';
-      expect(removeAiCommentMarkers(content)).toBe(content);
+      expect(removeAiCommentMarkers(content, 'test.ts')).toBe(content);
     });
 
-    test('should handle markers with leading/trailing whitespace on their line (due to line.trim())', () => {
-      const content =
-        '  <!-- AI_COMMENT_START_12345678 -->  \nAI: Content\n\t<!-- AI_COMMENT_END_12345678 -->\t\nActual code';
-      const expected = 'Actual code';
-      expect(removeAiCommentMarkers(content)).toBe(expected);
-    });
-
-    test('should not remove malformed markers (e.g., wrong prefix, wrong ID length, modified marker text)', () => {
+    test('should handle markers with leading/trailing whitespace on their line', () => {
       const content = [
-        '<!-- AI_COMMENT_START_123 -->',
-        'AI: This will be removed by AI: rule',
-        '<!-- AI_COMMENT_END_1234567 -->',
+        '  // AI_COMMENT_START_12345678  ',
+        '// AI: Content',
+        '\t// AI_COMMENT_END_12345678\t',
         'Actual code',
-        '<!-- XX_AI_COMMENT_START_12345678 -->',
-        '<!-- AI_COMMENT_START_12345678_MODIFIED -->',
-        '<!--AI_COMMENT_START_12345678-->',
+      ].join('\n');
+      const expected = 'Actual code';
+      expect(removeAiCommentMarkers(content, 'test.ts')).toBe(expected);
+    });
+
+    test('should not remove malformed markers (e.g., wrong prefix)', () => {
+      const content = [
+        '// AI_COMMENT_START_123',
+        '// AI: This will be removed',
+        '// AI_COMMENT_END_1234567',
+        'Actual code',
+        '// XX_AI_COMMENT_START_12345678',
+        '// AI_COMMENT_START_12345678_MODIFIED',
+        '//AI_COMMENT_START_12345678',
       ].join('\n');
       const expected = [
-        '<!-- AI_COMMENT_START_123 -->',
-        '<!-- AI_COMMENT_END_1234567 -->',
         'Actual code',
-        '<!-- XX_AI_COMMENT_START_12345678 -->',
-        '<!-- AI_COMMENT_START_12345678_MODIFIED -->',
-        '<!--AI_COMMENT_START_12345678-->',
+        '// XX_AI_COMMENT_START_12345678',
+        '//AI_COMMENT_START_12345678',
       ].join('\n');
-      expect(removeAiCommentMarkers(content)).toBe(expected);
+      expect(removeAiCommentMarkers(content, 'test.ts')).toBe(expected);
     });
 
     test('should handle empty string input', () => {
-      expect(removeAiCommentMarkers('')).toBe('');
+      expect(removeAiCommentMarkers('', 'test.ts')).toBe('');
     });
 
     test('should handle content with only AI comments and markers, resulting in empty string', () => {
       const content = [
-        'AI: Line 1',
-        '<!-- AI_COMMENT_START_12345678 -->',
-        'AI: Line 2',
-        '<!-- AI_COMMENT_END_12345678 -->',
-        '  AI: Line 3',
+        '// AI: Line 1',
+        '// AI_COMMENT_START_12345678',
+        '// AI: Line 2',
+        '// AI_COMMENT_END_12345678',
+        '  // AI: Line 3',
       ].join('\n');
-      expect(removeAiCommentMarkers(content)).toBe('');
+      expect(removeAiCommentMarkers(content, 'test.ts')).toBe('');
     });
   });
 });

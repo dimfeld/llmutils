@@ -15,9 +15,13 @@ function addToMapList(map: Map<number, string[]>, key: number, values: string[])
   map.get(key)!.push(...values);
 }
 
-type LinePrefixer = (text: string) => string;
+type LineCommenter = (text: string) => string;
 
-function getLinePrefixerForFile(filePath: string, firstLineOfFile?: string): LinePrefixer {
+function getLineCommenterForFile(
+  filePath: string,
+  firstLineOfFile?: string,
+  prefixOnly = false
+): LineCommenter {
   const extension = path.extname(filePath).toLowerCase();
   const baseName = path.basename(filePath).toLowerCase();
 
@@ -69,12 +73,12 @@ function getLinePrefixerForFile(filePath: string, firstLineOfFile?: string): Lin
     case '.astro':
     case '.md':
     case '.svg':
-      return (text: string) => `<!-- ${text} -->`;
+      return prefixOnly ? (text: string) => `<!-- ${text}` : (text: string) => `<!-- ${text} -->`;
     case '.css':
     case '.scss':
     case '.less':
     case '.styl': // Stylus
-      return (text: string) => `/* ${text} */`;
+      return prefixOnly ? (text: string) => `/* ${text}` : (text: string) => `/* ${text} */`;
     case '.lua':
       return (text: string) => `-- ${text}`;
     case '.sql':
@@ -137,7 +141,10 @@ export function insertAiCommentsIntoFileContent(
     return a.comment.id.localeCompare(b.comment.id);
   });
 
-  const defaultPrefixer = getLinePrefixerForFile(filePath, lines.length > 0 ? lines[0] : undefined);
+  const defaultPrefixer = getLineCommenterForFile(
+    filePath,
+    lines.length > 0 ? lines[0] : undefined
+  );
   const svelteJsPrefixer = (text: string) => `// ${text}`;
   const svelteHtmlPrefixer = (text: string) => `<!-- ${text} -->`;
 
@@ -147,7 +154,7 @@ export function insertAiCommentsIntoFileContent(
     : -1;
 
   for (const comment of sortedComments) {
-    let currentPrefixer: LinePrefixer = defaultPrefixer;
+    let currentPrefixer: LineCommenter = defaultPrefixer;
 
     if (useScriptTag) {
       // For Svelte files we do a dumb check to see if we're in the script or the template.
@@ -216,19 +223,41 @@ export function insertAiCommentsIntoFileContent(
   return { contentWithAiComments: newLines.join('\n') };
 }
 
-export function removeAiCommentMarkers(fileContent: string): string {
+export function removeAiCommentMarkers(fileContent: string, filePath: string): string {
   const lines = fileContent.split('\n');
-  const cleanedLines = lines.filter((line) => {
-    // Remove lines starting with "AI: " (and any leading whitespace before "AI:")
-    if (line.trim().startsWith('AI: ')) {
+  const prefixer = getLineCommenterForFile(filePath, lines.length > 0 ? lines[0] : undefined, true);
+  const isSvelte = path.extname(filePath).toLowerCase() === '.svelte';
+  const scriptEndTagIndex = isSvelte ? lines.findIndex((line) => line.includes('</script>')) : -1;
+
+  const candidates = [prefixer('AI_COMMENT_START_'), prefixer('AI_COMMENT_END_'), prefixer('AI:')];
+
+  const cleanedLines = lines.filter((line, index) => {
+    const trimmed = line.trim();
+
+    // Handle Svelte: check if line is in script or template section
+    let theseCandidates = candidates;
+    const tryOtherPrefixer = isSvelte && (scriptEndTagIndex === -1 || index >= scriptEndTagIndex);
+    if (tryOtherPrefixer) {
+      let thisPrefixer = (text: string) => `<!-- ${text}`;
+      theseCandidates = [
+        thisPrefixer('AI_COMMENT_START_'),
+        thisPrefixer('AI_COMMENT_END_'),
+        thisPrefixer('AI:'),
+      ];
+    }
+
+    if (theseCandidates.some((candidate) => trimmed.startsWith(candidate))) {
       return false;
     }
-    // Check for AI comment markers. Allow for potential leading/trailing whitespace on the line itself.
-    if (/^<!-- AI_COMMENT_(START|END)_[0-9a-f]{8} -->$/.test(line.trim())) {
+
+    // For Svelte, also check the other prefixer to handle mixed script/template comments
+    if (tryOtherPrefixer && candidates.some((candidate) => trimmed.startsWith(candidate))) {
       return false;
     }
+
     return true;
   });
+
   return cleanedLines.join('\n');
 }
 

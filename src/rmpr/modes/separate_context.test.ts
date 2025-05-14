@@ -39,7 +39,7 @@ describe('Separate Context Mode Logic', () => {
     };
   };
 
-  describe.only('formatReviewCommentsForSeparateContext', () => {
+  describe('formatReviewCommentsForSeparateContext', () => {
     test('should format a single comment with distinct start and end lines, injecting comment in diff', () => {
       const comments = [
         mockComment('c1', 'src/file1.ts', 'This is a comment body.\nAnd another line', 7, 6),
@@ -59,7 +59,7 @@ describe('Separate Context Mode Logic', () => {
       expect(result).toBe(expected);
     });
 
-    test.only('should format a single comment with same start and end lines (or null startLine), injecting comment in diff', () => {
+    test('should format a single comment with same start and end lines (or null startLine), injecting comment in diff', () => {
       const comments = [mockComment('c2', 'src/file2.py', 'Another comment.', 7, null)];
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [

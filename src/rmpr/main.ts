@@ -235,7 +235,7 @@ export async function handleRmprCommand(
       try {
         const absolutePath = path.resolve(gitRoot, filePath);
         const currentContentAfterLlm = await Bun.file(absolutePath).text();
-        const cleanedContent = removeAiCommentMarkers(currentContentAfterLlm);
+        const cleanedContent = removeAiCommentMarkers(currentContentAfterLlm, filePath);
         await secureWrite(gitRoot, filePath, cleanedContent);
       } catch (e: any) {
         error(`Failed to clean AI comment markers from ${filePath}: ${e.message}`);
