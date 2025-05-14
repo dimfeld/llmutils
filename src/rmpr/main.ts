@@ -4,7 +4,6 @@ import { applyLlmEdits } from '../apply-llm-edits/apply.js';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import {
   fetchPullRequestAndComments,
-  getDetailedUnresolvedReviewComments,
   selectReviewComments,
   type FileNode,
 } from '../common/github/pull_requests.js';
@@ -103,10 +102,10 @@ export async function handleRmprCommand(
     log(`     Diff Hunk: "${comment.diffHunk.split('\n')[0]}..."`);
   });
 
-  return;
-
   // 1. Identify unique file paths from selected comments
-  const uniqueFilePaths = Array.from(new Set(selectedComments.map((comment) => comment.path)));
+  const uniqueFilePaths = Array.from(
+    new Set(selectedComments.map((comment) => comment.thread.path))
+  );
 
   log(`Identified ${uniqueFilePaths.length} unique file paths from selected comments.`);
 
@@ -114,10 +113,11 @@ export async function handleRmprCommand(
   const fileDiffs = new Map<string, string>();
 
   // 2. For each unique file path, fetch content and diff
+  const gitRoot = await getGitRoot();
   for (const filePath of uniqueFilePaths) {
     try {
       debugLog(`Fetching content for ${filePath} at ${headRefName}...`);
-      const content = await getFileContentAtRef(filePath, headRefName);
+      const content = await Bun.file(path.resolve(gitRoot, filePath)).text();
       originalFilesContent.set(filePath, content);
     } catch (e: any) {
       error(`Failed to fetch content for ${filePath} at ${headRefName}: ${e.message}`);
@@ -126,6 +126,7 @@ export async function handleRmprCommand(
 
     try {
       debugLog(`Fetching diff for ${filePath} between ${baseRefName} and ${headRefName}...`);
+      // TODO Change this to use getDiffTag
       const diff = await getDiff(filePath, baseRefName, headRefName);
       fileDiffs.set(filePath, diff);
     } catch (e: any) {
@@ -142,12 +143,11 @@ export async function handleRmprCommand(
   let llmPrompt: string;
   const filesToProcessWithAiComments = new Map<string, string>();
   const filesActuallyModifiedWithAiComments = new Set<string>();
-  const gitRoot = await getGitRoot();
 
   if (options.mode === 'ai-comments') {
     log('Preparing context in AI Comments mode...');
     for (const [filePath, originalContent] of originalFilesContent.entries()) {
-      const commentsForThisFile = selectedComments.filter((c) => c.path === filePath);
+      const commentsForThisFile = selectedComments.filter((c) => c.thread.path === filePath);
       if (commentsForThisFile.length > 0) {
         const { contentWithAiComments } = insertAiCommentsIntoFileContent(
           originalContent,
