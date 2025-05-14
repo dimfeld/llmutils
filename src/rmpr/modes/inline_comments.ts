@@ -1,6 +1,5 @@
-import * as crypto from 'crypto';
 import * as path from 'path';
-import type { DetailedReviewComment } from './types.ts';
+import type { DetailedReviewComment } from '../types.ts';
 
 export interface AiCommentInsertionResult {
   contentWithAiComments: string;
@@ -108,135 +107,6 @@ function getLinePrefixerForFile(filePath: string, firstLineOfFile?: string): Lin
   }
 }
 
-/**
- * Inserts AI-prefixed comments and markers into file content.
- * Line numbers in comments (originalLine, originalStartLine) are 1-based.
- */
-export function insertAiCommentsIntoFileContent(
-  originalContent: string,
-  commentsForFile: DetailedReviewComment[],
-  filePath: string
-): AiCommentInsertionResult {
-  const lines = originalContent.split('\n');
-  const newLines: string[] = [];
-
-  const insertBefore = new Map<number, string[]>();
-  const insertAfter = new Map<number, string[]>();
-
-  // Sort comments to ensure a deterministic order if multiple comments affect the same line.
-  // Sorting by originalStartLine then originalLine. If originalStartLine is null, use originalLine.
-  const sortedComments = [...commentsForFile].sort((a, b) => {
-    const startA = a.originalStartLine ?? a.originalLine;
-    const startB = b.originalStartLine ?? b.originalLine;
-    if (startA !== startB) {
-      return startA - startB;
-    }
-    // If start lines are the same, sort by end line
-    if (a.originalLine !== b.originalLine) {
-      return a.originalLine - b.originalLine;
-    }
-    // If both start and end lines are the same, maintain original relative order or sort by ID for stability
-    return a.commentId.localeCompare(b.commentId);
-  });
-
-  const defaultPrefixer = getLinePrefixerForFile(filePath, lines.length > 0 ? lines[0] : undefined);
-  const svelteJsPrefixer = (text: string) => `// ${text}`;
-  const svelteHtmlPrefixer = (text: string) => `<!-- ${text} -->`;
-
-  for (const comment of sortedComments) {
-    let currentPrefixer: LinePrefixer = defaultPrefixer;
-
-    if (path.extname(filePath).toLowerCase() === '.svelte') {
-      const scriptEndTagIndex = originalContent.lastIndexOf('</script>');
-      const relevantLine1Based = comment.originalStartLine ?? comment.originalLine;
-      const relevantLine0Based = relevantLine1Based - 1;
-
-      let commentActualStartCharOffset = 0;
-      if (relevantLine0Based >= 0) {
-        let currentLineIdx = 0;
-        let charIdx = 0;
-        while (charIdx < originalContent.length) {
-          if (currentLineIdx === relevantLine0Based) {
-            commentActualStartCharOffset = charIdx;
-            break;
-          }
-          if (originalContent[charIdx] === '\n') {
-            currentLineIdx++;
-          }
-          charIdx++;
-          // If loop is about to end and we haven't found the line, it means the line is effectively at EOF
-          if (charIdx === originalContent.length && currentLineIdx < relevantLine0Based) {
-            commentActualStartCharOffset = originalContent.length;
-            break;
-          }
-        }
-        // If relevantLine0Based is 0, commentActualStartCharOffset remains 0 if loop doesn't run (empty content) or breaks immediately.
-        if (relevantLine0Based === 0 && originalContent.length === 0)
-          commentActualStartCharOffset = 0;
-        else if (relevantLine0Based === 0 && originalContent.length > 0)
-          commentActualStartCharOffset = 0; // Start of first line
-      }
-
-      // If no </script> tag, or comment is after it, use HTML style. Otherwise JS style.
-      if (scriptEndTagIndex === -1 || commentActualStartCharOffset >= scriptEndTagIndex) {
-        currentPrefixer = svelteHtmlPrefixer;
-      } else {
-        currentPrefixer = svelteJsPrefixer;
-      }
-    }
-
-    const aiPrefixedBodyLines = comment.body
-      .split('\n')
-      .map((line) => currentPrefixer(`AI: ${line}`));
-
-    // A comment is considered a "block" comment needing markers if originalStartLine is specified.
-    const isBlockComment = comment.originalStartLine !== null;
-
-    if (isBlockComment) {
-      const uniqueId = crypto.randomUUID().slice(0, 8);
-      const startMarkerLine = currentPrefixer(`AI_COMMENT_START_${uniqueId}`);
-      const endMarkerLine = currentPrefixer(`AI_COMMENT_END_${uniqueId}`);
-
-      const insertionPointStart0Based = comment.originalStartLine! - 1;
-      addToMapList(insertBefore, insertionPointStart0Based, [
-        startMarkerLine,
-        ...aiPrefixedBodyLines,
-      ]);
-
-      const insertionPointEnd0Based = comment.originalLine - 1;
-      addToMapList(insertAfter, insertionPointEnd0Based, [endMarkerLine]);
-    } else {
-      // Single-line comment (originalStartLine is null).
-      // Prefixed body goes directly above the originalLine.
-      // originalLine is 1-based. Convert to 0-based for map key.
-      const insertionPoint0Based = comment.originalLine - 1;
-      addToMapList(insertBefore, insertionPoint0Based, aiPrefixedBodyLines);
-    }
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    if (insertBefore.has(i)) {
-      newLines.push(...insertBefore.get(i)!);
-    }
-    newLines.push(lines[i]);
-    if (insertAfter.has(i)) {
-      newLines.push(...insertAfter.get(i)!);
-    }
-  }
-
-  // Special handling for empty original content to ensure comments are placed correctly.
-  if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
-    if (insertBefore.has(0)) {
-      newLines.push(...insertBefore.get(0)!);
-    }
-    if (insertAfter.has(0) && lines.length <= 1) {
-      newLines.push(...insertAfter.get(0)!);
-    }
-  }
-
-  return { contentWithAiComments: newLines.join('\n') };
-}
-
 export function createAiCommentsPrompt(
   filesWithAiComments: Map<string, string>,
   fileDiffs: Map<string, string>
@@ -279,6 +149,135 @@ export function createAiCommentsPrompt(
   return promptParts.join('\n');
 }
 
+/**
+ * Inserts AI-prefixed comments and markers into file content.
+ * Line numbers in comments (originalLine, originalStartLine) are 1-based.
+ */
+export function insertAiCommentsIntoFileContent(
+  originalContent: string,
+  commentsForFile: DetailedReviewComment[],
+  filePath: string
+): AiCommentInsertionResult {
+  const lines = originalContent.split('\n');
+  const newLines: string[] = [];
+
+  const insertBefore = new Map<number, string[]>();
+  const insertAfter = new Map<number, string[]>();
+
+  // Sort comments to ensure a deterministic order if multiple comments affect the same line.
+  // Sorting by originalStartLine then originalLine. If originalStartLine is null, use originalLine.
+  const sortedComments = [...commentsForFile].sort((a, b) => {
+    const startA = a.thread.originalStartLine ?? a.thread.originalLine;
+    const startB = b.thread.originalStartLine ?? b.thread.originalLine;
+    if (startA !== startB) {
+      return startA - startB;
+    }
+    // If start lines are the same, sort by end line
+    if (a.thread.originalLine !== b.thread.originalLine) {
+      return a.thread.originalLine - b.thread.originalLine;
+    }
+    // If both start and end lines are the same, maintain original relative order or sort by ID for stability
+    return a.comment.id.localeCompare(b.comment.id);
+  });
+
+  const defaultPrefixer = getLinePrefixerForFile(filePath, lines.length > 0 ? lines[0] : undefined);
+  const svelteJsPrefixer = (text: string) => `// ${text}`;
+  const svelteHtmlPrefixer = (text: string) => `<!-- ${text} -->`;
+
+  for (const comment of sortedComments) {
+    let currentPrefixer: LinePrefixer = defaultPrefixer;
+
+    if (path.extname(filePath).toLowerCase() === '.svelte') {
+      const scriptEndTagIndex = originalContent.lastIndexOf('</script>');
+      const relevantLine1Based = comment.thread.originalStartLine ?? comment.thread.originalLine;
+      const relevantLine0Based = relevantLine1Based - 1;
+
+      let commentActualStartCharOffset = 0;
+      if (relevantLine0Based >= 0) {
+        let currentLineIdx = 0;
+        let charIdx = 0;
+        while (charIdx < originalContent.length) {
+          if (currentLineIdx === relevantLine0Based) {
+            commentActualStartCharOffset = charIdx;
+            break;
+          }
+          if (originalContent[charIdx] === '\n') {
+            currentLineIdx++;
+          }
+          charIdx++;
+          // If loop is about to end and we haven't found the line, it means the line is effectively at EOF
+          if (charIdx === originalContent.length && currentLineIdx < relevantLine0Based) {
+            commentActualStartCharOffset = originalContent.length;
+            break;
+          }
+        }
+        // If relevantLine0Based is 0, commentActualStartCharOffset remains 0 if loop doesn't run (empty content) or breaks immediately.
+        if (relevantLine0Based === 0 && originalContent.length === 0)
+          commentActualStartCharOffset = 0;
+        else if (relevantLine0Based === 0 && originalContent.length > 0)
+          commentActualStartCharOffset = 0; // Start of first line
+      }
+
+      // If no </script> tag, or comment is after it, use HTML style. Otherwise JS style.
+      if (scriptEndTagIndex === -1 || commentActualStartCharOffset >= scriptEndTagIndex) {
+        currentPrefixer = svelteHtmlPrefixer;
+      } else {
+        currentPrefixer = svelteJsPrefixer;
+      }
+    }
+
+    const aiPrefixedBodyLines = comment.comment.body
+      .split('\n')
+      .map((line) => currentPrefixer(`AI: ${line}`));
+
+    // A comment is considered a "block" comment needing markers if originalStartLine is specified.
+    const isBlockComment = comment.thread.originalStartLine !== null;
+
+    if (isBlockComment) {
+      const uniqueId = crypto.randomUUID().slice(0, 8);
+      const startMarkerLine = currentPrefixer(`AI_COMMENT_START_${uniqueId}`);
+      const endMarkerLine = currentPrefixer(`AI_COMMENT_END_${uniqueId}`);
+
+      const insertionPointStart0Based = comment.thread.originalStartLine! - 1;
+      addToMapList(insertBefore, insertionPointStart0Based, [
+        startMarkerLine,
+        ...aiPrefixedBodyLines,
+      ]);
+
+      const insertionPointEnd0Based = comment.thread.originalLine - 1;
+      addToMapList(insertAfter, insertionPointEnd0Based, [endMarkerLine]);
+    } else {
+      // Single-line comment (originalStartLine is null).
+      // Prefixed body goes directly above the originalLine.
+      // originalLine is 1-based. Convert to 0-based for map key.
+      const insertionPoint0Based = comment.thread.originalLine - 1;
+      addToMapList(insertBefore, insertionPoint0Based, aiPrefixedBodyLines);
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    if (insertBefore.has(i)) {
+      newLines.push(...insertBefore.get(i)!);
+    }
+    newLines.push(lines[i]);
+    if (insertAfter.has(i)) {
+      newLines.push(...insertAfter.get(i)!);
+    }
+  }
+
+  // Special handling for empty original content to ensure comments are placed correctly.
+  if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
+    if (insertBefore.has(0)) {
+      newLines.push(...insertBefore.get(0)!);
+    }
+    if (insertAfter.has(0) && lines.length <= 1) {
+      newLines.push(...insertAfter.get(0)!);
+    }
+  }
+
+  return { contentWithAiComments: newLines.join('\n') };
+}
+
 export function removeAiCommentMarkers(fileContent: string): string {
   const lines = fileContent.split('\n');
   const cleanedLines = lines.filter((line) => {
@@ -293,82 +292,4 @@ export function removeAiCommentMarkers(fileContent: string): string {
     return true;
   });
   return cleanedLines.join('\n');
-}
-
-export function formatReviewCommentsForSeparateContext(
-  selectedComments: DetailedReviewComment[]
-): string {
-  const formattedComments: string[] = [];
-
-  for (const comment of selectedComments) {
-    let lineInfo: string;
-    if (comment.originalStartLine && comment.originalStartLine !== comment.originalLine) {
-      lineInfo = `Lines: ${comment.originalStartLine}-${comment.originalLine}`;
-    } else {
-      lineInfo = `Line: ${comment.originalLine}`;
-    }
-
-    const parts: string[] = [
-      `File: ${comment.path} (${lineInfo})`,
-      `Comment:`,
-      comment.body,
-      `Relevant Diff Hunk:`,
-      '```diff',
-      comment.diffHunk,
-      '```',
-    ];
-    formattedComments.push(parts.join('\n'));
-  }
-
-  return formattedComments.join('\n---\n');
-}
-
-export function createSeparateContextPrompt(
-  originalFilesContent: Map<string, string>,
-  fileDiffs: Map<string, string>,
-  formattedReviewComments: string
-): string {
-  const promptParts: string[] = [];
-
-  promptParts.push(
-    `Please review the following code files and address the provided review comments. Use the diffs from the parent branch for additional context on recent changes.`
-  );
-  promptParts.push('');
-
-  promptParts.push('File Contents:');
-  if (originalFilesContent.size > 0) {
-    for (const [filePath, content] of originalFilesContent) {
-      promptParts.push('---');
-      promptParts.push(`Path: ${filePath}`);
-      const lang = path.extname(filePath).slice(1).toLowerCase() || 'text';
-      promptParts.push(`\`\`\`${lang}`);
-      promptParts.push(content);
-      promptParts.push('```');
-    }
-    promptParts.push('---');
-  } else {
-    promptParts.push('(No file contents provided)');
-  }
-  promptParts.push('');
-
-  promptParts.push('Diffs from parent branch:');
-  if (fileDiffs.size > 0) {
-    for (const [filePath, diff] of fileDiffs) {
-      if (diff.trim() === '') continue;
-      promptParts.push('---');
-      promptParts.push(`Path: ${filePath}`);
-      promptParts.push('```diff');
-      promptParts.push(diff);
-      promptParts.push('```');
-    }
-    promptParts.push('---');
-  } else {
-    promptParts.push('(No diffs provided or all diffs were empty)');
-  }
-  promptParts.push('');
-
-  promptParts.push('Review Comments to Address:');
-  promptParts.push(formattedReviewComments);
-
-  return promptParts.join('\n');
 }

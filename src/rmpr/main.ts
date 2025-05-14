@@ -15,11 +15,13 @@ import type { RmplanConfig } from '../rmplan/configSchema.js';
 import { getDiff, getFileContentAtRef } from './git_utils.js';
 import {
   createAiCommentsPrompt,
-  createSeparateContextPrompt,
-  formatReviewCommentsForSeparateContext,
   insertAiCommentsIntoFileContent,
   removeAiCommentMarkers,
-} from './modes.js';
+} from './modes/inline_comments.js';
+import {
+  createSeparateContextPrompt,
+  formatReviewCommentsForSeparateContext,
+} from './modes/separate_context.js';
 import type { DetailedReviewComment } from './types.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 
