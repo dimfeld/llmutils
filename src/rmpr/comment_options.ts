@@ -6,7 +6,7 @@ import { debugLog } from '../logging.ts';
 /** Options parsed from --rmpr lines in a comment body */
 export interface RmprOptions {
   includeAll?: boolean;
-  noImports?: boolean;
+  withImports?: boolean;
   withImporters?: boolean;
   include?: string[];
   rmfilter?: string[];
@@ -21,7 +21,7 @@ export interface ParseRmprResult {
 export function combineRmprOptions(a: RmprOptions, b: RmprOptions): RmprOptions {
   return {
     includeAll: a.includeAll || b.includeAll,
-    noImports: a.noImports && b.noImports,
+    withImports: a.withImports || b.withImports,
     withImporters: a.withImporters || b.withImporters,
     include: [...(a.include ?? []), ...(b.include ?? [])],
     rmfilter: [...(a.rmfilter ?? []), ...(b.rmfilter ?? [])],
@@ -31,15 +31,19 @@ export function combineRmprOptions(a: RmprOptions, b: RmprOptions): RmprOptions 
 export function argsFromRmprOptions(pr: PullRequest, options: RmprOptions): string[] {
   const args: string[] = [];
   let prFiles = pr.files.nodes.map((f) => f.path);
+
   if (options.includeAll) {
     args.push(...prFiles);
   }
-  if (!options.noImports) {
+
+  if (options.withImports) {
     args.push('--with-imports');
   }
+
   if (options.withImporters) {
-    args.push('with-importers');
+    args.push('--with-importers');
   }
+
   if (options.include) {
     for (let includePath of options.include) {
       if (includePath.startsWith('pr:')) {
@@ -54,9 +58,11 @@ export function argsFromRmprOptions(pr: PullRequest, options: RmprOptions): stri
       }
     }
   }
+
   if (options.rmfilter) {
     args.push(...options.rmfilter);
   }
+
   return args;
 }
 
@@ -91,8 +97,8 @@ export function parseRmprOptions(commentBody: string): ParseRmprResult {
       if (arg === 'include-all') {
         options.includeAll = true;
         i++;
-      } else if (arg === 'no-imports') {
-        options.noImports = true;
+      } else if (arg === 'with-imports') {
+        options.withImports = true;
         i++;
       } else if (arg === 'with-importers') {
         options.withImporters = true;
