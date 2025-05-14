@@ -97,6 +97,10 @@ export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchI
  * parts of the issue to include in the prompt. */
 export async function getInstructionsFromGithubIssue(issueSpec: string) {
   const issue = await parsePrOrIssueNumber(issueSpec);
+  if (!issue) {
+    throw new Error(`Invalid issue spec: ${issueSpec}`);
+  }
+
   const data = await fetchIssueAndComments(issue);
   const selected = await selectIssueComments(data);
 

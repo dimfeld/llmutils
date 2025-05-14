@@ -64,6 +64,7 @@ export function findClosestMatches(
     if (similarity >= similarityThreshold) {
       results.push({
         lines: chunkLines,
+        // one-index line numbers
         startLine: i + 1,
         endLine: i + searchLineCount,
         score: similarity,

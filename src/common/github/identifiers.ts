@@ -39,8 +39,8 @@ async function parsePrOrIssueNumberInternal(identifier: string): Promise<{
     };
   }
 
-  const gitRepo = await getGitRepository();
   // See if it's just a number
+  const gitRepo = await getGitRepository();
   let [owner, repo] = gitRepo.split('/');
   let number = parseInt(identifier);
 
