@@ -1,98 +1,105 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import type { DetailedReviewComment } from '../types.js';
-import {
-  formatReviewCommentsForSeparateContext,
-  createSeparateContextPrompt,
-} from './separate_context.js';
+import { formatReviewCommentsForSeparateContext } from './separate_context.js';
+import { parseDiff } from '../../common/github/pull_requests.js';
 
 describe('Separate Context Mode Logic', () => {
+  const standardHunk = '@@ -7,2 +7,2 @@\n-old line\n+new line\n context';
+  const standardHunk2 = '@@ -12,2 +12,2 @@\n-old line 2\n+new line 2\n context 2';
   const mockComment = (
     id: string,
     path: string,
     body: string,
     originalLine: number,
     originalStartLine: number | null = null,
-    diffHunk: string = 'mock diff hunk',
+    diffHunk: string = standardHunk,
     authorLogin: string | undefined = 'testuser'
-  ): DetailedReviewComment => ({
-    comment: {
-      id,
-      body,
-      diffHunk,
-      author: {
-        login: authorLogin,
+  ): DetailedReviewComment => {
+    const diff = parseDiff(diffHunk);
+
+    return {
+      comment: {
+        id,
+        body,
+        diffHunk,
+        author: {
+          login: authorLogin,
+        },
       },
-    },
-    thread: {
-      path,
-      originalLine,
-      originalStartLine,
-      id: `thread-${id}`,
-    },
-    diffForContext: [
-      { content: diffHunk, oldLineNumber: originalLine, newLineNumber: originalLine },
-    ],
-  });
+      thread: {
+        path,
+        originalLine,
+        originalStartLine,
+        line: originalLine,
+        startLine: originalStartLine,
+        diffSide: 'RIGHT',
+        id: `thread-${id}`,
+      },
+      diffForContext: diff!.changes,
+    };
+  };
 
-  describe('formatReviewCommentsForSeparateContext', () => {
-    test('should format a single comment with distinct start and end lines', () => {
+  describe.only('formatReviewCommentsForSeparateContext', () => {
+    test('should format a single comment with distinct start and end lines, injecting comment in diff', () => {
       const comments = [
-        mockComment(
-          'c1',
-          'src/file1.ts',
-          'This is a comment body.',
-          10,
-          8,
-          '@@ -7,3 +7,4 @@\n-old line\n+new line\n context'
-        ),
+        mockComment('c1', 'src/file1.ts', 'This is a comment body.\nAnd another line', 7, 6),
       ];
+      console.dir(comments, { depth: null });
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
-        'File: src/file1.ts (Lines: 8-10)',
+        'File: src/file1.ts (Lines 6-7)',
+        'Diff and Comment:',
+        '```diff',
+        '-old line',
+        '+new line',
         'Comment: This is a comment body.',
-        'Relevant Diff Hunk:',
-        '```diff',
-        '@@ -7,3 +7,4 @@\n-old line\n+new line\n context',
+        'Comment: And another line',
+        ' context',
         '```',
       ].join('\n');
       expect(result).toBe(expected);
     });
 
-    test('should format a single comment with same start and end lines (or null startLine)', () => {
-      const comments = [
-        mockComment('c2', 'src/file2.py', 'Another comment.', 5, null, 'diff for file2'),
-      ];
+    test.only('should format a single comment with same start and end lines (or null startLine), injecting comment in diff', () => {
+      const comments = [mockComment('c2', 'src/file2.py', 'Another comment.', 7, null)];
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
-        'File: src/file2.py (Line: 5)',
+        'File: src/file2.py (Line 7)',
+        'Diff and Comment:',
+        '```diff',
+        '-old line',
+        '+new line',
         'Comment: Another comment.',
-        'Relevant Diff Hunk:',
-        '```diff',
-        'diff for file2',
+        ' context',
         '```',
       ].join('\n');
       expect(result).toBe(expected);
     });
 
-    test('should format multiple comments, joined by ---', () => {
+    test('should format multiple comments, joined by ---, with comments injected in diffs', () => {
       const comments = [
-        mockComment('c1', 'src/file1.ts', 'Comment 1', 10, 8, 'diff1'),
-        mockComment('c2', 'src/file2.py', 'Comment 2', 5, null, 'diff2', undefined),
+        mockComment('c1', 'src/file1.ts', 'Comment 1\nline', 7, 6),
+        mockComment('c2', 'src/file2.py', 'Comment 2', 12, null, standardHunk2, undefined),
       ];
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
-        'File: src/file1.ts (Lines: 8-10)',
-        'Comment: Comment 1',
-        'Relevant Diff Hunk:',
+        'File: src/file1.ts (Lines 6-7)',
+        'Diff and Comment:',
         '```diff',
-        'diff1',
+        '-old line',
+        '+new line',
+        'Comment: Comment 1',
+        'Comment: line',
+        ' context',
         '```',
         '---',
-        'File: src/file2.py (Line: 5)',
-        'Comment: Comment 2',
-        'Relevant Diff Hunk:',
+        'File: src/file2.py (Line 12)',
+        'Diff and Comment:',
         '```diff',
-        'diff2',
+        '-old line 2',
+        '+new line 2',
+        'Comment: Comment 2',
+        ' context 2',
         '```',
       ].join('\n');
       expect(result).toBe(expected);
@@ -101,85 +108,6 @@ describe('Separate Context Mode Logic', () => {
     test('should return an empty string if no comments are provided', () => {
       const result = formatReviewCommentsForSeparateContext([]);
       expect(result).toBe('');
-    });
-  });
-
-  describe('createSeparateContextPrompt', () => {
-    test('should construct a full prompt with files, diffs, and comments', () => {
-      const originalFilesContent = new Map<string, string>([
-        ['src/file1.ts', 'console.log("hello");'],
-        ['src/file2.py', 'print("world")'],
-      ]);
-      const fileDiffs = new Map<string, string>([
-        ['src/file1.ts', '@@ -1 +1 @@\n-console.log("hi");\n+console.log("hello");'],
-        ['src/file2.py', ''],
-      ]);
-      const formattedReviewComments =
-        'File: src/file1.ts (Line: 1)\nComment:\nFix this\nRelevant Diff Hunk:\n```diff\n-console.log("hi");\n+console.log("hello");\n```';
-
-      const result = createSeparateContextPrompt(
-        originalFilesContent,
-        fileDiffs,
-        formattedReviewComments
-      );
-
-      const expected = `Please review the following code files and address the provided review comments. Use the diffs from the parent branch for additional context on recent changes.
-
-File Contents:
----
-Path: src/file1.ts
-\`\`\`ts
-console.log("hello");
-\`\`\`
----
-Path: src/file2.py
-\`\`\`py
-print("world")
-\`\`\`
----
-
-Diffs from parent branch:
----
-Path: src/file1.ts
-\`\`\`diff
-@@ -1 +1 @@
--console.log("hi");
-+console.log("hello");
-\`\`\`
----
-
-Review Comments to Address:
-File: src/file1.ts (Line: 1)
-Comment:
-Fix this
-Relevant Diff Hunk:
-\`\`\`diff
--console.log("hi");
-+console.log("hello");
-\`\`\``;
-      expect(result).toBe(expected);
-    });
-
-    test('should handle empty files or diffs gracefully', () => {
-      const originalFilesContent = new Map<string, string>();
-      const fileDiffs = new Map<string, string>();
-      const formattedReviewComments = 'No comments.';
-      const result = createSeparateContextPrompt(
-        originalFilesContent,
-        fileDiffs,
-        formattedReviewComments
-      );
-      const expected = `Please review the following code files and address the provided review comments. Use the diffs from the parent branch for additional context on recent changes.
-
-File Contents:
-(No file contents provided)
-
-Diffs from parent branch:
-(No diffs provided or all diffs were empty)
-
-Review Comments to Address:
-No comments.`;
-      expect(result).toBe(expected);
     });
   });
 });

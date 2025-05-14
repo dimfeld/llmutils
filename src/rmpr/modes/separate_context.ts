@@ -1,4 +1,3 @@
-import * as path from 'path';
 import type { DetailedReviewComment } from '../types.ts';
 
 export function formatReviewCommentsForSeparateContext(
@@ -12,28 +11,49 @@ export function formatReviewCommentsForSeparateContext(
       comment.thread.originalStartLine &&
       comment.thread.originalStartLine !== comment.thread.originalLine
     ) {
-      lineInfo = `Lines: ${comment.thread.originalStartLine}-${comment.thread.originalLine}`;
+      lineInfo = `Lines ${comment.thread.originalStartLine}-${comment.thread.originalLine}`;
     } else {
-      lineInfo = `Line: ${comment.thread.originalLine}`;
+      lineInfo = `Line ${comment.thread.originalLine}`;
     }
 
     // Prefix each line of the comment body with 'Comment: '
-    const prefixedCommentBody = comment.comment.body
-      .split('\n')
-      .map(line => `Comment: ${line}`)
-      .join('\n');
+    const prefixedCommentBody = comment.comment.body.split('\n').map((line) => `Comment: ${line}`);
 
-    // Format diffForContext
-    const diffContent = comment.diffForContext
-      .map(line => line.content)
-      .join('\n');
+    // Format diffForContext with injected comments
+    const targetLine =
+      comment.thread.diffSide === 'LEFT' ? comment.thread.originalLine : comment.thread.line;
+    const diffKey = comment.thread.diffSide === 'LEFT' ? 'oldLineNumber' : 'newLineNumber';
+
+    let spliceBeforeIndex = comment.diffForContext.findLastIndex(
+      (line) => line[diffKey] > targetLine
+    );
+
+    console.log({
+      targetLine,
+      diffKey,
+      spliceBeforeIndex,
+    });
+
+    let diffContentLines: string[];
+    if (spliceBeforeIndex === -1) {
+      // Place it at the end
+      diffContentLines = [
+        ...comment.diffForContext.map((line) => line.content),
+        ...prefixedCommentBody,
+      ];
+    } else {
+      diffContentLines = [
+        ...comment.diffForContext.slice(0, spliceBeforeIndex).map((line) => line.content),
+        ...prefixedCommentBody,
+        ...comment.diffForContext.slice(spliceBeforeIndex).map((line) => line.content),
+      ];
+    }
 
     const parts: string[] = [
       `File: ${comment.thread.path} (${lineInfo})`,
-      prefixedCommentBody,
-      `Relevant Diff Hunk:`,
+      `Diff and Comment:`,
       '```diff',
-      diffContent,
+      diffContentLines.join('\n'),
       '```',
     ];
     formattedComments.push(parts.join('\n'));
@@ -42,51 +62,13 @@ export function formatReviewCommentsForSeparateContext(
   return formattedComments.join('\n---\n');
 }
 
-export function createSeparateContextPrompt(
-  originalFilesContent: Map<string, string>,
-  fileDiffs: Map<string, string>,
-  formattedReviewComments: string
-): string {
+export function createSeparateContextPrompt(formattedReviewComments: string): string {
   const promptParts: string[] = [];
 
   promptParts.push(
     `Please review the following code files and address the provided review comments. Use the diffs from the parent branch for additional context on recent changes.`
   );
   promptParts.push('');
-
-  // TODO Remove below this, we're using rmfilter for it
-  promptParts.push('File Contents:');
-  if (originalFilesContent.size > 0) {
-    for (const [filePath, content] of originalFilesContent) {
-      promptParts.push('---');
-      promptParts.push(`Path: ${filePath}`);
-      const lang = path.extname(filePath).slice(1).toLowerCase() || 'text';
-      promptParts.push(`\`\`\`${lang}`);
-      promptParts.push(content);
-      promptParts.push('```');
-    }
-    promptParts.push('---');
-  } else {
-    promptParts.push('(No file contents provided)');
-  }
-  promptParts.push('');
-
-  promptParts.push('Diffs from parent branch:');
-  if (fileDiffs.size > 0) {
-    for (const [filePath, diff] of fileDiffs) {
-      if (diff.trim() === '') continue;
-      promptParts.push('---');
-      promptParts.push(`Path: ${filePath}`);
-      promptParts.push('```diff');
-      promptParts.push(diff);
-      promptParts.push('```');
-    }
-    promptParts.push('---');
-  } else {
-    promptParts.push('(No diffs provided or all diffs were empty)');
-  }
-  promptParts.push('');
-  // TODO remove above this
 
   promptParts.push('Review Comments to Address:');
   promptParts.push(formattedReviewComments);

@@ -220,7 +220,7 @@ function filterDiffToRange(changes: DiffLine[] | undefined, rangeStart: number, 
   );
 }
 
-function parseDiff(diff: string) {
+export function parseDiff(diff: string) {
   // Find the hunk header (e.g., "@@ -6,4 +6,16 @@")
   const hunkHeaderRegex = /@@ -(\d+),(\d+) \+(\d+),(\d+) @@/;
   const match = diff.match(hunkHeaderRegex);
@@ -258,7 +258,7 @@ function parseDiff(diff: string) {
       return {
         content: line,
         oldLineNumber: currentOldLine,
-        lineNumber: currentNewLine,
+        newLineNumber: currentNewLine,
       };
     });
 

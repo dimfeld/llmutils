@@ -24,6 +24,7 @@ import {
 } from './modes/separate_context.js';
 import type { DetailedReviewComment } from './types.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
+import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
@@ -105,76 +106,41 @@ export async function handleRmprCommand(
   });
 
   // 1. Identify unique file paths from selected comments
-  const uniqueFilePaths = Array.from(
-    new Set(selectedComments.map((comment) => comment.thread.path))
-  );
+  const commentsByFilePath = new Map<string, DetailedReviewComment[]>();
+  selectedComments.forEach((comment) => {
+    const commentsForThisFile = commentsByFilePath.get(comment.thread.path) || [];
+    commentsForThisFile.push(comment);
+    commentsByFilePath.set(comment.thread.path, commentsForThisFile);
+  });
 
-  log(`Identified ${uniqueFilePaths.length} unique file paths from selected comments.`);
+  log(`Identified ${commentsByFilePath.size} unique file paths from selected comments.`);
 
-  const originalFilesContent = new Map<string, string>();
-  const fileDiffs = new Map<string, string>();
-
-  // 2. For each unique file path, fetch content and diff
   const gitRoot = await getGitRoot();
-  for (const filePath of uniqueFilePaths) {
-    try {
-      debugLog(`Fetching content for ${filePath} at ${headRefName}...`);
-      const content = await Bun.file(path.resolve(gitRoot, filePath)).text();
-      originalFilesContent.set(filePath, content);
-    } catch (e: any) {
-      error(`Failed to fetch content for ${filePath} at ${headRefName}: ${e.message}`);
-      // Decide if we should continue or exit. For now, let's log and continue.
-    }
 
-    try {
-      debugLog(`Fetching diff for ${filePath} between ${baseRefName} and ${headRefName}...`);
-      // TODO Change this to use getDiffTag
-      const diff = await getDiff(filePath, baseRefName, headRefName);
-      fileDiffs.set(filePath, diff);
-    } catch (e: any) {
-      error(
-        `Failed to fetch diff for ${filePath} between ${baseRefName} and ${headRefName}: ${e.message}`
+  let instructions: string;
+  const filesProcessedWithAiComments = new Map<string, string>();
+
+  if (options.mode === 'inline-comments') {
+    log('Preparing context in Inline Comments mode...');
+    for (const [filePath, commentsForThisFile] of commentsByFilePath.entries()) {
+      const originalContent = await Bun.file(filePath).text();
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        commentsForThisFile,
+        filePath
       );
-    }
-  }
-
-  log(
-    `Fetched content for ${originalFilesContent.size} files and diffs for ${fileDiffs.size} files.`
-  );
-
-  let llmPrompt: string;
-  const filesToProcessWithAiComments = new Map<string, string>();
-  const filesActuallyModifiedWithAiComments = new Set<string>();
-
-  if (options.mode === 'ai-comments') {
-    log('Preparing context in AI Comments mode...');
-    for (const [filePath, originalContent] of originalFilesContent.entries()) {
-      const commentsForThisFile = selectedComments.filter((c) => c.thread.path === filePath);
-      if (commentsForThisFile.length > 0) {
-        const { contentWithAiComments } = insertAiCommentsIntoFileContent(
-          originalContent,
-          commentsForThisFile,
-          filePath
-        );
-        filesToProcessWithAiComments.set(filePath, contentWithAiComments);
-        filesActuallyModifiedWithAiComments.add(filePath);
-      } else {
-        filesToProcessWithAiComments.set(filePath, originalContent);
-      }
+      filesProcessedWithAiComments.set(filePath, contentWithAiComments);
     }
 
-    if (filesActuallyModifiedWithAiComments.size > 0 && !options.dryRun) {
-      log(
-        '\nAI comments have been prepared in the following files. Please review and make any desired edits before proceeding:'
-      );
-      for (const filePath of filesActuallyModifiedWithAiComments) {
+    if (filesProcessedWithAiComments.size > 0 && !options.dryRun) {
+      log('\nAI comments have been prepared in the following files:');
+      for (const [filePath, content] of filesProcessedWithAiComments.entries()) {
         log(`  - ${filePath}`);
         try {
-          const contentToWrite = filesToProcessWithAiComments.get(filePath)!;
-          await secureWrite(gitRoot, filePath, contentToWrite);
+          await secureWrite(gitRoot, filePath, content);
         } catch (e: any) {
           error(`Failed to write AI comments to ${filePath}: ${e.message}`);
-          // Potentially exit or allow user to fix manually
+          process.exit(1);
         }
       }
 
@@ -182,51 +148,40 @@ export async function handleRmprCommand(
         log('Examine and edit the comments if you would like, then press Enter to continue');
         await waitForEnter();
       }
-
-      log('Re-reading files after user review...');
-      for (const filePath of filesActuallyModifiedWithAiComments) {
-        try {
-          const absolutePath = path.resolve(gitRoot, filePath);
-          const updatedContent = await Bun.file(absolutePath).text();
-          filesToProcessWithAiComments.set(filePath, updatedContent);
-        } catch (e: any) {
-          error(`Failed to re-read ${filePath} after edits: ${e.message}`);
-          // Potentially exit or use previous content
-        }
-      }
-    } else if (filesActuallyModifiedWithAiComments.size > 0 && options.dryRun) {
+    } else if (filesProcessedWithAiComments.size > 0 && options.dryRun) {
       log('\n--- DRY RUN INFO ---');
       log(
         'In AI Comments mode, if not a dry run, AI comments would be written to the following files for your review before generating the final prompt:'
       );
-      for (const filePath of filesActuallyModifiedWithAiComments) {
+      for (const filePath of filesProcessedWithAiComments.keys()) {
         log(`  - ${filePath}`);
       }
       log('These files have NOT been modified on disk due to --dry-run.');
       log('The prompt will be generated using the in-memory versions with AI comments.');
       debugLog('Skipping file writing and user prompt for AI comment review due to --dry-run.');
     }
-    llmPrompt = createInlineCommentsPrompt(filesToProcessWithAiComments, fileDiffs);
+    instructions = createInlineCommentsPrompt(filesProcessedWithAiComments.keys().toArray());
   } else {
     // Default to "separate-context" mode
     log('Preparing context in Separate Context mode...');
     const formattedComments = formatReviewCommentsForSeparateContext(selectedComments);
-    llmPrompt = createSeparateContextPrompt(originalFilesContent, fileDiffs, formattedComments);
+    instructions = createSeparateContextPrompt(formattedComments);
   }
 
-  if (globalCliOptions.debug || options.dryRun) {
-    const promptLines = llmPrompt.split('\n');
-    if (options.dryRun) {
-      log('\n--- DRY RUN MODE: LLM PROMPT ---');
-      // Using console.log for the potentially very long prompt to avoid log prefixing
-      console.log(llmPrompt);
-      log('--- END OF DRY RUN PROMPT ---');
-    } else {
-      debugLog('Generated LLM Prompt (first 10 lines):');
-      debugLog(promptLines.slice(0, 10).join('\n') + (promptLines.length > 10 ? '\n...' : ''));
-      // Consider logging the full prompt to a file or if a specific verbose flag is set
-    }
+  const rmFilterArgs = [
+    ...commentsByFilePath.keys(),
+    '--with-diff',
+    '--diff-from',
+    headRefName,
+    '--instructions',
+    instructions,
+  ];
+
+  if (!options.run) {
+    rmFilterArgs.push('--copy');
   }
+
+  const llmPrompt = await runRmfilterProgrammatically(rmFilterArgs, gitRoot, gitRoot);
 
   if (options.dryRun) {
     log(
@@ -236,8 +191,6 @@ export async function handleRmprCommand(
   }
 
   if (!options.run) {
-    await clipboardy.write(llmPrompt);
-    log('Wrote generated prompt to clipboard...');
     process.exit(0);
   }
 
@@ -274,9 +227,9 @@ export async function handleRmprCommand(
     process.exit(1);
   }
 
-  if (options.mode === 'ai-comments' && filesActuallyModifiedWithAiComments.size > 0) {
+  if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
     log('Cleaning up AI comment markers...');
-    for (const filePath of filesActuallyModifiedWithAiComments) {
+    for (const filePath of filesProcessedWithAiComments.keys()) {
       try {
         const absolutePath = path.resolve(gitRoot, filePath);
         const currentContentAfterLlm = await Bun.file(absolutePath).text();
