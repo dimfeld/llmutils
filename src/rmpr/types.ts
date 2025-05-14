@@ -5,7 +5,7 @@ export interface DetailedReviewComment {
     ReviewThreadNode,
     'id' | 'path' | 'originalLine' | 'originalStartLine' | 'diffSide' | 'line' | 'startLine'
   >;
-  comment: Pick<CommentNode, 'id' | 'body' | 'diffHunk' | 'author'>;
+  comment: Pick<CommentNode, 'id' | 'databaseId' | 'body' | 'diffHunk' | 'author'>;
   diffForContext: DiffLine[];
   cleanedComment?: string;
 }

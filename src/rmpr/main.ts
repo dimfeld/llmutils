@@ -100,7 +100,7 @@ export async function handleRmprCommand(
   log(`Found ${pullRequest.reviewThreads.nodes.length} unresolved threads.`);
 
   const selectedComments = await selectReviewComments(
-    pullRequest.reviewThreads.nodes,
+    pullRequest.reviewThreads.nodes.filter((t) => !t.isResolved),
     pullRequest.number,
     pullRequest.title
   );
@@ -286,7 +286,8 @@ export async function handleRmprCommand(
 
   log('Successfully addressed selected PR comments.');
 
-  if (options.run && options.commit) {
+  if (options.commit) {
+    const prUrl = `https://github.com/${parsedIdentifier.owner}/${parsedIdentifier.repo}/pull/${parsedIdentifier.number}`;
     log('Committing changes...');
     const commitMessageParts: string[] = [
       `Address PR comments for ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`,
@@ -296,7 +297,8 @@ export async function handleRmprCommand(
         .map((c) => {
           const { thread, comment, cleanedComment } = c;
           const body = cleanedComment || comment.body;
-          return `## ${thread.path}:${thread.line}\n${body}`;
+          const url = `${prUrl}#discussion_r${comment.databaseId}`;
+          return `## [${thread.path}:${thread.line}](${url})\n${body}`;
         })
         .join('\n\n'),
     ];
@@ -306,7 +308,6 @@ export async function handleRmprCommand(
       log('Changes committed successfully.');
     } else {
       error(`Commit failed with exit code ${exitCode}.`);
-      process.exit(1);
     }
   }
 }

@@ -2,6 +2,7 @@ import { Octokit } from 'octokit';
 import { checkbox, Separator } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import type { DetailedReviewComment } from '../../rmpr/types.ts';
+import { debugLog } from '../../logging.ts';
 
 export interface CommentAuthor {
   login: string;
@@ -9,6 +10,7 @@ export interface CommentAuthor {
 
 export interface CommentNode {
   id: string;
+  databaseId: number;
   body: string;
   diffHunk: string;
   state: string;
@@ -90,6 +92,7 @@ export async function fetchPullRequestAndComments(
               comments(first: 100) {
                 nodes {
                   id
+                  databaseId
                   body
                   diffHunk
                   state
@@ -110,6 +113,8 @@ export async function fetchPullRequestAndComments(
     repo,
     prNumber,
   });
+
+  debugLog(response);
 
   return {
     pullRequest: response.repository.pullRequest,
