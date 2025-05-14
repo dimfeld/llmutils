@@ -429,7 +429,7 @@ export async function applyLlmEdits({
     }
   } else {
     // No failures, apply all edits if not in dry run
-    if (!dryRun && successes.length > 0 && !appliedInitialSuccesses) {
+    if (!dryRun && !appliedInitialSuccesses) {
       appliedInitialSuccesses = true;
       await applyEditsInternal({
         content,

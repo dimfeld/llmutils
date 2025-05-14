@@ -49,8 +49,7 @@ describe('Separate Context Mode Logic', () => {
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
         'File: src/file1.ts (Lines: 8-10)',
-        'Comment:',
-        'This is a comment body.',
+        'Comment: This is a comment body.',
         'Relevant Diff Hunk:',
         '```diff',
         '@@ -7,3 +7,4 @@\n-old line\n+new line\n context',
@@ -66,8 +65,7 @@ describe('Separate Context Mode Logic', () => {
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
         'File: src/file2.py (Line: 5)',
-        'Comment:',
-        'Another comment.',
+        'Comment: Another comment.',
         'Relevant Diff Hunk:',
         '```diff',
         'diff for file2',
@@ -84,16 +82,14 @@ describe('Separate Context Mode Logic', () => {
       const result = formatReviewCommentsForSeparateContext(comments);
       const expected = [
         'File: src/file1.ts (Lines: 8-10)',
-        'Comment:',
-        'Comment 1',
+        'Comment: Comment 1',
         'Relevant Diff Hunk:',
         '```diff',
         'diff1',
         '```',
         '---',
         'File: src/file2.py (Line: 5)',
-        'Comment:',
-        'Comment 2',
+        'Comment: Comment 2',
         'Relevant Diff Hunk:',
         '```diff',
         'diff2',

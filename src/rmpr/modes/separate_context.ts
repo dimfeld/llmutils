@@ -17,13 +17,23 @@ export function formatReviewCommentsForSeparateContext(
       lineInfo = `Line: ${comment.thread.originalLine}`;
     }
 
+    // Prefix each line of the comment body with 'Comment: '
+    const prefixedCommentBody = comment.comment.body
+      .split('\n')
+      .map(line => `Comment: ${line}`)
+      .join('\n');
+
+    // Format diffForContext
+    const diffContent = comment.diffForContext
+      .map(line => line.content)
+      .join('\n');
+
     const parts: string[] = [
       `File: ${comment.thread.path} (${lineInfo})`,
-      `Comment:`,
-      comment.comment.body,
+      prefixedCommentBody,
       `Relevant Diff Hunk:`,
       '```diff',
-      comment.comment.diffHunk,
+      diffContent,
       '```',
     ];
     formattedComments.push(parts.join('\n'));
