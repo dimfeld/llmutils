@@ -1,11 +1,14 @@
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { findClosestMatches } from '../../editor/closest_match.ts';
 import type { DetailedReviewComment } from '../types.ts';
 import { basePrPrompt } from '../prompts.ts';
+import { error } from '../../logging.ts';
+import { singleLineWithPrefix } from '../../common/formatting.ts';
 
 export interface AiCommentInsertionResult {
   contentWithAiComments: string;
-  // any other metadata if needed
+  errors: string[];
 }
 
 function addToMapList(map: Map<number, string[]>, key: number, values: string[]) {
@@ -13,6 +16,63 @@ function addToMapList(map: Map<number, string[]>, key: number, values: string[])
     map.set(key, []);
   }
   map.get(key)!.push(...values);
+}
+
+/**
+ * Extracts the "after" state lines from diffForContext, including unchanged and added lines.
+ */
+function getAfterStateLines(diffForContext: DetailedReviewComment['diffForContext']): string[] {
+  return diffForContext
+    .filter((line) => line.content.startsWith(' ') || line.content.startsWith('+'))
+    .map((line) => line.content.slice(1));
+}
+
+/**
+ * Finds the best match for the comment's context in the original content, returning adjusted line numbers.
+ */
+function findBestMatchLine(
+  originalContent: string,
+  diffForContext: DetailedReviewComment['diffForContext'],
+  originalStartLine: number | null,
+  originalLine: number
+): { startLine: number; endLine: number } | null {
+  const afterStateLines = getAfterStateLines(diffForContext);
+  if (afterStateLines.length === 0) {
+    // Fallback to original line numbers if no valid context
+    return { startLine: originalStartLine ?? originalLine, endLine: originalLine };
+  }
+
+  const matches = findClosestMatches(originalContent, afterStateLines, {
+    similarityThreshold: 0.8,
+    maxMatches: 5,
+  });
+
+  if (matches.length === 0) {
+    // No match found, return null
+    return null;
+  }
+
+  // Find the match closest to the original line numbers
+  const originalReferenceLine = originalStartLine ?? originalLine;
+  let bestMatch = matches[0];
+  let minDistance = Math.abs(bestMatch.startLine - originalReferenceLine);
+
+  for (const match of matches.slice(1)) {
+    const distance = Math.abs(match.startLine - originalReferenceLine);
+    // Prefer match with higher score, or if scores are equal, the one with smaller distance
+    if (
+      match.score > bestMatch.score ||
+      (match.score === bestMatch.score && distance < minDistance)
+    ) {
+      bestMatch = match;
+      minDistance = distance;
+    }
+  }
+
+  return {
+    startLine: bestMatch.startLine,
+    endLine: bestMatch.endLine,
+  };
 }
 
 type LineCommenter = (text: string) => string;
@@ -128,16 +188,47 @@ export function insertAiCommentsIntoFileContent(
   const insertBefore = new Map<number, string[]>();
   const insertAfter = new Map<number, string[]>();
 
-  // Sort comments to ensure a deterministic order if multiple comments affect the same line.
-  // Sorting by startLine then line.
-  const sortedComments = [...commentsForFile].sort((a, b) => {
-    const startA = a.thread.startLine ?? a.thread.line;
-    const startB = b.thread.startLine ?? b.thread.line;
+  const errors: string[] = [];
+
+  // The file may ave changed since it was reviewed, so process the comments to determine
+  // adjusted line numbers.
+  const commentsWithAdjustedLines = commentsForFile
+    .map((comment) => {
+      const bestMatchResult = findBestMatchLine(
+        originalContent,
+        comment.diffForContext,
+        comment.thread.startLine,
+        comment.thread.line
+      );
+
+      if (!bestMatchResult) {
+        let lineRange = comment.thread.startLine
+          ? `${comment.thread.startLine}-${comment.thread.line}`
+          : comment.thread.line;
+        errors.push(
+          singleLineWithPrefix(
+            `Could not find matching comment content from ${filePath}:${lineRange}: `,
+            comment.comment.body
+          )
+        );
+        return;
+      }
+
+      return {
+        ...comment,
+        startLine: bestMatchResult.startLine,
+        endLine: bestMatchResult.endLine,
+      };
+    })
+    .filter((c) => c != null);
+
+  // Sort comments by adjusted startLine, then endLine, then ID for stability
+  const sortedComments = [...commentsWithAdjustedLines].sort((a, b) => {
+    const startA = a.startLine;
+    const startB = b.startLine;
     if (startA !== startB) {
       return startA - startB;
     }
-
-    // If both start and end lines are the same, maintain original relative order or sort by ID for stability
     return a.comment.id.localeCompare(b.comment.id);
   });
 
@@ -157,11 +248,11 @@ export function insertAiCommentsIntoFileContent(
     let currentPrefixer: LineCommenter = defaultPrefixer;
 
     if (useScriptTag) {
-      // For Svelte files we do a dumb check to see if we're in the script or the template.
-      const relevantLine1Based = comment.thread.startLine ?? comment.thread.line;
+      // For Svelte files, check if the adjusted line is in the script or template section
+      const relevantLine1Based = comment.startLine;
       const relevantLine0Based = relevantLine1Based - 1;
 
-      // If no </script> tag, or comment is after it, use HTML style. Otherwise JS style.
+      // If no </script> tag or comment is after it, use HTML style. Otherwise JS style.
       if (scriptEndTagIndex === -1 || relevantLine0Based >= scriptEndTagIndex) {
         currentPrefixer = svelteHtmlPrefixer;
       } else {
@@ -174,10 +265,9 @@ export function insertAiCommentsIntoFileContent(
       .split('\n')
       .map((line) => currentPrefixer(`AI: ${line}`));
 
-    // A comment is considered a "block" comment needing markers if startLine is specified.
-    const startLine = comment.thread.startLine ?? comment.thread.line;
-    const endLine = comment.thread.line;
-    const isBlockComment = comment.thread.startLine != null && startLine !== endLine;
+    // A comment is considered a "block" comment needing markers if startLine is specified and differs from endLine
+    const { startLine, endLine } = comment;
+    const isBlockComment = startLine !== endLine;
 
     if (isBlockComment) {
       const uniqueId = crypto.randomUUID().slice(0, 8);
@@ -193,9 +283,7 @@ export function insertAiCommentsIntoFileContent(
       const insertionPointEnd0Based = endLine - 1;
       addToMapList(insertAfter, insertionPointEnd0Based, [endMarkerLine]);
     } else {
-      // Single-line comment (startLine is null).
-      // Prefixed body goes directly above the originalLine.
-      // originalLine is 1-based. Convert to 0-based for map key.
+      // Single-line comment: insert before the startLine
       const insertionPoint0Based = startLine - 1;
       addToMapList(insertBefore, insertionPoint0Based, aiPrefixedBodyLines);
     }
@@ -221,7 +309,7 @@ export function insertAiCommentsIntoFileContent(
     }
   }
 
-  return { contentWithAiComments: newLines.join('\n') };
+  return { contentWithAiComments: newLines.join('\n'), errors };
 }
 
 export function removeAiCommentMarkers(fileContent: string, filePath: string): string {

@@ -23,6 +23,144 @@ describe('AI Comments Mode Logic', () => {
     uuidCounter = 0;
   });
 
+  describe('insertAiCommentsIntoFileContent - Handling Modified Files with diffForContext', () => {
+    const mockCommentBase = (
+      id: string,
+      body: string,
+      originalLine: number,
+      originalStartLine: number | null = null,
+      diffForContext: DetailedReviewComment['diffForContext'] = [
+        {
+          content: 'mock diff hunk',
+          oldLineNumber: originalLine,
+          newLineNumber: originalLine,
+        },
+      ]
+    ): DetailedReviewComment => ({
+      comment: {
+        id,
+        body,
+        diffHunk: 'mock diff hunk',
+        author: {
+          login: 'testuser',
+        },
+      },
+      thread: {
+        id: `thread-${id}`,
+        path: 'test.ts',
+        originalLine,
+        originalStartLine,
+        line: originalLine,
+        startLine: originalStartLine,
+        diffSide: 'RIGHT',
+      },
+      diffForContext,
+    });
+
+    test('should insert comment at matched location when file has been modified', () => {
+      const originalContent = [
+        'const a = 1;',
+        'const b = 2;',
+        '// Inserted line',
+        'const c = 3;',
+        'const d = 4;',
+      ].join('\n');
+      const diffForContext = [{ content: ' const c = 3;', oldLineNumber: 2, newLineNumber: 4 }];
+      const comments = [mockCommentBase('c1', 'Update c to 5', 2, null, diffForContext)];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      const expected = [
+        'const a = 1;',
+        'const b = 2;',
+        '// Inserted line',
+        '// AI: Update c to 5',
+        'const c = 3;',
+        'const d = 4;',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+
+    test('should choose closest match to original line when multiple matches exist', () => {
+      const originalContent = [
+        'const a = 1;',
+        'const b = 2;', // Match 1
+        'const x = 10;',
+        'const b = 2;', // Match 2 (closer to original line 5)
+        'const y = 20;',
+        'const b = 2;', // Match 3
+      ].join('\n');
+      const diffForContext = [{ content: ' const b = 2;', oldLineNumber: 5, newLineNumber: 5 }];
+      const comments = [mockCommentBase('c1', 'Check b value', 5, null, diffForContext)];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      const expected = [
+        'const a = 1;',
+        'const b = 2;', // Line 2
+        'const x = 10;',
+        '// AI: Check b value',
+        'const b = 2;', // Line 4 (closest to original line 5)
+        'const y = 20;',
+        'const b = 2;', // Line 6
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+
+    test('should insert block comment at matched location', () => {
+      const originalContent = [
+        'function foo() {',
+        '  let x = 1;',
+        '  // Inserted line',
+        '  return x;',
+        '}',
+      ].join('\n');
+      const diffForContext = [
+        { content: '   return x;', oldLineNumber: 2, newLineNumber: 4 },
+        { content: ' }', oldLineNumber: 3, newLineNumber: 5 },
+      ];
+      const comments = [
+        mockCommentBase('c1', 'Refactor function\nSimplify logic', 2, 1, diffForContext),
+      ];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      const expected = [
+        'function foo() {',
+        '  let x = 1;',
+        '  // Inserted line',
+        '// AI_COMMENT_START_00000000',
+        '// AI: Refactor function',
+        '// AI: Simplify logic',
+        '  return x;',
+        '}',
+        '// AI_COMMENT_END_00000000',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+
+    test('should not make an edit if no match found', () => {
+      const originalContent = ['const a = 1;', 'const b = 2;', 'const c = 3;'].join('\n');
+      const diffForContext = [
+        { content: ' non-existent line', oldLineNumber: 2, newLineNumber: 2 },
+      ];
+      const comments = [mockCommentBase('c1', 'No match comment', 2, null, diffForContext)];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      const expected = ['const a = 1;', 'const b = 2;', 'const c = 3;'].join('\n');
+      expect(contentWithAiComments).toEqual(expected);
+    });
+  });
+
   describe('insertAiCommentsIntoFileContent - TypeScript (.ts)', () => {
     const mockCommentBase = (
       id: string,

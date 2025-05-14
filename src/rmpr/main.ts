@@ -142,12 +142,16 @@ export async function handleRmprCommand(
     log('Preparing context in Inline Comments mode...');
     for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
       const originalContent = await Bun.file(path.resolve(gitRoot, filePath)).text();
-      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+      const { contentWithAiComments, errors } = insertAiCommentsIntoFileContent(
         originalContent,
         fileInfo.comments,
         filePath
       );
       filesProcessedWithAiComments.set(filePath, contentWithAiComments);
+
+      for (const message of errors) {
+        error(message);
+      }
     }
 
     if (filesProcessedWithAiComments.size > 0 && !options.dryRun) {
