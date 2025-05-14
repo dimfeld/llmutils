@@ -177,14 +177,13 @@ export async function handleRmprCommand(
     instructions,
     '--model',
     effectiveModel,
-    '--debug',
   ];
 
   if (!options.run) {
     rmFilterArgs.push('--copy');
   }
 
-  const llmPrompt = await fullRmfilterRun({ args: rmFilterArgs, gitRoot });
+  const llmPrompt = await fullRmfilterRun({ args: rmFilterArgs, gitRoot, skipWrite: true });
 
   if (options.dryRun) {
     log(

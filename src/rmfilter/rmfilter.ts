@@ -780,7 +780,11 @@ export async function runRmfilterProgrammatically(
 }
 
 // CLI entry point
-export async function fullRmfilterRun(options?: { args?: string[]; gitRoot?: string }) {
+export async function fullRmfilterRun(options?: {
+  args?: string[];
+  gitRoot?: string;
+  skipWrite?: boolean;
+}) {
   const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig(options);
   await handleInitialCliCommands(globalValues);
 
@@ -806,7 +810,9 @@ export async function fullRmfilterRun(options?: { args?: string[]; gitRoot?: str
 
   // Handle output writing/copying
   const outputFile = globalValues.output ?? (await getOutputPath());
-  await Bun.write(outputFile, finalOutput);
+  if (!options?.skipWrite) {
+    await Bun.write(outputFile, finalOutput);
+  }
 
   if (!globalValues.quiet) {
     // Basic logging based on config and output file
@@ -842,7 +848,11 @@ export async function fullRmfilterRun(options?: { args?: string[]; gitRoot?: str
 
     log('\n## OUTPUT');
     log(`Tokens: ${tokens.length}`);
-    log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+    if (options?.skipWrite) {
+      log(`edit format: ${editFormat}`);
+    } else {
+      log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+    }
   }
 
   if (globalValues.copy) {
@@ -851,6 +861,8 @@ export async function fullRmfilterRun(options?: { args?: string[]; gitRoot?: str
       log('Output copied to clipboard');
     }
   }
+
+  return finalOutput;
 }
 
 // Execute main only if the script is run directly
