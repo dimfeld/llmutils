@@ -1,6 +1,6 @@
 export function singleLineWithPrefix(prefix: string, text: string, padding = 0) {
   // Combine prefix and text, and truncate to process.stdout width. If the text is too long, add "...".
-  const output = `${prefix}${text}`;
+  const output = `${prefix}${text.replaceAll(/[\r\n ]+/g, ' ')}`;
 
   const width = process.stdout.columns - padding;
   if (output.length > width) {

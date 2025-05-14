@@ -5,7 +5,7 @@ import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import {
   fetchPullRequestAndComments,
   getDetailedUnresolvedReviewComments,
-  selectDetailedReviewComments,
+  selectReviewComments,
   type FileNode,
 } from '../common/github/pull_requests.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
@@ -68,7 +68,7 @@ export async function handleRmprCommand(
     process.exit(1);
   }
 
-  const { pullRequest, reviewThreads } = prData;
+  const { pullRequest } = prData;
 
   const baseRefName = pullRequest.baseRefName;
   const headRefName = pullRequest.headRefName;
@@ -78,18 +78,15 @@ export async function handleRmprCommand(
   log(`Head branch: ${headRefName}`);
   log(`Changed files in PR: ${changedFiles.map((f) => f.path).join(', ')}`);
 
-  const unresolvedComments: DetailedReviewComment[] =
-    getDetailedUnresolvedReviewComments(reviewThreads);
-
-  if (unresolvedComments.length === 0) {
+  if (pullRequest.reviewThreads.nodes.every((t) => t.isResolved)) {
     log('No unresolved review comments found for this PR. Exiting.');
     process.exit(0);
   }
 
-  log(`Found ${unresolvedComments.length} unresolved review comments.`);
+  log(`Found ${pullRequest.reviewThreads.nodes.length} unresolved threads.`);
 
-  const selectedComments = await selectDetailedReviewComments(
-    unresolvedComments,
+  const selectedComments = await selectReviewComments(
+    pullRequest.reviewThreads.nodes,
     pullRequest.number,
     pullRequest.title
   );
@@ -100,11 +97,13 @@ export async function handleRmprCommand(
   }
 
   log(`Selected ${selectedComments.length} comments to address:`);
-  selectedComments.forEach((comment, index) => {
-    log(`  ${index + 1}. [${comment.path}:${comment.originalLine}]:`);
+  selectedComments.forEach(({ comment, thread }, index) => {
+    log(`  ${index + 1}. [${thread.path}:${thread.originalLine}]:`);
     log(`     Body: "${comment.body.split('\n')[0]}..."`);
     log(`     Diff Hunk: "${comment.diffHunk.split('\n')[0]}..."`);
   });
+
+  return;
 
   // 1. Identify unique file paths from selected comments
   const uniqueFilePaths = Array.from(new Set(selectedComments.map((comment) => comment.path)));

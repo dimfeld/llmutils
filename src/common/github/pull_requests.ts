@@ -1,13 +1,13 @@
 import { Octokit } from 'octokit';
-import { checkbox } from '@inquirer/prompts';
-import { singleLineWithPrefix } from '../formatting.ts';
+import { checkbox, Separator } from '@inquirer/prompts';
+import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import type { DetailedReviewComment } from '../../rmpr/types.ts';
 
-interface CommentAuthor {
+export interface CommentAuthor {
   login: string;
 }
 
-interface CommentNode {
+export interface CommentNode {
   id: string;
   body: string;
   diffHunk: string;
@@ -15,13 +15,13 @@ interface CommentNode {
   author: CommentAuthor | null;
 }
 
-interface ReviewThreadNode {
+export interface ReviewThreadNode {
   id: string;
   isResolved: boolean;
   isOutdated: boolean;
-  line: number | null;
+  line: number;
   originalLine: number;
-  originalStartLine: number;
+  originalStartLine: number | null;
   path: string;
   diffSide: 'LEFT' | 'RIGHT';
   startDiffSide: 'LEFT' | 'RIGHT';
@@ -35,7 +35,7 @@ export interface FileNode {
   changeType: 'ADDED' | 'DELETED' | 'MODIFIED';
 }
 
-interface PullRequest {
+export interface PullRequest {
   number: number;
   title: string;
   body: string;
@@ -51,7 +51,11 @@ interface GraphQLResponse {
   };
 }
 
-export async function fetchPullRequestAndComments(owner: string, repo: string, prNumber: number) {
+export async function fetchPullRequestAndComments(
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<{ pullRequest: PullRequest }> {
   const octokit = new Octokit({
     auth: process.env.GITHUB_TOKEN,
   });
@@ -109,7 +113,6 @@ export async function fetchPullRequestAndComments(owner: string, repo: string, p
 
   return {
     pullRequest: response.repository.pullRequest,
-    reviewThreads: response.repository.pullRequest.reviewThreads.nodes,
   };
 }
 
@@ -117,123 +120,137 @@ export function getBaseBranch(data: Awaited<ReturnType<typeof fetchPullRequestAn
   return data.pullRequest.baseRefName;
 }
 
-interface UnresolvedThread {
-  id: string;
-  comments: Array<{
-    id: string;
-    body: string;
-    user: { login: string | undefined };
-  }>;
-}
-
-export function getUnresolvedComments(
-  data: Awaited<ReturnType<typeof fetchPullRequestAndComments>>
-): UnresolvedThread[] {
-  return data.reviewThreads
-    .filter((thread) => !thread.isResolved)
-    .map((thread) => ({
-      id: thread.id,
-      comments: thread.comments.nodes.map((comment) => ({
-        id: comment.id,
-        body: comment.body,
-        user: { login: comment.author?.login },
-      })),
-    }));
-}
-
-export function getDetailedUnresolvedReviewComments(
-  reviewThreads: ReviewThreadNode[]
-): DetailedReviewComment[] {
-  const detailedComments: DetailedReviewComment[] = [];
-
-  for (const thread of reviewThreads) {
-    if (thread.isResolved || thread.isOutdated) {
-      continue;
-    }
-
-    for (const comment of thread.comments.nodes) {
-      // Assuming 'ACTIVE' or similar states are the ones we care about,
-      // but the task doesn't specify filtering by comment.state.
-      // GitHub usually only shows active comments in unresolved threads.
-      detailedComments.push({
-        threadId: thread.id,
-        commentId: comment.id,
-        body: comment.body,
-        path: thread.path,
-        line: thread.line,
-        originalLine: thread.originalLine,
-        originalStartLine: thread.originalStartLine,
-        diffHunk: comment.diffHunk,
-        authorLogin: comment.author?.login,
-      });
-    }
-  }
-  return detailedComments;
-}
-
-export async function selectUnresolvedComments(
-  data: Awaited<ReturnType<typeof fetchPullRequestAndComments>>
-): Promise<string[]> {
-  const unresolvedThreads = getUnresolvedComments(data);
-  const LINE_PADDING = 4;
-
-  const items = unresolvedThreads.flatMap((thread, threadIndex) =>
-    thread.comments.map((comment, commentIndex) => {
-      const name = `#${thread.id} - ${comment.user?.login ?? 'unknown'}: `;
-      return {
-        name: singleLineWithPrefix(name, comment.body ?? '', LINE_PADDING),
-        value: `${threadIndex}-${commentIndex}`,
-        description: comment.body ?? undefined,
-      };
-    })
-  );
-
-  if (items.length === 0) {
-    return [];
-  }
-
-  const chosen = await checkbox({
-    message: `Unresolved comments for PR #${data.pullRequest.number} - ${data.pullRequest.title}`,
-    required: false,
-    pageSize: 10,
-    choices: items,
-  });
-
-  return chosen
-    .map((choice) => {
-      const [threadIndex, commentIndex] = choice.split('-').map(Number);
-      return unresolvedThreads[threadIndex].comments[commentIndex].body?.trim() ?? '';
-    })
-    .filter((s) => s !== '');
-}
-
-export async function selectDetailedReviewComments(
-  comments: DetailedReviewComment[],
+export async function selectReviewComments(
+  threads: ReviewThreadNode[],
   prNumber: number,
   prTitle: string
 ): Promise<DetailedReviewComment[]> {
   const LINE_PADDING = 4;
+  const MAX_HEIGHT = process.stdout.rows - 25;
 
-  if (comments.length === 0) {
+  if (threads.length === 0) {
     return [];
   }
 
-  const choices = comments.map((comment, index) => {
-    const prefix = `[${comment.path}:${comment.originalLine}] ${comment.authorLogin || 'unknown'}: `;
-    const displayName = singleLineWithPrefix(prefix, comment.body, LINE_PADDING);
+  const groups = threads.map((thread) => {
+    let start = Math.max(1, thread.startLine ?? thread.line);
+    let end = thread.line;
+
+    let range = end - start;
+    let extra = Math.floor((MAX_HEIGHT - 10 - range) / 2);
+    if (extra > 0) {
+      start -= extra;
+      end += extra;
+    }
+
+    start = Math.max(1, start);
+
+    const lines = extractDiffLineRange(thread.comments.nodes[0].diffHunk, start, end)
+      ?.changes.map((c) => c.content)
+      .join('\n');
+
+    const comments = thread.comments.nodes.map((comment) => ({
+      name: singleLineWithPrefix(
+        (comment.author?.login ?? 'Unknown') + ': ',
+        comment.body,
+        LINE_PADDING
+      ),
+      value: { comment, thread },
+      short: `${thread.path}:${thread.originalLine}`,
+      description: limitLines(lines ?? '', MAX_HEIGHT - 10) + '\n\n' + limitLines(comment.body, 10),
+    }));
+
+    comments.sort((a, b) => {
+      return a.value.comment.id.localeCompare(b.value.comment.id);
+    });
+
+    const lineRange = thread.originalStartLine
+      ? `${thread.originalStartLine}-${thread.originalLine}`
+      : `${thread.originalLine}`;
+
     return {
-      name: displayName,
-      value: index,
-      short: `${comment.path}:${comment.originalLine}`,
+      path: thread.path,
+      line: thread.originalLine,
+      choices: [new Separator(`== ${thread.path}:${lineRange} ==`), ...comments],
     };
   });
 
-  const selectedIndices = await checkbox({
+  groups.sort((a, b) => {
+    if (a.path !== b.path) {
+      return a.path.localeCompare(b.path);
+    }
+    return a.line - b.line;
+  });
+
+  const choices = groups.flatMap((group) => group.choices);
+
+  const selected = await checkbox({
     message: `Select comments to address for PR #${prNumber} - ${prTitle}`,
-    required: false,
-    pageSize: 10,
+    required: true,
+    pageSize: 20,
     choices: choices,
   });
 
-  return selectedIndices.map((index) => comments[index]);
+  return selected;
+}
+
+function extractDiffLineRange(diff: string, rangeStart: number, rangeEnd: number) {
+  // Validate range
+  if (
+    !Number.isInteger(rangeStart) ||
+    !Number.isInteger(rangeEnd) ||
+    rangeStart < 1 ||
+    rangeEnd < rangeStart
+  ) {
+    throw new Error(
+      'Invalid range: start and end must be positive integers, and end must be >= start'
+    );
+  }
+
+  // Find the hunk header (e.g., "@@ -6,4 +6,16 @@")
+  const hunkHeaderRegex = /@@ -(\d+),(\d+) \+(\d+),(\d+) @@/;
+  const match = diff.match(hunkHeaderRegex);
+
+  if (!match) {
+    return null; // No valid hunk header found
+  }
+
+  // Extract line numbers
+  const oldStart = parseInt(match[1], 10) - 1; // Starting line of old file
+  const oldCount = parseInt(match[2], 10); // Number of lines in old file
+  const newStart = parseInt(match[3], 10) - 1; // Starting line of new file
+  const newCount = parseInt(match[4], 10); // Number of lines in new file
+
+  // Split diff into lines
+  const lines = diff.split('\n');
+
+  // Track current line numbers for old and new files
+  let currentOldLine = oldStart;
+  let currentNewLine = newStart;
+
+  // Extract changed lines within the specified range
+  const changedLines = lines
+    .slice(1) // Skip hunk header
+    .map((line, i) => {
+      if (line.startsWith(' ')) {
+        currentOldLine++;
+        currentNewLine++;
+      } else if (line.startsWith('-')) {
+        currentOldLine++;
+      } else if (line.startsWith('+')) {
+        currentNewLine++;
+      }
+
+      return {
+        content: line,
+        lineNumber: currentNewLine,
+      };
+    })
+    .filter((change) => change.lineNumber >= rangeStart && change.lineNumber <= rangeEnd);
+
+  return {
+    old: { start: oldStart, count: oldCount },
+    new: { start: newStart, count: newCount },
+    changes: changedLines,
+  };
 }
