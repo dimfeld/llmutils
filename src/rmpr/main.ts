@@ -1,7 +1,7 @@
 import * as path from 'node:path';
-import clipboardy from 'clipboardy';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
+import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
   fetchPullRequestAndComments,
   selectReviewComments,
@@ -10,9 +10,9 @@ import {
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { waitForEnter } from '../common/terminal.js';
 import { debugLog, error, log } from '../logging.js';
+import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
 import { getGitRoot, secureWrite } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
-import { getDiff, getFileContentAtRef } from './git_utils.js';
 import {
   createInlineCommentsPrompt,
   insertAiCommentsIntoFileContent,
@@ -23,8 +23,13 @@ import {
   formatReviewCommentsForSeparateContext,
 } from './modes/separate_context.js';
 import type { DetailedReviewComment } from './types.js';
-import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
-import { fullRmfilterRun, runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
+import {
+  argsFromRmprOptions,
+  combineRmprOptions,
+  parseRmprOptions,
+  type RmprOptions,
+} from './comment_options.js';
+import micromatch from 'micromatch';
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
@@ -105,12 +110,24 @@ export async function handleRmprCommand(
     log(`     Diff Hunk: "${comment.diffHunk.split('\n')[0]}..."`);
   });
 
-  // 1. Identify unique file paths from selected comments
-  const commentsByFilePath = new Map<string, DetailedReviewComment[]>();
+  // 1. Identify unique file paths from selected comments and parse --rmpr options
+  const commentsByFilePath = new Map<
+    string,
+    { comments: DetailedReviewComment[]; options: RmprOptions }
+  >();
   selectedComments.forEach((comment) => {
-    const commentsForThisFile = commentsByFilePath.get(comment.thread.path) || [];
-    commentsForThisFile.push(comment);
+    const commentsForThisFile = commentsByFilePath.get(comment.thread.path) || {
+      comments: [],
+      options: {},
+    };
+    commentsForThisFile.comments.push(comment);
     commentsByFilePath.set(comment.thread.path, commentsForThisFile);
+
+    const rmprOptions = parseRmprOptions(comment.comment.body);
+    if (rmprOptions) {
+      commentsForThisFile.options = combineRmprOptions(commentsForThisFile.options, rmprOptions);
+      debugLog(`Parsed --rmpr options for comment ${comment.comment.id}:`, rmprOptions);
+    }
   });
 
   log(`Identified ${commentsByFilePath.size} unique file paths from selected comments.`);
@@ -122,11 +139,11 @@ export async function handleRmprCommand(
 
   if (options.mode === 'inline-comments') {
     log('Preparing context in Inline Comments mode...');
-    for (const [filePath, commentsForThisFile] of commentsByFilePath.entries()) {
-      const originalContent = await Bun.file(filePath).text();
+    for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
+      const originalContent = await Bun.file(path.resolve(gitRoot, filePath)).text();
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         originalContent,
-        commentsForThisFile,
+        fileInfo.comments,
         filePath
       );
       filesProcessedWithAiComments.set(filePath, contentWithAiComments);
@@ -168,8 +185,8 @@ export async function handleRmprCommand(
     instructions = createSeparateContextPrompt(formattedComments);
   }
 
-  const rmFilterArgs = [
-    ...commentsByFilePath.keys(),
+  // Construct rmfilter arguments, incorporating --rmpr options
+  let rmFilterArgs: string[] = [
     '--with-diff',
     '--diff-from',
     headRefName,
@@ -178,6 +195,17 @@ export async function handleRmprCommand(
     '--model',
     effectiveModel,
   ];
+
+  // Add files and related options
+  for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
+    const rmprOptions = fileInfo.options;
+    rmFilterArgs.push('--', filePath);
+    rmFilterArgs.push(...argsFromRmprOptions(pullRequest, rmprOptions));
+  }
+
+  if (!options.run) {
+    rmFilterArgs.push('--copy');
+  }
 
   if (!options.run) {
     rmFilterArgs.push('--copy');
