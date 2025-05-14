@@ -258,7 +258,7 @@ export async function handleRmprCommand(
       baseDir: gitRoot,
       content: llmOutputText,
       originalPrompt: llmPrompt,
-      retryRequester: createRetryRequester(effectiveModel),
+      retryRequester: options.run ? createRetryRequester(effectiveModel) : undefined,
       writeRoot: gitRoot,
     });
   } catch (e: any) {

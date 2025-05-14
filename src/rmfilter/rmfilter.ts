@@ -849,7 +849,7 @@ export async function fullRmfilterRun(options?: {
     log('\n## OUTPUT');
     log(`Tokens: ${tokens.length}`);
     if (options?.skipWrite) {
-      log(`edit format: ${editFormat}`);
+      log(`Edit format: ${editFormat}`);
     } else {
       log(`Output written to ${outputFile}, edit format: ${editFormat}`);
     }
