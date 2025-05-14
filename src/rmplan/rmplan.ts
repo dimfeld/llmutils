@@ -368,8 +368,8 @@ program
   .description('Address Pull Request (PR) review comments using an LLM.')
   .option(
     '--mode <mode>',
-    "Specify the editing mode. 'ai-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",
-    'ai-comments'
+    "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",
+    'inline-comments'
   )
   .option(
     '--yes',

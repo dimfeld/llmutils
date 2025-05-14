@@ -125,17 +125,14 @@ export function insertAiCommentsIntoFileContent(
   const insertAfter = new Map<number, string[]>();
 
   // Sort comments to ensure a deterministic order if multiple comments affect the same line.
-  // Sorting by originalStartLine then originalLine. If originalStartLine is null, use originalLine.
+  // Sorting by startLine then line.
   const sortedComments = [...commentsForFile].sort((a, b) => {
-    const startA = a.thread.originalStartLine ?? a.thread.originalLine;
-    const startB = b.thread.originalStartLine ?? b.thread.originalLine;
+    const startA = a.thread.startLine ?? a.thread.line;
+    const startB = b.thread.startLine ?? b.thread.line;
     if (startA !== startB) {
       return startA - startB;
     }
-    // If start lines are the same, sort by end line
-    if (a.thread.originalLine !== b.thread.originalLine) {
-      return a.thread.originalLine - b.thread.originalLine;
-    }
+
     // If both start and end lines are the same, maintain original relative order or sort by ID for stability
     return a.comment.id.localeCompare(b.comment.id);
   });
@@ -154,7 +151,7 @@ export function insertAiCommentsIntoFileContent(
 
     if (useScriptTag) {
       // For Svelte files we do a dumb check to see if we're in the script or the template.
-      const relevantLine1Based = comment.thread.originalStartLine ?? comment.thread.originalLine;
+      const relevantLine1Based = comment.thread.startLine ?? comment.thread.line;
       const relevantLine0Based = relevantLine1Based - 1;
 
       // If no </script> tag, or comment is after it, use HTML style. Otherwise JS style.
@@ -169,27 +166,29 @@ export function insertAiCommentsIntoFileContent(
       .split('\n')
       .map((line) => currentPrefixer(`AI: ${line}`));
 
-    // A comment is considered a "block" comment needing markers if originalStartLine is specified.
-    const isBlockComment = comment.thread.originalStartLine !== null;
+    // A comment is considered a "block" comment needing markers if startLine is specified.
+    const startLine = comment.thread.startLine ?? comment.thread.line;
+    const endLine = comment.thread.line;
+    const isBlockComment = comment.thread.startLine != null && startLine !== endLine;
 
     if (isBlockComment) {
       const uniqueId = crypto.randomUUID().slice(0, 8);
       const startMarkerLine = currentPrefixer(`AI_COMMENT_START_${uniqueId}`);
       const endMarkerLine = currentPrefixer(`AI_COMMENT_END_${uniqueId}`);
 
-      const insertionPointStart0Based = comment.thread.originalStartLine! - 1;
+      const insertionPointStart0Based = startLine - 1;
       addToMapList(insertBefore, insertionPointStart0Based, [
         startMarkerLine,
         ...aiPrefixedBodyLines,
       ]);
 
-      const insertionPointEnd0Based = comment.thread.originalLine - 1;
+      const insertionPointEnd0Based = endLine - 1;
       addToMapList(insertAfter, insertionPointEnd0Based, [endMarkerLine]);
     } else {
-      // Single-line comment (originalStartLine is null).
+      // Single-line comment (startLine is null).
       // Prefixed body goes directly above the originalLine.
       // originalLine is 1-based. Convert to 0-based for map key.
-      const insertionPoint0Based = comment.thread.originalLine - 1;
+      const insertionPoint0Based = startLine - 1;
       addToMapList(insertBefore, insertionPoint0Based, aiPrefixedBodyLines);
     }
   }
