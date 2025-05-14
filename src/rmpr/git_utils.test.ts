@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import ** as fs from 'node:fs/promises';
-import ** as path from 'node:path';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { getFileContentAtRef, getDiff } from './git_utils';
 import { $ } from 'bun';
@@ -76,8 +76,8 @@ describe('Git Utilities', () => {
         new RegExp(
           `Failed to get file content for 'nonexistent\\.txt' at ref '${commit1Sha}'\\. ` +
             `Git command: 'git show ${commit1Sha}:nonexistent\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
-            `Stderr: fatal: path 'nonexistent\\.txt' does not exist in '${commit1Sha}'`,
-        ),
+            `Stderr: fatal: path 'nonexistent\\.txt' does not exist in '${commit1Sha}'`
+        )
       );
     });
 
@@ -86,8 +86,8 @@ describe('Git Utilities', () => {
         new RegExp(
           `Failed to get file content for 'file1\\.txt' at ref '${commit4Sha}'\\. ` +
             `Git command: 'git show ${commit4Sha}:file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
-            `Stderr: fatal: path 'file1\\.txt' does not exist in '${commit4Sha}'`,
-        ),
+            `Stderr: fatal: path 'file1\\.txt' does not exist in '${commit4Sha}'`
+        )
       );
     });
 
@@ -108,8 +108,8 @@ describe('Git Utilities', () => {
       expect(diff).toMatch(
         new RegExp(
           `^diff --git a\\/file1\\.txt b\\/file1\\.txt\\nindex [0-9a-f]+\\.\\.[0-9a-f]+ \\d+\\n--- a\\/file1\\.txt\\n\\+\\+\\+ b\\/file1\\.txt\\n@@ -1 \\+1 @@\\n-Initial content for file1\\n\\+Modified content for file1$`,
-          'm',
-        ),
+          'm'
+        )
       );
     });
 
@@ -118,8 +118,8 @@ describe('Git Utilities', () => {
       expect(diff).toMatch(
         new RegExp(
           `^diff --git a\\/file2\\.txt b\\/file2\\.txt\\nnew file mode \\d+\\nindex 0000000\\.\\.[0-9a-f]+\\n--- \\/dev\\/null\\n\\+\\+\\+ b\\/file2\\.txt\\n@@ -0,0 \\+1 @@\\n\\+Content for file2$`,
-          'm',
-        ),
+          'm'
+        )
       );
     });
 
@@ -128,8 +128,8 @@ describe('Git Utilities', () => {
       expect(diff).toMatch(
         new RegExp(
           `^diff --git a\\/file1\\.txt b\\/file1\\.txt\\ndeleted file mode \\d+\\nindex [0-9a-f]+\\.\\.0000000\\n--- a\\/file1\\.txt\\n\\+\\+\\+ \\/dev\\/null\\n@@ -1 \\+0,0 @@\\n-Modified content for file1$`,
-          'm',
-        ),
+          'm'
+        )
       );
     });
 
@@ -149,8 +149,8 @@ describe('Git Utilities', () => {
         new RegExp(
           `Failed to get diff for 'file1\\.txt' between '${invalidRef}' and '${commit2Sha}'\\. ` +
             `Git command: 'git diff --patch ${invalidRef}\\.\\.${commit2Sha} -- file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
-            `Stderr: fatal: (bad revision '${invalidRef}'|ambiguous argument '${invalidRef}\\.\\.${commit2Sha}|bad object '${invalidRef}')`,
-        ),
+            `Stderr: fatal: (bad revision '${invalidRef}'|ambiguous argument '${invalidRef}\\.\\.${commit2Sha}|bad object '${invalidRef}')`
+        )
       );
     });
 
@@ -159,8 +159,8 @@ describe('Git Utilities', () => {
       expect(diff).toMatch(
         new RegExp(
           `^diff --git a\\/file2\\.txt b\\/file2\\.txt\\nnew file mode \\d+\\nindex 0000000\\.\\.[0-9a-f]+\\n--- \\/dev\\/null\\n\\+\\+\\+ b\\/file2\\.txt\\n@@ -0,0 \\+1 @@\\n\\+Content for file2$`,
-          'm',
-        ),
+          'm'
+        )
       );
     });
 
@@ -169,8 +169,8 @@ describe('Git Utilities', () => {
       expect(diff).toMatch(
         new RegExp(
           `^diff --git a\\/file1\\.txt b\\/file1\\.txt\\ndeleted file mode \\d+\\nindex [0-9a-f]+\\.\\.0000000\\n--- a\\/file1\\.txt\\n\\+\\+\\+ \\/dev\\/null\\n@@ -1 \\+0,0 @@\\n-Initial content for file1$`,
-          'm',
-        ),
+          'm'
+        )
       );
     });
   });

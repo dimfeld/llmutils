@@ -380,7 +380,7 @@ program
   .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
 
 program
-  .command('rmpr <prIdentifier>')
+  .command('answer-pr <prIdentifier>')
   .description('Address Pull Request (PR) review comments using an LLM.')
   .option(
     '--mode <mode>',
