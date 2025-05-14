@@ -50,13 +50,6 @@ export async function handleRmprCommand(
   log(
     `Processing PR: ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`
   );
-  log(`  Mode: ${options.mode}`);
-  log(`  Model: ${effectiveModel}`);
-  log(`  Auto-confirm (--yes): ${options.yes}`);
-  log(`  Dry Run (--dry-run): ${options.dryRun}`);
-  if (globalCliOptions.debug) {
-    debugLog(`  Global Debug Flag: true`);
-  }
 
   let prData;
   try {
@@ -107,11 +100,7 @@ export async function handleRmprCommand(
 
   log(`Selected ${selectedComments.length} comments to address:`);
   selectedComments.forEach((comment, index) => {
-    log(
-      `  ${index + 1}. [${comment.path}:${comment.originalLine}] by ${
-        comment.authorLogin || 'unknown'
-      }:`
-    );
+    log(`  ${index + 1}. [${comment.path}:${comment.originalLine}]:`);
     log(`     Body: "${comment.body.split('\n')[0]}..."`);
     log(`     Diff Hunk: "${comment.diffHunk.split('\n')[0]}..."`);
   });
@@ -172,7 +161,7 @@ export async function handleRmprCommand(
       }
     }
 
-    if (!options.yes && filesActuallyModifiedWithAiComments.size > 0 && !options.dryRun) {
+    if (filesActuallyModifiedWithAiComments.size > 0 && !options.dryRun) {
       log(
         '\nAI comments have been prepared in the following files. Please review and make any desired edits before proceeding:'
       );
@@ -203,7 +192,7 @@ export async function handleRmprCommand(
           // Potentially exit or use previous content
         }
       }
-    } else if (!options.yes && filesActuallyModifiedWithAiComments.size > 0 && options.dryRun) {
+    } else if (filesActuallyModifiedWithAiComments.size > 0 && options.dryRun) {
       log('\n--- DRY RUN INFO ---');
       log(
         'In AI Comments mode, if not a dry run, AI comments would be written to the following files for your review before generating the final prompt:'
