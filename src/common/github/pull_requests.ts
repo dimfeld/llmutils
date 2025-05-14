@@ -158,7 +158,7 @@ export async function selectReviewComments(
         comment.body,
         LINE_PADDING
       ),
-      value: { comment, thread, diffForTerminal, diffForContext } satisfies DetailedReviewComment,
+      value: { comment, thread, diffForContext } satisfies DetailedReviewComment,
       short: `${thread.path}:${thread.originalLine}`,
       description:
         limitLines(diffForTerminal ?? '', MAX_HEIGHT - 10) + '\n\n' + limitLines(comment.body, 10),
