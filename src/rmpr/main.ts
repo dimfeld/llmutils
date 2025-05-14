@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import clipboardy from 'clipboardy';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import {
@@ -25,7 +26,7 @@ import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
-  options: { mode: string; yes: boolean; model?: string; dryRun: boolean },
+  options: { mode: string; yes: boolean; model?: string; dryRun: boolean; run: boolean },
   globalCliOptions: { debug?: boolean },
   config: RmplanConfig
 ) {
@@ -230,6 +231,12 @@ export async function handleRmprCommand(
     log(
       'Exiting due to --dry-run. No LLM call will be made, and no files will be modified by the LLM.'
     );
+    process.exit(0);
+  }
+
+  if (!options.run) {
+    await clipboardy.write(llmPrompt);
+    log('Wrote generated prompt to clipboard...');
     process.exit(0);
   }
 

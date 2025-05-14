@@ -385,6 +385,7 @@ program
     'Prepare and print the LLM prompt, but do not call the LLM or apply edits.',
     false
   )
+  .option('--run', 'Send the context straight to an LLM and apply the results', false)
   .action(async (prIdentifier, options) => {
     // Pass global options (like --debug) along with command-specific options
     const globalOpts = program.opts();

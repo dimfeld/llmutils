@@ -1,6 +1,6 @@
 import { getGitRepository } from '../../rmfilter/utils.ts';
 
-export async function parsePrOrIssueNumber(identifier: string): Promise<{
+async function parsePrOrIssueNumberInternal(identifier: string): Promise<{
   owner: string;
   repo: string;
   number: number;
@@ -8,13 +8,12 @@ export async function parsePrOrIssueNumber(identifier: string): Promise<{
   try {
     // If it's a URL, just use the owner and repo from the URL
     const url = new URL(identifier);
-    const [owner, repo] = url.pathname.split('/')[1];
-    const number = parseInt(url.pathname.split('/')[4]);
+    const [owner, repo, _, number] = url.pathname.slice(1).split('/');
 
     return {
       owner,
       repo,
-      number,
+      number: parseInt(number, 10),
     };
   } catch (err) {
     // it's fine if it wasn't a url
@@ -45,13 +44,22 @@ export async function parsePrOrIssueNumber(identifier: string): Promise<{
   let [owner, repo] = gitRepo.split('/');
   let number = parseInt(identifier);
 
-  if (Number.isNaN(number)) {
-    throw new Error(`Issue number must be a Github URL or number, got ${identifier}`);
-  }
-
   return {
     owner,
     repo,
     number,
   };
+}
+
+export async function parsePrOrIssueNumber(identifier: string): Promise<{
+  owner: string;
+  repo: string;
+  number: number;
+} | null> {
+  const value = await parsePrOrIssueNumberInternal(identifier);
+
+  if (!value || !value.owner || !value.repo || !value.number || Number.isNaN(value.number)) {
+    return null;
+  }
+  return value;
 }
