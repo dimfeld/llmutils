@@ -19,32 +19,32 @@ describe('Git Utilities', () => {
     process.chdir(tmpRepoPath);
 
     // Initialize Git repo
-    await $`git init -b main`.cwd(tmpRepoPath);
-    await $`git config user.email test@example.com`.cwd(tmpRepoPath);
-    await $`git config user.name "Test User"`.cwd(tmpRepoPath);
-    await $`git config commit.gpgsign false`.cwd(tmpRepoPath);
+    await $`git init -b main`.cwd(tmpRepoPath).quiet();
+    await $`git config user.email test@example.com`.cwd(tmpRepoPath).quiet();
+    await $`git config user.name "Test User"`.cwd(tmpRepoPath).quiet();
+    await $`git config commit.gpgsign false`.cwd(tmpRepoPath).quiet();
 
     // Commit 1: Add file1.txt
-    await fs.writeFile(path.join(tmpRepoPath, 'file1.txt'), 'Initial content for file1');
-    await $`git add file1.txt`.cwd(tmpRepoPath);
-    await $`git commit -m "Add file1.txt"`.cwd(tmpRepoPath);
+    await fs.writeFile(path.join(tmpRepoPath, 'file1.txt'), 'Initial content for file1\n');
+    await $`git add file1.txt`.cwd(tmpRepoPath).quiet();
+    await $`git commit -m "Add file1.txt"`.cwd(tmpRepoPath).quiet();
     commit1Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
 
     // Commit 2: Modify file1.txt
-    await fs.writeFile(path.join(tmpRepoPath, 'file1.txt'), 'Modified content for file1');
-    await $`git add file1.txt`.cwd(tmpRepoPath);
-    await $`git commit -m "Modify file1.txt"`.cwd(tmpRepoPath);
+    await fs.writeFile(path.join(tmpRepoPath, 'file1.txt'), 'Modified content for file1\n');
+    await $`git add file1.txt`.cwd(tmpRepoPath).quiet();
+    await $`git commit -m "Modify file1.txt"`.cwd(tmpRepoPath).quiet();
     commit2Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
 
     // Commit 3: Add file2.txt (file1.txt remains as in commit2Sha)
-    await fs.writeFile(path.join(tmpRepoPath, 'file2.txt'), 'Content for file2');
-    await $`git add file2.txt`.cwd(tmpRepoPath);
-    await $`git commit -m "Add file2.txt"`.cwd(tmpRepoPath);
+    await fs.writeFile(path.join(tmpRepoPath, 'file2.txt'), 'Content for file2\n');
+    await $`git add file2.txt`.cwd(tmpRepoPath).quiet();
+    await $`git commit -m "Add file2.txt"`.cwd(tmpRepoPath).quiet();
     commit3Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
 
     // Commit 4: Delete file1.txt (file2.txt remains as in commit3Sha)
-    await $`git rm file1.txt`.cwd(tmpRepoPath);
-    await $`git commit -m "Delete file1.txt"`.cwd(tmpRepoPath);
+    await $`git rm file1.txt`.cwd(tmpRepoPath).quiet();
+    await $`git commit -m "Delete file1.txt"`.cwd(tmpRepoPath).quiet();
     commit4Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
   });
 
@@ -58,17 +58,17 @@ describe('Git Utilities', () => {
   describe('getFileContentAtRef', () => {
     test('should fetch content of an existing file at a specific commit', async () => {
       const content = await getFileContentAtRef('file1.txt', commit1Sha);
-      expect(content).toBe('Initial content for file1');
+      expect(content).toBe('Initial content for file1\n');
     });
 
     test('should fetch content of a modified file at a later commit', async () => {
       const content = await getFileContentAtRef('file1.txt', commit2Sha);
-      expect(content).toBe('Modified content for file1');
+      expect(content).toBe('Modified content for file1\n');
     });
 
     test('should fetch content of a newly added file', async () => {
       const content = await getFileContentAtRef('file2.txt', commit3Sha);
-      expect(content).toBe('Content for file2');
+      expect(content).toBe('Content for file2\n');
     });
 
     test('should throw an error when fetching a non-existent file', async () => {
@@ -93,12 +93,12 @@ describe('Git Utilities', () => {
 
     test('should fetch content of a file using "HEAD" as ref', async () => {
       const content = await getFileContentAtRef('file2.txt', 'HEAD');
-      expect(content).toBe('Content for file2');
+      expect(content).toBe('Content for file2\n');
     });
 
     test('should fetch content of a file using a branch name as ref (main)', async () => {
       const content = await getFileContentAtRef('file2.txt', 'main');
-      expect(content).toBe('Content for file2');
+      expect(content).toBe('Content for file2\n');
     });
   });
 
@@ -149,7 +149,7 @@ describe('Git Utilities', () => {
         new RegExp(
           `Failed to get diff for 'file1\\.txt' between '${invalidRef}' and '${commit2Sha}'\\. ` +
             `Git command: 'git diff --patch ${invalidRef}\\.\\.${commit2Sha} -- file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
-            `Stderr: fatal: (bad revision '${invalidRef}'|ambiguous argument '${invalidRef}\\.\\.${commit2Sha}|bad object '${invalidRef}')`
+            `Stderr: fatal: (bad revision '${invalidRef}\\.\\.${commit2Sha}'|ambiguous argument '${invalidRef}\\.\\.${commit2Sha}|bad object '${invalidRef}')`
         )
       );
     });

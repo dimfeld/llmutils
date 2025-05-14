@@ -182,7 +182,6 @@ export function formatReviewCommentsForSeparateContext(
 
     const parts: string[] = [
       `File: ${comment.path} (${lineInfo})`,
-      `Author: ${comment.authorLogin || 'unknown'}`,
       `Comment:`,
       comment.body,
       `Relevant Diff Hunk:`,

@@ -19,8 +19,8 @@ export async function getFileContentAtRef(filePath: string, ref: string): Promis
   });
 
   const exitCode = await proc.exited;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const stdout = await new Response(proc.stdout as ReadableStream).text();
+  const stderr = await new Response(proc.stderr as ReadableStream).text();
 
   if (exitCode !== 0) {
     const errorMsg = stderr.trim();
@@ -48,14 +48,17 @@ export async function getDiff(filePath: string, baseRef: string, headRef: string
 
   const proc = logSpawn(command, {
     cwd: gitRoot,
+    env: {
+      GIT_CONFIG_GLOBAL: '/dev/null',
+    },
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: 'ignore',
   });
 
   const exitCode = await proc.exited;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const stdout = await new Response(proc.stdout as ReadableStream).text();
+  const stderr = await new Response(proc.stderr as ReadableStream).text();
 
   if (exitCode !== 0) {
     const errorMsg = stderr.trim();
