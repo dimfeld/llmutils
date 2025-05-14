@@ -137,16 +137,19 @@ export async function selectReviewComments(
     let end = thread.line;
 
     let range = end - start;
-    let extra = Math.floor((MAX_HEIGHT - 10 - range) / 2);
-    if (extra > 0) {
-      start -= extra;
-      end += extra;
-    }
+    let terminalExtra = Math.max(0, Math.floor((MAX_HEIGHT - 10 - range) / 2));
+    let terminalStart = Math.max(1, start + terminalExtra);
+    let terminalEnd = end + terminalExtra;
 
-    start = Math.max(1, start);
+    const diff = parseDiff(thread.comments.nodes[0].diffHunk);
+    const diffForTerminal = filterDiffToRange(diff?.changes, terminalStart, terminalEnd)
+      .map((c) => c.content)
+      .join('\n');
 
-    const lines = extractDiffLineRange(thread.comments.nodes[0].diffHunk, start, end)
-      ?.changes.map((c) => c.content)
+    const contextStart = Math.max(1, start - 3);
+    const contextEnd = end + 3;
+    const diffForContext = filterDiffToRange(diff?.changes, contextStart, contextEnd)
+      .map((c) => c.content)
       .join('\n');
 
     const comments = thread.comments.nodes.map((comment) => ({
@@ -155,9 +158,10 @@ export async function selectReviewComments(
         comment.body,
         LINE_PADDING
       ),
-      value: { comment, thread },
+      value: { comment, thread, diffForTerminal, diffForContext } satisfies DetailedReviewComment,
       short: `${thread.path}:${thread.originalLine}`,
-      description: limitLines(lines ?? '', MAX_HEIGHT - 10) + '\n\n' + limitLines(comment.body, 10),
+      description:
+        limitLines(diffForTerminal ?? '', MAX_HEIGHT - 10) + '\n\n' + limitLines(comment.body, 10),
     }));
 
     comments.sort((a, b) => {
@@ -194,7 +198,12 @@ export async function selectReviewComments(
   return selected;
 }
 
-function extractDiffLineRange(diff: string, rangeStart: number, rangeEnd: number) {
+interface DiffLine {
+  content: string;
+  lineNumber: number;
+}
+
+function filterDiffToRange(changes: DiffLine[] | undefined, rangeStart: number, rangeEnd: number) {
   // Validate range
   if (
     !Number.isInteger(rangeStart) ||
@@ -207,6 +216,12 @@ function extractDiffLineRange(diff: string, rangeStart: number, rangeEnd: number
     );
   }
 
+  return (changes || []).filter(
+    (change) => change.lineNumber >= rangeStart && change.lineNumber <= rangeEnd
+  );
+}
+
+function parseDiff(diff: string) {
   // Find the hunk header (e.g., "@@ -6,4 +6,16 @@")
   const hunkHeaderRegex = /@@ -(\d+),(\d+) \+(\d+),(\d+) @@/;
   const match = diff.match(hunkHeaderRegex);
@@ -229,7 +244,7 @@ function extractDiffLineRange(diff: string, rangeStart: number, rangeEnd: number
   let currentNewLine = newStart;
 
   // Extract changed lines within the specified range
-  const changedLines = lines
+  const changedLines: DiffLine[] = lines
     .slice(1) // Skip hunk header
     .map((line, i) => {
       if (line.startsWith(' ')) {
@@ -245,8 +260,7 @@ function extractDiffLineRange(diff: string, rangeStart: number, rangeEnd: number
         content: line,
         lineNumber: currentNewLine,
       };
-    })
-    .filter((change) => change.lineNumber >= rangeStart && change.lineNumber <= rangeEnd);
+    });
 
   return {
     old: { start: oldStart, count: oldCount },

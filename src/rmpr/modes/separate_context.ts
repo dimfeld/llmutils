@@ -44,6 +44,7 @@ export function createSeparateContextPrompt(
   );
   promptParts.push('');
 
+  // TODO Remove below this, we're using rmfilter for it
   promptParts.push('File Contents:');
   if (originalFilesContent.size > 0) {
     for (const [filePath, content] of originalFilesContent) {
@@ -75,6 +76,7 @@ export function createSeparateContextPrompt(
     promptParts.push('(No diffs provided or all diffs were empty)');
   }
   promptParts.push('');
+  // TODO remove above this
 
   promptParts.push('Review Comments to Address:');
   promptParts.push(formattedReviewComments);

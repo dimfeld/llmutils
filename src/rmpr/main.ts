@@ -14,7 +14,7 @@ import { getGitRoot, secureWrite } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import { getDiff, getFileContentAtRef } from './git_utils.js';
 import {
-  createAiCommentsPrompt,
+  createInlineCommentsPrompt,
   insertAiCommentsIntoFileContent,
   removeAiCommentMarkers,
 } from './modes/inline_comments.js';
@@ -206,7 +206,7 @@ export async function handleRmprCommand(
       log('The prompt will be generated using the in-memory versions with AI comments.');
       debugLog('Skipping file writing and user prompt for AI comment review due to --dry-run.');
     }
-    llmPrompt = createAiCommentsPrompt(filesToProcessWithAiComments, fileDiffs);
+    llmPrompt = createInlineCommentsPrompt(filesToProcessWithAiComments, fileDiffs);
   } else {
     // Default to "separate-context" mode
     log('Preparing context in Separate Context mode...');

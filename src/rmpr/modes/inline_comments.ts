@@ -107,48 +107,6 @@ function getLinePrefixerForFile(filePath: string, firstLineOfFile?: string): Lin
   }
 }
 
-export function createInlineCommentsPrompt(
-  filesWithAiComments: Map<string, string>,
-  fileDiffs: Map<string, string>
-): string {
-  const promptParts: string[] = [];
-
-  promptParts.push(
-    `You will be provided with source code files that include special 'AI comments'. These comments are prefixed with 'AI:' and may be enclosed in markers like '<!-- AI_COMMENT_START_XYZ -->' and '<!-- AI_COMMENT_END_XYZ -->'. Your task is to address the instructions in these AI comments by modifying the code.`
-  );
-  promptParts.push(`- Make the necessary code changes to satisfy the AI comment.`);
-  promptParts.push(
-    `- After addressing a comment, **remove the AI comment itself and its markers**. Do not add any new comments like 'addressed' or 'fixed'. Simply make the change.`
-  );
-  promptParts.push(`- The diff from the parent branch is provided for context on recent changes.`);
-  promptParts.push('');
-
-  promptParts.push('Files with AI Comments:');
-  for (const [filePath, content] of filesWithAiComments) {
-    promptParts.push('---');
-    promptParts.push(`Path: ${filePath}`);
-    const lang = path.extname(filePath).slice(1).toLowerCase() || 'text';
-    promptParts.push(`\`\`\`${lang}`);
-    promptParts.push(content);
-    promptParts.push('```');
-  }
-  promptParts.push('---');
-  promptParts.push('');
-
-  promptParts.push('Diffs from parent branch:');
-  for (const [filePath, diff] of fileDiffs) {
-    if (diff.trim() === '') continue;
-    promptParts.push('---');
-    promptParts.push(`Path: ${filePath}`);
-    promptParts.push('```diff');
-    promptParts.push(diff);
-    promptParts.push('```');
-  }
-  promptParts.push('---');
-
-  return promptParts.join('\n');
-}
-
 /**
  * Inserts AI-prefixed comments and markers into file content.
  * Line numbers in comments (originalLine, originalStartLine) are 1-based.
@@ -271,4 +229,47 @@ export function removeAiCommentMarkers(fileContent: string): string {
     return true;
   });
   return cleanedLines.join('\n');
+}
+
+export function createInlineCommentsPrompt(
+  filesWithAiComments: Map<string, string>,
+  fileDiffs: Map<string, string>
+): string {
+  const promptParts: string[] = [];
+
+  promptParts.push(
+    `You will be provided with source code files that include special 'AI comments'. These comments are prefixed with 'AI:' and may be enclosed in markers like '<!-- AI_COMMENT_START_XYZ -->' and '<!-- AI_COMMENT_END_XYZ -->'. Your task is to address the instructions in these AI comments by modifying the code.`
+  );
+  promptParts.push(`- Make the necessary code changes to satisfy the AI comment.`);
+  promptParts.push(
+    `- After addressing a comment, **remove the AI comment itself and its markers**. Do not add any new comments like 'addressed' or 'fixed'. Simply make the change.`
+  );
+  promptParts.push(`- The diff from the parent branch is provided for context on recent changes.`);
+  promptParts.push('');
+
+  // TODO remove this, we're using rmfilter for it
+  promptParts.push('Files with AI Comments:');
+  for (const [filePath, content] of filesWithAiComments) {
+    promptParts.push('---');
+    promptParts.push(`Path: ${filePath}`);
+    const lang = path.extname(filePath).slice(1).toLowerCase() || 'text';
+    promptParts.push(`\`\`\`${lang}`);
+    promptParts.push(content);
+    promptParts.push('```');
+  }
+  promptParts.push('---');
+  promptParts.push('');
+
+  promptParts.push('Diffs from parent branch:');
+  for (const [filePath, diff] of fileDiffs) {
+    if (diff.trim() === '') continue;
+    promptParts.push('---');
+    promptParts.push(`Path: ${filePath}`);
+    promptParts.push('```diff');
+    promptParts.push(diff);
+    promptParts.push('```');
+  }
+  promptParts.push('---');
+
+  return promptParts.join('\n');
 }

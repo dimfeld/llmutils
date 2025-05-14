@@ -3,4 +3,6 @@ import type { CommentNode, ReviewThreadNode } from '../common/github/pull_reques
 export interface DetailedReviewComment {
   thread: ReviewThreadNode;
   comment: CommentNode;
+  diffForContext: string;
+  diffForTerminal: string;
 }
