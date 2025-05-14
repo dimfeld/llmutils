@@ -11,7 +11,7 @@ import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.j
 import { waitForEnter } from '../common/terminal.js';
 import { debugLog, error, log } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import { getGitRoot, secureWrite } from '../rmfilter/utils.js';
+import { commitAll, getGitRoot, secureWrite } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {
   createInlineCommentsPrompt,
@@ -29,10 +29,18 @@ import {
   parseRmprOptions,
   type RmprOptions,
 } from './comment_options.js';
+import clipboardy from 'clipboardy';
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
-  options: { mode: string; yes: boolean; model?: string; dryRun: boolean; run: boolean },
+  options: {
+    mode: string;
+    yes: boolean;
+    model?: string;
+    dryRun: boolean;
+    run: boolean;
+    commit: boolean;
+  },
   globalCliOptions: { debug?: boolean },
   config: RmplanConfig
 ) {
@@ -211,10 +219,6 @@ export async function handleRmprCommand(
     rmFilterArgs.push('--copy');
   }
 
-  if (!options.run) {
-    rmFilterArgs.push('--copy');
-  }
-
   const llmPrompt = await fullRmfilterRun({ args: rmFilterArgs, gitRoot, skipWrite: true });
 
   if (options.dryRun) {
@@ -224,23 +228,27 @@ export async function handleRmprCommand(
     process.exit(0);
   }
 
-  if (!options.run) {
-    process.exit(0);
-  }
-
-  log('Invoking LLM...');
-  let llmOutputText = '';
-  try {
-    const { text } = await runStreamingPrompt({
-      messages: [{ role: 'user', content: llmPrompt }],
-      model: effectiveModel,
-      temperature: 0,
-    });
-    llmOutputText = text;
-  } catch (e: any) {
-    error(`LLM invocation failed: ${e.message}`);
-    if (globalCliOptions.debug) console.error(e);
-    process.exit(1);
+  let llmOutputText: string;
+  if (options.run) {
+    log('Invoking LLM...');
+    try {
+      const { text } = await runStreamingPrompt({
+        messages: [{ role: 'user', content: llmPrompt }],
+        model: effectiveModel,
+        temperature: 0,
+      });
+      llmOutputText = text;
+    } catch (e: any) {
+      error(`LLM invocation failed: ${e.message}`);
+      if (globalCliOptions.debug) console.error(e);
+      process.exit(1);
+    }
+  } else {
+    log(
+      `Paste the context into your model, and then press Enter to apply once you've copied the output.`
+    );
+    await waitForEnter();
+    llmOutputText = await clipboardy.read();
   }
 
   log('Applying LLM suggestions...');
@@ -277,4 +285,27 @@ export async function handleRmprCommand(
   }
 
   log('Successfully addressed selected PR comments.');
+
+  if (options.run && options.commit) {
+    log('Committing changes...');
+    const commitMessageParts: string[] = [
+      `Address PR comments for ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`,
+      '',
+      'Changes address the following review comments:',
+      ...selectedComments.map((c, index) => {
+        const { thread, comment } = c;
+        const firstLine =
+          comment.body.split('\n')[0].slice(0, 50) + (comment.body.length > 50 ? '...' : '');
+        return `${index + 1}. ${thread.path}:${thread.originalLine} - ${firstLine}`;
+      }),
+    ];
+    const commitMessage = commitMessageParts.join('\n');
+    const exitCode = await commitAll(commitMessage);
+    if (exitCode === 0) {
+      log('Changes committed successfully.');
+    } else {
+      error(`Commit failed with exit code ${exitCode}.`);
+      process.exit(1);
+    }
+  }
 }

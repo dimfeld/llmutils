@@ -386,6 +386,7 @@ program
     false
   )
   .option('--run', 'Send the context straight to an LLM and apply the results', false)
+  .option('--commit', 'Commit changes to jj/git if --run is also set', false)
   .action(async (prIdentifier, options) => {
     // Pass global options (like --debug) along with command-specific options
     const globalOpts = program.opts();
