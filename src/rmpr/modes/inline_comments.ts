@@ -69,6 +69,10 @@ function findBestMatchLine(
     }
   }
 
+  // Now that we found the best match for the context, we need to adjust the line numbers to account for where the
+  // comments actually start inside the code diff.
+  // TODO do this
+
   return {
     startLine: bestMatch.startLine,
     endLine: bestMatch.endLine,

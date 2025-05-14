@@ -29,7 +29,6 @@ import {
   parseRmprOptions,
   type RmprOptions,
 } from './comment_options.js';
-import micromatch from 'micromatch';
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
