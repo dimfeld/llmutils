@@ -292,12 +292,13 @@ export async function handleRmprCommand(
       `Address PR comments for ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`,
       '',
       'Changes address the following review comments:',
-      ...selectedComments.map((c, index) => {
-        const { thread, comment } = c;
-        const firstLine =
-          comment.body.split('\n')[0].slice(0, 50) + (comment.body.length > 50 ? '...' : '');
-        return `${index + 1}. ${thread.path}:${thread.originalLine} - ${firstLine}`;
-      }),
+      selectedComments
+        .map((c) => {
+          const { thread, comment, cleanedComment } = c;
+          const body = cleanedComment || comment.body;
+          return `## ${thread.path}:${thread.line}\n${body}`;
+        })
+        .join('\n\n'),
     ];
     const commitMessage = commitMessageParts.join('\n');
     const exitCode = await commitAll(commitMessage);
