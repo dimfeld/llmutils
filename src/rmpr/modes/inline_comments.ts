@@ -215,6 +215,9 @@ export function insertAiCommentsIntoFileContent(
   commentsForFile: DetailedReviewComment[],
   filePath: string
 ): AiCommentInsertionResult {
+  // If the file already has AI comments left over from a cancelled run, remove them
+  originalContent = removeAiCommentMarkers(originalContent, filePath);
+
   const lines = originalContent.split('\n');
   const newLines: string[] = [];
 
