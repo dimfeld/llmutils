@@ -218,58 +218,10 @@ export async function handleRmprCommand(
       log('AI comments *would have been* written to files for review (this is a dry run).');
     }
 
-    let userWantsToContinue = false;
-    while (!userWantsToContinue) {
-      const choice = await expand({
-        message: 'What would you like to do?',
-        choices: [
-          { key: 'c', name: 'Continue to generate LLM prompt', value: 'continue' },
-          { key: 'm', name: 'Change LLM model for editing', value: 'model' },
-          { key: 'r', name: 'Edit rmfilter options for context', value: 'rmfilter' },
-        ],
-      });
-
-      if (choice === 'continue') {
-        userWantsToContinue = true;
-      } else if (choice === 'model') {
-        log('Model selection chosen (to be implemented)');
-        const defaultModels = [
-          'gpt-4-turbo',
-          'gpt-4',
-          'gpt-3.5-turbo',
-          'claude-3-opus',
-          'claude-3-sonnet',
-          'claude-2',
-          'google/gemini-1.5-pro-latest',
-          'google/gemini-1.5-flash-latest',
-          DEFAULT_RUN_MODEL,
-        ];
-        const availableModels = [...new Set([...defaultModels, modelForLlmEdit])].sort();
-
-        const newModel = await search({
-          message: 'Select or type to filter LLM model:',
-          source: async (input) => {
-            const filtered = availableModels.filter((modelName) =>
-              input ? modelName.toLowerCase().includes(input.toLowerCase()) : true
-            );
-            return filtered.map((modelName) => ({
-              name: modelName,
-              value: modelName,
-              description: modelName === modelForLlmEdit ? 'current' : undefined,
-            }));
-          },
-        });
-        modelForLlmEdit = newModel;
-        log(`LLM model for editing set to: ${modelForLlmEdit}`);
-      } else if (choice === 'rmfilter') {
-        const newArgsStr = await input({
-          message: 'Enter additional rmfilter arguments (space-separated):',
-          default: additionalUserRmFilterArgs.join(' '),
-        });
-        additionalUserRmFilterArgs = parseCliArgsFromString(newArgsStr.trim());
-        log(`Additional rmfilter args set to: "${additionalUserRmFilterArgs.join(' ')}"`);
-      }
-    }
+    const promptResults = await optionsPrompt({ modelForLlmEdit, run: options.run });
+    modelForLlmEdit = promptResults.model;
+    options.run = promptResults.run;
+    additionalUserRmFilterArgs = promptResults.rmfilterOptions;
   }
 
   // Construct rmfilter arguments, incorporating --rmpr options
@@ -397,4 +349,99 @@ export async function handleRmprCommand(
       error(`Commit failed with exit code ${exitCode}.`);
     }
   }
+}
+
+interface PromptOptions {
+  model: string;
+  rmfilterOptions: string[];
+  run: boolean;
+}
+
+async function optionsPrompt(initialOptions: {
+  modelForLlmEdit: string;
+  run: boolean;
+}): Promise<PromptOptions> {
+  let result: PromptOptions = {
+    model: initialOptions.modelForLlmEdit,
+    rmfilterOptions: [],
+    run: initialOptions.run,
+  };
+
+  let userWantsToContinue = false;
+  while (!userWantsToContinue) {
+    const choice = await expand({
+      message: 'What would you like to do?',
+      choices: [
+        { key: 'c', name: 'Continue to generate LLM prompt', value: 'continue' },
+        { key: 'm', name: 'Change LLM model for editing', value: 'model' },
+        { key: 'r', name: 'Edit rmfilter options for context', value: 'rmfilter' },
+      ],
+    });
+
+    if (choice === 'continue') {
+      userWantsToContinue = true;
+    } else if (choice === 'model') {
+      const availableModels = [
+        'google/gemini-2.5-pro-preview-05-06',
+        'google/gemini-2.5-flash-preview-04-17',
+        'google/gemini-2.0-flash',
+        'openai/o4-mini',
+        'openai/gpt-4.1',
+        'openai/gpt-4.1-mini',
+        'openai/gpt-4.1-nano',
+        'anthropic/claude-3.5-sonnet-latest',
+        'anthropic/claude-3.5-haiku-latest',
+        'anthropic/claude-3.7-sonnet-latest',
+        'openrouter/anthropic/claude-3.5-sonnet',
+        'openrouter/anthropic/claude-3.7-sonnet',
+        'openrouter/anthropic/claude-3.5-haiku',
+        'openrouter/openai/gpt-4.1',
+        'openrouter/openai/gpt-4.1-mini',
+        'openrouter/openai/gpt-4.1-nano',
+        'openrouter/openai/o4-mini',
+        'openrouter/google/gemini-2.5-pro-preview',
+        'openrouter/google/gemini-2.5-flash-preview',
+        { name: 'Claude Web', value: 'claude', run: false },
+        { name: 'Gemini AI Studio', value: 'gemini', run: false },
+        { name: 'Grok Web', value: 'grok', run: true },
+      ].map((m) =>
+        typeof m === 'string'
+          ? {
+              name: m,
+              value: m,
+              run: true,
+            }
+          : m
+      );
+
+      const newModel = await search({
+        message: 'Select or type to filter LLM model:',
+        theme: {
+          helpMode: 'always',
+        },
+        source: (input) => {
+          return availableModels.filter(({ name }) =>
+            input ? name.toLowerCase().includes(input.toLowerCase()) : true
+          );
+        },
+      });
+
+      const modelSetting = availableModels.find((m) => m.value === newModel);
+      if (modelSetting) {
+        result.run = modelSetting.run;
+      }
+
+      result.model = newModel;
+      log(`LLM model for editing set to: ${result.model}`);
+    } else if (choice === 'rmfilter') {
+      const newArgsStr = await input({
+        message: 'Enter additional rmfilter arguments (space-separated):',
+        default: result.rmfilterOptions.join(' '),
+      });
+      result.rmfilterOptions = parseCliArgsFromString(newArgsStr.trim());
+      log(`Additional rmfilter args set to: "${result.rmfilterOptions.join(' ')}"`);
+    }
+  }
+
+  return result;
 }
