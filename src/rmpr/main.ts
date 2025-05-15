@@ -289,8 +289,18 @@ export async function handleRmprCommand(
   if (options.commit) {
     const prUrl = `https://github.com/${parsedIdentifier.owner}/${parsedIdentifier.repo}/pull/${parsedIdentifier.number}`;
     log('Committing changes...');
+
+    let firstLine: string;
+    if (selectedComments.length === 1) {
+      const firstCommentBody =
+        selectedComments[0].cleanedComment || selectedComments[0].comment.body;
+      const bodyFirstLine = firstCommentBody.split('\n')[0];
+      firstLine = `Address PR comment: ${bodyFirstLine.slice(0, 100)}...`;
+    } else {
+      firstLine = `Address ${selectedComments.length} PR comments for ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`;
+    }
     const commitMessageParts: string[] = [
-      `Address PR comments for ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`,
+      firstLine,
       '',
       'Changes address the following review comments:',
       selectedComments
@@ -298,7 +308,7 @@ export async function handleRmprCommand(
           const { thread, comment, cleanedComment } = c;
           const body = cleanedComment || comment.body;
           const url = `${prUrl}#discussion_r${comment.databaseId}`;
-          return `## [${thread.path}:${thread.line}](${url})\n${body}`;
+          return `## ${thread.path}:${thread.line} -- (${url})\n${body}`;
         })
         .join('\n\n'),
     ];
