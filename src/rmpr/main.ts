@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
+import expand from '@inquirer/expand';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
@@ -10,8 +11,8 @@ import {
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { waitForEnter } from '../common/terminal.js';
 import { debugLog, error, log } from '../logging.js';
-import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import { commitAll, getGitRoot, secureWrite } from '../rmfilter/utils.js';
+import { fullRmfilterRun, RmfilterConfig } from '../rmfilter/rmfilter.js';
+import { commitAll, getGitRoot, secureWrite, parseCliArgsFromString } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {
   createInlineCommentsPrompt,
@@ -197,6 +198,48 @@ export async function handleRmprCommand(
     instructions = createSeparateContextPrompt(formattedComments);
   }
 
+  // Initialize state variables for interactive settings adjustment
+  let modelForLlmEdit = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
+  let additionalUserRmFilterArgs: string[] = [];
+
+  if (!options.yes) {
+    log('\nSettings can be adjusted before generating the LLM prompt.');
+    if (
+      options.mode === 'inline-comments' &&
+      filesProcessedWithAiComments.size > 0 &&
+      !options.dryRun
+    ) {
+      log(
+        'AI comments have been written to the relevant files. You can examine and edit them directly on disk before continuing.'
+      );
+    } else if (
+      options.mode === 'inline-comments' &&
+      filesProcessedWithAiComments.size > 0 &&
+      options.dryRun
+    ) {
+      log('AI comments *would have been* written to files for review (this is a dry run).');
+    }
+
+    let userWantsToContinue = false;
+    while (!userWantsToContinue) {
+      const choice = await expand({
+        message: 'What would you like to do?',
+        choices: [
+          { key: 'c', name: 'Continue to generate LLM prompt', value: 'continue' },
+          { key: 'm', name: 'Change LLM model for editing', value: 'model' },
+          { key: 'r', name: 'Edit rmfilter options for context', value: 'rmfilter' },
+        ],
+      });
+
+      if (choice === 'continue') {
+        userWantsToContinue = true;
+      } else if (choice === 'model') {
+        log('Model selection chosen (to be implemented)');
+      } else if (choice === 'rmfilter') {
+        log('RMFILTER editing chosen (to be implemented)');
+      }
+    }
+  }
   // Construct rmfilter arguments, incorporating --rmpr options
   let rmFilterArgs: string[] = [
     '--with-diff',
