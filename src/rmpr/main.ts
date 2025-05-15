@@ -173,11 +173,6 @@ export async function handleRmprCommand(
           process.exit(1);
         }
       }
-
-      if (!options.yes) {
-        log('Examine and edit the comments if you would like, then press Enter to continue');
-        await waitForEnter();
-      }
     } else if (filesProcessedWithAiComments.size > 0 && options.dryRun) {
       log('\n--- DRY RUN INFO ---');
       log(
@@ -187,8 +182,6 @@ export async function handleRmprCommand(
         log(`  - ${filePath}`);
       }
       log('These files have NOT been modified on disk due to --dry-run.');
-      log('The prompt will be generated using the in-memory versions with AI comments.');
-      debugLog('Skipping file writing and user prompt for AI comment review due to --dry-run.');
     }
     instructions = createInlineCommentsPrompt(filesProcessedWithAiComments.keys().toArray());
   } else {
@@ -204,20 +197,10 @@ export async function handleRmprCommand(
 
   if (!options.yes) {
     log('\nSettings can be adjusted before generating the LLM prompt.');
-    if (
-      options.mode === 'inline-comments' &&
-      filesProcessedWithAiComments.size > 0 &&
-      !options.dryRun
-    ) {
+    if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
       log(
         'AI comments have been written to the relevant files. You can examine and edit them directly on disk before continuing.'
       );
-    } else if (
-      options.mode === 'inline-comments' &&
-      filesProcessedWithAiComments.size > 0 &&
-      options.dryRun
-    ) {
-      log('AI comments *would have been* written to files for review (this is a dry run).');
     }
 
     const promptResults = await optionsPrompt({ modelForLlmEdit, run: options.run });
@@ -276,7 +259,7 @@ export async function handleRmprCommand(
     }
   } else {
     log(
-      `Paste the context into your model, and then press Enter to apply once you've copied the output.`
+      `Paste the context into your model, and then press Enter to apply once you've copied the output, or Ctrl+C to exit.`
     );
     await waitForEnter();
     llmOutputText = await clipboardy.read();
@@ -312,7 +295,6 @@ export async function handleRmprCommand(
         error(`Failed to clean AI comment markers from ${filePath}: ${e.message}`);
       }
     }
-    log('AI comment markers cleaned up.');
   }
 
   log('Successfully addressed selected PR comments.');
