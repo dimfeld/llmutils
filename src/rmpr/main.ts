@@ -1,8 +1,6 @@
 import * as path from 'node:path';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
-import search from '@inquirer/search';
-import expand from '@inquirer/expand';
-import input from '@inquirer/input';
+import { search, expand, input } from '@inquirer/prompts';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
@@ -13,7 +11,7 @@ import {
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { waitForEnter } from '../common/terminal.js';
 import { debugLog, error, log } from '../logging.js';
-import { fullRmfilterRun, RmfilterConfig } from '../rmfilter/rmfilter.js';
+import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
 import { commitAll, getGitRoot, secureWrite, parseCliArgsFromString } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {
