@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
 import search from '@inquirer/search';
 import expand from '@inquirer/expand';
+import input from '@inquirer/input';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
@@ -263,7 +264,12 @@ export async function handleRmprCommand(
         modelForLlmEdit = newModel;
         log(`LLM model for editing set to: ${modelForLlmEdit}`);
       } else if (choice === 'rmfilter') {
-        log('RMFILTER editing chosen (to be implemented)');
+        const newArgsStr = await input({
+          message: 'Enter additional rmfilter arguments (space-separated):',
+          default: additionalUserRmFilterArgs.join(' '),
+        });
+        additionalUserRmFilterArgs = parseCliArgsFromString(newArgsStr.trim());
+        log(`Additional rmfilter args set to: "${additionalUserRmFilterArgs.join(' ')}"`);
       }
     }
   }
@@ -283,6 +289,10 @@ export async function handleRmprCommand(
     const rmprOptions = fileInfo.options;
     rmFilterArgs.push('--', filePath);
     rmFilterArgs.push(...argsFromRmprOptions(pullRequest, rmprOptions));
+  }
+
+  if (additionalUserRmFilterArgs.length > 0) {
+    rmFilterArgs.push(...additionalUserRmFilterArgs);
   }
 
   if (!options.run) {

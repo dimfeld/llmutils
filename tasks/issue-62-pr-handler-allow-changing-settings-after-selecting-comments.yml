@@ -167,7 +167,7 @@ tasks:
               -   The `default` value should be the current `additionalUserRmFilterArgs` joined by spaces, so the user can easily edit them.
               -   Parse the returned string into an array of arguments using `parseCliArgsFromString(newArgsStr.trim())`. Store this in `additionalUserRmFilterArgs`.
               -   Log the change, e.g., `log(`Additional rmfilter args set to: "${additionalUserRmFilterArgs.join(' ')}"`);`.
-        done: false
+        done: true
   - title: 4. Integrate Changed Settings into Execution Flow
     description: Ensure that the `modelForLlmEdit` and `additionalUserRmFilterArgs`
       (potentially modified by the user) are correctly used when constructing
