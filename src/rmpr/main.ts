@@ -354,7 +354,9 @@ async function optionsPrompt(initialOptions: {
   let userWantsToContinue = false;
   while (!userWantsToContinue) {
     const choice = await expand({
-      message: 'What would you like to do?',
+      message: 'What would you like to do? (press Enter to continue)',
+      default: 'c',
+      expanded: true,
       choices: [
         { key: 'c', name: 'Continue to generate LLM prompt', value: 'continue' },
         { key: 'm', name: 'Change LLM model for editing', value: 'model' },
