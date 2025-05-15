@@ -82,7 +82,7 @@ export async function applyEditsInternal({
   dryRun: boolean;
   suppressLogging?: boolean;
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
-}): Promise<{ successes: EditResult[]; failures: FailureResult[] } | undefined> {
+}): Promise<{ successes: SuccessResult[]; failures: FailureResult[] } | undefined> {
   const xmlMode = mode === 'xml' || (!mode && content.includes('<code_changes>'));
   const diffMode = mode === 'diff' || (!mode && content.includes('<<<<<<< SEARCH'));
   const udiffMode =
@@ -129,7 +129,7 @@ async function handleAutoApplyNotUnique(
   results: EditResult[] | undefined,
   writeRoot: string,
   dryRun: boolean
-): Promise<{ remainingFailures: FailureResult[]; autoApplied: EditResult[] }> {
+): Promise<{ remainingFailures: FailureResult[]; autoApplied: SuccessResult[] }> {
   if (!results) {
     return { remainingFailures: [], autoApplied: [] };
   }
@@ -146,7 +146,7 @@ async function handleAutoApplyNotUnique(
     groupedByEdit.set(key, group);
   }
 
-  const autoApplied: EditResult[] = [];
+  const autoApplied: SuccessResult[] = [];
   for (const group of groupedByEdit.values()) {
     if (group.length === 0) continue;
 
@@ -219,12 +219,14 @@ async function handleAutoApplyNotUnique(
             );
           }
           // Mark all failures in this group as auto-applied (represented as success)
-          for (const failure of group) {
+          for (let i = 0; i < totalLocations; i++) {
+            const failure = group[i];
             autoApplied.push({
               type: 'success',
               filePath: failure.filePath,
               originalText: failure.originalText,
               updatedText: failure.updatedText,
+              startLine: group[0].matchLocations[i].startLine,
             });
           }
         } else if (appliedCount > 0) {
@@ -412,15 +414,37 @@ export async function applyLlmEdits({
           remainingFailures = finalFailures;
           appliedSuccesses.push(...retryResults.successes);
 
-          // Check for original successes that weren't applied in retry
-          const retrySuccessKeys = new Set(
-            retryResults.successes.map((s) => `${s.filePath}:${s.originalText}:${s.updatedText}`)
-          );
-          const missingSuccesses = successes.filter(
-            (s) =>
-              !successOnlyFilePaths.has(s.filePath) &&
-              !retrySuccessKeys.has(`${s.filePath}:${s.originalText}:${s.updatedText}`)
-          );
+          // Check for original successes that weren't applied in retry, considering overlapping line ranges
+          const missingSuccesses: EditResult[] = [];
+          for (const success of successes) {
+            if (successOnlyFilePaths.has(success.filePath)) continue;
+
+            let isMissing = true;
+            for (const retrySuccess of retryResults.successes) {
+              if (retrySuccess.filePath !== success.filePath) continue;
+
+              // Check if line ranges overlap
+              const successLines = success.originalText.split('\n').length;
+              const retryLines = retrySuccess.originalText.split('\n').length;
+              const successStartLine = success.startLine ?? 0;
+              const retryStartLine = retrySuccess.startLine ?? 0;
+              const successEndLine = successStartLine + successLines;
+              const retryEndLine = retryStartLine + retryLines;
+
+              // Consider edits overlapping if they share any line
+              if (
+                (successStartLine <= retryEndLine && successEndLine >= retryStartLine) ||
+                retrySuccess.originalText === success.originalText
+              ) {
+                isMissing = false;
+                break;
+              }
+            }
+
+            if (isMissing) {
+              missingSuccesses.push(success);
+            }
+          }
 
           if (missingSuccesses.length > 0 && !dryRun) {
             log(
@@ -441,9 +465,11 @@ export async function applyLlmEdits({
     if (interactive) {
       log(
         chalk.yellow(
-          `Found ${remainingSuccesses.length} proper edits and ${remainingFailures.length} errors in the proposed edits.`
+          `Found ${appliedSuccesses.length} proper edits and ${remainingFailures.length} errors in the proposed edits.`
         )
       );
+
+      remainingSuccesses = remainingSuccesses.filter((s) => !appliedSuccessKeys.has(editKey(s)));
 
       const applySuccesses =
         remainingSuccesses.length > 0

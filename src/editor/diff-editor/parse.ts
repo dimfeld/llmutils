@@ -12,6 +12,11 @@ interface Edit {
   updated: string;
 }
 
+interface ContentAndLine {
+  content: string;
+  editedStartLine: number;
+}
+
 const fence = '```';
 
 export async function processSearchReplace({
@@ -66,11 +71,12 @@ async function applyEdits(
     if (newContent !== null) {
       if (!suppressLogging) log(`Applying diff to ${filePath}`);
       if (!dryRun) {
-        await secureWrite(rootDir, filePath, newContent);
+        await secureWrite(rootDir, filePath, newContent.content);
       }
       const success: SuccessResult = {
         type: 'success',
         filePath,
+        startLine: newContent.editedStartLine,
         originalText: original,
         updatedText: updated,
       };
@@ -99,7 +105,7 @@ async function doReplace(
   content: string | null,
   beforeText: string,
   afterText: string
-): Promise<string | null> {
+): Promise<ContentAndLine | null> {
   beforeText = stripQuotedWrapping(beforeText, relativePath);
   afterText = stripQuotedWrapping(afterText, relativePath);
 
@@ -107,7 +113,7 @@ async function doReplace(
   const fileExists = content !== null;
 
   if (!fileExists && !beforeText.trim()) {
-    return afterText;
+    return { content: afterText, editedStartLine: 0 };
   }
 
   if (content === null) {
@@ -115,7 +121,8 @@ async function doReplace(
   }
 
   if (!beforeText.trim()) {
-    return content + afterText;
+    let beforeTextLines = content.split('\n').length;
+    return { content: content + afterText, editedStartLine: beforeTextLines };
   }
 
   return replaceMostSimilarChunk(content, beforeText, afterText);
@@ -142,7 +149,11 @@ function stripQuotedWrapping(res: string, fname?: string): string {
   return result;
 }
 
-function replaceMostSimilarChunk(whole: string, part: string, replace: string): string | null {
+function replaceMostSimilarChunk(
+  whole: string,
+  part: string,
+  replace: string
+): ContentAndLine | null {
   const { content: wholePrep, lines: wholeLines } = prep(whole);
   const { content: partPrep, lines: partLines } = prep(part);
   const { content: replacePrep, lines: replaceLines } = prep(replace);
@@ -181,7 +192,7 @@ function perfectOrWhitespace(
   wholeLines: string[],
   partLines: string[],
   replaceLines: string[]
-): string | null {
+): ContentAndLine | null {
   let res = perfectReplace(wholeLines, partLines, replaceLines);
   if (res) return res;
 
@@ -198,21 +209,28 @@ function perfectReplace(
   wholeLines: string[],
   partLines: string[],
   replaceLines: string[]
-): string | null {
+): ContentAndLine | null {
   const partLen = partLines.length;
 
   for (let i = 0; i <= wholeLines.length - partLen; i++) {
     const wholeSlice = wholeLines.slice(i, i + partLen);
     if (JSON.stringify(wholeSlice) === JSON.stringify(partLines)) {
-      return [...wholeLines.slice(0, i), ...replaceLines, ...wholeLines.slice(i + partLen)].join(
-        ''
-      );
+      const content = [
+        ...wholeLines.slice(0, i),
+        ...replaceLines,
+        ...wholeLines.slice(i + partLen),
+      ].join('');
+
+      return {
+        content,
+        editedStartLine: i,
+      };
     }
   }
   return null;
 }
 
-function tryDotdotdots(whole: string, part: string, replace: string): string | null {
+function tryDotdotdots(whole: string, part: string, replace: string): ContentAndLine | null {
   /**
    * See if the edit block has ... lines.
    * If not, return null
@@ -252,6 +270,7 @@ function tryDotdotdots(whole: string, part: string, replace: string): string | n
     (part, i) => [part, replaceContentPieces[i]] as [string, string]
   );
 
+  let firstPairIndex: number | null = null;
   for (const [partPiece, replacePiece] of pairs) {
     if (!partPiece && !replacePiece) {
       continue;
@@ -261,6 +280,11 @@ function tryDotdotdots(whole: string, part: string, replace: string): string | n
       if (!result.endsWith('\n')) {
         result += '\n';
       }
+
+      if (firstPairIndex === null) {
+        firstPairIndex = result.length;
+      }
+
       result += replacePiece;
       continue;
     }
@@ -273,17 +297,25 @@ function tryDotdotdots(whole: string, part: string, replace: string): string | n
     }
 
     // Replace the first occurrence
+    if (firstPairIndex === null) {
+      firstPairIndex = result.indexOf(partPiece);
+    }
     result = result.replace(partPiece, replacePiece);
   }
 
-  return result;
+  let editedStartLine = 0;
+  if (firstPairIndex !== null) {
+    editedStartLine = whole.slice(0, firstPairIndex).split('\n').length;
+  }
+
+  return { content: result, editedStartLine };
 }
 
 function replacePartWithMissingLeadingWhitespace(
   wholeLines: string[],
   partLines: string[],
   replaceLines: string[]
-): string | null {
+): ContentAndLine | null {
   // GPT often messes up leading whitespace.
   // It usually does it uniformly across the ORIG and UPD blocks.
   // Either omitting all leading whitespace, or including only some of it.
@@ -322,7 +354,7 @@ function replacePartWithMissingLeadingWhitespace(
       ...adjustedReplaceLines,
       ...wholeLines.slice(i + numPartLines),
     ].join('');
-    return result;
+    return { content: result, editedStartLine: i };
   }
 
   return null;
@@ -340,7 +372,7 @@ function replacePartWithExtraTrailingNewlines(
   wholeLines: string[],
   partLines: string[],
   replaceLines: string[]
-): string | null {
+): ContentAndLine | null {
   let trimmedWhole = removeTrailingNewlines(wholeLines);
   if (!trimmedWhole) {
     return null;

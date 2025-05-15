@@ -15,6 +15,15 @@ interface EditHunk {
   hunk: string[];
 }
 
+interface ContentAndLine {
+  content: string;
+  editedStartLine: number;
+}
+
+function isContentAndLine(x: unknown): x is ContentAndLine {
+  return Boolean(x && typeof x === 'object' && 'content' in x && 'editedStartLine' in x);
+}
+
 /**
  * Splits a string into lines, preserving the newline characters at the end of each line.
  * Mimics Python's `str.splitlines(keepends=True)`.
@@ -135,7 +144,10 @@ function normalizeHunk(hunk: string[]): string[] {
  * Throws SearchTextNotUnique if the "before" text appears multiple times.
  * Returns MatchLocation[] if the "before" text appears multiple times.
  */
-function directlyApplyHunk(content: string, hunk: string[]): string | null | MatchLocation[] {
+function directlyApplyHunk(
+  content: string,
+  hunk: string[]
+): ContentAndLine | MatchLocation[] | null {
   let [beforeText, afterText] = hunkToBeforeAfter(hunk);
   if (!beforeText.trim()) {
     // If 'before' is just whitespace, it's likely an insertion.
@@ -164,6 +176,12 @@ function directlyApplyHunk(content: string, hunk: string[]): string | null | Mat
 
   // Try perfect match first
   const result = searchAndReplace(content, beforeText, afterText);
+
+  if (isContentAndLine(result)) {
+    const firstChange = hunk.findIndex((line) => line.startsWith('-') || line.startsWith('+'));
+    result.editedStartLine += firstChange;
+  }
+
   // Result can be string (success), null (no match), or MatchLocation[] (not unique)
   return result;
 }
@@ -185,7 +203,7 @@ function searchAndReplace(
   whole: string,
   part: string,
   replace: string
-): string | null | MatchLocation[] {
+): ContentAndLine | MatchLocation[] | null {
   const regex = new RegExp(escapeRegExp(part), 'g');
   const matches = [...whole.matchAll(regex)];
   if (matches.length === 0) {
@@ -197,7 +215,14 @@ function searchAndReplace(
   }
   // Exactly one match found
   const index = matches[0].index;
-  return whole.substring(0, index) + replace + whole.substring(index + part.length);
+  const start = whole.substring(0, index);
+  // This is the start of the `part`, but the caller needs to update this to account
+  // for where it knows the changes actually start.
+  let line = start.split('\n').length - 1;
+  return {
+    content: start + replace + whole.substring(index + part.length),
+    editedStartLine: line,
+  };
 }
 
 /**
@@ -241,7 +266,7 @@ export function findAllMatches(whole: string, part: string): MatchLocation[] {
  * Applies a hunk to the content, trying direct application first,
  * then falling back to applying partial hunks if necessary.
  */
-function applyHunk(content: string, hunk: string[]): string | null | MatchLocation[] {
+function applyHunk(content: string, hunk: string[]): ContentAndLine | MatchLocation[] | null {
   // 1. Try direct application
   const directResult = directlyApplyHunk(content, hunk);
   if (directResult !== null) {
@@ -284,6 +309,7 @@ function applyHunk(content: string, hunk: string[]): string | null | MatchLocati
   }
 
   let currentContent = content;
+  let firstEditedLine: number | null = null;
   let allApplied = true;
 
   // Iterate through change sections, applying them with surrounding context
@@ -301,8 +327,9 @@ function applyHunk(content: string, hunk: string[]): string | null | MatchLocati
         followingContext
       );
 
-      if (typeof partialResult === 'string') {
-        currentContent = partialResult;
+      if (isContentAndLine(partialResult)) {
+        currentContent = partialResult.content;
+        firstEditedLine ??= partialResult.editedStartLine;
       } else {
         // Failure for this part (null for no match, MatchLocation[] for not unique)
         allApplied = false;
@@ -316,7 +343,7 @@ function applyHunk(content: string, hunk: string[]): string | null | MatchLocati
     }
   }
 
-  return allApplied ? currentContent : null;
+  return allApplied ? { content: currentContent, editedStartLine: firstEditedLine ?? 0 } : null;
 }
 
 function changeLineToContext(line: string): string {
@@ -331,7 +358,7 @@ function tryConvertedContextHunk(
   followingContext: string[],
   convertPreceding: number,
   convertFollowing: number
-): string | MatchLocation[] | null {
+): ContentAndLine | MatchLocation[] | null {
   if (convertPreceding + convertFollowing >= changes.length) {
     return null;
   }
@@ -358,7 +385,7 @@ function applyPartialHunk(
   precedingContext: string[],
   changes: string[],
   followingContext: string[]
-): string | null | MatchLocation[] {
+): ContentAndLine | MatchLocation[] | null {
   const lenPrec = precedingContext.length;
   const lenFoll = followingContext.length;
   const totalContext = lenPrec + lenFoll;
@@ -375,6 +402,8 @@ function applyPartialHunk(
     [2, 2],
   ];
 
+  let nonUnique: MatchLocation[] | null = null;
+
   for (const [convertPreceding, convertFollowing] of convertTable) {
     const result = tryConvertedContextHunk(
       content,
@@ -384,11 +413,12 @@ function applyPartialHunk(
       convertPreceding,
       convertFollowing
     );
-    if (typeof result === 'string') {
+
+    if (isContentAndLine(result)) {
       return result;
     } else if (Array.isArray(result)) {
       // Not unique, but maybe less context will work? Continue trying.
-      return result;
+      nonUnique ??= result;
     }
   }
 
@@ -414,24 +444,29 @@ function applyPartialHunk(
 
       // Try applying this specific combination of context + changes
       const result = directlyApplyHunk(content, currentHunk);
-      if (typeof result === 'string') {
+      if (isContentAndLine(result)) {
         return result;
       } else if (Array.isArray(result)) {
         // Not unique with this context. Propagate the failure.
         // Trying less context is unlikely to resolve uniqueness.
-        return result;
+        // If nonUnique was set ealier then use that.
+        return nonUnique ?? result;
       }
     }
   }
 
-  return null;
+  // Return nonUnique if it was set, otherwise this is null
+  return nonUnique;
 }
 
 /**
  * Applies the edits to the specified file content.
  * Handles creating new files.
  */
-export function doReplace(content: string | null, hunk: string[]): string | null | MatchLocation[] {
+export function doReplace(
+  content: string | null,
+  hunk: string[]
+): ContentAndLine | MatchLocation[] | null {
   const [beforeText, afterText] = hunkToBeforeAfter(hunk);
 
   // Handle creating a new file
@@ -439,7 +474,7 @@ export function doReplace(content: string | null, hunk: string[]): string | null
   if (!fileExists && !beforeText.trim()) {
     // If file doesn't exist and the 'before' part is empty/whitespace,
     // treat it as creating a new file with the 'after' content.
-    return afterText;
+    return { content: afterText, editedStartLine: 0 };
   }
 
   if (content === null) {
@@ -448,7 +483,8 @@ export function doReplace(content: string | null, hunk: string[]): string | null
   }
   if (!beforeText.trim()) {
     // Append to existing file content
-    return content + afterText;
+    const numLines = content.split('\n').length;
+    return { content: content + afterText, editedStartLine: numLines };
   }
 
   // Apply the hunk using the main application logic
@@ -737,7 +773,7 @@ async function applyEdits(
 
     const result = doReplace(currentContent, hunk);
 
-    if (typeof result === 'string') {
+    if (isContentAndLine(result)) {
       // SUCCESS!
       const [originalText, updatedText] = hunkToBeforeAfter(hunk);
       results.push({
@@ -745,10 +781,11 @@ async function applyEdits(
         filePath,
         originalText,
         updatedText,
+        startLine: result.editedStartLine,
       });
       if (!suppressLogging) log(`Applying diff to ${filePath}`);
       if (!dryRun) {
-        await secureWrite(rootDir, filePath, result);
+        await secureWrite(rootDir, filePath, result.content);
       }
       hunksAppliedCount++;
     } else if (result === null) {

@@ -203,7 +203,7 @@ export interface PendingTaskResult {
       hunk.split('\n').map((l) => l + '\n')
     );
 
-    expect(result).toEqual(`interface PrepareNextStepOptions {
+    expect(result?.content).toEqual(`interface PrepareNextStepOptions {
   rmfilter?: boolean;
   previous?: boolean;
   withImports?: boolean;
@@ -223,6 +223,7 @@ export interface PendingTaskResult {
   task: PlanSchema['tasks'][number];
   step: PlanSchema['tasks'][number]['steps'][number];
 }`);
+    expect(result?.editedStartLine).toBe(9);
   });
 
   test('multiple sections', () => {
@@ -268,7 +269,7 @@ export interface PendingTaskResult {
       hunk.split('\n').map((l) => l + '\n')
     );
 
-    expect(result).toEqual(
+    expect(result?.content).toEqual(
       `  const planData = plan.data;
   const result = findPendingTask(planData);
   if (!result) {
@@ -289,14 +290,14 @@ export interface PendingTaskResult {
       })
 `
     );
+    expect(result?.editedStartLine).toBe(7);
   });
 
   test('addition to end of file', () => {
     const hunk = `export type ItemBatch = InferSelectModel<typeof itemBatches>;
  export type ItemBatchItem = InferSelectModel<typeof itemBatchItems>;
  
-+// Represents a line item in the variance report, detailing a specific item's discrepancy.
-+export interface VarianceReportDisplayItem {
++export interface DisplayItem {
 +  // Identifying fields for the item
 +  snapshotLocationValue: string | null; // Raw location value from the snapshot file
 +  mappedLocationId?: string | null;    // Mapped RealWorldLocation.id (UUID) if available
@@ -311,17 +312,17 @@ export type ItemBatchItem = InferSelectModel<typeof itemBatchItems>;
       hunk.split('\n').map((l) => l + '\n')
     );
 
-    expect(result).toEqual(
+    expect(result?.content).toEqual(
       `export type ItemBatch = InferSelectModel<typeof itemBatches>;
 export type ItemBatchItem = InferSelectModel<typeof itemBatchItems>;
 
-// Represents a line item in the variance report, detailing a specific item's discrepancy.
-export interface VarianceReportDisplayItem {
+export interface DisplayItem {
   // Identifying fields for the item
   snapshotLocationValue: string | null; // Raw location value from the snapshot file
   mappedLocationId?: string | null;    // Mapped RealWorldLocation.id (UUID) if available
   locationName?: string | null;        // Name of the location (from DB or snapshot)
 `
     );
+    expect(result?.editedStartLine).toBe(4);
   });
 });

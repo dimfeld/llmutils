@@ -34,6 +34,7 @@ export interface BaseEditResult {
  */
 export interface SuccessResult extends BaseEditResult {
   type: 'success';
+  startLine: number;
 }
 
 /**
