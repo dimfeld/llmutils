@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
+import { search, expand, input } from '@inquirer/prompts';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
@@ -11,7 +12,7 @@ import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.j
 import { waitForEnter } from '../common/terminal.js';
 import { debugLog, error, log } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import { commitAll, getGitRoot, secureWrite } from '../rmfilter/utils.js';
+import { commitAll, getGitRoot, secureWrite, parseCliArgsFromString } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {
   createInlineCommentsPrompt,
@@ -44,8 +45,6 @@ export async function handleRmprCommand(
   globalCliOptions: { debug?: boolean },
   config: RmplanConfig
 ) {
-  const effectiveModel = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
-
   const parsedIdentifier = await parsePrOrIssueNumber(prIdentifierArg);
 
   if (!process.env.GITHUB_TOKEN) {
@@ -92,15 +91,17 @@ export async function handleRmprCommand(
   log(`Head branch: ${headRefName}`);
   log(`Changed files in PR: ${changedFiles.map((f) => f.path).join(', ')}`);
 
-  if (pullRequest.reviewThreads.nodes.every((t) => t.isResolved)) {
+  const unresolvedReviewThreads = pullRequest.reviewThreads.nodes.filter((t) => !t.isResolved);
+
+  if (unresolvedReviewThreads.length === 0) {
     log('No unresolved review comments found for this PR. Exiting.');
     process.exit(0);
   }
 
-  log(`Found ${pullRequest.reviewThreads.nodes.length} unresolved threads.`);
+  log(`Found ${unresolvedReviewThreads.length} unresolved threads.`);
 
   const selectedComments = await selectReviewComments(
-    pullRequest.reviewThreads.nodes.filter((t) => !t.isResolved),
+    unresolvedReviewThreads,
     pullRequest.number,
     pullRequest.title
   );
@@ -172,11 +173,6 @@ export async function handleRmprCommand(
           process.exit(1);
         }
       }
-
-      if (!options.yes) {
-        log('Examine and edit the comments if you would like, then press Enter to continue');
-        await waitForEnter();
-      }
     } else if (filesProcessedWithAiComments.size > 0 && options.dryRun) {
       log('\n--- DRY RUN INFO ---');
       log(
@@ -186,8 +182,6 @@ export async function handleRmprCommand(
         log(`  - ${filePath}`);
       }
       log('These files have NOT been modified on disk due to --dry-run.');
-      log('The prompt will be generated using the in-memory versions with AI comments.');
-      debugLog('Skipping file writing and user prompt for AI comment review due to --dry-run.');
     }
     instructions = createInlineCommentsPrompt(filesProcessedWithAiComments.keys().toArray());
   } else {
@@ -195,6 +189,24 @@ export async function handleRmprCommand(
     log('Preparing context in Separate Context mode...');
     const formattedComments = formatReviewCommentsForSeparateContext(selectedComments);
     instructions = createSeparateContextPrompt(formattedComments);
+  }
+
+  // Initialize state variables for interactive settings adjustment
+  let modelForLlmEdit = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
+  let additionalUserRmFilterArgs: string[] = [];
+
+  if (!options.yes) {
+    log('\nSettings can be adjusted before generating the LLM prompt.');
+    if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
+      log(
+        'AI comments have been written to the relevant files. You can examine and edit them directly on disk before continuing.'
+      );
+    }
+
+    const promptResults = await optionsPrompt({ modelForLlmEdit, run: options.run });
+    modelForLlmEdit = promptResults.model;
+    options.run = promptResults.run;
+    additionalUserRmFilterArgs = promptResults.rmfilterOptions;
   }
 
   // Construct rmfilter arguments, incorporating --rmpr options
@@ -205,7 +217,7 @@ export async function handleRmprCommand(
     '--instructions',
     instructions,
     '--model',
-    effectiveModel,
+    modelForLlmEdit,
   ];
 
   // Add files and related options
@@ -214,6 +226,8 @@ export async function handleRmprCommand(
     rmFilterArgs.push('--', filePath);
     rmFilterArgs.push(...argsFromRmprOptions(pullRequest, rmprOptions));
   }
+
+  rmFilterArgs.push(...additionalUserRmFilterArgs);
 
   if (!options.run) {
     rmFilterArgs.push('--copy');
@@ -234,7 +248,7 @@ export async function handleRmprCommand(
     try {
       const { text } = await runStreamingPrompt({
         messages: [{ role: 'user', content: llmPrompt }],
-        model: effectiveModel,
+        model: modelForLlmEdit,
         temperature: 0,
       });
       llmOutputText = text;
@@ -245,7 +259,7 @@ export async function handleRmprCommand(
     }
   } else {
     log(
-      `Paste the context into your model, and then press Enter to apply once you've copied the output.`
+      `Paste the context into your model, and then press Enter to apply once you've copied the output, or Ctrl+C to exit.`
     );
     await waitForEnter();
     llmOutputText = await clipboardy.read();
@@ -258,7 +272,7 @@ export async function handleRmprCommand(
       baseDir: gitRoot,
       content: llmOutputText,
       originalPrompt: llmPrompt,
-      retryRequester: options.run ? createRetryRequester(effectiveModel) : undefined,
+      retryRequester: options.run ? createRetryRequester(modelForLlmEdit) : undefined,
       writeRoot: gitRoot,
     });
   } catch (e: any) {
@@ -281,7 +295,6 @@ export async function handleRmprCommand(
         error(`Failed to clean AI comment markers from ${filePath}: ${e.message}`);
       }
     }
-    log('AI comment markers cleaned up.');
   }
 
   log('Successfully addressed selected PR comments.');
@@ -320,4 +333,104 @@ export async function handleRmprCommand(
       error(`Commit failed with exit code ${exitCode}.`);
     }
   }
+}
+
+interface PromptOptions {
+  model: string;
+  rmfilterOptions: string[];
+  run: boolean;
+}
+
+async function optionsPrompt(initialOptions: {
+  modelForLlmEdit: string;
+  run: boolean;
+}): Promise<PromptOptions> {
+  let result: PromptOptions = {
+    model: initialOptions.modelForLlmEdit,
+    rmfilterOptions: [],
+    run: initialOptions.run,
+  };
+
+  let userWantsToContinue = false;
+  while (!userWantsToContinue) {
+    const choice = await expand({
+      message: 'What would you like to do? (press Enter to continue)',
+      default: 'c',
+      expanded: true,
+      choices: [
+        { key: 'c', name: 'Continue to generate LLM prompt', value: 'continue' },
+        { key: 'm', name: 'Change LLM model for editing', value: 'model' },
+        { key: 'r', name: 'Edit rmfilter options for context', value: 'rmfilter' },
+      ],
+    });
+
+    if (choice === 'continue') {
+      userWantsToContinue = true;
+    } else if (choice === 'model') {
+      const availableModels = [
+        'google/gemini-2.5-pro-preview-05-06',
+        'google/gemini-2.5-flash-preview-04-17',
+        'google/gemini-2.0-flash',
+        'openai/o4-mini',
+        'openai/gpt-4.1',
+        'openai/gpt-4.1-mini',
+        'openai/gpt-4.1-nano',
+        'anthropic/claude-3.5-sonnet-latest',
+        'anthropic/claude-3.5-haiku-latest',
+        'anthropic/claude-3.7-sonnet-latest',
+        'openrouter/anthropic/claude-3.5-sonnet',
+        'openrouter/anthropic/claude-3.7-sonnet',
+        'openrouter/anthropic/claude-3.5-haiku',
+        'openrouter/openai/gpt-4.1',
+        'openrouter/openai/gpt-4.1-mini',
+        'openrouter/openai/gpt-4.1-nano',
+        'openrouter/openai/o4-mini',
+        'openrouter/google/gemini-2.5-pro-preview',
+        'openrouter/google/gemini-2.5-flash-preview',
+        { name: 'Claude Web', value: 'claude', run: false },
+        { name: 'Gemini AI Studio', value: 'gemini', run: false },
+        { name: 'Grok Web', value: 'grok', run: false },
+      ].map((m) =>
+        typeof m === 'string'
+          ? {
+              name: m,
+              value: m,
+              run: true,
+            }
+          : m
+      );
+
+      const newModel = await search({
+        message: 'Select or type to filter LLM model:',
+        theme: {
+          helpMode: 'always',
+        },
+        source: (input) => {
+          return availableModels.filter(({ name }) =>
+            input ? name.toLowerCase().includes(input.toLowerCase()) : true
+          );
+        },
+      });
+      debugLog({ newModel });
+
+      const modelSetting = availableModels.find((m) => m.value === newModel);
+      if (modelSetting) {
+        result.run = modelSetting.run;
+      }
+
+      result.model = newModel;
+      log(`LLM model for editing set to: ${result.model}`);
+    } else if (choice === 'rmfilter') {
+      const newArgsStr = await input({
+        message: 'Enter additional rmfilter arguments (space-separated):',
+        default: result.rmfilterOptions.join(' '),
+      });
+      result.rmfilterOptions = parseCliArgsFromString(newArgsStr.trim());
+      log(`Additional rmfilter args set to: "${result.rmfilterOptions.join(' ')}"`);
+    }
+  }
+
+  debugLog(result);
+
+  return result;
 }

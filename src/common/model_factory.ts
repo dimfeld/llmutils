@@ -21,7 +21,8 @@ export function createModel(modelString: string): LanguageModel {
   }
 
   const provider = parts[0];
-  const modelName = parts.slice(1).join('/'); // Join all parts after provider to support slashes in model name
+  // Join all parts after provider to support slashes in model name
+  const modelName = parts.slice(1).join('/');
 
   if (!provider || !modelName) {
     throw new Error('Model string must be in the format "provider/model-name"');
