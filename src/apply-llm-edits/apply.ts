@@ -469,6 +469,12 @@ export async function applyLlmEdits({
         )
       );
 
+      debugLog({
+        appliedSuccesses,
+        remainingSuccesses,
+        remainingFailures,
+        appliedSuccessKeys,
+      });
       remainingSuccesses = remainingSuccesses.filter((s) => !appliedSuccessKeys.has(editKey(s)));
 
       const applySuccesses =
