@@ -477,7 +477,7 @@ export async function applyLlmEdits({
       });
       remainingSuccesses = remainingSuccesses.filter((s) => !appliedSuccessKeys.has(editKey(s)));
 
-      const applySuccesses =
+      let applySuccesses =
         remainingSuccesses.length > 0
           ? await confirm({
               message: `Would you like to apply the successful edits before resolving errors?`,
@@ -492,19 +492,32 @@ export async function applyLlmEdits({
             await applySuccessOnce(success);
           }
         }
+      }
 
-        // Proceed to interactive error resolution
-        await resolveFailuresInteractively(
-          remainingFailures.filter(
-            (f): f is NoMatchFailure | NotUniqueFailure =>
-              f.type === 'noMatch' || f.type === 'notUnique'
-          ),
-          writeRoot,
-          dryRun
-        );
-      } else {
-        log('Exiting without applying any edits.');
-        return;
+      // Proceed to interactive error resolution
+      await resolveFailuresInteractively(
+        remainingFailures.filter(
+          (f): f is NoMatchFailure | NotUniqueFailure =>
+            f.type === 'noMatch' || f.type === 'notUnique'
+        ),
+        writeRoot,
+        dryRun
+      );
+
+      applySuccesses =
+        remainingSuccesses.length > 0
+          ? await confirm({
+              message: `Would you like to apply the successful edits now?`,
+            })
+          : false;
+      if (applySuccesses) {
+        // Apply remaining successful edits
+        if (!dryRun && remainingSuccesses.length > 0) {
+          log('Applying successful edits...');
+          for (const success of remainingSuccesses) {
+            await applySuccessOnce(success);
+          }
+        }
       }
     } else {
       // Non-interactive mode

@@ -134,7 +134,7 @@ export function formatFailuresForLlm(failures: (NoMatchFailure | NotUniqueFailur
           .join('\n');
         description += `      Context:\n${context}\n`;
       });
-      description += `  The edit was ambiguous because the same original text appeared multiple times.\n`;
+      description += `  The edit was ambiguous because the same original text appeared in multiple edits. Please generate the edits again with additional surrounding context to help uniquely identify the location.\n`;
     }
 
     failureDescriptions.push(description);
