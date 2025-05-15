@@ -163,7 +163,7 @@ async function handleNoMatchFailure(
     }
     const currentLines = splitLinesWithEndings(currentContent);
 
-    // Search for the closest match lines in the current file content
+    // Search for the closest match lines in the current file content since it may have changed
     const [bestMatch] = findClosestMatches(currentContent, failure.closestMatch.lines, {
       maxMatches: 1,
     });
