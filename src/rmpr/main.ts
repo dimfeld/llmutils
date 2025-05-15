@@ -387,7 +387,7 @@ async function optionsPrompt(initialOptions: {
         'openrouter/google/gemini-2.5-flash-preview',
         { name: 'Claude Web', value: 'claude', run: false },
         { name: 'Gemini AI Studio', value: 'gemini', run: false },
-        { name: 'Grok Web', value: 'grok', run: true },
+        { name: 'Grok Web', value: 'grok', run: false },
       ].map((m) =>
         typeof m === 'string'
           ? {
@@ -409,6 +409,7 @@ async function optionsPrompt(initialOptions: {
           );
         },
       });
+      debugLog({ newModel });
 
       const modelSetting = availableModels.find((m) => m.value === newModel);
       if (modelSetting) {
@@ -426,6 +427,8 @@ async function optionsPrompt(initialOptions: {
       log(`Additional rmfilter args set to: "${result.rmfilterOptions.join(' ')}"`);
     }
   }
+
+  debugLog(result);
 
   return result;
 }
