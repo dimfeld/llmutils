@@ -49,7 +49,7 @@ export function argsFromRmprOptions(pr: PullRequest, options: RmprOptions): stri
       if (includePath.startsWith('pr:')) {
         includePath = includePath.slice(3);
         // Filter globs to PR files only
-        const matchedFiles = micromatch(prFiles, includePath);
+        const matchedFiles = micromatch(prFiles, [includePath, includePath + '/**/*']);
         args.push(...matchedFiles);
         debugLog(`Added PR-matched files for --rmpr include pr:${includePath}:`, matchedFiles);
       } else {
