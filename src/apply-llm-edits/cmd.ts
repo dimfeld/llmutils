@@ -79,15 +79,10 @@ let content: string | undefined;
 if (file) {
   content = await Bun.file(file).text();
 } else {
-  let content = useStdin ? await Bun.stdin.text() : await clipboard.read();
+  content = useStdin ? await Bun.stdin.text() : await clipboard.read();
   if (!content) {
     content = await clipboard.read();
   }
-}
-
-if (!content) {
-  error('No input provided');
-  process.exit(1);
 }
 
 // Determine the base directory for operations. Uses --cwd if provided, otherwise git root or current dir.
