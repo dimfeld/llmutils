@@ -143,7 +143,7 @@ tasks:
                   ```
               -   Update `modelForLlmEdit` with the string value returned by the `search` prompt.
               -   Log the change, e.g., `log(`LLM model for editing set to: ${modelForLlmEdit}`);`.
-        done: false
+        done: true
   - title: 3. Implement RMFILTER Options Editor
     description: Implement the 'Edit RMFILTER options' functionality using
       `@inquirer/input`. The provided string of arguments will update the

@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
+import search from '@inquirer/search';
 import expand from '@inquirer/expand';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
@@ -45,8 +46,6 @@ export async function handleRmprCommand(
   globalCliOptions: { debug?: boolean },
   config: RmplanConfig
 ) {
-  const effectiveModel = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
-
   const parsedIdentifier = await parsePrOrIssueNumber(prIdentifierArg);
 
   if (!process.env.GITHUB_TOKEN) {
@@ -235,6 +234,34 @@ export async function handleRmprCommand(
         userWantsToContinue = true;
       } else if (choice === 'model') {
         log('Model selection chosen (to be implemented)');
+        const defaultModels = [
+          'gpt-4-turbo',
+          'gpt-4',
+          'gpt-3.5-turbo',
+          'claude-3-opus',
+          'claude-3-sonnet',
+          'claude-2',
+          'google/gemini-1.5-pro-latest',
+          'google/gemini-1.5-flash-latest',
+          DEFAULT_RUN_MODEL,
+        ];
+        const availableModels = [...new Set([...defaultModels, modelForLlmEdit])].sort();
+
+        const newModel = await search({
+          message: 'Select or type to filter LLM model:',
+          source: async (input) => {
+            const filtered = availableModels.filter((modelName) =>
+              input ? modelName.toLowerCase().includes(input.toLowerCase()) : true
+            );
+            return filtered.map((modelName) => ({
+              name: modelName,
+              value: modelName,
+              description: modelName === modelForLlmEdit ? 'current' : undefined,
+            }));
+          },
+        });
+        modelForLlmEdit = newModel;
+        log(`LLM model for editing set to: ${modelForLlmEdit}`);
       } else if (choice === 'rmfilter') {
         log('RMFILTER editing chosen (to be implemented)');
       }
@@ -248,7 +275,7 @@ export async function handleRmprCommand(
     '--instructions',
     instructions,
     '--model',
-    effectiveModel,
+    modelForLlmEdit,
   ];
 
   // Add files and related options
@@ -277,7 +304,7 @@ export async function handleRmprCommand(
     try {
       const { text } = await runStreamingPrompt({
         messages: [{ role: 'user', content: llmPrompt }],
-        model: effectiveModel,
+        model: modelForLlmEdit,
         temperature: 0,
       });
       llmOutputText = text;
@@ -301,7 +328,7 @@ export async function handleRmprCommand(
       baseDir: gitRoot,
       content: llmOutputText,
       originalPrompt: llmPrompt,
-      retryRequester: options.run ? createRetryRequester(effectiveModel) : undefined,
+      retryRequester: options.run ? createRetryRequester(modelForLlmEdit) : undefined,
       writeRoot: gitRoot,
     });
   } catch (e: any) {
