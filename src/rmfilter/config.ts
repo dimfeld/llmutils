@@ -247,6 +247,7 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     new: { type: 'string' },
     compress: { type: 'boolean' },
     model: { type: 'string', short: 'm' },
+    run: { type: 'boolean' },
   } as const;
 
   // Define command-specific options
@@ -415,6 +416,7 @@ Global Options:
   --no-autodocs             Disable automatic loading of .mdc rule/doc files
   --instructions-editor     Open editor for instructions in $EDITOR
   -m, --model <grok|gemini> Set presets for certain models
+  --run                     Run the prompt right away
 
 Command Options (per command):
   -g, --grep <patterns>     Include files matching these patterns

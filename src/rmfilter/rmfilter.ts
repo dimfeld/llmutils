@@ -38,6 +38,7 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
+import { runPrompt } from '../common/run_and_apply.ts';
 
 async function handleInitialCliCommands(globalValues: GlobalValues) {
   // Handle creation of new YAML config
@@ -862,6 +863,14 @@ export async function fullRmfilterRun(options?: {
     if (!globalValues.quiet) {
       log('Output copied to clipboard');
     }
+  }
+
+  if (globalValues.run) {
+    await runPrompt({
+      model: globalValues.model,
+      file: outputFile,
+      interactive: process.stdout.isTTY,
+    });
   }
 
   return finalOutput;

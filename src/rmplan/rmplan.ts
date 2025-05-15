@@ -1,22 +1,25 @@
 #!/usr/bin/env bun
+import { input } from '@inquirer/prompts';
 import chalk from 'chalk';
 import clipboardy from 'clipboardy';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import { loadEnv } from '../common/env.js';
+import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
+import { waitForEnter } from '../common/terminal.js';
 import { error, log, warn } from '../logging.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { getGitRepository, getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
+import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
+import { handleRmprCommand } from '../rmpr/main.js';
 import { extractMarkdownToYaml, markStepDone, prepareNextStep } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
-import { findConfigPath, loadEffectiveConfig } from './configLoader.js';
+import { loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
-import { handleRmprCommand } from '../rmpr/main.js';
-import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
-import { input } from '@inquirer/prompts';
-import { waitForEnter } from '../common/terminal.js';
+
+await loadEnv();
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');

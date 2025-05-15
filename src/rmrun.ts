@@ -2,18 +2,29 @@
 import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
 import { applyLlmEdits } from './apply-llm-edits/apply.ts';
+import { createRetryRequester } from './apply-llm-edits/retry.ts';
+import { loadEnv } from './common/env.ts';
+import { askForModelId } from './common/model_factory.ts';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './common/run_and_apply.ts';
 import { log } from './logging.ts';
+import { setDebug } from './rmfilter/utils.ts';
+
+await loadEnv();
 
 const { values, positionals } = parseArgs({
   arg: Bun.argv,
   options: {
-    model: { type: 'string', short: 'm', default: DEFAULT_RUN_MODEL },
+    model: { type: 'string', short: 'm' },
     help: { type: 'boolean', short: 'h' },
+    debug: { type: 'boolean' },
   },
   strict: true,
   allowPositionals: true,
 });
+
+if (values.debug) {
+  setDebug(true);
+}
 
 if (values.help) {
   log(`Usage: rmrun [options] [filename]
@@ -22,6 +33,15 @@ Options:
   -h, --help      Print this help message
 `);
   process.exit(0);
+}
+
+if (!values.model) {
+  values.model =
+    (
+      await askForModelId({
+        onlyRunTrue: true,
+      })
+    )?.value ?? DEFAULT_RUN_MODEL;
 }
 
 let input: string;
@@ -56,4 +76,9 @@ await fileWriter.end();
 log('\nWrote to repomix-result.txt. Applying...');
 
 const content = result.text;
-await applyLlmEdits({ content, interactive: true });
+await applyLlmEdits({
+  content,
+  originalPrompt: input,
+  retryRequester: createRetryRequester(values.model),
+  interactive: true,
+});

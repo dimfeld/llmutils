@@ -7,6 +7,8 @@ import { xai } from '@ai-sdk/xai';
 import { vertex } from '@ai-sdk/google-vertex';
 import { openrouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
+import { search } from '@inquirer/prompts';
+import { debugLog } from '../logging.ts';
 
 /**
  * Creates a language model instance based on the provided model string in the format `provider/model-name`.
@@ -49,4 +51,71 @@ export function createModel(modelString: string): LanguageModel {
     default:
       throw new Error(`Unsupported provider: ${provider}`);
   }
+}
+
+export async function askForModelId(options?: {
+  defaultId?: string;
+  onlyRunTrue?: boolean;
+}): Promise<{ value: string; run: boolean } | null> {
+  let availableModels = [
+    'google/gemini-2.5-pro-preview-05-06',
+    'google/gemini-2.5-flash-preview-04-17',
+    'google/gemini-2.0-flash',
+    'openai/o4-mini',
+    'openai/gpt-4.1',
+    'openai/gpt-4.1-mini',
+    'openai/gpt-4.1-nano',
+    'anthropic/claude-3.5-sonnet-latest',
+    'anthropic/claude-3.5-haiku-latest',
+    'anthropic/claude-3.7-sonnet-latest',
+    'openrouter/anthropic/claude-3.5-sonnet',
+    'openrouter/anthropic/claude-3.7-sonnet',
+    'openrouter/anthropic/claude-3.5-haiku',
+    'openrouter/openai/gpt-4.1',
+    'openrouter/openai/gpt-4.1-mini',
+    'openrouter/openai/gpt-4.1-nano',
+    'openrouter/openai/o4-mini',
+    'openrouter/google/gemini-2.5-pro-preview',
+    'openrouter/google/gemini-2.5-flash-preview',
+    { name: 'Claude Web', value: 'claude', run: false },
+    { name: 'Gemini AI Studio', value: 'gemini', run: false },
+    { name: 'Grok Web', value: 'grok', run: false },
+  ].map((m) =>
+    typeof m === 'string'
+      ? {
+          name: m,
+          value: m,
+          run: true,
+        }
+      : m
+  );
+
+  if (options?.onlyRunTrue) {
+    availableModels = availableModels.filter((m) => m.run);
+  }
+
+  let newModel = await search({
+    message: 'Select a model:',
+    theme: {
+      helpMode: 'always',
+    },
+    source: (input) => {
+      return availableModels.filter(({ name }) =>
+        input ? name.toLowerCase().includes(input.toLowerCase()) : true
+      );
+    },
+  });
+  debugLog({ newModel });
+
+  if (options?.defaultId && !newModel) {
+    newModel = options?.defaultId;
+  }
+
+  const modelSetting = availableModels.find((m) => m.value === newModel) ?? {
+    name: newModel,
+    value: newModel,
+    run: true,
+  };
+
+  return modelSetting;
 }
