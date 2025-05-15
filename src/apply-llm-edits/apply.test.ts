@@ -8,6 +8,7 @@ import {
 import * as path from 'node:path';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { setDebug } from '../rmfilter/utils.ts';
 
 // Helper function to create a temporary directory structure for testing
 async function createTempTestDir() {
@@ -484,57 +485,6 @@ describe('applyLlmEdits', () => {
     expect(updatedContent2).toBe('Different content\nSecond line\n');
   });
 
-  test('prompts to apply successful edits in interactive mode', async () => {
-    const testFile1 = path.join(tempDir, 'test1.txt');
-    const testFile2 = path.join(tempDir, 'test2.txt');
-    await writeFile(testFile1, 'Original content\nSecond line\n');
-    await writeFile(testFile2, 'Different content\nSecond line\n');
-
-    const diffContent = `
---- test1.txt
-+++ test1.txt
-@@ -1,2 +1,2 @@
--Original content
-+Modified content
- Second line
---- test2.txt
-+++ test2.txt
-@@ -1,2 +1,2 @@
--Original content
-+Modified content
- Second line
-`;
-
-    let calledConfirm = false;
-    await mock.module('@inquirer/prompts', () => ({
-      confirm: () => {
-        calledConfirm = true;
-        return Promise.resolve(true);
-      },
-      select: () => {
-        return Promise.resolve(-1);
-      },
-    }));
-
-    const result = await applyLlmEdits({
-      content: diffContent,
-      writeRoot: tempDir,
-      dryRun: false,
-      mode: 'udiff',
-      interactive: true,
-    });
-
-    expect(result).toBeDefined();
-    expect(result?.successes.length).toBe(1);
-    expect(result?.failures.length).toBe(1);
-    expect(calledConfirm).toBe(true);
-
-    const updatedContent1 = await Bun.file(testFile1).text();
-    expect(updatedContent1).toBe('Modified content\nSecond line\n');
-    const updatedContent2 = await Bun.file(testFile2).text();
-    expect(updatedContent2).toBe('Different content\nSecond line\n');
-  });
-
   test('exits without applying edits in interactive mode if user declines', async () => {
     const testFile1 = path.join(tempDir, 'test1.txt');
     const testFile2 = path.join(tempDir, 'test2.txt');
@@ -637,6 +587,65 @@ describe('applyLlmEdits', () => {
 
     const updatedContent = await Bun.file(testFile).text();
     expect(updatedContent).toBe('Modified content\nSecond line\n');
+  });
+
+  test('applies success-only files first and retries with missing successes', async () => {
+    const testFile1 = path.join(tempDir, 'test1.txt');
+    const testFile2 = path.join(tempDir, 'test2.txt');
+    await writeFile(testFile1, 'Original content\nSecond line\n');
+    await writeFile(testFile2, 'Different content\nSecond line\n');
+
+    const diffContent = `
+--- test1.txt
++++ test1.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+--- test2.txt
++++ test2.txt
+@@ -1,2 +1,2 @@
+-Original content
++Modified content
+ Second line
+`;
+
+    // Mock LLM requester that omits the successful edit for test1.txt
+    const mockRetryRequester = mock(() => {
+      return Promise.resolve(`
+--- test2.txt
++++ test2.txt
+@@ -1,2 +1,2 @@
+-Different content
++Modified content
+ Second line
+`);
+    });
+
+    const originalPrompt = 'Please modify test1.txt and test2.txt';
+    setDebug(true);
+
+    const result = await applyLlmEdits({
+      content: diffContent,
+      writeRoot: tempDir,
+      dryRun: false,
+      mode: 'udiff',
+      interactive: false,
+      retryRequester: mockRetryRequester,
+      originalPrompt,
+      baseDir: tempDir,
+      applyPartial: true,
+    });
+
+    const updatedContent1 = await Bun.file(testFile1).text();
+    expect(updatedContent1).toBe('Modified content\nSecond line\n');
+    const updatedContent2 = await Bun.file(testFile2).text();
+    expect(updatedContent2).toBe('Modified content\nSecond line\n');
+
+    expect(result).toBeDefined();
+    expect(result?.successes.length).toBe(2); // Both files should be updated
+    expect(result?.failures.length).toBe(0);
+    expect(mockRetryRequester).toHaveBeenCalled();
   });
 });
 

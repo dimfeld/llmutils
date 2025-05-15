@@ -18,8 +18,14 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   const agentExecutionModel = options.model || config.models?.execution;
 
+  let parsed = path.parse(planFile);
+  if (parsed.ext === '.md' || parsed.ext === '.' || !parsed.ext) {
+    parsed.base = parsed.name + '.yml';
+    parsed.ext = 'yml';
+    planFile = path.join(parsed.dir, parsed.base);
+  }
+
   if (!options['no-log']) {
-    let parsed = path.parse(planFile);
     let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
     openLogFile(logFilePath);
   }

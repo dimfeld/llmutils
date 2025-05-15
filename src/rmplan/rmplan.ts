@@ -234,10 +234,10 @@ program
     }
 
     if (options.plan && !options.output) {
-      options.output = path.join(
-        path.dirname(options.plan),
-        path.basename(options.plan, '.md') + '.yml'
-      );
+      let name = options.plan.endsWith('.yml')
+        ? options.plan
+        : path.basename(options.plan, '.md') + '.yml';
+      options.output = path.join(path.dirname(options.plan), name);
     }
 
     try {

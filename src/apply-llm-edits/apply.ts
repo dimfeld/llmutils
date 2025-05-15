@@ -8,6 +8,7 @@ import type {
   FailureResult,
   NoMatchFailure,
   NotUniqueFailure,
+  SuccessResult,
 } from '../editor/types.js';
 import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 import { processRawFiles } from '../editor/whole-file/parse_raw_edits.ts';
@@ -15,7 +16,7 @@ import { processXmlContents } from '../editor/xml/parse_xml.ts';
 import { debugLog, error, log, warn } from '../logging.ts';
 import { getGitRoot, parseCliArgsFromString, secureWrite } from '../rmfilter/utils.ts';
 import { printDetailedFailures } from './failures.ts';
-import { resolveFailuresInteractively } from './interactive.ts';
+import { applyEditResult, resolveFailuresInteractively } from './interactive.ts';
 import {
   constructRetryPrompt,
   constructRetryMessage,
@@ -254,7 +255,7 @@ async function handleAutoApplyNotUnique(
 
 export async function applyLlmEdits({
   content,
-  writeRoot,
+  writeRoot: writeRootArg,
   dryRun = false,
   applyPartial = false,
   mode,
@@ -266,7 +267,7 @@ export async function applyLlmEdits({
 }: ApplyLlmEditsOptions): Promise<
   { successes: EditResult[]; failures: FailureResult[] } | undefined
 > {
-  writeRoot ??= await getWriteRoot();
+  const writeRoot = writeRootArg || (await getWriteRoot());
 
   // Apply in dry run mode first to count up successes and failures
   let results = await applyEditsInternal({
@@ -290,22 +291,76 @@ export async function applyLlmEdits({
     return;
   }
 
-  // Handle results from dry un (currently only from udiff and diff modes)
-  let { successes, failures: remainingFailures } = results;
-  let appliedInitialSuccesses = false;
+  // Handle results from dry run (currently only from udiff and diff modes)
+  let { successes, failures: initialFailures } = results;
+
+  let remainingFailures = initialFailures;
+  let appliedSuccesses: EditResult[] = [];
+  let appliedSuccessKeys = new Set<string>();
+  let remainingSuccesses = successes;
+
+  function editKey(edit: EditResult) {
+    return [edit.filePath, edit.originalText, edit.updatedText].join('|');
+  }
+
+  function countAppliedSuccess(success: EditResult) {
+    appliedSuccesses.push(success);
+    appliedSuccessKeys.add(editKey(success));
+    remainingSuccesses = remainingSuccesses.filter((s) => s !== success);
+  }
+
+  async function applySuccessOnce(success: EditResult) {
+    if (!appliedSuccessKeys.has(editKey(success))) {
+      console.log(`== Applying edit to ${success.filePath}...`);
+      await applyEditResult(success, writeRoot, dryRun);
+      countAppliedSuccess(success);
+    }
+  }
+
+  if (!initialFailures.length || (!interactive && applyPartial)) {
+    debugLog('Initial real apply');
+    const result = await applyEditsInternal({
+      content,
+      writeRoot,
+      dryRun: false,
+      mode,
+    });
+
+    remainingFailures = result?.failures ?? [];
+    remainingSuccesses = [];
+    for (const success of result?.successes ?? []) {
+      countAppliedSuccess(success);
+    }
+  }
+
+  // Identify files with only successes (no failures)
+  const fileResults = new Map<string, { successes: EditResult[]; failures: FailureResult[] }>();
+  for (const success of remainingSuccesses) {
+    const fileEntry = fileResults.get(success.filePath) || { successes: [], failures: [] };
+    fileEntry.successes.push(success);
+    fileResults.set(success.filePath, fileEntry);
+  }
+  for (const failure of remainingFailures) {
+    const fileEntry = fileResults.get(failure.filePath) || { successes: [], failures: [] };
+    fileEntry.failures.push(failure);
+    fileResults.set(failure.filePath, fileEntry);
+  }
 
   // --- Retry Logic ---
   if (remainingFailures.length > 0 && retryRequester) {
-    // Right now we always apply initial successes first when retry is enabled
-    log(`Applying ${successes.length} successful edits...`);
-    appliedInitialSuccesses = true;
-    if (!dryRun) {
-      await applyEditsInternal({
-        content,
-        writeRoot,
-        dryRun: false,
-        mode,
-      });
+    // Apply edits for files with only successes
+    const successOnlyFiles = [...fileResults.entries()].filter(
+      ([_, { failures }]) => failures.length === 0
+    );
+    const successOnlyFilePaths = new Set(successOnlyFiles.map(([filePath]) => filePath));
+    if (successOnlyFiles.length > 0 && successes.length > 0) {
+      log(`Applying ${successes.length} successful edits from ${successOnlyFiles.length} files...`);
+      for (const [_filePath, { successes }] of successOnlyFiles) {
+        for (const success of successes) {
+          debugLog(`Applying all-success edits for ${success.filePath}`);
+          await applySuccessOnce(success);
+        }
+      }
     }
 
     log(
@@ -355,8 +410,26 @@ export async function applyLlmEdits({
             `Retry attempt finished. ${retrySuccessCount} edits applied successfully, ${finalFailures.length} failures remain.`
           );
           remainingFailures = finalFailures;
-          // Add successfully applied retry results to the overall list
-          successes.push(...retryResults.successes);
+          appliedSuccesses.push(...retryResults.successes);
+
+          // Check for original successes that weren't applied in retry
+          const retrySuccessKeys = new Set(
+            retryResults.successes.map((s) => `${s.filePath}:${s.originalText}:${s.updatedText}`)
+          );
+          const missingSuccesses = successes.filter(
+            (s) =>
+              !successOnlyFilePaths.has(s.filePath) &&
+              !retrySuccessKeys.has(`${s.filePath}:${s.originalText}:${s.updatedText}`)
+          );
+
+          if (missingSuccesses.length > 0 && !dryRun) {
+            log(
+              `Applying ${missingSuccesses.length} original successful edits that were not included in retry...`
+            );
+            for (const success of missingSuccesses) {
+              await applySuccessOnce(success as SuccessResult);
+            }
+          }
         }
       }
     }
@@ -368,12 +441,12 @@ export async function applyLlmEdits({
     if (interactive) {
       log(
         chalk.yellow(
-          `Found ${successes.length} proper edits and ${remainingFailures.length} errors in the proposed edits.`
+          `Found ${remainingSuccesses.length} proper edits and ${remainingFailures.length} errors in the proposed edits.`
         )
       );
 
       const applySuccesses =
-        successes.length > 0
+        remainingSuccesses.length > 0
           ? await confirm({
               message: `Would you like to apply the successful edits before resolving errors?`,
             })
@@ -381,14 +454,11 @@ export async function applyLlmEdits({
 
       if (applySuccesses) {
         // Apply successful edits
-        if (!dryRun && successes.length > 0) {
+        if (!dryRun && remainingSuccesses.length > 0) {
           log('Applying successful edits...');
-          await applyEditsInternal({
-            content,
-            writeRoot,
-            dryRun: false,
-            mode,
-          });
+          for (const success of remainingSuccesses) {
+            await applySuccessOnce(success);
+          }
         }
 
         // Proceed to interactive error resolution
@@ -408,16 +478,12 @@ export async function applyLlmEdits({
       // Non-interactive mode
       printDetailedFailures(remainingFailures);
 
-      if (applyPartial && !appliedInitialSuccesses && successes.length > 0) {
-        log(`Applying ${successes.length} successful edits...`);
-        appliedInitialSuccesses = true;
+      if (applyPartial && remainingSuccesses.length > 0) {
+        log(`Applying ${remainingSuccesses.length} successful edits...`);
         if (!dryRun) {
-          await applyEditsInternal({
-            content,
-            writeRoot,
-            dryRun: false,
-            mode,
-          });
+          for (const success of remainingSuccesses) {
+            await applySuccessOnce(success);
+          }
         }
       }
 
@@ -437,20 +503,16 @@ export async function applyLlmEdits({
     }
   } else {
     // No failures, apply all edits if not in dry run
-    if (!dryRun && !appliedInitialSuccesses) {
-      appliedInitialSuccesses = true;
-      await applyEditsInternal({
-        content,
-        writeRoot,
-        dryRun: false,
-        mode,
-      });
+    if (!dryRun && remainingSuccesses.length) {
+      for (const success of remainingSuccesses) {
+        await applySuccessOnce(success);
+      }
     }
     log('All edits applied successfully.');
   }
 
   return {
-    successes,
+    successes: appliedSuccesses,
     failures: remainingFailures,
   };
 }

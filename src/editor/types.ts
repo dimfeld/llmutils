@@ -23,7 +23,7 @@ export interface ClosestMatchResult {
 /**
  * Base interface for all edit result types
  */
-interface BaseEditResult {
+export interface BaseEditResult {
   filePath: string;
   originalText: string;
   updatedText: string;

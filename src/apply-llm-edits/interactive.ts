@@ -9,6 +9,9 @@ import type {
   NotUniqueFailure,
   MatchLocation,
   ClosestMatchResult,
+  SuccessResult,
+  BaseEditResult,
+  EditResult,
 } from '../editor/types.js';
 import { secureWrite, validatePath } from '../rmfilter/utils.js';
 import { log, warn, error, debugLog } from '../logging.js';
@@ -46,24 +49,66 @@ function splitLinesWithEndings(text: string): string[] {
   return lines;
 }
 
+export async function applyEditResult(edit: EditResult, writeRoot: string, dryRun: boolean) {
+  const absoluteFilePath = validatePath(writeRoot, edit.filePath);
+  try {
+    const currentContent = await Bun.file(absoluteFilePath).text();
+    const currentLines = splitLinesWithEndings(currentContent);
+    const targetLines = splitLinesWithEndings(edit.originalText);
+    const updatedLines = splitLinesWithEndings(edit.updatedText);
+
+    // Search for the closest match lines in the current file content
+    const [bestMatch] = findClosestMatches(currentContent, targetLines, {
+      maxMatches: 1,
+    });
+
+    if (!bestMatch) {
+      error(`Original text not found in ${edit.filePath}. Edit may be stale.`);
+      return;
+    }
+
+    // Apply the edit
+    const newContentLines = [
+      ...currentLines.slice(0, bestMatch.startLine),
+      ...updatedLines,
+      ...currentLines.slice(bestMatch.endLine),
+    ];
+
+    const newContent = newContentLines.join('');
+
+    if (dryRun) {
+      log(`[Dry Run] Would apply diff to ${edit.filePath}`);
+      const patch = diff.createPatch(edit.filePath, currentContent, newContent, '', '', {
+        context: 3,
+      });
+      log(patch);
+    } else {
+      await secureWrite(writeRoot, edit.filePath, newContent);
+      log(chalk.green(`Applied diff to ${edit.filePath}`));
+    }
+  } catch (err: any) {
+    error(`Failed to apply success to ${edit.filePath}: ${err.message}`);
+  }
+}
+
 async function applyEdit(
-  failure: NoMatchFailure | NotUniqueFailure,
+  edit: EditResult,
   targetLines: string[],
   startLineIndex: number,
   writeRoot: string,
   dryRun: boolean
 ): Promise<{ success: boolean; lineDelta: number }> {
-  const absoluteFilePath = validatePath(writeRoot, failure.filePath);
+  const absoluteFilePath = validatePath(writeRoot, edit.filePath);
   try {
     const currentContent = await Bun.file(absoluteFilePath).text();
     const currentLines = splitLinesWithEndings(currentContent);
-    const updatedLines = splitLinesWithEndings(failure.updatedText);
+    const updatedLines = splitLinesWithEndings(edit.updatedText);
 
     // Basic check: ensure the lines we intend to replace still exist at the expected location
     // This is a simplified check; more robust checks might compare content.
     if (startLineIndex + targetLines.length >= currentLines.length) {
       error(
-        `Error applying edit to ${failure.filePath}: Line range ${startLineIndex}-${startLineIndex + targetLines.length} is out of bounds (file has ${currentLines.length} lines). Edit may be stale.`
+        `Error applying edit to ${edit.filePath}: Line range ${startLineIndex}-${startLineIndex + targetLines.length} is out of bounds (file has ${currentLines.length} lines). Edit may be stale.`
       );
       return { success: false, lineDelta: 0 };
     }
@@ -80,9 +125,9 @@ async function applyEdit(
     const newContent = newContentLines.join('');
 
     if (dryRun) {
-      log(`[Dry Run] Applying diff to ${failure.filePath}`);
+      log(`[Dry Run] Applying diff to ${edit.filePath}`);
       // Optionally show a diff preview in dry run
-      const patch = diff.createPatch(failure.filePath, currentContent, newContent, '', '', {
+      const patch = diff.createPatch(edit.filePath, currentContent, newContent, '', '', {
         context: 3,
       });
       log(patch);
@@ -92,12 +137,12 @@ async function applyEdit(
         lineDelta: 0,
       };
     } else {
-      await secureWrite(writeRoot, failure.filePath, newContent);
-      log(chalk.green(`Applying diff to ${failure.filePath}`));
+      await secureWrite(writeRoot, edit.filePath, newContent);
+      log(chalk.green(`Applying diff to ${edit.filePath}`));
       return { success: true, lineDelta };
     }
   } catch (err: any) {
-    error(`Failed to apply diff to ${failure.filePath}: ${err.message}`);
+    error(`Failed to apply diff to ${edit.filePath}: ${err.message}`);
     return { success: false, lineDelta: 0 };
   }
 }
