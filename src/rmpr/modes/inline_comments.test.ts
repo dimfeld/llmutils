@@ -1,28 +1,8 @@
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach } from 'bun:test';
 import { insertAiCommentsIntoFileContent, removeAiCommentMarkers } from './inline_comments.js';
 import type { DetailedReviewComment } from '../types.js';
 
-// Mock crypto globally for this test file
-let uuidCounter: number;
-
-await mock.module('crypto', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const originalCrypto = require('crypto');
-  return {
-    ...originalCrypto,
-    randomUUID: () => {
-      // uuidCounter is managed by beforeEach and incremented here for each call
-      const id = String(uuidCounter++).padStart(8, '0');
-      return `${id}-mock-uuid-part-and-more-chars`;
-    },
-  };
-});
-
 describe('AI Comments Mode Logic', () => {
-  beforeEach(() => {
-    uuidCounter = 0;
-  });
-
   describe('insertAiCommentsIntoFileContent - Handling Modified Files with diffForContext', () => {
     const mockCommentBase = (
       id: string,
@@ -39,6 +19,7 @@ describe('AI Comments Mode Logic', () => {
     ): DetailedReviewComment => ({
       comment: {
         id,
+        databaseId: 0,
         body,
         diffHunk: 'mock diff hunk',
         author: {
@@ -135,12 +116,12 @@ describe('AI Comments Mode Logic', () => {
         'function foo() {',
         '  let x = 1;',
         '  // Inserted line',
-        '// AI_COMMENT_START_00000000',
+        '// AI_COMMENT_START',
         '// AI: Refactor function',
         '// AI: Simplify logic',
         '  return x;',
         '}',
-        '// AI_COMMENT_END_00000000',
+        '// AI_COMMENT_END',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
@@ -200,6 +181,7 @@ describe('AI Comments Mode Logic', () => {
     ): DetailedReviewComment => ({
       comment: {
         id,
+        databaseId: 1,
         body,
         diffHunk: 'mock diff hunk',
         author: {
@@ -245,12 +227,12 @@ describe('AI Comments Mode Logic', () => {
         'test.ts'
       );
       const expected = [
-        '// AI_COMMENT_START_00000000',
+        '// AI_COMMENT_START',
         '// AI: Refactor this function',
         '// AI: It is too complex',
         'function foo() {',
         '  return 1;',
-        '// AI_COMMENT_END_00000000',
+        '// AI_COMMENT_END',
         '}', // Note: The closing brace should ideally be on a new line if the END marker is meant to be *after* line 3.
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
@@ -274,12 +256,12 @@ describe('AI Comments Mode Logic', () => {
         '// AI: x should be 20',
         'const x = 10;',
         '',
-        '// AI_COMMENT_START_00000000',
+        '// AI_COMMENT_START',
         '// AI: Add more logic here',
         '// AI: Consider edge cases',
         'function bar() {',
         '',
-        '// AI_COMMENT_END_00000000',
+        '// AI_COMMENT_END',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
@@ -301,11 +283,11 @@ describe('AI Comments Mode Logic', () => {
       const expected = [
         '// AI: Comment for line 1',
         'line1',
-        '// AI_COMMENT_START_00000000',
+        '// AI_COMMENT_START',
         '// AI: Block for line 2-3',
         'line2',
         'line3',
-        '// AI_COMMENT_END_00000000',
+        '// AI_COMMENT_END',
         'line4',
         '// AI: Comment for line 5',
         'line5',
@@ -346,13 +328,13 @@ describe('AI Comments Mode Logic', () => {
         'test.ts'
       );
       const expected = [
-        '// AI_COMMENT_START_00000000',
+        '// AI_COMMENT_START',
         '// AI: Block for line 1-2',
         'line1',
         '// AI: Comment A for line 2',
         '// AI: Comment Z for line 2',
         'line2',
-        '// AI_COMMENT_END_00000000',
+        '// AI_COMMENT_END',
         'line3',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
@@ -368,6 +350,7 @@ describe('AI Comments Mode Logic', () => {
     ): DetailedReviewComment => ({
       comment: {
         id,
+        databaseId: 0,
         body,
         diffHunk: 'mock diff hunk',
         author: {
@@ -407,11 +390,11 @@ describe('AI Comments Mode Logic', () => {
       const expected = [
         '# AI: Change to world',
         'print("hello")',
-        '# AI_COMMENT_START_00000000',
+        '# AI_COMMENT_START',
         '# AI: Add docstring',
         'def foo():',
         '  pass',
-        '# AI_COMMENT_END_00000000',
+        '# AI_COMMENT_END',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
@@ -426,11 +409,11 @@ describe('AI Comments Mode Logic', () => {
         'test.html'
       );
       const expected = [
-        '<!-- AI_COMMENT_START_00000000 -->',
+        '<!-- AI_COMMENT_START -->',
         '<!-- AI: Wrap in div -->',
         '<h1>Title</h1>',
         '<p>Text</p>',
-        '<!-- AI_COMMENT_END_00000000 -->',
+        '<!-- AI_COMMENT_END -->',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
@@ -464,11 +447,11 @@ describe('AI Comments Mode Logic', () => {
         '  let name = "world";',
         '</script>',
         '',
-        '<!-- AI_COMMENT_START_00000000 -->',
+        '<!-- AI_COMMENT_START -->',
         '<!-- AI: Add a class to h1 -->',
         '<h1>Hello {name}</h1>',
         '<h2>Goodbye</h2>',
-        '<!-- AI_COMMENT_END_00000000 -->',
+        '<!-- AI_COMMENT_END -->',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
@@ -480,10 +463,10 @@ describe('AI Comments Mode Logic', () => {
         '// AI: This is a comment',
         'Actual code',
         '  // AI: Another comment with leading spaces',
-        '// AI_COMMENT_START_12345678',
+        '// AI_COMMENT_START',
         '// AI: Block comment',
         'More code',
-        '// AI_COMMENT_END_12345678',
+        '// AI_COMMENT_END',
       ].join('\n');
       const expected = 'Actual code\nMore code';
       expect(removeAiCommentMarkers(content, 'test.ts')).toBe(expected);
@@ -494,10 +477,10 @@ describe('AI Comments Mode Logic', () => {
         '# AI: This is a comment',
         'print("hello")',
         '  # AI: Another comment',
-        '# AI_COMMENT_START_12345678',
+        '# AI_COMMENT_START',
         '# AI: Block comment',
         'def foo():',
-        '# AI_COMMENT_END_12345678',
+        '# AI_COMMENT_END',
       ].join('\n');
       const expected = 'print("hello")\ndef foo():';
       expect(removeAiCommentMarkers(content, 'test.py')).toBe(expected);
@@ -508,10 +491,10 @@ describe('AI Comments Mode Logic', () => {
         '<!-- AI: This is a comment -->',
         '<h1>Title</h1>',
         '  <!-- AI: Another comment -->',
-        '<!-- AI_COMMENT_START_12345678 -->',
+        '<!-- AI_COMMENT_START -->',
         '<!-- AI: Block comment -->',
         '<p>Text</p>',
-        '<!-- AI_COMMENT_END_12345678 -->',
+        '<!-- AI_COMMENT_END -->',
       ].join('\n');
       const expected = '<h1>Title</h1>\n<p>Text</p>';
       expect(removeAiCommentMarkers(content, 'test.html')).toBe(expected);
@@ -522,10 +505,10 @@ describe('AI Comments Mode Logic', () => {
         '<script>',
         '// AI: Script comment',
         '  let x = 1;',
-        '// AI_COMMENT_START_12345678',
+        '// AI_COMMENT_START',
         '// AI: Script block',
         '</script>',
-        '<!-- AI_COMMENT_END_12345678 -->',
+        '<!-- AI_COMMENT_END -->',
         '',
         '<!-- AI: Template comment -->',
         '<h1>Title</h1>',
@@ -552,9 +535,9 @@ describe('AI Comments Mode Logic', () => {
 
     test('should handle markers with leading/trailing whitespace on their line', () => {
       const content = [
-        '  // AI_COMMENT_START_12345678  ',
+        '  // AI_COMMENT_START  ',
         '// AI: Content',
-        '\t// AI_COMMENT_END_12345678\t',
+        '\t// AI_COMMENT_END\t',
         'Actual code',
       ].join('\n');
       const expected = 'Actual code';
@@ -567,15 +550,11 @@ describe('AI Comments Mode Logic', () => {
         '// AI: This will be removed',
         '// AI_COMMENT_END_1234567',
         'Actual code',
-        '// XX_AI_COMMENT_START_12345678',
-        '// AI_COMMENT_START_12345678_MODIFIED',
-        '//AI_COMMENT_START_12345678',
+        '// XX_AI_COMMENT_START',
+        '// AI_COMMENT_START_MODIFIED',
+        '//AI_COMMENT_START',
       ].join('\n');
-      const expected = [
-        'Actual code',
-        '// XX_AI_COMMENT_START_12345678',
-        '//AI_COMMENT_START_12345678',
-      ].join('\n');
+      const expected = ['Actual code', '// XX_AI_COMMENT_START', '//AI_COMMENT_START'].join('\n');
       expect(removeAiCommentMarkers(content, 'test.ts')).toBe(expected);
     });
 
@@ -586,9 +565,9 @@ describe('AI Comments Mode Logic', () => {
     test('should handle content with only AI comments and markers, resulting in empty string', () => {
       const content = [
         '// AI: Line 1',
-        '// AI_COMMENT_START_12345678',
+        '// AI_COMMENT_START',
         '// AI: Line 2',
-        '// AI_COMMENT_END_12345678',
+        '// AI_COMMENT_END',
         '  // AI: Line 3',
       ].join('\n');
       expect(removeAiCommentMarkers(content, 'test.ts')).toBe('');

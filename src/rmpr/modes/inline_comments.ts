@@ -1,5 +1,4 @@
 import * as path from 'path';
-import * as crypto from 'crypto';
 import { findClosestMatches } from '../../editor/closest_match.ts';
 import type { DetailedReviewComment } from '../types.ts';
 import { basePrPrompt } from '../prompts.ts';
@@ -303,9 +302,8 @@ export function insertAiCommentsIntoFileContent(
     const isBlockComment = startLine !== endLine;
 
     if (isBlockComment) {
-      const uniqueId = crypto.randomUUID().slice(0, 8);
-      const startMarkerLine = currentPrefixer(`AI_COMMENT_START_${uniqueId}`);
-      const endMarkerLine = currentPrefixer(`AI_COMMENT_END_${uniqueId}`);
+      const startMarkerLine = currentPrefixer(`AI_COMMENT_START`);
+      const endMarkerLine = currentPrefixer(`AI_COMMENT_END`);
 
       const insertionPointStart0Based = startLine - 1;
       addToMapList(insertBefore, insertionPointStart0Based, [
@@ -351,7 +349,7 @@ export function removeAiCommentMarkers(fileContent: string, filePath: string): s
   const isSvelte = path.extname(filePath).toLowerCase() === '.svelte';
   const scriptEndTagIndex = isSvelte ? lines.findIndex((line) => line.includes('</script>')) : -1;
 
-  const candidates = [prefixer('AI_COMMENT_START_'), prefixer('AI_COMMENT_END_'), prefixer('AI:')];
+  const candidates = [prefixer('AI_COMMENT_START'), prefixer('AI_COMMENT_END'), prefixer('AI:')];
 
   const cleanedLines = lines.filter((line, index) => {
     const trimmed = line.trim();
@@ -362,8 +360,8 @@ export function removeAiCommentMarkers(fileContent: string, filePath: string): s
     if (tryOtherPrefixer) {
       let thisPrefixer = (text: string) => `<!-- ${text}`;
       theseCandidates = [
-        thisPrefixer('AI_COMMENT_START_'),
-        thisPrefixer('AI_COMMENT_END_'),
+        thisPrefixer('AI_COMMENT_START'),
+        thisPrefixer('AI_COMMENT_END'),
         thisPrefixer('AI:'),
       ];
     }
@@ -392,7 +390,7 @@ export function createInlineCommentsPrompt(filesWithAiComments: string[]): strin
 
 ### Review Format
 
-The review comments are injected into the code files as special 'AI comments'. These comments are prefixed with 'AI:' and may be enclosed in markers like '// AI_COMMENT_START_XYZ' and '// AI_COMMENT_END_XYZ'. The code lines in between the start and end markers are the specific lines being commented on in the review, but you should analyze the entire file to see what other pieces of code may need to be updated in response.
+The review comments are injected into the code files as special 'AI comments'. These comments are prefixed with 'AI:' and may be enclosed in markers like '// AI_COMMENT_START' and '// AI_COMMENT_END'. The code lines in between the start and end markers are the specific lines being commented on in the review, but you should analyze the entire file to see what other pieces of code may need to be updated in response.
 
 After addressing a comment, remove the AI comment itself and its markers.
 
