@@ -226,4 +226,4 @@ tasks:
 
           This ensures that user's choices for model and rmfilter arguments are
           respected in the subsequent processing steps.
-        done: false
+        done: true

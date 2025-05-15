@@ -273,6 +273,7 @@ export async function handleRmprCommand(
       }
     }
   }
+
   // Construct rmfilter arguments, incorporating --rmpr options
   let rmFilterArgs: string[] = [
     '--with-diff',
@@ -291,9 +292,7 @@ export async function handleRmprCommand(
     rmFilterArgs.push(...argsFromRmprOptions(pullRequest, rmprOptions));
   }
 
-  if (additionalUserRmFilterArgs.length > 0) {
-    rmFilterArgs.push(...additionalUserRmFilterArgs);
-  }
+  rmFilterArgs.push(...additionalUserRmFilterArgs);
 
   if (!options.run) {
     rmFilterArgs.push('--copy');
