@@ -669,10 +669,10 @@ export async function generateRmfilterOutput(
 
   // Construct command tag using provided cliArgsString or reconstruct if needed
   const commandTagContent = cliArgsString ?? reconstructCliArgs(globalValues, commandsParsed);
-  const commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should place this tag and its contents at the start of your output.
-<rmfilter_command>${commandTagContent}</rmfilter_command>
+  let commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should place this tag and its contents at the start of your output.
+<rmfilter_command>${commandTagContent}</rmfilter_command>`;
 
-Also place the <instructions> tag and its contents at the start of your output.`;
+  // commandTag += `\nAlso place the <instructions> tag and its contents at the start of your output.`;
 
   const finalOutput = [
     repomixOutput,
