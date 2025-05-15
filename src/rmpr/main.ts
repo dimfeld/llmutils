@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { applyLlmEdits } from '../apply-llm-edits/apply.js';
-import { search, expand, input } from '@inquirer/prompts';
+import { search, input, select } from '@inquirer/prompts';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
@@ -204,9 +204,14 @@ export async function handleRmprCommand(
       );
     }
 
-    const promptResults = await optionsPrompt({ modelForLlmEdit, run: options.run });
+    const promptResults = await optionsPrompt({
+      modelForLlmEdit,
+      run: options.run,
+      commit: options.commit,
+    });
     modelForLlmEdit = promptResults.model;
     options.run = promptResults.run;
+    options.commit = promptResults.commit;
     additionalUserRmFilterArgs = promptResults.rmfilterOptions;
   }
 
@@ -340,28 +345,34 @@ interface PromptOptions {
   model: string;
   rmfilterOptions: string[];
   run: boolean;
+  commit: boolean;
 }
 
 async function optionsPrompt(initialOptions: {
   modelForLlmEdit: string;
   run: boolean;
+  commit: boolean;
 }): Promise<PromptOptions> {
   let result: PromptOptions = {
     model: initialOptions.modelForLlmEdit,
     rmfilterOptions: [],
     run: initialOptions.run,
+    commit: initialOptions.commit,
   };
 
   let userWantsToContinue = false;
   while (!userWantsToContinue) {
-    const choice = await expand({
-      message: 'What would you like to do? (press Enter to continue)',
-      default: 'c',
-      expanded: true,
+    log('');
+    const choice = await select({
+      message: 'What would you like to do?',
+      default: 'continue',
       choices: [
-        { key: 'c', name: 'Continue to generate LLM prompt', value: 'continue' },
-        { key: 'm', name: 'Change LLM model for editing', value: 'model' },
-        { key: 'r', name: 'Edit rmfilter options for context', value: 'rmfilter' },
+        { name: 'Continue to generate LLM prompt', value: 'continue' },
+        { name: 'Change LLM model for editing', value: 'model' },
+        { name: 'Edit rmfilter options for context', value: 'rmfilter' },
+        result.commit
+          ? { name: 'Disable autocommit', value: 'no-commit' }
+          : { name: 'Enable autocommit', value: 'commit' },
       ],
     });
 
@@ -381,6 +392,10 @@ async function optionsPrompt(initialOptions: {
       });
       result.rmfilterOptions = parseCliArgsFromString(newArgsStr.trim());
       log(`Additional rmfilter args set to: "${result.rmfilterOptions.join(' ')}"`);
+    } else if (choice === 'no-commit') {
+      result.commit = false;
+    } else if (choice === 'commit') {
+      result.commit = true;
     }
   }
 
