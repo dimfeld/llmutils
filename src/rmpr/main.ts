@@ -91,15 +91,17 @@ export async function handleRmprCommand(
   log(`Head branch: ${headRefName}`);
   log(`Changed files in PR: ${changedFiles.map((f) => f.path).join(', ')}`);
 
-  if (pullRequest.reviewThreads.nodes.every((t) => t.isResolved)) {
+  const unresolvedReviewThreads = pullRequest.reviewThreads.nodes.filter((t) => !t.isResolved);
+
+  if (unresolvedReviewThreads.length === 0) {
     log('No unresolved review comments found for this PR. Exiting.');
     process.exit(0);
   }
 
-  log(`Found ${pullRequest.reviewThreads.nodes.length} unresolved threads.`);
+  log(`Found ${unresolvedReviewThreads.length} unresolved threads.`);
 
   const selectedComments = await selectReviewComments(
-    pullRequest.reviewThreads.nodes.filter((t) => !t.isResolved),
+    unresolvedReviewThreads,
     pullRequest.number,
     pullRequest.title
   );
