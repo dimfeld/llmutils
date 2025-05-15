@@ -1,5 +1,6 @@
 import { test, expect, describe } from 'bun:test';
-import { findClosestMatches } from './closest_match';
+import { findClosestMatches, splitLinesWithEndings } from './closest_match';
+import { hunkToBeforeAfter } from './udiff-simple/parse.ts';
 
 describe('findClosestMatches', () => {
   const fileContent = `Line 1
@@ -20,8 +21,8 @@ Line 12`;
     const result = findClosestMatches(fileContent, searchLines);
     expect(result.length).toBe(1);
     expect(result[0].score).toBe(1);
-    expect(result[0].startLine).toBe(6);
-    expect(result[0].endLine).toBe(8);
+    expect(result[0].startLine).toBe(5);
+    expect(result[0].endLine).toBe(7);
     expect(result[0].lines).toEqual(searchLines);
   });
 
@@ -30,8 +31,8 @@ Line 12`;
     const result = findClosestMatches(fileContent, searchLines, { similarityThreshold: 0.7 });
     expect(result.length).toBe(1);
     expect(result[0].score).toBeGreaterThan(0.7);
-    expect(result[0].startLine).toBe(10);
-    expect(result[0].endLine).toBe(11);
+    expect(result[0].startLine).toBe(9);
+    expect(result[0].endLine).toBe(10);
     expect(result[0].lines).toEqual([
       'Line 10 Another Close Match\n',
       'Line 11 Another Close Match\n',
@@ -62,7 +63,7 @@ Line 1`;
 
     // Check that we got all three matches at the correct positions
     const startLines = result.map((r) => r.startLine).sort((a, b) => a - b);
-    expect(startLines).toEqual([1, 4, 6]);
+    expect(startLines).toEqual([0, 3, 5]);
   });
 
   test('should handle no matches in file', () => {
@@ -87,7 +88,7 @@ Line 1`;
     const result = findClosestMatches(fileContent, searchLines, { similarityThreshold: 0.8 });
     expect(result.length).toBe(1);
     expect(result[0].score).toBeGreaterThan(0.8);
-    expect(result[0].startLine).toBe(6);
+    expect(result[0].startLine).toBe(5);
   });
 
   test('should handle case differences', () => {
@@ -95,7 +96,7 @@ Line 1`;
     const result = findClosestMatches(fileContent, searchLines, { similarityThreshold: 0.7 });
     expect(result.length).toBe(1);
     expect(result[0].score).toBeGreaterThan(0.7);
-    expect(result[0].startLine).toBe(6);
+    expect(result[0].startLine).toBe(5);
   });
 
   test('should handle small typos', () => {
@@ -103,7 +104,7 @@ Line 1`;
     const result = findClosestMatches(fileContent, searchLines, { similarityThreshold: 0.7 });
     expect(result.length).toBe(1);
     expect(result[0].score).toBeGreaterThan(0.7);
-    expect(result[0].startLine).toBe(6);
+    expect(result[0].startLine).toBe(5);
   });
 
   test('should handle last line without newline', () => {
@@ -111,8 +112,8 @@ Line 1`;
     const result = findClosestMatches(fileContent, searchLines);
     expect(result.length).toBe(1);
     expect(result[0].score).toBe(1);
-    expect(result[0].startLine).toBe(12);
-    expect(result[0].endLine).toBe(12);
+    expect(result[0].startLine).toBe(11);
+    expect(result[0].endLine).toBe(11);
   });
 
   test('should handle search lines longer than file content', () => {
@@ -128,6 +129,6 @@ Line 1`;
       maxMatches: 3,
     });
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].startLine).toBe(3);
+    expect(result[0].startLine).toBe(2);
   });
 });

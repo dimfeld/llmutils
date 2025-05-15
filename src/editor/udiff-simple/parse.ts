@@ -1,6 +1,6 @@
 import * as diff from 'diff';
 import * as path from 'path';
-import { error, log, warn } from '../../logging.ts';
+import { debugLog, error, log, warn } from '../../logging.ts';
 import { secureWrite } from '../../rmfilter/utils.js';
 import { findClosestMatches } from '../closest_match.ts';
 import type {
@@ -41,9 +41,9 @@ function splitLinesWithEndings(content: string): string[] {
  * @param lines If true, returns arrays of lines; otherwise, returns joined strings.
  * @returns A tuple containing the "before" and "after" content.
  */
-function hunkToBeforeAfter(hunk: string[], lines: true): [string[], string[]];
-function hunkToBeforeAfter(hunk: string[], lines?: false): [string, string];
-function hunkToBeforeAfter(
+export function hunkToBeforeAfter(hunk: string[], lines: true): [string[], string[]];
+export function hunkToBeforeAfter(hunk: string[], lines?: false): [string, string];
+export function hunkToBeforeAfter(
   hunk: string[],
   lines: boolean = false
 ): [string | string[], string | string[]] {
@@ -203,7 +203,7 @@ function searchAndReplace(
 /**
  * Finds all occurrences of a substring and returns their locations.
  */
-function findAllMatches(whole: string, part: string): MatchLocation[] {
+export function findAllMatches(whole: string, part: string): MatchLocation[] {
   const locations: MatchLocation[] = [];
   if (!part || !whole) {
     return locations;
@@ -213,22 +213,22 @@ function findAllMatches(whole: string, part: string): MatchLocation[] {
   const fileLines = splitLinesWithEndings(whole);
 
   for (const match of whole.matchAll(regex)) {
-    const contextRadius = 2;
+    const contextRadius = 10;
     const startIndex = match.index;
     const beforeMatch = whole.substring(0, startIndex);
-    // Count occurrences of '\n' to determine the line number (1-based)
-    const startLine = (beforeMatch.match(/\n/g) || []).length + 1;
+    // Count occurrences of '\n' to determine the line number
+    const startLine = (beforeMatch.match(/\n/g) || []).length;
 
-    // Calculate the end line of the match itself (1-based)
+    // Calculate the end line of the match itself
     // Count newlines within the matched part. If part has no newlines, it's on one line.
     const numNewlinesInPart = (part.match(/\n/g) || []).length;
     const endLine = startLine + numNewlinesInPart;
 
-    // Calculate context start and end line indices (0-based for slicing fileLines)
+    // Calculate context start and end line indices
     // Context starts `contextRadius` lines before the match starts.
-    const contextStartLineIndex = Math.max(0, startLine - 1 - contextRadius);
+    const contextStartLineIndex = Math.max(0, startLine - contextRadius);
     // Context ends `contextRadius` lines after the match ends.
-    const contextEndLineIndex = Math.min(fileLines.length, endLine - 1 + contextRadius + 1);
+    const contextEndLineIndex = endLine + contextRadius + 1;
     const contextLines = fileLines.slice(contextStartLineIndex, contextEndLineIndex);
 
     locations.push({ startIndex, startLine, contextLines });

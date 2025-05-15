@@ -52,6 +52,12 @@ function findBestMatchLine(
     return null;
   }
 
+  // Convert matches to 1-indexed line numbers used by comments
+  for (const match of matches) {
+    match.startLine += 1;
+    match.endLine += 1;
+  }
+
   // Find the match closest to the original line numbers
   const originalReferenceLine = originalStartLine ?? originalLine;
   let bestMatch = matches[0];

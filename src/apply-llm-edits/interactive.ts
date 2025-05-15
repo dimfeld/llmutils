@@ -1,21 +1,14 @@
 import { select } from '@inquirer/prompts';
-import * as diff from 'diff';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
-import type {
-  NoMatchFailure,
-  NotUniqueFailure,
-  MatchLocation,
-  ClosestMatchResult,
-  SuccessResult,
-  BaseEditResult,
-  EditResult,
-} from '../editor/types.js';
-import { secureWrite, validatePath } from '../rmfilter/utils.js';
-import { log, warn, error, debugLog } from '../logging.js';
+import * as diff from 'diff';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { findClosestMatches } from '../editor/closest_match.js';
+import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
+import { debugLog, error, log } from '../logging.js';
+import { secureWrite, validatePath } from '../rmfilter/utils.js';
+import { findAllMatches } from '../editor/udiff-simple/parse.js';
 
 // Helper function to split lines while preserving line endings
 function splitLinesWithEndings(text: string): string[] {
@@ -69,9 +62,11 @@ export async function applyEditResult(edit: EditResult, writeRoot: string, dryRu
 
     // Apply the edit
     const newContentLines = [
+      // up but not including startLine
       ...currentLines.slice(0, bestMatch.startLine),
       ...updatedLines,
-      ...currentLines.slice(bestMatch.endLine),
+      // Resume after endLine
+      ...currentLines.slice(bestMatch.endLine + 1),
     ];
 
     const newContent = newContentLines.join('');
@@ -108,7 +103,7 @@ async function applyEdit(
     // This is a simplified check; more robust checks might compare content.
     if (startLineIndex + targetLines.length >= currentLines.length) {
       error(
-        `Error applying edit to ${edit.filePath}: Line range ${startLineIndex}-${startLineIndex + targetLines.length} is out of bounds (file has ${currentLines.length} lines). Edit may be stale.`
+        `Error applying edit to ${edit.filePath}: Line range ${startLineIndex + 1}-${startLineIndex + 1 + targetLines.length} is out of bounds (file has ${currentLines.length} lines). Edit may be stale.`
       );
       return { success: false, lineDelta: 0 };
     }
@@ -179,7 +174,9 @@ async function handleNoMatchFailure(
 
     const { lines, startLine, score } = bestMatch;
     log(
-      chalk.cyan(`\nClosest match found (score: ${score.toFixed(2)}) starting at line ${startLine}`)
+      chalk.cyan(
+        `\nClosest match found (score: ${score.toFixed(2)}) starting at line ${startLine + 1}`
+      )
     );
 
     // Generate diff between closest match and original text
@@ -219,7 +216,7 @@ async function handleNoMatchFailure(
     });
 
     if (choice === 'apply') {
-      return await applyEdit(failure, lines, startLine - 1, writeRoot, dryRun);
+      return await applyEdit(failure, lines, startLine, writeRoot, dryRun);
     } else if (choice === 'diff') {
       log('Opening in Neovim diff mode...');
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'llmutils-diff-'));
@@ -228,9 +225,9 @@ async function handleNoMatchFailure(
         // Generate the proposed full file content by applying the edit
         const updatedLines = splitLinesWithEndings(failure.updatedText);
         const newContentLines = [
-          ...currentLines.slice(0, startLine - 1),
+          ...currentLines.slice(0, startLine),
           ...updatedLines,
-          ...currentLines.slice(startLine - 1 + lines.length),
+          ...currentLines.slice(startLine + lines.length),
         ];
         const proposedContent = newContentLines.join('');
 
@@ -299,6 +296,8 @@ async function handleNotUniqueFailure(
         f.updatedText === failure.updatedText
     );
 
+  debugLog(failure);
+
   log(chalk.yellow(`\n--- Failure: Not Unique ---`));
   log(`File: ${chalk.bold(failure.filePath)}`);
   log(
@@ -333,14 +332,18 @@ async function handleNotUniqueFailure(
     appliedLocationsByFile.set(failure.filePath, appliedLocations);
   }
 
+  const fileContents = await Bun.file(failure.filePath).text();
+  // Find the locations again since the file may have changed
+  const matchLocations = findAllMatches(fileContents, failure.originalText);
+
   // Filter out previously applied locations
-  const choices = failure.matchLocations
+  const choices = matchLocations
     .map((match, index) => ({
-      name: `Location ${index + 1} (Line ${match.startLine})`,
+      name: `Location ${index + 1} (Line ${match.startLine + 1})`,
       value: index,
       description: match.contextLines.join(''),
     }))
-    .filter((choice) => !appliedLocations.has(failure.matchLocations[choice.value].startLine));
+    .filter((choice) => !appliedLocations.has(matchLocations[choice.value].startLine));
 
   choices.push({ name: 'Apply to all matching locations', value: -2, description: '' });
   choices.push({ name: 'Skip this edit', value: -1, description: '' });
@@ -354,7 +357,7 @@ async function handleNotUniqueFailure(
     // Apply to all matching locations
     let totalLineDelta = 0;
     let success = true;
-    for (const match of failure.matchLocations) {
+    for (const match of matchLocations) {
       if (!appliedLocations.has(match.startLine)) {
         appliedLocations.add(match.startLine);
         const originalLines = splitLinesWithEndings(failure.originalText);
@@ -369,7 +372,7 @@ async function handleNotUniqueFailure(
 
     return { success, lineDelta: totalLineDelta, obsoleted: duplicates };
   } else if (selectedIndex !== -1) {
-    const selectedMatch = failure.matchLocations[selectedIndex];
+    const selectedMatch = matchLocations[selectedIndex];
     // Record the applied location
     appliedLocations.add(selectedMatch.startLine);
     const originalLines = splitLinesWithEndings(failure.originalText);

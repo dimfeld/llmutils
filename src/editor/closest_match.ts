@@ -22,7 +22,7 @@ export interface ClosestMatchConfig {
 /**
  * Splits a string into lines, preserving line endings
  */
-function splitLinesWithEndings(content: string): string[] {
+export function splitLinesWithEndings(content: string): string[] {
   if (!content) return [];
 
   // Split the content into lines
@@ -64,9 +64,8 @@ export function findClosestMatches(
     if (similarity >= similarityThreshold) {
       results.push({
         lines: chunkLines,
-        // one-index line numbers
-        startLine: i + 1,
-        endLine: i + searchLineCount,
+        startLine: i,
+        endLine: i - 1 + searchLineCount,
         score: similarity,
       });
     }

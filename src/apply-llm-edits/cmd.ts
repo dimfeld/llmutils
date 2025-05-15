@@ -19,6 +19,7 @@ const { values } = parseArgs({
   options: {
     stdin: { type: 'boolean' },
     clipboard: { type: 'boolean' },
+    file: { type: 'string', short: 'f' },
     cwd: { type: 'string' },
     mode: { type: 'string' },
     interactive: { type: 'boolean', short: 'i' },
@@ -44,6 +45,7 @@ if (values.help) {
 Options:
   --stdin                        Read from stdin (the default if input is piped in)
   --clipboard                    Read from the clipboard even if stdin is available
+  -f <file>, --file <file>       Read from a file
   --cwd <path>                   Write files based on the given path
   --mode <mode>                  Force an edit mode
   -i, --interactive              Enable interactive mode for resolving edit failures
@@ -60,6 +62,7 @@ Options:
 
 const useClipboard = values.clipboard || false;
 const useStdin = !useClipboard && (values.stdin || !process.stdin.isTTY);
+const file = values.file;
 const dryRun = values['dry-run'] || false;
 const interactive = values.interactive || false;
 const applyPartial = values['partial-apply'] || values.pa || false;
@@ -72,9 +75,19 @@ const modelValue = values.model;
 
 setDebug(values.debug || false);
 
-let content = useStdin ? await Bun.stdin.text() : await clipboard.read();
+let content: string | undefined;
+if (file) {
+  content = await Bun.file(file).text();
+} else {
+  let content = useStdin ? await Bun.stdin.text() : await clipboard.read();
+  if (!content) {
+    content = await clipboard.read();
+  }
+}
+
 if (!content) {
-  content = await clipboard.read();
+  error('No input provided');
+  process.exit(1);
 }
 
 // Determine the base directory for operations. Uses --cwd if provided, otherwise git root or current dir.
