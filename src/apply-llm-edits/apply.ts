@@ -281,7 +281,12 @@ export async function applyLlmEdits({
   retryRequester,
   copyRetryPrompt = false,
 }: ApplyLlmEditsOptions): Promise<
-  { successes: EditResult[]; failures: FailureResult[] } | undefined
+  | {
+      appliedSuccesses: SuccessResult[];
+      remainingSuccesses: SuccessResult[];
+      failures: FailureResult[];
+    }
+  | undefined
 > {
   const writeRoot = writeRootArg || (await getWriteRoot());
 
@@ -313,7 +318,7 @@ export async function applyLlmEdits({
   /** Failures remaining to resolve */
   let remainingFailures = initialFailures;
   /** Successful edits that have already been applied */
-  let appliedSuccesses: EditResult[] = [];
+  let appliedSuccesses: SuccessResult[] = [];
   /** Lookup for successful edits */
   let appliedSuccessKeys = new Set<string>();
   /** Successful edits that have not been applied yet */
@@ -323,13 +328,13 @@ export async function applyLlmEdits({
     return [edit.filePath, edit.originalText, edit.updatedText].join('|');
   }
 
-  function countAppliedSuccess(success: EditResult) {
+  function countAppliedSuccess(success: SuccessResult) {
     appliedSuccesses.push(success);
     appliedSuccessKeys.add(editKey(success));
     remainingSuccesses = remainingSuccesses.filter((s) => s !== success);
   }
 
-  async function applySuccessOnce(success: EditResult) {
+  async function applySuccessOnce(success: SuccessResult) {
     if (!appliedSuccessKeys.has(editKey(success))) {
       await applyEditResult(success, writeRoot, dryRun);
       countAppliedSuccess(success);
@@ -353,7 +358,7 @@ export async function applyLlmEdits({
   }
 
   // Identify files with only successes (no failures)
-  const fileResults = new Map<string, { successes: EditResult[]; failures: FailureResult[] }>();
+  const fileResults = new Map<string, { successes: SuccessResult[]; failures: FailureResult[] }>();
   for (const success of remainingSuccesses) {
     const fileEntry = fileResults.get(success.filePath) || { successes: [], failures: [] };
     fileEntry.successes.push(success);
@@ -577,7 +582,8 @@ export async function applyLlmEdits({
   }
 
   return {
-    successes: appliedSuccesses,
+    appliedSuccesses,
+    remainingSuccesses,
     failures: remainingFailures,
   };
 }

@@ -318,8 +318,7 @@ export function insertAiCommentsIntoFileContent(
       addToMapList(insertAfter, insertionPointEnd0Based, [endMarkerLine]);
     } else {
       // Single-line comment: insert before the startLine
-      // Subtract 1 to make it zero-based and another so that we go up a line
-      const insertionPoint0Based = startLine - 2;
+      const insertionPoint0Based = startLine - 1;
       addToMapList(insertBefore, insertionPoint0Based, aiPrefixedBodyLines);
     }
   }

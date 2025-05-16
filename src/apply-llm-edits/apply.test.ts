@@ -415,7 +415,7 @@ describe('applyLlmEdits', () => {
     });
 
     expect(result).toBeDefined();
-    expect(result?.successes.length).toBe(1);
+    expect(result?.appliedSuccesses.length).toBe(1);
     expect(result?.failures.length).toBe(0);
 
     const updatedContent = await Bun.file(testFile).text();
@@ -526,7 +526,9 @@ describe('applyLlmEdits', () => {
       interactive: true,
     });
 
-    expect(result).toBeUndefined();
+    expect(result?.appliedSuccesses).toHaveLength(0);
+    expect(result?.remainingSuccesses).toHaveLength(1);
+    expect(result?.failures).toHaveLength(1);
     expect(calledConfirm).toBe(true);
 
     const updatedContent1 = await Bun.file(testFile1).text();
@@ -581,7 +583,7 @@ describe('applyLlmEdits', () => {
     });
 
     expect(result).toBeDefined();
-    expect(result?.successes.length).toBe(1);
+    expect(result?.appliedSuccesses.length).toBe(1);
     expect(result?.failures.length).toBe(0);
     expect(mockRetryRequester).toHaveBeenCalled();
 
@@ -643,7 +645,7 @@ describe('applyLlmEdits', () => {
     expect(updatedContent2).toBe('Modified content\nSecond line\n');
 
     expect(result).toBeDefined();
-    expect(result?.successes.length).toBe(2); // Both files should be updated
+    expect(result?.appliedSuccesses.length).toBe(2); // Both files should be updated
     expect(result?.failures.length).toBe(0);
     expect(mockRetryRequester).toHaveBeenCalled();
   });

@@ -151,7 +151,7 @@ export async function selectReviewComments(
 
     let range = end - start;
     let terminalExtra = Math.max(0, Math.floor((MAX_HEIGHT - 10 - range) / 2));
-    let terminalStart = Math.max(1, start + terminalExtra);
+    let terminalStart = Math.max(1, start - terminalExtra);
     let terminalEnd = end + terminalExtra;
 
     const diff = parseDiff(thread.comments.nodes[0].diffHunk);

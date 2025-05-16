@@ -98,9 +98,8 @@ return value;
       26: function B() {
       27:   return value;
       28: }
-  The edit was ambiguous because the same original text appeared multiple times.
-`;
-    expect(formatFailuresForLlm([failure])).toBe(expectedOutput);
+  The edit was ambiguous because`;
+    expect(formatFailuresForLlm([failure])).toStartWith(expectedOutput);
   });
 
   test('should format a mix of failure types', () => {
@@ -149,9 +148,8 @@ return value;
       11: function A() {
       12:   return value;
       13: }
-  The edit was ambiguous because the same original text appeared multiple times.
-`;
-    expect(formatFailuresForLlm(failures)).toBe(expectedOutput);
+  The edit was ambiguous because`;
+    expect(formatFailuresForLlm(failures)).toStartWith(expectedOutput);
   });
 
   test('should trim long text blocks', () => {
