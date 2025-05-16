@@ -46,8 +46,8 @@ describe('AI Comments Mode Logic', () => {
         'const c = 3;',
         'const d = 4;',
       ].join('\n');
-      const diffForContext = [{ content: ' const c = 3;', oldLineNumber: 2, newLineNumber: 4 }];
-      const comments = [mockCommentBase('c1', 'Update c to 5', 2, null, diffForContext)];
+      const diffForContext = [{ content: ' const c = 3;', oldLineNumber: 1, newLineNumber: 2 }];
+      const comments = [mockCommentBase('c1', 'Update c to 5', 3, null, diffForContext)];
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         originalContent,
         comments,

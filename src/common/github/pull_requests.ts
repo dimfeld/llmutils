@@ -21,7 +21,7 @@ export interface ReviewThreadNode {
   id: string;
   isResolved: boolean;
   isOutdated: boolean;
-  line: number;
+  line: number | null;
   originalLine: number;
   originalStartLine: number | null;
   path: string;
@@ -146,10 +146,13 @@ export async function selectReviewComments(
   }
 
   const groups = threads.map((thread) => {
-    let start = Math.max(1, thread.startLine ?? thread.line);
-    let end = thread.line;
+    let start = Math.max(
+      1,
+      thread.startLine ?? thread.line ?? thread.originalStartLine ?? thread.originalLine
+    );
+    let end = thread.line ?? thread.originalLine;
 
-    let range = end - start;
+    let range = end - start + 1;
     let terminalExtra = Math.max(0, Math.floor((MAX_HEIGHT - 10 - range) / 2));
     let terminalStart = Math.max(1, start - terminalExtra);
     let terminalEnd = end + terminalExtra;
@@ -172,7 +175,9 @@ export async function selectReviewComments(
       value: { comment, thread, diffForContext } satisfies DetailedReviewComment,
       short: `${thread.path}:${thread.originalLine}`,
       description:
-        limitLines(diffForTerminal ?? '', MAX_HEIGHT - 10) + '\n\n' + limitLines(comment.body, 10),
+        limitLines(diffForTerminal ?? '', Math.max(2, MAX_HEIGHT - 10)) +
+        '\n\n' +
+        limitLines(comment.body, 10),
     }));
 
     comments.sort((a, b) => {

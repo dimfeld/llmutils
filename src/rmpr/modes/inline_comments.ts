@@ -2,7 +2,7 @@ import * as path from 'path';
 import { findClosestMatches } from '../../editor/closest_match.ts';
 import type { DetailedReviewComment } from '../types.ts';
 import { basePrPrompt } from '../prompts.ts';
-import { error } from '../../logging.ts';
+import { debugLog, error } from '../../logging.ts';
 import { singleLineWithPrefix } from '../../common/formatting.ts';
 
 export interface AiCommentInsertionResult {
@@ -51,12 +51,6 @@ function findBestMatchLine(
     return null;
   }
 
-  // Convert matches to 1-indexed line numbers used by comments
-  for (const match of matches) {
-    match.startLine += 1;
-    match.endLine += 1;
-  }
-
   // Find the match closest to the original line numbers
   const originalReferenceLine = originalStartLine ?? originalLine;
   let bestMatch = matches[0];
@@ -76,13 +70,9 @@ function findBestMatchLine(
 
   // Adjust line numbers based on the comment's position within the diff context
   // Find the index of the target line in afterStateLines by matching newLineNumber
-  let targetIndex = -1;
-  for (let i = 0; i < diffForContext.length; i++) {
-    if (diffForContext[i].newLineNumber === originalReferenceLine) {
-      targetIndex = i;
-      break;
-    }
-  }
+  let targetIndex = diffForContext.findIndex(
+    (diffLine) => diffLine.newLineNumber - 1 === originalReferenceLine
+  );
 
   // If no exact match, fallback to using the original line numbers relative to the match
   if (targetIndex === -1) {
@@ -94,7 +84,7 @@ function findBestMatchLine(
   }
 
   // Calculate the offset from the start of the matched context
-  const lineOffset = targetIndex;
+  const lineOffset = diffForContext[targetIndex].newLineNumber - diffForContext[0].newLineNumber;
   const adjustedStartLine = bestMatch.startLine + lineOffset;
   const adjustedEndLine =
     originalStartLine && originalStartLine !== originalLine
@@ -214,6 +204,8 @@ export function insertAiCommentsIntoFileContent(
   commentsForFile: DetailedReviewComment[],
   filePath: string
 ): AiCommentInsertionResult {
+  debugLog('insertAiCommentsIntoFileContent', filePath);
+
   // If the file already has AI comments left over from a cancelled run, remove them
   originalContent = removeAiCommentMarkers(originalContent, filePath);
 
@@ -229,17 +221,23 @@ export function insertAiCommentsIntoFileContent(
   // adjusted line numbers.
   const commentsWithAdjustedLines = commentsForFile
     .map((comment) => {
+      const startLine = comment.thread.startLine ?? comment.thread.originalStartLine;
+      const endLine = comment.thread.line ?? comment.thread.originalLine;
+
+      debugLog({
+        index1Start: startLine,
+        index1End: endLine,
+      });
       const bestMatchResult = findBestMatchLine(
         originalContent,
         comment.diffForContext,
-        comment.thread.startLine,
-        comment.thread.line
+        // Pass zero-indexed line numbers
+        startLine ? startLine - 1 : null,
+        endLine - 1
       );
 
       if (!bestMatchResult) {
-        let lineRange = comment.thread.startLine
-          ? `${comment.thread.startLine}-${comment.thread.line}`
-          : comment.thread.line;
+        let lineRange = startLine ? `${startLine}-${endLine}` : endLine;
         errors.push(
           singleLineWithPrefix(
             `Could not find matching comment content from ${filePath}:${lineRange}: `,
@@ -284,11 +282,9 @@ export function insertAiCommentsIntoFileContent(
 
     if (useScriptTag) {
       // For Svelte files, check if the adjusted line is in the script or template section
-      const relevantLine1Based = comment.startLine;
-      const relevantLine0Based = relevantLine1Based - 1;
 
       // If no </script> tag or comment is after it, use HTML style. Otherwise JS style.
-      if (scriptEndTagIndex === -1 || relevantLine0Based >= scriptEndTagIndex) {
+      if (scriptEndTagIndex === -1 || comment.startLine >= scriptEndTagIndex) {
         currentPrefixer = svelteHtmlPrefixer;
       } else {
         currentPrefixer = svelteJsPrefixer;
@@ -308,27 +304,22 @@ export function insertAiCommentsIntoFileContent(
       const startMarkerLine = currentPrefixer(`AI_COMMENT_START`);
       const endMarkerLine = currentPrefixer(`AI_COMMENT_END`);
 
-      const insertionPointStart0Based = startLine - 1;
-      addToMapList(insertBefore, insertionPointStart0Based, [
-        startMarkerLine,
-        ...aiPrefixedBodyLines,
-      ]);
-
-      const insertionPointEnd0Based = endLine - 1;
-      addToMapList(insertAfter, insertionPointEnd0Based, [endMarkerLine]);
+      addToMapList(insertBefore, startLine, [startMarkerLine, ...aiPrefixedBodyLines]);
+      addToMapList(insertAfter, endLine, [endMarkerLine]);
     } else {
       // Single-line comment: insert before the startLine
-      const insertionPoint0Based = startLine - 1;
-      addToMapList(insertBefore, insertionPoint0Based, aiPrefixedBodyLines);
+      addToMapList(insertBefore, startLine, aiPrefixedBodyLines);
     }
   }
 
   for (let i = 0; i < lines.length; i++) {
     if (insertBefore.has(i)) {
+      debugLog(`Inserting AI comment marker before line ${i + 1}`);
       newLines.push(...insertBefore.get(i)!);
     }
     newLines.push(lines[i]);
     if (insertAfter.has(i)) {
+      debugLog(`Inserting AI comment marker after line ${i + 1}`);
       newLines.push(...insertAfter.get(i)!);
     }
   }

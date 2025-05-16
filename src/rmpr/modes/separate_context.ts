@@ -27,7 +27,9 @@ export function formatReviewCommentsForSeparateContext(
 
     // Format diffForContext with injected comments
     const targetLine =
-      comment.thread.diffSide === 'LEFT' ? comment.thread.originalLine : comment.thread.line;
+      comment.thread.diffSide === 'LEFT'
+        ? comment.thread.originalLine
+        : (comment.thread.line ?? comment.thread.originalLine);
     const diffKey = comment.thread.diffSide === 'LEFT' ? 'oldLineNumber' : 'newLineNumber';
 
     let spliceBeforeIndex = comment.diffForContext.findLastIndex(
