@@ -318,10 +318,11 @@ export async function handleRmprCommand(
     if (selectedComments.length === 1) {
       const firstCommentBody =
         selectedComments[0].cleanedComment || selectedComments[0].comment.body;
-      const bodyFirstLine = firstCommentBody.split('\n')[0];
-      firstLine = `Address PR comment: ${bodyFirstLine.slice(0, 100)}...`;
+      const bodyFirstLine =
+        firstCommentBody.split('\n').find((l) => l.trim().length > 0) || 'Empty comment';
+      firstLine = `Address PR comment: ${bodyFirstLine.slice(0, 50)}...`;
     } else {
-      firstLine = `Address ${selectedComments.length} PR comments for ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`;
+      firstLine = `Address ${selectedComments.length} PR comments`;
     }
     const commitMessageParts: string[] = [
       firstLine,
