@@ -310,9 +310,13 @@ export async function applyLlmEdits({
   // Handle results from dry run (currently only from udiff and diff modes)
   let { successes, failures: initialFailures } = results;
 
+  /** Failures remaining to resolve */
   let remainingFailures = initialFailures;
+  /** Successful edits that have already been applied */
   let appliedSuccesses: EditResult[] = [];
+  /** Lookup for successful edits */
   let appliedSuccessKeys = new Set<string>();
+  /** Successful edits that have not been applied yet */
   let remainingSuccesses = successes;
 
   function editKey(edit: EditResult) {
@@ -413,9 +417,9 @@ export async function applyLlmEdits({
         const retryResults = await applyEditsInternal({
           content: retryResponseContent,
           writeRoot,
-          dryRun: dryRun,
+          dryRun,
           mode,
-          ignoreFiles: successOnlyFilePaths.values().toArray(),
+          ignoreFiles: [...new Set(appliedSuccesses.map((s) => s.filePath))],
         });
 
         if (retryResults) {
@@ -429,11 +433,16 @@ export async function applyLlmEdits({
           appliedSuccesses.push(...retryResults.successes);
 
           // Check for original successes that weren't applied in retry, considering overlapping line ranges
-          const missingSuccesses: EditResult[] = [];
-          for (const success of successes) {
-            if (successOnlyFilePaths.has(success.filePath)) continue;
+          remainingSuccesses = remainingSuccesses.filter((success) => {
+            if (
+              successOnlyFilePaths.has(success.filePath) ||
+              appliedSuccessKeys.has(editKey(success))
+            ) {
+              return false;
+            }
 
-            let isMissing = true;
+            // Look for overlapping edits to indicate that this edit was returned in the retry as well, so was already
+            // applied.
             for (const retrySuccess of retryResults.successes) {
               if (retrySuccess.filePath !== success.filePath) continue;
 
@@ -450,22 +459,19 @@ export async function applyLlmEdits({
                 (successStartLine <= retryEndLine && successEndLine >= retryStartLine) ||
                 retrySuccess.originalText === success.originalText
               ) {
-                isMissing = false;
-                break;
+                return false;
               }
             }
 
-            if (isMissing) {
-              missingSuccesses.push(success);
-            }
-          }
+            return true;
+          });
 
-          if (missingSuccesses.length > 0 && !dryRun) {
+          if (remainingSuccesses.length > 0 && !dryRun) {
             log(
-              `Applying ${missingSuccesses.length} original successful edits that were not included in retry...`
+              `Applying ${remainingSuccesses.length} original successful edits that were not included in retry...`
             );
-            for (const success of missingSuccesses) {
-              await applySuccessOnce(success as SuccessResult);
+            for (const success of remainingSuccesses) {
+              await applySuccessOnce(success);
             }
           }
         }
