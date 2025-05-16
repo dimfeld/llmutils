@@ -116,6 +116,14 @@ export async function fetchPullRequestAndComments(
 
   debugLog(response);
 
+  for (const thread of response.repository.pullRequest.reviewThreads.nodes) {
+    for (const comment of thread.comments.nodes) {
+      if (comment.body) {
+        comment.body = comment.body.replaceAll(/\r\n|\r/g, '\n');
+      }
+    }
+  }
+
   return {
     pullRequest: response.repository.pullRequest,
   };

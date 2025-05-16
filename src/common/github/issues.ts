@@ -32,6 +32,16 @@ export async function fetchIssueAndComments({
     }),
   ]);
 
+  if (issueResponse.data.body) {
+    issueResponse.data.body = issueResponse.data.body.replaceAll(/\r\n|\r/g, '\n');
+  }
+
+  commentsResponse.data.forEach((comment) => {
+    if (comment.body) {
+      comment.body = comment.body.replaceAll(/\r\n|\r/g, '\n');
+    }
+  });
+
   const result = {
     issue: issueResponse.data,
     comments: commentsResponse.data,
