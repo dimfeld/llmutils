@@ -225,7 +225,7 @@ export function insertAiCommentsIntoFileContent(
 
   const errors: string[] = [];
 
-  // The file may ave changed since it was reviewed, so process the comments to determine
+  // The file may have changed since it was reviewed, so process the comments to determine
   // adjusted line numbers.
   const commentsWithAdjustedLines = commentsForFile
     .map((comment) => {
@@ -318,7 +318,8 @@ export function insertAiCommentsIntoFileContent(
       addToMapList(insertAfter, insertionPointEnd0Based, [endMarkerLine]);
     } else {
       // Single-line comment: insert before the startLine
-      const insertionPoint0Based = startLine - 1;
+      // Subtract 1 to make it zero-based and another so that we go up a line
+      const insertionPoint0Based = startLine - 2;
       addToMapList(insertBefore, insertionPoint0Based, aiPrefixedBodyLines);
     }
   }
