@@ -335,7 +335,7 @@ export async function handleRmprCommand(
     const commitMessageParts: string[] = [
       firstLine,
       '',
-      'Changes address the following review comments:',
+      'Changes address the following review comments:\n',
       selectedComments
         .map((c) => {
           const { thread, comment, cleanedComment } = c;
