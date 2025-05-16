@@ -320,7 +320,15 @@ export async function handleRmprCommand(
         selectedComments[0].cleanedComment || selectedComments[0].comment.body;
       const bodyFirstLine =
         firstCommentBody.split('\n').find((l) => l.trim().length > 0) || 'Empty comment';
-      firstLine = `Address PR comment: ${bodyFirstLine.slice(0, 50)}...`;
+      let slicedBodyFirstLine = bodyFirstLine.slice(0, 50);
+      if (slicedBodyFirstLine !== bodyFirstLine) {
+        let lastSpace = slicedBodyFirstLine.lastIndexOf(' ');
+        if (lastSpace !== -1) {
+          slicedBodyFirstLine = slicedBodyFirstLine.slice(0, lastSpace);
+        }
+        slicedBodyFirstLine += '…';
+      }
+      firstLine = `Address PR comment: ${slicedBodyFirstLine}`;
     } else {
       firstLine = `Address ${selectedComments.length} PR comments`;
     }
