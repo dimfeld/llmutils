@@ -76,12 +76,14 @@ export async function applyEditsInternal({
   dryRun,
   suppressLogging = false,
   mode,
+  ignoreFiles,
 }: {
   content: string;
   writeRoot: string;
   dryRun: boolean;
   suppressLogging?: boolean;
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
+  ignoreFiles?: string[];
 }): Promise<{ successes: SuccessResult[]; failures: FailureResult[] } | undefined> {
   const xmlMode = mode === 'xml' || (!mode && content.includes('<code_changes>'));
   const diffMode = mode === 'diff' || (!mode && content.includes('<<<<<<< SEARCH'));
@@ -94,17 +96,29 @@ export async function applyEditsInternal({
   let results: EditResult[];
   if (udiffMode) {
     if (!suppressLogging) log('Processing as Unified Diff...');
-    results = await processUnifiedDiff({ content, writeRoot, dryRun, suppressLogging });
+    results = await processUnifiedDiff({
+      content,
+      writeRoot,
+      dryRun,
+      suppressLogging,
+      ignoreFiles,
+    });
   } else if (diffMode) {
     if (!suppressLogging) log('Processing as Search/Replace Diff...');
-    results = await processSearchReplace({ content, writeRoot, dryRun, suppressLogging });
+    results = await processSearchReplace({
+      content,
+      writeRoot,
+      dryRun,
+      suppressLogging,
+      ignoreFiles,
+    });
   } else if (xmlMode) {
     if (!suppressLogging) log('Processing as XML Whole Files...');
-    await processXmlContents({ content, writeRoot, dryRun, suppressLogging });
+    await processXmlContents({ content, writeRoot, dryRun, suppressLogging, ignoreFiles });
     return undefined;
   } else {
     if (!suppressLogging) log('Processing as Whole Files...');
-    await processRawFiles({ content, writeRoot, dryRun, suppressLogging });
+    await processRawFiles({ content, writeRoot, dryRun, suppressLogging, ignoreFiles });
     return undefined;
   }
 
@@ -313,7 +327,6 @@ export async function applyLlmEdits({
 
   async function applySuccessOnce(success: EditResult) {
     if (!appliedSuccessKeys.has(editKey(success))) {
-      console.log(`== Applying edit to ${success.filePath}...`);
       await applyEditResult(success, writeRoot, dryRun);
       countAppliedSuccess(success);
     }
@@ -356,7 +369,7 @@ export async function applyLlmEdits({
     );
     const successOnlyFilePaths = new Set(successOnlyFiles.map(([filePath]) => filePath));
     if (successOnlyFiles.length > 0 && successes.length > 0) {
-      log(`Applying ${successes.length} successful edits from ${successOnlyFiles.length} files...`);
+      log(`Applying edits from ${successOnlyFiles.length} files...`);
       for (const [_filePath, { successes }] of successOnlyFiles) {
         for (const success of successes) {
           debugLog(`Applying all-success edits for ${success.filePath}`);
@@ -402,6 +415,7 @@ export async function applyLlmEdits({
           writeRoot,
           dryRun: dryRun,
           mode,
+          ignoreFiles: successOnlyFilePaths.values().toArray(),
         });
 
         if (retryResults) {

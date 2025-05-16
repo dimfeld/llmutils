@@ -786,13 +786,14 @@ export async function runRmfilterProgrammatically(
 export async function fullRmfilterRun(options?: {
   args?: string[];
   gitRoot?: string;
+  baseDir?: string;
   skipWrite?: boolean;
 }) {
   const { globalValues, commandsParsed, yamlConfigPath } = await getCurrentConfig(options);
   await handleInitialCliCommands(globalValues);
 
   const gitRoot = await getGitRoot();
-  const baseDir = calculateBaseDir(globalValues, gitRoot, yamlConfigPath);
+  const baseDir = options?.baseDir ?? calculateBaseDir(globalValues, gitRoot, yamlConfigPath);
   const modelSettings = resolveModelSettings(globalValues.model);
 
   // Reconstruct the original CLI arguments string for the command tag

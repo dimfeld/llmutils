@@ -239,7 +239,12 @@ export async function handleRmprCommand(
     rmFilterArgs.push('--copy');
   }
 
-  const llmPrompt = await fullRmfilterRun({ args: rmFilterArgs, gitRoot, skipWrite: true });
+  const llmPrompt = await fullRmfilterRun({
+    args: rmFilterArgs,
+    gitRoot,
+    baseDir: gitRoot,
+    skipWrite: true,
+  });
 
   if (options.dryRun) {
     log(

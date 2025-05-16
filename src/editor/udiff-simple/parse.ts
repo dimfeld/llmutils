@@ -684,6 +684,7 @@ export async function processUnifiedDiff({
   writeRoot,
   dryRun,
   suppressLogging = false,
+  ignoreFiles,
 }: ProcessFileOptions): Promise<EditResult[]> {
   const rawEdits = findDiffs(content);
 
@@ -706,8 +707,13 @@ export async function processUnifiedDiff({
       }
       continue;
     }
+
     // Normalize path separators for consistency
     resolvedPath = resolvedPath.replace(/\\/g, '/');
+    if (ignoreFiles?.includes(resolvedPath)) {
+      continue;
+    }
+
     edits.push({ filePath: resolvedPath, hunk });
   }
 

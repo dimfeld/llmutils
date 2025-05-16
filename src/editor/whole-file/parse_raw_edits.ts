@@ -51,6 +51,7 @@ export async function processRawFiles({
   writeRoot,
   dryRun,
   suppressLogging = false,
+  ignoreFiles,
 }: ProcessFileOptions) {
   // Split content into lines
   const lines = content.split('\n');
@@ -166,6 +167,10 @@ export async function processRawFiles({
 
   // Write files to disk
   for (const [filePath, contentLines] of filesToWrite) {
+    if (ignoreFiles?.includes(filePath)) {
+      continue;
+    }
+
     try {
       if (!dryRun) {
         let contentStr = contentLines.join('\n').trimEnd();

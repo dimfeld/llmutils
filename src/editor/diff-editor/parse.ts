@@ -24,8 +24,12 @@ export async function processSearchReplace({
   writeRoot,
   dryRun,
   suppressLogging = false,
+  ignoreFiles,
 }: ProcessFileOptions) {
-  const edits = getEdits(content, writeRoot);
+  const edits = getEdits(content, writeRoot).filter(
+    (edit) => !ignoreFiles?.includes(edit.filePath)
+  );
+
   return await applyEdits(edits, writeRoot, dryRun, suppressLogging);
 }
 

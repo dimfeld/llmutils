@@ -7,6 +7,7 @@ export async function processXmlContents({
   writeRoot,
   dryRun,
   suppressLogging = false,
+  ignoreFiles,
 }: ProcessFileOptions) {
   const changes = (await parseContentsWithXml(content)) ?? [];
   if (!changes) {
@@ -14,6 +15,9 @@ export async function processXmlContents({
   }
 
   for (let change of changes) {
+    if (ignoreFiles?.includes(change.file_path)) {
+      continue;
+    }
     await applyFileChanges(change, writeRoot, dryRun, suppressLogging);
   }
 }
