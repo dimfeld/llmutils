@@ -79,3 +79,10 @@ export async function getOutputPath() {
   }
   return outputFile;
 }
+
+export function getCommandFilePath(outputFilePath: string) {
+  const outputFileParsed = path.parse(outputFilePath);
+  const commandFilePath = path.join(outputFileParsed.dir, outputFileParsed.name + '.command.xml');
+
+  return commandFilePath;
+}

@@ -17,6 +17,8 @@ async function createTempTestDir() {
 }
 
 describe('extractRmfilterCommandArgs', () => {
+  const responseContent = '<command_id>1234</command_id>';
+
   test('extracts command args from content with rmfilter_command tag', () => {
     const content = `
 Some content here
@@ -24,19 +26,21 @@ Some content here
 More content here
     `;
 
-    const result = extractRmfilterCommandArgs(content);
-    expect(result).toEqual(['--include', '*.ts', '--exclude', 'node_modules']);
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', '*.ts', '--exclude', 'node_modules'],
+    });
   });
 
   test('returns null when no rmfilter_command tag is found', () => {
     const content = 'Some content without rmfilter_command tag';
-    const result = extractRmfilterCommandArgs(content);
+    const result = extractRmfilterCommandArgs(content, responseContent);
     expect(result).toBeNull();
   });
 
   test('returns null when rmfilter_command tag is empty', () => {
     const content = '<rmfilter_command></rmfilter_command>';
-    const result = extractRmfilterCommandArgs(content);
+    const result = extractRmfilterCommandArgs(content, responseContent);
     expect(result).toBeNull();
   });
 
@@ -48,29 +52,37 @@ More content here
 </rmfilter_command>
     `;
 
-    const result = extractRmfilterCommandArgs(content);
-    expect(result).toEqual(['--include', '*.ts', '--exclude', 'node_modules']);
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', '*.ts', '--exclude', 'node_modules'],
+    });
   });
 
   test('handles quoted arguments correctly', () => {
     const content =
       '<rmfilter_command>--include "src/**/*.ts" --exclude "test files"</rmfilter_command>';
-    const result = extractRmfilterCommandArgs(content);
-    expect(result).toEqual(['--include', 'src/**/*.ts', '--exclude', 'test files']);
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', 'src/**/*.ts', '--exclude', 'test files'],
+    });
   });
 
   test('handles escaped quotes inside quoted strings', () => {
     const content =
       '<rmfilter_command>--include "src/**/*.ts" --message "This is a \\"quoted\\" message"</rmfilter_command>';
-    const result = extractRmfilterCommandArgs(content);
-    expect(result).toEqual(['--include', 'src/**/*.ts', '--message', 'This is a "quoted" message']);
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', 'src/**/*.ts', '--message', 'This is a "quoted" message'],
+    });
   });
 
   test('handles single quotes', () => {
     const content =
       "<rmfilter_command>--include '*.ts' --exclude 'node_modules'</rmfilter_command>";
-    const result = extractRmfilterCommandArgs(content);
-    expect(result).toEqual(['--include', '*.ts', '--exclude', 'node_modules']);
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', '*.ts', '--exclude', 'node_modules'],
+    });
   });
 
   test('returns only first rmfilter_command tag when multiple exist', () => {
@@ -80,14 +92,62 @@ Some content in between
 <rmfilter_command>--exclude "node_modules"</rmfilter_command>
     `;
 
-    const result = extractRmfilterCommandArgs(content);
-    expect(result).toEqual(['--include', '*.ts']);
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', '*.ts'],
+    });
   });
 
   test('handles whitespace-only content in rmfilter_command tag', () => {
     const content = '<rmfilter_command>   </rmfilter_command>';
-    const result = extractRmfilterCommandArgs(content);
+    const result = extractRmfilterCommandArgs(content, responseContent);
     expect(result).toBeNull();
+  });
+
+  test('returns promptMessage when command IDs mismatch', () => {
+    const content = `
+<command_id>1234</command_id>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+    `;
+    const responseContent = `
+<command_id>5678</command_id>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+    `;
+
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', '*.ts'],
+      promptMessage: "The saved command file ID does not match the response's ID. Continue anyway?",
+    });
+  });
+
+  test('returns promptMessage when response lacks command ID', () => {
+    const content = `
+<command_id>1234</command_id>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+    `;
+    const responseContent = `
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+    `;
+
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', '*.ts'],
+      promptMessage: 'The response does not contain a command file ID. Continue anyway?',
+    });
+  });
+
+  test('includes instructions in command string', () => {
+    const content = `
+<command_id>1234</command_id>
+<rmfilter_instructions>Update all TypeScript files</rmfilter_instructions>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+    `;
+
+    const result = extractRmfilterCommandArgs(content, responseContent);
+    expect(result).toEqual({
+      commands: ['--include', '*.ts', '--instructions', 'Update all TypeScript files'],
+    });
   });
 });
 

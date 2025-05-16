@@ -26,6 +26,7 @@ import {
 
 export interface ApplyLlmEditsOptions {
   content: string;
+  contentCommandsFilename?: string;
   writeRoot?: string;
   dryRun?: boolean;
   mode?: 'diff' | 'udiff' | 'xml' | 'whole';
@@ -39,12 +40,33 @@ export interface ApplyLlmEditsOptions {
 
 /**
  * Extracts the command-line arguments from the first <rmfilter_command> tag found in the content.
- * @param content The string content potentially containing the tag.
+ * @param argsContent The string content potentially containing the tag.
  * @returns An array of parsed arguments, or null if the tag is not found or empty.
  */
-export function extractRmfilterCommandArgs(content: string): string[] | null {
-  const match = content.match(/<rmfilter_command>(.*?)<\/rmfilter_command>/s);
-  const instructionsMatch = content.match(/<instructions>(.*?)<\/instructions>/s);
+export function extractRmfilterCommandArgs(
+  argsContent: string,
+  responseContent: string
+): { commands: string[]; promptMessage?: string } | null {
+  let promptMessage: string | undefined;
+  const match = argsContent.match(/<rmfilter_command>(.*?)<\/rmfilter_command>/s);
+  const instructionsMatch = argsContent.match(
+    /<rmfilter_instructions>(.*?)<\/rmfilter_instructions>/s
+  );
+
+  const idTagRe = /<command_id>(.*?)<\/command_id>/s;
+  const argsIdMatch = argsContent.match(idTagRe);
+  const responseContentIdMatch = responseContent.match(idTagRe);
+
+  const responseContentId = responseContentIdMatch?.[1]?.trim();
+  const argsId = argsIdMatch?.[1]?.trim();
+  debugLog('extractRmfilterCommandArgs', { responseContentId, argsId });
+
+  if (argsId && responseContentId && argsId !== responseContentId) {
+    promptMessage = `The saved command file ID does not match the response's ID. Continue anyway?`;
+  } else if (!responseContentId) {
+    promptMessage = `The response does not contain a command file ID. Continue anyway?`;
+  }
+
   if (match && match[1]) {
     let commandString = match[1].trim();
     if (commandString) {
@@ -56,7 +78,11 @@ export function extractRmfilterCommandArgs(content: string): string[] | null {
       }
 
       try {
-        return parseCliArgsFromString(commandString);
+        const commands = parseCliArgsFromString(commandString);
+        return {
+          commands,
+          promptMessage,
+        };
       } catch (e) {
         error(`Error parsing rmfilter_command content: "${commandString}"`, e);
         return null;
@@ -396,7 +422,7 @@ export async function applyLlmEdits({
     let originalContext: string | null = null;
     try {
       originalContext = await getOriginalRequestContext(
-        { content, originalPrompt },
+        { content, originalPrompt, interactive },
         await getGitRoot(baseDir),
         baseDir
       );

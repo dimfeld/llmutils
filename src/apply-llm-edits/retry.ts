@@ -1,13 +1,12 @@
-import { streamText } from 'ai';
+import { confirm } from '@inquirer/prompts';
 import { createModel } from '../common/model_factory.ts';
+import { runStreamingPrompt, type LlmPromptStructure } from '../common/run_and_apply.ts';
 import type { NoMatchFailure, NotUniqueFailure } from '../editor/types.ts';
-import { debugLog, warn, error } from '../logging.ts';
-import { getOutputPath } from '../rmfilter/repomix.ts';
+import { debugLog, error } from '../logging.ts';
+import { getCommandFilePath, getOutputPath } from '../rmfilter/repomix.ts';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.ts';
 import { extractRmfilterCommandArgs, type ApplyLlmEditsOptions } from './apply.ts';
 import { formatFailuresForLlm } from './failures.ts';
-import * as path from 'path';
-import { runStreamingPrompt, type LlmPromptStructure } from '../common/run_and_apply.ts';
 
 /** Type definition for the callback function used to request LLM completions. */
 export type RetryRequester = (prompt: LlmPromptStructure) => Promise<string>;
@@ -27,9 +26,8 @@ export function createRetryRequester(modelId: string): RetryRequester {
 }
 
 /**
- * Retrieves the original context (prompt) used to generate the LLM response.
- * It prioritizes the explicitly provided prompt, then tries to use a cached
- * rmfilter output if the command matches, and finally re-runs rmfilter if necessary.
+ * Retrieves the original context (prompt) used to generate the LLM response,
+ * and reruns rmfilter to get the current file content.
  */
 export async function getOriginalRequestContext(
   options: ApplyLlmEditsOptions,
@@ -41,61 +39,48 @@ export async function getOriginalRequestContext(
     return options.originalPrompt;
   }
 
-  debugLog('Attempting to retrieve original context via rmfilter command.');
-  const currentArgs = extractRmfilterCommandArgs(options.content);
-  if (!currentArgs) {
-    throw new Error(
-      'Cannot retry: Original prompt not provided and <rmfilter_command> tag not found or empty in the LLM response content.'
-    );
+  let commandsPath = options.contentCommandsFilename;
+  if (!commandsPath) {
+    commandsPath = getCommandFilePath(await getOutputPath());
   }
 
-  const outputPath = path.resolve(gitRoot, await getOutputPath());
-  let cachedContent: string | null = null;
-  let cachedArgs: string[] | null = null;
-
+  let contextContent: string;
   try {
-    cachedContent = await Bun.file(outputPath).text();
-    cachedArgs = extractRmfilterCommandArgs(cachedContent);
-    debugLog(`Found cached rmfilter output at: ${outputPath}`);
+    contextContent = await Bun.file(commandsPath).text();
   } catch (e: any) {
     if (e.code !== 'ENOENT') {
-      warn(`Error reading cached rmfilter output at ${outputPath}:`, e.message);
+      throw e;
     } else {
-      debugLog(`No cached rmfilter output found at: ${outputPath}`);
+      throw new Error(`No cached rmfilter output found at: ${commandsPath}`);
     }
   }
 
-  let argsMatch = false;
-  if (cachedArgs && currentArgs) {
-    // Compare arguments ignoring order
-    const currentSet = new Set(currentArgs);
-    const cachedSet = new Set(cachedArgs);
-    if (currentSet.size === cachedSet.size && [...currentSet].every((arg) => cachedSet.has(arg))) {
-      argsMatch = true;
+  const result = extractRmfilterCommandArgs(contextContent, options.content);
+
+  if (result?.promptMessage && options.interactive) {
+    let keepGoing = await confirm({
+      message: result.promptMessage,
+      default: true,
+    });
+
+    if (!keepGoing) {
+      throw new Error('Not continuing due to command ID mismatch');
     }
   }
 
-  if (cachedContent && argsMatch) {
-    debugLog('Using cached rmfilter output as original context (arguments match).');
-    return cachedContent;
+  let argsFromContext = result?.commands ?? null;
+  if (!argsFromContext) {
+    throw new Error(`No rmfilter command found in cached rmfilter output at: ${commandsPath}`);
   }
 
-  if (cachedContent && !argsMatch) {
-    warn(
-      `Cached rmfilter output at ${outputPath} is stale (command arguments mismatch). Re-running rmfilter.`
-    );
-  } else if (!cachedContent) {
-    debugLog('No matching cached rmfilter output found. Re-running rmfilter.');
-  }
-
-  debugLog('Running rmfilter programmatically with args:', currentArgs);
+  debugLog('Running rmfilter programmatically with args:', argsFromContext);
   try {
-    const regeneratedOutput = await runRmfilterProgrammatically(currentArgs, gitRoot, baseDir);
+    const regeneratedOutput = await runRmfilterProgrammatically(argsFromContext, gitRoot, baseDir);
     return regeneratedOutput;
   } catch (err) {
     error('Error running rmfilter programmatically to regenerate context:', err);
     throw new Error(
-      `Failed to regenerate original rmfilter context by re-running command: ${currentArgs.join(' ')}`
+      `Failed to regenerate original rmfilter context by re-running command: ${argsFromContext.join(' ')}`
     );
   }
 }

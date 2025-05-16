@@ -500,7 +500,10 @@ export interface RmfilterConfig {
   cliArgsString?: string;
 }
 
-const getGuidelinesTag = (modelSettings: ReturnType<typeof resolveModelSettings>) => {
+const getGuidelinesTag = (
+  modelSettings: ReturnType<typeof resolveModelSettings>,
+  idCommand: string
+) => {
   const guidelines = [
     `<guideline>When making a change, update related tests.</guideline>`,
     `<guideline>Leave existing comments and docstrings alone unless updating them is relevant to the change.</guideline>`,
@@ -515,6 +518,11 @@ const getGuidelinesTag = (modelSettings: ReturnType<typeof resolveModelSettings>
   if (modelSettings.noArtifacts) {
     guidelines.push(`<guideline>${noArtifacts}</guideline>`);
   }
+
+  if (idCommand) {
+    guidelines.push(`<guideline>${idCommand}</guideline>`);
+  }
+
   return `<guidelines>\n${guidelines.join('\n')}\n</guidelines>`;
 };
 
@@ -525,6 +533,7 @@ export async function generateRmfilterOutput(
   editorInstructions: string = ''
 ): Promise<{
   finalOutput: string;
+  commandOutput: string;
   instructions: string;
   docFilesPaths: string[];
   ruleFilesPaths: string[];
@@ -670,10 +679,18 @@ export async function generateRmfilterOutput(
 
   // Construct command tag using provided cliArgsString or reconstruct if needed
   const commandTagContent = cliArgsString ?? reconstructCliArgs(globalValues, commandsParsed);
-  let commandTag = `The rmfilter_command tag contains the CLI arguments used to generate these instructions. You should place this tag and its contents at the start of your output.
-<rmfilter_command>${commandTagContent}</rmfilter_command>`;
+  let commandTag = ` <rmfilter_command>${commandTagContent}</rmfilter_command>`;
 
-  // commandTag += `\nAlso place the <instructions> tag and its contents at the start of your output.`;
+  const idTag = `<command_id>${crypto.randomUUID()}</command_id>`;
+  const idInstruction = `Place this identifier tag at the beginning of your output: ${idTag}`;
+
+  const commandOutput = [
+    '<rmfilter_context>',
+    idTag,
+    commandTag,
+    `<rmfilter_instructions>${rawInstructions}</rmfilter_instructions>`,
+    '</rmfilter_context>',
+  ].join('\n');
 
   const finalOutput = [
     repomixOutput,
@@ -687,8 +704,7 @@ export async function generateRmfilterOutput(
     editFormat === 'diff-fenced' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
     editFormat === 'udiff-simple' && notBare ? udiffPrompt(modelSettings) : '',
     editFormat === 'whole-file' && notBare ? generateWholeFilePrompt(modelSettings) : '',
-    notBare ? getGuidelinesTag(modelSettings) : '',
-    notBare ? commandTag : '',
+    notBare ? getGuidelinesTag(modelSettings, idInstruction) : '',
     instructionsTag,
   ]
     .filter(Boolean)
@@ -696,6 +712,7 @@ export async function generateRmfilterOutput(
 
   return {
     finalOutput,
+    commandOutput,
     instructions: rawInstructions,
     docFilesPaths,
     ruleFilesPaths,
@@ -809,13 +826,16 @@ export async function fullRmfilterRun(options?: {
     cliArgsString,
   };
 
-  const { finalOutput, instructions, docFilesPaths, ruleFilesPaths, examples } =
+  const { commandOutput, finalOutput, instructions, docFilesPaths, ruleFilesPaths, examples } =
     await generateRmfilterOutput(config, baseDir, gitRoot, editorInstructions);
 
   // Handle output writing/copying
-  const outputFile = globalValues.output ?? (await getOutputPath());
+  const outputFilePath = globalValues.output ?? (await getOutputPath());
   if (!options?.skipWrite) {
-    await Bun.write(outputFile, finalOutput);
+    const outputFileParsed = path.parse(outputFilePath);
+    const commandFilePath = path.join(outputFileParsed.dir, outputFileParsed.name + '.command.xml');
+    await Bun.write(commandFilePath, commandOutput);
+    await Bun.write(outputFilePath, finalOutput);
   }
 
   if (!globalValues.quiet) {
@@ -855,7 +875,7 @@ export async function fullRmfilterRun(options?: {
     if (options?.skipWrite) {
       log(`Edit format: ${editFormat}`);
     } else {
-      log(`Output written to ${outputFile}, edit format: ${editFormat}`);
+      log(`Output written to ${outputFilePath}, edit format: ${editFormat}`);
     }
   }
 
@@ -869,7 +889,7 @@ export async function fullRmfilterRun(options?: {
   if (globalValues.run) {
     await runPrompt({
       model: globalValues.model,
-      file: outputFile,
+      file: outputFilePath,
       interactive: process.stdout.isTTY,
     });
   }

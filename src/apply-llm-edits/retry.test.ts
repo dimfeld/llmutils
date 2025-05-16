@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { runRmfilterProgrammatically } from '../rmfilter/rmfilter';
+import * as repomix from '../rmfilter/repomix';
 import { getOriginalRequestContext } from './retry.ts';
 
 // Helper function to create a temporary directory structure for testing
@@ -16,9 +16,16 @@ describe('getOriginalRequestContext', () => {
 
   beforeEach(async () => {
     tempDir = await createTempTestDir();
-    // Reset mocks for runRmfilterProgrammatically
+    // Reset mocks for runRmfilterProgrammatically and inquirer
     await mock.module('../rmfilter/rmfilter', () => ({
       runRmfilterProgrammatically: mock(() => Promise.resolve('regenerated output')),
+    }));
+    await mock.module('@inquirer/prompts', () => ({
+      confirm: mock(() => Promise.resolve(true)),
+    }));
+    await mock.module('../rmfilter/repomix', () => ({
+      ...repomix,
+      getOutputPath: mock(() => Promise.resolve(path.join(tempDir, 'repomix-output.xml'))),
     }));
   });
 
@@ -32,66 +39,94 @@ describe('getOriginalRequestContext', () => {
     expect(result).toBe('test prompt');
   });
 
-  test('throws when rmfilter_command is missing in content', async () => {
-    const options = { content: 'no rmfilter_command tag' };
+  test('throws when cache file does not exist', async () => {
+    const options = { content: '<rmfilter_command>--include "*.ts"</rmfilter_command>' };
     await expect(getOriginalRequestContext(options, tempDir, tempDir)).rejects.toThrow(
-      'Cannot retry: Original prompt not provided and <rmfilter_command> tag not found or empty in the LLM response content.'
+      `No cached rmfilter output found at: ${path.join(tempDir, 'repomix-output.command.xml')}`
     );
   });
 
-  test('returns cached content when cache file exists and arguments match', async () => {
+  test('throws when rmfilter_command is missing in cached content', async () => {
     const outputPath = path.join(tempDir, 'repomix-output.xml');
-    const cachedContent = '<rmfilter_command>--include "*.ts"</rmfilter_command>\nCached content';
-    await Bun.write(outputPath, cachedContent);
+    const commandPath = repomix.getCommandFilePath(outputPath);
+    await Bun.write(commandPath, 'no rmfilter_command tag');
 
-    const options = {
-      content: '<rmfilter_command>--include "*.ts"</rmfilter_command>',
-    };
-    const result = await getOriginalRequestContext(options, tempDir, tempDir);
-    expect(result).toBe(cachedContent);
+    const options = { content: '<rmfilter_command>--include "*.ts"</rmfilter_command>' };
+    await expect(getOriginalRequestContext(options, tempDir, tempDir)).rejects.toThrow(
+      `No rmfilter command found in cached rmfilter output at: ${repomix.getCommandFilePath(outputPath)}`
+    );
   });
 
-  test('calls runRmfilterProgrammatically when cache file exists but arguments do not match', async () => {
+  test('prompts user when command IDs mismatch and proceeds if confirmed', async () => {
     const outputPath = path.join(tempDir, 'repomix-output.xml');
-    const cachedContent = '<rmfilter_command>--include "*.js"</rmfilter_command>\nCached content';
-    await Bun.write(outputPath, cachedContent);
+    const commandPath = repomix.getCommandFilePath(outputPath);
+    const cachedContent = `
+<command_id>1234</command_id>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+Cached content
+    `;
+    await Bun.write(commandPath, cachedContent);
 
     const options = {
-      content: '<rmfilter_command>--include "*.ts"</rmfilter_command>',
+      content: `
+<command_id>5678</command_id>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+      `,
+      interactive: true,
     };
     const result = await getOriginalRequestContext(options, tempDir, tempDir);
     expect(result).toBe('regenerated output');
-    expect(runRmfilterProgrammatically).toHaveBeenCalledWith(
-      ['--include', '*.ts'],
-      tempDir,
-      tempDir
+    expect((await import('@inquirer/prompts')).confirm).toHaveBeenCalledWith({
+      message: "The saved command file ID does not match the response's ID. Continue anyway?",
+      default: true,
+    });
+  });
+
+  test('throws when user declines command ID mismatch prompt', async () => {
+    await mock.module('@inquirer/prompts', () => ({
+      confirm: mock(() => Promise.resolve(false)),
+    }));
+
+    const outputPath = path.join(tempDir, 'repomix-output.xml');
+    const commandPath = repomix.getCommandFilePath(outputPath);
+    const cachedContent = `
+<command_id>1234</command_id>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+Cached content
+    `;
+    await Bun.write(commandPath, cachedContent);
+
+    const options = {
+      content: `
+<command_id>5678</command_id>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+      `,
+      interactive: true,
+    };
+    await expect(getOriginalRequestContext(options, tempDir, tempDir)).rejects.toThrow(
+      'Not continuing due to command ID mismatch'
     );
   });
 
-  test('calls runRmfilterProgrammatically when cache file does not exist', async () => {
-    // Don't create the output file, so it doesn't exist
+  test('prompts when response lacks command ID and proceeds if confirmed', async () => {
+    const outputPath = path.join(tempDir, 'repomix-output.xml');
+    const commandPath = repomix.getCommandFilePath(outputPath);
+    const cachedContent = `
+<command_id>1234</command_id>
+<rmfilter_command>--include "*.ts"</rmfilter_command>
+Cached content
+    `;
+    await Bun.write(commandPath, cachedContent);
+
     const options = {
       content: '<rmfilter_command>--include "*.ts"</rmfilter_command>',
+      interactive: true,
     };
     const result = await getOriginalRequestContext(options, tempDir, tempDir);
     expect(result).toBe('regenerated output');
-    expect(runRmfilterProgrammatically).toHaveBeenCalledWith(
-      ['--include', '*.ts'],
-      tempDir,
-      tempDir
-    );
-  });
-
-  test('handles different argument ordering in comparison', async () => {
-    const outputPath = path.join(tempDir, 'repomix-output.xml');
-    const cachedContent =
-      '<rmfilter_command>--include "*.ts" --exclude "node_modules"</rmfilter_command>\nCached content';
-    await Bun.write(outputPath, cachedContent);
-
-    const options = {
-      content: '<rmfilter_command>--exclude "node_modules" --include "*.ts"</rmfilter_command>',
-    };
-    const result = await getOriginalRequestContext(options, tempDir, tempDir);
-    expect(result).toBe(cachedContent);
+    expect((await import('@inquirer/prompts')).confirm).toHaveBeenCalledWith({
+      message: 'The response does not contain a command file ID. Continue anyway?',
+      default: true,
+    });
   });
 });
