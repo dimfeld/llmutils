@@ -152,7 +152,7 @@ function formatJsonMessage(input: string) {
   const outputLines: string[] = [];
 
   if (message.role === 'system') {
-    let result = `Cost: $${message.cost_usd.toFixed(2)} (${message.duration_ms} ms)`;
+    let result = `Cost: $${message.cost_usd.toFixed(2)} (${Math.round(message.duration_ms / 1000)} s)`;
     outputLines.push(chalk.bold.green('### Done'), result);
     return outputLines.join('\n\n');
   }
