@@ -41,21 +41,25 @@ This repository contains command-line utilities for managing context with chat-o
 The codebase is organized into several main modules:
 
 1. **rmfilter**: Prepares code context for LLMs with support for different edit formats (diff, whole-file, XML)
+
    - Uses repomix for context preparation
    - Supports dependency analysis to include related files
    - Handles configuration via YAML files with preset support
 
 2. **rmplan**: Manages step-by-step project plans with LLM integration
+
    - Generates planning prompts
    - Extracts Markdown plans into YAML format
    - Tracks progress and executes steps with potential Git integration
 
 3. **apply-llm-edits**: Processes LLM-generated edits and applies them to the codebase
+
    - Supports different edit formats (unified diff, search/replace, XML, whole-file)
    - Handles interactive retry mechanisms for failed edits
    - Offers options for dry-runs and partial application
 
 4. **dependency_graph**: Analyzes file import relationships
+
    - Resolves import paths and walks import trees
    - Essential for the `--with-imports` and `--with-all-imports` options
 
@@ -68,7 +72,7 @@ The codebase is organized into several main modules:
 ## Environment Requirements
 
 - **Bun**: Required as the JavaScript runtime
-- **ripgrep**: Used for efficient code searching 
+- **ripgrep**: Used for efficient code searching
 - **repomix**: Core tool for context preparation
 - **fzf**: Used by rmfind for interactive file selection
 - **bat**: Used by rmfind and rmrun for syntax highlighting
@@ -76,34 +80,37 @@ The codebase is organized into several main modules:
 ## Common Workflow Patterns
 
 1. **Finding and preparing context**:
+
    ```bash
    # Find relevant files
    rmfind src/**/*.ts --grep "auth"
-   
+
    # Prepare context with those files
    rmfilter src/auth/**/*.ts --instructions "Implement OAuth flow"
    ```
 
 2. **Creating and executing plans**:
+
    ```bash
    # Generate a plan
    rmplan generate --plan tasks/new-feature.md -- src/**/*.ts
-   
+
    # Extract the plan from clipboard to YAML
    rmplan extract --output tasks/new-feature.yml
-   
+
    # Get next step with context
    rmplan next tasks/new-feature.yml --rmfilter -- src/**/*.ts
-   
+
    # Mark steps as done and commit
    rmplan done tasks/new-feature.yml --commit
    ```
 
 3. **Applying edits**:
+
    ```bash
    # Apply edits from clipboard
    apply-llm-edits
-   
+
    # Apply edits with dry-run
    apply-llm-edits --dry-run
    ```
@@ -111,6 +118,7 @@ The codebase is organized into several main modules:
 ## Configuration Files
 
 The repository uses several configuration files:
+
 - `.rmfilter/`: Directory for rmfilter preset configurations
 - `schema/`: Contains JSON schemas for validating configurations
 - Environment variables (via dotenv) for model configuration
@@ -118,11 +126,13 @@ The repository uses several configuration files:
 ## Testing
 
 The codebase uses Bun's built-in test runner. Tests typically:
+
 - Create temporary test directories with fixture files
 - Apply transformations using the utilities
 - Verify the output matches expectations
 
 When adding new features, ensure test coverage for:
+
 - Happy path functionality
 - Edge cases and error handling
 - Different file formats and configurations

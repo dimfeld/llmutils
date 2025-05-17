@@ -110,6 +110,7 @@ tasks:
 
           You don't need to mock `warn` from `logging.ts` for these tests;
           testing the returned arguments is sufficient.
+        done: true
   - title: 2. Modify `getInstructionsFromGithubIssue` to parse and return
       `RmprOptions`
     description: >

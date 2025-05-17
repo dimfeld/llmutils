@@ -116,14 +116,18 @@ describe('genericArgsFromRmprOptions', () => {
     };
 
     const args = genericArgsFromRmprOptions(options);
-    
+
     // Should skip PR-specific paths and the includeAll option
     expect(args).toEqual(['--with-imports', 'lib/*.js']);
-    
+
     // Check that appropriate warnings were issued
     expect(warnSpy).toHaveBeenCalledTimes(2);
-    expect(warnSpy).toHaveBeenCalledWith('Skipping PR-specific include directive in generic context: pr:src/file.ts');
-    expect(warnSpy).toHaveBeenCalledWith('Skipping PR-specific "include-all" directive in generic context.');
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Skipping PR-specific include directive in generic context: pr:src/file.ts'
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Skipping PR-specific "include-all" directive in generic context.'
+    );
   });
 
   test('handles empty options', () => {
