@@ -18,6 +18,7 @@ import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
+import { executors } from './executors/index.js';
 
 await loadEnv();
 
@@ -356,11 +357,18 @@ program
     }
   });
 
+const executorNames = executors
+  .values()
+  .map((e) => e.name)
+  .toArray()
+  .join(', ');
+
 program
   .command('agent <planFile>')
   .description('Automatically execute steps in a plan YAML file')
   .option('-m, --model <model>', 'Model to use for LLM')
-  .option('--executor <name>', 'The executor to use for plan execution', 'direct-call')
+  .option(`--executor <name>`, 'The executor to use for plan execution', 'direct-call')
+  .addHelpText('after', `Available executors: ${executorNames}`)
   .option('--steps <steps>', 'Number of steps to execute')
   .option('--no-log', 'Do not log to file')
   .allowExcessArguments(true)

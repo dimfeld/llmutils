@@ -1,4 +1,6 @@
 import type { RmplanConfig } from '../configSchema.ts';
+import { ClaudeCodeExecutor } from './claude_code.ts';
+import { CopyPasteExecutor } from './copy_paste.ts';
 import { OneCallExecutor } from './one-call';
 import type { AgentCommandSharedOptions, Executor, ExecutorFactory } from './types';
 
@@ -7,6 +9,8 @@ import type { AgentCommandSharedOptions, Executor, ExecutorFactory } from './typ
  */
 export const executors = new Map<string, ExecutorFactory<any>>([
   [OneCallExecutor.name, OneCallExecutor],
+  [CopyPasteExecutor.name, CopyPasteExecutor],
+  [ClaudeCodeExecutor.name, ClaudeCodeExecutor],
 ]);
 
 // Optionally, export individual executors if they need to be imported directly elsewhere.

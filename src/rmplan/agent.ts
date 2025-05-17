@@ -38,6 +38,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const selectedExecutorName = options.executor;
   const buildExecutorResult = createExecutor(
     selectedExecutorName,
+    // TODO load options from the various config files and CLI
     {},
     sharedExecutorOptions,
     config

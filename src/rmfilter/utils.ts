@@ -3,7 +3,7 @@ import type { SpawnOptions } from 'bun';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import { debugLog, log } from '../logging.js';
+import { debugLog, log, writeStderr, writeStdout } from '../logging.js';
 import { findUp } from 'find-up';
 export let debug = false;
 export let quiet = false;
@@ -53,6 +53,62 @@ export function logSpawn<
   }
 
   return Bun.spawn(cmd, options);
+}
+
+export async function spawnAndLogOutput(
+  cmd: string[],
+  options?: {
+    cwd?: string;
+    env?: Record<string, string>;
+    quiet?: boolean;
+    stdin?: string;
+  }
+) {
+  const proc = Bun.spawn(cmd, {
+    cwd: options?.cwd,
+    env: options?.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  if (options?.stdin) {
+    proc.stdin.write(options.stdin);
+  }
+  await proc.stdin.end();
+
+  let stdout: string[] = [];
+  let stderr: string[] = [];
+
+  async function readStdout() {
+    const stdoutDecoder = new TextDecoder();
+    for await (const value of proc.stdout) {
+      let output = stdoutDecoder.decode(value, { stream: true });
+      stdout.push(output);
+      if (!options?.quiet) {
+        writeStdout(output);
+      }
+    }
+  }
+
+  async function readStderr() {
+    const stderrDecoder = new TextDecoder();
+    for await (const value of proc.stderr) {
+      let output = stderrDecoder.decode(value, { stream: true });
+      stderr.push(output);
+      if (!options?.quiet) {
+        writeStderr(output);
+      }
+    }
+  }
+
+  await Promise.all([readStdout(), readStderr()]);
+
+  const exitCode = await proc.exited;
+
+  return {
+    exitCode,
+    stdout: stdout.join(''),
+    stderr: stderr.join(''),
+  };
 }
 
 export type MaybeAwaited<T extends Promise<any>> = Awaited<T> | T;
