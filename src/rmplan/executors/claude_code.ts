@@ -47,6 +47,7 @@ export class ClaudeCodeExecutor implements Executor {
     const defaultAllowedTools = this.options.includeDefaultTools
       ? [
           `Edit`,
+          'MultliEdit',
           `Write`,
           'WebFetch',
           ...jsTaskRunners.flatMap((name) => [
@@ -105,12 +106,18 @@ export class ClaudeCodeExecutor implements Executor {
 interface Message {
   id: string;
   type: string;
-  role: string;
+  role: 'user' | 'assistant';
   model: string;
   content: Content[];
   stop_reason: string | null;
   stop_sequence: string | null;
   usage: Usage;
+}
+
+interface SystemMessage {
+  role: 'system';
+  cost_usd: number;
+  duration_ms: number;
 }
 
 // Represents the content array items
@@ -140,9 +147,15 @@ interface Usage {
 }
 
 function formatJsonMessage(input: string) {
-  const message = JSON.parse(input) as Message;
+  const message = JSON.parse(input) as Message | SystemMessage;
 
   const outputLines: string[] = [];
+
+  if (message.role === 'system') {
+    let result = `Cost: $${message.cost_usd.toFixed(2)} (${message.duration_ms} ms)`;
+    outputLines.push(chalk.bold.green('### Done'), result);
+    return outputLines.join('\n\n');
+  }
 
   for (const content of message.content) {
     if (content.type === 'thinking') {
@@ -156,17 +169,41 @@ function formatJsonMessage(input: string) {
 
       outputLines.push(content.text!);
     } else if (content.type === 'tool_use') {
-      const values = Object.entries(content.input ?? {})
-        .map(([key, value]) => `${key}=${value}`)
-        .join('\n');
-      outputLines.push(chalk.cyan(`### Invoke Tool: ${content.name}`), values);
+      outputLines.push(
+        chalk.cyan(`### Invoke Tool: ${content.name}`),
+        formatObject(content.input ?? {})
+      );
     } else if (content.type === 'tool_result') {
-      outputLines.push(chalk.magenta(`### Tool Result`), content.content!);
+      outputLines.push(chalk.magenta(`### Tool Result`), formatValue(content.content));
     } else {
       debugLog('Unknown message type:', content.type);
-      outputLines.push(`### ${content.type as string}`, JSON.stringify(content));
+      outputLines.push(`### ${content.type as string}`, formatValue(content));
     }
   }
 
   return outputLines.join('\n\n');
+}
+
+function formatObject(value: Record<string, any>, indent = 0) {
+  return Object.entries(value ?? {})
+    .map(([key, value]) => {
+      return `${key}=${formatValue(value, indent)}`;
+    })
+    .join('\n');
+}
+
+function formatValue(value: unknown, indent = 0): string {
+  let indentStr = ''.padStart(indent, ' ');
+  if (Array.isArray(value)) {
+    let list = value
+      .map((v) => {
+        v = formatValue(v, indent + 2);
+        return `${indentStr}- ${v}`;
+      })
+      .join('\n');
+    value = '\n' + list;
+  } else if (value && typeof value === 'object') {
+    return indentStr + formatObject(value);
+  }
+  return indentStr + String(value);
 }
