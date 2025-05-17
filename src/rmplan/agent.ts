@@ -131,6 +131,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       } else {
         log(boldMarkdownHeaders('\n## Using Direct Prompt as Context\n'));
         contextContent = stepPreparationResult.prompt;
+        log(contextContent)
       }
 
       try {

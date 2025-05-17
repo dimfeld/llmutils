@@ -5,6 +5,7 @@ import * as path from 'node:path';
 
 import { debugLog, log, writeStderr, writeStdout } from '../logging.js';
 import { findUp } from 'find-up';
+import { debuglog } from 'node:util';
 export let debug = false;
 export let quiet = false;
 
@@ -64,16 +65,17 @@ export async function spawnAndLogOutput(
     stdin?: string;
   }
 ) {
+  debugLog('Running', cmd, options)
   const proc = Bun.spawn(cmd, {
     cwd: options?.cwd,
     env: options?.env,
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdio: [options?.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   });
 
   if (options?.stdin) {
-    proc.stdin.write(options.stdin);
+    proc.stdin!.write(options.stdin);
+    await proc.stdin!.end();
   }
-  await proc.stdin.end();
 
   let stdout: string[] = [];
   let stderr: string[] = [];
@@ -101,8 +103,10 @@ export async function spawnAndLogOutput(
   }
 
   await Promise.all([readStdout(), readStderr()]);
+  debugLog('finished reading output')
 
   const exitCode = await proc.exited;
+  debugLog('exit code', exitCode)
 
   return {
     exitCode,

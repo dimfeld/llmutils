@@ -2,10 +2,11 @@ import { z } from 'zod';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { Executor, AgentCommandSharedOptions } from './types.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
-import { getGitRoot, logSpawn, spawnAndLogOutput } from '../../rmfilter/utils.ts';
+import { debug, getGitRoot, logSpawn, spawnAndLogOutput } from '../../rmfilter/utils.ts';
 
 const claudeCodeOptionsSchema = z.object({
   allowedTools: z.array(z.string()).optional(),
+  includeDefaultTools: z.boolean().default(true),
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
 });
@@ -31,12 +32,42 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
-    const { allowedTools, disallowedTools, mcpConfigFile } = this.options;
-    const args = ['claude', '-p', contextContent];
+    const { disallowedTools, mcpConfigFile } = this.options;
+    const gitRoot = await getGitRoot();
 
-    if (allowedTools) {
-      args.push('--allowedTools', allowedTools.join(','));
+    const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
+
+    const defaultAllowedTools = this.options.includeDefaultTools
+      ? [
+          `Edit(${gitRoot})`,
+          `Write(${gitRoot})`,
+          'WebFetch',
+          ...jsTaskRunners.flatMap((name) => [
+            `Bash(${name} test:*)`,
+            `Bash(${name} run build:*)`,
+            `Bash(${name} install)`,
+            `Bash(${name} add)`,
+          ]),
+          'Bash(cargo add)',
+          'Bash(cargo build)',
+          'Bash(cargo test)',
+        ]
+      : [];
+
+    let allowedTools = [...defaultAllowedTools, ...(this.options.allowedTools ?? [])];
+    if (disallowedTools) {
+      allowedTools = allowedTools.filter((t) => !disallowedTools?.includes(t));
     }
+
+    const args = [
+      'claude',
+      '-p',
+      debug ? '--debug' : '',
+      '--allowedTools',
+      allowedTools.join('n'),
+      contextContent,
+    ].filter(Boolean);
+
     if (disallowedTools) {
       args.push('--disallowedTools', disallowedTools.join(','));
     }
