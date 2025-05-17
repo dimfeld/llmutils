@@ -125,7 +125,7 @@
             "type": "boolean",
             "description": "Disable inclusion of matching page/server route files."
           },
-          "no-tests": {
+          "no-expand-tests": {
             "type": "boolean",
             "description": "Disable automatic inclusion of corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
           },
