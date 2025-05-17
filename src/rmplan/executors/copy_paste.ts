@@ -1,20 +1,15 @@
+import chalk from 'chalk';
+import clipboard from 'clipboardy';
 import { z } from 'zod';
-import type { AgentCommandSharedOptions, Executor, ExecutorFactory } from './types';
-import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../../common/run_and_apply';
-import { applyLlmEdits, type ApplyLlmEditsOptions } from '../../apply-llm-edits/apply';
+import { applyLlmEdits } from '../../apply-llm-edits/apply';
+import { DEFAULT_RUN_MODEL } from '../../common/run_and_apply';
+import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';
-import { createRetryRequester } from '../../apply-llm-edits/retry.ts';
-import type { RmplanConfig } from '../configSchema.ts';
 import { getGitRoot } from '../../rmfilter/utils.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
-import clipboard from 'clipboardy';
-import { waitForEnter } from '../../common/terminal.ts';
-import chalk from 'chalk';
+import type { RmplanConfig } from '../configSchema.ts';
+import type { AgentCommandSharedOptions, Executor } from './types';
 
-/**
- * Schema for the 'direct-call' executor's options.
- * It expects a model string for the LLM.
- */
 const copyPasteOptionsSchema = z.object({
   executionModel: z
     .string()
