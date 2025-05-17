@@ -1,3 +1,12 @@
+# May 17, 2025
+
+- Support executing tasks with Claude Code
+
+# May 15, 2025
+
+- Add --run option to rmfilter to directly run and apply.
+- In `answer-pr`, allow updating options before running 
+
 # May 14, 2025
 
 - Add `rmplan answer-pr` command to handle review feedback
