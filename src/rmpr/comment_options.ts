@@ -1,7 +1,7 @@
 import micromatch from 'micromatch';
 import type { PullRequest } from '../common/github/pull_requests.ts';
 import { parseCliArgsFromString } from '../rmfilter/utils.ts';
-import { debugLog } from '../logging.ts';
+import { debugLog, warn } from '../logging.ts';
 
 /** Options parsed from --rmpr lines in a comment body */
 export interface RmprOptions {
@@ -61,6 +61,44 @@ export function argsFromRmprOptions(pr: PullRequest, options: RmprOptions): stri
 
   if (options.rmfilter) {
     args.push(...options.rmfilter);
+  }
+
+  return args;
+}
+
+/**
+ * Converts RmprOptions to command-line arguments for rmfilter in a generic context (not PR-specific).
+ * @param options The RmprOptions to convert
+ * @returns Array of string arguments suitable for passing to rmfilter
+ */
+export function genericArgsFromRmprOptions(options: RmprOptions): string[] {
+  const args: string[] = [];
+
+  if (options.withImports) {
+    args.push('--with-imports');
+  }
+
+  if (options.withImporters) {
+    args.push('--with-importers');
+  }
+
+  if (options.include) {
+    for (const pathSpec of options.include) {
+      if (pathSpec.startsWith('pr:')) {
+        warn(`Skipping PR-specific include directive in generic context: ${pathSpec}`);
+      } else {
+        args.push(pathSpec);
+        debugLog(`Added file/dir for generic --rmpr include ${pathSpec}`);
+      }
+    }
+  }
+
+  if (options.rmfilter) {
+    args.push(...options.rmfilter);
+  }
+
+  if (options.includeAll) {
+    warn('Skipping PR-specific "include-all" directive in generic context.');
   }
 
   return args;

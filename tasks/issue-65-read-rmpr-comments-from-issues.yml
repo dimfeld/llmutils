@@ -1,31 +1,63 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-goal: "Implement the feature: Read `rmpr` comments from GitHub issues and use them to provide arguments to `rmfilter` when using the `rmplan generate --issue` command."
-details: |
-  The `rmplan generate` command, when used with the `--issue` option, fetches content from a GitHub issue (title, body, comments) to form a plan. This project will extend this functionality to parse `rmpr` (ReadMePRompt) directives from this issue content.
+goal: "Implement the feature: Read `rmpr` comments from GitHub issues and use
+  them to provide arguments to `rmfilter` when using the `rmplan generate
+  --issue` command."
+details: >
+  The `rmplan generate` command, when used with the `--issue` option, fetches
+  content from a GitHub issue (title, body, comments) to form a plan. This
+  project will extend this functionality to parse `rmpr` (ReadMePRompt)
+  directives from this issue content.
 
-  Similar to how `rmpr` directives in PR comments guide context generation for `pr-answer`, these directives in issues will be translated into arguments for the `rmfilter` command that `rmplan generate` uses. This allows users to specify `rmfilter` options (like including specific files, enabling import analysis, or passing arbitrary `rmfilter` flags) directly within the issue description or comments.
+
+  Similar to how `rmpr` directives in PR comments guide context generation for
+  `pr-answer`, these directives in issues will be translated into arguments for
+  the `rmfilter` command that `rmplan generate` uses. This allows users to
+  specify `rmfilter` options (like including specific files, enabling import
+  analysis, or passing arbitrary `rmfilter` flags) directly within the issue
+  description or comments.
+
 
   The project involves:
-  1.  Creating a generic function to convert `RmprOptions` (parsed from comments) into `rmfilter` arguments, suitable for contexts other than Pull Requests (i.e., ignoring PR-specific directives).
-  2.  Modifying the GitHub issue processing logic to parse `rmpr` directives from the selected issue content (title, body, comments), combine these options, and return them along with the cleaned plan text.
-  3.  Updating the `rmplan generate` command to take these parsed `RmprOptions` and use them to augment the arguments passed to `rmfilter`.
 
-  This will provide more fine-grained control over the context generation process when starting a plan from a GitHub issue.
+  1.  Creating a generic function to convert `RmprOptions` (parsed from
+  comments) into `rmfilter` arguments, suitable for contexts other than Pull
+  Requests (i.e., ignoring PR-specific directives).
+
+  2.  Modifying the GitHub issue processing logic to parse `rmpr` directives
+  from the selected issue content (title, body, comments), combine these
+  options, and return them along with the cleaned plan text.
+
+  3.  Updating the `rmplan generate` command to take these parsed `RmprOptions`
+  and use them to augment the arguments passed to `rmfilter`.
+
+
+  This will provide more fine-grained control over the context generation
+  process when starting a plan from a GitHub issue.
 tasks:
-  - title: "1. Implement generic `rmfilter` argument generation from `RmprOptions`"
-    description: |
-      Create a new function `genericArgsFromRmprOptions` in `src/rmpr/comment_options.ts`. This function will take `RmprOptions` and convert them into an array of string arguments suitable for `rmfilter`. Unlike the existing `argsFromRmprOptions`, this new function will not require a Pull Request context. It should handle generic options like `withImports`, `withImporters`, `include` (for non-PR specific paths), and `rmfilter` (for arbitrary arguments). PR-specific options such as `includeAll` or `include pr:*` should be ignored, possibly with a warning.
+  - title: 1. Implement generic `rmfilter` argument generation from `RmprOptions`
+    description: >
+      Create a new function `genericArgsFromRmprOptions` in
+      `src/rmpr/comment_options.ts`. This function will take `RmprOptions` and
+      convert them into an array of string arguments suitable for `rmfilter`.
+      Unlike the existing `argsFromRmprOptions`, this new function will not
+      require a Pull Request context. It should handle generic options like
+      `withImports`, `withImporters`, `include` (for non-PR specific paths), and
+      `rmfilter` (for arbitrary arguments). PR-specific options such as
+      `includeAll` or `include pr:*` should be ignored, possibly with a warning.
     files:
       - src/rmpr/comment_options.ts
       - src/rmpr/comment_options.test.ts
       - src/logging.ts
     include_imports: false
     steps:
-      - prompt: |
+      - prompt: >
           Modify `src/rmpr/comment_options.ts`.
 
+
           1.  Import `warn` from `../logging.ts`.
-          2.  Define a new exported function `genericArgsFromRmprOptions(options: RmprOptions): string[]`.
+
+          2.  Define a new exported function
+          `genericArgsFromRmprOptions(options: RmprOptions): string[]`.
+
           3.  Implement the function logic:
               - Initialize an empty array `args: string[]`.
               - If `options.withImports` is true, add `'--with-imports'` to `args`.
@@ -39,11 +71,15 @@ tasks:
               - Return `args`.
 
           Ensure the function is exported.
-      - prompt: |
+        done: true
+      - prompt: >
           Modify `src/rmpr/comment_options.test.ts`.
 
+
           1.  Import `genericArgsFromRmprOptions` from './comment_options.ts'.
+
           2.  Add a new `describe` block for `genericArgsFromRmprOptions`.
+
           3.  Inside this block, add test cases to verify its functionality:
               - Test case for basic options: `withImports`, `withImporters`.
                 - Input: `{ withImports: true, withImporters: true }`
@@ -71,19 +107,31 @@ tasks:
                 - Expected output: `[]`
 
           Use `expect(result).toEqual(expected)` for comparisons.
-          You don't need to mock `warn` from `logging.ts` for these tests; testing the returned arguments is sufficient.
-  - title: "2. Modify `getInstructionsFromGithubIssue` to parse and return `RmprOptions`"
-    description: |
-      Update the `getInstructionsFromGithubIssue` function in `src/common/github/issues.ts`. This function fetches issue data and allows the user to select parts of it. It should now also parse `rmpr` directives from these selected text parts, combine any found `RmprOptions`, and return them along with the cleaned plan text. The plan text itself should be constructed from the parts of the issue content after `rmpr` directives have been removed.
+
+          You don't need to mock `warn` from `logging.ts` for these tests;
+          testing the returned arguments is sufficient.
+  - title: 2. Modify `getInstructionsFromGithubIssue` to parse and return
+      `RmprOptions`
+    description: >
+      Update the `getInstructionsFromGithubIssue` function in
+      `src/common/github/issues.ts`. This function fetches issue data and allows
+      the user to select parts of it. It should now also parse `rmpr` directives
+      from these selected text parts, combine any found `RmprOptions`, and
+      return them along with the cleaned plan text. The plan text itself should
+      be constructed from the parts of the issue content after `rmpr` directives
+      have been removed.
     files:
       - src/common/github/issues.ts
       - src/rmpr/comment_options.ts
     include_imports: false
     steps:
-      - prompt: |
+      - prompt: >
           Modify `src/common/github/issues.ts`.
 
-          1.  Import `parseRmprOptions`, `combineRmprOptions`, and the `RmprOptions` type from `../../rmpr/comment_options.ts`.
+
+          1.  Import `parseRmprOptions`, `combineRmprOptions`, and the
+          `RmprOptions` type from `../../rmpr/comment_options.ts`.
+
           2.  In the `getInstructionsFromGithubIssue` function:
               a.  After the `selected` array of strings is obtained from `selectIssueComments(data)`, initialize two variables:
                   - `let combinedRmprOptions: RmprOptions | null = null;`
@@ -98,10 +146,18 @@ tasks:
                   `const plan = cleanedPlanParts.join('\n\n').trim();`
               d.  Modify the return statement to include `combinedRmprOptions`. The new return object should be:
                   `{ suggestedFileName, issue: data.issue, plan, combinedRmprOptions };`
-          3.  Update the JSDoc or return type annotation for `getInstructionsFromGithubIssue` if necessary to reflect the change in the returned object structure (it now includes `combinedRmprOptions: RmprOptions | null`).
-  - title: "3. Integrate `rmpr` options from issues into `rmplan generate` command"
-    description: |
-      Modify the `rmplan generate` command in `src/rmplan/rmplan.ts`. When processing an issue (`--issue` flag), it should now use the `combinedRmprOptions` returned by `getInstructionsFromGithubIssue`. These options will be converted into `rmfilter` arguments using the `genericArgsFromRmprOptions` function (from Task 1) and appended to the arguments passed to the `rmfilter` subprocess.
+          3.  Update the JSDoc or return type annotation for
+          `getInstructionsFromGithubIssue` if necessary to reflect the change in
+          the returned object structure (it now includes `combinedRmprOptions:
+          RmprOptions | null`).
+  - title: 3. Integrate `rmpr` options from issues into `rmplan generate` command
+    description: >
+      Modify the `rmplan generate` command in `src/rmplan/rmplan.ts`. When
+      processing an issue (`--issue` flag), it should now use the
+      `combinedRmprOptions` returned by `getInstructionsFromGithubIssue`. These
+      options will be converted into `rmfilter` arguments using the
+      `genericArgsFromRmprOptions` function (from Task 1) and appended to the
+      arguments passed to the `rmfilter` subprocess.
     files:
       - src/rmplan/rmplan.ts
       - src/rmpr/comment_options.ts
@@ -109,10 +165,12 @@ tasks:
       - src/logging.ts
     include_imports: true
     steps:
-      - prompt: |
+      - prompt: >
           Modify `src/rmplan/rmplan.ts`.
 
-          1.  Import `genericArgsFromRmprOptions` from `../rmpr/comment_options.ts`.
+
+          1.  Import `genericArgsFromRmprOptions` from
+          `../rmpr/comment_options.ts`.
               (Note: `log` is already imported from `../logging.ts`).
 
           2.  In the `action` for the `generate` command:
@@ -135,4 +193,5 @@ tasks:
               f.  Update the `rmfilterFullArgs` construction to use `allRmfilterOptions` instead of just `rmfilterArgs` (or `userCliRmfilterArgs`):
                   `const rmfilterFullArgs = ['rmfilter', ...allRmfilterOptions, '--', ...additionalFiles, '--bare', '--copy', '--instructions', \`@\${tmpPromptPath}\`];`
 
-          Ensure `chalk` is imported at the top if it's used for logging: `import chalk from 'chalk';`.
+          Ensure `chalk` is imported at the top if it's used for logging:
+          `import chalk from 'chalk';`.

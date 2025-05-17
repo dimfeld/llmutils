@@ -1,5 +1,6 @@
-import { describe, test, expect } from 'bun:test';
-import { parseRmprOptions } from './comment_options.ts';
+import { describe, test, expect, spyOn } from 'bun:test';
+import { parseRmprOptions, genericArgsFromRmprOptions } from './comment_options.ts';
+import * as logging from '../logging.ts';
 
 describe('parseRmprOptions', () => {
   test('parses single --rmpr line with multiple options and returns cleaned comment', () => {
@@ -79,5 +80,55 @@ describe('parseRmprOptions', () => {
       },
       cleanedComment: 'Update imports',
     });
+  });
+});
+
+describe('genericArgsFromRmprOptions', () => {
+  test('includes standard options', () => {
+    const options = {
+      withImports: true,
+      withImporters: true,
+      include: ['src/file.ts', 'lib/*.js'],
+      rmfilter: ['--grep', 'example', '--exclude', 'node_modules'],
+    };
+
+    const args = genericArgsFromRmprOptions(options);
+    expect(args).toEqual([
+      '--with-imports',
+      '--with-importers',
+      'src/file.ts',
+      'lib/*.js',
+      '--grep',
+      'example',
+      '--exclude',
+      'node_modules',
+    ]);
+  });
+
+  test('skips PR-specific options with warnings', () => {
+    // Spy on warn function
+    const warnSpy = spyOn(logging, 'warn');
+
+    const options = {
+      includeAll: true,
+      withImports: true,
+      include: ['pr:src/file.ts', 'lib/*.js'],
+    };
+
+    const args = genericArgsFromRmprOptions(options);
+    
+    // Should skip PR-specific paths and the includeAll option
+    expect(args).toEqual(['--with-imports', 'lib/*.js']);
+    
+    // Check that appropriate warnings were issued
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledWith('Skipping PR-specific include directive in generic context: pr:src/file.ts');
+    expect(warnSpy).toHaveBeenCalledWith('Skipping PR-specific "include-all" directive in generic context.');
+  });
+
+  test('handles empty options', () => {
+    const options = {};
+    const args = genericArgsFromRmprOptions(options);
+    expect(args).toEqual([]);
   });
 });
