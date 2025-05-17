@@ -151,6 +151,7 @@ tasks:
           `getInstructionsFromGithubIssue` if necessary to reflect the change in
           the returned object structure (it now includes `combinedRmprOptions:
           RmprOptions | null`).
+        done: true
   - title: 3. Integrate `rmpr` options from issues into `rmplan generate` command
     description: >
       Modify the `rmplan generate` command in `src/rmplan/rmplan.ts`. When
