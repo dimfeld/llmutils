@@ -366,7 +366,7 @@ program
   .command('agent <planFile>')
   .description('Automatically execute steps in a plan YAML file')
   .option('-m, --model <model>', 'Model to use for LLM')
-  .option(`--executor <name>`, 'The executor to use for plan execution', 'direct-call')
+  .option(`-x, --executor <name>`, 'The executor to use for plan execution', 'direct-call')
   .addHelpText('after', `Available executors: ${executorNames}`)
   .option('--steps <steps>', 'Number of steps to execute')
   .option('--no-log', 'Do not log to file')

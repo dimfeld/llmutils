@@ -17,7 +17,7 @@ export type CopyOnlyExecutorOptions = z.infer<typeof copyOnlyOptionsSchema>;
  * with that context. The LLM's response is then processed by `applyLlmEdits`.
  */
 export class CopyOnlyExecutor implements Executor {
-  static name = 'copy-paste';
+  static name = 'copy-only';
   static description =
     'Copies the prompt into the clipboard for you to send to an agent';
   static optionsSchema = copyOnlyOptionsSchema;
