@@ -197,3 +197,4 @@ tasks:
 
           Ensure `chalk` is imported at the top if it's used for logging:
           `import chalk from 'chalk';`.
+        done: true
