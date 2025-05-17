@@ -63,9 +63,11 @@ export async function spawnAndLogOutput(
     env?: Record<string, string>;
     quiet?: boolean;
     stdin?: string;
+    formatStdout?: (output: string) => string;
+    formatStderr?: (output: string) => string;
   }
 ) {
-  debugLog('Running', cmd, options)
+  debugLog('Running', cmd, options);
   const proc = Bun.spawn(cmd, {
     cwd: options?.cwd,
     env: options?.env,
@@ -84,6 +86,11 @@ export async function spawnAndLogOutput(
     const stdoutDecoder = new TextDecoder();
     for await (const value of proc.stdout) {
       let output = stdoutDecoder.decode(value, { stream: true });
+
+      if (options?.formatStdout) {
+        output = options.formatStdout(output);
+      }
+
       stdout.push(output);
       if (!options?.quiet) {
         writeStdout(output);
@@ -95,6 +102,11 @@ export async function spawnAndLogOutput(
     const stderrDecoder = new TextDecoder();
     for await (const value of proc.stderr) {
       let output = stderrDecoder.decode(value, { stream: true });
+
+      if (options?.formatStderr) {
+        output = options.formatStderr(output);
+      }
+
       stderr.push(output);
       if (!options?.quiet) {
         writeStderr(output);
@@ -103,10 +115,10 @@ export async function spawnAndLogOutput(
   }
 
   await Promise.all([readStdout(), readStderr()]);
-  debugLog('finished reading output')
+  debugLog('finished reading output');
 
   const exitCode = await proc.exited;
-  debugLog('exit code', exitCode)
+  debugLog('exit code', exitCode);
 
   return {
     exitCode,
@@ -297,4 +309,19 @@ export function parseCliArgsFromString(commandString: string): string[] {
   }
 
   return args;
+}
+
+export function createLineSplitter(): (input: string) => string[] {
+  let fragment: string = '';
+
+  return function splitLines(input: string): string[] {
+    // Prepend any existing fragment to the input
+    const fullInput = fragment + input;
+    // Split on newlines
+    const lines = fullInput.split('\n');
+    // Last element is the new fragment (empty if input ends with newline)
+    fragment = lines.pop() || '';
+    // Return complete lines
+    return lines;
+  };
 }

@@ -2,7 +2,15 @@ import { z } from 'zod';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { Executor, AgentCommandSharedOptions } from './types.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
-import { debug, getGitRoot, logSpawn, spawnAndLogOutput } from '../../rmfilter/utils.ts';
+import {
+  createLineSplitter,
+  debug,
+  getGitRoot,
+  logSpawn,
+  spawnAndLogOutput,
+} from '../../rmfilter/utils.ts';
+import { debugLog } from '../../logging.ts';
+import chalk from 'chalk';
 
 const claudeCodeOptionsSchema = z.object({
   allowedTools: z.array(z.string()).optional(),
@@ -33,14 +41,13 @@ export class ClaudeCodeExecutor implements Executor {
 
   async execute(contextContent: string) {
     const { disallowedTools, mcpConfigFile } = this.options;
-    const gitRoot = await getGitRoot();
 
     const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
 
     const defaultAllowedTools = this.options.includeDefaultTools
       ? [
-          `Edit(${gitRoot})`,
-          `Write(${gitRoot})`,
+          `Edit`,
+          `Write`,
           'WebFetch',
           ...jsTaskRunners.flatMap((name) => [
             `Bash(${name} test:*)`,
@@ -61,11 +68,11 @@ export class ClaudeCodeExecutor implements Executor {
 
     const args = [
       'claude',
-      '-p',
+      '--output-format',
+      'stream-json',
       debug ? '--debug' : '',
       '--allowedTools',
-      allowedTools.join('n'),
-      contextContent,
+      allowedTools.join(','),
     ].filter(Boolean);
 
     if (disallowedTools) {
@@ -75,8 +82,91 @@ export class ClaudeCodeExecutor implements Executor {
       args.push('--mcp-config', mcpConfigFile);
     }
 
-    await spawnAndLogOutput(args, {
+    args.push('-p', contextContent);
+
+    let splitter = createLineSplitter();
+
+    const result = await spawnAndLogOutput(args, {
       cwd: await getGitRoot(),
+      formatStdout: (output) => {
+        let lines = splitter(output);
+
+        return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
+      },
     });
+
+    if (result.exitCode !== 0) {
+      throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
+    }
   }
+}
+
+// Represents the top-level message object
+interface Message {
+  id: string;
+  type: string;
+  role: string;
+  model: string;
+  content: Content[];
+  stop_reason: string | null;
+  stop_sequence: string | null;
+  usage: Usage;
+}
+
+// Represents the content array items
+interface Content {
+  type: 'thinking' | 'text' | 'tool_use' | 'tool_result';
+  thinking?: string;
+  signature?: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Input;
+  tool_use_id?: string;
+  content?: string;
+}
+
+// Represents the input object within tool_use content
+interface Input {
+  file_path: string;
+}
+
+// Represents the usage object
+interface Usage {
+  input_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  output_tokens: number;
+}
+
+function formatJsonMessage(input: string) {
+  const message = JSON.parse(input) as Message;
+
+  const outputLines: string[] = [];
+
+  for (const content of message.content) {
+    if (content.type === 'thinking') {
+      outputLines.push(chalk.blue('### Thinking'), content.thinking!);
+    } else if (content.type === 'text') {
+      if (message.role === 'assistant') {
+        outputLines.push(chalk.bold.green('### Model Response'));
+      } else {
+        outputLines.push(chalk.bold.blue('### Agent Request'));
+      }
+
+      outputLines.push(content.text!);
+    } else if (content.type === 'tool_use') {
+      const values = Object.entries(content.input ?? {})
+        .map(([key, value]) => `${key}=${value}`)
+        .join('\n');
+      outputLines.push(chalk.cyan(`### Invoke Tool: ${content.name}`), values);
+    } else if (content.type === 'tool_result') {
+      outputLines.push(chalk.magenta(`### Tool Result`), content.content!);
+    } else {
+      debugLog('Unknown message type:', content.type);
+      outputLines.push(`### ${content.type as string}`, JSON.stringify(content));
+    }
+  }
+
+  return outputLines.join('\n\n');
 }
