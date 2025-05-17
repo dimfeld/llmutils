@@ -38,6 +38,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const selectedExecutorName = options.executor;
   const buildExecutorResult = createExecutor(
     selectedExecutorName,
+    // TODO load options from the various config files and CLI
     {},
     sharedExecutorOptions,
     config
@@ -130,6 +131,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       } else {
         log(boldMarkdownHeaders('\n## Using Direct Prompt as Context\n'));
         contextContent = stepPreparationResult.prompt;
+        log(contextContent)
       }
 
       try {

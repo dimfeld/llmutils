@@ -62,7 +62,7 @@ export const CommandConfigSchema = z
     'whole-word': z.boolean().optional(),
     expand: z.boolean().optional(),
     'no-expand-pages': z.boolean().optional(),
-    'no-tests': z.boolean().optional(),
+    'no-expand-tests': z.boolean().optional(),
     'with-imports': z.boolean().optional(),
     'with-all-imports': z.boolean().optional(),
     'with-importers': z.boolean().optional(),
@@ -259,7 +259,7 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     'whole-word': { type: 'boolean', short: 'w' },
     expand: { type: 'boolean', short: 'e' },
     'no-expand-pages': { type: 'boolean' },
-    'no-tests': { type: 'boolean' },
+    'no-expand-tests': { type: 'boolean' },
     'with-imports': { type: 'boolean' },
     'with-all-imports': { type: 'boolean' },
     'with-importers': { type: 'boolean' },
@@ -428,7 +428,7 @@ Command Options (per command):
   --with-all-imports        Include entire import tree
   --with-importers          Include files that import the given files
   --no-expand-pages         Disable inclusion of matching page/server route files
-  --no-tests                Disable automatic inclusion of corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
+  --no-expand-tests                Disable automatic inclusion of corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
   -l, --largest <number>    Keep only the N largest files
   --example <pattern>       Include the largest file that matches the pattern.
   --example-file <term=path> Specify a particular example file for a pattern.

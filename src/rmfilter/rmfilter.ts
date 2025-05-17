@@ -440,7 +440,7 @@ async function processCommand(
     }
 
     // Handle --with-tests: for each file NAME.EXT, try to add NAME.test.EXT
-    if (!cmdValues['no-tests']) {
+    if (!cmdValues['no-expand-tests']) {
       const testFiles = (
         await Promise.all(
           files.map(async (file) => {
