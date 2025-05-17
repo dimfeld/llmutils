@@ -189,7 +189,6 @@ program
             path.basename(planFile, '.md') + '.yml'
           );
         }
-        const config = await loadEffectiveConfig(options.config);
         const outputYaml = await extractMarkdownToYaml(input, config, options.quiet ?? false);
         if (outputFilename) {
           // no need to print otherwise, extractMarkdownToYaml already did

@@ -58,7 +58,7 @@
                   "default": false
                 }
               },
-              "required": ["prompt", "done"]
+              "required": ["prompt"]
             }
           }
         },
