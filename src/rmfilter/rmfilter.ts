@@ -38,7 +38,9 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-import { runPrompt } from '../common/run_and_apply.ts';
+import { buildExecutorAndLog } from '../rmplan/executors/index.ts';
+import type { RmplanConfig } from '../rmplan/configSchema.ts';
+import type { ExecutorCommonOptions } from '../rmplan/executors/types';
 
 async function handleInitialCliCommands(globalValues: GlobalValues) {
   // Handle creation of new YAML config
@@ -418,15 +420,15 @@ async function processCommand(
 
     // Handle --with-importers
     if (cmdValues['with-importers']) {
-      const filesToFindImportersFor = files.map((file) => path.resolve(baseDir, file)); // Convert current relative paths to absolute
+      const filesToFindImportersFor = files.map((file) => path.resolve(baseDir, file));
       const allImportersRelative = new Set<string>();
 
       for (const absFilePath of filesToFindImportersFor) {
-        const importers = await walker.findImporters(absFilePath); // Returns absolute paths
+        const importers = await walker.findImporters(absFilePath);
         importers.forEach((importerAbsPath) => {
           // Ensure the importer is not the file itself to avoid self-loops if findImporters could return that
           if (importerAbsPath !== absFilePath) {
-            allImportersRelative.add(path.relative(baseDir, importerAbsPath)); // Convert to relative and add
+            allImportersRelative.add(path.relative(baseDir, importerAbsPath));
           }
         });
       }
@@ -886,12 +888,28 @@ export async function fullRmfilterRun(options?: {
     }
   }
 
-  if (globalValues.run) {
-    await runPrompt({
+  if (globalValues.executor) {
+    const executorCommonOptions: ExecutorCommonOptions = {
+      baseDir: baseDir,
       model: globalValues.model,
-      file: outputFilePath,
-      interactive: process.stdout.isTTY,
-    });
+    };
+
+    // Create a minimal RmplanConfig
+    const rmplanConfig: RmplanConfig = {
+      models: globalValues.model ? { execution: globalValues.model } : undefined,
+    };
+
+    try {
+      const executor = buildExecutorAndLog(
+        globalValues.executor,
+        executorCommonOptions,
+        rmplanConfig
+      );
+      await executor.execute(finalOutput);
+    } catch (err) {
+      error(`Failed to execute with executor ${globalValues.executor}: ${(err as Error).message}`);
+      process.exit(1);
+    }
   }
 
   return finalOutput;

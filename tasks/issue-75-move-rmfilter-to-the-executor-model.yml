@@ -92,7 +92,7 @@ tasks:
           longer be needed by `fullRmfilterRun` directly. It can be removed if
           no other function in this file uses it. (Review its usage; it's
           currently only used in the `--run` block).
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmfilter/rmfilter.ts`.
 
