@@ -2,7 +2,7 @@ import { Octokit } from 'octokit';
 import { checkbox, Separator } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import type { DetailedReviewComment } from '../../rmpr/types.ts';
-import { debugLog } from '../../logging.ts';
+import { debugLog, error } from '../../logging.ts';
 
 export interface CommentAuthor {
   login: string;
@@ -37,6 +37,14 @@ export interface FileNode {
   changeType: 'ADDED' | 'DELETED' | 'MODIFIED';
 }
 
+export interface OpenPullRequest {
+  number: number;
+  title: string;
+  headRefName: string;
+  html_url: string;
+  user: { login: string } | null;
+}
+
 export interface PullRequest {
   number: number;
   title: string;
@@ -51,6 +59,52 @@ interface GraphQLResponse {
   repository: {
     pullRequest: PullRequest;
   };
+}
+
+/**
+ * Fetches all open pull requests for a repository
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @returns Array of open pull requests
+ * @throws {Error} If GITHUB_TOKEN is not set or API request fails
+ */
+export async function fetchOpenPullRequests(
+  owner: string,
+  repo: string
+): Promise<OpenPullRequest[]> {
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN environment variable is not set');
+  }
+
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN,
+  });
+
+  try {
+    const response = await octokit.request('GET /repos/{owner}/{repo}/pulls', {
+      owner,
+      repo,
+      state: 'open',
+      per_page: 100,
+      headers: {
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    return response.data.map((pr) => ({
+      number: pr.number,
+      title: pr.title,
+      headRefName: pr.head.ref,
+      html_url: pr.html_url,
+      user: pr.user ? { login: pr.user.login } : null,
+    }));
+  } catch (err) {
+    error(
+      `Failed to fetch open pull requests for ${owner}/${repo}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    throw err;
+  }
 }
 
 export async function fetchPullRequestAndComments(
@@ -244,14 +298,14 @@ export function parseDiff(diff: string) {
   const match = diff.match(hunkHeaderRegex);
 
   if (!match) {
-    return null; // No valid hunk header found
+    return null;
   }
 
   // Extract line numbers
-  const oldStart = parseInt(match[1], 10) - 1; // Starting line of old file
-  const oldCount = parseInt(match[2], 10); // Number of lines in old file
-  const newStart = parseInt(match[3], 10) - 1; // Starting line of new file
-  const newCount = parseInt(match[4], 10); // Number of lines in new file
+  const oldStart = parseInt(match[1], 10) - 1;
+  const oldCount = parseInt(match[2], 10);
+  const newStart = parseInt(match[3], 10) - 1;
+  const newCount = parseInt(match[4], 10);
 
   // Split diff into lines
   const lines = diff.split('\n');
@@ -261,24 +315,22 @@ export function parseDiff(diff: string) {
   let currentNewLine = newStart;
 
   // Extract changed lines within the specified range
-  const changedLines: DiffLine[] = lines
-    .slice(1) // Skip hunk header
-    .map((line, i) => {
-      if (line.startsWith(' ')) {
-        currentOldLine++;
-        currentNewLine++;
-      } else if (line.startsWith('-')) {
-        currentOldLine++;
-      } else if (line.startsWith('+')) {
-        currentNewLine++;
-      }
+  const changedLines: DiffLine[] = lines.slice(1).map((line, i) => {
+    if (line.startsWith(' ')) {
+      currentOldLine++;
+      currentNewLine++;
+    } else if (line.startsWith('-')) {
+      currentOldLine++;
+    } else if (line.startsWith('+')) {
+      currentNewLine++;
+    }
 
-      return {
-        content: line,
-        oldLineNumber: currentOldLine,
-        newLineNumber: currentNewLine,
-      };
-    });
+    return {
+      content: line,
+      oldLineNumber: currentOldLine,
+      newLineNumber: currentNewLine,
+    };
+  });
 
   return {
     old: { start: oldStart, count: oldCount },

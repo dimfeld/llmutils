@@ -192,7 +192,7 @@ tasks:
               *   Test Case 2: API returns an empty list. Verify an empty array is returned.
               *   Test Case 3: Mock an API error. Verify the function handles it (e.g., throws or returns empty array and logs error).
               *   Test Case 4: `GITHUB_TOKEN` is not set. Verify an error is thrown.
-        done: false
+        done: true
   - title: 3. Modify `answer-pr` Command for Optional PR Identifier
     description: Update the `commander` definition for `answer-pr` to make the
       `prIdentifier` argument optional.
