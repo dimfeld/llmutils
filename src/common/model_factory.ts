@@ -78,11 +78,11 @@ export async function askForModelId(options?: {
     'openrouter/openai/o4-mini',
     'openrouter/google/gemini-2.5-pro-preview',
     'openrouter/google/gemini-2.5-flash-preview',
-    { name: 'Claude Web', value: 'claude', executor: 'copy_paste' },
-    { name: 'Gemini AI Studio', value: 'gemini', executor: 'copy_paste' },
-    { name: 'Grok Web', value: 'grok', executor: 'copy_paste' },
-    { name: 'Claude Code', value: 'claude_code', executor: 'claude_code' },
-    { name: 'Paste into Agent', value: 'paste_into_agent', executor: 'copy_only' },
+    { name: 'Claude Web', value: 'claude', executor: 'copy-paste' },
+    { name: 'Gemini AI Studio', value: 'gemini', executor: 'copy-paste' },
+    { name: 'Grok Web', value: 'grok', executor: 'copy-paste' },
+    { name: 'Claude Code', value: 'claude_code', executor: 'claude-code' },
+    { name: 'Paste into Agent', value: 'paste_into_agent', executor: 'copy-only' },
   ].map((m) =>
     typeof m === 'string'
       ? {
