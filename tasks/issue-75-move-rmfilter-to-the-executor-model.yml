@@ -202,4 +202,4 @@ tasks:
 
           No code changes are expected from this prompt, only verification. If
           discrepancies are found, point them out.
-        done: false
+        done: true
