@@ -146,6 +146,30 @@ describe('Git Utilities', () => {
     });
   });
 
+  describe('getCurrentCommitSha', () => {
+    test('should return the current commit SHA when in a Git repository', async () => {
+      // Get the current commit SHA using git command for comparison
+      const expectedSha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+
+      const sha = await gitUtils.getCurrentCommitSha();
+      expect(sha).toBe(expectedSha);
+    });
+
+    test('should return null when not in a Git repository', async () => {
+      // Change to a temporary directory that's not a Git repository
+      const tempDir = await fs.mkdtemp(path.join(tmpdir(), 'non-git-dir-'));
+      try {
+        process.chdir(tempDir);
+        const sha = await gitUtils.getCurrentCommitSha();
+        expect(sha).toBeNull();
+      } finally {
+        // Clean up and return to the test repo
+        process.chdir(tmpRepoPath);
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('getDiff', () => {
     test('should get a diff for a modified file', async () => {
       const diff = await getDiff('file1.txt', commit1Sha, commit2Sha);
