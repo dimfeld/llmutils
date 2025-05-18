@@ -76,7 +76,7 @@ tasks:
 
           Make sure to import `Octokit` from `octokit`, and `debugLog`, `error`,
           `warn` from `../../logging.ts`.
-        done: false
+        done: true
       - prompt: >
           Now, let's add tests for the `addReplyToReviewThread` function in
           `src/common/github/pull_requests.ts`. Since this file does not have an
