@@ -4,13 +4,17 @@ import { search, input, select } from '@inquirer/prompts';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
+  detectPullRequest,
   fetchPullRequestAndComments,
   selectReviewComments,
   type FileNode,
 } from '../common/github/pull_requests.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { waitForEnter } from '../common/terminal.js';
-import { debugLog, error, log } from '../logging.js';
+import { debugLog, error, log, warn } from '../logging.js';
+import { getCurrentBranchName } from './git_utils.js';
+import { getGitRepository } from '../rmfilter/utils.js';
+import { fetchOpenPullRequests } from '../common/github/pull_requests.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
 import { commitAll, getGitRoot, secureWrite, parseCliArgsFromString } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
@@ -35,7 +39,7 @@ import { askForModelId } from '../common/model_factory.js';
 import { buildExecutorAndLog } from '../rmplan/executors/index.js';
 
 export async function handleRmprCommand(
-  prIdentifierArg: string,
+  prIdentifierArg: string | undefined,
   options: {
     executor: string;
     mode: string;
@@ -48,8 +52,6 @@ export async function handleRmprCommand(
   globalCliOptions: { debug?: boolean },
   config: RmplanConfig
 ) {
-  const parsedIdentifier = await parsePrOrIssueNumber(prIdentifierArg);
-
   if (!process.env.GITHUB_TOKEN) {
     error(
       'GITHUB_TOKEN environment variable is not set. Please set it to a valid GitHub personal access token.'
@@ -57,24 +59,58 @@ export async function handleRmprCommand(
     process.exit(1);
   }
 
-  if (!parsedIdentifier) {
-    error(
-      `Invalid PR identifier format: ${prIdentifierArg}. Expected URL (e.g., https://github.com/owner/repo/pull/123), owner/repo#123, or owner/repo/123.`
-    );
+  const resolvedPrIdentifier = await detectPullRequest(prIdentifierArg);
+  if (!resolvedPrIdentifier) {
+    error('Could not identify a PR to process.');
     process.exit(1);
   }
 
   log(
-    `Processing PR: ${parsedIdentifier.owner}/${parsedIdentifier.repo}#${parsedIdentifier.number}`
+    `Processing PR: ${resolvedPrIdentifier.owner}/${resolvedPrIdentifier.repo}#${resolvedPrIdentifier.number}`
   );
+
+  // If we autodetected the PR, verify the branch matches
+  if (!prIdentifierArg) {
+    const currentBranch = await getCurrentBranchName();
+    if (currentBranch) {
+      const prData = await fetchPullRequestAndComments(
+        resolvedPrIdentifier.owner,
+        resolvedPrIdentifier.repo,
+        resolvedPrIdentifier.number
+      );
+
+      if (prData.pullRequest.headRefName !== currentBranch) {
+        warn(
+          `Warning: Current branch "${currentBranch}" does not match PR branch "${prData.pullRequest.headRefName}".`
+        );
+        const proceed =
+          options.yes ||
+          (
+            await input({
+              message: 'Continue anyway? (y/N)',
+              default: 'n',
+            })
+          ).toLowerCase() === 'y';
+
+        if (!proceed) {
+          log('Operation cancelled by user.');
+          process.exit(0);
+        }
+      }
+    }
+  }
+
+  // Check if PR identifier was explicitly provided (not autodetected)
+  const wasPrIdentifierExplicit =
+    prIdentifierArg !== undefined && (await parsePrOrIssueNumber(prIdentifierArg)) !== null;
 
   let prData;
   try {
     log('Fetching PR data and comments...');
     prData = await fetchPullRequestAndComments(
-      parsedIdentifier.owner,
-      parsedIdentifier.repo,
-      parsedIdentifier.number
+      resolvedPrIdentifier.owner,
+      resolvedPrIdentifier.repo,
+      resolvedPrIdentifier.number
     );
   } catch (e: any) {
     error(`Failed to fetch PR data: ${e.message}`);
@@ -82,6 +118,31 @@ export async function handleRmprCommand(
       console.error(e);
     }
     process.exit(1);
+  }
+
+  // Check for branch mismatch if PR identifier was explicitly provided
+  if (wasPrIdentifierExplicit) {
+    const currentScmBranch = await getCurrentBranchName();
+    const prHeadBranch = prData.pullRequest.headRefName;
+
+    if (currentScmBranch && currentScmBranch !== prHeadBranch) {
+      warn(
+        `Current local branch "${currentScmBranch}" does not match the PR's head branch "${prHeadBranch}".`
+      );
+
+      if (!options.yes) {
+        const { confirm } = await import('@inquirer/prompts');
+        const proceed = await confirm({
+          message: 'Proceed with this PR anyway?',
+          default: true,
+        });
+
+        if (!proceed) {
+          log('User chose not to proceed due to branch mismatch.');
+          process.exit(0);
+        }
+      }
+    }
   }
 
   const { pullRequest } = prData;
@@ -296,7 +357,7 @@ export async function handleRmprCommand(
   log('Successfully addressed selected PR comments.');
 
   if (options.commit) {
-    const prUrl = `https://github.com/${parsedIdentifier.owner}/${parsedIdentifier.repo}/pull/${parsedIdentifier.number}`;
+    const prUrl = `https://github.com/${resolvedPrIdentifier.owner}/${resolvedPrIdentifier.repo}/pull/${resolvedPrIdentifier.number}`;
     log('Committing changes...');
 
     let firstLine: string;
