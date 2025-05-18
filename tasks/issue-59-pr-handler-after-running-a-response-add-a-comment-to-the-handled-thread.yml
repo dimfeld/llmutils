@@ -137,7 +137,7 @@ tasks:
 
           Make sure to adapt the mock for your specific needs, potentially
           checking `variables.body` or `variables.pullRequestReviewThreadId`.
-        done: false
+        done: true
   - title: 2. Add Git Utility to Get Current Commit SHA
     description: >
       Create a utility function in `src/rmpr/git_utils.ts` to retrieve the SHA
