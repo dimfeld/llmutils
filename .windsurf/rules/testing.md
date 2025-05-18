@@ -1,7 +1,11 @@
 ---
+trigger: glob
 description: Writing tests
 globs: *.test.ts
-trigger: model_decision
 ---
 
-Tests use Bun test. Don't use mocks if you can help it. Prefer to use real code, and if you need to emulate a filesystem you can set up a temporary directory and clean it up after the test.
+- Tests use Bun test.
+- Don't use mocks if you can help it, but when you do, use Bun's mocking functionality.
+- Tests should be useful; if a test needs to mock almost all of the functionality, then it should probably not be written.
+- Never manually create mocks by just replacing and restoring functions yourself.
+- Prefer to use real code to test things, and if you need to emulate a filesystem you can set up a temporary directory and clean it up after the test.
