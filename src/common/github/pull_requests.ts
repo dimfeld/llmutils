@@ -472,15 +472,11 @@ export function parseDiff(diff: string) {
 
 /**
  * Adds a reply comment to a pull request review thread
- * @param owner GitHub repository owner
- * @param repo GitHub repository name
  * @param pullRequestReviewThreadId The ID of the review thread to reply to
  * @param body The content of the reply comment
  * @returns Promise that resolves to true if the comment was added successfully, false otherwise
  */
 export async function addReplyToReviewThread(
-  owner: string,
-  repo: string,
   pullRequestReviewThreadId: string,
   body: string
 ): Promise<boolean> {
@@ -494,7 +490,7 @@ export async function addReplyToReviewThread(
 
   const mutation = `
     mutation AddReplyToThread($threadId: ID!, $body: String!) {
-      addPullRequestReviewThreadComment(
+      addPullRequestReviewThreadReply(
         input: {
           pullRequestReviewThreadId: $threadId,
           body: $body

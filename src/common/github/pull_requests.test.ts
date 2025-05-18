@@ -57,7 +57,7 @@ describe('addReplyToReviewThread', () => {
   });
 
   test('successfully adds a reply to a review thread', async () => {
-    const result = await addReplyToReviewThread(owner, repo, threadId, body);
+    const result = await addReplyToReviewThread(threadId, body);
 
     expect(result).toBe(true);
 
@@ -92,7 +92,7 @@ describe('addReplyToReviewThread', () => {
 
   test('handles API errors gracefully', async () => {
     const failingThreadId = 'fail_thread';
-    const result = await addReplyToReviewThread(owner, repo, failingThreadId, body);
+    const result = await addReplyToReviewThread(failingThreadId, body);
 
     expect(result).toBe(false);
 
@@ -111,7 +111,7 @@ describe('addReplyToReviewThread', () => {
     // Temporarily unset the token
     delete process.env.GITHUB_TOKEN;
 
-    const result = await addReplyToReviewThread(owner, repo, threadId, body);
+    const result = await addReplyToReviewThread(threadId, body);
 
     expect(result).toBe(false);
 

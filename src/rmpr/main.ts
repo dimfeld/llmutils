@@ -410,7 +410,7 @@ export async function handleRmprCommand(
 
         for (const { thread } of selectedComments) {
           const replyMessage = `Addressed in commit [${shortSha}](${commitUrl}).`;
-          const success = await addReplyToReviewThread(owner, repo, thread.id, replyMessage);
+          const success = await addReplyToReviewThread(thread.id, replyMessage);
 
           if (success) {
             log(
