@@ -49,6 +49,7 @@ export async function handleRmprCommand(
     dryRun: boolean;
     run: boolean;
     commit: boolean;
+    comment: boolean;
   },
   globalCliOptions: { debug?: boolean },
   config: RmplanConfig
@@ -397,31 +398,35 @@ export async function handleRmprCommand(
     if (exitCode === 0) {
       log('Changes committed successfully.');
 
-      // Post replies to the review threads that were addressed
-      log('Posting replies to handled review threads...');
-      const commitSha = await getCurrentCommitSha();
+      // Only post replies if the comment option is enabled
+      if (options.comment) {
+        log('Posting replies to handled review threads...');
+        const commitSha = await getCurrentCommitSha();
 
-      if (!commitSha) {
-        warn('Could not retrieve commit SHA. Skipping posting replies to PR threads.');
-      } else {
-        const { owner, repo } = resolvedPrIdentifier;
-        const commitUrl = `https://github.com/${owner}/${repo}/commit/${commitSha}`;
-        const shortSha = commitSha.slice(0, 7);
+        if (!commitSha) {
+          warn('Could not retrieve commit SHA. Skipping posting replies to PR threads.');
+        } else {
+          const { owner, repo } = resolvedPrIdentifier;
+          const commitUrl = `https://github.com/${owner}/${repo}/commit/${commitSha}`;
+          const shortSha = commitSha.slice(0, 7);
 
-        for (const { thread } of selectedComments) {
-          const replyMessage = `Addressed in commit [${shortSha}](${commitUrl}).`;
-          const success = await addReplyToReviewThread(thread.id, replyMessage);
+          for (const { thread } of selectedComments) {
+            const replyMessage = `Addressed in commit [${shortSha}](${commitUrl}).`;
+            const success = await addReplyToReviewThread(thread.id, replyMessage);
 
-          if (success) {
-            log(
-              `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
-            );
-          } else {
-            debugLog(
-              `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
-            );
+            if (success) {
+              log(
+                `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+              );
+            } else {
+              debugLog(
+                `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+              );
+            }
           }
         }
+      } else {
+        debugLog('Skipping posting replies to review threads (--comment not enabled)');
       }
     } else {
       error(`Commit failed with exit code ${exitCode}.`);
