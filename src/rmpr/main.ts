@@ -228,10 +228,13 @@ export async function handleRmprCommand(
       modelForLlmEdit,
       executor: options.executor,
       commit: options.commit,
+      comment: options.comment,
+      showCommentOption: true,
     });
     modelForLlmEdit = promptResults.model;
     options.executor = promptResults.executor;
     options.commit = promptResults.commit;
+    options.comment = promptResults.comment;
     additionalUserRmFilterArgs = promptResults.rmfilterOptions;
   }
 
@@ -439,18 +442,22 @@ interface PromptOptions {
   rmfilterOptions: string[];
   executor: string;
   commit: boolean;
+  comment?: boolean;
 }
 
 async function optionsPrompt(initialOptions: {
   modelForLlmEdit: string;
   executor: string;
   commit: boolean;
+  comment?: boolean;
+  showCommentOption?: boolean;
 }): Promise<PromptOptions> {
   let result: PromptOptions = {
     model: initialOptions.modelForLlmEdit,
     rmfilterOptions: [],
     executor: initialOptions.executor,
     commit: initialOptions.commit,
+    comment: initialOptions.comment,
   };
 
   let userWantsToContinue = false;
@@ -466,6 +473,13 @@ async function optionsPrompt(initialOptions: {
         result.commit
           ? { name: 'Disable autocommit', value: 'no-commit' }
           : { name: 'Enable autocommit', value: 'commit' },
+        ...(initialOptions.showCommentOption
+          ? [
+              result.comment
+                ? { name: 'Disable review thread replies', value: 'no-comment' }
+                : { name: 'Enable review thread replies', value: 'comment' },
+            ]
+          : []),
       ],
     });
 
@@ -485,6 +499,8 @@ async function optionsPrompt(initialOptions: {
       });
       result.rmfilterOptions = parseCliArgsFromString(newArgsStr.trim());
       log(`Additional rmfilter args set to: "${result.rmfilterOptions.join(' ')}"`);
+    } else if (choice === 'comment' || choice === 'no-comment') {
+      result.comment = choice === 'comment';
     } else if (choice === 'no-commit') {
       result.commit = false;
     } else if (choice === 'commit') {
