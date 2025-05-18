@@ -191,3 +191,36 @@ export async function getCurrentBranchName(): Promise<string | null> {
   }
   return await getCurrentJujutsuBranch();
 }
+
+/**
+ * Gets the SHA of the current Git commit (HEAD).
+ * @returns A promise that resolves to the commit SHA string if successful, or null if an error occurs.
+ */
+export async function getCurrentCommitSha(): Promise<string | null> {
+  try {
+    const proc = logSpawn(['git', 'rev-parse', 'HEAD'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout as ReadableStream).text(),
+      new Response(proc.stderr as ReadableStream).text(),
+    ]);
+
+    if (exitCode === 0) {
+      return stdout.trim();
+    }
+
+    debugLog(
+      'Failed to get current commit SHA. Exit code: %d, stderr: %s',
+      exitCode,
+      stderr.trim()
+    );
+    return null;
+  } catch (error) {
+    debugLog('Error getting current commit SHA: %o', error);
+    return null;
+  }
+}

@@ -179,7 +179,7 @@ tasks:
 
           Ensure you import `logSpawn` from `../rmfilter/utils.js` and
           `debugLog` from `../logging.js`.
-        done: false
+        done: true
       - prompt: >
           Now, let's add tests for the `getCurrentCommitSha` function in
           `src/rmpr/git_utils.test.ts`.
