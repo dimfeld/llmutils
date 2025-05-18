@@ -325,4 +325,4 @@ tasks:
 
           *   Test 5: Explicit PR ID, `getCurrentBranchName` returns `null` ->
           No warning, no prompt.
-        done: false
+        done: true

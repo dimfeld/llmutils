@@ -218,6 +218,10 @@ export async function handleRmprCommand(
     }
   }
 
+  // Check if PR identifier was explicitly provided (not autodetected)
+  const wasPrIdentifierExplicit =
+    prIdentifierArg !== undefined && (await parsePrOrIssueNumber(prIdentifierArg)) !== null;
+
   let prData;
   try {
     log('Fetching PR data and comments...');
@@ -232,6 +236,31 @@ export async function handleRmprCommand(
       console.error(e);
     }
     process.exit(1);
+  }
+
+  // Check for branch mismatch if PR identifier was explicitly provided
+  if (wasPrIdentifierExplicit) {
+    const currentScmBranch = await getCurrentBranchName();
+    const prHeadBranch = prData.pullRequest.headRefName;
+
+    if (currentScmBranch && currentScmBranch !== prHeadBranch) {
+      warn(
+        `Current local branch "${currentScmBranch}" does not match the PR's head branch "${prHeadBranch}".`
+      );
+
+      if (!options.yes) {
+        const { confirm } = await import('@inquirer/prompts');
+        const proceed = await confirm({
+          message: 'Proceed with this PR anyway?',
+          default: true,
+        });
+
+        if (!proceed) {
+          log('User chose not to proceed due to branch mismatch.');
+          process.exit(0);
+        }
+      }
+    }
   }
 
   const { pullRequest } = prData;
