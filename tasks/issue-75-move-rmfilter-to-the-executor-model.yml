@@ -49,7 +49,7 @@ tasks:
               b.  Add a new option for the executor: `executor: { type: 'string', short: 'x' },` (you can choose a different short option if 'x' is taken or unsuitable).
           2.  Ensure that `ConfigSchema` does not contain a `run` field. It
           currently doesn't, so no change is needed there, but verify.
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmfilter/config.ts`.
 

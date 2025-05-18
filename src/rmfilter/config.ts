@@ -123,7 +123,7 @@ export async function findPresetFile(preset: string, gitRoot: string): Promise<s
     } catch {
       // Move up to parent directory
       const parentDir = path.dirname(currentDir);
-      if (parentDir === currentDir) break; // Reached root
+      if (parentDir === currentDir) break;
       currentDir = parentDir;
     }
   }
@@ -247,7 +247,7 @@ export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: st
     new: { type: 'string' },
     compress: { type: 'boolean' },
     model: { type: 'string', short: 'm' },
-    run: { type: 'boolean' },
+    executor: { type: 'string', short: 'x' },
   } as const;
 
   // Define command-specific options
@@ -416,7 +416,7 @@ Global Options:
   --no-autodocs             Disable automatic loading of .mdc rule/doc files
   --instructions-editor     Open editor for instructions in $EDITOR
   -m, --model <grok|gemini> Set presets for certain models
-  --run                     Run the prompt right away
+  -x, --executor <name>     Use the specified executor to run the prompt
 
 Command Options (per command):
   -g, --grep <patterns>     Include files matching these patterns
@@ -520,7 +520,7 @@ export async function listPresets() {
   if (presets.length > 0) {
     log('Available presets:');
     const longestNameLength = presets.reduce((max, p) => Math.max(max, p.name.length), 0);
-    const sourcePadding = '(repository)'.length; // Length of the longest source string + ()
+    const sourcePadding = '(repository)'.length;
 
     presets.forEach((preset) => {
       const sourceStr = `(${preset.source})`;
