@@ -73,6 +73,76 @@ export async function getFileContentAtRef(filePath: string, ref: string): Promis
 }
 
 /**
+ * Gets the name of the current Jujutsu branch.
+ * @returns A promise that resolves to the current branch name, or null if not in a Jujutsu repository or no branch found.
+ */
+export async function getCurrentJujutsuBranch(): Promise<string | null> {
+  try {
+    const proc = logSpawn(
+      [
+        'jj',
+        'log',
+        '-r',
+        'latest(heads(ancestors(@) & bookmarks()), 1)',
+        '--limit',
+        '1',
+        '--no-graph',
+        '--ignore-working-copy',
+        '-T',
+        'bookmarks',
+      ],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }
+    );
+
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout as ReadableStream).text(),
+      new Response(proc.stderr as ReadableStream).text(),
+    ]);
+
+    if (exitCode !== 0) {
+      if (debug) {
+        debugLog(
+          'Failed to get current Jujutsu branch. Exit code: %d, stderr: %s',
+          exitCode,
+          stderr.trim()
+        );
+      }
+      return null;
+    }
+
+    const branchNames = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (branchNames.length === 0) {
+      return null;
+    }
+
+    if (branchNames.length === 1) {
+      return branchNames[0];
+    }
+
+    // Filter out 'main' and 'master' branches
+    const filteredBranches = branchNames.filter(
+      (branch) => branch !== 'main' && branch !== 'master'
+    );
+
+    // Return the first non-main/master branch if any exist, otherwise first branch from original list
+    return filteredBranches.length > 0 ? filteredBranches[0] : branchNames[0];
+  } catch (error) {
+    if (debug) {
+      debugLog('Error getting current Jujutsu branch: %o', error);
+    }
+    return null;
+  }
+}
+
+/**
  * Gets the diff of a specific file between two Git references.
  * @param filePath The path to the file, relative to the Git repository root.
  * @param baseRef The base Git reference for the diff.

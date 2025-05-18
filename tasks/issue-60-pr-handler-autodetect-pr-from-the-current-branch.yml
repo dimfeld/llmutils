@@ -114,7 +114,7 @@ tasks:
               *   Test Case 4: Outputting "main\nmaster". Verify it returns "main" (or "master").
               *   Test Case 5: Empty output. Verify it returns `null`.
               *   Test Case 6: Command failure (mock `exited` to be non-zero). Verify it returns `null`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmpr/git_utils.ts`, add a new asynchronous function
           `getCurrentBranchName(): Promise<string | null>`.
