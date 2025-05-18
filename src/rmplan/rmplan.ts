@@ -390,8 +390,10 @@ program
   .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
 
 program
-  .command('answer-pr <prIdentifier>')
-  .description('Address Pull Request (PR) review comments using an LLM.')
+  .command('answer-pr [prIdentifier]')
+  .description(
+    'Address Pull Request (PR) review comments using an LLM. If no PR identifier is provided, it will try to detect the PR from the current branch.'
+  )
   .option(
     '--mode <mode>',
     "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",

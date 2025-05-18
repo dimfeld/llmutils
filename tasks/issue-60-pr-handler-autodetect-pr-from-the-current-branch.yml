@@ -215,7 +215,7 @@ tasks:
           other changes are needed in this file for this step; the handling of
           the potentially undefined `prIdentifier` will be done in
           `src/rmpr/main.ts`.
-        done: false
+        done: true
   - title: 4. Implement PR Autodetection and Selection Logic
     description: >
       Modify `handleRmprCommand` in `src/rmpr/main.ts` to implement the PR
