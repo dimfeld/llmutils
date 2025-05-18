@@ -1,8 +1,11 @@
 import { Octokit } from 'octokit';
-import { checkbox, Separator } from '@inquirer/prompts';
+import { checkbox, input, select, Separator } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import type { DetailedReviewComment } from '../../rmpr/types.ts';
-import { debugLog, error } from '../../logging.ts';
+import { debugLog, error, log, warn } from '../../logging.ts';
+import { parsePrOrIssueNumber } from './identifiers.ts';
+import { getCurrentBranchName } from '../../rmpr/git_utils.ts';
+import { getGitRepository } from '../../rmfilter/utils.ts';
 
 export interface CommentAuthor {
   login: string;
@@ -81,14 +84,11 @@ export async function fetchOpenPullRequests(
   });
 
   try {
-    const response = await octokit.request('GET /repos/{owner}/{repo}/pulls', {
+    const response = await octokit.rest.pulls.list({
       owner,
       repo,
       state: 'open',
       per_page: 100,
-      headers: {
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
     });
 
     return response.data.map((pr) => ({
@@ -185,6 +185,137 @@ export async function fetchPullRequestAndComments(
 
 export function getBaseBranch(data: Awaited<ReturnType<typeof fetchPullRequestAndComments>>) {
   return data.pullRequest.baseRefName;
+}
+
+/**
+ * Detects the pull request to process, either from the provided identifier or by autodetecting based on the current branch.
+ * @param prIdentifierArg The PR identifier provided by the user (e.g., "owner/repo#123" or "#123").
+ * @returns The resolved PR identifier or null if detection fails.
+ */
+export async function detectPullRequest(prIdentifierArg: string | undefined): Promise<{
+  owner: string;
+  repo: string;
+  number: number;
+} | null> {
+  let resolvedPrIdentifier = prIdentifierArg ? await parsePrOrIssueNumber(prIdentifierArg) : null;
+
+  // If no PR identifier was provided or couldn't be parsed, try to autodetect
+  if (!resolvedPrIdentifier) {
+    // Get current branch name
+    const currentBranch = await getCurrentBranchName();
+    if (!currentBranch) {
+      error('Could not determine current branch. Please specify a PR identifier manually.');
+      process.exit(1);
+    }
+
+    // Get repository owner/name
+    const repoInfo = await getGitRepository();
+    if (!repoInfo) {
+      error(
+        'Could not determine GitHub repository. Make sure you are in a Git repository with a remote origin.'
+      );
+      process.exit(1);
+    }
+
+    const [owner, repo] = repoInfo.split('/');
+    if (!owner || !repo) {
+      error(`Invalid repository format: ${repoInfo}. Expected format: owner/repo`);
+      process.exit(1);
+    }
+
+    try {
+      // Fetch open PRs
+      const openPrs = await fetchOpenPullRequests(owner, repo);
+
+      // Find PRs where the head branch matches the current branch
+      const matchingPrs = openPrs.filter(
+        (pr: { headRefName: string }) => pr.headRefName === currentBranch
+      );
+
+      if (matchingPrs.length === 1) {
+        // Single matching PR found
+        const pr = matchingPrs[0];
+        log(`Found PR #${pr.number} (${pr.title}) matching current branch "${currentBranch}"`);
+        resolvedPrIdentifier = { owner, repo, number: pr.number };
+      } else if (matchingPrs.length > 1) {
+        // Multiple matching PRs - let user choose
+        warn(`Found ${matchingPrs.length} PRs matching the current branch "${currentBranch}":`);
+        const selectedPrNumber = await select({
+          message: 'Select a PR to continue:',
+          choices: matchingPrs.map(
+            (pr: { number: number; title: string; user?: { login: string } | null }) => ({
+              name: `#${pr.number}: ${pr.title} (${pr.user?.login || 'unknown'})`,
+              value: pr.number,
+            })
+          ),
+        });
+
+        const selectedPr = matchingPrs.find(
+          (pr: { number: number }) => pr.number === selectedPrNumber
+        );
+        if (selectedPr) {
+          resolvedPrIdentifier = { owner, repo, number: selectedPr.number };
+        } else {
+          error('No PR selected. Exiting.');
+          process.exit(1);
+        }
+      } else {
+        // No matching PRs - let user select from all open PRs or enter manually
+        log(`No open PRs found for branch "${currentBranch}".`);
+        const selectedPrNumber = await select({
+          message: 'Select a PR to continue or press Ctrl+C to exit:',
+          choices: [
+            ...openPrs.map(
+              (pr: {
+                number: number;
+                title: string;
+                headRefName: string;
+                user?: { login: string } | null;
+              }) => ({
+                name: `#${pr.number}: ${pr.title} (${pr.headRefName} by ${pr.user?.login || 'unknown'})`,
+                value: pr.number,
+              })
+            ),
+            {
+              name: 'Enter PR number manually',
+              value: -1,
+            },
+          ],
+        });
+
+        if (selectedPrNumber === -1) {
+          const manualPrNumber = parseInt(
+            await input({
+              message: 'Enter PR number:',
+              validate: (input) => {
+                const num = parseInt(input);
+                return (!isNaN(num) && num > 0) || 'Please enter a valid PR number';
+              },
+            }),
+            10
+          );
+
+          if (isNaN(manualPrNumber) || manualPrNumber <= 0) {
+            error('Invalid PR number. Exiting.');
+            process.exit(1);
+          }
+          resolvedPrIdentifier = { owner, repo, number: manualPrNumber };
+        } else {
+          const selectedPr = openPrs.find(
+            (pr: { number: number }) => pr.number === selectedPrNumber
+          );
+          if (selectedPr) {
+            resolvedPrIdentifier = { owner, repo, number: selectedPr.number };
+          }
+        }
+      }
+    } catch (e) {
+      error(`Failed to autodetect PR: ${e instanceof Error ? e.message : String(e)}`);
+      process.exit(1);
+    }
+  }
+
+  return resolvedPrIdentifier;
 }
 
 export async function selectReviewComments(

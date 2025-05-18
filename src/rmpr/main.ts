@@ -4,6 +4,7 @@ import { search, input, select } from '@inquirer/prompts';
 import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
+  detectPullRequest,
   fetchPullRequestAndComments,
   selectReviewComments,
   type FileNode,
@@ -51,8 +52,6 @@ export async function handleRmprCommand(
   globalCliOptions: { debug?: boolean },
   config: RmplanConfig
 ) {
-  let resolvedPrIdentifier = prIdentifierArg ? await parsePrOrIssueNumber(prIdentifierArg) : null;
-
   if (!process.env.GITHUB_TOKEN) {
     error(
       'GITHUB_TOKEN environment variable is not set. Please set it to a valid GitHub personal access token.'
@@ -60,124 +59,7 @@ export async function handleRmprCommand(
     process.exit(1);
   }
 
-  // If no PR identifier was provided or couldn't be parsed, try to autodetect
-  if (!resolvedPrIdentifier) {
-    log('PR identifier not provided or not specific, attempting to autodetect...');
-
-    // Get current branch name
-    const currentBranch = await getCurrentBranchName();
-    if (!currentBranch) {
-      error('Could not determine current branch. Please specify a PR identifier manually.');
-      process.exit(1);
-    }
-
-    // Get repository owner/name
-    const repoInfo = await getGitRepository();
-    if (!repoInfo) {
-      error(
-        'Could not determine GitHub repository. Make sure you are in a Git repository with a remote origin.'
-      );
-      process.exit(1);
-    }
-
-    const [owner, repo] = repoInfo.split('/');
-    if (!owner || !repo) {
-      error(`Invalid repository format: ${repoInfo}. Expected format: owner/repo`);
-      process.exit(1);
-    }
-
-    try {
-      // Fetch open PRs
-      const openPrs = await fetchOpenPullRequests(owner, repo);
-
-      // Find PRs where the head branch matches the current branch
-      const matchingPrs = openPrs.filter(
-        (pr: { headRefName: string }) => pr.headRefName === currentBranch
-      );
-
-      if (matchingPrs.length === 1) {
-        // Single matching PR found
-        const pr = matchingPrs[0];
-        log(`Found PR #${pr.number} (${pr.title}) matching current branch "${currentBranch}"`);
-        resolvedPrIdentifier = { owner, repo, number: pr.number };
-      } else if (matchingPrs.length > 1) {
-        // Multiple matching PRs - let user choose
-        warn(`Found ${matchingPrs.length} PRs matching the current branch "${currentBranch}":`);
-        const selectedPrNumber = await select({
-          message: 'Select a PR to continue:',
-          choices: matchingPrs.map(
-            (pr: { number: number; title: string; user?: { login: string } | null }) => ({
-              name: `#${pr.number}: ${pr.title} (${pr.user?.login || 'unknown'})`,
-              value: pr.number,
-            })
-          ),
-        });
-
-        const selectedPr = matchingPrs.find(
-          (pr: { number: number }) => pr.number === selectedPrNumber
-        );
-        if (selectedPr) {
-          resolvedPrIdentifier = { owner, repo, number: selectedPr.number };
-        } else {
-          error('No PR selected. Exiting.');
-          process.exit(1);
-        }
-      } else {
-        // No matching PRs - let user select from all open PRs or enter manually
-        log(`No open PRs found for branch "${currentBranch}".`);
-        const selectedPrNumber = await select({
-          message: 'Select a PR to continue or press Ctrl+C to exit:',
-          choices: [
-            ...openPrs.map(
-              (pr: {
-                number: number;
-                title: string;
-                headRefName: string;
-                user?: { login: string } | null;
-              }) => ({
-                name: `#${pr.number}: ${pr.title} (${pr.headRefName} by ${pr.user?.login || 'unknown'})`,
-                value: pr.number,
-              })
-            ),
-            {
-              name: 'Enter PR number manually',
-              value: -1,
-            },
-          ],
-        });
-
-        if (selectedPrNumber === -1) {
-          const manualPrNumber = parseInt(
-            await input({
-              message: 'Enter PR number:',
-              validate: (input) => {
-                const num = parseInt(input);
-                return (!isNaN(num) && num > 0) || 'Please enter a valid PR number';
-              },
-            }),
-            10
-          );
-
-          if (isNaN(manualPrNumber) || manualPrNumber <= 0) {
-            error('Invalid PR number. Exiting.');
-            process.exit(1);
-          }
-          resolvedPrIdentifier = { owner, repo, number: manualPrNumber };
-        } else {
-          const selectedPr = openPrs.find(
-            (pr: { number: number }) => pr.number === selectedPrNumber
-          );
-          if (selectedPr) {
-            resolvedPrIdentifier = { owner, repo, number: selectedPr.number };
-          }
-        }
-      }
-    } catch (e) {
-      error(`Failed to autodetect PR: ${e instanceof Error ? e.message : String(e)}`);
-      process.exit(1);
-    }
-  }
-
+  const resolvedPrIdentifier = await detectPullRequest(prIdentifierArg);
   if (!resolvedPrIdentifier) {
     error('Could not identify a PR to process.');
     process.exit(1);
