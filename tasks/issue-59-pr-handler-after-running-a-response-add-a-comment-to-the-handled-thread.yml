@@ -244,7 +244,7 @@ tasks:
 
           ` from `bun` for git commands and sets up a temporary repository.
           Leverage this.
-        done: false
+        done: true
   - title: 3. Integrate Commenting into rmpr Main Workflow
     description: >
       Modify `src/rmpr/main.ts` to use the newly created functions. After
