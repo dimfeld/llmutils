@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { Executor, AgentCommandSharedOptions } from './types.ts';
+import type { Executor, ExecutorCommonOptions } from './types.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
 import {
   createLineSplitter,
@@ -26,9 +26,11 @@ export class ClaudeCodeExecutor implements Executor {
   static description = 'Executes the plan using Claude Code';
   static optionsSchema = claudeCodeOptionsSchema;
 
+  readonly forceReviewCommentsMode = 'separate-context';
+
   constructor(
     public options: ClaudeCodeExecutorOptions,
-    public sharedOptions: AgentCommandSharedOptions,
+    public sharedOptions: ExecutorCommonOptions,
     public rmplanConfig: RmplanConfig
   ) {}
 

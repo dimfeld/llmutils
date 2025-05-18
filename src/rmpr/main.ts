@@ -32,10 +32,12 @@ import {
 } from './comment_options.js';
 import clipboardy from 'clipboardy';
 import { askForModelId } from '../common/model_factory.js';
+import { buildExecutorAndLog } from '../rmplan/executors/index.js';
 
 export async function handleRmprCommand(
   prIdentifierArg: string,
   options: {
+    executor: string;
     mode: string;
     yes: boolean;
     model?: string;
@@ -147,6 +149,42 @@ export async function handleRmprCommand(
   let instructions: string;
   const filesProcessedWithAiComments = new Map<string, string>();
 
+  // Initialize state variables for interactive settings adjustment
+  let modelForLlmEdit = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
+  let additionalUserRmFilterArgs: string[] = [];
+
+  if (!options.yes) {
+    log('\nSettings can be adjusted before generating the LLM prompt.');
+    if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
+      log(
+        'AI comments have been written to the relevant files. You can examine and edit them directly on disk before continuing.'
+      );
+    }
+
+    const promptResults = await optionsPrompt({
+      modelForLlmEdit,
+      executor: options.executor,
+      commit: options.commit,
+    });
+    modelForLlmEdit = promptResults.model;
+    options.executor = promptResults.executor;
+    options.commit = promptResults.commit;
+    additionalUserRmFilterArgs = promptResults.rmfilterOptions;
+  }
+
+  const executor = buildExecutorAndLog(
+    options.executor,
+    {
+      baseDir: gitRoot,
+      model: modelForLlmEdit,
+    },
+    config
+  );
+
+  if (executor.forceReviewCommentsMode) {
+    options.mode = executor.forceReviewCommentsMode;
+  }
+
   if (options.mode === 'inline-comments') {
     log('Preparing context in Inline Comments mode...');
     for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
@@ -192,59 +230,45 @@ export async function handleRmprCommand(
     instructions = createSeparateContextPrompt(formattedComments);
   }
 
-  // Initialize state variables for interactive settings adjustment
-  let modelForLlmEdit = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
-  let additionalUserRmFilterArgs: string[] = [];
+  const prepareOptions = executor.prepareStepOptions?.();
 
-  if (!options.yes) {
-    log('\nSettings can be adjusted before generating the LLM prompt.');
-    if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
-      log(
-        'AI comments have been written to the relevant files. You can examine and edit them directly on disk before continuing.'
-      );
+  let llmPrompt: string;
+
+  if (prepareOptions?.rmfilter) {
+    // Construct rmfilter arguments, incorporating --rmpr options
+    let rmFilterArgs: string[] = [
+      '--with-diff',
+      '--diff-from',
+      headRefName,
+      '--instructions',
+      instructions,
+      '--model',
+      modelForLlmEdit,
+    ];
+
+    // Add files and related options
+    for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
+      const rmprOptions = fileInfo.options;
+      rmFilterArgs.push('--', filePath);
+      rmFilterArgs.push(...argsFromRmprOptions(rmprOptions, pullRequest));
     }
 
-    const promptResults = await optionsPrompt({
-      modelForLlmEdit,
-      run: options.run,
-      commit: options.commit,
+    rmFilterArgs.push(...additionalUserRmFilterArgs);
+
+    if (prepareOptions.rmfilterArgs) {
+      rmFilterArgs.push('--', ...prepareOptions.rmfilterArgs);
+    }
+
+    llmPrompt = await fullRmfilterRun({
+      args: rmFilterArgs,
+      gitRoot,
+      baseDir: gitRoot,
+      skipWrite: true,
     });
-    modelForLlmEdit = promptResults.model;
-    options.run = promptResults.run;
-    options.commit = promptResults.commit;
-    additionalUserRmFilterArgs = promptResults.rmfilterOptions;
+  } else {
+    // TODO This needs some additional work to provide enough context to the model.
+    llmPrompt = instructions;
   }
-
-  // Construct rmfilter arguments, incorporating --rmpr options
-  let rmFilterArgs: string[] = [
-    '--with-diff',
-    '--diff-from',
-    headRefName,
-    '--instructions',
-    instructions,
-    '--model',
-    modelForLlmEdit,
-  ];
-
-  // Add files and related options
-  for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
-    const rmprOptions = fileInfo.options;
-    rmFilterArgs.push('--', filePath);
-    rmFilterArgs.push(...argsFromRmprOptions(rmprOptions, pullRequest));
-  }
-
-  rmFilterArgs.push(...additionalUserRmFilterArgs);
-
-  if (!options.run) {
-    rmFilterArgs.push('--copy');
-  }
-
-  const llmPrompt = await fullRmfilterRun({
-    args: rmFilterArgs,
-    gitRoot,
-    baseDir: gitRoot,
-    skipWrite: true,
-  });
 
   if (options.dryRun) {
     log(
@@ -253,46 +277,7 @@ export async function handleRmprCommand(
     process.exit(0);
   }
 
-  let llmOutputText: string;
-  if (options.run) {
-    log('Invoking LLM...');
-    try {
-      const { text } = await runStreamingPrompt({
-        messages: [{ role: 'user', content: llmPrompt }],
-        model: modelForLlmEdit,
-        temperature: 0,
-      });
-      llmOutputText = text;
-    } catch (e: any) {
-      error(`LLM invocation failed: ${e.message}`);
-      if (globalCliOptions.debug) console.error(e);
-      process.exit(1);
-    }
-  } else {
-    log(
-      `Paste the context into your model, and then press Enter to apply once you've copied the output, or Ctrl+C to exit.`
-    );
-    await waitForEnter();
-    llmOutputText = await clipboardy.read();
-  }
-
-  log('Applying LLM suggestions...');
-  try {
-    await applyLlmEdits({
-      interactive: !options.yes,
-      baseDir: gitRoot,
-      content: llmOutputText,
-      originalPrompt: llmPrompt,
-      retryRequester: options.run ? createRetryRequester(modelForLlmEdit) : undefined,
-      writeRoot: gitRoot,
-    });
-  } catch (e: any) {
-    error(`Failed to apply LLM edits: ${e.message}`);
-    // The error from applyLlmEdits might already be user-friendly.
-    // If not, add more context here.
-    if (globalCliOptions.debug) console.error(e);
-    process.exit(1);
-  }
+  await executor.execute(llmPrompt);
 
   if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
     log('Cleaning up AI comment markers...');
@@ -358,19 +343,19 @@ export async function handleRmprCommand(
 interface PromptOptions {
   model: string;
   rmfilterOptions: string[];
-  run: boolean;
+  executor: string;
   commit: boolean;
 }
 
 async function optionsPrompt(initialOptions: {
   modelForLlmEdit: string;
-  run: boolean;
+  executor: string;
   commit: boolean;
 }): Promise<PromptOptions> {
   let result: PromptOptions = {
     model: initialOptions.modelForLlmEdit,
     rmfilterOptions: [],
-    run: initialOptions.run,
+    executor: initialOptions.executor,
     commit: initialOptions.commit,
   };
 
@@ -395,7 +380,7 @@ async function optionsPrompt(initialOptions: {
     } else if (choice === 'model') {
       const newSetting = await askForModelId();
       if (newSetting) {
-        result.run = newSetting.run;
+        result.executor = newSetting.executor;
         result.model = newSetting.value;
       }
       log(`LLM model for editing set to: ${result.model}`);

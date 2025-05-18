@@ -1,9 +1,10 @@
+import { error, log } from '../../logging.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import { ClaudeCodeExecutor } from './claude_code.ts';
 import { CopyOnlyExecutor } from './copy_only.ts';
 import { CopyPasteExecutor } from './copy_paste.ts';
 import { OneCallExecutor } from './one-call';
-import type { AgentCommandSharedOptions, Executor, ExecutorFactory } from './types';
+import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
 
 /**
  * A map of available executors, keyed by their names.
@@ -21,7 +22,7 @@ export { OneCallExecutor };
 export function createExecutor(
   name: string,
   options: any,
-  sharedOptions: AgentCommandSharedOptions,
+  sharedOptions: ExecutorCommonOptions,
   rmplanConfig: RmplanConfig
 ) {
   const executor = executors.get(name);
@@ -47,4 +48,27 @@ export function createExecutor(
     factory: executor,
     executor: new executor(parsedExecutorOptions, sharedOptions, rmplanConfig) as Executor,
   };
+}
+
+export function buildExecutorAndLog(
+  executorName: string,
+  sharedOptions: ExecutorCommonOptions,
+  config: RmplanConfig
+) {
+  const buildExecutorResult = createExecutor(
+    executorName,
+    // TODO load options from the various config files and CLI
+    {},
+    sharedOptions,
+    config
+  );
+
+  if ('error' in buildExecutorResult) {
+    error(buildExecutorResult.error);
+    process.exit(1);
+  }
+  const { factory: executorFactory, executor } = buildExecutorResult;
+  log(`Using executor: ${executorFactory.name}`);
+
+  return executor;
 }

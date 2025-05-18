@@ -1,6 +1,6 @@
-export async function waitForEnter() {
+export async function waitForEnter(otherKeys: string[] = []) {
   // Wait for Enter key
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.on('data', (data) => {
@@ -8,11 +8,16 @@ export async function waitForEnter() {
         // Enter key
         process.stdin.setRawMode(false);
         process.stdin.pause();
-        resolve();
+        resolve('Enter');
       } else if (data[0] === 0x03) {
         // ctrl-c
         console.warn('Cancelled');
         process.exit(1);
+      } else if (otherKeys.includes(String.fromCharCode(data[0]))) {
+        // Other key
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        resolve(String.fromCharCode(data[0]));
       }
     });
   });

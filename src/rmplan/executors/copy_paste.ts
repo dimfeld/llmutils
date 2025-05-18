@@ -8,7 +8,7 @@ import { log } from '../../logging';
 import { getGitRoot } from '../../rmfilter/utils.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { AgentCommandSharedOptions, Executor } from './types';
+import type { ExecutorCommonOptions, Executor } from './types';
 
 const copyPasteOptionsSchema = z.object({
   executionModel: z
@@ -32,7 +32,7 @@ export class CopyPasteExecutor implements Executor {
 
   constructor(
     public options: CopyPasteExecutorOptions,
-    public sharedOptions: AgentCommandSharedOptions,
+    public sharedOptions: ExecutorCommonOptions,
     public rmplanConfig: RmplanConfig
   ) {}
 

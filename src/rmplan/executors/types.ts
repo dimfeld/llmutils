@@ -5,8 +5,7 @@ import type { PrepareNextStepOptions } from '../actions.ts';
 /**
  * Shared options/state from the agent command, passed to the executor.
  */
-export interface AgentCommandSharedOptions {
-  planFile: string; // The plan file being executed
+export interface ExecutorCommonOptions {
   baseDir: string;
   model?: string;
 }
@@ -14,7 +13,7 @@ export interface AgentCommandSharedOptions {
 export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {
   new (
     executorOptions: z.infer<SCHEMA>,
-    sharedOptions: AgentCommandSharedOptions,
+    sharedOptions: ExecutorCommonOptions,
     rmplanConfig: RmplanConfig
   ): E | Promise<E>;
 
@@ -32,6 +31,8 @@ export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = 
  */
 export interface Executor {
   prepareStepOptions?: () => Partial<PrepareNextStepOptions>;
+
+  forceReviewCommentsMode?: 'inline-edits' | 'separate-context';
 
   /**
    * The asynchronous function that executes the generated context.

@@ -9,8 +9,8 @@ import {
   prepareNextStep,
 } from './actions.ts';
 import { loadEffectiveConfig } from './configLoader.ts';
-import { createExecutor } from './executors/index.ts';
-import type { AgentCommandSharedOptions } from './executors/types.ts';
+import { buildExecutorAndLog } from './executors/index.ts';
+import type { ExecutorCommonOptions } from './executors/types.ts';
 import { planSchema } from './planSchema.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
@@ -30,25 +30,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     openLogFile(logFilePath);
   }
 
-  const sharedExecutorOptions: AgentCommandSharedOptions = {
-    planFile,
+  const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: await getGitRoot(),
     model: agentExecutionModel,
   };
-  const selectedExecutorName = options.executor;
-  const buildExecutorResult = createExecutor(
-    selectedExecutorName,
-    // TODO load options from the various config files and CLI
-    {},
-    sharedExecutorOptions,
-    config
-  );
-  if ('error' in buildExecutorResult) {
-    error(buildExecutorResult.error);
-    process.exit(1);
-  }
-  const { factory: executorFactory, executor } = buildExecutorResult;
-  log(`Using executor: ${executorFactory.name}`);
+  const executor = buildExecutorAndLog(options.executor, sharedExecutorOptions, config);
 
   log('Starting agent to execute plan:', planFile);
   try {
@@ -131,7 +117,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       } else {
         log(boldMarkdownHeaders('\n## Using Direct Prompt as Context\n'));
         contextContent = stepPreparationResult.prompt;
-        log(contextContent)
+        log(contextContent);
       }
 
       try {

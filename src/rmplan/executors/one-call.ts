@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentCommandSharedOptions, Executor, ExecutorFactory } from './types';
+import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../../common/run_and_apply';
 import { applyLlmEdits, type ApplyLlmEditsOptions } from '../../apply-llm-edits/apply';
 import { log } from '../../logging';
@@ -34,7 +34,7 @@ export class OneCallExecutor implements Executor {
 
   constructor(
     public options: OneCallExecutorOptions,
-    public sharedOptions: AgentCommandSharedOptions,
+    public sharedOptions: ExecutorCommonOptions,
     public rmplanConfig: RmplanConfig
   ) {}
 

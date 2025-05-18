@@ -39,7 +39,7 @@ if (!values.model) {
   values.model =
     (
       await askForModelId({
-        onlyRunTrue: true,
+        onlyDirectCall: true,
       })
     )?.value ?? DEFAULT_RUN_MODEL;
 }

@@ -5,7 +5,7 @@
 # May 15, 2025
 
 - Add --run option to rmfilter to directly run and apply.
-- In `answer-pr`, allow updating options before running 
+- In `answer-pr`, allow updating options before running
 
 # May 14, 2025
 

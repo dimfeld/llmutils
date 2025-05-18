@@ -55,8 +55,9 @@ export function createModel(modelString: string): LanguageModel {
 
 export async function askForModelId(options?: {
   defaultId?: string;
-  onlyRunTrue?: boolean;
-}): Promise<{ value: string; run: boolean } | null> {
+  /** Use this for code that isn't yet on the new executor model. */
+  onlyDirectCall?: boolean;
+}): Promise<{ value: string; executor: string } | null> {
   let availableModels = [
     'google/gemini-2.5-pro-preview-05-06',
     'google/gemini-2.5-flash-preview-04-17',
@@ -77,21 +78,23 @@ export async function askForModelId(options?: {
     'openrouter/openai/o4-mini',
     'openrouter/google/gemini-2.5-pro-preview',
     'openrouter/google/gemini-2.5-flash-preview',
-    { name: 'Claude Web', value: 'claude', run: false },
-    { name: 'Gemini AI Studio', value: 'gemini', run: false },
-    { name: 'Grok Web', value: 'grok', run: false },
+    { name: 'Claude Web', value: 'claude', executor: 'copy_paste' },
+    { name: 'Gemini AI Studio', value: 'gemini', executor: 'copy_paste' },
+    { name: 'Grok Web', value: 'grok', executor: 'copy_paste' },
+    { name: 'Claude Code', value: 'claude_code', executor: 'claude_code' },
+    { name: 'Paste into Agent', value: 'paste_into_agent', executor: 'copy_only' },
   ].map((m) =>
     typeof m === 'string'
       ? {
           name: m,
           value: m,
-          run: true,
+          executor: 'direct-call',
         }
       : m
   );
 
-  if (options?.onlyRunTrue) {
-    availableModels = availableModels.filter((m) => m.run);
+  if (options?.onlyDirectCall) {
+    availableModels = availableModels.filter((m) => m.executor === 'direct-call');
   }
 
   let newModel = await search({
@@ -114,7 +117,7 @@ export async function askForModelId(options?: {
   const modelSetting = availableModels.find((m) => m.value === newModel) ?? {
     name: newModel,
     value: newModel,
-    run: true,
+    executor: 'direct-call',
   };
 
   return modelSetting;

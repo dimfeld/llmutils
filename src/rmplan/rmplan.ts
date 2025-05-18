@@ -397,6 +397,8 @@ program
     "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",
     'inline-comments'
   )
+  .option(`-x, --executor <name>`, 'The executor to use for execution', 'direct-call')
+  .addHelpText('after', `Available executors: ${executorNames}`)
   .option(
     '--yes',
     'Automatically proceed without interactive prompts (e.g., for reviewing AI comments in files).',
@@ -411,7 +413,6 @@ program
     'Prepare and print the LLM prompt, but do not call the LLM or apply edits.',
     false
   )
-  .option('--run', 'Send the context straight to an LLM and apply the results', false)
   .option('--commit', 'Commit changes to jj/git', false)
   .action(async (prIdentifier, options) => {
     // Pass global options (like --debug) along with command-specific options

@@ -5,7 +5,7 @@ import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';
 import type { PrepareNextStepOptions } from '../actions.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { AgentCommandSharedOptions, Executor } from './types';
+import type { ExecutorCommonOptions, Executor } from './types';
 
 const copyOnlyOptionsSchema = z.object({});
 
@@ -18,29 +18,34 @@ export type CopyOnlyExecutorOptions = z.infer<typeof copyOnlyOptionsSchema>;
  */
 export class CopyOnlyExecutor implements Executor {
   static name = 'copy-only';
-  static description =
-    'Copies the prompt into the clipboard for you to send to an agent';
+  static description = 'Copies the prompt into the clipboard for you to send to an agent';
   static optionsSchema = copyOnlyOptionsSchema;
+
+  readonly forceReviewCommentsMode = 'separate-context';
 
   constructor(
     public options: CopyOnlyExecutorOptions,
-    public sharedOptions: AgentCommandSharedOptions,
+    public sharedOptions: ExecutorCommonOptions,
     public rmplanConfig: RmplanConfig
   ) {}
 
-
   prepareStepOptions(): Partial<PrepareNextStepOptions> {
-    return { rmfilter: true };
+    return { rmfilter: false };
   }
 
   async execute(contextContent: string) {
-    await clipboard.write(contextContent);
-    log(
-      chalk.bold(
-        '\nPlease paste the prompt into your agent and when it is done, press Enter to continue'
-      )
-    );
-    await waitForEnter();
+    while (true) {
+      await clipboard.write(contextContent);
+      log(
+        chalk.bold(
+          '\nPlease paste the prompt into your agent and when it is done, press Enter to continue or `c` to copy again.'
+        )
+      );
+      const pressed = await waitForEnter(['c']);
+
+      if (pressed !== 'c') {
+        break;
+      }
+    }
   }
 }
-

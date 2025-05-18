@@ -66,7 +66,7 @@ export async function runPrompt(options: RunPromptOptions) {
     model =
       (
         await askForModelId({
-          onlyRunTrue: true,
+          onlyDirectCall: true,
         })
       )?.value ?? DEFAULT_RUN_MODEL;
   }
