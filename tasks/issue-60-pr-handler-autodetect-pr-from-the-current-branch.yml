@@ -74,7 +74,7 @@ tasks:
 
           Remember to `import { $ } from 'bun';` for running shell commands in
           tests if needed.
-        done: false
+        done: true
       - prompt: >
           In `src/rmpr/git_utils.ts`, add a new asynchronous function
           `getCurrentJujutsuBranch(): Promise<string | null>`.

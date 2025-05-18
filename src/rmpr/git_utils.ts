@@ -1,4 +1,43 @@
-import { getGitRoot, logSpawn } from '../rmfilter/utils.js';
+import { getGitRoot, logSpawn, debug } from '../rmfilter/utils.js';
+import { debugLog } from '../logging.js';
+
+/**
+ * Gets the name of the current Git branch.
+ * @returns A promise that resolves to the current branch name, or null if in a detached HEAD state or not in a Git repository.
+ */
+export async function getCurrentGitBranch(): Promise<string | null> {
+  try {
+    const proc = logSpawn(['git', 'branch', '--show-current'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout as ReadableStream).text(),
+      new Response(proc.stderr as ReadableStream).text(),
+    ]);
+
+    if (exitCode !== 0) {
+      if (debug) {
+        debugLog(
+          'Failed to get current Git branch. Exit code: %d, stderr: %s',
+          exitCode,
+          stderr.trim()
+        );
+      }
+      return null;
+    }
+
+    const branchName = stdout.trim();
+    return branchName || null;
+  } catch (error) {
+    if (debug) {
+      debugLog('Error getting current Git branch: %o', error);
+    }
+    return null;
+  }
+}
 
 /**
  * Fetches the content of a file at a specific Git reference (branch, commit hash, etc.).

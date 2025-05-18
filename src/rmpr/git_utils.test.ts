@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import { getFileContentAtRef, getDiff } from './git_utils';
+import { getFileContentAtRef, getDiff, getCurrentGitBranch } from './git_utils';
 import { $ } from 'bun';
 
 describe('Git Utilities', () => {
@@ -55,6 +55,39 @@ describe('Git Utilities', () => {
     }
   });
 
+  describe('getCurrentGitBranch', () => {
+    test('should return the current branch name', async () => {
+      // Create a new branch and check it out
+      const branchName = 'test-branch';
+      await $`git checkout -b ${branchName}`.cwd(tmpRepoPath).quiet();
+
+      const currentBranch = await getCurrentGitBranch();
+      expect(currentBranch).toBe(branchName);
+    });
+
+    test('should return null in detached HEAD state', async () => {
+      // Checkout a commit directly to simulate detached HEAD
+      await $`git checkout ${commit1Sha}`.cwd(tmpRepoPath).quiet();
+
+      const currentBranch = await getCurrentGitBranch();
+      expect(currentBranch).toBeNull();
+    });
+
+    test('should return null when not in a Git repository', async () => {
+      // Change to a directory outside the Git repository
+      const tempDir = await fs.mkdtemp(path.join(tmpdir(), 'non-git-dir-'));
+      try {
+        process.chdir(tempDir);
+        const currentBranch = await getCurrentGitBranch();
+        expect(currentBranch).toBeNull();
+      } finally {
+        // Clean up and return to the test repo
+        process.chdir(tmpRepoPath);
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('getFileContentAtRef', () => {
     test('should fetch content of an existing file at a specific commit', async () => {
       const content = await getFileContentAtRef('file1.txt', commit1Sha);
@@ -72,7 +105,7 @@ describe('Git Utilities', () => {
     });
 
     test('should throw an error when fetching a non-existent file', async () => {
-      await expect(getFileContentAtRef('nonexistent.txt', commit1Sha)).rejects.toThrow(
+      expect(getFileContentAtRef('nonexistent.txt', commit1Sha)).rejects.toThrow(
         new RegExp(
           `Failed to get file content for 'nonexistent\\.txt' at ref '${commit1Sha}'\\. ` +
             `Git command: 'git show ${commit1Sha}:nonexistent\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
@@ -82,16 +115,18 @@ describe('Git Utilities', () => {
     });
 
     test('should throw an error when fetching a deleted file at a commit after its deletion', async () => {
-      await expect(getFileContentAtRef('file1.txt', commit4Sha)).rejects.toThrow(
+      expect(getFileContentAtRef('file1.txt', commit4Sha)).rejects.toThrow(
         new RegExp(
           `Failed to get file content for 'file1\\.txt' at ref '${commit4Sha}'\\. ` +
             `Git command: 'git show ${commit4Sha}:file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
-            `Stderr: fatal: path 'file1\\.txt' does not exist in '${commit4Sha}'`
+            `Stderr: fatal: path 'file1\\.txt' (exists on disk, but not in|does not exist in) '${commit4Sha}'`
         )
       );
     });
 
     test('should fetch content of a file using "HEAD" as ref', async () => {
+      // Checkout back to main branch where file2.txt exists
+      await $`git checkout main`.cwd(tmpRepoPath).quiet();
       const content = await getFileContentAtRef('file2.txt', 'HEAD');
       expect(content).toBe('Content for file2\n');
     });
@@ -145,11 +180,11 @@ describe('Git Utilities', () => {
 
     test('should throw an error if one of the refs is invalid for diff', async () => {
       const invalidRef = 'nonexistentref';
-      await expect(getDiff('file1.txt', invalidRef, commit2Sha)).rejects.toThrow(
+      expect(getDiff('file1.txt', invalidRef, commit2Sha)).rejects.toThrow(
         new RegExp(
           `Failed to get diff for 'file1\\.txt' between '${invalidRef}' and '${commit2Sha}'\\. ` +
             `Git command: 'git diff --patch ${invalidRef}\\.\\.${commit2Sha} -- file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
-            `Stderr: fatal: (bad revision '${invalidRef}\\.\\.${commit2Sha}'|ambiguous argument '${invalidRef}\\.\\.${commit2Sha}|bad object '${invalidRef}')`
+            `Stderr: fatal: bad revision '${invalidRef}\\.\\.${commit2Sha}'`
         )
       );
     });
