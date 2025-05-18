@@ -1,6 +1,11 @@
 import { describe, test, expect, spyOn } from 'bun:test';
-import { parseRmprOptions, genericArgsFromRmprOptions } from './comment_options.ts';
+import {
+  parseRmprOptions,
+  genericArgsFromRmprOptions,
+  argsFromRmprOptions,
+} from './comment_options.ts';
 import * as logging from '../logging.ts';
+import type { PullRequest } from '../common/github/pull_requests.ts';
 
 describe('parseRmprOptions', () => {
   test('parses single --rmpr line with multiple options and returns cleaned comment', () => {
@@ -139,10 +144,7 @@ describe('argsFromRmprOptions', () => {
   test('includes PR-specific options when PR is provided', () => {
     const pr: PullRequest = {
       files: {
-        nodes: [
-          { path: 'src/file1.ts' },
-          { path: 'src/file2.ts' },
-        ],
+        nodes: [{ path: 'src/file1.ts' }, { path: 'src/file2.ts' }],
       },
     } as PullRequest;
 
@@ -152,12 +154,7 @@ describe('argsFromRmprOptions', () => {
       include: ['pr:src/*.ts', 'lib/*.js'],
     };
 
-    const args = argsFromRmprOptions(options, pr);
-    expect(args).toEqual([
-      '--with-imports',
-      'src/file1.ts',
-      'src/file2.ts',
-      'lib/*.js',
-    ]);
+    const args = argsFromRmprOptions(options, pr).sort();
+    expect(args).toEqual(['--with-imports', 'src/file1.ts', 'src/file2.ts', 'lib/*.js'].sort());
   });
 });

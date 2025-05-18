@@ -50,12 +50,14 @@ export function argsFromRmprOptions(options: RmprOptions, pr?: PullRequest): str
     for (const pathSpec of options.include) {
       if (pathSpec.startsWith('pr:')) {
         if (pr) {
-          const includePath = pathSpec.slice(3);
-          const prFiles = pr.files.nodes.map((f) => f.path);
-          // Filter globs to PR files only
-          const matchedFiles = micromatch(prFiles, [includePath, includePath + '/**/*']);
-          args.push(...matchedFiles);
-          debugLog(`Added PR-matched files for --rmpr include pr:${includePath}:`, matchedFiles);
+          if (!options.includeAll) {
+            const includePath = pathSpec.slice(3);
+            const prFiles = pr.files.nodes.map((f) => f.path);
+            // Filter globs to PR files only
+            const matchedFiles = micromatch(prFiles, [includePath, includePath + '/**/*']);
+            args.push(...matchedFiles);
+            debugLog(`Added PR-matched files for --rmpr include pr:${includePath}:`, matchedFiles);
+          }
         } else {
           warn(`Skipping PR-specific include directive in generic context: ${pathSpec}`);
         }
