@@ -2,6 +2,11 @@ import { Octokit } from 'octokit';
 import { checkbox } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import { parsePrOrIssueNumber } from './identifiers.ts';
+import {
+  parseRmprOptions,
+  combineRmprOptions,
+  type RmprOptions,
+} from '../../rmpr/comment_options.ts';
 
 export async function fetchIssueAndComments({
   owner,
@@ -103,8 +108,8 @@ export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchI
     .filter((s) => s != '');
 }
 
-/** Based on a Github issue number or URL, fetches the issue and its comments, and allows selecting which
- * parts of the issue to include in the prompt. */
+/** Based on a Github issue number or URL, fetches the issue and its comments, parses RmprOptions,
+ * and allows selecting which parts of the issue to include in the prompt. */
 export async function getInstructionsFromGithubIssue(issueSpec: string) {
   const issue = await parsePrOrIssueNumber(issueSpec);
   if (!issue) {
@@ -112,6 +117,24 @@ export async function getInstructionsFromGithubIssue(issueSpec: string) {
   }
 
   const data = await fetchIssueAndComments(issue);
+
+  // Parse RmprOptions from issue body and comments
+  let rmprOptions: RmprOptions | null = null;
+  if (data.issue.body) {
+    const issueOptions = parseRmprOptions(data.issue.body);
+    rmprOptions = issueOptions.options;
+  }
+  for (const comment of data.comments) {
+    if (comment.body) {
+      const commentOptions = parseRmprOptions(comment.body);
+      if (commentOptions.options) {
+        rmprOptions = rmprOptions
+          ? combineRmprOptions(rmprOptions, commentOptions.options)
+          : commentOptions.options;
+      }
+    }
+  }
+
   const selected = await selectIssueComments(data);
 
   const plan = selected.join('\n\n');
@@ -123,5 +146,6 @@ export async function getInstructionsFromGithubIssue(issueSpec: string) {
     suggestedFileName,
     issue: data.issue,
     plan,
+    rmprOptions,
   };
 }

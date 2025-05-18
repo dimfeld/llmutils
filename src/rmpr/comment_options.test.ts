@@ -1,5 +1,11 @@
-import { describe, test, expect } from 'bun:test';
-import { parseRmprOptions } from './comment_options.ts';
+import { describe, test, expect, spyOn } from 'bun:test';
+import {
+  parseRmprOptions,
+  genericArgsFromRmprOptions,
+  argsFromRmprOptions,
+} from './comment_options.ts';
+import * as logging from '../logging.ts';
+import type { PullRequest } from '../common/github/pull_requests.ts';
 
 describe('parseRmprOptions', () => {
   test('parses single --rmpr line with multiple options and returns cleaned comment', () => {
@@ -79,5 +85,76 @@ describe('parseRmprOptions', () => {
       },
       cleanedComment: 'Update imports',
     });
+  });
+});
+
+describe('argsFromRmprOptions', () => {
+  test('includes standard options without PR', () => {
+    const options = {
+      withImports: true,
+      withImporters: true,
+      include: ['src/file.ts', 'lib/*.js'],
+      rmfilter: ['--grep', 'example', '--exclude', 'node_modules'],
+    };
+
+    const args = argsFromRmprOptions(options);
+    expect(args).toEqual([
+      '--with-imports',
+      '--with-importers',
+      'src/file.ts',
+      'lib/*.js',
+      '--grep',
+      'example',
+      '--exclude',
+      'node_modules',
+    ]);
+  });
+
+  test('skips PR-specific options with warnings when no PR provided', () => {
+    // Spy on warn function
+    const warnSpy = spyOn(logging, 'warn');
+
+    const options = {
+      includeAll: true,
+      withImports: true,
+      include: ['pr:src/file.ts', 'lib/*.js'],
+    };
+
+    const args = argsFromRmprOptions(options);
+
+    // Should skip PR-specific paths and the includeAll option
+    expect(args).toEqual(['--with-imports', 'lib/*.js']);
+
+    // Check that appropriate warnings were issued
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Skipping PR-specific include directive in generic context: pr:src/file.ts'
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Skipping PR-specific "include-all" directive in generic context.'
+    );
+  });
+
+  test('handles empty options without PR', () => {
+    const options = {};
+    const args = argsFromRmprOptions(options);
+    expect(args).toEqual([]);
+  });
+
+  test('includes PR-specific options when PR is provided', () => {
+    const pr: PullRequest = {
+      files: {
+        nodes: [{ path: 'src/file1.ts' }, { path: 'src/file2.ts' }],
+      },
+    } as PullRequest;
+
+    const options = {
+      includeAll: true,
+      withImports: true,
+      include: ['pr:src/*.ts', 'lib/*.js'],
+    };
+
+    const args = argsFromRmprOptions(options, pr).sort();
+    expect(args).toEqual(['--with-imports', 'src/file1.ts', 'src/file2.ts', 'lib/*.js'].sort());
   });
 });

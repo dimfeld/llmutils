@@ -13,6 +13,7 @@ import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { handleRmprCommand } from '../rmpr/main.js';
+import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
 import { extractMarkdownToYaml, markStepDone, prepareNextStep } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
@@ -52,7 +53,7 @@ program
 
     // Find '--' in process.argv to get extra args for rmfilter
     const doubleDashIdx = process.argv.indexOf('--');
-    const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
+    const userCliRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
 
     let planOptionsSet = [options.plan, options.planEditor, options.issue].reduce(
       (acc, val) => acc + (val ? 1 : 0),
@@ -68,6 +69,7 @@ program
     }
 
     let planText: string | undefined;
+    let combinedRmprOptions: RmprOptions | null = null;
 
     let planFile = options.plan;
 
@@ -93,6 +95,8 @@ program
     } else if (options.issue) {
       let issueResult = await getInstructionsFromGithubIssue(options.issue);
       planText = issueResult.plan;
+      // Extract combinedRmprOptions from the result if it exists
+      combinedRmprOptions = issueResult.rmprOptions ?? null;
 
       let tasksDir = config.paths?.tasks;
       let suggestedFilename = tasksDir
@@ -158,10 +162,22 @@ program
         }
       }
 
+      // Process the combinedRmprOptions if available
+      let issueRmfilterOptions: string[] = [];
+      if (combinedRmprOptions) {
+        issueRmfilterOptions = argsFromRmprOptions(combinedRmprOptions);
+        if (issueRmfilterOptions.length > 0 && !options.quiet) {
+          log(chalk.blue('Applying rmpr options from issue:'), issueRmfilterOptions.join(' '));
+        }
+      }
+
+      // Combine user CLI args and issue rmpr options
+      const allRmfilterOptions = [...userCliRmfilterArgs, ...issueRmfilterOptions];
+
       // Append autofound files to rmfilter args
       const rmfilterFullArgs = [
         'rmfilter',
-        ...rmfilterArgs,
+        ...allRmfilterOptions,
         '--',
         ...additionalFiles,
         '--bare',
