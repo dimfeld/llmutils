@@ -179,3 +179,15 @@ export async function getDiff(filePath: string, baseRef: string, headRef: string
   }
   return stdout;
 }
+
+/**
+ * Gets the current branch name by trying Git first, then Jujutsu.
+ * @returns A promise that resolves to the current branch name, or null if neither Git nor Jujutsu is available or in a detached HEAD state.
+ */
+export async function getCurrentBranchName(): Promise<string | null> {
+  const gitBranch = await getCurrentGitBranch();
+  if (gitBranch !== null) {
+    return gitBranch;
+  }
+  return await getCurrentJujutsuBranch();
+}

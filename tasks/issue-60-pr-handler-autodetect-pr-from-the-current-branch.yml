@@ -146,7 +146,7 @@ tasks:
 
           4.  Test Case 3: Both return `null`. Verify `getCurrentBranchName`
           returns `null`.
-        done: false
+        done: true
   - title: 2. Implement Fetching Open Pull Requests
     description: Add a function to fetch all open pull requests for a given repository.
     files:

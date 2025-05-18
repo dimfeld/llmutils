@@ -2,7 +2,14 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import { getFileContentAtRef, getDiff, getCurrentGitBranch } from './git_utils';
+import {
+  getFileContentAtRef,
+  getDiff,
+  getCurrentGitBranch,
+  getCurrentBranchName,
+  getCurrentJujutsuBranch,
+} from './git_utils';
+import * as gitUtils from './git_utils';
 import { $ } from 'bun';
 
 describe('Git Utilities', () => {
@@ -207,6 +214,66 @@ describe('Git Utilities', () => {
           'm'
         )
       );
+    });
+  });
+
+  describe('getCurrentBranchName', () => {
+    test('should return Git branch when available', async () => {
+      // Mock getCurrentGitBranch to return a branch name
+      const mockGitBranch = 'git-branch';
+      const originalGitBranch = gitUtils.getCurrentGitBranch;
+      const originalJjBranch = gitUtils.getCurrentJujutsuBranch;
+
+      gitUtils.getCurrentGitBranch = async () => mockGitBranch;
+      gitUtils.getCurrentJujutsuBranch = async () => {
+        throw new Error('Should not be called');
+      };
+
+      try {
+        const branchName = await getCurrentBranchName();
+        expect(branchName).toBe(mockGitBranch);
+      } finally {
+        // Restore originals
+        gitUtils.getCurrentGitBranch = originalGitBranch;
+        gitUtils.getCurrentJujutsuBranch = originalJjBranch;
+      }
+    });
+
+    test('should return Jujutsu branch when Git is not available', async () => {
+      // Mock getCurrentGitBranch to return null (not in Git repo or detached HEAD)
+      const mockJjBranch = 'jj-branch';
+      const originalGitBranch = gitUtils.getCurrentGitBranch;
+      const originalJjBranch = gitUtils.getCurrentJujutsuBranch;
+
+      gitUtils.getCurrentGitBranch = async () => null;
+      gitUtils.getCurrentJujutsuBranch = async () => mockJjBranch;
+
+      try {
+        const branchName = await getCurrentBranchName();
+        expect(branchName).toBe(mockJjBranch);
+      } finally {
+        // Restore originals
+        gitUtils.getCurrentGitBranch = originalGitBranch;
+        gitUtils.getCurrentJujutsuBranch = originalJjBranch;
+      }
+    });
+
+    test('should return null when neither Git nor Jujutsu is available', async () => {
+      // Mock both functions to return null
+      const originalGitBranch = gitUtils.getCurrentGitBranch;
+      const originalJjBranch = gitUtils.getCurrentJujutsuBranch;
+
+      gitUtils.getCurrentGitBranch = async () => null;
+      gitUtils.getCurrentJujutsuBranch = async () => null;
+
+      try {
+        const branchName = await getCurrentBranchName();
+        expect(branchName).toBeNull();
+      } finally {
+        // Restore originals
+        gitUtils.getCurrentGitBranch = originalGitBranch;
+        gitUtils.getCurrentJujutsuBranch = originalJjBranch;
+      }
     });
   });
 });
