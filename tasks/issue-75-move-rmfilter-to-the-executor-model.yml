@@ -178,7 +178,7 @@ tasks:
           `../logging.ts`, ensure you use the correct one that reflects the
           `--debug` flag state. The `debug` variable from `import { debug } from
           '../rmfilter/utils.ts';` should be correct.
-        done: false
+        done: true
       - prompt: >
           Review `src/rmfilter/rmfilter.ts` in the `fullRmfilterRun` function.
 
