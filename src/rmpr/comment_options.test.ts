@@ -49,7 +49,7 @@ describe('parseRmprOptions', () => {
     const result = parseRmprOptions(commentBody);
     expect(result).toEqual({
       options: {
-        rmfilter: ['--grep', 'example', '--exclude', 'node_modules'],
+        rmfilter: ['--', '--grep', 'example', '--exclude', 'node_modules'],
       },
       cleanedComment: 'Filter files',
     });
@@ -81,7 +81,7 @@ describe('parseRmprOptions', () => {
       options: {
         include: ['src/utils.ts'],
         withImports: true,
-        rmfilter: ['--grep', 'example'],
+        rmfilter: ['--', '--grep', 'example'],
       },
       cleanedComment: 'Update imports',
     });
