@@ -124,7 +124,7 @@ export function parseRmprOptions(commentBody: string): ParseRmprResult {
       } else if (arg === 'include') {
         if (i + 1 < args.length) {
           options.include = options.include || [];
-          options.include.push(...args[i + 1].split(','));
+          options.include.push(...args.slice(i + 1).flatMap((x) => x.split(/[ ,]+/)));
           // include consumes all remaining args
           break;
         } else {
@@ -133,7 +133,7 @@ export function parseRmprOptions(commentBody: string): ParseRmprResult {
       } else if (arg === 'rmfilter') {
         if (i + 1 < args.length) {
           options.rmfilter = options.rmfilter || [];
-          options.rmfilter.push(...args.slice(i + 1).flatMap((x) => x.split(' ')));
+          options.rmfilter.push(...args.slice(i + 1).flatMap((x) => x.split(/[ ,]+/)));
           break; // rmfilter consumes all remaining args
         } else {
           i++;
