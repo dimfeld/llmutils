@@ -102,7 +102,7 @@ tasks:
           1.  Locate and delete the entire `if (globalValues.run) { ... }`
           block. This block is typically found near the end of the function,
           after copying output to the clipboard.
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmfilter/rmfilter.ts`.
 
