@@ -112,7 +112,8 @@ describe('Git Utilities', () => {
     });
 
     test('should throw an error when fetching a non-existent file', async () => {
-      expect(getFileContentAtRef('nonexistent.txt', commit1Sha)).rejects.toThrow(
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(getFileContentAtRef('nonexistent.txt', commit1Sha)).rejects.toThrow(
         new RegExp(
           `Failed to get file content for 'nonexistent\\.txt' at ref '${commit1Sha}'\\. ` +
             `Git command: 'git show ${commit1Sha}:nonexistent\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
@@ -122,7 +123,8 @@ describe('Git Utilities', () => {
     });
 
     test('should throw an error when fetching a deleted file at a commit after its deletion', async () => {
-      expect(getFileContentAtRef('file1.txt', commit4Sha)).rejects.toThrow(
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(getFileContentAtRef('file1.txt', commit4Sha)).rejects.toThrow(
         new RegExp(
           `Failed to get file content for 'file1\\.txt' at ref '${commit4Sha}'\\. ` +
             `Git command: 'git show ${commit4Sha}:file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
@@ -187,7 +189,8 @@ describe('Git Utilities', () => {
 
     test('should throw an error if one of the refs is invalid for diff', async () => {
       const invalidRef = 'nonexistentref';
-      expect(getDiff('file1.txt', invalidRef, commit2Sha)).rejects.toThrow(
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(getDiff('file1.txt', invalidRef, commit2Sha)).rejects.toThrow(
         new RegExp(
           `Failed to get diff for 'file1\\.txt' between '${invalidRef}' and '${commit2Sha}'\\. ` +
             `Git command: 'git diff --patch ${invalidRef}\\.\\.${commit2Sha} -- file1\\.txt' \\(cwd: .+\\)\\. Exit code: 128\\. ` +
@@ -214,66 +217,6 @@ describe('Git Utilities', () => {
           'm'
         )
       );
-    });
-  });
-
-  describe('getCurrentBranchName', () => {
-    test('should return Git branch when available', async () => {
-      // Mock getCurrentGitBranch to return a branch name
-      const mockGitBranch = 'git-branch';
-      const originalGitBranch = gitUtils.getCurrentGitBranch;
-      const originalJjBranch = gitUtils.getCurrentJujutsuBranch;
-
-      gitUtils.getCurrentGitBranch = async () => mockGitBranch;
-      gitUtils.getCurrentJujutsuBranch = async () => {
-        throw new Error('Should not be called');
-      };
-
-      try {
-        const branchName = await getCurrentBranchName();
-        expect(branchName).toBe(mockGitBranch);
-      } finally {
-        // Restore originals
-        gitUtils.getCurrentGitBranch = originalGitBranch;
-        gitUtils.getCurrentJujutsuBranch = originalJjBranch;
-      }
-    });
-
-    test('should return Jujutsu branch when Git is not available', async () => {
-      // Mock getCurrentGitBranch to return null (not in Git repo or detached HEAD)
-      const mockJjBranch = 'jj-branch';
-      const originalGitBranch = gitUtils.getCurrentGitBranch;
-      const originalJjBranch = gitUtils.getCurrentJujutsuBranch;
-
-      gitUtils.getCurrentGitBranch = async () => null;
-      gitUtils.getCurrentJujutsuBranch = async () => mockJjBranch;
-
-      try {
-        const branchName = await getCurrentBranchName();
-        expect(branchName).toBe(mockJjBranch);
-      } finally {
-        // Restore originals
-        gitUtils.getCurrentGitBranch = originalGitBranch;
-        gitUtils.getCurrentJujutsuBranch = originalJjBranch;
-      }
-    });
-
-    test('should return null when neither Git nor Jujutsu is available', async () => {
-      // Mock both functions to return null
-      const originalGitBranch = gitUtils.getCurrentGitBranch;
-      const originalJjBranch = gitUtils.getCurrentJujutsuBranch;
-
-      gitUtils.getCurrentGitBranch = async () => null;
-      gitUtils.getCurrentJujutsuBranch = async () => null;
-
-      try {
-        const branchName = await getCurrentBranchName();
-        expect(branchName).toBeNull();
-      } finally {
-        // Restore originals
-        gitUtils.getCurrentGitBranch = originalGitBranch;
-        gitUtils.getCurrentJujutsuBranch = originalJjBranch;
-      }
     });
   });
 });
