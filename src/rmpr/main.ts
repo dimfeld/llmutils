@@ -230,7 +230,7 @@ export async function handleRmprCommand(
   for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
     const rmprOptions = fileInfo.options;
     rmFilterArgs.push('--', filePath);
-    rmFilterArgs.push(...argsFromRmprOptions(pullRequest, rmprOptions));
+    rmFilterArgs.push(...argsFromRmprOptions(rmprOptions, pullRequest));
   }
 
   rmFilterArgs.push(...additionalUserRmFilterArgs);

@@ -83,8 +83,8 @@ describe('parseRmprOptions', () => {
   });
 });
 
-describe('genericArgsFromRmprOptions', () => {
-  test('includes standard options', () => {
+describe('argsFromRmprOptions', () => {
+  test('includes standard options without PR', () => {
     const options = {
       withImports: true,
       withImporters: true,
@@ -92,7 +92,7 @@ describe('genericArgsFromRmprOptions', () => {
       rmfilter: ['--grep', 'example', '--exclude', 'node_modules'],
     };
 
-    const args = genericArgsFromRmprOptions(options);
+    const args = argsFromRmprOptions(options);
     expect(args).toEqual([
       '--with-imports',
       '--with-importers',
@@ -105,7 +105,7 @@ describe('genericArgsFromRmprOptions', () => {
     ]);
   });
 
-  test('skips PR-specific options with warnings', () => {
+  test('skips PR-specific options with warnings when no PR provided', () => {
     // Spy on warn function
     const warnSpy = spyOn(logging, 'warn');
 
@@ -115,7 +115,7 @@ describe('genericArgsFromRmprOptions', () => {
       include: ['pr:src/file.ts', 'lib/*.js'],
     };
 
-    const args = genericArgsFromRmprOptions(options);
+    const args = argsFromRmprOptions(options);
 
     // Should skip PR-specific paths and the includeAll option
     expect(args).toEqual(['--with-imports', 'lib/*.js']);
@@ -130,9 +130,34 @@ describe('genericArgsFromRmprOptions', () => {
     );
   });
 
-  test('handles empty options', () => {
+  test('handles empty options without PR', () => {
     const options = {};
-    const args = genericArgsFromRmprOptions(options);
+    const args = argsFromRmprOptions(options);
     expect(args).toEqual([]);
+  });
+
+  test('includes PR-specific options when PR is provided', () => {
+    const pr: PullRequest = {
+      files: {
+        nodes: [
+          { path: 'src/file1.ts' },
+          { path: 'src/file2.ts' },
+        ],
+      },
+    } as PullRequest;
+
+    const options = {
+      includeAll: true,
+      withImports: true,
+      include: ['pr:src/*.ts', 'lib/*.js'],
+    };
+
+    const args = argsFromRmprOptions(options, pr);
+    expect(args).toEqual([
+      '--with-imports',
+      'src/file1.ts',
+      'src/file2.ts',
+      'lib/*.js',
+    ]);
   });
 });

@@ -28,50 +28,14 @@ export function combineRmprOptions(a: RmprOptions, b: RmprOptions): RmprOptions 
   };
 }
 
-export function argsFromRmprOptions(pr: PullRequest, options: RmprOptions): string[] {
-  const args: string[] = [];
-  let prFiles = pr.files.nodes.map((f) => f.path);
-
-  if (options.includeAll) {
-    args.push(...prFiles);
-  }
-
-  if (options.withImports) {
-    args.push('--with-imports');
-  }
-
-  if (options.withImporters) {
-    args.push('--with-importers');
-  }
-
-  if (options.include) {
-    for (let includePath of options.include) {
-      if (includePath.startsWith('pr:')) {
-        includePath = includePath.slice(3);
-        // Filter globs to PR files only
-        const matchedFiles = micromatch(prFiles, [includePath, includePath + '/**/*']);
-        args.push(...matchedFiles);
-        debugLog(`Added PR-matched files for --rmpr include pr:${includePath}:`, matchedFiles);
-      } else {
-        args.push(includePath);
-        debugLog(`Added file/dir for --rmpr include ${includePath}`);
-      }
-    }
-  }
-
-  if (options.rmfilter) {
-    args.push(...options.rmfilter);
-  }
-
-  return args;
-}
-
 /**
- * Converts RmprOptions to command-line arguments for rmfilter in a generic context (not PR-specific).
+ * Converts RmprOptions to command-line arguments for rmfilter.
+ * If a PullRequest is provided, includes PR-specific options; otherwise, warns and skips them.
  * @param options The RmprOptions to convert
+ * @param pr Optional PullRequest for PR-specific processing
  * @returns Array of string arguments suitable for passing to rmfilter
  */
-export function genericArgsFromRmprOptions(options: RmprOptions): string[] {
+export function argsFromRmprOptions(options: RmprOptions, pr?: PullRequest): string[] {
   const args: string[] = [];
 
   if (options.withImports) {
@@ -85,10 +49,19 @@ export function genericArgsFromRmprOptions(options: RmprOptions): string[] {
   if (options.include) {
     for (const pathSpec of options.include) {
       if (pathSpec.startsWith('pr:')) {
-        warn(`Skipping PR-specific include directive in generic context: ${pathSpec}`);
+        if (pr) {
+          const includePath = pathSpec.slice(3);
+          const prFiles = pr.files.nodes.map((f) => f.path);
+          // Filter globs to PR files only
+          const matchedFiles = micromatch(prFiles, [includePath, includePath + '/**/*']);
+          args.push(...matchedFiles);
+          debugLog(`Added PR-matched files for --rmpr include pr:${includePath}:`, matchedFiles);
+        } else {
+          warn(`Skipping PR-specific include directive in generic context: ${pathSpec}`);
+        }
       } else {
         args.push(pathSpec);
-        debugLog(`Added file/dir for generic --rmpr include ${pathSpec}`);
+        debugLog(`Added file/dir for --rmpr include ${pathSpec}`);
       }
     }
   }
@@ -98,7 +71,12 @@ export function genericArgsFromRmprOptions(options: RmprOptions): string[] {
   }
 
   if (options.includeAll) {
-    warn('Skipping PR-specific "include-all" directive in generic context.');
+    if (pr) {
+      const prFiles = pr.files.nodes.map((f) => f.path);
+      args.push(...prFiles);
+    } else {
+      warn('Skipping PR-specific "include-all" directive in generic context.');
+    }
   }
 
   return args;

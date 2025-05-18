@@ -13,7 +13,7 @@ import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { handleRmprCommand } from '../rmpr/main.js';
-import { genericArgsFromRmprOptions } from '../rmpr/comment_options.js';
+import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
 import { extractMarkdownToYaml, markStepDone, prepareNextStep } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
@@ -68,7 +68,7 @@ program
     }
 
     let planText: string | undefined;
-    let combinedRmprOptions = null;
+    let combinedRmprOptions: RmprOptions | null = null;
 
     let planFile = options.plan;
 
@@ -95,7 +95,7 @@ program
       let issueResult = await getInstructionsFromGithubIssue(options.issue);
       planText = issueResult.plan;
       // Extract combinedRmprOptions from the result if it exists
-      combinedRmprOptions = issueResult.combinedRmprOptions ?? null;
+      combinedRmprOptions = issueResult.rmprOptions ?? null;
 
       let tasksDir = config.paths?.tasks;
       let suggestedFilename = tasksDir
@@ -164,7 +164,7 @@ program
       // Process the combinedRmprOptions if available
       let issueRmfilterOptions: string[] = [];
       if (combinedRmprOptions) {
-        issueRmfilterOptions = genericArgsFromRmprOptions(combinedRmprOptions);
+        issueRmfilterOptions = argsFromRmprOptions(combinedRmprOptions);
         if (issueRmfilterOptions.length > 0 && !options.quiet) {
           log(chalk.blue('Applying rmpr options from issue:'), issueRmfilterOptions.join(' '));
         }
