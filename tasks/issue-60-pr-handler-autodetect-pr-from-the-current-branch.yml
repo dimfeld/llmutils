@@ -270,7 +270,7 @@ tasks:
           *   Test 4: `prIdentifierArg` is undefined, no PRs match -> `search` prompt is called, user selection sets `resolvedPrIdentifier`.
           *   Test 5: `prIdentifierArg` is undefined, no current branch -> error occurs.
           *   Test 6: `prIdentifierArg` is undefined, no PRs match, user cancels `search` prompt -> error occurs.
-        done: false
+        done: true
   - title: 5. Implement Branch Mismatch Warning
     description: If a PR identifier was explicitly provided, warn the user if the
       current SCM branch does not match the PR's head branch.
