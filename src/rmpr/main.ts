@@ -8,11 +8,12 @@ import {
   fetchPullRequestAndComments,
   selectReviewComments,
   type FileNode,
+  addReplyToReviewThread,
 } from '../common/github/pull_requests.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { waitForEnter } from '../common/terminal.js';
 import { debugLog, error, log, warn } from '../logging.js';
-import { getCurrentBranchName } from './git_utils.js';
+import { getCurrentBranchName, getCurrentCommitSha } from './git_utils.js';
 import { getGitRepository } from '../rmfilter/utils.js';
 import { fetchOpenPullRequests } from '../common/github/pull_requests.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
@@ -395,6 +396,33 @@ export async function handleRmprCommand(
     const exitCode = await commitAll(commitMessage);
     if (exitCode === 0) {
       log('Changes committed successfully.');
+
+      // Post replies to the review threads that were addressed
+      log('Posting replies to handled review threads...');
+      const commitSha = await getCurrentCommitSha();
+
+      if (!commitSha) {
+        warn('Could not retrieve commit SHA. Skipping posting replies to PR threads.');
+      } else {
+        const { owner, repo } = resolvedPrIdentifier;
+        const commitUrl = `https://github.com/${owner}/${repo}/commit/${commitSha}`;
+        const shortSha = commitSha.slice(0, 7);
+
+        for (const { thread } of selectedComments) {
+          const replyMessage = `Addressed in commit [${shortSha}](${commitUrl}).`;
+          const success = await addReplyToReviewThread(owner, repo, thread.id, replyMessage);
+
+          if (success) {
+            log(
+              `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+            );
+          } else {
+            debugLog(
+              `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+            );
+          }
+        }
+      }
     } else {
       error(`Commit failed with exit code ${exitCode}.`);
     }

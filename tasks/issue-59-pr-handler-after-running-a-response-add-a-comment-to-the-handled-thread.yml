@@ -302,4 +302,4 @@ tasks:
           Consider the overall flow: this new commenting step should only occur
           if `options.commit` is true AND the commit operation itself was
           successful.
-        done: false
+        done: true
