@@ -91,7 +91,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    * Persists the scratchpad to support hibernation.
    */
   setScratchpad(scratchpad: unknown): void {
-    this.scratchpad = structuredClone(scratchpad); // Deep copy
+    this.scratchpad = scratchpad;
   }
 
   /**

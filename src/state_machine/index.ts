@@ -6,6 +6,8 @@ export interface StateMachineConfig<StateName extends string, TContext, TEvent e
   initialState: StateName;
   errorState: StateName;
   nodes: Map<StateName, Node<StateName, TContext, TEvent, any, any, any>>;
+  maxRetries?: number;
+  retryDelay?: (attempt: number) => number;
   onError?: (
     error: Error,
     store: SharedStore<TContext, TEvent>
@@ -15,6 +17,8 @@ export interface StateMachineConfig<StateName extends string, TContext, TEvent e
 export interface StateMachineHooks<StateName extends string, TEvent extends BaseEvent> {
   onTransition?: (from: StateName, to: StateName, context: any) => void;
   onActions?: (actions: TEvent[], state: StateName) => void;
+  onError?: (error: Error, store: SharedStore<any, any>) => Promise<StateResult<StateName, TEvent>>;
+  onRetry?: (error: Error, state: string, attempt: number) => void;
 }
 
 export class StateMachine<StateName extends string, TContext, TEvent extends BaseEvent> {
