@@ -182,6 +182,7 @@ tasks:
               *   Verify `getPendingEvents()` is updated.
               *   Test that it returns `undefined` when the queue is empty.
               *   Test that dequeued event is a deep clone.
+        done: true
       - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
 
