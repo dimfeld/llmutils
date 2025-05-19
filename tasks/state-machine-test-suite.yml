@@ -204,6 +204,7 @@ tasks:
           *   `exportTrace()`:
               *   Test that it returns a JSON string representing the execution trace.
               *   Parse the JSON and verify its structure and content against a known history.
+        done: true
   - title: 3. `SharedStore` Persistence, Rollback, and Retry Tests
     description: >
       This task tests `SharedStore`'s persistence capabilities using the mock
