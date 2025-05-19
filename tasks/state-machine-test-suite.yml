@@ -258,6 +258,7 @@ tasks:
           code. We've tested `adapter.writeEvents` via `enqueueEvents`. If
           `adapter.write` is meant to be used, a public method should trigger
           it.
+        done: true
       - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
 
