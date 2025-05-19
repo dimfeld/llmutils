@@ -416,6 +416,7 @@ program
     false
   )
   .option('--commit', 'Commit changes to jj/git', false)
+  .option('--comment', 'Post replies to review threads after committing changes', false)
   .action(async (prIdentifier, options) => {
     // Pass global options (like --debug) along with command-specific options
     const globalOpts = program.opts();
