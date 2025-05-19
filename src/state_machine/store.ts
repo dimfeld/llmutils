@@ -13,6 +13,12 @@ export interface AllState<TContext, TEvent extends BaseEvent> {
   }[];
 }
 
+export interface PersistenceAdapter<TContext, TEvent extends BaseEvent> {
+  write(instanceId: string, state: AllState<TContext, TEvent>): Promise<void>;
+  writeEvents(instanceId: string, events: TEvent[]): Promise<void>;
+  read(instanceId: string): Promise<AllState<TContext, TEvent>>;
+}
+
 /**
  * SharedStore manages the state machine's shared context, scratchpad, events, and history.
  * It provides type-safe access, persistence, rollback, retry, and observability features.
@@ -29,9 +35,16 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
     timestamp: number;
   }[] = [];
 
-  constructor(initialContext: TContext) {
+  private adapter: PersistenceAdapter<TContext, TEvent>;
+
+  constructor(
+    instanceId: string,
+    initialContext: TContext,
+    adapter: PersistenceAdapter<TContext, TEvent>
+  ) {
     this.context = initialContext;
     this.scratchpad = undefined;
+    this.adapter = adapter;
   }
 
   get allState(): AllState<TContext, TEvent> {
@@ -50,6 +63,11 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
     this.history = state.history;
   }
 
+  /** Override the persistence adapter */
+  setAdapter(adapter: PersistenceAdapter<TContext, TEvent>): void {
+    this.adapter = adapter;
+  }
+
   /**
    * Returns an immutable copy of the current context.
    */
@@ -63,7 +81,6 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    */
   async updateContext(updater: (context: TContext) => TContext): Promise<void> {
     this.context = updater(this.getContext());
-    await this.persist();
   }
 
   /**
@@ -219,27 +236,17 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    * Persists the context, scratchpad, pending events, and history to storage.
    */
   private async persist(): Promise<void> {
-    const update = async () => {
-      // TODO add storage adapter
-      // await storage.write({
-      //   context: this.context,
-      //   scratchpad: this.scratchpad,
-      //   history: this.history,
-      // });
-    };
-
-    await update();
+    await this.adapter.write(this.instanceId, this.allState);
   }
 
   /**
    * Persists just the pending events to storage.
    */
   private async persistEvents(strategy: 'immediate' | 'batched' = 'immediate'): Promise<void> {
-    const update = async () => {
-      // TODO
-      // await storage.write({ events: this.pendingEvents });
-    };
+    await this.adapter.writeEvents(this.instanceId, this.pendingEvents);
+  }
 
-    await update();
+  public async loadState(): Promise<void> {
+    this.allState = await this.adapter.read(this.instanceId);
   }
 }
