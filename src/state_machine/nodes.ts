@@ -1,6 +1,7 @@
 import type { BaseEvent } from './events.ts';
 import { StateMachine, type StateMachineConfig } from './index.ts';
 import type { AllState, SharedStore } from './store.ts';
+import { withSpan, type StateMachineAttributes, recordEvent } from './telemetry.ts';
 
 export type StateResult<StateName extends string, TEvent extends BaseEvent> =
   | { status: 'waiting' | 'terminal'; actions?: TEvent[] }
@@ -76,13 +77,69 @@ export abstract class Node<
 
   /** Perform the entire node running process, including prep, exec, and post */
   async run(store: SharedStore<TContext, TEvent>): Promise<StateResult<StateName, TEvent>> {
-    return store.withRollback(async () => {
-      const prepResult = await store.retry(() => this._prep(store));
-      const result = await store.retry(() =>
-        this._exec(prepResult.args, prepResult.events ?? [], store.getScratchpad<TScratchpad>())
-      );
-      store.setScratchpad(result.scratchpad);
-      return this._post(result.result, store);
+    const attributes: StateMachineAttributes = {
+      instanceId: store.instanceId,
+      stateName: this.id as string,
+    };
+
+    return await withSpan(`node.run.${this.id}`, attributes, async (span) => {
+      return store.withRollback(async () => {
+        // Prep phase
+        const prepResult = await withSpan(`node.prep.${this.id}`, attributes, async (prepSpan) => {
+          prepSpan.addEvent('node_prep_started', { node_id: this.id });
+          const result = await store.retry(() => this._prep(store));
+          prepSpan.addEvent('node_prep_completed', { 
+            event_count: result.events?.length ?? 0 
+          });
+          return result;
+        });
+
+        // Exec phase
+        const result = await withSpan(`node.exec.${this.id}`, attributes, async (execSpan) => {
+          execSpan.setAttributes({
+            'event_count': prepResult.events?.length ?? 0,
+          });
+          
+          // Record events being processed in exec phase
+          if (prepResult.events?.length) {
+            for (const event of prepResult.events) {
+              recordEvent(execSpan, event.type, event.id, this.id as string);
+            }
+          }
+          
+          execSpan.addEvent('node_exec_started', { node_id: this.id });
+          const execResult = await store.retry(() =>
+            this._exec(prepResult.args, prepResult.events ?? [], store.getScratchpad<TScratchpad>())
+          );
+          execSpan.addEvent('node_exec_completed');
+          return execResult;
+        });
+
+        store.setScratchpad(result.scratchpad);
+
+        // Post phase
+        return await withSpan(`node.post.${this.id}`, attributes, async (postSpan) => {
+          postSpan.addEvent('node_post_started', { node_id: this.id });
+          const stateResult = await this._post(result.result, store);
+          
+          postSpan.setAttributes({
+            'result_status': stateResult.status,
+            ...(stateResult.status === 'transition' && stateResult.to && {
+              'next_state': stateResult.to as string,
+            }),
+          });
+          
+          postSpan.addEvent('node_post_completed', {
+            status: stateResult.status,
+            ...(stateResult.status === 'transition' && stateResult.to && {
+              next_state: stateResult.to as string,
+            }),
+            has_actions: stateResult.actions !== undefined && stateResult.actions.length > 0
+          });
+          
+          return stateResult;
+        });
+      });
     });
   }
 }
@@ -141,23 +198,63 @@ export abstract class FlowNode<
     result: StateResult<any, TEvent>;
     scratchpad: { subMachineState: AllState<any, SubEvent> } | undefined;
   }> {
-    const existingState = scratchpad?.subMachineState;
-    if (existingState) {
-      this.subMachine.store.allState = existingState;
-    }
-
-    // Run sub-machine
-    // TODO Figure out how to pass args to sub-machine
-    const result = await this.subMachine.resume(this.translateEvents(events));
-
-    return {
-      result: {
-        status: result.status,
-        actions: result.actions ? this.translateActions(result.actions) : undefined,
-      },
-      scratchpad: {
-        subMachineState: this.subMachine.store.allState,
+    const attributes: StateMachineAttributes = {
+      instanceId: this.subMachine.instanceId,
+      stateName: this.id as string,
+      metadata: {
+        'is_sub_machine': true,
+        'parent_instance_id': this.subMachine.instanceId,
       },
     };
+
+    return await withSpan(`flow_node.exec.${this.id}`, attributes, async (span) => {
+      const existingState = scratchpad?.subMachineState;
+      if (existingState) {
+        this.subMachine.store.allState = existingState;
+        span.addEvent('submachine_resumed', {
+          from_state: existingState.history[existingState.history.length - 1]?.state
+        });
+      } else {
+        span.addEvent('submachine_initialized');
+      }
+
+      // Record events being processed by sub-machine
+      if (events.length > 0 && span) {
+        span.addEvent('events_translated', { count: events.length });
+        const translatedEvents = this.translateEvents(events);
+        for (const event of translatedEvents) {
+          recordEvent(span, event.type, event.id, 'submachine');
+        }
+      }
+
+      // Run sub-machine
+      // TODO Figure out how to pass args to sub-machine
+      const result = await this.subMachine.resume(this.translateEvents(events));
+
+      span.setAttributes({
+        'sub_machine_status': result.status,
+        'translated_event_count': events.length,
+        'translated_action_count': result.actions?.length ?? 0,
+      });
+
+      if (result.actions && result.actions.length > 0) {
+        span.addEvent('actions_translated', { count: result.actions.length });
+      }
+
+      span.addEvent('submachine_completed', {
+        status: result.status,
+        has_actions: result.actions !== undefined && result.actions.length > 0
+      });
+
+      return {
+        result: {
+          status: result.status,
+          actions: result.actions ? this.translateActions(result.actions) : undefined,
+        },
+        scratchpad: {
+          subMachineState: this.subMachine.store.allState,
+        },
+      };
+    });
   }
 }

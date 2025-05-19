@@ -1,4 +1,5 @@
 import type { BaseEvent } from './events.ts';
+import { recordEvent, recordError, withSpan, getActiveSpan, type StateMachineAttributes } from './telemetry.ts';
 
 export interface AllState<TContext, TEvent extends BaseEvent> {
   context: TContext;
@@ -27,6 +28,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   private context: TContext;
   private scratchpad: unknown;
   private pendingEvents: TEvent[] = [];
+  private currentState: string | undefined;
   private history: {
     state: string;
     context: TContext;
@@ -118,8 +120,24 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    * Enqueues one or more events to the pending list and persists them.
    */
   async enqueueEvents(events: TEvent[]): Promise<void> {
-    this.pendingEvents.push(...events.map((e) => ({ ...e }))); // Deep copy for immutability
-    await this.persistEvents();
+    const attributes: StateMachineAttributes = {
+      instanceId: this.instanceId,
+      stateName: this.currentState,
+    };
+
+    await withSpan('store.enqueue_events', attributes, async (span) => {
+      span.setAttributes({
+        'event_count': events.length,
+      });
+      
+      this.pendingEvents.push(...events.map((e) => ({ ...e }))); // Deep copy for immutability
+      await this.persistEvents();
+
+      // Record each enqueued event on the span
+      for (const event of events) {
+        recordEvent(span, event.type, event.id, this.currentState || '<no-state>');
+      }
+    });
   }
 
   /**
@@ -179,7 +197,14 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    * Returns the current state from the latest history entry, or undefined if no history.
    */
   getCurrentState(): string | undefined {
-    return this.history[this.history.length - 1]?.state;
+    return this.currentState ?? this.history[this.history.length - 1]?.state;
+  }
+
+  /**
+   * Sets the current state (used during transitions)
+   */
+  setCurrentState(state: string): void {
+    this.currentState = state;
   }
 
   /**
@@ -205,34 +230,68 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    * Executes an operation with rollback support to ensure context consistency.
    */
   async withRollback<T>(operation: () => Promise<T>): Promise<T> {
-    const snapshot = {
-      context: this.getContext(),
-      scratchpad: this.getScratchpad(),
-      pendingEvents: this.getPendingEvents(),
+    const attributes: StateMachineAttributes = {
+      instanceId: this.instanceId,
+      stateName: this.currentState,
     };
-    try {
-      return await operation();
-    } catch (e) {
-      this.context = snapshot.context;
-      this.scratchpad = snapshot.scratchpad;
-      this.pendingEvents = snapshot.pendingEvents;
-      throw e;
-    }
+
+    return await withSpan('store.with_rollback', attributes, async (span) => {
+      const snapshot = {
+        context: this.getContext(),
+        scratchpad: this.getScratchpad(),
+        pendingEvents: this.getPendingEvents(),
+      };
+      try {
+        return await operation();
+      } catch (e) {
+        span.setStatus({ code: 1, message: 'Rollback executed' });
+        span.addEvent('rollback_executed', {
+          error: e instanceof Error ? e.message : String(e)
+        });
+        
+        this.context = snapshot.context;
+        this.scratchpad = snapshot.scratchpad;
+        this.pendingEvents = snapshot.pendingEvents;
+        throw e;
+      }
+    });
   }
 
   /**
    * Retries an operation up to maxAttempts with exponential backoff.
    */
   async retry<T>(operation: () => Promise<T>, maxAttempts: number = 3): Promise<T> {
+    const span = getActiveSpan();
+    if (span) {
+      span.setAttributes({ 'max_attempts': maxAttempts });
+    }
+    
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        if (span) {
+          span.addEvent('retry_attempt', { attempt });
+        }
         return await operation();
       } catch (e) {
-        if (attempt === maxAttempts) throw e;
+        if (attempt === maxAttempts) {
+          if (span) {
+            span.setStatus({ code: 1, message: 'Max retries reached' });
+            span.addEvent('max_retries_reached', { 
+              attempts: maxAttempts,
+              error: e instanceof Error ? e.message : String(e)
+            });
+          }
+          throw e;
+        }
+        
+        if (span) {
+          span.addEvent('retry_failed', { attempt, error: String(e) });
+        }
         await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
     }
     throw new Error('Unreachable');
+  }
   }
 
   /**
