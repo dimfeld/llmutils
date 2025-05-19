@@ -1,59 +1,73 @@
-import type { FileSink } from 'bun';
-import stripAnsi from 'strip-ansi';
-import { debug } from './rmfilter/utils.js';
 import chalk from 'chalk';
+import { getLoggerAdapter, runWithLogger } from './logging/adapter.js';
+import { ConsoleAdapter } from './logging/console.js';
 
-let logFile: FileSink | undefined;
+// Default console adapter that will be used when no other adapter is set
+const defaultConsoleAdapter = new ConsoleAdapter();
 
-export function openLogFile(logPath: string) {
-  if (logFile) {
-    throw new Error('Log file already open');
-  }
-  logFile = Bun.file(logPath).writer();
+// Re-export common functions to make it available to consumers
+export { openLogFile, closeLogFile, writeToLogFile } from './logging/common.js';
+export { runWithLogger };
+
+/**
+ * Logs a message to the current logger adapter or the default console adapter.
+ * @param args The message(s) to log
+ */
+export function log(...args: any[]): void {
+  const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
+  adapter.log(...args);
 }
 
-export async function closeLogFile(): Promise<void> {
-  await logFile?.end();
+/**
+ * Logs an error message to the current logger adapter or the default console adapter.
+ * @param args The error message(s) to log
+ */
+export function error(...args: any[]): void {
+  const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
+  adapter.error(...args);
 }
 
-/** Only write to the log file without outputting anywhere else.
- * Useful when you are doing something custom. */
-export function writeLogFile(data: string) {
-  logFile?.write(stripAnsi(data));
+/**
+ * Logs a warning message to the current logger adapter or the default console adapter.
+ * @param args The warning message(s) to log
+ */
+export function warn(...args: any[]): void {
+  const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
+  adapter.warn(...args);
 }
 
-export function log(...args: any[]) {
-  console.log(...args);
-  logFile?.write(stripAnsi(args.join(' ') + '\n'));
+/**
+ * Writes data to stdout and the current logger adapter.
+ * @param data The data to write
+ */
+export function writeStdout(data: string): void {
+  const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
+  adapter.writeStdout(data);
 }
 
-export function error(...args: any[]) {
-  console.error(...args);
-  logFile?.write(stripAnsi(args.join(' ') + '\n'));
+/**
+ * Writes data to stderr and the current logger adapter.
+ * @param data The data to write
+ */
+export function writeStderr(data: string): void {
+  const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
+  adapter.writeStderr(data);
 }
 
-export function warn(...args: any[]) {
-  console.warn(...args);
-  logFile?.write(stripAnsi(args.join(' ') + '\n'));
+/**
+ * Logs a debug message if debug mode is enabled.
+ * @param args The debug message(s) to log
+ */
+export function debugLog(...args: any[]): void {
+  const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
+  adapter.debugLog(...args);
 }
 
-export function writeStdout(data: string) {
-  process.stdout.write(data);
-  logFile?.write(stripAnsi(data));
-}
-
-export function writeStderr(data: string) {
-  process.stderr.write(data);
-  logFile?.write(stripAnsi(data));
-}
-
-export function debugLog(...args: any[]) {
-  if (debug) {
-    log('[DEBUG]', ...args);
-  }
-}
-
-// Function to bold Markdown headers
+/**
+ * Function to bold Markdown headers using chalk.
+ * @param text The text containing markdown headers
+ * @returns The text with markdown headers bolded using ANSI escape codes
+ */
 export function boldMarkdownHeaders(text: string): string {
   return text.replaceAll(/^(#+)\s+(.+)$/gm, (match, hashes, title) => {
     return `${hashes} ${chalk.bold(title)}`;

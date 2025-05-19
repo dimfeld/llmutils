@@ -318,4 +318,4 @@ tasks:
           Ensure all previous exports from `src/logging.ts` that are part of the
           public API are preserved, either through direct implementation,
           re-exporting from common modules, or by using the adapter pattern.
-        done: false
+        done: true

@@ -1,4 +1,4 @@
-import { LoggerAdapter } from './adapter.js';
+import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../rmfilter/utils.js';
 
