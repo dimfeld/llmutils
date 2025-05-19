@@ -508,9 +508,6 @@ export async function addReplyToReviewThread(
     await octokit.graphql(mutation, {
       threadId: pullRequestReviewThreadId,
       body,
-      headers: {
-        'GraphQL-Features': 'timeline_edit_dialog',
-      },
     });
 
     debugLog(`Successfully added reply to thread ${pullRequestReviewThreadId}`);
