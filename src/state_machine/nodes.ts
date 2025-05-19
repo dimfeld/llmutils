@@ -61,8 +61,10 @@ export abstract class FlowNode<
     super(id);
   }
 
-  async _run(store: SharedStore<TContext, TScratchpad>): Promise<StateResult> {
+  async _run(store: SharedStore<TContext, TEvent>): Promise<StateResult<StateName, TEvent>> {
     return store.withRollback(async () => {
+      // TODO clean all this up
+
       const args = await store.retry(() => this.prep(store));
       // Store sub-machine state in scratchpad
       await store.setScratchpad({ subMachineState: args } as any);
