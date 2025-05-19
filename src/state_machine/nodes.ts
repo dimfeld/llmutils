@@ -88,8 +88,8 @@ export abstract class Node<
         const prepResult = await withSpan(`node.prep.${this.id}`, attributes, async (prepSpan) => {
           prepSpan.addEvent('node_prep_started', { node_id: this.id });
           const result = await store.retry(() => this._prep(store));
-          prepSpan.addEvent('node_prep_completed', { 
-            event_count: result.events?.length ?? 0 
+          prepSpan.addEvent('node_prep_completed', {
+            event_count: result.events?.length ?? 0,
           });
           return result;
         });
@@ -97,16 +97,16 @@ export abstract class Node<
         // Exec phase
         const result = await withSpan(`node.exec.${this.id}`, attributes, async (execSpan) => {
           execSpan.setAttributes({
-            'event_count': prepResult.events?.length ?? 0,
+            event_count: prepResult.events?.length ?? 0,
           });
-          
+
           // Record events being processed in exec phase
           if (prepResult.events?.length) {
             for (const event of prepResult.events) {
               recordEvent(execSpan, event.type, event.id, this.id as string);
             }
           }
-          
+
           execSpan.addEvent('node_exec_started', { node_id: this.id });
           const execResult = await store.retry(() =>
             this._exec(prepResult.args, prepResult.events ?? [], store.getScratchpad<TScratchpad>())
@@ -121,22 +121,24 @@ export abstract class Node<
         return await withSpan(`node.post.${this.id}`, attributes, async (postSpan) => {
           postSpan.addEvent('node_post_started', { node_id: this.id });
           const stateResult = await this._post(result.result, store);
-          
+
           postSpan.setAttributes({
-            'result_status': stateResult.status,
-            ...(stateResult.status === 'transition' && stateResult.to && {
-              'next_state': stateResult.to as string,
-            }),
+            result_status: stateResult.status,
+            ...(stateResult.status === 'transition' &&
+              stateResult.to && {
+                next_state: stateResult.to as string,
+              }),
           });
-          
+
           postSpan.addEvent('node_post_completed', {
             status: stateResult.status,
-            ...(stateResult.status === 'transition' && stateResult.to && {
-              next_state: stateResult.to as string,
-            }),
-            has_actions: stateResult.actions !== undefined && stateResult.actions.length > 0
+            ...(stateResult.status === 'transition' &&
+              stateResult.to && {
+                next_state: stateResult.to as string,
+              }),
+            has_actions: stateResult.actions !== undefined && stateResult.actions.length > 0,
           });
-          
+
           return stateResult;
         });
       });
@@ -202,8 +204,8 @@ export abstract class FlowNode<
       instanceId: this.subMachine.instanceId,
       stateName: this.id as string,
       metadata: {
-        'is_sub_machine': true,
-        'parent_instance_id': this.subMachine.instanceId,
+        is_sub_machine: true,
+        parent_instance_id: this.subMachine.instanceId,
       },
     };
 
@@ -212,7 +214,7 @@ export abstract class FlowNode<
       if (existingState) {
         this.subMachine.store.allState = existingState;
         span.addEvent('submachine_resumed', {
-          from_state: existingState.history[existingState.history.length - 1]?.state
+          from_state: existingState.history[existingState.history.length - 1]?.state,
         });
       } else {
         span.addEvent('submachine_initialized');
@@ -232,9 +234,9 @@ export abstract class FlowNode<
       const result = await this.subMachine.resume(this.translateEvents(events));
 
       span.setAttributes({
-        'sub_machine_status': result.status,
-        'translated_event_count': events.length,
-        'translated_action_count': result.actions?.length ?? 0,
+        sub_machine_status: result.status,
+        translated_event_count: events.length,
+        translated_action_count: result.actions?.length ?? 0,
       });
 
       if (result.actions && result.actions.length > 0) {
@@ -243,7 +245,7 @@ export abstract class FlowNode<
 
       span.addEvent('submachine_completed', {
         status: result.status,
-        has_actions: result.actions !== undefined && result.actions.length > 0
+        has_actions: result.actions !== undefined && result.actions.length > 0,
       });
 
       return {

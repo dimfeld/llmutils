@@ -442,7 +442,7 @@ interface PromptOptions {
   rmfilterOptions: string[];
   executor: string;
   commit: boolean;
-  comment?: boolean;
+  comment: boolean;
 }
 
 async function optionsPrompt(initialOptions: {
@@ -457,7 +457,7 @@ async function optionsPrompt(initialOptions: {
     rmfilterOptions: [],
     executor: initialOptions.executor,
     commit: initialOptions.commit,
-    comment: initialOptions.comment,
+    comment: initialOptions.comment ?? false,
   };
 
   let userWantsToContinue = false;

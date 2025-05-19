@@ -4,13 +4,10 @@ import {
   DiagConsoleLogger,
   DiagLogLevel,
   trace,
-  Tracer,
   SpanStatusCode,
   SpanKind,
-  Context,
-  Span,
-  AttributeValue,
 } from '@opentelemetry/api';
+import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
 
 // Initialize tracer for state machine
 const TRACER_NAME = 'state-machine';
@@ -69,12 +66,9 @@ export async function withSpan<T>(
   fn: (span: Span) => Promise<T>
 ): Promise<T> {
   const span = createSpan(name, attributes);
-  
+
   try {
-    const result = await context.with(
-      trace.setSpan(context.active(), span),
-      () => fn(span)
-    );
+    const result = await context.with(trace.setSpan(context.active(), span), () => fn(span));
     span.setStatus({ code: SpanStatusCode.OK });
     return result;
   } catch (error) {
@@ -82,11 +76,11 @@ export async function withSpan<T>(
       code: SpanStatusCode.ERROR,
       message: error instanceof Error ? error.message : String(error),
     });
-    
+
     if (error instanceof Error) {
       span.recordException(error);
     }
-    
+
     throw error;
   } finally {
     span.end();
@@ -116,7 +110,7 @@ export function recordStateTransition(
   metadata?: Record<string, AttributeValue>
 ): void {
   if (!span) return;
-  
+
   span.addEvent('state_transition', {
     from_state: fromState,
     to_state: toState,
@@ -135,7 +129,7 @@ export function recordEvent(
   metadata?: Record<string, AttributeValue>
 ): void {
   if (!span) return;
-  
+
   span.addEvent('event_processed', {
     event_type: eventType,
     event_id: eventId,
@@ -156,15 +150,21 @@ export function recordError(
   }
 ): void {
   if (!span) return;
-  
-  const attributes = context ? {
-    ...(context.state && { state: context.state }),
-    ...(context.eventType && { event_type: context.eventType }),
-    ...(context.eventId && { event_id: context.eventId }),
-    ...context?.metadata,
-  } : undefined;
-  
-  span.recordException(error, attributes);
+
+  // First, record the exception without attributes (compliant with OpenTelemetry API)
+  span.recordException(error);
+
+  // Then add the detailed event with all our context
+  if (context) {
+    span.addEvent('error_details', {
+      ...(context.state && { state: context.state }),
+      ...(context.eventType && { event_type: context.eventType }),
+      ...(context.eventId && { event_id: context.eventId }),
+      ...context?.metadata,
+      error_name: error.name,
+      error_message: error.message,
+    });
+  }
 }
 
 // Helper to flatten nested attributes for OpenTelemetry
@@ -192,10 +192,7 @@ function flattenAttributes(
 }
 
 // Custom span attributes setter
-export function setStateMachineAttributes(
-  span: Span,
-  attributes: StateMachineAttributes
-): void {
+export function setStateMachineAttributes(span: Span, attributes: StateMachineAttributes): void {
   const flattened = flattenAttributes(attributes);
   if (flattened) {
     span.setAttributes(flattened);

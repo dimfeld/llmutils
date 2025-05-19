@@ -50,23 +50,23 @@ class LoginNode extends Node<'login', AppContext, AppEvent, any, any, any> {
 
   async exec(args, events, scratchpad) {
     // Process the login
-    return { 
-      result: {}, 
-      scratchpad: undefined 
+    return {
+      result: {},
+      scratchpad: undefined,
     };
   }
 
   async post(result, store) {
     // Update context and decide next state
-    await store.updateContext(ctx => ({
+    await store.updateContext((ctx) => ({
       ...ctx,
       isAuthenticated: true,
-      user: { id: 'user123', name: 'John Doe' }
+      user: { id: 'user123', name: 'John Doe' },
     }));
 
     return {
       status: 'transition',
-      to: 'home'
+      to: 'home',
     };
   }
 }
@@ -77,22 +77,24 @@ const stateMachine = new StateMachine<string, AppContext, AppEvent>(
     initialState: 'login',
     errorState: 'error',
     nodes: new Map([
-      ['login', new LoginNode()]
+      ['login', new LoginNode()],
       // Define other states...
-    ])
+    ]),
   },
   myPersistenceAdapter,
   { isAuthenticated: false }, // initial context
-  'user-session-123'          // instance id
+  'user-session-123' // instance id
 );
 
 // Initialize and use the state machine
 await stateMachine.initialize();
-const result = await stateMachine.resume([{ 
-  id: 'evt1', 
-  type: 'USER_LOGIN', 
-  payload: { username: 'johndoe', password: '****' } 
-}]);
+const result = await stateMachine.resume([
+  {
+    id: 'evt1',
+    type: 'USER_LOGIN',
+    payload: { username: 'johndoe', password: '****' },
+  },
+]);
 ```
 
 ## OpenTelemetry Integration

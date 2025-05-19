@@ -14,7 +14,7 @@ export interface BaseAction<T extends string = string, P = unknown> {
 export type Event<T extends string, P> = BaseEvent<T, P>;
 
 // Example usage:
-// type AppEvent = 
+// type AppEvent =
 //   | Event<'USER_LOGIN', { username: string; password: string }>
 //   | Event<'USER_LOGOUT', void>
 //   | Event<'UPDATE_PROFILE', { name: string; email: string }>;

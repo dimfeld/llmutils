@@ -1,5 +1,11 @@
 import type { BaseEvent } from './events.ts';
-import { recordEvent, recordError, withSpan, getActiveSpan, type StateMachineAttributes } from './telemetry.ts';
+import {
+  recordEvent,
+  recordError,
+  withSpan,
+  getActiveSpan,
+  type StateMachineAttributes,
+} from './telemetry.ts';
 
 export interface AllState<TContext, TEvent extends BaseEvent> {
   context: TContext;
@@ -127,9 +133,9 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
 
     await withSpan('store.enqueue_events', attributes, async (span) => {
       span.setAttributes({
-        'event_count': events.length,
+        event_count: events.length,
       });
-      
+
       this.pendingEvents.push(...events.map((e) => ({ ...e }))); // Deep copy for immutability
       await this.persistEvents();
 
@@ -246,9 +252,9 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
       } catch (e) {
         span.setStatus({ code: 1, message: 'Rollback executed' });
         span.addEvent('rollback_executed', {
-          error: e instanceof Error ? e.message : String(e)
+          error: e instanceof Error ? e.message : String(e),
         });
-        
+
         this.context = snapshot.context;
         this.scratchpad = snapshot.scratchpad;
         this.pendingEvents = snapshot.pendingEvents;
@@ -263,9 +269,9 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   async retry<T>(operation: () => Promise<T>, maxAttempts: number = 3): Promise<T> {
     const span = getActiveSpan();
     if (span) {
-      span.setAttributes({ 'max_attempts': maxAttempts });
+      span.setAttributes({ max_attempts: maxAttempts });
     }
-    
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         if (span) {
@@ -276,14 +282,14 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
         if (attempt === maxAttempts) {
           if (span) {
             span.setStatus({ code: 1, message: 'Max retries reached' });
-            span.addEvent('max_retries_reached', { 
+            span.addEvent('max_retries_reached', {
               attempts: maxAttempts,
-              error: e instanceof Error ? e.message : String(e)
+              error: e instanceof Error ? e.message : String(e),
             });
           }
           throw e;
         }
-        
+
         if (span) {
           span.addEvent('retry_failed', { attempt, error: String(e) });
         }
@@ -291,7 +297,6 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
       }
     }
     throw new Error('Unreachable');
-  }
   }
 
   /**

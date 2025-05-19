@@ -64,10 +64,18 @@ The codebase is organized into several main modules:
    - Essential for the `--with-imports` and `--with-all-imports` options
 
 5. **editor**: Contains parsing and prompting logic for different edit formats
+
    - diff-editor: For classic diff-style edits
    - udiff-simple: For unified diff format
    - whole-file: For complete file replacements
    - xml: For XML-formatted edits
+
+6. **state_machine**: Provides an event-driven state machine implementation
+
+   - Manages state transitions with explicit type safety
+   - Supports hierarchical state machines with sub-machines
+   - Includes OpenTelemetry integration for observability
+   - Features rollback capabilities for failed operations
 
 ## Environment Requirements
 
@@ -136,3 +144,28 @@ When adding new features, ensure test coverage for:
 - Happy path functionality
 - Edge cases and error handling
 - Different file formats and configurations
+
+## Telemetry & Observability
+
+The codebase uses OpenTelemetry for distributed tracing and monitoring:
+
+- **state_machine**: Implements tracing with spans and events via `telemetry.ts`
+- All spans should have descriptive names and relevant attributes
+- When working with existing spans, use `getActiveSpan()` rather than creating new ones
+- Record events on spans using methods like `recordStateTransition` and `recordError`
+- Always handle cases where spans might be undefined with null checks
+- When importing OpenTelemetry types, use type-only imports:
+  ```typescript
+  import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
+  ```
+
+## Type Safety
+
+TypeScript is used throughout the codebase with strict type checking:
+
+- Always use proper type annotations for function parameters and return types
+- Use type guards and runtime validation where appropriate
+- When working with external APIs, ensure proper type safety with validation
+- Run `bun run check` before committing to ensure no type errors are present
+
+You can check if compilation works using `bun run check`

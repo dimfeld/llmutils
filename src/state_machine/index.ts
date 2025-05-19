@@ -33,7 +33,7 @@ export interface StateMachineHooks<StateName extends string, TEvent extends Base
 export class StateMachine<StateName extends string, TContext, TEvent extends BaseEvent> {
   store: SharedStore<TContext, TEvent>;
   private initialized = false;
-  
+
   constructor(
     public config: StateMachineConfig<StateName, TContext, TEvent>,
     public adapter: PersistenceAdapter<TContext, TEvent>,
@@ -69,7 +69,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       const currentState = (this.store.getCurrentState() as StateName) ?? this.config.initialState;
       span.setAttributes({
         'state_machine.current_state': currentState as string,
-        'event_count': events.length,
+        event_count: events.length,
       });
 
       for (const event of events) {
@@ -100,7 +100,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
         recordError(span, error, {
           state: node.id as string,
         });
-        
+
         const handler = node.onError ?? this.config.onError;
         const stateResult = (await handler?.(error, this.store)) ?? {
           status: 'transition',
@@ -119,16 +119,16 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     if (result.status === 'transition' && result.to) {
       const fromState = this.store.getCurrentState() as string;
       const toState = result.to as string;
-      
+
       // Record state transition on the active span
       recordStateTransition(getActiveSpan(), fromState, toState, '<transition>', '<transition>');
-      
+
       // Notify hooks if present
       this.hooks?.onTransition?.(fromState as StateName, result.to, this.store.getContext());
-      
+
       this.store.clearScratchpad();
       this.store.setCurrentState(result.to as string);
-      
+
       const nextNode = this.config.nodes.get(result.to);
       if (nextNode) {
         return new Promise((res, rej) => {
@@ -139,7 +139,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       } else {
         const error = new Error(`Unknown state: ${result.to}`);
         recordError(getActiveSpan(), error, { state: this.store.getCurrentState() });
-        
+
         const stateResult = await this.config.onError?.(error, this.store);
         if (!stateResult) {
           throw error;
