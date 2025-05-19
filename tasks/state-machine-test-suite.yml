@@ -1,17 +1,39 @@
-goal: Write a comprehensive test suite for the state machine functionality in `dimfeld/llmutils`, ensuring robustness, correctness, and observability of the `StateMachine`, `Node`, `FlowNode`, and `SharedStore` components.
-details: |
-  The project aims to create a suite of unit and integration tests using a test-driven development (TDD) approach. The tests will cover all major aspects of the state machine:
-  - Core logic of `SharedStore` (context, scratchpad, events, history, persistence, rollback, retry).
-  - `Node` lifecycle (`prep`, `exec`, `post`), error handling, and interaction with `SharedStore`.
-  - `FlowNode` behavior, including sub-machine management and event/action translation.
-  - `StateMachine` operations: initialization, event processing, state transitions, error handling, retries, persistence integration, and hooks.
-  - Telemetry generation: ensuring correct spans, attributes, and events are emitted for observability.
+goal: Write a comprehensive test suite for the state machine functionality in
+  `dimfeld/llmutils`, ensuring robustness, correctness, and observability of the
+  `StateMachine`, `Node`, `FlowNode`, and `SharedStore` components.
+details: >
+  The project aims to create a suite of unit and integration tests using a
+  test-driven development (TDD) approach. The tests will cover all major aspects
+  of the state machine:
 
-  We will use Jest (or a similar testing framework) and create mocks for external dependencies like the `PersistenceAdapter`. For telemetry, we will leverage the `@opentelemetry/sdk-trace-base` with an `InMemorySpanExporter` to capture and verify emitted telemetry data. The tests will be broken down into small, incremental tasks, building upon each other to achieve full coverage.
+  - Core logic of `SharedStore` (context, scratchpad, events, history,
+  persistence, rollback, retry).
+
+  - `Node` lifecycle (`prep`, `exec`, `post`), error handling, and interaction
+  with `SharedStore`.
+
+  - `FlowNode` behavior, including sub-machine management and event/action
+  translation.
+
+  - `StateMachine` operations: initialization, event processing, state
+  transitions, error handling, retries, persistence integration, and hooks.
+
+  - Telemetry generation: ensuring correct spans, attributes, and events are
+  emitted for observability.
+
+
+  We will use Jest (or a similar testing framework) and create mocks for
+  external dependencies like the `PersistenceAdapter`. For telemetry, we will
+  leverage the `@opentelemetry/sdk-trace-base` with an `InMemorySpanExporter` to
+  capture and verify emitted telemetry data. The tests will be broken down into
+  small, incremental tasks, building upon each other to achieve full coverage.
 tasks:
-  - title: "1. Setup Test Environment and `SharedStore` Context/Scratchpad Tests"
-    description: |
-      This task focuses on setting up the testing environment (assuming Jest) and writing the first set of unit tests for the `SharedStore` class. These initial tests will cover context and scratchpad management. A mock `PersistenceAdapter` will also be defined for use in `SharedStore` tests.
+  - title: 1. Setup Test Environment and `SharedStore` Context/Scratchpad Tests
+    description: >
+      This task focuses on setting up the testing environment (assuming Jest)
+      and writing the first set of unit tests for the `SharedStore` class. These
+      initial tests will cover context and scratchpad management. A mock
+      `PersistenceAdapter` will also be defined for use in `SharedStore` tests.
     files:
       - src/state_machine/store.test.ts
       - src/state_machine/store.ts
@@ -19,16 +41,19 @@ tasks:
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           Create a new test file `src/state_machine/store.test.ts`.
+
           Set up the basic structure for Jest tests.
+
 
           1.  Import necessary modules:
               *   `SharedStore`, `PersistenceAdapter`, `AllState` from `./store.ts`.
               *   `BaseEvent` from `./events.ts`.
               *   Mock `initTelemetry` from `./telemetry` as it's called in `SharedStore` methods like `enqueueEvents` and `withRollback` via `withSpan`. We will test telemetry separately. `jest.mock('./telemetry', () => ({ ...jest.requireActual('./telemetry'), initTelemetry: jest.fn(), withSpan: jest.fn((_name, _attrs, fn) => fn(mockSpan)), getActiveSpan: jest.fn(() => mockSpan) }));` where `mockSpan` is a Jest mock object with `addEvent`, `setAttributes`, `setStatus`, `recordException` methods.
 
-          2.  Define a simple `TestEvent` interface extending `BaseEvent` and a `TestContext` interface for use in tests. For example:
+          2.  Define a simple `TestEvent` interface extending `BaseEvent` and a
+          `TestContext` interface for use in tests. For example:
               ```typescript
               interface TestEvent extends BaseEvent<'TEST_EVENT', { data: string }> {}
               interface TestContext {
@@ -47,7 +72,10 @@ tasks:
               ```
               Ensure the mock `read` returns a structure that `SharedStore` can use upon `loadState`, e.g., an `AllState` object with initial values for context, scratchpad, pendingEvents, and history.
 
-          4.  In a `describe` block for `SharedStore`, set up `beforeEach` to create a new `SharedStore` instance with an initial context and the mock adapter. Reset mock function calls in `beforeEach` or `afterEach`.
+          4.  In a `describe` block for `SharedStore`, set up `beforeEach` to
+          create a new `SharedStore` instance with an initial context and the
+          mock adapter. Reset mock function calls in `beforeEach` or
+          `afterEach`.
               ```typescript
               let store: SharedStore<TestContext, TestEvent>;
               const initialContext: TestContext = { counter: 0 };
@@ -81,10 +109,14 @@ tasks:
               *   `updateContext(updater)`:
                   *   Test that it correctly updates the context based on the updater function.
                   *   Verify the new context value.
-      - prompt: |
+        done: true
+      - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
 
-          Add test cases for scratchpad management within the `SharedStore` describe block:
+
+          Add test cases for scratchpad management within the `SharedStore`
+          describe block:
+
           *   `setScratchpad(data)` and `getScratchpad<TScratchpad>()`:
               *   Test setting a value to the scratchpad and retrieving it.
               *   Test that `getScratchpad` returns `undefined` if nothing is set.
@@ -96,9 +128,12 @@ tasks:
               *   Test updating the scratchpad using the updater function.
               *   Verify the new scratchpad value.
               *   Test that it works correctly if the scratchpad is initially undefined (it should likely operate on an empty object or handle this case gracefully, though current implementation might expect an object). The current implementation `this.scratchpad = updater(this.getScratchpad() as TScratchpad);` implies `getScratchpad` should return something the updater can work with, or the updater must be robust. Test with an updater that expects an object.
-  - title: "2. `SharedStore` Event Queue and History Tests"
-    description: |
-      This task continues testing `SharedStore` by focusing on its event queue management (`enqueueEvents`, `processEvents`, `getPendingEvents`, `dequeueEvent`) and history/tracing features (`logTransition`, `getCurrentState`, `setCurrentState`, `getExecutionTrace`, `exportTrace`).
+  - title: 2. `SharedStore` Event Queue and History Tests
+    description: >
+      This task continues testing `SharedStore` by focusing on its event queue
+      management (`enqueueEvents`, `processEvents`, `getPendingEvents`,
+      `dequeueEvent`) and history/tracing features (`logTransition`,
+      `getCurrentState`, `setCurrentState`, `getExecutionTrace`, `exportTrace`).
     files:
       - src/state_machine/store.test.ts
       - src/state_machine/store.ts
@@ -106,15 +141,25 @@ tasks:
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
 
-          Add test cases for event queue management within the `SharedStore` describe block:
+
+          Add test cases for event queue management within the `SharedStore`
+          describe block:
+
           Define a sample `TestEvent`:
+
           ```typescript
-          const sampleEvent1: TestEvent = { id: 'evt1', type: 'TEST_EVENT', payload: { data: 'event1' } };
-          const sampleEvent2: TestEvent = { id: 'evt2', type: 'TEST_EVENT', payload: { data: 'event2' } };
+
+          const sampleEvent1: TestEvent = { id: 'evt1', type: 'TEST_EVENT',
+          payload: { data: 'event1' } };
+
+          const sampleEvent2: TestEvent = { id: 'evt2', type: 'TEST_EVENT',
+          payload: { data: 'event2' } };
+
           ```
+
 
           *   `enqueueEvents(events)`:
               *   Test enqueuing a single event. Verify `getPendingEvents()` returns it.
@@ -136,10 +181,13 @@ tasks:
               *   Verify `getPendingEvents()` is updated.
               *   Test that it returns `undefined` when the queue is empty.
               *   Test that dequeued event is a deep clone.
-      - prompt: |
+      - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
 
-          Add test cases for history and state tracking within the `SharedStore` describe block:
+
+          Add test cases for history and state tracking within the `SharedStore`
+          describe block:
+
           *   `setCurrentState(state)` and `getCurrentState()`:
               *   Test that `getCurrentState()` returns `undefined` initially (or the last state from history if history is populated by `loadState`).
               *   Test setting a current state using `setCurrentState()` and retrieving it with `getCurrentState()`.
@@ -154,9 +202,12 @@ tasks:
           *   `exportTrace()`:
               *   Test that it returns a JSON string representing the execution trace.
               *   Parse the JSON and verify its structure and content against a known history.
-  - title: "3. `SharedStore` Persistence, Rollback, and Retry Tests"
-    description: |
-      This task tests `SharedStore`'s persistence capabilities using the mock adapter, and its `withRollback` and `retry` mechanisms. This will also involve checking that telemetry calls (mocked for now) within these methods are made.
+  - title: 3. `SharedStore` Persistence, Rollback, and Retry Tests
+    description: >
+      This task tests `SharedStore`'s persistence capabilities using the mock
+      adapter, and its `withRollback` and `retry` mechanisms. This will also
+      involve checking that telemetry calls (mocked for now) within these
+      methods are made.
     files:
       - src/state_machine/store.test.ts
       - src/state_machine/store.ts
@@ -165,10 +216,13 @@ tasks:
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
 
-          Add test cases for persistence methods within the `SharedStore` describe block:
+
+          Add test cases for persistence methods within the `SharedStore`
+          describe block:
+
           *   `allState` getter and setter:
               *   Test getting `allState` and verify it reflects the current store's context, scratchpad, pendingEvents, and history.
               *   Test setting `allState` and verify all internal properties of the store are updated accordingly.
@@ -181,11 +235,32 @@ tasks:
               *   Call `store.loadState()`.
               *   Verify that `store.getContext()`, `store.getScratchpad()`, `store.getPendingEvents()`, and `store.getExecutionTrace()` reflect the loaded state.
               *   Verify `mockPersistenceAdapter.read` was called with `instanceId`.
-          *   Private `persist()` (tested via public methods that call it, like `updateContext` if it were to call persist, though it doesn't directly. `SharedStore` doesn't have a public `persist()` method. The `adapter.write` is called by `persist()`, which is not directly exposed. We can test this implicitly if other methods were designed to call `persist()`. The current `SharedStore` doesn't seem to have an explicit public method that *only* calls `persist()`. `persistEvents` is separate. Let's assume `persist()` is an internaldetail for now, or test it if a public method is identified that uses it. The `README.md` example for `StateMachine` implies persistence happens, likely through the adapter passed to `SharedStore`. The `SharedStore` constructor takes an adapter, and `loadState` uses `adapter.read`. `enqueueEvents` calls `persistEvents` which calls `adapter.writeEvents`. `withRollback` does not call persist. The `persist()` method itself is private and not called by any public method in the provided `store.ts`. We will skip direct testing of the private `persist()` method for now, as its usage pattern is unclear from the provided code. We've tested `adapter.writeEvents` via `enqueueEvents`. If `adapter.write` is meant to be used, a public method should trigger it.
-      - prompt: |
+          *   Private `persist()` (tested via public methods that call it, like
+          `updateContext` if it were to call persist, though it doesn't
+          directly. `SharedStore` doesn't have a public `persist()` method. The
+          `adapter.write` is called by `persist()`, which is not directly
+          exposed. We can test this implicitly if other methods were designed to
+          call `persist()`. The current `SharedStore` doesn't seem to have an
+          explicit public method that *only* calls `persist()`. `persistEvents`
+          is separate. Let's assume `persist()` is an internaldetail for now, or
+          test it if a public method is identified that uses it. The `README.md`
+          example for `StateMachine` implies persistence happens, likely through
+          the adapter passed to `SharedStore`. The `SharedStore` constructor
+          takes an adapter, and `loadState` uses `adapter.read`. `enqueueEvents`
+          calls `persistEvents` which calls `adapter.writeEvents`.
+          `withRollback` does not call persist. The `persist()` method itself is
+          private and not called by any public method in the provided
+          `store.ts`. We will skip direct testing of the private `persist()`
+          method for now, as its usage pattern is unclear from the provided
+          code. We've tested `adapter.writeEvents` via `enqueueEvents`. If
+          `adapter.write` is meant to be used, a public method should trigger
+          it.
+      - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
 
+
           Add test cases for the `withRollback(operation)` method:
+
           *   Successful operation:
               *   Define an async operation that modifies context and scratchpad.
               *   Call `store.withRollback(operation)`.
@@ -197,11 +272,15 @@ tasks:
               *   Call `store.withRollback(operation)` and expect it to throw an error.
               *   Verify that context, scratchpad, and pending events are rolled back to their state before the operation.
               *   Verify that the `withSpan` mock was called and that `span.setStatus` (with error) and `span.addEvent('rollback_executed')` were called on the mock span.
-      - prompt: |
+      - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
-          Use `jest.useFakeTimers()` and `jest.runAllTimers()` or `jest.advanceTimersByTime()` for testing delays in `retry`.
+
+          Use `jest.useFakeTimers()` and `jest.runAllTimers()` or
+          `jest.advanceTimersByTime()` for testing delays in `retry`.
+
 
           Add test cases for the `retry(operation, maxAttemptsOverride)` method:
+
           *   Operation succeeds on the first attempt:
               *   Define an async mock operation `jest.fn().mockResolvedValue('success')`.
               *   Call `store.retry(operation)`.
@@ -227,19 +306,27 @@ tasks:
           *   Test `retryDelay` function:
               *   Configure the store with a custom `retryDelay` function: `retryDelay: (attempt) => attempt * 100`.
               *   In a test where retries occur, verify `setTimeout` is called with the delays calculated by this custom function.
-          Remember to call `jest.useRealTimers()` in an `afterEach` or `afterAll` if you use `jest.useFakeTimers()`.
-  - title: "4. `telemetry.ts` Utility Function Tests and Basic Telemetry Setup"
-    description: |
-      This task involves writing unit tests for utility functions in `src/state_machine/telemetry.ts` like `flattenAttributes`, `objectToSpanAttributeValues`, and `toSpanAttributeValue`. It also includes setting up the actual OpenTelemetry SDK with an `InMemorySpanExporter` for more comprehensive telemetry testing in later tasks, instead of relying solely on mocks for `withSpan`.
+          Remember to call `jest.useRealTimers()` in an `afterEach` or
+          `afterAll` if you use `jest.useFakeTimers()`.
+  - title: 4. `telemetry.ts` Utility Function Tests and Basic Telemetry Setup
+    description: >
+      This task involves writing unit tests for utility functions in
+      `src/state_machine/telemetry.ts` like `flattenAttributes`,
+      `objectToSpanAttributeValues`, and `toSpanAttributeValue`. It also
+      includes setting up the actual OpenTelemetry SDK with an
+      `InMemorySpanExporter` for more comprehensive telemetry testing in later
+      tasks, instead of relying solely on mocks for `withSpan`.
     files:
       - src/state_machine/telemetry.test.ts
       - src/state_machine/telemetry.ts
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           Create a new test file `src/state_machine/telemetry.test.ts`.
+
           Import the functions to be tested from `./telemetry.ts`.
+
 
           1.  Test `toSpanAttributeValue(v)`:
               *   Input: primitive types (string, number, boolean). Expected: same value.
@@ -260,10 +347,16 @@ tasks:
               *   Input: `StateMachineAttributes` with only some fields. Expected: Only corresponding flat keys.
               *   Input: `undefined`. Expected: `undefined`.
               *   Input: `StateMachineAttributes` with empty `metadata`.
-      - prompt: |
-          In `src/state_machine/telemetry.test.ts` (or a new test helper file, e.g. `src/state_machine/test-utils.ts`, that can be imported by other test files):
+      - prompt: >
+          In `src/state_machine/telemetry.test.ts` (or a new test helper file,
+          e.g. `src/state_machine/test-utils.ts`, that can be imported by other
+          test files):
 
-          Set up a basic OpenTelemetry SDK for testing purposes. This will allow us to capture spans emitted by the state machine components in later integration tests.
+
+          Set up a basic OpenTelemetry SDK for testing purposes. This will allow
+          us to capture spans emitted by the state machine components in later
+          integration tests.
+
 
           1.  Import necessary modules from OpenTelemetry:
               ```typescript
@@ -298,18 +391,34 @@ tasks:
               // If `provider.register()` is called before `initTelemetry` in the SUT, it should work.
               // For tests, you might call `originalInitTelemetry()` after setting up the provider.
               ```
-          3.  Write a simple test case in `telemetry.test.ts` using `withSpan` from `src/state_machine/telemetry.ts` to verify that a span is created and captured by the `InMemorySpanExporter`.
+          3.  Write a simple test case in `telemetry.test.ts` using `withSpan`
+          from `src/state_machine/telemetry.ts` to verify that a span is created
+          and captured by the `InMemorySpanExporter`.
               *   Call `originalInitTelemetry()` (potentially with debug true).
               *   Call `resetSpans()` before the test.
               *   Use `withSpan` to wrap a simple async function.
               *   After the `withSpan` call completes, use `getSpans()` to retrieve the finished spans.
               *   Assert that one span was created and has the correct name and attributes.
 
-          This setup will replace the deep mocking of `withSpan` etc., in subsequent tests for `Store`, `Node`, and `StateMachine`, allowing for more realistic telemetry testing. Other test files will need to import `resetSpans`, `getSpans` and ensure `originalInitTelemetry()` is called after the provider setup if they want to test telemetry.
-          The `jest.mock('./telemetry', ...)` in `store.test.ts` will need to be removed or adapted once this real SDK setup is used for store tests that check telemetry. For now, `store.test.ts` can keep its simpler mocks. We will integrate this full telemetry testing rig more deeply in later tasks.
-  - title: "5. Basic `Node` Tests (Lifecycle and Error Handling)"
-    description: |
-      This task focuses on testing the abstract `Node` class. Since `Node` is abstract, we'll need to create a concrete implementation for testing. Tests will cover the `run` method, including the `prep`, `exec`, `post` lifecycle, error handling, and interactions with`SharedStore` (retry, rollback). We will also start using the telemetry test setup from Task 4 to verify spans created by `Node.run`.
+          This setup will replace the deep mocking of `withSpan` etc., in
+          subsequent tests for `Store`, `Node`, and `StateMachine`, allowing for
+          more realistic telemetry testing. Other test files will need to import
+          `resetSpans`, `getSpans` and ensure `originalInitTelemetry()` is
+          called after the provider setup if they want to test telemetry.
+
+          The `jest.mock('./telemetry', ...)` in `store.test.ts` will need to be
+          removed or adapted once this real SDK setup is used for store tests
+          that check telemetry. For now, `store.test.ts` can keep its simpler
+          mocks. We will integrate this full telemetry testing rig more deeply
+          in later tasks.
+  - title: 5. Basic `Node` Tests (Lifecycle and Error Handling)
+    description: >
+      This task focuses on testing the abstract `Node` class. Since `Node` is
+      abstract, we'll need to create a concrete implementation for testing.
+      Tests will cover the `run` method, including the `prep`, `exec`, `post`
+      lifecycle, error handling, and interactions with`SharedStore` (retry,
+      rollback). We will also start using the telemetry test setup from Task 4
+      to verify spans created by `Node.run`.
     files:
       - src/state_machine/nodes.test.ts
       - src/state_machine/nodes.ts
@@ -320,13 +429,23 @@ tasks:
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           Create `src/state_machine/nodes.test.ts`.
-          Import necessary modules: `Node`, `StateResult`, `PrepResult` from `./nodes.ts`; `SharedStore`, `PersistenceAdapter`, `AllState` from `./store.ts`; `BaseEvent` from `./events.ts`.
-          Import telemetry test helpers (`provider`, `memoryExporter`, `getSpans`, `resetSpans`) from your telemetry test utility/`telemetry.test.ts`.
-          Import and call `initTelemetry` from `./telemetry.ts` after the provider setup to ensure the node uses the test tracer.
 
-          1.  Define `TestEvent`, `TestContext`, `TestScratchpad`, `TestExecArgs`, `TestExecResult` types for the test node.
+          Import necessary modules: `Node`, `StateResult`, `PrepResult` from
+          `./nodes.ts`; `SharedStore`, `PersistenceAdapter`, `AllState` from
+          `./store.ts`; `BaseEvent` from `./events.ts`.
+
+          Import telemetry test helpers (`provider`, `memoryExporter`,
+          `getSpans`, `resetSpans`) from your telemetry test
+          utility/`telemetry.test.ts`.
+
+          Import and call `initTelemetry` from `./telemetry.ts` after the
+          provider setup to ensure the node uses the test tracer.
+
+
+          1.  Define `TestEvent`, `TestContext`, `TestScratchpad`,
+          `TestExecArgs`, `TestExecResult` types for the test node.
               ```typescript
               interface TestEvent extends BaseEvent<'TEST_NODE_EVENT', { data: string }> {}
               interface TestContext { value: number }
@@ -336,7 +455,9 @@ tasks:
               type TestNodeStateName = 'STATE_A' | 'STATE_B' | 'ERROR_STATE';
               ```
 
-          2.  Create a concrete `TestNode` class extending `Node<TestNodeStateName, TestContext, TestEvent, TestScratchpad, TestExecArgs, TestExecResult>`.
+          2.  Create a concrete `TestNode` class extending
+          `Node<TestNodeStateName, TestContext, TestEvent, TestScratchpad,
+          TestExecArgs, TestExecResult>`.
               *   Implement `prep`, `exec`, `post` as `jest.fn()` mocks to control their behavior and assert calls.
               *   Optionally, implement a mock `onError` handler as `jest.fn()`.
               ```typescript
@@ -372,8 +493,10 @@ tasks:
               *   Create `testNode` instance.
               *   `resetSpans()` from telemetry helpers in `beforeEach` or `afterEach`.
               *   Ensure `initTelemetry()` is called once after `provider.register()` (e.g. in a `beforeAll`).
-      - prompt: |
-          In `src/state_machine/nodes.test.ts`, write tests for the `TestNode.run()` method focusing on the successful lifecycle:
+      - prompt: >
+          In `src/state_machine/nodes.test.ts`, write tests for the
+          `TestNode.run()` method focusing on the successful lifecycle:
+
 
           1.  **Successful run:**
               *   Mock `testNode.prepMock` to resolve with `{ args: testExecArgs, events: [testEvent] }`.
@@ -391,8 +514,10 @@ tasks:
           2.  **Test `_prep`, `_exec`, `_post` calls:**
               *   Verify that `run` calls `_prep`, `_exec`, `_post` internally, which by default call `prep`, `exec`, `post`.
               *   This can be done by spying on the `_prep`, `_exec`, `_post` methods of the `TestNode` instance if needed, or by assuming the default implementation works and focusing on the user-overridable `prep/exec/post`. For now, testing `prep/exec/post` mocks is sufficient.
-      - prompt: |
-          In `src/state_machine/nodes.test.ts`, write tests for `TestNode.run()` focusing on error handling and retry/rollback:
+      - prompt: >
+          In `src/state_machine/nodes.test.ts`, write tests for `TestNode.run()`
+          focusing on error handling and retry/rollback:
+
 
           1.  **Error in `prep`:**
               *   Mock `testNode.prepMock` to reject with an error.
@@ -425,9 +550,12 @@ tasks:
               *   Verify that the mock was called multiple times, according to `sharedStore`'s retry policy.
               *   Verify the overall `run` succeeds.
               *   Check telemetry for retry events on the relevant phase span (e.g., `node.prep.STATE_A`).
-  - title: "6. `StateMachine` Initialization and Basic Transitions"
-    description: |
-      This task begins testing the `StateMachine` class. It covers initialization, loading persisted state (using a mock adapter), and processing a single event that leads to a simple state transition. We'll verify state changes, context updates, and basic telemetry.
+  - title: 6. `StateMachine` Initialization and Basic Transitions
+    description: >
+      This task begins testing the `StateMachine` class. It covers
+      initialization, loading persisted state (using a mock adapter), and
+      processing a single event that leads to a simple state transition. We'll
+      verify state changes, context updates, and basic telemetry.
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
@@ -439,16 +567,26 @@ tasks:
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           Create `src/state_machine/index.test.ts`.
-          Import necessary modules:
-          *   `StateMachine`, `StateMachineConfig` from `./index.ts`.
-          *   `Node`, `StateResult`, `PrepResult` from `./nodes.ts`.
-          *   `SharedStore`, `PersistenceAdapter`, `AllState` from `./store.ts`.
-          *   `BaseEvent` from `./events.ts`.
-          *   Telemetry test helpers (`provider`, `memoryExporter`, `getSpans`, `resetSpans`) and `initTelemetry as originalInitTelemetry` from your telemetry test utility / `telemetry.ts`.
 
-          1.  Define `TestSMEvent`, `TestSMContext`, and state names for the state machine.
+          Import necessary modules:
+
+          *   `StateMachine`, `StateMachineConfig` from `./index.ts`.
+
+          *   `Node`, `StateResult`, `PrepResult` from `./nodes.ts`.
+
+          *   `SharedStore`, `PersistenceAdapter`, `AllState` from `./store.ts`.
+
+          *   `BaseEvent` from `./events.ts`.
+
+          *   Telemetry test helpers (`provider`, `memoryExporter`, `getSpans`,
+          `resetSpans`) and `initTelemetry as originalInitTelemetry` from your
+          telemetry test utility / `telemetry.ts`.
+
+
+          1.  Define `TestSMEvent`, `TestSMContext`, and state names for the
+          state machine.
               ```typescript
               type TestSMStateName = 'initial' | 'processing' | 'final' | 'error';
               interface TestSMEvent extends BaseEvent {
@@ -461,7 +599,8 @@ tasks:
               }
               ```
 
-          2.  Create mock `Node` implementations (or a generic mock `Node` class) for each state.
+          2.  Create mock `Node` implementations (or a generic mock `Node`
+          class) for each state.
               *   `InitialNode`, `ProcessingNode`, `FinalNode`.
               *   Each node's `prep`, `exec`, `post` methods should be `jest.fn()` to control their behavior.
               *   Example for `InitialNode`:
@@ -497,8 +636,9 @@ tasks:
               *   Call `await stateMachine.loadPersistedState()`.
               *   Verify `mockPersistenceAdapter.read` was called.
               *   Verify the machine's internal store (`stateMachine.store`) reflects the loaded state (context, events, history).
-      - prompt: |
+      - prompt: >
           In `src/state_machine/index.test.ts`, test a basic state transition:
+
 
           1.  **Single event, single transition:**
               *   Configure `InitialNode`:
@@ -520,17 +660,20 @@ tasks:
                   *   Spans for `state_machine.resume`, `state_machine.run_node.initial`, `node.run.initial` (and its phases), `state_machine.run_node.processing`, `node.run.processing` (and its phases).
                   *   Check for `state_transition` event on the `state_machine.resume` span or the active span during `handleStateResult`. The current code adds it to `getActiveSpan()`.
                   *   Check for `event_processed` event for `incomingEvent`.
-  - title: "7. `StateMachine` Event Handling, Multiple Transitions, and Terminal States"
-    description: |
-      This task expands `StateMachine` tests to cover scenarios with multiple events, sequences of transitions, and handling of `waiting` and `terminal` state results.
+  - title: 7. `StateMachine` Event Handling, Multiple Transitions, and Terminal States
+    description: >
+      This task expands `StateMachine` tests to cover scenarios with multiple
+      events, sequences of transitions, and handling of `waiting` and `terminal`
+      state results.
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           In `src/state_machine/index.test.ts`:
+
 
           1.  **Multiple events in one `resume` call:**
               *   Set up `InitialNode`'s `prepMock` to process multiple events. For example, it could expect two events and its `args` could reflect that.
@@ -557,17 +700,22 @@ tasks:
               *   Have a node's `postMock` return `{ status: 'transition', to: 'next_state', actions: [actionEvent] }` or `{ status: 'waiting', actions: [actionEvent] }`.
               *   Verify `stateMachine.store.enqueueEvents` is called with `actionEvent`. (Note: `handleStateResult` has a TODO: "This should send the events instead". Currently, it enqueues them. Test current behavior.)
               *   If it transitions, the next node's `prep` should be able to process this `actionEvent`.
-  - title: "8. `StateMachine` Error Handling and Retries"
-    description: |
-      This task focuses on testing the `StateMachine`'s error handling capabilities. This includes errors originating from nodes, node-specific `onError` handlers, machine-level `config.onError` handlers, transitions to the configured `errorState`, and the retry mechanism defined in `StateMachineConfig`.
+  - title: 8. `StateMachine` Error Handling and Retries
+    description: >
+      This task focuses on testing the `StateMachine`'s error handling
+      capabilities. This includes errors originating from nodes, node-specific
+      `onError` handlers, machine-level `config.onError` handlers, transitions
+      to the configured `errorState`, and the retry mechanism defined in
+      `StateMachineConfig`.
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           In `src/state_machine/index.test.ts`:
+
 
           1.  **Error in Node's `exec` without node-specific `onError`:**
               *   Set up `InitialNode.prepMock` to succeed.
@@ -612,12 +760,18 @@ tasks:
               *   If `config.onError` is defined, it should be called with an "Unknown state" error.
               *   If `config.onError` is not defined or re-throws/returns no result, an error should be thrown by the state machine, or it should transition to `errorState` if `config.onError` returns that. Test the current behavior: `handleStateResult` throws if `config.onError` doesn't provide a `stateResult`.
               *   Verify telemetry: `recordError` called for "Unknown state".
-      - prompt: |
+      - prompt: >
           In `src/state_machine/index.test.ts`:
 
-          Test `StateMachine` retry mechanism (Note: This retry is for the `SharedStore` operations like `_prep`, `_exec`, `_post` within a node run, configured via `SharedStore` options, which are passed from `StateMachineConfig`'s `maxRetries` and `retryDelay` to the store).
 
-          1.  **Node operation (e.g., `prep`) fails then succeeds, with SM configured retries:**
+          Test `StateMachine` retry mechanism (Note: This retry is for the
+          `SharedStore` operations like `_prep`, `_exec`, `_post` within a node
+          run, configured via `SharedStore` options, which are passed from
+          `StateMachineConfig`'s `maxRetries` and `retryDelay` to the store).
+
+
+          1.  **Node operation (e.g., `prep`) fails then succeeds, with SM
+          configured retries:**
               *   In `stateMachineConfig`, set `maxRetries: 3` and a `retryDelay` function.
               *   `InitialNode.prepMock` is `jest.fn().mockRejectedValueOnce(new Error('fail prep')).mockResolvedValue({ args: {}, events: [event] })`.
               *   `InitialNode.execMock` and `postMock` are set for a successful continuation (e.g., transition to 'processing').
@@ -627,17 +781,20 @@ tasks:
               *   Verify the machine successfully transitions to 'processing' and ends in 'waiting'.
               *   Verify telemetry on the `node.prep.initial` span for retry attempts.
               *   (This tests that the store's retry mechanism, configured by the SM, is working within the node's execution path).
-  - title: "9. `StateMachine` Persistence Integration"
-    description: |
-      This task tests the integration of persistence with the `StateMachine`. It involves verifying that the state is correctly saved to (and loaded from) the `PersistenceAdapter` during the state machine's lifecycle.
+  - title: 9. `StateMachine` Persistence Integration
+    description: >
+      This task tests the integration of persistence with the `StateMachine`. It
+      involves verifying that the state is correctly saved to (and loaded from)
+      the `PersistenceAdapter` during the state machine's lifecycle.
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           In `src/state_machine/index.test.ts`:
+
 
           1.  **State saving on event enqueue (via store):**
               *   When `stateMachine.resume([event])` is called, `store.enqueueEvents` is called, which in turn calls `adapter.writeEvents`.
@@ -659,34 +816,58 @@ tasks:
               *   Set up the `ProcessingNode`'s mocks to handle these pending events and transition or wait.
               *   Verify the subsequent behavior and state transitions.
 
-          (Note: The current `SharedStore` doesn't automatically call `adapter.write` for the full state on every context/scratchpad update. Persistence of the full state seems to be primarily through `loadState` (read) and potentially an explicit save mechanism if one existed, or if `FlowNode` saves its submachine state. `enqueueEvents` saves events. Test what's explicitly implemented.)
-  - title: "10. `StateMachine` Hooks"
-    description: |
-      This task is dedicated to testing the various hooks provided by `StateMachine`: `onTransition`, `onActions` (if its TODO is resolved or testing current behavior), `onError`, and `onRetry`.
+          (Note: The current `SharedStore` doesn't automatically call
+          `adapter.write` for the full state on every context/scratchpad update.
+          Persistence of the full state seems to be primarily through
+          `loadState` (read) and potentially an explicit save mechanism if one
+          existed, or if `FlowNode` saves its submachine state. `enqueueEvents`
+          saves events. Test what's explicitly implemented.)
+  - title: 10. `StateMachine` Hooks
+    description: >
+      This task is dedicated to testing the various hooks provided by
+      `StateMachine`: `onTransition`, `onActions` (if its TODO is resolved or
+      testing current behavior), `onError`, and `onRetry`.
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           In `src/state_machine/index.test.ts`:
 
+
           Define mock hook functions:
+
           ```typescript
+
           const mockOnTransition = jest.fn();
-          const mockOnActions = jest.fn(); // Note: Current SM implementation doesn't call this. Test if behavior changes.
-          const mockOnErrorHook = jest.fn(); // This is SM-level hook, distinct from config.onError
+
+          const mockOnActions = jest.fn(); // Note: Current SM implementation
+          doesn't call this. Test if behavior changes.
+
+          const mockOnErrorHook = jest.fn(); // This is SM-level hook, distinct
+          from config.onError
+
           const mockOnRetryHook = jest.fn(); // This is SM-level hook
+
           ```
-          Create the `stateMachine` instance passing these hooks in the `hooks` argument. Remember to clear these mocks in `beforeEach`.
+
+          Create the `stateMachine` instance passing these hooks in the `hooks`
+          argument. Remember to clear these mocks in `beforeEach`.
+
 
           1.  **Test `onTransition` hook:**
               *   Set up a transition from `InitialNode` to `ProcessingNode`.
               *   Call `await stateMachine.resume([event])`.
               *   Verify `mockOnTransition` was called with the correct `from` state, `to` state, and context.
 
-          2.  **Test `onActions` hook:** (Current `handleStateResult` has a TODO: "This should send the events instead". It currently enqueues them. The `onActions` hook is not explicitly called in the provided `index.ts`. If this hook is meant to be implemented, thistest would verify it. For now, this test might be skipped or adapted if the hook is indeed unused.)
+          2.  **Test `onActions` hook:** (Current `handleStateResult` has a
+          TODO: "This should send the events instead". It currently enqueues
+          them. The `onActions` hook is not explicitly called in the provided
+          `index.ts`. If this hook is meant to be implemented, thistest would
+          verify it. For now, this test might be skipped or adapted if the hook
+          is indeed unused.)
               *   If `onActions` is implemented: Have a node return actions in `StateResult`.
               *   Verify `mockOnActions` is called with the actions and current state.
 
@@ -709,10 +890,18 @@ tasks:
                   *   Verify `mockOnRetryHook` was called with the error, state name, and attempt number.
               *   Test based on current implementation (likely this hook won't be called).
 
-          Given the current code, `onTransition` is the primary hook that seems active. Focus tests on that unless the other hooks are meant to be wired up. If the prompt implies testing the *interface definition* vs actual usage, then state that the hook is defined but not called. For a comprehensive test suite, we test what *is*, and can note what *could be* if features are fully implemented.
-  - title: "11. `FlowNode` Tests and Integration"
-    description: |
-      This task tests the `FlowNode` class, which manages a nested state machine. Tests will cover event/action translation, sub-machine execution, persistence of sub-machine state in the scratchpad, and integration of `FlowNode` within a parent `StateMachine`.
+          Given the current code, `onTransition` is the primary hook that seems
+          active. Focus tests on that unless the other hooks are meant to be
+          wired up. If the prompt implies testing the *interface definition* vs
+          actual usage, then state that the hook is defined but not called. For
+          a comprehensive test suite, we test what *is*, and can note what
+          *could be* if features are fully implemented.
+  - title: 11. `FlowNode` Tests and Integration
+    description: >
+      This task tests the `FlowNode` class, which manages a nested state
+      machine. Tests will cover event/action translation, sub-machine execution,
+      persistence of sub-machine state in the scratchpad, and integration of
+      `FlowNode` within a parent `StateMachine`.
     files:
       - src/state_machine/nodes.test.ts
       - src/state_machine/index.test.ts
@@ -721,8 +910,10 @@ tasks:
     include_imports: true
     include_importers: false
     steps:
-      - prompt: |
-          In `src/state_machine/nodes.test.ts`, add a new `describe` block for `FlowNode`.
+      - prompt: >
+          In `src/state_machine/nodes.test.ts`, add a new `describe` block for
+          `FlowNode`.
+
 
           1.  Define types for parent and sub-machine:
               ```typescript
@@ -772,8 +963,10 @@ tasks:
               *   Instantiate `testFlowNode` with the `subMachineConfig`.
               *   Instantiate `sharedStore` for the parent machine.
               *   `resetSpans()`.
-      - prompt: |
-          In `src/state_machine/nodes.test.ts`, test the `FlowNode.exec()` method:
+      - prompt: >
+          In `src/state_machine/nodes.test.ts`, test the `FlowNode.exec()`
+          method:
+
 
           1.  **Sub-machine runs to completion:**
               *   Mock `testFlowNode.translateEventsMock` to convert `ParentEvent[]` to `SubEvent[]`.
@@ -797,8 +990,10 @@ tasks:
               *   Configure `SubNodeB` to process `newEventForSubB` and reach a terminal state.
               *   Verify the sub-machine resumed from `subB` (e.g., `SubNodeA` was not run).
               *   Verify telemetry: `submachine_resumed` event on `flow_node.exec.flowStep` span.
-      - prompt: |
-          In `src/state_machine/index.test.ts`, integrate `FlowNode` into a `StateMachine` test:
+      - prompt: >
+          In `src/state_machine/index.test.ts`, integrate `FlowNode` into a
+          `StateMachine` test:
+
 
           1.  **StateMachine with a FlowNode:**
               *   Define a `TestFlowNode` instance (as set up in `nodes.test.ts` but adapted for `index.test.ts` context).
@@ -813,9 +1008,12 @@ tasks:
               *   Verify `testFlowNode.prepMock`, `testFlowNode.exec` (implicitly via `run`), and `testFlowNode.postMock` were called.
               *   Verify the sub-machine within `testFlowNode` executed correctly.
               *   Verify `parentStateMachine.store.getScratchpad()` for the `flowStepNode`'s state contains `subMachineState` after `testFlowNode.exec` completes but before `testFlowNode.post` (if `post` clears it or if `run` clears it. `SharedStore.clearScratchpad` is called by `StateMachine.handleStateResult` on transition). The sub-machine state is stored in the scratchpad by `FlowNode.exec`.
-  - title: "12. Advanced Telemetry Verification"
-    description: |
-      Using the OpenTelemetry SDK setup with `InMemorySpanExporter` (from Task 4), this task focuses on performing more detailed verification of emitted spans, attributes, and events across `StateMachine`, `Node`, and `SharedStore` operations.
+  - title: 12. Advanced Telemetry Verification
+    description: >
+      Using the OpenTelemetry SDK setup with `InMemorySpanExporter` (from Task
+      4), this task focuses on performing more detailed verification of emitted
+      spans, attributes, and events across `StateMachine`, `Node`, and
+      `SharedStore` operations.
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/nodes.test.ts
@@ -867,20 +1065,37 @@ tasks:
           expect(specificSpan.events.some(e => e.name === 'my_event')).toBe(true);
           ```
           This is a general instruction. Apply it by modifying existing test files and adding these more detailed assertions where telemetry is relevant.
-  - title: "13. Documentation Update"
-    description: |
-      Update `src/state_machine/README.md` to include information about the newly created test suite, how to run the tests, and any other relevant details for developers regarding testing the state machine functionality.
+  - title: 13. Documentation Update
+    description: >
+      Update `src/state_machine/README.md` to include information about the
+      newly created test suite, how to run the tests, and any other relevant
+      details for developers regarding testing the state machine functionality.
     files:
       - src/state_machine/README.md
     include_imports: false
     include_importers: false
     steps:
-      - prompt: |
+      - prompt: >
           Update the `src/state_machine/README.md` file.
 
+
           1.  Add a new section titled "Testing".
-          2.  In this section, briefly describe the testing strategy (e.g., "The state machine functionality is covered by a comprehensive suite of unit and integration tests using Jest.").
-          3.  Provide instructions on how to run the tests. This usually involves a command like `npm test` or `yarn test`. If tests for this specific module are run with a more specific command (e.g., `npm test src/state_machine`), mention that.
-          4.  Optionally, mention key aspects covered by the tests (e.g., "Tests cover core logic, state transitions, event handling, error management, persistence, retries, hooks, FlowNodes, and telemetry generation.").
-          5.  If there's anything specific developers should know about the test setup (e.g., use of mock persistence, OpenTelemetry InMemoryExporter), briefly mention it.
+
+          2.  In this section, briefly describe the testing strategy (e.g., "The
+          state machine functionality is covered by a comprehensive suite of
+          unit and integration tests using Jest.").
+
+          3.  Provide instructions on how to run the tests. This usually
+          involves a command like `npm test` or `yarn test`. If tests for this
+          specific module are run with a more specific command (e.g., `npm test
+          src/state_machine`), mention that.
+
+          4.  Optionally, mention key aspects covered by the tests (e.g., "Tests
+          cover core logic, state transitions, event handling, error management,
+          persistence, retries, hooks, FlowNodes, and telemetry generation.").
+
+          5.  If there's anything specific developers should know about the test
+          setup (e.g., use of mock persistence, OpenTelemetry InMemoryExporter),
+          briefly mention it.
+
           6.  Ensure the overall README remains coherent and well-formatted.

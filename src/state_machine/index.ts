@@ -42,15 +42,10 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     public hooks?: StateMachineHooks<StateName, TEvent>
   ) {
     // Pass retry configuration from config to store
-    this.store = new SharedStore<TContext, TEvent>(
-      instanceId, 
-      initialContext, 
-      adapter,
-      {
-        maxRetries: config.maxRetries,
-        retryDelay: config.retryDelay
-      }
-    );
+    this.store = new SharedStore<TContext, TEvent>(instanceId, initialContext, adapter, {
+      maxRetries: config.maxRetries,
+      retryDelay: config.retryDelay,
+    });
   }
 
   async loadPersistedState(): Promise<void> {

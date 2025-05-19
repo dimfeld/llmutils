@@ -46,7 +46,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   private adapter: PersistenceAdapter<TContext, TEvent>;
 
   public instanceId: string;
-  
+
   // Retry configuration
   private maxRetries: number = 3;
   private retryDelay: (attempt: number) => number = (attempt) => 1000 * attempt;
@@ -64,13 +64,13 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
     this.context = initialContext;
     this.scratchpad = undefined;
     this.adapter = adapter;
-    
+
     // Set retry configuration if provided
     if (options) {
       if (options.maxRetries !== undefined) {
         this.maxRetries = options.maxRetries;
       }
-      
+
       if (options.retryDelay) {
         this.retryDelay = options.retryDelay;
       }
@@ -291,7 +291,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   async retry<T>(operation: () => Promise<T>, maxAttemptsOverride?: number): Promise<T> {
     const maxAttempts = maxAttemptsOverride !== undefined ? maxAttemptsOverride : this.maxRetries;
     const span = getActiveSpan();
-    
+
     if (span) {
       span.setAttributes({ max_attempts: maxAttempts });
     }
@@ -317,7 +317,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
         if (span) {
           span.addEvent('retry_failed', { attempt, error: String(e) });
         }
-        
+
         // Use the configured retryDelay function
         const delay = this.retryDelay(attempt);
         if (delay > 0) {

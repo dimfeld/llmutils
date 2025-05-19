@@ -111,14 +111,14 @@ type Message =
   // An assistant message
   | {
       type: 'assistant';
-      message: Anthropic.Message; // from Anthropic SDK
+      message: Anthropic.Message;
       session_id: string;
     }
 
   // A user message
   | {
       type: 'user';
-      message: Anthropic.MessageParam; // from Anthropic SDK
+      message: Anthropic.MessageParam;
       session_id: string;
     }
 
@@ -160,6 +160,8 @@ type Message =
     };
 
 function formatJsonMessage(input: string) {
+  // TODO Cache tool use IDs across calls so that we can print the tool names with the results
+
   const message = JSON.parse(input) as Message;
   debugLog(input);
 
