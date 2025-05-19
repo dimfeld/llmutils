@@ -1,17 +1,30 @@
 import type { BaseEvent } from './events.ts';
 
+export interface AllState<TContext, TEvent extends BaseEvent> {
+  context: TContext;
+  scratchpad: unknown;
+  pendingEvents: TEvent[];
+  history: {
+    state: string;
+    context: TContext;
+    scratchpad: unknown;
+    events: TEvent[];
+    timestamp: number;
+  }[];
+}
+
 /**
  * SharedStore manages the state machine's shared context, scratchpad, events, and history.
  * It provides type-safe access, persistence, rollback, retry, and observability features.
  */
 export class SharedStore<TContext, TEvent extends BaseEvent> {
   private context: TContext;
-  private scratchpad: object | undefined;
+  private scratchpad: unknown;
   private pendingEvents: TEvent[] = [];
   private history: {
     state: string;
     context: TContext;
-    scratchpad: object | undefined;
+    scratchpad: unknown;
     events: TEvent[];
     timestamp: number;
   }[] = [];
@@ -19,6 +32,22 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   constructor(initialContext: TContext) {
     this.context = initialContext;
     this.scratchpad = undefined;
+  }
+
+  get allState(): AllState<TContext, TEvent> {
+    return {
+      context: this.context,
+      scratchpad: this.scratchpad,
+      pendingEvents: this.pendingEvents,
+      history: this.history,
+    };
+  }
+
+  set allState(state: AllState<TContext, TEvent>) {
+    this.context = state.context;
+    this.scratchpad = state.scratchpad;
+    this.pendingEvents = state.pendingEvents;
+    this.history = state.history;
   }
 
   /**
@@ -41,24 +70,28 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    * Sets the scratchpad data, which is cleared on state exit.
    * Persists the scratchpad to support hibernation.
    */
-  async setScratchpad(scratchpad: object): Promise<void> {
+  setScratchpad(scratchpad: unknown): void {
     this.scratchpad = structuredClone(scratchpad); // Deep copy
-    await this.persist();
   }
 
   /**
    * Clears the scratchpad when exiting a state.
    */
-  async clearScratchpad(): Promise<void> {
+  clearScratchpad(): void {
     this.scratchpad = undefined;
-    await this.persist();
   }
 
   /**
    * Returns an immutable copy of the scratchpad, or null if not set.
    */
-  getScratchpad<TScratchpad extends object>(): TScratchpad | undefined {
+  getScratchpad<TScratchpad>(): TScratchpad | undefined {
     return this.scratchpad ? (structuredClone(this.scratchpad) as TScratchpad) : undefined;
+  }
+
+  updateScratchpad<TScratchpad extends object>(
+    updater: (scratchpad: TScratchpad) => TScratchpad
+  ): void {
+    this.scratchpad = updater(this.getScratchpad() as TScratchpad);
   }
 
   /**
@@ -91,7 +124,6 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
     }
 
     this.pendingEvents = remaining;
-    this.persistEvents().catch((e) => console.error('Failed to persist events:', e)); // Async persistence
     return processed.map((e) => ({ ...e })); // Immutable copy
   }
 
@@ -103,13 +135,10 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   }
 
   /**
-   * Dequeues the oldest event, if any, and persists the updated event list.
+   * Dequeues the oldest event, if any
    */
   async dequeueEvent(): Promise<TEvent | undefined> {
     const event = this.pendingEvents.shift();
-    if (event) {
-      await this.persistEvents();
-    }
     return event ? { ...event } : undefined;
   }
 
@@ -187,7 +216,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   }
 
   /**
-   * Persists the context, scratchpad, and history to storage.
+   * Persists the context, scratchpad, pending events, and history to storage.
    */
   private async persist(): Promise<void> {
     const update = async () => {
@@ -203,7 +232,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   }
 
   /**
-   * Persists the pending events to storage.
+   * Persists just the pending events to storage.
    */
   private async persistEvents(strategy: 'immediate' | 'batched' = 'immediate'): Promise<void> {
     const update = async () => {

@@ -1,6 +1,6 @@
 import type { BaseEvent } from './events.ts';
 import type { StateMachine } from './index.ts';
-import type { SharedStore } from './store.ts';
+import type { AllState, SharedStore } from './store.ts';
 
 export type StateResult<StateName extends string, TEvent extends BaseEvent> =
   | { status: 'waiting' | 'terminal'; actions?: TEvent[] }
@@ -13,33 +13,45 @@ export abstract class Node<
   StateName extends string,
   TContext,
   TEvent extends BaseEvent,
-  RUNARGS,
-  RUNRESULT,
+  TScratchpad,
+  EXECARGS,
+  EXECRESULT,
 > {
   id: StateName;
   constructor(id: StateName) {
     this.id = id;
   }
 
-  abstract prep(store: SharedStore<TContext, TEvent>): Promise<RUNARGS>;
+  /** Read pending events and state, and return arguments for `run` */
+  abstract prep(store: SharedStore<TContext, TEvent>): Promise<EXECARGS>;
 
-  abstract run(args: RUNARGS, store: SharedStore<TContext, TEvent>): Promise<RUNRESULT>;
+  /** Run the node with arguments */
+  abstract exec(
+    args: EXECARGS,
+    scratchpad: TScratchpad | undefined
+  ): Promise<{ result: EXECRESULT; scratchpad: TScratchpad | undefined }>;
 
+  /**
+   * Process the result, updating the state and returning a StateResult.
+   * This is called after `exec` and before `post`.
+   */
   abstract post(
-    result: RUNRESULT,
+    result: EXECRESULT,
     store: SharedStore<TContext, TEvent>
   ): Promise<StateResult<StateName, TEvent>>;
 
+  /** When an unexpected error occurs, this is called instead of post */
   onError?: (
     error: Error,
     store: SharedStore<TContext, TEvent>
   ) => Promise<StateResult<StateName, TEvent>>;
 
-  async _run(store: SharedStore<TContext, TEvent>): Promise<StateResult<StateName, TEvent>> {
+  async run(store: SharedStore<TContext, TEvent>): Promise<StateResult<StateName, TEvent>> {
     return store.withRollback(async () => {
       const args = await store.retry(() => this.prep(store));
-      const result = await store.retry(() => this.run(args, store));
-      return this.post(result, store);
+      const result = await store.retry(() => this.exec(args, store.getScratchpad<TScratchpad>()));
+      store.setScratchpad(result.scratchpad);
+      return this.post(result.result, store);
     });
   }
 }
@@ -51,32 +63,43 @@ export abstract class FlowNode<
   StateName extends string,
   TContext,
   TEvent extends BaseEvent,
-  RUNARG,
-  RUNRESULT,
-> extends Node<StateName, TContext, TEvent, RUNARG, RUNRESULT> {
+  EXECARG,
+> extends Node<
+  StateName,
+  TContext,
+  TEvent,
+  { subMachineState: AllState<TContext, TEvent> },
+  EXECARG,
+  StateResult<any, TEvent>
+> {
   constructor(
     id: StateName,
-    private subMachine: StateMachine<StateName, TContext, TEvent>
+    private subMachine: StateMachine<any, any, TEvent>
   ) {
     super(id);
   }
 
-  async _run(store: SharedStore<TContext, TEvent>): Promise<StateResult<StateName, TEvent>> {
-    return store.withRollback(async () => {
-      // TODO clean all this up
+  async exec(
+    args: EXECARG,
+    scratchpad: { subMachineState: AllState<TContext, TEvent> } | undefined
+  ): Promise<{
+    result: StateResult<any, TEvent>;
+    scratchpad: { subMachineState: AllState<TContext, TEvent> } | undefined;
+  }> {
+    const existingState = scratchpad?.subMachineState;
+    if (existingState) {
+      this.subMachine.store.allState = existingState;
+    }
 
-      const args = await store.retry(() => this.prep(store));
-      // Store sub-machine state in scratchpad
-      await store.setScratchpad({ subMachineState: args } as any);
+    // Run sub-machine
+    // TODO Figure out how to pass args to sub-machine
+    const result = await this.subMachine.resume();
 
-      // Run sub-machine
-      await store.retry(() => this.subMachine.resume());
-
-      // Clear sub-machine state from scratchpad
-      await store.clearScratchpad();
-
-      // Post-process (e.g., based on sub-machine outcome)
-      return this.post(args, store);
-    });
+    return {
+      result,
+      scratchpad: {
+        subMachineState: this.subMachine.store.allState,
+      },
+    };
   }
 }
