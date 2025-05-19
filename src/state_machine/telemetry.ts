@@ -43,7 +43,7 @@ export function createSpan(
   parentContext?: Context
 ): Span {
   if (!tracer) {
-    throw new Error('Telemetry not initialized. Call initTelemetry() first.');
+    tracer = trace.getTracer(TRACER_NAME, TRACER_VERSION);
   }
 
   const ctx = parentContext || context.active();

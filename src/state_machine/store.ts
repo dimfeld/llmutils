@@ -46,16 +46,35 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   private adapter: PersistenceAdapter<TContext, TEvent>;
 
   public instanceId: string;
+  
+  // Retry configuration
+  private maxRetries: number = 3;
+  private retryDelay: (attempt: number) => number = (attempt) => 1000 * attempt;
 
   constructor(
     instanceId: string,
     initialContext: TContext,
-    adapter: PersistenceAdapter<TContext, TEvent>
+    adapter: PersistenceAdapter<TContext, TEvent>,
+    options?: {
+      maxRetries?: number;
+      retryDelay?: (attempt: number) => number;
+    }
   ) {
     this.instanceId = instanceId;
     this.context = initialContext;
     this.scratchpad = undefined;
     this.adapter = adapter;
+    
+    // Set retry configuration if provided
+    if (options) {
+      if (options.maxRetries !== undefined) {
+        this.maxRetries = options.maxRetries;
+      }
+      
+      if (options.retryDelay) {
+        this.retryDelay = options.retryDelay;
+      }
+    }
   }
 
   get allState(): AllState<TContext, TEvent> {
@@ -264,10 +283,15 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   }
 
   /**
-   * Retries an operation up to maxAttempts with exponential backoff.
+   * Retries an operation up to maxRetries times with configurable delay.
+   * @param operation The operation to retry
+   * @param maxAttemptsOverride Optional override for the configured maxRetries
+   * @returns The result of the operation
    */
-  async retry<T>(operation: () => Promise<T>, maxAttempts: number = 3): Promise<T> {
+  async retry<T>(operation: () => Promise<T>, maxAttemptsOverride?: number): Promise<T> {
+    const maxAttempts = maxAttemptsOverride !== undefined ? maxAttemptsOverride : this.maxRetries;
     const span = getActiveSpan();
+    
     if (span) {
       span.setAttributes({ max_attempts: maxAttempts });
     }
@@ -293,7 +317,12 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
         if (span) {
           span.addEvent('retry_failed', { attempt, error: String(e) });
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        
+        // Use the configured retryDelay function
+        const delay = this.retryDelay(attempt);
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
       }
     }
     throw new Error('Unreachable');

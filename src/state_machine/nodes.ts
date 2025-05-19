@@ -75,7 +75,9 @@ export abstract class Node<
     store: SharedStore<TContext, TEvent>
   ) => Promise<StateResult<StateName, TEvent>>;
 
-  /** Perform the entire node running process, including prep, exec, and post */
+  /** Perform the entire node running process, including prep, exec, and post.
+   * Don't override this unless you are creating a wholly new node type
+   * */
   async run(store: SharedStore<TContext, TEvent>): Promise<StateResult<StateName, TEvent>> {
     const attributes: StateMachineAttributes = {
       instanceId: store.instanceId,
