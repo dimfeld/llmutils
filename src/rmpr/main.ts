@@ -414,7 +414,7 @@ export async function handleRmprCommand(
           const shortSha = commitSha.slice(0, 7);
 
           for (const { thread } of selectedComments) {
-            const replyMessage = `Addressed in commit [${shortSha}](${commitUrl}).`;
+            const replyMessage = `rmplan: Addressed in commit [${shortSha}](${commitUrl}).`;
             const success = await addReplyToReviewThread(thread.id, replyMessage);
 
             if (success) {
