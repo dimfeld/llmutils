@@ -138,7 +138,7 @@ tasks:
           // }
 
           ```
-        done: false
+        done: true
   - title: 3. Implement ConsoleAdapter
     description: Create the `ConsoleAdapter` in `src/logging/console.ts`. This
       adapter will implement the `LoggerAdapter` interface and contain the
