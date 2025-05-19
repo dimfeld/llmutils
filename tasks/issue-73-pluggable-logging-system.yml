@@ -249,7 +249,7 @@ tasks:
 
           Remember that `writeToLogFile` (from `common.ts`) already handles
           `stripAnsi`.
-        done: false
+        done: true
   - title: 4. Refactor `src/logging.ts` to Use Adapters
     description: Update `src/logging.ts` to use the new adapter system. Logging
       functions will delegate to the active adapter or a default
