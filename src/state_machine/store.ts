@@ -37,11 +37,14 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
 
   private adapter: PersistenceAdapter<TContext, TEvent>;
 
+  public instanceId: string;
+
   constructor(
     instanceId: string,
     initialContext: TContext,
     adapter: PersistenceAdapter<TContext, TEvent>
   ) {
+    this.instanceId = instanceId;
     this.context = initialContext;
     this.scratchpad = undefined;
     this.adapter = adapter;
