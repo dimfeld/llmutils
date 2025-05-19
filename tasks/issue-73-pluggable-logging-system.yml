@@ -72,7 +72,7 @@ tasks:
           LoggerAdapter, callback: () => T): T`. This function should use
           `adapterStorage.run(adapter, callback)` to execute the callback within
           a context where the provided adapter is active.
-        done: false
+        done: true
   - title: 2. Create Common Log File Utilities
     description: Move log file management (`logFile` variable, `openLogFile`,
       `closeLogFile`, and file writing logic) from `src/logging.ts` to a new
