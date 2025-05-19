@@ -59,7 +59,7 @@ export class CopyPasteExecutor implements Executor {
 
     log(
       chalk.bold(
-        '\nPlease paste the prompt into the chat interface and copy the response. Press Enter to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.'
+        '\nPlease paste the prompt into the chat interface and copy the response. Then press Enter to apply the changes, or Ctrl+C to exit.'
       )
     );
     await waitForEnter();
