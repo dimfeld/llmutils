@@ -1,0 +1,321 @@
+goal: Implement a pluggable logging system for `dimfeld/llmutils` to allow log
+  output to be directed to various targets like the console, Discord messages,
+  etc., in preparation for chatbot integration.
+details: >
+  The project involves several key changes:
+
+  1.  **Define a `LoggerAdapter` interface**: This interface will specify the
+  contract for all logging adapters, mirroring the methods currently available
+  in `src/logging.ts` (`log`, `error`, `warn`, `writeStdout`, `writeStderr`,
+  `debugLog`).
+
+  2.  **Implement `AsyncLocalStorage` for adapter management**: This will allow
+  setting and retrieving the active logger adapter for the current asynchronous
+  context. Functions `getLoggerAdapter` and `runWithLogger` will be created.
+
+  3.  **Create `ConsoleAdapter`**: This will be the first implementation of
+  `LoggerAdapter`. It will reside in `src/logging/console.ts` and replicate the
+  exact behavior of the current logging functions in `src/logging.ts`, including
+  writing to both the console and the log file.
+
+  4.  **Shared Log File Utilities**: Logic related to `logFile` (`FileSink`),
+  its opening, closing, and writing, will be moved to a new
+  `src/logging/common.ts` file. This prevents circular dependencies and
+  centralizes file logging mechanics.
+
+  5.  **Refactor `src/logging.ts`**: The existing logging functions will be
+  updated to:
+      *   Retrieve the current adapter using `getLoggerAdapter()`.
+      *   If an adapter is found, use it.
+      *   If no adapter is set, default to an instance of `ConsoleAdapter`.
+      *   The functions `openLogFile`, `closeLogFile` will be re-exported from `src/logging/common.ts`.
+      *   The specific `writeLogFile` function (for writing only to the file) will also use the utilities from `src/logging/common.ts`.
+
+  This approach ensures backward compatibility for existing log calls while
+  providing flexibility for future adapter implementations. The changes are
+  broken down into iterative tasks to manage complexity and allow for testing at
+  each stage.
+tasks:
+  - title: 1. Define LoggerAdapter Interface and AsyncLocalStorage Utilities
+    description: Create the `LoggerAdapter` interface that all loggers will
+      implement, and set up `AsyncLocalStorage` to manage the active logger
+      adapter within asynchronous contexts.
+    files:
+      - src/logging/adapter.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Create a new file `src/logging/adapter.ts`.
+
+          In this file, perform the following:
+
+          1.  Define and export an interface named `LoggerAdapter`. This
+          interface should include the following method signatures:
+              - `log(...args: any[]): void`
+              - `error(...args: any[]): void`
+              - `warn(...args: any[]): void`
+              - `writeStdout(data: string): void`
+              - `writeStderr(data: string): void`
+              - `debugLog(...args: any[]): void`
+
+          2.  Import `AsyncLocalStorage` from `node:async_hooks`.
+
+          3.  Create and export an instance of
+          `AsyncLocalStorage<LoggerAdapter>` named `adapterStorage`.
+
+          4.  Define and export a function `getLoggerAdapter(): LoggerAdapter |
+          undefined`. This function should return the store from
+          `adapterStorage.getStore()`.
+
+          5.  Define and export a function `runWithLogger<T>(adapter:
+          LoggerAdapter, callback: () => T): T`. This function should use
+          `adapterStorage.run(adapter, callback)` to execute the callback within
+          a context where the provided adapter is active.
+        done: false
+  - title: 2. Create Common Log File Utilities
+    description: Move log file management (`logFile` variable, `openLogFile`,
+      `closeLogFile`, and file writing logic) from `src/logging.ts` to a new
+      dedicated file `src/logging/common.ts`. This will be used by
+      `ConsoleAdapter` and `src/logging.ts`.
+    files:
+      - src/logging/common.ts
+      - src/logging.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Create a new file `src/logging/common.ts`.
+
+          Perform the following changes:
+
+
+          1.  In `src/logging/common.ts`:
+              a.  Import `FileSink` from `bun`.
+              b.  Import `stripAnsi` from `strip-ansi`.
+              c.  Declare and export a variable `logFile` of type `FileSink | undefined`, initialized to `undefined`. (This is moved from `src/logging.ts`)
+              d.  Move the `openLogFile(logPath: string)` function from `src/logging.ts` to `src/logging/common.ts`. Ensure it's exported and uses the local `logFile` variable.
+              e.  Move the `closeLogFile(): Promise<void>` function from `src/logging.ts` to `src/logging/common.ts`. Ensure it's exported and uses the local `logFile` variable.
+              f.  Create and export a new function `writeToLogFile(data: string)`. This function should implement the logic from the existing `writeLogFile` function in `src/logging.ts`: `logFile?.write(stripAnsi(data));`. It should use the local `logFile` variable and `stripAnsi`.
+
+          Context from `src/logging.ts` for functions to move:
+
+          ```typescript
+
+          // import type { FileSink } from 'bun';
+
+          // import stripAnsi from 'strip-ansi';
+
+
+          // let logFile: FileSink | undefined;
+
+
+          // export function openLogFile(logPath: string) {
+
+          //   if (logFile) {
+
+          //     throw new Error('Log file already open');
+
+          //   }
+
+          //   logFile = Bun.file(logPath).writer();
+
+          // }
+
+
+          // export async function closeLogFile(): Promise<void> {
+
+          //   await logFile?.end();
+
+          // }
+
+
+          // export function writeLogFile(data: string) { // This logic goes
+          into writeToLogFile
+
+          //   logFile?.write(stripAnsi(data));
+
+          // }
+
+          ```
+        done: false
+  - title: 3. Implement ConsoleAdapter
+    description: Create the `ConsoleAdapter` in `src/logging/console.ts`. This
+      adapter will implement the `LoggerAdapter` interface and contain the
+      logging logic previously in `src/logging.ts` (console output and file
+      logging via `common.ts`).
+    files:
+      - src/logging/console.ts
+      - src/logging/adapter.ts
+      - src/logging/common.ts
+      - src/rmfilter/utils.js
+      - src/logging.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Create a new file `src/logging/console.ts`.
+
+          In this file, perform the following:
+
+
+          1.  Import `LoggerAdapter` from `./adapter.ts`.
+
+          2.  Import `writeToLogFile` from `./common.ts`. (Note: `logFile`
+          itself is managed within `common.ts` and accessed via
+          `writeToLogFile`).
+
+          3.  Import `debug` from `../rmfilter/utils.js`.
+
+          4.  Define and export a class `ConsoleAdapter` that implements
+          `LoggerAdapter`.
+
+
+          5.  Implement the methods of `LoggerAdapter` in `ConsoleAdapter`. The
+          logic for these methods should be based on the current implementations
+          in `src/logging.ts`, but adapted to use `console` object for terminal
+          output and `writeToLogFile` for file output.
+              *   `log(...args: any[]): void`: Should call `console.log(...args)` and then `writeToLogFile(args.join(' ') + '\n')`.
+              *   `error(...args: any[]): void`: Should call `console.error(...args)` and then `writeToLogFile(args.join(' ') + '\n')`.
+              *   `warn(...args: any[]): void`: Should call `console.warn(...args)` and then `writeToLogFile(args.join(' ') + '\n')`.
+              *   `writeStdout(data: string): void`: Should call `process.stdout.write(data)` and then `writeToLogFile(data)`.
+              *   `writeStderr(data: string): void`: Should call `process.stderr.write(data)` and then `writeToLogFile(data)`.
+              *   `debugLog(...args: any[]): void`: Should check `if (debug)` (the imported `debug` variable). If true, it should call `this.log('[DEBUG]', ...args)`.
+
+          Reference implementations from the current `src/logging.ts`:
+
+          ```typescript
+
+          // export function log(...args: any[]) {
+
+          //   console.log(...args);
+
+          //   logFile?.write(stripAnsi(args.join(' ') + '\n')); // Becomes
+          writeToLogFile(args.join(' ') + '\n')
+
+          // }
+
+
+          // export function error(...args: any[]) {
+
+          //   console.error(...args);
+
+          //   logFile?.write(stripAnsi(args.join(' ') + '\n')); // Becomes
+          writeToLogFile(args.join(' ') + '\n')
+
+          // }
+
+
+          // export function warn(...args: any[]) {
+
+          //   console.warn(...args);
+
+          //   logFile?.write(stripAnsi(args.join(' ') + '\n')); // Becomes
+          writeToLogFile(args.join(' ') + '\n')
+
+          // }
+
+
+          // export function writeStdout(data: string) {
+
+          //   process.stdout.write(data);
+
+          //   logFile?.write(stripAnsi(data)); // Becomes writeToLogFile(data)
+
+          // }
+
+
+          // export function writeStderr(data: string) {
+
+          //   process.stderr.write(data);
+
+          //   logFile?.write(stripAnsi(data)); // Becomes writeToLogFile(data)
+
+          // }
+
+
+          // export function debugLog(...args: any[]) {
+
+          //   if (debug) { // debug is imported from '../rmfilter/utils.js'
+
+          //     log('[DEBUG]', ...args); // Becomes this.log('[DEBUG]',
+          ...args)
+
+          //   }
+
+          // }
+
+          ```
+
+          Remember that `writeToLogFile` (from `common.ts`) already handles
+          `stripAnsi`.
+        done: false
+  - title: 4. Refactor `src/logging.ts` to Use Adapters
+    description: Update `src/logging.ts` to use the new adapter system. Logging
+      functions will delegate to the active adapter or a default
+      `ConsoleAdapter`. File operation functions will be re-exported or use
+      `common.ts`.
+    files:
+      - src/logging.ts
+      - src/logging/adapter.ts
+      - src/logging/console.ts
+      - src/logging/common.ts
+    include_imports: true
+    include_importers: true
+    steps:
+      - prompt: >
+          Modify the existing file `src/logging.ts`.
+
+          The goal is to refactor it to use the new pluggable logging system.
+
+
+          1.  **Imports**:
+              *   Remove direct imports of `FileSink` and `stripAnsi` if they are no longer used directly in this file (they should now be primarily in `common.ts` and `console.ts`).
+              *   Keep the import for `chalk`.
+              *   Remove `import { debug } from './rmfilter/utils.js';` if it's solely used for the old `debugLog`'s conditional logic (which is now in `ConsoleAdapter`). If `debug` is used for other purposes in this file, it can remain. For this refactor, assume it was only for `debugLog`.
+              *   Add new imports:
+                  *   `import { getLoggerAdapter, runWithLogger } from './logging/adapter.ts';` (Note: Add `.js` if your project's tsconfig/bundler setup requires it for intra-project TS imports, otherwise use `.ts`. The original project uses `.js` for `utils.js`, so be consistent or use `.ts` for `.ts` files. For this prompt, assume `.ts` for TS files: `./logging/adapter.ts`)
+                  *   `import { ConsoleAdapter } from './logging/console.ts';`
+                  *   `import { openLogFile as commonOpenLogFile, closeLogFile as commonCloseLogFile, writeToLogFile as commonWriteToLogFile } from './logging/common.ts';`
+
+          2.  **Remove Old Log File Variables and Functions**:
+              *   Remove the `logFile` variable declaration (it's now in `src/logging/common.ts`).
+              *   The original `openLogFile`, `closeLogFile` functions are effectively replaced by re-exports (see step 5).
+
+          3.  **Default Adapter**:
+              *   Create an instance of `ConsoleAdapter`: `const defaultConsoleAdapter = new ConsoleAdapter();`
+
+          4.  **Update Logging Functions**:
+              Refactor `log`, `error`, `warn`, `writeStdout`, `writeStderr`, and `debugLog` functions. Each function should:
+              a.  Get the current adapter: `const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;`
+              b.  Call the corresponding method on the `adapter` (e.g., `adapter.log(...args);`).
+
+              Example for `log`:
+              ```typescript
+              export function log(...args: any[]) {
+                const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
+                adapter.log(...args);
+              }
+              ```
+              Apply this pattern to `error`, `warn`, `writeStdout`, `writeStderr`, and `debugLog`.
+
+          5.  **Update File Operation Functions**:
+              *   `openLogFile`: Re-export `commonOpenLogFile`: `export const openLogFile = commonOpenLogFile;`
+              *   `closeLogFile`: Re-export `commonCloseLogFile`: `export const closeLogFile = commonCloseLogFile;`
+              *   `writeLogFile` (the function that *only* writes to the log file): Update it to use `commonWriteToLogFile`:
+                  ```typescript
+                  export function writeLogFile(data: string) {
+                    commonWriteToLogFile(data); // commonWriteToLogFile from common.ts handles stripAnsi and logFile access
+                  }
+                  ```
+
+          6.  **Preserve `boldMarkdownHeaders`**:
+              *   The `boldMarkdownHeaders` function and its `chalk` import should remain unchanged.
+
+          7.  **Export `runWithLogger`**:
+              *   Re-export `runWithLogger` so it's available to users of the logging module: `export { runWithLogger };`
+
+          Ensure all previous exports from `src/logging.ts` that are part of the
+          public API are preserved, either through direct implementation,
+          re-exporting from common modules, or by using the adapter pattern.
+        done: false
