@@ -7,7 +7,7 @@ import {
   SpanStatusCode,
   SpanKind,
 } from '@opentelemetry/api';
-import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
+import type { Tracer, Context, Span, AttributeValue, Attributes } from '@opentelemetry/api';
 
 // Initialize tracer for state machine
 const TRACER_NAME = 'state-machine';
@@ -34,6 +34,41 @@ export interface StateMachineAttributes {
   previousState?: string;
   nextState?: string;
   metadata?: Record<string, AttributeValue>;
+}
+
+/** Add an event to the current span. */
+export function addSpanEvent(name: string, attributes?: Attributes) {
+  trace.getActiveSpan()?.addEvent(name, attributes);
+}
+
+/** Add an event to the current span. */
+export function addSpanAttributes(attributes: object) {
+  const span = trace.getActiveSpan();
+  const attrs = objectToSpanAttributeValues(attributes);
+  if (span && attrs) {
+    span.setAttributes(attrs);
+  }
+}
+
+export function objectToSpanAttributeValues(
+  o: object | null | undefined,
+  prefix = ''
+): Record<string, AttributeValue> | undefined {
+  if (!o) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    Object.entries(o).map(([k, v]) => [prefix + k, toSpanAttributeValue(v)])
+  );
+}
+
+export function toSpanAttributeValue(v: AttributeValue | object): AttributeValue {
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    return JSON.stringify(v);
+  } else {
+    return v;
+  }
 }
 
 // Create a span for state machine operations
@@ -65,26 +100,34 @@ export async function withSpan<T>(
   attributes: StateMachineAttributes | undefined,
   fn: (span: Span) => Promise<T>
 ): Promise<T> {
-  const span = createSpan(name, attributes);
+  const parent = context.active();
 
-  try {
-    const result = await context.with(trace.setSpan(context.active(), span), () => fn(span));
-    span.setStatus({ code: SpanStatusCode.OK });
-    return result;
-  } catch (error) {
-    span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: error instanceof Error ? error.message : String(error),
-    });
+  return tracer.startActiveSpan(
+    name,
+    { attributes: flattenAttributes(attributes) },
+    parent,
+    async (span: Span) => {
+      try {
+        const result = await fn(span);
 
-    if (error instanceof Error) {
-      span.recordException(error);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (error) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: error instanceof Error ? error.message : String(error),
+        });
+
+        if (error instanceof Error) {
+          span.recordException(error);
+        }
+
+        throw error;
+      } finally {
+        span.end();
+      }
     }
-
-    throw error;
-  } finally {
-    span.end();
-  }
+  );
 }
 
 // Context propagation helpers
