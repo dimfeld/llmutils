@@ -209,6 +209,35 @@ describe('SharedStore', () => {
         items: ['a', 'b'],
       });
     });
+
+    test('updateScratchpad() handles initially undefined scratchpad', () => {
+      // Ensure scratchpad is undefined
+      store.clearScratchpad();
+      expect(store.getScratchpad()).toBeUndefined();
+
+      // Define the updater type - an object that would be created if scratchpad is undefined
+      interface InitialScratchpad {
+        count: number;
+        items: string[];
+      }
+
+      // Update undefined scratchpad with a function that creates a new object
+      store.updateScratchpad<InitialScratchpad>((pad) => {
+        // We need to handle undefined case inside the updater
+        const basePad = pad || { count: 0, items: [] };
+        return {
+          count: basePad.count + 1,
+          items: [...basePad.items, 'first'],
+        };
+      });
+
+      // Verify the new scratchpad
+      const updated = store.getScratchpad<InitialScratchpad>();
+      expect(updated).toEqual({
+        count: 1,
+        items: ['first'],
+      });
+    });
   });
 
   describe('Event Management', () => {
