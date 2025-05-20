@@ -6,7 +6,7 @@ import { read } from './common/clipboard.ts';
 import { loadEnv } from './common/env.ts';
 import { askForModelId } from './common/model_factory.ts';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './common/run_and_apply.ts';
-import { log } from './logging.ts';
+import { log, error } from './logging.ts';
 import { setDebug } from './rmfilter/utils.ts';
 
 await loadEnv();
@@ -55,7 +55,10 @@ if (!process.stdin.isTTY) {
 } else {
   log('Reading from clipboard');
   input = await read();
-  process.exit(1);
+  if (input === undefined || input === null || input.trim() === '') {
+    error('Clipboard is empty or could not be read. Exiting.');
+    process.exit(1);
+  }
 }
 
 const outputFile = Bun.file('repomix-result.txt');

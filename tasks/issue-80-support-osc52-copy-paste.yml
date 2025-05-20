@@ -669,7 +669,7 @@ tasks:
                 // No process.exit(1) here if read was successful
               }
               ```
-        done: false
+        done: true
   - title: 5. Documentation Update
     description: Update the README.md to inform users about the new OSC52 copy/paste
       support, especially its benefits for SSH users, and any terminal
