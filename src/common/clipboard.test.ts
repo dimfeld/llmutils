@@ -3,23 +3,23 @@ import { expect, test, mock, beforeEach } from 'bun:test';
 // Mock the modules before importing the functions that use them
 const mockIsSshSession = mock(() => false);
 const mockOsc52Copy = mock(async () => {});
-const mockOsc52Read = mock(async () => null);
+const mockOsc52Read = mock<() => Promise<string | null>>(async () => null);
 const mockClipboardRead = mock(async () => 'clipboardy_text');
 const mockClipboardWrite = mock(async () => {});
 const mockDebugLog = mock((...args: any[]) => {});
 
 // Setup mock modules
-mock.module('./ssh_detection.js', () => ({
+await mock.module('./ssh_detection.js', () => ({
   isSshSession: mockIsSshSession,
 }));
 
-mock.module('./osc52.js', () => ({
+await mock.module('./osc52.js', () => ({
   osc52Copy: mockOsc52Copy,
   osc52Read: mockOsc52Read,
 }));
 
 // Mock clipboardy module
-mock.module('clipboardy', () => ({
+await mock.module('clipboardy', () => ({
   default: {
     read: mockClipboardRead,
     write: mockClipboardWrite,
@@ -28,7 +28,7 @@ mock.module('clipboardy', () => ({
   write: mockClipboardWrite,
 }));
 
-mock.module('../logging.js', () => ({
+await mock.module('../logging.js', () => ({
   debugLog: mockDebugLog,
 }));
 
