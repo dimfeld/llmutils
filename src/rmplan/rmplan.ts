@@ -195,9 +195,8 @@ program
           )
         );
 
-        await waitForEnter();
+        let input = await waitForEnter(true);
 
-        let input = await clipboard.read();
         let outputFilename: string | undefined;
         if (planFile) {
           outputFilename = path.join(

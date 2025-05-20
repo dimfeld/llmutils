@@ -41,7 +41,7 @@ export class CopyOnlyExecutor implements Executor {
           '\nPlease paste the prompt into your agent and when it is done, press Enter to continue or `c` to copy again.'
         )
       );
-      const pressed = await waitForEnter(['c']);
+      const pressed = await waitForEnter();
 
       if (pressed !== 'c') {
         break;

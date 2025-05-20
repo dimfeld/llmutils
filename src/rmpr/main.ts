@@ -1,24 +1,27 @@
+import { input, select } from '@inquirer/prompts';
 import * as path from 'node:path';
-import { applyLlmEdits } from '../apply-llm-edits/apply.js';
-import { search, input, select } from '@inquirer/prompts';
-import { createRetryRequester } from '../apply-llm-edits/retry.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
+  addReplyToReviewThread,
   detectPullRequest,
   fetchPullRequestAndComments,
   selectReviewComments,
   type FileNode,
-  addReplyToReviewThread,
 } from '../common/github/pull_requests.js';
-import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
-import { waitForEnter } from '../common/terminal.js';
+import { askForModelId } from '../common/model_factory.js';
+import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
 import { debugLog, error, log, warn } from '../logging.js';
-import { getCurrentBranchName, getCurrentCommitSha } from './git_utils.js';
-import { getGitRepository } from '../rmfilter/utils.js';
-import { fetchOpenPullRequests } from '../common/github/pull_requests.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import { commitAll, getGitRoot, secureWrite, parseCliArgsFromString } from '../rmfilter/utils.js';
+import { commitAll, getGitRoot, parseCliArgsFromString, secureWrite } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
+import { buildExecutorAndLog } from '../rmplan/executors/index.js';
+import {
+  argsFromRmprOptions,
+  combineRmprOptions,
+  parseRmprOptions,
+  type RmprOptions,
+} from './comment_options.js';
+import { getCurrentBranchName, getCurrentCommitSha } from './git_utils.js';
 import {
   createInlineCommentsPrompt,
   insertAiCommentsIntoFileContent,
@@ -29,14 +32,6 @@ import {
   formatReviewCommentsForSeparateContext,
 } from './modes/separate_context.js';
 import type { DetailedReviewComment } from './types.js';
-import {
-  argsFromRmprOptions,
-  combineRmprOptions,
-  parseRmprOptions,
-  type RmprOptions,
-} from './comment_options.js';
-import { askForModelId } from '../common/model_factory.js';
-import { buildExecutorAndLog } from '../rmplan/executors/index.js';
 
 export async function handleRmprCommand(
   prIdentifierArg: string | undefined,

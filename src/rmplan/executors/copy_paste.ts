@@ -62,9 +62,7 @@ export class CopyPasteExecutor implements Executor {
         '\nPlease paste the prompt into the chat interface and copy the response. Then press Enter to apply the changes, or Ctrl+C to exit.'
       )
     );
-    await waitForEnter();
-
-    const llmOutput = await clipboard.read();
+    const llmOutput = await waitForEnter(true);
 
     await applyLlmEdits({
       interactive: true,

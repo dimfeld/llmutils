@@ -36,24 +36,12 @@ test('teardown', () => {
 // Tests for waitForEnter
 test('waitForEnter - Enter key', async () => {
   const promise = waitForEnter();
-  
+
   // Emit Enter key press
   mockStdin.emit('data', Buffer.from([0x0d]));
-  
+
   const result = await promise;
   expect(result).toBe('Enter');
-  expect(mockStdin.setRawMode).toHaveBeenCalledWith(true);
-  expect(mockStdin.pause).toHaveBeenCalled();
-});
-
-test('waitForEnter - other specified key', async () => {
-  const promise = waitForEnter(['a', 'b']);
-  
-  // Emit 'a' key press
-  mockStdin.emit('data', Buffer.from('a'));
-  
-  const result = await promise;
-  expect(result).toBe('a');
   expect(mockStdin.setRawMode).toHaveBeenCalledWith(true);
   expect(mockStdin.pause).toHaveBeenCalled();
 });
@@ -68,15 +56,15 @@ test('waitForEnter - any other key triggers stdin reading', async () => {
 
   try {
     const promise = waitForEnter();
-    
+
     // Emit 'x' key press (not in allowedKeys)
     mockStdin.emit('data', Buffer.from('x'));
-    
+
     // Wait a bit for the readStdinUntilTimeout to complete
     setTimeout(() => {
       // No more input, timeout will resolve
     }, 10);
-    
+
     const result = await promise;
     expect(result).toBe('x');
     expect(mockStdin.setRawMode).toHaveBeenCalledWith(true);
@@ -94,21 +82,21 @@ test('readStdinUntilTimeout - basic functionality', async () => {
   const resultPromise = new Promise<string>((resolve) => {
     resolveFn = resolve;
   });
-  
+
   // Mock the readStdinUntilTimeout function
   const originalFn = readStdinUntilTimeout;
   (globalThis as any).readStdinUntilTimeout = mock((data: Buffer) => {
     resolveFn(data.toString());
     return Promise.resolve(data.toString());
   });
-  
+
   try {
     const initialData = Buffer.from('initial');
     const promise = waitForEnter();
-    
+
     // Simulate typing a key that's not Enter and not in the allowed keys
     mockStdin.emit('data', Buffer.from('x'));
-    
+
     const result = await promise;
     expect(result).toBe('x');
   } finally {
@@ -120,14 +108,14 @@ test('readStdinUntilTimeout - basic functionality', async () => {
 test('readStdinUntilTimeout - with additional data', async () => {
   let timeoutFn: Function;
   let dataHandler: Function;
-  
+
   // Mock stdin.on to capture the data handler
   const originalOn = mockStdin.on;
   mockStdin.on = mock((event, handler) => {
     if (event === 'data') dataHandler = handler;
     return mockStdin;
   });
-  
+
   // Mock setTimeout
   const originalSetTimeout = global.setTimeout;
   const mockSetTimeout = mock((fn: Function) => {
@@ -135,18 +123,18 @@ test('readStdinUntilTimeout - with additional data', async () => {
     return 1 as any;
   });
   global.setTimeout = mockSetTimeout;
-  
+
   try {
     // Start the function
     const initialData = Buffer.from('initial');
     const promise = readStdinUntilTimeout(initialData);
-    
+
     // Now that we have the data handler, manually simulate data events
     if (dataHandler) dataHandler(Buffer.from(' more'));
-    
+
     // Then trigger timeout to resolve the promise
     if (timeoutFn) timeoutFn();
-    
+
     const result = await promise;
     expect(result).toBe('initial more');
   } finally {
