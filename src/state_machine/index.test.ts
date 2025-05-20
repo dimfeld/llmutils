@@ -323,4 +323,238 @@ describe('StateMachine', () => {
     });
     */
   });
+
+  test('should handle multiple events from resume call', async () => {
+    // Define test events
+    const event1: TestSMEvent = { id: 'evt1', type: 'START', payload: { data: 'start data' } };
+    const event2: TestSMEvent = { id: 'evt2', type: 'PROCESS', payload: { value: 42 } };
+
+    // Get references to the nodes
+    const initialNode = nodesMap.get('initial')!;
+    const processingNode = nodesMap.get('processing')!;
+
+    // Configure the initial node mocks
+    initialNode.prepMock.mockReturnValue(
+      Promise.resolve({
+        args: { eventsReceived: true },
+        events: [event1],
+      })
+    );
+
+    initialNode.execMock.mockReturnValue(
+      Promise.resolve({
+        result: { processed: true },
+        scratchpad: undefined,
+      })
+    );
+
+    initialNode.postMock.mockReturnValue(
+      Promise.resolve({
+        status: 'transition',
+        to: 'processing',
+      })
+    );
+
+    // Configure the processing node mocks
+    processingNode.prepMock.mockReturnValue(
+      Promise.resolve({
+        args: {},
+        events: [],
+      })
+    );
+
+    processingNode.execMock.mockReturnValue(
+      Promise.resolve({
+        result: {},
+        scratchpad: undefined,
+      })
+    );
+
+    processingNode.postMock.mockReturnValue(
+      Promise.resolve({
+        status: 'waiting',
+      })
+    );
+
+    // Initialize the state machine
+    await stateMachine.initialize();
+
+    // Process the events - we're passing multiple events to resume
+    const result = await stateMachine.resume([event1, event2]);
+
+    // Since we're testing the ability to pass multiple events,
+    // just verify the events get enqueued correctly
+    expect(stateMachine.store.getPendingEvents()).toContainEqual(
+      expect.objectContaining({ id: event2.id })
+    );
+
+    // Verify state transitions completed as expected
+    expect(stateMachine.store.getCurrentState()).toBe('processing');
+    expect(result).toEqual({ status: 'waiting' });
+  });
+
+  test('should handle a sequence of transitions through multiple states', async () => {
+    // Define test event
+    const initialEvent: TestSMEvent = { id: 'evt-init', type: 'START', payload: { data: 'init' } };
+
+    // Get references to all nodes
+    const initialNode = nodesMap.get('initial')!;
+    const processingNode = nodesMap.get('processing')!;
+    const finalNode = nodesMap.get('final')!;
+
+    // Configure initial node mocks
+    initialNode.prepMock.mockImplementation(() =>
+      Promise.resolve({ args: {}, events: [initialEvent] })
+    );
+    initialNode.execMock.mockImplementation(() =>
+      Promise.resolve({ result: { state: 'initial-complete' }, scratchpad: undefined })
+    );
+    initialNode.postMock.mockImplementation(() =>
+      Promise.resolve({ status: 'transition', to: 'processing' })
+    );
+
+    // Configure processing node mocks
+    processingNode.prepMock.mockImplementation(() => Promise.resolve({ args: {}, events: [] }));
+    processingNode.execMock.mockImplementation(() =>
+      Promise.resolve({ result: { state: 'processing-complete' }, scratchpad: undefined })
+    );
+    processingNode.postMock.mockImplementation(() =>
+      Promise.resolve({ status: 'transition', to: 'final' })
+    );
+
+    // Configure final node mocks
+    finalNode.prepMock.mockImplementation(() => Promise.resolve({ args: {}, events: [] }));
+    finalNode.execMock.mockImplementation(() =>
+      Promise.resolve({ result: { state: 'final-complete' }, scratchpad: undefined })
+    );
+    finalNode.postMock.mockImplementation(() => Promise.resolve({ status: 'terminal' }));
+
+    // Initialize the state machine
+    await stateMachine.initialize();
+
+    // Process the event and start the sequence
+    const result = await stateMachine.resume([initialEvent]);
+
+    // Verify that all nodes' lifecycle methods were called
+    expect(initialNode.prepMock).toHaveBeenCalled();
+    expect(initialNode.execMock).toHaveBeenCalled();
+    expect(initialNode.postMock).toHaveBeenCalled();
+
+    expect(processingNode.prepMock).toHaveBeenCalled();
+    expect(processingNode.execMock).toHaveBeenCalled();
+    expect(processingNode.postMock).toHaveBeenCalled();
+
+    expect(finalNode.prepMock).toHaveBeenCalled();
+    expect(finalNode.execMock).toHaveBeenCalled();
+    expect(finalNode.postMock).toHaveBeenCalled();
+
+    // Verify final state is 'final'
+    expect(stateMachine.store.getCurrentState()).toBe('final');
+
+    // Verify result indicates terminal state
+    expect(result).toEqual({ status: 'terminal' });
+
+    /* 
+    // Telemetry verification if our mocks properly captured spans
+    
+    // Verify state transition events
+    const resumeSpan = verifySpan('state_machine.resume');
+    const stateTransitionEvents = resumeSpan.events.filter(e => e.name === 'state_transition');
+    
+    // Expect two transitions: initial->processing and processing->final
+    expect(stateTransitionEvents.length).toBe(2);
+    
+    // First transition: initial -> processing
+    expect(stateTransitionEvents[0]?.attributes).toMatchObject({
+      'from_state': 'initial',
+      'to_state': 'processing',
+    });
+    
+    // Second transition: processing -> final
+    expect(stateTransitionEvents[1]?.attributes).toMatchObject({
+      'from_state': 'processing',
+      'to_state': 'final',
+    });
+    
+    // Verify spans for each node execution
+    verifySpan('state_machine.run_node.initial');
+    verifySpan('state_machine.run_node.processing');
+    verifySpan('state_machine.run_node.final');
+    */
+  });
+
+  test('should handle actions in StateResult', async () => {
+    // Define events
+    const initialEvent: TestSMEvent = { id: 'evt-init', type: 'START', payload: { data: 'init' } };
+    const actionEvent: TestSMEvent = { id: 'evt-action', type: 'PROCESS', payload: { value: 100 } };
+
+    // Get references to nodes
+    const initialNode = nodesMap.get('initial')!;
+    const processingNode = nodesMap.get('processing')!;
+
+    // Configure initial node to include an action in its state result
+    initialNode.prepMock.mockReturnValue(
+      Promise.resolve({
+        args: {},
+        events: [initialEvent],
+      })
+    );
+
+    initialNode.execMock.mockReturnValue(
+      Promise.resolve({
+        result: { state: 'initial-complete' },
+        scratchpad: undefined,
+      })
+    );
+
+    initialNode.postMock.mockReturnValue(
+      Promise.resolve({
+        status: 'transition',
+        to: 'processing',
+        actions: [actionEvent],
+      })
+    );
+
+    // Configure processing node with simple mocks
+    processingNode.prepMock.mockReturnValue(
+      Promise.resolve({
+        args: {},
+        events: [],
+      })
+    );
+
+    processingNode.execMock.mockReturnValue(
+      Promise.resolve({
+        result: {},
+        scratchpad: undefined,
+      })
+    );
+
+    processingNode.postMock.mockReturnValue(
+      Promise.resolve({
+        status: 'waiting',
+      })
+    );
+
+    // Initialize the state machine
+    await stateMachine.initialize();
+
+    // Process the event
+    await stateMachine.resume([initialEvent]);
+
+    // Verify that both nodes were called
+    expect(initialNode.prepMock).toHaveBeenCalled();
+    expect(initialNode.execMock).toHaveBeenCalled();
+    expect(initialNode.postMock).toHaveBeenCalled();
+
+    expect(processingNode.prepMock).toHaveBeenCalled();
+    expect(processingNode.execMock).toHaveBeenCalled();
+    expect(processingNode.postMock).toHaveBeenCalled();
+
+    // Verify the action was enqueued correctly by checking pending events
+    // should contain the action event that was scheduled by the initial node
+    expect(stateMachine.store.getPendingEvents()).toContainEqual(
+      expect.objectContaining({ id: actionEvent.id })
+    );
+  });
 });

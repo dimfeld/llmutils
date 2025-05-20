@@ -713,6 +713,7 @@ tasks:
               *   Have a node's `postMock` return `{ status: 'transition', to: 'next_state', actions: [actionEvent] }` or `{ status: 'waiting', actions: [actionEvent] }`.
               *   Verify `stateMachine.store.enqueueEvents` is called with `actionEvent`. (Note: `handleStateResult` has a TODO: "This should send the events instead". Currently, it enqueues them. Test current behavior.)
               *   If it transitions, the next node's `prep` should be able to process this `actionEvent`.
+        done: true
   - title: 8. `StateMachine` Error Handling and Retries
     description: >
       This task focuses on testing the `StateMachine`'s error handling
