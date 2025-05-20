@@ -245,17 +245,24 @@ function formatJsonMessage(input: string) {
 
         // Check if this is a file operation (read/write) and simplify output
         const result = content.content;
-        let formattedResult = formatValue(result);
 
-        if (typeof result === 'object' && result !== null) {
+        let formattedResult: string;
+        if (toolName === 'Read' && typeof result === 'string') {
+          formattedResult = `Lines: ${result.split('\n').length}`;
+        } else if (
+          typeof result === 'object' &&
+          result !== null &&
+          'file_path' in result &&
+          'content' in result
+        ) {
           // Handle file read/write operations by showing only summary
-          if ('file_path' in result && 'content' in result) {
-            // This is likely a file read or write operation
-            const filePath = (result as any).file_path;
-            const fileContent = (result as any).content as string;
-            const lineCount = fileContent.split('\n').length;
-            formattedResult = `File: ${filePath}\nLines: ${lineCount}`;
-          }
+          // This is likely a file read or write operation
+          const filePath = (result as any).file_path;
+          const fileContent = (result as any).content as string;
+          const lineCount = fileContent.split('\n').length;
+          formattedResult = `File: ${filePath}\nLines: ${lineCount}`;
+        } else {
+          formattedResult = formatValue(result);
         }
 
         outputLines.push(
