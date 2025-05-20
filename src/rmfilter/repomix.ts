@@ -75,7 +75,7 @@ export async function getOutputPath() {
     }
   }
   if (!outputFile) {
-    outputFile = './repomix_output.txt';
+    outputFile = './repomix-output.txt';
   }
   return outputFile;
 }
