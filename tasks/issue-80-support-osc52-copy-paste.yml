@@ -691,4 +691,4 @@ tasks:
           2.  Briefly mention this in the general introduction or a relevant
           tool's section if applicable (e.g., `rmfilter` or `apply-llm-edits`
           often involve clipboard).
-        done: false
+        done: true

@@ -10,6 +10,8 @@ The scripts are:
 - `rmfind` - Find relevant files to use with rmfilter
 - `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks.
 
+All tools include built-in OSC52 clipboard support, making them work seamlessly over SSH sessions.
+
 Some of the features, such as dependency analysis, only work with the code I've been writing at work recently, and so
 assume a repository written with Typescript and PNPM workspaces.
 
@@ -17,6 +19,8 @@ assume a repository written with Typescript and PNPM workspaces.
 
 - [Installation](#installation)
   - [Build Instructions](#build-instructions)
+- [Key Features](#key-features)
+  - [SSH Support with OSC52](#ssh-support-with-osc52)
 - [Configuration and Presets](#configuration-and-presets)
   - [YAML Configuration](#yaml-configuration)
   - [Example Config File](#example-config-file)
@@ -28,12 +32,12 @@ assume a repository written with Typescript and PNPM workspaces.
     - [MDC File Format](#mdc-file-format)
   - [Model Presets](#model-presets)
 - [rmfind](#rmfind)
-  - [Key Features](#key-features)
+  - [Key Features](#key-features-2)
   - [Usage](#usage)
   - [Requirements](#requirements)
   - [Notes](#notes)
 - [rmplan](#rmplan)
-  - [Key Features](#key-features-1)
+  - [Key Features](#key-features-3)
   - [Usage](#usage-1)
     - [Cleanup Command](#cleanup-command)
   - [Requirements](#requirements-1)
@@ -66,6 +70,25 @@ cd llmutils
 bun install
 pnpm add -g file://$(pwd)
 ```
+
+## Key Features
+
+### SSH Support with OSC52
+
+llmutils now includes built-in OSC52 clipboard support for improved functionality when working over SSH sessions:
+
+- **Automatic SSH Detection**: Automatically detects when you're running in an SSH session by checking environment variables like `SSH_CLIENT` and `SSH_CONNECTION`.
+
+- **Clipboard Integration**:
+
+  - **Copy Operations**: When running in an SSH session, automatically uses OSC52 escape sequences to copy content to your local machine's clipboard.
+  - **Read Operations**: First attempts to read from the local clipboard using OSC52, with an automatic fallback to standard mechanisms if OSC52 fails or times out.
+
+- **Terminal Requirements**: For full OSC52 functionality, your terminal emulator must support OSC52 escape sequences. Modern terminal emulators like iTerm2, WezTerm, kitty, and recent versions of Windows Terminal generally have good support.
+
+- **Transparent Usage**: No configuration needed - all clipboard operations in `rmfilter`, `apply-llm-edits`, and other utilities automatically use the appropriate method based on your session type.
+
+This feature significantly improves the experience of running llmutils over SSH, particularly when using `rmfilter` to copy prompts and `apply-llm-edits` to paste LLM-generated code changes.
 
 ## Configuration and Presets
 
@@ -196,7 +219,7 @@ The `--model` option can be passed to `rmfilter` to configure settings for parti
 
 The `rmfind` utility helps you locate relevant files in your repository using a combination of glob patterns, ripgrep patterns, and natural language queries. It integrates with `fzf` for interactive file selection, allowing you to refine your file list efficiently. The output can be copied to the clipboard and formatted as a space-separated list or YAML array.
 
-### Key Features
+### Key Features {#key-features-2}
 
 - **Glob-based file search**: Find files matching specific patterns (e.g., `src/**/*.ts`).
 - **Ripgrep integration**: Filter files by content using ripgrep patterns, with options for whole-word matching and case expansion (e.g., snake_case to camelCase).
@@ -247,7 +270,7 @@ The `rmplan` utility generates and manages step-by-step project plans for code c
 
 You can find the task plans for this repository under the "tasks" directory.
 
-### Key Features
+### Key Features {#key-features-3}
 
 - **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
@@ -499,7 +522,7 @@ Process LLM-generated edits from different sources:
 
 ```bash
 
-# Apply edits from clipboard
+# Apply edits from clipboard (works in both local and SSH sessions thanks to OSC52 support)
 rmfilter src/**/*.ts --copy
 apply-llm-edits
 
