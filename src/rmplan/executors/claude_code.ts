@@ -233,10 +233,27 @@ function formatJsonMessage(input: string) {
           toolUseCache.set(content.id, content.name);
         }
 
-        outputLines.push(
-          chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
-          yaml.stringify(content.input ?? {})
-        );
+        // Special handling for Write tool to show file_path and line count
+        if (
+          content.name === 'Write' &&
+          content.input &&
+          typeof content.input === 'object' &&
+          'file_path' in content.input &&
+          'content' in content.input
+        ) {
+          const filePath = content.input.file_path as string;
+          const fileContent = content.input.content as string;
+          const lineCount = fileContent.split('\n').length;
+          outputLines.push(
+            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+            `File path: ${filePath}\nNumber of lines: ${lineCount}`
+          );
+        } else {
+          outputLines.push(
+            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+            yaml.stringify(content.input ?? {})
+          );
+        }
       } else if (content.type === 'tool_result') {
         // Get the tool name if we have it cached
         let toolName = '';
