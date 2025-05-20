@@ -225,7 +225,7 @@ rmfind --gitroot src/**/*.ts --yaml
 rmfind src/**/*.ts --grep user --whole-word
 
 # Use a specific AI model for querying
-rmfind src/**/*.ts --query "database migrations" --model google/gemini-2.5-flash-preview-04-17
+rmfind src/**/*.ts --query "database migrations" --model google/gemini-2.5-flash-preview-05-20
 ```
 
 ### Requirements
@@ -309,7 +309,7 @@ rmplan done plan.yml --commit
 rmplan done plan.yml --commit --steps 2
 
 # Automatically execute steps in a plan, choosing a specific model
-rmplan agent plan.yml --model google/gemini-2.5-flash-preview-04-17
+rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
 
 # Execute a specific number of steps automatically
 rmplan agent plan.yml --steps 3
