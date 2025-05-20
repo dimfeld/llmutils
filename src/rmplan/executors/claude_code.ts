@@ -258,7 +258,7 @@ function formatJsonMessage(input: string) {
         // Get the tool name if we have it cached
         let toolName = '';
         if ('tool_use_id' in content && toolUseCache.has(content.tool_use_id)) {
-          toolName = toolUseCache.get(content.tool_use_id);
+          toolName = toolUseCache.get(content.tool_use_id) ?? '';
         }
 
         // Check if this is a file operation (read/write) and simplify output
@@ -298,6 +298,6 @@ function formatJsonMessage(input: string) {
   return `Unknown message: ${JSON.stringify(message)}`;
 }
 
-function formatValue(value: unknown, indent = 0): string {
+function formatValue(value: unknown): string {
   return yaml.stringify(value);
 }

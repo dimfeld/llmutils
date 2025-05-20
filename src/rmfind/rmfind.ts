@@ -3,7 +3,7 @@ import { $ } from 'bun';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { debugLog, error, log, warn } from '../logging.ts';
-import { write } from '../common/clipboard.ts';
+import * as clipboard from '../common/clipboard.ts';
 import { getGitRoot, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { findFilesCore, type RmfindOptions, type RmfindResult } from './core.ts';
 
@@ -183,7 +183,7 @@ async function main() {
       output = selectedRelativeFiles.map((file) => `'${file}'`).join(' ');
     }
 
-    await write(output);
+    await clipboard.write(output);
     log(output);
   }
 }

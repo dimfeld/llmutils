@@ -3,7 +3,7 @@ import { globby } from 'globby';
 import { encode } from 'gpt-tokenizer';
 import micromatch from 'micromatch';
 import path from 'node:path';
-import { write } from '../common/clipboard.js';
+import * as clipboard from '../common/clipboard.js';
 import { grepFor } from '../common/file_finder.ts';
 import { Resolver } from '../dependency_graph/resolve.ts';
 import { ImportWalker } from '../dependency_graph/walk_imports.ts';
@@ -882,7 +882,7 @@ export async function fullRmfilterRun(options?: {
   }
 
   if (globalValues.copy) {
-    await write(finalOutput);
+    await clipboard.write(finalOutput);
     if (!globalValues.quiet) {
       log('Output copied to clipboard');
     }

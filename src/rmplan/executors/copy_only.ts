@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { z } from 'zod';
-import { write } from '../../common/clipboard.ts';
+import * as clipboard from '../../common/clipboard.ts';
 import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';
 import type { PrepareNextStepOptions } from '../actions.ts';
@@ -35,7 +35,7 @@ export class CopyOnlyExecutor implements Executor {
 
   async execute(contextContent: string) {
     while (true) {
-      await write(contextContent);
+      await clipboard.write(contextContent);
       log(
         chalk.bold(
           '\nPlease paste the prompt into your agent and when it is done, press Enter to continue or `c` to copy again.'

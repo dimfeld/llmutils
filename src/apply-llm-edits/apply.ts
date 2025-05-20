@@ -1,7 +1,7 @@
 import { confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import * as path from 'node:path';
-import { write } from '../common/clipboard.ts';
+import * as clipboard from '../common/clipboard.ts';
 import { processSearchReplace } from '../editor/diff-editor/parse.js';
 import type {
   EditResult,
@@ -586,7 +586,7 @@ export async function applyLlmEdits({
       log(chalk.red(`Failed to apply ${remainingFailures.length} edits.`));
       if (copyRetryPrompt) {
         const retryMessage = constructRetryMessage(remainingFailures);
-        await write(retryMessage);
+        await clipboard.write(retryMessage);
         log(chalk.green('Retry prompt copied to clipboard.'));
       } else {
         log(`Resolution options:`);

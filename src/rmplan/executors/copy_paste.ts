@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { z } from 'zod';
-import { read, write } from '../../common/clipboard.ts';
+import * as clipboard from '../../common/clipboard.ts';
 import { applyLlmEdits } from '../../apply-llm-edits/apply';
 import { DEFAULT_RUN_MODEL } from '../../common/run_and_apply';
 import { waitForEnter } from '../../common/terminal.ts';
@@ -55,7 +55,7 @@ export class CopyPasteExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
-    await write(contextContent);
+    await clipboard.write(contextContent);
 
     log(
       chalk.bold(
@@ -64,7 +64,7 @@ export class CopyPasteExecutor implements Executor {
     );
     await waitForEnter();
 
-    const llmOutput = await read();
+    const llmOutput = await clipboard.read();
 
     await applyLlmEdits({
       interactive: true,
@@ -73,14 +73,14 @@ export class CopyPasteExecutor implements Executor {
       retryRequester: async (prompt) => {
         // We know the last message is the new context, so just use that.
         // Better to have a separate specific place in the argument containing it though.
-        await write(prompt.at(-1)!.content);
+        await clipboard.write(prompt.at(-1)!.content);
         log(
           chalk.bold(
             `Retry prompt was copied to clipboard. Please paste it into the chat interface and copy the result back.`
           )
         );
         await waitForEnter();
-        const llmOutput = await read();
+        const llmOutput = await clipboard.read();
         return llmOutput;
       },
       content: llmOutput,
