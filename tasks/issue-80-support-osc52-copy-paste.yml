@@ -561,7 +561,7 @@ tasks:
           3.  Find the line `await clipboard.write(contextContent);`.
 
           4.  Replace it with `await write(contextContent);`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/executors/copy_paste.ts`:
 

@@ -6,9 +6,9 @@
  * and writes the contents to the path given, relative to the Git root.
  **/
 
-import clipboard from 'clipboardy';
 import * as path from 'node:path';
 import { parseArgs } from 'util';
+import { read } from '../common/clipboard.ts';
 import { error, log } from '../logging.ts';
 import { setDebug } from '../rmfilter/utils.ts';
 import { applyLlmEdits, getWriteRoot } from './apply.js';
@@ -79,9 +79,9 @@ let content: string | undefined;
 if (file) {
   content = await Bun.file(file).text();
 } else {
-  content = useStdin ? await Bun.stdin.text() : await clipboard.read();
+  content = useStdin ? await Bun.stdin.text() : await read();
   if (!content) {
-    content = await clipboard.read();
+    content = await read();
   }
 }
 

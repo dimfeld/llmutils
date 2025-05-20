@@ -35,7 +35,6 @@ import {
   parseRmprOptions,
   type RmprOptions,
 } from './comment_options.js';
-import clipboardy from 'clipboardy';
 import { askForModelId } from '../common/model_factory.js';
 import { buildExecutorAndLog } from '../rmplan/executors/index.js';
 

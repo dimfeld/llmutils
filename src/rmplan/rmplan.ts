@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import { input } from '@inquirer/prompts';
 import chalk from 'chalk';
-import clipboardy from 'clipboardy';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import { read, write } from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
 import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
 import { waitForEnter } from '../common/terminal.js';
@@ -197,7 +197,7 @@ program
 
         await waitForEnter();
 
-        let input = await clipboardy.read();
+        let input = await read();
         let outputFilename: string | undefined;
         if (planFile) {
           outputFilename = path.join(
@@ -249,7 +249,7 @@ program
     } else if (!process.stdin.isTTY) {
       inputText = await Bun.stdin.text();
     } else {
-      inputText = await clipboardy.read();
+      inputText = await read();
     }
 
     if (options.plan && !options.output) {
@@ -347,7 +347,7 @@ program
         log('\n----- LLM PROMPT -----\n');
         log(result.prompt);
         log('\n---------------------\n');
-        await clipboardy.write(result.prompt);
+        await write(result.prompt);
         log('Prompt copied to clipboard');
       }
     } catch (err) {

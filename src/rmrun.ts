@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
 import { applyLlmEdits } from './apply-llm-edits/apply.ts';
 import { createRetryRequester } from './apply-llm-edits/retry.ts';
+import { read } from './common/clipboard.ts';
 import { loadEnv } from './common/env.ts';
 import { askForModelId } from './common/model_factory.ts';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './common/run_and_apply.ts';
@@ -54,7 +54,7 @@ if (!process.stdin.isTTY) {
   input = await Bun.file(filename).text();
 } else {
   log('Reading from clipboard');
-  input = await clipboard.read();
+  input = await read();
   process.exit(1);
 }
 
