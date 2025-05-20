@@ -21,7 +21,7 @@ export class CopyOnlyExecutor implements Executor {
   static description = 'Copies the prompt into the clipboard for you to send to an agent';
   static optionsSchema = copyOnlyOptionsSchema;
 
-  readonly forceReviewCommentsMode = 'separate-context';
+  // readonly forceReviewCommentsMode = 'separate-context';
 
   constructor(
     public options: CopyOnlyExecutorOptions,

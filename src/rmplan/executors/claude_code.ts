@@ -27,7 +27,7 @@ export class ClaudeCodeExecutor implements Executor {
   static description = 'Executes the plan using Claude Code';
   static optionsSchema = claudeCodeOptionsSchema;
 
-  readonly forceReviewCommentsMode = 'separate-context';
+  // readonly forceReviewCommentsMode = 'separate-context';
 
   constructor(
     public options: ClaudeCodeExecutorOptions,
