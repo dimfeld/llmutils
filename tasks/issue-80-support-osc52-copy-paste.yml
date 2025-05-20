@@ -634,7 +634,7 @@ tasks:
                 content = await read();
               }
               ```
-        done: false
+        done: true
       - prompt: >
           In `src/rmrun.ts`:
 
