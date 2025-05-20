@@ -276,6 +276,7 @@ tasks:
               *   Call `store.withRollback(operation)` and expect it to throw an error.
               *   Verify that context, scratchpad, and pending events are rolled back to their state before the operation.
               *   Verify that the `withSpan` mock was called and that `span.setStatus` (with error) and `span.addEvent('rollback_executed')` were called on the mock span.
+        done: true
       - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
 

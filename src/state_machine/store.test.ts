@@ -562,13 +562,15 @@ describe('SharedStore', () => {
     test('withRollback() maintains state on success', async () => {
       // Reset mocks before test
       mockSpan.setAttributes.mockReset();
+      const withSpanMock = mock.module('./telemetry').withSpan;
+      withSpanMock.mockReset();
 
       // Setup initial state
       await store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
       store.setScratchpad({ test: 'data' });
 
       // Run operation that updates state
-      await store.withRollback(async () => {
+      const result = await store.withRollback(async () => {
         await store.updateContext((ctx) => ({ ...ctx, counter: 10 }));
         store.setScratchpad({ test: 'updated' });
         return 'success';
@@ -577,42 +579,123 @@ describe('SharedStore', () => {
       // Verify state after successful operation
       expect(store.getContext().counter).toBe(10);
       expect(store.getScratchpad()).toEqual({ test: 'updated' });
+      expect(result).toBe('success');
 
-      // The withSpan function in our mock calls the callback directly and doesn't apply the attributes
-      // In a real environment, setAttributes would have been called
-      // This test is more about the functional behavior of withRollback
+      // Verify telemetry span was created with correct name
+      expect(withSpanMock).toHaveBeenCalledTimes(1);
+      expect(withSpanMock.mock.calls[0][0]).toBe('store.with_rollback');
+
+      // Verify attributes passed to withSpan
+      expect(withSpanMock.mock.calls[0][1]).toEqual({
+        instanceId: instanceId,
+        stateName: undefined,
+      });
+    });
+
+    test('withRollback() maintains all changes on success, including events', async () => {
+      // Reset required mocks
+      const withSpanMock = mock.module('./telemetry').withSpan;
+      withSpanMock.mockReset();
+      mockAdapter.writeEvents.mockReset();
+
+      // Setup initial state with current state
+      store.setCurrentState('INITIAL_STATE');
+      await store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
+      store.setScratchpad({ test: 'data' });
+
+      // Run operation that updates state and adds events
+      await store.withRollback(async () => {
+        await store.updateContext((ctx) => ({
+          ...ctx,
+          counter: 10,
+          items: ['item1', 'item2'],
+        }));
+        store.setScratchpad({ test: 'updated', details: { complete: true } });
+        await store.enqueueEvents([
+          createTestEvent('new-event-1', 'operation-data-1'),
+          createTestEvent('new-event-2', 'operation-data-2'),
+        ]);
+        return true;
+      });
+
+      // Verify all state components were updated
+      const finalContext = store.getContext();
+      expect(finalContext.counter).toBe(10);
+      expect(finalContext.items).toEqual(['item1', 'item2']);
+
+      const finalScratchpad = store.getScratchpad<{
+        test: string;
+        details: { complete: boolean };
+      }>();
+      expect(finalScratchpad?.test).toBe('updated');
+      expect(finalScratchpad?.details.complete).toBe(true);
+
+      // Verify events were maintained
+      const pendingEvents = store.getPendingEvents();
+      expect(pendingEvents).toHaveLength(2);
+      expect(pendingEvents[0].id).toBe('new-event-1');
+      expect(pendingEvents[1].id).toBe('new-event-2');
+
+      // Verify correct persistence calls were made
+      expect(mockAdapter.writeEvents).toHaveBeenCalled();
+
+      // Verify telemetry attributes
+      expect(withSpanMock).toHaveBeenCalledTimes(1);
+      expect(withSpanMock.mock.calls[0][1]).toEqual({
+        instanceId: instanceId,
+        stateName: 'INITIAL_STATE',
+      });
     });
 
     test('withRollback() restores state on failure', async () => {
       // Reset mocks to check specific calls
       mockSpan.setStatus.mockReset();
       mockSpan.addEvent.mockReset();
+      const withSpanMock = mock.module('./telemetry').withSpan;
+      withSpanMock.mockReset();
 
       // Setup initial state
       await store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
       store.setScratchpad({ test: 'data' });
       await store.enqueueEvents([createTestEvent('initial-event', 'data')]);
 
+      // Store copies of initial state for later verification
+      const initialContext = store.getContext();
+      const initialScratchpad = store.getScratchpad();
+      const initialEvents = store.getPendingEvents();
+
       // Run operation that throws
+      const error = new Error('Intentional error');
       try {
         await store.withRollback(async () => {
           await store.updateContext((ctx) => ({ ...ctx, counter: 10 }));
           store.setScratchpad({ test: 'updated' });
           await store.enqueueEvents([createTestEvent('new-event', 'data')]);
-          throw new Error('Intentional error');
+          throw error;
         });
+        fail('Expected an error to be thrown');
       } catch (e) {
-        // Expected error
+        // Verify that the original error is propagated
+        expect(e).toBe(error);
       }
 
       // Verify state is rolled back
-      expect(store.getContext().counter).toBe(5);
-      expect(store.getScratchpad()).toEqual({ test: 'data' });
+      expect(store.getContext()).toEqual(initialContext);
+      expect(store.getScratchpad()).toEqual(initialScratchpad);
 
       // Verify events are rolled back
       const events = store.getPendingEvents();
+      expect(events).toEqual(initialEvents);
       expect(events).toHaveLength(1);
       expect(events[0].id).toBe('initial-event');
+
+      // Verify withSpan was called with correct name and attributes
+      expect(withSpanMock).toHaveBeenCalledTimes(1);
+      expect(withSpanMock.mock.calls[0][0]).toBe('store.with_rollback');
+      expect(withSpanMock.mock.calls[0][1]).toEqual({
+        instanceId: instanceId,
+        stateName: undefined,
+      });
 
       // Verify telemetry operations for rollback
       expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1, message: 'Rollback executed' });
@@ -625,6 +708,11 @@ describe('SharedStore', () => {
       // Reset mocks for this test
       mockSpan.addEvent.mockReset();
       mockSpan.setAttributes.mockReset();
+      const getActiveSpanMock = mock.module('./telemetry').getActiveSpan;
+      getActiveSpanMock.mockReset();
+
+      // Ensure getActiveSpan returns our mock span
+      getActiveSpanMock.mockReturnValue(mockSpan);
 
       // Mock function that fails a few times
       let attempts = 0;
@@ -653,6 +741,9 @@ describe('SharedStore', () => {
       expect(operation).toHaveBeenCalledTimes(2);
       expect(result).toBe('success');
 
+      // Verify the getActiveSpan was called
+      expect(getActiveSpanMock).toHaveBeenCalled();
+
       // Verify telemetry operations
       expect(mockSpan.setAttributes).toHaveBeenCalledWith({ max_attempts: 3 });
       expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_attempt', { attempt: 1 });
@@ -667,6 +758,11 @@ describe('SharedStore', () => {
       // Reset mocks for this test
       mockSpan.addEvent.mockReset();
       mockSpan.setStatus.mockReset();
+      const getActiveSpanMock = mock.module('./telemetry').getActiveSpan;
+      getActiveSpanMock.mockReset();
+
+      // Ensure getActiveSpan returns our mock span
+      getActiveSpanMock.mockReturnValue(mockSpan);
 
       // Mock function that always fails
       const operation = mock(() => Promise.reject(new Error('Always fails')));
@@ -688,7 +784,17 @@ describe('SharedStore', () => {
       // Verify the correct number of attempts were made
       expect(operation).toHaveBeenCalledTimes(2);
 
+      // Verify the getActiveSpan was called
+      expect(getActiveSpanMock).toHaveBeenCalled();
+
       // Verify telemetry operations for max retries
+      expect(mockSpan.setAttributes).toHaveBeenCalledWith({ max_attempts: 2 });
+      expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_attempt', { attempt: 1 });
+      expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_failed', {
+        attempt: 1,
+        error: 'Error: Always fails',
+      });
+      expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_attempt', { attempt: 2 });
       expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1, message: 'Max retries reached' });
       expect(mockSpan.addEvent).toHaveBeenCalledWith('max_retries_reached', {
         attempts: 2,
@@ -699,6 +805,13 @@ describe('SharedStore', () => {
     test('retry() respects maxAttemptsOverride', async () => {
       // Reset mocks for this test
       mockSpan.setAttributes.mockReset();
+      mockSpan.addEvent.mockReset();
+      mockSpan.setStatus.mockReset();
+      const getActiveSpanMock = mock.module('./telemetry').getActiveSpan;
+      getActiveSpanMock.mockReset();
+
+      // Ensure getActiveSpan returns our mock span
+      getActiveSpanMock.mockReturnValue(mockSpan);
 
       // Mock function that always fails
       const operation = mock(() => Promise.reject(new Error('Always fails')));
@@ -709,8 +822,40 @@ describe('SharedStore', () => {
       // Verify only one attempt was made (override takes precedence)
       expect(operation).toHaveBeenCalledTimes(1);
 
+      // Verify the getActiveSpan was called
+      expect(getActiveSpanMock).toHaveBeenCalled();
+
       // Verify telemetry sets the correct max_attempts attribute
       expect(mockSpan.setAttributes).toHaveBeenCalledWith({ max_attempts: 1 });
+      expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_attempt', { attempt: 1 });
+      expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1, message: 'Max retries reached' });
+      expect(mockSpan.addEvent).toHaveBeenCalledWith('max_retries_reached', {
+        attempts: 1,
+        error: 'Always fails',
+      });
+    });
+
+    test('retry() with null span still functions correctly', async () => {
+      // Reset mocks for this test
+      const getActiveSpanMock = mock.module('./telemetry').getActiveSpan;
+      getActiveSpanMock.mockReset();
+
+      // Return null to simulate no active span
+      getActiveSpanMock.mockReturnValue(null);
+
+      // Mock function that succeeds on first attempt
+      const operation = mock(() => Promise.resolve('success'));
+
+      // Run with retry
+      const result = await store.retry(operation);
+
+      // Verify operation was called and succeeded
+      expect(operation).toHaveBeenCalledTimes(1);
+      expect(result).toBe('success');
+
+      // Verify span methods were not called (since span is null)
+      expect(mockSpan.setAttributes).not.toHaveBeenCalled();
+      expect(mockSpan.addEvent).not.toHaveBeenCalled();
     });
   });
 });
