@@ -91,7 +91,7 @@ export async function osc52Read(): Promise<string | null> {
           // Failed to decode the response
           resolve(null);
         }
-      } else if (receivedData.length > 1024) {
+      } else if (receivedData.length > 1024 * 1024) {
         // Received too much data without a match, likely not an OSC52 response
         cleanup();
         resolve(null);
