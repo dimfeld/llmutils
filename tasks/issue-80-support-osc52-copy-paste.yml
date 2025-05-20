@@ -134,7 +134,7 @@ tasks:
           ```
 
           Make sure to handle the `undefined` case for restoration correctly.
-        done: false
+        done: true
   - title: 2. OSC52 Core Functions (Copy and Read)
     description: Implement the core OSC52 copy and read functionalities. `osc52Copy`
       will send data to the terminal clipboard. `osc52Read` will attempt to
