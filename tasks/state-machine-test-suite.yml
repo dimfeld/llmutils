@@ -981,6 +981,7 @@ tasks:
               *   Instantiate `testFlowNode` with the `subMachineConfig`.
               *   Instantiate `sharedStore` for the parent machine.
               *   `resetSpans()`.
+        done: true
       - prompt: >
           In `src/state_machine/nodes.test.ts`, test the `FlowNode.exec()`
           method:
