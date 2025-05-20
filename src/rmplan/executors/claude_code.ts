@@ -160,13 +160,20 @@ type Message =
       }[];
     };
 
+// Cache for tool use IDs mapped to their names
+const toolUseCache = new Map<string, string>();
+
 function formatJsonMessage(input: string) {
-  // TODO Cache tool use IDs across calls so that we can print the tool names with the results
-  // TODO When reading and writing files, just show number of lines read and written
-  // TODO Add timestamps at each header
+  // TODOS implemented:
+  // - Cache tool use IDs across calls so that we can print the tool names with the results
+  // - When reading and writing files, just show number of lines read and written
+  // - Add timestamps at each header
 
   const message = JSON.parse(input) as Message;
   debugLog(input);
+
+  // Get the current timestamp in HH:MM:SS format
+  const timestamp = new Date().toTimeString().split(' ')[0];
 
   const outputLines: string[] = [];
 
@@ -176,12 +183,16 @@ function formatJsonMessage(input: string) {
       if (message.subtype === 'error_max_turns') {
         result += ' (max turns reached)';
       }
-      outputLines.push(chalk.bold.green('### Done\n'), `Session ID: ${message.session_id}`, result);
+      outputLines.push(
+        chalk.bold.green(`### Done [${timestamp}]\n`),
+        `Session ID: ${message.session_id}`,
+        result
+      );
       return outputLines.join('\n');
     }
   } else if (message.type === 'system' && message.subtype === 'init') {
     outputLines.push(
-      chalk.bold.green('### Starting\n'),
+      chalk.bold.green(`### Starting [${timestamp}]\n`),
       `Session ID: ${message.session_id}`,
       `Tools: ${message.tools.join(', ')}`
     );
@@ -200,25 +211,54 @@ function formatJsonMessage(input: string) {
       if (typeof content === 'string') {
         outputLines.push(content);
       } else if (content.type === 'thinking') {
-        outputLines.push(chalk.blue('### Thinking'), content.thinking);
+        outputLines.push(chalk.blue(`### Thinking [${timestamp}]`), content.thinking);
       } else if (content.type === 'text') {
         if (message.type === 'assistant') {
-          outputLines.push(chalk.bold.green('### Model Response'));
+          outputLines.push(chalk.bold.green(`### Model Response [${timestamp}]`));
         } else {
-          outputLines.push(chalk.bold.blue('### Agent Request'));
+          outputLines.push(chalk.bold.blue(`### Agent Request [${timestamp}]`));
         }
 
         outputLines.push(content.text);
       } else if (content.type === 'tool_use') {
+        // Store tool use ID mapping
+        if ('id' in content) {
+          toolUseCache.set(content.id, content.name);
+        }
+
         outputLines.push(
-          chalk.cyan(`### Invoke Tool: ${content.name}`),
+          chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
           formatObject(content.input ?? {})
         );
       } else if (content.type === 'tool_result') {
-        outputLines.push(chalk.magenta(`### Tool Result`), formatValue(content.content));
+        // Get the tool name if we have it cached
+        let toolName = '';
+        if ('tool_use_id' in content && toolUseCache.has(content.tool_use_id)) {
+          toolName = ` (${toolUseCache.get(content.tool_use_id)})`;
+        }
+
+        // Check if this is a file operation (read/write) and simplify output
+        const result = content.content;
+        let formattedResult = formatValue(result);
+
+        if (typeof result === 'object' && result !== null) {
+          // Handle file read/write operations by showing only summary
+          if ('file_path' in result && 'content' in result) {
+            // This is likely a file read or write operation
+            const filePath = (result as any).file_path;
+            const fileContent = (result as any).content as string;
+            const lineCount = fileContent.split('\n').length;
+            formattedResult = `File: ${filePath}\nLines: ${lineCount}`;
+          }
+        }
+
+        outputLines.push(
+          chalk.magenta(`### Tool Result${toolName} [${timestamp}]`),
+          formattedResult
+        );
       } else {
         debugLog('Unknown message type:', content.type);
-        outputLines.push(`### ${content.type as string}`, formatValue(content));
+        outputLines.push(`### ${content.type as string} [${timestamp}]`, formatValue(content));
       }
       return outputLines.join('\n\n');
     }
