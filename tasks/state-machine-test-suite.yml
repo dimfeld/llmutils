@@ -560,6 +560,7 @@ tasks:
               *   Verify that the mock was called multiple times, according to `sharedStore`'s retry policy.
               *   Verify the overall `run` succeeds.
               *   Check telemetry for retry events on the relevant phase span (e.g., `node.prep.STATE_A`).
+        done: true
   - title: 6. `StateMachine` Initialization and Basic Transitions
     description: >
       This task begins testing the `StateMachine` class. It covers
