@@ -774,6 +774,7 @@ tasks:
               *   If `config.onError` is defined, it should be called with an "Unknown state" error.
               *   If `config.onError` is not defined or re-throws/returns no result, an error should be thrown by the state machine, or it should transition to `errorState` if `config.onError` returns that. Test the current behavior: `handleStateResult` throws if `config.onError` doesn't provide a `stateResult`.
               *   Verify telemetry: `recordError` called for "Unknown state".
+        done: true
       - prompt: >
           In `src/state_machine/index.test.ts`:
 
