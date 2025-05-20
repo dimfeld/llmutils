@@ -84,7 +84,7 @@ tasks:
           function should return `true`. Otherwise, it should return `false`.
 
           Ensure the function correctly accesses `process.env`.
-        done: false
+        done: true
       - prompt: >
           Create a new test file `src/common/ssh_detection.test.ts`.
 
