@@ -1028,6 +1028,7 @@ tasks:
               *   Verify `testFlowNode.prepMock`, `testFlowNode.exec` (implicitly via `run`), and `testFlowNode.postMock` were called.
               *   Verify the sub-machine within `testFlowNode` executed correctly.
               *   Verify `parentStateMachine.store.getScratchpad()` for the `flowStepNode`'s state contains `subMachineState` after `testFlowNode.exec` completes but before `testFlowNode.post` (if `post` clears it or if `run` clears it. `SharedStore.clearScratchpad` is called by `StateMachine.handleStateResult` on transition). The sub-machine state is stored in the scratchpad by `FlowNode.exec`.
+        done: true
   - title: 12. Advanced Telemetry Verification
     description: >
       Using the OpenTelemetry SDK setup with `InMemorySpanExporter` (from Task

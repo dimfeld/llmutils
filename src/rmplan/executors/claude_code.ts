@@ -50,7 +50,7 @@ export class ClaudeCodeExecutor implements Executor {
     const defaultAllowedTools = this.options.includeDefaultTools
       ? [
           `Edit`,
-          'MultliEdit',
+          'MultiEdit',
           `Write`,
           'WebFetch',
           `Bash(cd:*)`,
@@ -163,6 +163,7 @@ type Message =
 function formatJsonMessage(input: string) {
   // TODO Cache tool use IDs across calls so that we can print the tool names with the results
   // TODO When reading and writing files, just show number of lines read and written
+  // TODO Add timestamps at each header
 
   const message = JSON.parse(input) as Message;
   debugLog(input);
