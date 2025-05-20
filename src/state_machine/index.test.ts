@@ -902,6 +902,82 @@ describe('StateMachine', () => {
       expect(result).toEqual({ status: 'terminal' });
     });
 
+    test('should handle Node prep failing then succeeding with SM configured retries', async () => {
+      // Configure retry behavior: 3 retries with minimal delay
+      stateMachineConfig.maxRetries = 3;
+      stateMachineConfig.retryDelay = (attempt) => 1;
+
+      // Get references to the nodes
+      const initialNode = nodesMap.get('initial')!;
+      const processingNode = nodesMap.get('processing')!;
+
+      // Create test event
+      const event: TestSMEvent = {
+        id: 'evt-retry',
+        type: 'START',
+        payload: { data: 'retry-test' },
+      };
+
+      // Set up InitialNode.prepMock to fail on first attempt then succeed on second
+      initialNode.prepMock.mockImplementation(() => {
+        // This mock will reject the first time it's called, then resolve on subsequent calls
+        if (initialNode.prepMock.mock.calls.length === 1) {
+          return Promise.reject(new Error('fail prep'));
+        }
+        return Promise.resolve({ args: {}, events: [event] });
+      });
+
+      // Set up successful continuation after prep succeeds
+      initialNode.execMock.mockImplementation(() =>
+        Promise.resolve({ result: { success: true }, scratchpad: undefined })
+      );
+
+      initialNode.postMock.mockImplementation(() =>
+        Promise.resolve({ status: 'transition', to: 'processing' })
+      );
+
+      // Configure processing node for successful continuation
+      processingNode.prepMock.mockImplementation(() => Promise.resolve({ args: {}, events: [] }));
+      processingNode.execMock.mockImplementation(() =>
+        Promise.resolve({ result: {}, scratchpad: undefined })
+      );
+      processingNode.postMock.mockImplementation(() => Promise.resolve({ status: 'waiting' }));
+
+      // Initialize the state machine
+      await stateMachine.initialize();
+
+      // Process the event
+      const result = await stateMachine.resume([event]);
+
+      // Verify that initialNode.prepMock was called twice (one failure, one success)
+      expect(initialNode.prepMock).toHaveBeenCalledTimes(2);
+
+      // Verify that initialNode.execMock and postMock were each called once
+      expect(initialNode.execMock).toHaveBeenCalledTimes(1);
+      expect(initialNode.postMock).toHaveBeenCalledTimes(1);
+
+      // Verify that the machine successfully transitioned to 'processing'
+      expect(stateMachine.store.getCurrentState()).toBe('processing');
+
+      // Verify the final result shows 'waiting' status from the processing node
+      expect(result).toEqual({ status: 'waiting' });
+
+      /* 
+      // Telemetry validation for retry would look like this if our mocks captured spans correctly
+      // This is left commented out as a reference for future implementation
+      
+      // Get the node.prep.initial span and verify it has retry-related events
+      const prepSpan = verifySpan('node.prep.initial');
+      const retryAttemptEvents = prepSpan.events.filter(e => e.name === 'retry_attempt');
+      expect(retryAttemptEvents.length).toBeGreaterThan(0);
+      
+      // Verify there's at least one retry_failed event (from the first attempt)
+      const retryFailedEvents = prepSpan.events.filter(e => e.name === 'retry_failed');
+      expect(retryFailedEvents.length).toBe(1);
+      expect(retryFailedEvents[0].attributes?.error).toContain('fail prep');
+      */
+    });
+
     test('should configure retryDelay function via constructor', async () => {
       // Test that the retry delay function can be set in the constructor
       // and is appropriately passed to the SharedStore

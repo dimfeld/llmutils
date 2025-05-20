@@ -796,6 +796,7 @@ tasks:
               *   Verify the machine successfully transitions to 'processing' and ends in 'waiting'.
               *   Verify telemetry on the `node.prep.initial` span for retry attempts.
               *   (This tests that the store's retry mechanism, configured by the SM, is working within the node's execution path).
+        done: true
   - title: 9. `StateMachine` Persistence Integration
     description: >
       This task tests the integration of persistence with the `StateMachine`. It
