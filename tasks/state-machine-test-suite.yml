@@ -913,6 +913,7 @@ tasks:
           actual usage, then state that the hook is defined but not called. For
           a comprehensive test suite, we test what *is*, and can note what
           *could be* if features are fully implemented.
+        done: true
   - title: 11. `FlowNode` Tests and Integration
     description: >
       This task tests the `FlowNode` class, which manages a nested state
