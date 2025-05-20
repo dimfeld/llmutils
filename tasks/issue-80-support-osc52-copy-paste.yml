@@ -340,7 +340,7 @@ tasks:
           Adjust mocking strategy as needed for Bun's test environment.
           `oggetti.fn()` is a placeholder for Bun's mocking function if it's not
           `jest.fn()`. It's `mock()` from `bun:test`.
-        done: false
+        done: true
   - title: 3. Clipboard Wrapper Implementation
     description: Create a wrapper module for clipboard operations. It will use OSC52
       functions if in an SSH session and `clipboardy` otherwise. Initially,
