@@ -396,7 +396,7 @@ tasks:
                   -   Return `await clipboard.read();`.
           -   Else (not in an SSH session):
               -   Return `await clipboard.read();`.
-        done: false
+        done: true
       - prompt: >
           Create a new test file `src/common/clipboard.test.ts`.
 
