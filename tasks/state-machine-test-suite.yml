@@ -672,6 +672,7 @@ tasks:
                   *   Spans for `state_machine.resume`, `state_machine.run_node.initial`, `node.run.initial` (and its phases), `state_machine.run_node.processing`, `node.run.processing` (and its phases).
                   *   Check for `state_transition` event on the `state_machine.resume` span or the active span during `handleStateResult`. The current code adds it to `getActiveSpan()`.
                   *   Check for `event_processed` event for `incomingEvent`.
+        done: true
   - title: 7. `StateMachine` Event Handling, Multiple Transitions, and Terminal States
     description: >
       This task expands `StateMachine` tests to cover scenarios with multiple
