@@ -537,7 +537,7 @@ tasks:
           4.  Replace it with `await write(finalOutput);`.
 
           5.  Ensure all other parts of the file remain unchanged.
-        done: false
+        done: true
       - prompt: >
           In `src/rmfind/rmfind.ts`:
 
