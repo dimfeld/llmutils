@@ -838,6 +838,7 @@ tasks:
           `loadState` (read) and potentially an explicit save mechanism if one
           existed, or if `FlowNode` saves its submachine state. `enqueueEvents`
           saves events. Test what's explicitly implemented.)
+        done: true
   - title: 10. `StateMachine` Hooks
     description: >
       This task is dedicated to testing the various hooks provided by

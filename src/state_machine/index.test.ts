@@ -217,6 +217,146 @@ describe('StateMachine', () => {
     expect(stateMachine.store.getExecutionTrace()).toEqual(mockState.history);
   });
 
+  describe('Persistence integration', () => {
+    test('should call writeEvents when enqueue events in resume()', async () => {
+      // Define test event
+      const event: TestSMEvent = {
+        id: 'evt-persist-test',
+        type: 'START',
+        payload: { data: 'test' },
+      };
+
+      // Get reference to the initial node
+      const initialNode = nodesMap.get('initial')!;
+
+      // Configure initialNode to return a waiting state
+      initialNode.prepMock.mockImplementation(() => Promise.resolve({ args: {}, events: [] }));
+      initialNode.execMock.mockImplementation(() =>
+        Promise.resolve({ result: {}, scratchpad: undefined })
+      );
+      initialNode.postMock.mockImplementation(() => Promise.resolve({ status: 'waiting' }));
+
+      // Initialize the state machine
+      await stateMachine.initialize();
+
+      // Clear previous calls to the adapter
+      mockPersistenceAdapter.writeEvents.mockClear();
+
+      // Process the event through resume
+      await stateMachine.resume([event]);
+
+      // Verify writeEvents was called with correct parameters
+      expect(mockPersistenceAdapter.writeEvents).toHaveBeenCalledWith(
+        'test-instance-1',
+        expect.arrayContaining([expect.objectContaining({ id: event.id })])
+      );
+    });
+
+    test('should load persisted state and resume from loaded state', async () => {
+      // Define a state representing a machine in 'processing' state
+      const loadedState: AllState<TestSMContext, TestSMEvent> = {
+        context: {
+          status: 'in_progress',
+          items: ['item1'],
+        },
+        scratchpad: { progress: 50 },
+        pendingEvents: [{ id: 'evt-pending', type: 'PROCESS', payload: { value: 42 } }],
+        history: [
+          {
+            state: 'initial',
+            context: { status: 'new', items: [] },
+            scratchpad: undefined,
+            events: [],
+            timestamp: Date.now() - 2000,
+          },
+          {
+            state: 'processing',
+            context: { status: 'in_progress', items: ['item1'] },
+            scratchpad: { progress: 50 },
+            events: [{ id: 'evt-started', type: 'START', payload: { data: 'start' } }],
+            timestamp: Date.now() - 1000,
+          },
+        ],
+      };
+
+      // Get references to the nodes
+      const processingNode = nodesMap.get('processing')!;
+      const finalNode = nodesMap.get('final')!;
+
+      // Configure processing node to handle the pending event and transition to final
+      processingNode.prepMock.mockImplementation(() =>
+        Promise.resolve({
+          args: { fromPersisted: true },
+          events: loadedState.pendingEvents,
+        })
+      );
+
+      processingNode.execMock.mockImplementation(() =>
+        Promise.resolve({
+          result: { processed: true },
+          scratchpad: { progress: 100 },
+        })
+      );
+
+      processingNode.postMock.mockImplementation(() =>
+        Promise.resolve({
+          status: 'transition',
+          to: 'final',
+        })
+      );
+
+      // Configure final node
+      finalNode.prepMock.mockImplementation(() => Promise.resolve({ args: {}, events: [] }));
+      finalNode.execMock.mockImplementation(() =>
+        Promise.resolve({
+          result: { completed: true },
+          scratchpad: undefined,
+        })
+      );
+      finalNode.postMock.mockImplementation(() => Promise.resolve({ status: 'terminal' }));
+
+      // Create a new state machine for this test
+      const localStateMachine = new StateMachine(
+        stateMachineConfig,
+        mockPersistenceAdapter,
+        initialContext,
+        'test-persist-resume'
+      );
+
+      // Mock the adapter to return our loadedState
+      mockPersistenceAdapter.read = mock(() => Promise.resolve(loadedState));
+
+      // Initialize and load the persisted state
+      await localStateMachine.initialize();
+      await localStateMachine.loadPersistedState();
+
+      // Verify the state was loaded correctly
+      expect(localStateMachine.store.getContext()).toEqual(loadedState.context);
+      expect(localStateMachine.store.getScratchpad()).toEqual(loadedState.scratchpad);
+      expect(localStateMachine.store.getPendingEvents()).toEqual(loadedState.pendingEvents);
+
+      // Resume the state machine (without new events)
+      const result = await localStateMachine.resume([]);
+
+      // Verify that processing node's methods were called
+      expect(processingNode.prepMock).toHaveBeenCalled();
+      expect(processingNode.execMock).toHaveBeenCalled();
+      expect(processingNode.postMock).toHaveBeenCalled();
+
+      // Verify that final node's methods were called
+      expect(finalNode.prepMock).toHaveBeenCalled();
+      expect(finalNode.execMock).toHaveBeenCalled();
+      expect(finalNode.postMock).toHaveBeenCalled();
+
+      // Verify the final state and result
+      expect(localStateMachine.store.getCurrentState()).toBe('final');
+      expect(result).toEqual({ status: 'terminal' });
+
+      // Verify that the pending event was processed (should be removed from pending events)
+      expect(localStateMachine.store.getPendingEvents()).toEqual([]);
+    });
+  });
+
   test('should handle a basic state transition from initial to processing', async () => {
     // Define test event
     const incomingEvent: TestSMEvent = { id: 'e1', type: 'START', payload: {} };
