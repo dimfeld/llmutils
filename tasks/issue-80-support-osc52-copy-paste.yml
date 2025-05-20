@@ -549,7 +549,7 @@ tasks:
           3.  Find the line `await clipboard.write(output);`.
 
           4.  Replace it with `await write(output);`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/executors/copy_only.ts`:
 
