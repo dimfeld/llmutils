@@ -685,7 +685,7 @@ describe('applyLlmEdits', () => {
     });
 
     const originalPrompt = 'Please modify test1.txt and test2.txt';
-    setDebug(true);
+    // setDebug(true);
 
     const result = await applyLlmEdits({
       content: diffContent,
