@@ -353,6 +353,7 @@ tasks:
               *   Input: `StateMachineAttributes` with only some fields. Expected: Only corresponding flat keys.
               *   Input: `undefined`. Expected: `undefined`.
               *   Input: `StateMachineAttributes` with empty `metadata`.
+        done: true
       - prompt: >
           In `src/state_machine/telemetry.test.ts` (or a new test helper file,
           e.g. `src/state_machine/test-utils.ts`, that can be imported by other
