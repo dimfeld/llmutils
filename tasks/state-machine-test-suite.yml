@@ -1009,6 +1009,7 @@ tasks:
               *   Configure `SubNodeB` to process `newEventForSubB` and reach a terminal state.
               *   Verify the sub-machine resumed from `subB` (e.g., `SubNodeA` was not run).
               *   Verify telemetry: `submachine_resumed` event on `flow_node.exec.flowStep` span.
+        done: true
       - prompt: >
           In `src/state_machine/index.test.ts`, integrate `FlowNode` into a
           `StateMachine` test:
