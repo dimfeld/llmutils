@@ -647,6 +647,7 @@ tasks:
               *   Call `await stateMachine.loadPersistedState()`.
               *   Verify `mockPersistenceAdapter.read` was called.
               *   Verify the machine's internal store (`stateMachine.store`) reflects the loaded state (context, events, history).
+        done: true
       - prompt: >
           In `src/state_machine/index.test.ts`, test a basic state transition:
 
