@@ -506,7 +506,7 @@ tasks:
           Adjust mocking strategy as needed for Bun's test environment.
           `oggetti.fn()` is a placeholder for Bun's mocking function if it's not
           `jest.fn()`. It's `mock()` from `bun:test`.
-        done: false
+        done: true
   - title: 4. Refactor Existing Code to Use Clipboard Wrapper
     description: Systematically replace all direct usages of `clipboardy` with the
       new clipboard wrapper functions. This task is broken down per file for
