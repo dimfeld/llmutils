@@ -146,3 +146,50 @@ When using Jaeger, Zipkin, or other OpenTelemetry-compatible tracing tools, you 
 3. Implement proper error handling for every state
 4. Use FlowNode for complex sub-processes to maintain clean architecture
 5. Add custom span events to capture business-relevant transitions
+
+## Testing
+
+The state machine functionality is covered by a comprehensive test suite using Bun's built-in test runner. These tests ensure the robustness, correctness, and observability of all state machine components.
+
+### Running Tests
+
+To run all tests:
+
+```bash
+bun test
+```
+
+To run only state machine tests:
+
+```bash
+bun test src/state_machine
+```
+
+To run a specific test file:
+
+```bash
+bun test src/state_machine/specific-test-file.test.ts
+```
+
+### Test Coverage
+
+The test suite covers:
+
+- Core logic of `SharedStore` (context, scratchpad, events, history, persistence)
+- Node lifecycle (`prep`, `exec`, `post`), error handling, and interactions
+- FlowNode behavior, including sub-machine management and event/action translation
+- StateMachine operations: initialization, event processing, state transitions, retries
+- Transaction support: rollback and retry mechanisms
+- Hook functionality for pre/post processing
+- Telemetry generation: verifying spans, attributes, and events
+
+### Test Setup
+
+The tests use:
+
+- Mock persistence adapter for isolated testing
+- In-memory OpenTelemetry span exporter to capture and verify telemetry data
+- Test utilities for common setup and verification
+- Snapshots for testing complex output structures
+
+Writing tests for your own state machine implementations should follow the patterns established in these test files for consistent testing approaches.
