@@ -258,7 +258,7 @@ function formatJsonMessage(input: string) {
         // Get the tool name if we have it cached
         let toolName = '';
         if ('tool_use_id' in content && toolUseCache.has(content.tool_use_id)) {
-          toolName = ` (${toolUseCache.get(content.tool_use_id)})`;
+          toolName = toolUseCache.get(content.tool_use_id);
         }
 
         // Check if this is a file operation (read/write) and simplify output
@@ -284,7 +284,7 @@ function formatJsonMessage(input: string) {
         }
 
         outputLines.push(
-          chalk.magenta(`### Tool Result${toolName} [${timestamp}]`),
+          chalk.magenta(`### Tool Result: ${toolName} [${timestamp}]`),
           formattedResult
         );
       } else {
