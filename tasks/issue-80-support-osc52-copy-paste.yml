@@ -610,7 +610,7 @@ tasks:
           non-interactive mode failures:
               - Find `await clipboard.write(retryMessage);`.
               - Replace it with `await write(retryMessage);`.
-        done: false
+        done: true
       - prompt: >
           In `src/apply-llm-edits/cmd.ts`:
 
