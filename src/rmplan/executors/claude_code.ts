@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import yaml from 'yaml';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions } from './types.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
@@ -234,7 +235,7 @@ function formatJsonMessage(input: string) {
 
         outputLines.push(
           chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
-          formatObject(content.input ?? {})
+          yaml.stringify(content.input ?? {})
         );
       } else if (content.type === 'tool_result') {
         // Get the tool name if we have it cached
@@ -280,26 +281,6 @@ function formatJsonMessage(input: string) {
   return `Unknown message: ${JSON.stringify(message)}`;
 }
 
-function formatObject(value: Record<string, any>, indent = 0) {
-  return Object.entries(value ?? {})
-    .map(([key, value]) => {
-      return `${key}=${formatValue(value, indent)}`;
-    })
-    .join('\n');
-}
-
 function formatValue(value: unknown, indent = 0): string {
-  let indentStr = ''.padStart(indent, ' ');
-  if (Array.isArray(value)) {
-    let list = value
-      .map((v) => {
-        v = formatValue(v, indent + 2);
-        return `${indentStr}- ${v}`;
-      })
-      .join('\n');
-    value = '\n' + list;
-  } else if (value && typeof value === 'object') {
-    return indentStr + formatObject(value);
-  }
-  return indentStr + String(value);
+  return yaml.stringify(value);
 }
