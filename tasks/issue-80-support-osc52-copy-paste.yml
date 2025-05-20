@@ -261,7 +261,7 @@ tasks:
 
           The response from the terminal will be `\x1b]52;c;BASE64_DATA\x07`.
           You need to parse this.
-        done: false
+        done: true
       - prompt: >
           Create a new test file `src/common/osc52.test.ts`.
 
