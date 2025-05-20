@@ -74,7 +74,7 @@ export function createSeparateContextPrompt(formattedReviewComments: string): st
 
 The review comments are provided below in the <reviews> element. Inside each <review> is the
 relevant diff being commented on, as well as the comment itself, starting with "Comment: ".
-You should analyze the entire file referenced in the review to see what other pieces of code may need to be updated in response.
+You should analyze the entire file referenced in the review to see what other pieces of code may need to be updated in addition to the code in the diff.
 
 ${formattedReviewComments}
 `;
