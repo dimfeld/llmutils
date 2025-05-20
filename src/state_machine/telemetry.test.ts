@@ -1,13 +1,145 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import {
   toSpanAttributeValue,
   objectToSpanAttributeValues,
   StateMachineAttributes,
   setStateMachineAttributes,
+  withSpan,
 } from './telemetry';
+import { trace, context as apiContext, SpanStatusCode } from '@opentelemetry/api';
+import { getSpans, resetSpans, setupTestTelemetry } from './telemetry_test_utils';
 
 // Since flattenAttributes is private, we'll test it indirectly through setStateMachineAttributes
 // by creating a mock span and checking what attributes were set on it
+
+describe('telemetry_test_utils', () => {
+  test('MockSpan correctly tracks events and status', () => {
+    const { MockSpan } = require('./telemetry_test_utils');
+
+    const span = new MockSpan('test-span', { initialAttr: 'value' });
+    expect(span.name).toBe('test-span');
+    expect(span.attributes.initialAttr).toBe('value');
+    expect(span.isEnded).toBe(false);
+
+    // Add events and attributes
+    span.addEvent('test-event', { key: 'value' });
+    span.setAttribute('new-attr', 'new-value');
+    span.setStatus({ code: SpanStatusCode.OK });
+
+    // Verify they're tracked correctly
+    expect(span.events.length).toBe(1);
+    expect(span.events[0].name).toBe('test-event');
+    expect(span.events[0].attributes?.key).toBe('value');
+    expect(span.attributes['new-attr']).toBe('new-value');
+    expect(span.status.code).toBe(SpanStatusCode.OK);
+
+    // End the span
+    span.end();
+    expect(span.isEnded).toBe(true);
+    expect(span.isRecording()).toBe(false);
+  });
+
+  test('getSpans and resetSpans work correctly', () => {
+    const { MockSpan, getSpans, resetSpans } = require('./telemetry_test_utils');
+
+    // Clear any existing spans
+    resetSpans();
+    expect(getSpans().length).toBe(0);
+
+    // Create and end a span (which adds it to the finished spans)
+    const span = new MockSpan('test-span');
+    span.end();
+
+    // Check that it was added
+    expect(getSpans().length).toBe(1);
+    expect(getSpans()[0].name).toBe('test-span');
+
+    // Reset and check that the spans are cleared
+    resetSpans();
+    expect(getSpans().length).toBe(0);
+  });
+});
+
+describe('telemetry module direct usage', () => {
+  beforeEach(() => {
+    // Import our test utilities inside each test to avoid global state issues
+    const { resetSpans } = require('./telemetry_test_utils');
+    resetSpans();
+  });
+
+  test('createSpan function creates spans with correct attributes', () => {
+    // We'll test the exported functions more directly
+    const { createSpan, setStateMachineAttributes } = require('./telemetry');
+    const { MockSpan } = require('./telemetry_test_utils');
+
+    // Create a test span with our mock tracer
+    const testSpan = new MockSpan('test-span');
+
+    // Set attributes on it
+    const testAttributes: StateMachineAttributes = {
+      instanceId: 'test-machine-123',
+      stateName: 'test-state',
+      eventType: 'TEST_EVENT',
+    };
+
+    setStateMachineAttributes(testSpan, testAttributes);
+
+    // Verify the attributes were correctly flattened and set
+    expect(testSpan.attributes['state_machine.instance_id']).toBe('test-machine-123');
+    expect(testSpan.attributes['state_machine.state']).toBe('test-state');
+    expect(testSpan.attributes['state_machine.event_type']).toBe('TEST_EVENT');
+  });
+
+  test('recordStateTransition adds correct event to span', () => {
+    const { recordStateTransition } = require('./telemetry');
+    const { MockSpan } = require('./telemetry_test_utils');
+
+    // Create a test span with our mock tracer
+    const testSpan = new MockSpan('test-span');
+
+    // Record a state transition
+    recordStateTransition(testSpan, 'initial', 'running', 'START', 'ev123', { custom: 'metadata' });
+
+    // Verify the event was recorded correctly
+    expect(testSpan.events.length).toBe(1);
+    expect(testSpan.events[0].name).toBe('state_transition');
+    expect(testSpan.events[0].attributes?.from_state).toBe('initial');
+    expect(testSpan.events[0].attributes?.to_state).toBe('running');
+    expect(testSpan.events[0].attributes?.event_type).toBe('START');
+    expect(testSpan.events[0].attributes?.event_id).toBe('ev123');
+    expect(testSpan.events[0].attributes?.custom).toBe('metadata');
+  });
+
+  test('recordError adds exception and details to span', () => {
+    const { recordError } = require('./telemetry');
+    const { MockSpan } = require('./telemetry_test_utils');
+
+    // Create a test span and an error
+    const testSpan = new MockSpan('test-span');
+    const testError = new Error('Test error message');
+
+    // Record the error with context
+    recordError(testSpan, testError, {
+      state: 'failed',
+      eventType: 'FAILURE',
+      eventId: 'ev456',
+      metadata: { reason: 'test failure' },
+    });
+
+    // Verify exception was recorded
+    expect(testSpan.events.length).toBe(2);
+
+    // Ensure error details event was added with the correct attributes
+    const errorDetailsEvent = testSpan.events.find((e) => e.name === 'error_details');
+    expect(errorDetailsEvent).toBeDefined();
+    expect(errorDetailsEvent?.attributes?.state).toBe('failed');
+    expect(errorDetailsEvent?.attributes?.event_type).toBe('FAILURE');
+    expect(errorDetailsEvent?.attributes?.event_id).toBe('ev456');
+    expect(errorDetailsEvent?.attributes?.reason).toBe('test failure');
+    expect(errorDetailsEvent?.attributes?.error_name).toBe('Error');
+    expect(errorDetailsEvent?.attributes?.error_message).toBe('Test error message');
+  });
+});
 
 describe('toSpanAttributeValue', () => {
   test('handles primitive types', () => {

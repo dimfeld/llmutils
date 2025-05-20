@@ -1,83 +1,147 @@
-import type { Context, Span, AttributeValue, Attributes } from '@opentelemetry/api';
+import type { Span, AttributeValue, Attributes } from '@opentelemetry/api';
+import { SpanStatusCode } from '@opentelemetry/api';
+import { initTelemetry } from './telemetry';
+import { expect } from 'bun:test';
 
 /**
- * Mock implementation of Span for testing
+ * A simple mock span for testing
  */
-export class MockSpan implements Span {
-  private _name: string;
-  private _attributes: Record<string, AttributeValue> = {};
-  private _events: Array<{ name: string; attributes?: Record<string, AttributeValue> }> = [];
-  private _exceptions: Array<Error> = [];
-  private _status: { code: number; message?: string } = { code: 0 };
-  private _isEnded = false;
+export class MockSpan implements Partial<Span> {
+  name: string;
+  attributes: Record<string, AttributeValue>;
+  events: Array<{ name: string; attributes?: Record<string, AttributeValue> }>;
+  #exceptions: Error[] = [];
+  status: { code: number; message?: string };
+  isEnded: boolean;
+  startTime: number;
+  endTime?: number;
+
+  // Required by Span interface but not used in our tests
+  spanContext() {
+    return { traceId: '1', spanId: '1', traceFlags: 1 };
+  }
+  addLink() {
+    return this;
+  }
+  addLinks() {
+    return this;
+  }
 
   constructor(name: string, initialAttributes: Record<string, AttributeValue> = {}) {
-    this._name = name;
-    this._attributes = { ...initialAttributes };
+    this.name = name;
+    this.attributes = { ...initialAttributes };
+    this.events = [];
+    this.status = { code: SpanStatusCode.UNSET };
+    this.isEnded = false;
+    this.startTime = Date.now();
   }
 
-  get name(): string {
-    return this._name;
-  }
-
-  get attributes(): Record<string, AttributeValue> {
-    return { ...this._attributes };
-  }
-
-  get events(): Array<{ name: string; attributes?: Record<string, AttributeValue> }> {
-    return [...this._events];
-  }
-
-  get exceptions(): Array<Error> {
-    return [...this._exceptions];
-  }
-
-  get status(): { code: number; message?: string } {
-    return { ...this._status };
-  }
-
-  get isEnded(): boolean {
-    return this._isEnded;
-  }
-
-  // Span implementation
   setAttribute(key: string, value: AttributeValue): this {
-    this._attributes[key] = value;
+    this.attributes[key] = value;
     return this;
   }
 
   setAttributes(attributes: Record<string, AttributeValue>): this {
-    Object.assign(this._attributes, attributes);
+    Object.assign(this.attributes, attributes);
     return this;
   }
 
   addEvent(name: string, attributes?: Attributes): this {
-    this._events.push({ name, attributes: attributes as Record<string, AttributeValue> });
+    this.events.push({ name, attributes: attributes as Record<string, AttributeValue> });
     return this;
   }
 
   setStatus(status: { code: number; message?: string }): this {
-    this._status = { ...status };
+    this.status = { ...status };
     return this;
   }
 
   updateName(name: string): this {
-    this._name = name;
+    this.name = name;
     return this;
   }
 
   end(): void {
-    this._isEnded = true;
+    if (!this.isEnded) {
+      this.isEnded = true;
+      this.endTime = Date.now();
+
+      // Add to finished spans collection
+      finishedSpans.push(this);
+    }
   }
 
   recordException(exception: Error): void {
-    this._exceptions.push(exception);
+    this.#exceptions.push(exception);
+    this.addEvent('exception', {
+      'exception.type': exception.name,
+      'exception.message': exception.message,
+      'exception.stacktrace': exception.stack,
+    });
   }
 
-  // Not implemented but required for the interface
   isRecording(): boolean {
-    return !this._isEnded;
+    return !this.isEnded;
   }
+}
+
+// Global store for spans across all tests
+const finishedSpans: MockSpan[] = [];
+
+/**
+ * Get all captured spans from the mock store
+ */
+export function getSpans() {
+  return [...finishedSpans];
+}
+
+/**
+ * Reset the mock span collection, clearing all captured spans
+ */
+export function resetSpans() {
+  finishedSpans.length = 0;
+}
+
+/**
+ * Set up telemetry for testing. This reinitializes the tracer used by
+ * the state machine code, ensuring it's using the test provider.
+ *
+ * @param debug Whether to enable debug logging
+ */
+export function setupTestTelemetry(debug = false) {
+  initTelemetry(debug);
+}
+
+/**
+ * Find a span by name in the captured spans
+ *
+ * @param name The name of the span to find
+ * @returns The span if found, undefined otherwise
+ */
+export function findSpan(name: string) {
+  return getSpans().find((span) => span.name === name);
+}
+
+/**
+ * Verify that a span with the given name exists and has the expected attributes
+ *
+ * @param name The name of the span to verify
+ * @param expectedAttributes The attributes the span should have (partial match)
+ * @returns The verified span for further assertions
+ */
+export function verifySpan(name: string, expectedAttributes?: Record<string, any>) {
+  const span = findSpan(name);
+  if (!span) {
+    throw new Error(`Span with name "${name}" not found`);
+  }
+
+  if (expectedAttributes) {
+    for (const [key, value] of Object.entries(expectedAttributes)) {
+      expect(span.attributes[key]).toEqual(value);
+    }
+  }
+
+  return span;
 }
 
 /**
@@ -99,7 +163,30 @@ export class MockTracer {
     fn: (span: Span) => Promise<T>
   ): Promise<T> {
     const span = this.startSpan(name, options);
-    return fn(span);
+
+    return Promise.resolve().then(async () => {
+      try {
+        const result = await fn(span);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (error) {
+        if (error instanceof Error) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: error.message,
+          });
+          span.recordException(error);
+        } else {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: String(error),
+          });
+        }
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
   }
 
   getAllSpans(): MockSpan[] {
@@ -120,81 +207,24 @@ export class MockTracer {
 }
 
 /**
- * Test utilities for OpenTelemetry mocks
+ * Create a mock tracer for testing
  */
-export class TelemetryTestUtils {
-  private tracer: MockTracer;
-
-  constructor() {
-    this.tracer = new MockTracer();
-  }
-
-  /**
-   * Get all spans
-   */
-  getSpans() {
-    return this.tracer.getAllSpans();
-  }
-
-  /**
-   * Get a span by name (returns the most recent one if multiple exist)
-   */
-  getSpanByName(name: string) {
-    return this.tracer.getSpanByName(name);
-  }
-
-  /**
-   * Get all spans by name
-   */
-  getSpansByName(name: string) {
-    return this.tracer.getSpansByName(name);
-  }
-
-  /**
-   * Clear all spans
-   */
-  clearSpans() {
-    this.tracer.clearSpans();
-  }
-
-  /**
-   * No-op shutdown for the mock implementation
-   */
-  async shutdown() {
-    // No-op for mock implementation
-  }
-
-  /**
-   * Helper function to get span events
-   */
-  getSpanEvents(spanName: string, eventName: string) {
-    const span = this.getSpanByName(spanName);
-    if (!span) return [];
-
-    return span.events.filter((event) => event.name === eventName);
-  }
-
-  /**
-   * Helper function to get span attributes
-   */
-  getSpanAttributes(spanName: string) {
-    const span = this.getSpanByName(spanName);
-    if (!span) return {};
-
-    return span.attributes;
-  }
-
-  /**
-   * Get the tracer
-   */
-  getMockTracer() {
-    return this.tracer;
-  }
+export function createMockTracer() {
+  return new MockTracer();
 }
 
 /**
- * Create a test telemetry setup with mock tracer
+ * Utility to mock the telemetry module for tests
  */
-export function createTelemetryTestSetup() {
-  return new TelemetryTestUtils();
+export function getMockTelemetryModule() {
+  const mockTracer = createMockTracer();
+
+  return {
+    withSpan: (name: string, attributes: Record<string, any>, fn: (span: Span) => Promise<any>) => {
+      return mockTracer.startActiveSpan(name, { attributes }, undefined, fn);
+    },
+    createSpan: (name: string, attributes?: Record<string, any>) => {
+      return mockTracer.startSpan(name, { attributes });
+    },
+  };
 }

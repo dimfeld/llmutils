@@ -418,6 +418,7 @@ tasks:
           that check telemetry. For now, `store.test.ts` can keep its simpler
           mocks. We will integrate this full telemetry testing rig more deeply
           in later tasks.
+        done: true
   - title: 5. Basic `Node` Tests (Lifecycle and Error Handling)
     description: >
       This task focuses on testing the abstract `Node` class. Since `Node` is

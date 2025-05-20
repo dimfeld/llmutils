@@ -53,15 +53,16 @@ export class ClaudeCodeExecutor implements Executor {
           'MultliEdit',
           `Write`,
           'WebFetch',
+          `Bash(cd:*)`,
           ...jsTaskRunners.flatMap((name) => [
             `Bash(${name} test:*)`,
             `Bash(${name} run build:*)`,
             `Bash(${name} install)`,
-            `Bash(${name} add)`,
+            `Bash(${name} add:*)`,
           ]),
-          'Bash(cargo add)',
+          'Bash(cargo add:*)',
           'Bash(cargo build)',
-          'Bash(cargo test)',
+          'Bash(cargo test:*)',
         ]
       : [];
 
@@ -161,6 +162,7 @@ type Message =
 
 function formatJsonMessage(input: string) {
   // TODO Cache tool use IDs across calls so that we can print the tool names with the results
+  // TODO When reading and writing files, just show number of lines read and written
 
   const message = JSON.parse(input) as Message;
   debugLog(input);
