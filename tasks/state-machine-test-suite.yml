@@ -523,6 +523,7 @@ tasks:
           2.  **Test `_prep`, `_exec`, `_post` calls:**
               *   Verify that `run` calls `_prep`, `_exec`, `_post` internally, which by default call `prep`, `exec`, `post`.
               *   This can be done by spying on the `_prep`, `_exec`, `_post` methods of the `TestNode` instance if needed, or by assuming the default implementation works and focusing on the user-overridable `prep/exec/post`. For now, testing `prep/exec/post` mocks is sufficient.
+        done: true
       - prompt: >
           In `src/state_machine/nodes.test.ts`, write tests for `TestNode.run()`
           focusing on error handling and retry/rollback:
