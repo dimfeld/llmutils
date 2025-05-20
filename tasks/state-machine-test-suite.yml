@@ -313,6 +313,7 @@ tasks:
               *   In a test where retries occur, verify `setTimeout` is called with the delays calculated by this custom function.
           Remember to call `jest.useRealTimers()` in an `afterEach` or
           `afterAll` if you use `jest.useFakeTimers()`.
+        done: true
   - title: 4. `telemetry.ts` Utility Function Tests and Basic Telemetry Setup
     description: >
       This task involves writing unit tests for utility functions in

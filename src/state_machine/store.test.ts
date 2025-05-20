@@ -857,5 +857,85 @@ describe('SharedStore', () => {
       expect(mockSpan.setAttributes).not.toHaveBeenCalled();
       expect(mockSpan.addEvent).not.toHaveBeenCalled();
     });
+
+    test('retry() correctly uses timeouts between attempts with fake timers', async () => {
+      // Setup fake timers to control time precisely
+      jest.useFakeTimers();
+
+      try {
+        // Reset mocks for this test
+        mockSpan.addEvent.mockReset();
+        mockSpan.setAttributes.mockReset();
+        const getActiveSpanMock = mock.module('./telemetry').getActiveSpan;
+        getActiveSpanMock.mockReset();
+        getActiveSpanMock.mockReturnValue(mockSpan);
+
+        // Mock function that fails twice then succeeds on third attempt
+        const operation = mock()
+          .mockRejectedValueOnce(new Error('fail1'))
+          .mockRejectedValueOnce(new Error('fail2'))
+          .mockResolvedValueOnce('success');
+
+        // Create a store with a known retry delay for testing
+        const customRetryDelay = mock((attempt) => attempt * 100);
+        const storeWithCustomDelay = new SharedStore<TestContext, TestEvent>(
+          instanceId,
+          initialContext,
+          mockAdapter,
+          {
+            retryDelay: customRetryDelay,
+          }
+        );
+
+        // Start the retry operation (but don't await yet)
+        const retryPromise = storeWithCustomDelay.retry(operation);
+
+        // First attempt already happened and failed
+        expect(operation).toHaveBeenCalledTimes(1);
+
+        // Advance timers by the first delay (100ms)
+        jest.advanceTimersByTime(100);
+
+        // We need to resolve any pending promises
+        await Promise.resolve();
+
+        // Second attempt should have occurred
+        expect(operation).toHaveBeenCalledTimes(2);
+
+        // Advance timers by the second delay (200ms)
+        jest.advanceTimersByTime(200);
+
+        // We need to resolve any pending promises again
+        await Promise.resolve();
+
+        // Third attempt should have occurred
+        expect(operation).toHaveBeenCalledTimes(3);
+
+        // Complete the operation
+        const result = await retryPromise;
+        expect(result).toBe('success');
+
+        // Verify retry delays were calculated with the correct attempt numbers
+        expect(customRetryDelay).toHaveBeenCalledTimes(2);
+        expect(customRetryDelay).toHaveBeenNthCalledWith(1, 1);
+        expect(customRetryDelay).toHaveBeenNthCalledWith(2, 2);
+
+        // Verify telemetry for each attempt
+        expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_attempt', { attempt: 1 });
+        expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_failed', {
+          attempt: 1,
+          error: 'Error: fail1',
+        });
+        expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_attempt', { attempt: 2 });
+        expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_failed', {
+          attempt: 2,
+          error: 'Error: fail2',
+        });
+        expect(mockSpan.addEvent).toHaveBeenCalledWith('retry_attempt', { attempt: 3 });
+      } finally {
+        // Always restore real timers even if the test fails
+        jest.useRealTimers();
+      }
+    });
   });
 });
