@@ -3,9 +3,12 @@ import { EventEmitter } from 'events';
 import { waitForEnter, readStdinUntilTimeout } from './terminal';
 
 // Mock process.stdin
-const mockStdin = new EventEmitter();
+const mockStdin = new EventEmitter() as (typeof process)['stdin'];
+// @ts-expect-error setting up bad mock
 mockStdin.setRawMode = mock(() => true);
+// @ts-expect-error setting up bad mock
 mockStdin.resume = mock(() => {});
+// @ts-expect-error setting up bad mock
 mockStdin.pause = mock(() => {});
 
 // Backup original stdin
@@ -20,8 +23,11 @@ beforeEach(() => {
   });
 
   // Reset mocks
+  // @ts-expect-error setting up bad mock
   mockStdin.setRawMode.mockReset();
+  // @ts-expect-error setting up bad mock
   mockStdin.resume.mockReset();
+  // @ts-expect-error setting up bad mock
   mockStdin.pause.mockReset();
 });
 
@@ -42,13 +48,16 @@ test('waitForEnter - Enter key', async () => {
 
   const result = await promise;
   expect(result).toBe('Enter');
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   expect(mockStdin.setRawMode).toHaveBeenCalledWith(true);
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   expect(mockStdin.pause).toHaveBeenCalled();
 });
 
 test('waitForEnter - any other key triggers stdin reading', async () => {
   // Mock setTimeout to execute immediately
   const originalSetTimeout = global.setTimeout;
+  // @ts-expect-error gross mock
   global.setTimeout = mock((fn) => {
     fn();
     return {} as any;
@@ -67,7 +76,9 @@ test('waitForEnter - any other key triggers stdin reading', async () => {
 
     const result = await promise;
     expect(result).toBe('x');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(mockStdin.setRawMode).toHaveBeenCalledWith(true);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(mockStdin.pause).toHaveBeenCalled();
   } finally {
     // Restore original setTimeout
@@ -106,10 +117,13 @@ test('readStdinUntilTimeout - basic functionality', async () => {
 });
 
 test('readStdinUntilTimeout - with additional data', async () => {
-  let timeoutFn: Function;
-  let dataHandler: Function;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  let timeoutFn: Function | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  let dataHandler: Function | undefined;
 
   // Mock stdin.on to capture the data handler
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   const originalOn = mockStdin.on;
   mockStdin.on = mock((event, handler) => {
     if (event === 'data') dataHandler = handler;
@@ -118,10 +132,11 @@ test('readStdinUntilTimeout - with additional data', async () => {
 
   // Mock setTimeout
   const originalSetTimeout = global.setTimeout;
-  const mockSetTimeout = mock((fn: Function) => {
+  const mockSetTimeout = mock((fn: () => any) => {
     timeoutFn = fn;
     return 1 as any;
   });
+  // @ts-expect-error mocking
   global.setTimeout = mockSetTimeout;
 
   try {
