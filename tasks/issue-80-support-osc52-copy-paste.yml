@@ -170,7 +170,7 @@ tasks:
           OSC52 sequences. For this initial implementation, do not implement
           chunking; assume the text length is manageable. We can add chunking
           later if needed.
-        done: false
+        done: true
       - prompt: >
           In `src/common/osc52.ts`, implement an asynchronous function `export
           async function osc52Read(): Promise<string | null>`.
