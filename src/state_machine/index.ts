@@ -1,5 +1,11 @@
 import type { BaseEvent } from './events.ts';
-import type { Node, StateResult } from './nodes.ts';
+import {
+  Node,
+  InitialNode,
+  FinalNode,
+  ErrorNode,
+  FlowNode,
+} from './nodes.ts';
 import { SharedStore, type PersistenceAdapter } from './store.ts';
 import {
   initTelemetry,
@@ -10,6 +16,20 @@ import {
   getActiveSpan,
   type StateMachineAttributes,
 } from './telemetry.ts';
+import { type StateResult, type PrepResult } from './types.ts';
+
+// Re-export types and classes from nodes.ts
+export { Node, InitialNode, FinalNode, ErrorNode, FlowNode };
+
+// Re-export from events.ts
+export type { BaseEvent };
+
+// Re-export from store.ts
+export { SharedStore };
+export type { PersistenceAdapter };
+
+// Re-export from types.ts
+export type { StateResult, PrepResult };
 
 export interface StateMachineConfig<StateName extends string, TContext, TEvent extends BaseEvent> {
   initialState: StateName;
@@ -59,7 +79,10 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     }
   }
 
-  async resume(events: TEvent[]): Promise<StateResult<StateName, TEvent>> {
+  async resume(events: TEvent[]): Promise<StateResult<StateName, TEvent> & {
+    stateName?: StateName; 
+    context?: TContext;
+  }> {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -68,7 +91,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       instanceId: this.instanceId,
     };
 
-    return await withSpan('state_machine.resume', attributes, async (span) => {
+    const result = await withSpan('state_machine.resume', attributes, async (span) => {
       // Record incoming events on the span
       const currentState = (this.store.getCurrentState() as StateName) ?? this.config.initialState;
       span.setAttributes({
@@ -85,6 +108,13 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       if (!node) throw new Error(`Unknown state: ${currentState}`);
       return await this.runNode(node);
     });
+    
+    // Add context and current state to result for easier testing
+    return {
+      ...result,
+      stateName: this.store.getCurrentState() as StateName,
+      context: this.store.getContext(),
+    };
   }
 
   async runNode(
@@ -149,6 +179,17 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
           throw error;
         }
         return stateResult;
+      }
+    }
+
+    // When a node returns a terminal result, also include the pending actions
+    if (result.status === 'terminal' && !result.actions) {
+      const pendingActions = this.store.getPendingEvents();
+      if (pendingActions.length > 0) {
+        return {
+          ...result,
+          actions: pendingActions,
+        };
       }
     }
 
