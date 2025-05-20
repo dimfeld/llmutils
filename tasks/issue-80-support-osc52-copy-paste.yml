@@ -597,7 +597,7 @@ tasks:
           (where `options.rmfilter` is false):
               - Find `await clipboardy.write(result.prompt);`.
               - Replace it with `await write(result.prompt);`.
-        done: false
+        done: true
       - prompt: >
           In `src/apply-llm-edits/apply.ts`:
 
