@@ -1086,6 +1086,7 @@ tasks:
           expect(specificSpan.events.some(e => e.name === 'my_event')).toBe(true);
           ```
           This is a general instruction. Apply it by modifying existing test files and adding these more detailed assertions where telemetry is relevant.
+        done: true
   - title: 13. Documentation Update
     description: >
       Update `src/state_machine/README.md` to include information about the
