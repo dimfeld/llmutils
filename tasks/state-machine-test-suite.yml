@@ -501,6 +501,7 @@ tasks:
               *   Create `testNode` instance.
               *   `resetSpans()` from telemetry helpers in `beforeEach` or `afterEach`.
               *   Ensure `initTelemetry()` is called once after `provider.register()` (e.g. in a `beforeAll`).
+        done: true
       - prompt: >
           In `src/state_machine/nodes.test.ts`, write tests for the
           `TestNode.run()` method focusing on the successful lifecycle:
