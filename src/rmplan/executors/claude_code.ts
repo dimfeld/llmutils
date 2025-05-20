@@ -54,6 +54,12 @@ export class ClaudeCodeExecutor implements Executor {
           `Write`,
           'WebFetch',
           `Bash(cd:*)`,
+          'Bash(ls:*)',
+          'Bash(mkdir:*)',
+          'Bash(mv:*)',
+          'Bash(cp:*)',
+          'Bash(find:*)',
+          'Bash(cwd)',
           ...jsTaskRunners.flatMap((name) => [
             `Bash(${name} test:*)`,
             `Bash(${name} run build:*)`,
