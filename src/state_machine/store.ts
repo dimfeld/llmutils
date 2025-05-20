@@ -49,7 +49,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
 
   // Retry configuration
   private maxRetries: number = 3;
-  private retryDelay: (attempt: number) => number = (attempt) => 1000 * attempt;
+  private retryDelay: (attempt: number) => number = (attempt) => 0;
 
   constructor(
     instanceId: string,

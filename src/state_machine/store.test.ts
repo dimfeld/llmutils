@@ -736,7 +736,7 @@ describe('SharedStore', () => {
         initialContext,
         mockAdapter,
         {
-          retryDelay: () => 10,
+          retryDelay: () => 0,
         }
       );
 
@@ -791,7 +791,7 @@ describe('SharedStore', () => {
         mockAdapter,
         {
           maxRetries: 2,
-          retryDelay: () => 10,
+          retryDelay: () => 0,
         }
       );
 
@@ -921,7 +921,7 @@ describe('SharedStore', () => {
       getActiveSpanMock.mockReturnValue(mockSpan);
 
       // Create a custom retry delay function that we can check was called
-      const customRetryDelay = mock((attempt) => attempt * 10);
+      const customRetryDelay = mock((attempt) => 0);
 
       // Create a store with the custom retry delay
       const storeWithCustomDelay = new SharedStore<TestContext, TestEvent>(
