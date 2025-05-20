@@ -583,7 +583,7 @@ tasks:
           6.  Inside the `retryRequester` callback, replace `const llmOutput =
           await clipboard.read();` (second instance) with `const llmOutputRetry
           = await read();` and use `llmOutputRetry`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/rmplan.ts`:
 
