@@ -21,9 +21,6 @@ export async function osc52Copy(text: string): Promise<void> {
 
   // Write the sequence to stdout
   process.stdout.write(osc52Sequence);
-
-  // Return a resolved promise
-  return Promise.resolve();
 }
 
 /**
