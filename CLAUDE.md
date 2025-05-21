@@ -171,3 +171,7 @@ TypeScript is used throughout the codebase with strict type checking:
 - Run `bun run check` before committing to ensure no type errors are present
 
 You can check if compilation works using `bun run check`
+
+## Workflow Tips
+
+- Run `pnpm format` to format code after making changes

@@ -58,7 +58,9 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
   ) {
     // Convert nodes array to Map
     this.nodesMap = new Map(
-      config.nodes.map(node => [node.id, node] as [StateName, Node<StateName, TContext, TEvent, any, any, any>])
+      config.nodes.map(
+        (node) => [node.id, node] as [StateName, Node<StateName, TContext, TEvent, any, any, any>]
+      )
     );
 
     // Pass retry configuration from config to store

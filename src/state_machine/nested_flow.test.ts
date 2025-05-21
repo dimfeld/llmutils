@@ -91,10 +91,7 @@ describe('Nested Flow State Machine', () => {
       {
         initialState: 'start',
         errorState: 'start',
-        nodes: [
-          new SimpleInitialNode(),
-          new CustomFinalNode(),
-        ],
+        nodes: [new SimpleInitialNode(), new CustomFinalNode()],
       },
       {
         write: async () => {},
@@ -414,7 +411,7 @@ describe('Nested Flow State Machine', () => {
         // If the inner state machine is waiting, the outer machine should also wait
         if (result.status === 'waiting') {
           // Make sure we have a waiting action
-          const actions =
+          const actions: ProcessEvent[] =
             result.actions && result.actions.length > 0
               ? result.actions
               : [
@@ -509,11 +506,7 @@ describe('Nested Flow State Machine', () => {
       {
         initialState: 'outer_start',
         errorState: 'outer_start',
-        nodes: [
-          new OuterInitialNode(),
-          new ProcessFlowNode(innerMachine),
-          new OuterFinalNode(),
-        ],
+        nodes: [new OuterInitialNode(), new ProcessFlowNode(innerMachine), new OuterFinalNode()],
       },
       {
         write: async () => {},
