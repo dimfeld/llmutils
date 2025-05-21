@@ -527,4 +527,4 @@ tasks:
           `~/.llmutils/workspaces.json`.
 
           5.  Provide examples of how to configure and use this feature.
-        done: false
+        done: true
