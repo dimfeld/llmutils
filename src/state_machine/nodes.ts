@@ -160,43 +160,7 @@ export abstract class Node<
 }
 
 /**
- * InitialNode: The starting point of a state machine that automatically transitions to the next state.
- */
-export class InitialNode<StateName extends string, TContext, TEvent extends BaseEvent> extends Node<
-  StateName,
-  TContext,
-  TEvent
-> {
-  constructor(id: StateName) {
-    super(id);
-  }
-
-  async prep(store: SharedStore<TContext, TEvent>): Promise<PrepResult<TEvent, void>> {
-    const events = store.getPendingEvents();
-    return { events, args: undefined };
-  }
-
-  async exec(
-    args: void,
-    events: TEvent[],
-    scratchpad: any
-  ): Promise<{ result: null; scratchpad: any }> {
-    return { result: null, scratchpad };
-  }
-
-  async post(
-    result: null,
-    store: SharedStore<TContext, TEvent>
-  ): Promise<StateResult<StateName, TEvent>> {
-    // Initial nodes automatically transition to another state
-    // In a real implementation, you would compute the next state based on context
-    // For simplicity in the test, this is handled in the test code
-    return { status: 'transition', to: 'processing' as any };
-  }
-}
-
-/**
- * FinalNode: A terminal state in the state machine.
+ * FinalNode: A simple way to implement a terminal state in the state machine.
  */
 export class FinalNode<StateName extends string, TContext, TEvent extends BaseEvent> extends Node<
   StateName,
@@ -241,14 +205,16 @@ export class ErrorNode<StateName extends string, TContext, TEvent extends BaseEv
     super(id);
   }
 
-  async prep(store: SharedStore<TContext, TEvent>): Promise<PrepResult<TEvent, void>> {
+  async prep(
+    store: SharedStore<TContext, TEvent>
+  ): Promise<PrepResult<TEvent, AllState<TContext, TEvent>>> {
     const events = store.getPendingEvents();
     console.log('👉 ErrorNode prep with events:', events);
-    return { events, args: undefined };
+    return { events, args: store.allState };
   }
 
   async exec(
-    args: void,
+    args: AllState<StateName, TEvent>,
     events: TEvent[],
     scratchpad: any
   ): Promise<{ result: null; scratchpad: any }> {
@@ -371,53 +337,46 @@ export abstract class FlowNode<
       // Initialize the sub-machine
       await this.subMachine.initialize();
 
-      try {
-        // Run sub-machine with the translated events
-        const translatedEvents = this.translateEvents(events);
-        console.log('👉 Running submachine with events:', translatedEvents);
-        const result = await this.subMachine.resume(translatedEvents);
-        console.log('👉 Submachine result:', result);
+      // Run sub-machine with the translated events
+      const translatedEvents = this.translateEvents(events);
+      const result = await this.subMachine.resume(translatedEvents);
 
-        // Check the current state of the subMachine before updating our result
-        const currentSubState = this.subMachine.store.getCurrentState();
-        console.log('👉 Current subMachine state:', currentSubState);
+      // Check the current state of the subMachine before updating our result
+      const currentSubState = this.subMachine.store.getCurrentState();
+      console.log('👉 Current subMachine state:', currentSubState);
 
-        let endState = result.status;
-        if (currentSubState === 'inner_waiting') {
-          endState = 'waiting';
-        }
-        console.log('👉 Mapped state to:', endState);
-
-        span.setAttributes({
-          sub_machine_status: result.status,
-          sub_machine_current_state: currentSubState,
-          translated_event_count: events.length,
-          translated_action_count: result.actions?.length ?? 0,
-        });
-
-        if (result.actions && result.actions.length > 0) {
-          span.addEvent('actions_translated', { count: result.actions.length });
-        }
-
-        span.addEvent('submachine_completed', {
-          status: result.status,
-          has_actions: result.actions !== undefined && result.actions.length > 0,
-        });
-
-        // Update the result status based on the current state of the subMachine
-        return {
-          result: {
-            status: endState as any,
-            actions: result.actions ? this.translateActions(result.actions) : undefined,
-          },
-          scratchpad: {
-            subMachineState: this.subMachine.store.allState,
-          },
-        };
-      } catch (e) {
-        console.error('👉 Error running submachine:', e);
-        throw e;
+      let endState = result.status;
+      if (currentSubState === 'inner_waiting') {
+        endState = 'waiting';
       }
+      console.log('👉 Mapped state to:', endState);
+
+      span.setAttributes({
+        sub_machine_status: result.status,
+        sub_machine_current_state: currentSubState,
+        translated_event_count: events.length,
+        translated_action_count: result.actions?.length ?? 0,
+      });
+
+      if (result.actions && result.actions.length > 0) {
+        span.addEvent('actions_translated', { count: result.actions.length });
+      }
+
+      span.addEvent('submachine_completed', {
+        status: result.status,
+        has_actions: result.actions !== undefined && result.actions.length > 0,
+      });
+
+      // Update the result status based on the current state of the subMachine
+      return {
+        result: {
+          status: endState as any,
+          actions: result.actions ? this.translateActions(result.actions) : undefined,
+        },
+        scratchpad: {
+          subMachineState: this.subMachine.store.allState,
+        },
+      };
     });
   }
 }

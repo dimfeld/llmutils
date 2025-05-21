@@ -1,9 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  ErrorNode,
   FinalNode,
   FlowNode,
-  InitialNode,
   Node,
   StateMachine,
   type StateResult,
@@ -24,9 +22,24 @@ describe('Nested Flow State Machine', () => {
     };
 
     // The SimpleInitialNode class needs to transition to "end" directly
-    class SimpleInitialNode extends InitialNode<SimpleStates, {}, SimpleEvent> {
+    class SimpleInitialNode extends Node<SimpleStates, {}, SimpleEvent> {
       constructor() {
         super('start');
+      }
+
+      async prep(store: SharedStore<{}, SimpleEvent>) {
+        return {
+          events: [],
+          args: null,
+        };
+      }
+
+      async exec(
+        args: null,
+        events: SimpleEvent[],
+        scratchpad: any
+      ): Promise<{ result: null; scratchpad: any }> {
+        return { result: null, scratchpad };
       }
 
       async post(
@@ -126,9 +139,21 @@ describe('Nested Flow State Machine', () => {
     type InnerStates = 'inner_initial' | 'inner_processing' | 'inner_waiting' | 'inner_final';
 
     // Inner state machine nodes
-    class InnerInitialNode extends InitialNode<InnerStates, {}, ProcessEvent> {
+    class InnerInitialNode extends Node<InnerStates, {}, ProcessEvent> {
       constructor() {
         super('inner_initial');
+      }
+      async prep(store: SharedStore<{}, ProcessEvent>): Promise<PrepResult<ProcessEvent, null>> {
+        const events = store.getPendingEvents();
+        return { events, args: null };
+      }
+
+      async exec(
+        args: null,
+        events: ProcessEvent[],
+        scratchpad: any
+      ): Promise<{ result: null; scratchpad: any }> {
+        return { result: null, scratchpad };
       }
 
       async post(
@@ -307,9 +332,22 @@ describe('Nested Flow State Machine', () => {
     type OuterStates = 'outer_start' | 'outer_process' | 'outer_end';
 
     // Outer state machine nodes
-    class OuterInitialNode extends InitialNode<OuterStates, {}, ProcessEvent> {
+    class OuterInitialNode extends Node<OuterStates, {}, ProcessEvent> {
       constructor() {
         super('outer_start');
+      }
+
+      async prep(store: SharedStore<{}, ProcessEvent>): Promise<PrepResult<ProcessEvent, null>> {
+        const events = store.getPendingEvents();
+        return { events, args: null };
+      }
+
+      async exec(
+        args: null,
+        events: ProcessEvent[],
+        scratchpad: any
+      ): Promise<{ result: null; scratchpad: any }> {
+        return { result: null, scratchpad };
       }
 
       async post(

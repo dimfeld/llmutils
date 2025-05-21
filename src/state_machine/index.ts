@@ -1,5 +1,5 @@
 import type { BaseEvent } from './events.ts';
-import { Node, InitialNode, FinalNode, ErrorNode, FlowNode } from './nodes.ts';
+import { Node, FinalNode, ErrorNode, FlowNode } from './nodes.ts';
 import { SharedStore, type PersistenceAdapter } from './store.ts';
 import {
   initTelemetry,
@@ -13,7 +13,7 @@ import {
 import { type StateResult, type PrepResult } from './types.ts';
 
 // Re-export types and classes from nodes.ts
-export { Node, InitialNode, FinalNode, ErrorNode, FlowNode };
+export { Node, FinalNode, ErrorNode, FlowNode };
 
 // Re-export from events.ts
 export type { BaseEvent };
