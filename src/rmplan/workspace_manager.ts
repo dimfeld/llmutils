@@ -1,9 +1,10 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { $ } from 'bun';
 import { log, debugLog } from '../logging.js';
-import { spawnAndLogOutput, getGitRoot } from '../rmfilter/utils.js';
-import type { RmplanConfig, WorkspaceCreationConfig } from './configSchema.js';
+import { spawnAndLogOutput, getGitRoot, parseCliArgsFromString } from '../rmfilter/utils.js';
+import type { RmplanConfig, WorkspaceCreationConfig, PostApplyCommand } from './configSchema.js';
 
 /**
  * Interface representing a created workspace
@@ -65,8 +66,7 @@ export class WorkspaceManager {
         config.workspaceCreation as WorkspaceCreationConfigRequired
       );
     } else if (config.workspaceCreation.method === 'llmutils') {
-      log('LLMUtils-based workspace creation not yet implemented');
-      return null;
+      return this._createWithLlmUtils(taskId, originalPlanFilePath, config.workspaceCreation);
     }
 
     return null;
@@ -104,7 +104,7 @@ export class WorkspaceManager {
         }
       }
     } catch (error) {
-      log(`Error accessing script at ${scriptPath}: ${error}`);
+      log(`Error accessing script at ${scriptPath}: ${String(error)}`);
       return null;
     }
 
@@ -139,7 +139,7 @@ export class WorkspaceManager {
         return null;
       }
     } catch (error) {
-      log(`Error accessing workspace at ${workspacePath}: ${error}`);
+      log(`Error accessing workspace at ${workspacePath}: ${String(error)}`);
       return null;
     }
 
@@ -148,6 +148,165 @@ export class WorkspaceManager {
     // Return the workspace information
     return {
       path: workspacePath,
+      originalPlanFilePath,
+      taskId,
+    };
+  }
+
+  /**
+   * Creates a workspace by cloning a repository and creating a new branch using llmutils method
+   * @param taskId Unique identifier for the task
+   * @param originalPlanFilePath Absolute path to the original plan file
+   * @param workspaceConfig Workspace creation configuration
+   * @returns A Workspace object if successful, null otherwise
+   */
+  private async _createWithLlmUtils(
+    taskId: string,
+    originalPlanFilePath: string,
+    workspaceConfig: WorkspaceCreationConfig
+  ): Promise<Workspace | null> {
+    log('Creating workspace using llmutils-based method');
+
+    // Step 1: Infer repository URL if not provided
+    let repositoryUrl = workspaceConfig.repositoryUrl;
+    if (!repositoryUrl) {
+      try {
+        const { exitCode, stdout, stderr } = await spawnAndLogOutput(
+          ['git', 'remote', 'get-url', 'origin'],
+          { cwd: this.mainRepoRoot }
+        );
+
+        if (exitCode !== 0 || !stdout.trim()) {
+          log(`Failed to infer repository URL from origin remote: ${stderr}`);
+          return null;
+        }
+
+        repositoryUrl = stdout.trim();
+        log(`Inferred repository URL: ${repositoryUrl}`);
+      } catch (error) {
+        log(`Error getting repository URL: ${String(error)}`);
+        return null;
+      }
+    }
+
+    // Step 2: Determine clone location
+    let cloneLocationBase: string;
+    if (workspaceConfig.cloneLocation) {
+      // If relative, resolve against mainRepoRoot
+      cloneLocationBase = path.isAbsolute(workspaceConfig.cloneLocation)
+        ? workspaceConfig.cloneLocation
+        : path.resolve(this.mainRepoRoot, workspaceConfig.cloneLocation);
+    } else {
+      // Default location is ~/.llmutils/workspaces
+      cloneLocationBase = path.join(os.homedir(), '.llmutils', 'workspaces');
+    }
+
+    // Ensure the base clone directory exists
+    try {
+      await fs.mkdir(cloneLocationBase, { recursive: true });
+    } catch (error) {
+      log(`Error creating clone location directory: ${String(error)}`);
+      return null;
+    }
+
+    // Step 3: Construct the target directory name
+    // Extract repo name from URL
+    const repoName =
+      repositoryUrl
+        .split('/')
+        .pop()
+        ?.replace(/\.git$/, '') || 'repo';
+
+    const targetClonePath = path.join(cloneLocationBase, `${repoName}-${taskId}`);
+
+    // Step 4: Clone the repository
+    try {
+      log(`Cloning repository ${repositoryUrl} to ${targetClonePath}`);
+      const { exitCode, stderr } = await spawnAndLogOutput(
+        ['git', 'clone', repositoryUrl, targetClonePath],
+        {
+          cwd: this.mainRepoRoot,
+        }
+      );
+
+      if (exitCode !== 0) {
+        log(`Failed to clone repository: ${stderr}`);
+        return null;
+      }
+    } catch (error) {
+      log(`Error cloning repository: ${String(error)}`);
+      return null;
+    }
+
+    // Step 5: Create and checkout a new branch
+    const branchName = `llmutils-task/${taskId}`;
+    try {
+      log(`Creating and checking out branch ${branchName}`);
+      const { exitCode, stderr } = await spawnAndLogOutput(['git', 'checkout', '-b', branchName], {
+        cwd: targetClonePath,
+      });
+
+      if (exitCode !== 0) {
+        log(`Failed to create and checkout branch: ${stderr}`);
+        // Consider cleaning up the clone
+        try {
+          await fs.rm(targetClonePath, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
+        return null;
+      }
+    } catch (error) {
+      log(`Error creating branch: ${String(error)}`);
+      return null;
+    }
+
+    // Step 6: Run post-clone commands if specified
+    if (workspaceConfig.postCloneCommands?.length) {
+      log('Running post-clone commands');
+
+      for (const command of workspaceConfig.postCloneCommands) {
+        try {
+          const { exitCode, stdout, stderr } = await spawnAndLogOutput(
+            parseCliArgsFromString(command.command),
+            {
+              cwd: command.workingDirectory
+                ? path.resolve(targetClonePath, command.workingDirectory)
+                : targetClonePath,
+              env: {
+                ...process.env,
+                ...command.env,
+                LLMUTILS_TASK_ID: taskId,
+                LLMUTILS_PLAN_FILE_PATH: originalPlanFilePath,
+              },
+            }
+          );
+
+          if (exitCode !== 0 && !command.allowFailure) {
+            log(`Post-clone command failed: ${command.title || command.command}`);
+            log(`Command output: ${stderr}`);
+            // Consider cleaning up the clone
+            try {
+              await fs.rm(targetClonePath, { recursive: true, force: true });
+            } catch {
+              // Ignore cleanup errors
+            }
+            return null;
+          }
+        } catch (error) {
+          if (!command.allowFailure) {
+            log(`Error running post-clone command: ${String(error)}`);
+            return null;
+          }
+        }
+      }
+    }
+
+    debugLog(`Successfully created workspace at ${targetClonePath}`);
+
+    // Return the workspace information
+    return {
+      path: targetClonePath,
       originalPlanFilePath,
       taskId,
     };

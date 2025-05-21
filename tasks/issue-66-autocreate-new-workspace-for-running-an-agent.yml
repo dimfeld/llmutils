@@ -216,7 +216,7 @@ tasks:
 
           9.  Update the main `createWorkspace` method to call
           `_createWithLlmUtils` when `method` is `'llmutils'`.
-        done: false
+        done: true
       - prompt: >
           Update tests in `src/rmplan/workspace_manager.test.ts`.
 
