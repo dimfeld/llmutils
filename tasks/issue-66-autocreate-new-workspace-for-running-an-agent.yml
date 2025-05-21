@@ -496,7 +496,7 @@ tasks:
           directly, or ensure `getGitRoot` is also spied on/mocked to return the
           expected workspace root. For simplicity, assume `process.chdir` works
           and `getGitRoot()` (called without args) picks up the new CWD.
-        done: false
+        done: true
   - title: 7. Documentation Update
     description: Update `README.md` and any other relevant documentation to describe
       the new workspace auto-creation feature, its configuration, and usage.
