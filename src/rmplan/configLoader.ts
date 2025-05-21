@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { getGitRoot, quiet } from '../rmfilter/utils.js'; // Assuming logging exists
-import { debugLog, error, log } from '../logging.js';
+import { debugLog, error, log, warn } from '../logging.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
 
 /**
@@ -96,8 +96,34 @@ export async function loadConfig(configPath: string | null): Promise<RmplanConfi
 }
 
 /**
+ * Finds the path to a local override configuration file, which is rmplan.local.yml 
+ * in the same directory as the main config file.
+ * 
+ * @param mainConfigPath - The path to the main configuration file
+ * @returns The path to the local override config if it exists, null otherwise
+ */
+export async function findLocalConfigPath(mainConfigPath: string | null): Promise<string | null> {
+  if (!mainConfigPath) {
+    return null;
+  }
+  
+  const dir = path.dirname(mainConfigPath);
+  const localConfigPath = path.join(dir, 'rmplan.local.yml');
+  const fileExists = await Bun.file(localConfigPath).exists();
+  
+  if (fileExists) {
+    debugLog(`Found local override configuration at: ${localConfigPath}`);
+    return localConfigPath;
+  }
+  
+  return null;
+}
+
+/**
  * Orchestrates finding, loading, parsing, and validating the rmplan configuration.
  * Handles errors gracefully and logs user-friendly messages.
+ * If a rmplan.local.yml file exists in the same directory as the main config,
+ * its settings will override the main config.
  *
  * @param overridePath - An optional path explicitly provided by the user (e.g., via CLI flag).
  * @returns The effective RmplanConfig object (either loaded or default).
@@ -115,11 +141,43 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
   }
 
   try {
+    // Load the main configuration
     const config = await loadConfig(configPath);
-    if (!quiet) {
-      log('Loaded configuration file', configPath);
+    
+    // Find and load local override configuration if it exists
+    const localConfigPath = await findLocalConfigPath(configPath);
+    if (localConfigPath) {
+      try {
+        // Load the local override configuration
+        const localConfig = await loadConfig(localConfigPath);
+        
+        // Merge the configurations with local overriding main
+        const mergedConfig = { ...config, ...localConfig };
+        
+        if (!quiet) {
+          log('Loaded configuration files', 
+            configPath ? `Main: ${configPath}` : 'Default config', 
+            `Local override: ${localConfigPath}`);
+        }
+        
+        return mergedConfig;
+      } catch (localErr: any) {
+        // If there's a validation error in the local config, log it but continue with the main config
+        warn(`Error loading local override configuration: ${localErr.message}`);
+        warn('Continuing with main configuration only');
+        
+        if (!quiet) {
+          log('Loaded configuration file', configPath);
+        }
+        
+        return config;
+      }
+    } else {
+      if (!quiet) {
+        log('Loaded configuration file', configPath);
+      }
+      return config;
     }
-    return config;
   } catch (err: any) {
     // loadConfig only throws on validation errors. Read/parse errors return default config.
     error(`Error loading or validating configuration: ${err.message}`);

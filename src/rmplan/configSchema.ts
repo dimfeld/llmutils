@@ -53,6 +53,8 @@ export const rmplanConfigSchema = z.object({
         .describe('Model spec for rmplan markdown-to-yaml extraction'),
     })
     .optional(),
+  /** Default executor to use when not specified via --executor option */
+  defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
 });
 
 export type RmplanConfig = z.infer<typeof rmplanConfigSchema>;
@@ -63,5 +65,8 @@ export type PostApplyCommand = z.infer<typeof postApplyCommandSchema>;
  * This is used when no configuration file is found or specified.
  */
 export function getDefaultConfig(): RmplanConfig {
-  return { postApplyCommands: [] };
+  return { 
+    postApplyCommands: [],
+    defaultExecutor: 'CopyOnlyExecutor'
+  };
 }
