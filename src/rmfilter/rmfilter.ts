@@ -353,6 +353,10 @@ async function processCommand(
       ...exampleValues.map(async (p) => {
         let matching = await grepFor(baseDir, [p], files || positionals, false, false);
 
+        if (ignoreGlobs?.length) {
+          matching = micromatch.not(matching, ignoreGlobs);
+        }
+
         if (!matching.length) {
           throw new Error(`No files found matching example pattern: ${p}`);
         }
@@ -476,6 +480,10 @@ async function processCommand(
       // Otherwise, just use the example files so we don't include everything
       files = examples.map((f) => f.file);
     }
+  }
+
+  if (files && ignoreGlobs?.length) {
+    files = micromatch.not(files, ignoreGlobs);
   }
 
   files?.forEach((file) => filesSet.add(file));
