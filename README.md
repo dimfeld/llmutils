@@ -539,7 +539,8 @@ You can also include special options in PR comments to customize how they're han
 ```
 Add validation here for user input
 
---rmpr with-tests=true with-imports=true
+rmpr: with-imports
+rmpr: include src/forms 
 ```
 
 ## Usage Examples
