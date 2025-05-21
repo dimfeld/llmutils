@@ -40,6 +40,13 @@ await mock.module('node:fs/promises', () => ({
   mkdir: mockMkdir,
 }));
 
+// Mock executePostApplyCommand function
+const mockExecutePostApplyCommand = mock(async () => true);
+
+await mock.module('./actions.js', () => ({
+  executePostApplyCommand: mockExecutePostApplyCommand,
+}));
+
 // Import the module under test after all mocks are set up
 import { WorkspaceManager } from './workspace_manager.js';
 import type { RmplanConfig } from './configSchema.js';
@@ -64,6 +71,7 @@ describe('WorkspaceManager', () => {
     mockWriteFile.mockReset();
     mockRm.mockReset();
     mockMkdir.mockReset();
+    mockExecutePostApplyCommand.mockReset();
   });
 
   test('createWorkspace returns null when workspaceCreation is not enabled', async () => {
@@ -518,19 +526,8 @@ describe('WorkspaceManager', () => {
       stderr: '',
     }));
 
-    // Mock the npm install command
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Mock the npm run build command
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
+    // Mock the executePostApplyCommand function to succeed for both commands
+    mockExecutePostApplyCommand.mockResolvedValue(true);
 
     // Mock the directory creation
     mockMkdir.mockImplementation(async () => {});
@@ -547,11 +544,34 @@ describe('WorkspaceManager', () => {
     expect(result).not.toBeNull();
     expect(mockLog).toHaveBeenCalledWith('Running post-clone commands');
 
-    // Verify npm install was called
-    expect(mockParseCliArgsFromString).toHaveBeenCalledWith('npm install');
+    // Verify executePostApplyCommand was called twice
+    expect(mockExecutePostApplyCommand).toHaveBeenCalledTimes(2);
 
-    // Verify npm run build was called
-    expect(mockParseCliArgsFromString).toHaveBeenCalledWith('npm run build');
+    // Verify first command was called with correct parameters
+    expect(mockExecutePostApplyCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Install dependencies',
+        command: 'npm install',
+        env: expect.objectContaining({
+          LLMUTILS_TASK_ID: taskId,
+          LLMUTILS_PLAN_FILE_PATH: planPath,
+        }),
+      }),
+      expect.stringContaining('repo-task-123')
+    );
+
+    // Verify second command was called with correct parameters
+    expect(mockExecutePostApplyCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Run build',
+        command: 'npm run build',
+        env: expect.objectContaining({
+          LLMUTILS_TASK_ID: taskId,
+          LLMUTILS_PLAN_FILE_PATH: planPath,
+        }),
+      }),
+      expect.stringContaining('repo-task-123')
+    );
   });
 
   test('createWorkspace with llmutils method - uses default clone location when not specified', async () => {
@@ -687,5 +707,66 @@ describe('WorkspaceManager', () => {
     // Verify
     expect(result).toBeNull();
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Failed to infer repository URL'));
+  });
+
+  test('createWorkspace with llmutils method - post-clone command fails and cleans up workspace', async () => {
+    // Setup
+    const taskId = 'task-123';
+    const planPath = '/path/to/plan.yml';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = '/path/to/clones';
+    const targetClonePath = expect.stringContaining('repo-task-123');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        method: 'llmutils',
+        repositoryUrl,
+        cloneLocation,
+        postCloneCommands: [
+          {
+            title: 'Install dependencies',
+            command: 'npm install',
+            allowFailure: false,
+          },
+        ],
+      },
+    };
+
+    // Mock the clone operation to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the branch creation to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the executePostApplyCommand function to fail
+    mockExecutePostApplyCommand.mockResolvedValue(false);
+
+    // Mock the directory creation
+    mockMkdir.mockImplementation(async () => {});
+
+    // Mock fs.rm to verify cleanup attempt
+    mockRm.mockImplementationOnce(async (path: string, options: any) => {
+      expect(path).toEqual(expect.stringContaining(`repo-${taskId}`));
+      expect(options.recursive).toBe(true);
+      expect(options.force).toBe(true);
+    });
+
+    // Execute
+    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+
+    // Verify
+    expect(result).toBeNull();
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('Post-clone command failed and failure is not allowed')
+    );
+    expect(mockRm).toHaveBeenCalled();
   });
 });

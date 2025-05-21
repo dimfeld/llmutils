@@ -276,7 +276,7 @@ tasks:
                   *   Log an error.
                   *   Attempt to clean up the partially created workspace (e.g., delete the cloned directory).
                   *   Return `null`.
-        done: false
+        done: true
       - prompt: >
           Update tests in `src/rmplan/workspace_manager.test.ts`.
 
