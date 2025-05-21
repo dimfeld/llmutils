@@ -371,7 +371,7 @@ tasks:
                   *   For `_createWithLlmUtils`, you have `repositoryUrl` and the `branchName`.
               *   Call `await recordWorkspace(workspaceInfo)`.
               *   If `recordWorkspace` throws an error, log it, but consider if the overall workspace creation should fail or just proceed with a warning about tracking. For now, let's log a warning and proceed.
-        done: false
+        done: true
       - prompt: >
           Create a test file `src/rmplan/workspace_tracker.test.ts`.
 
