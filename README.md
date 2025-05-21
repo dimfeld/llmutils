@@ -9,6 +9,7 @@ The scripts are:
 - `rmrun` - Send the rmfilter output to a language model and apply the edits back.
 - `rmfind` - Find relevant files to use with rmfilter
 - `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks.
+- `rmpr` - Handle pull request comments and reviews with AI assistance
 
 All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
 
@@ -44,9 +45,16 @@ assume a repository written with Typescript and PNPM workspaces.
   - [Notes](#notes-1)
   - [Configuration](#configuration)
     - [Post-Apply Commands](#post-apply-commands)
+  - [Executors](#executors)
+    - [Available Executors](#available-executors)
+- [rmpr](#rmpr)
+  - [Key Features](#key-features-4)
+  - [Usage](#usage-2)
+  - [Options Editor](#options-editor)
 - [Usage Examples](#usage-examples)
   - [Using rmfilter](#using-rmfilter)
   - [Using rmplan](#using-rmplan)
+  - [Using rmpr](#using-rmpr)
   - [Applying LLM Edits](#applying-llm-edits)
 
 ## Installation
@@ -59,6 +67,7 @@ This project assumes you have these tools installed:
 - [llm](https://llm.datasette.io/en/stable/index.html)
 - [fzf](https://github.com/junegunn/fzf) (for rmfind)
 - [bat](https://github.com/sharkdp/bat) (for rmfind and rmrun)
+- [claude-cli](https://github.com/anthropics/claude-cli) (for Claude Code support)
 
 ### Build Instructions
 
@@ -345,6 +354,12 @@ rmplan cleanup --diff-from main
 
 # Clean up end-of-line comments from specific files
 rmplan cleanup src/lib/utils.ts src/components/Button.svelte
+
+# Answer PR review comments, automatically detecting the current PR
+rmplan answer-pr
+
+# Answer PR review comments for a specific PR
+rmplan answer-pr dimfeld/llmutils#82
 ```
 
 #### Cleanup Command
@@ -449,6 +464,84 @@ postApplyCommands:
 - `workingDirectory`: (Optional) String path relative to the repository root where the command should be executed. Defaults to the repository root.
 - `env`: (Optional) An object mapping environment variable names to string values for the command's execution context.
 
+### Executors
+
+The executor system in rmplan provides a flexible way to execute plan steps with different AI models or tools. Executors handle the interaction with language models, applying edits to the codebase, and integrating with external tools.
+
+#### Available Executors
+
+- **CopyPasteExecutor (default)**: Copies the prompt to the clipboard for you to paste into a web UI and then manually apply the model's response.
+
+- **OneCallExecutor**: Sends the prompt to an API-accessible LLM directly without user intervention.
+
+- **CopyOnlyExecutor**: Just copies the prompt to the clipboard without applying any edits.
+
+- **ClaudeCodeExecutor**: Executes the plan using Claude Code CLI, providing an agent-based approach that can read files, apply edits, and run commands directly.
+
+To specify an executor, use the `--executor` option:
+
+```bash
+# Use Claude Code to execute the plan
+rmplan agent plan.yml --executor claude-code
+
+# Use direct API calls to execute the plan
+rmplan agent plan.yml --executor OneCallExecutor
+```
+
+## answer-pr
+
+The `rmplan answer-pr` command helps handle GitHub pull request review comments using language models. It can fetch PR comments, let you select which ones to address, and automate responses with AI assistance.
+
+### Key Features {#key-features-4}
+
+- **PR Comment Selection**: Fetch and interactively select which PR comments to address.
+- **Automatic PR Detection**: Automatically detect the current PR from your branch.
+- **Comment Modes**: Choose between inline comment markers or separate context for addressing feedback.
+- **Integration with Executors**: Use the same executor system as rmplan for applying changes.
+- **Automatic Replies**: Optionally post replies to the handled threads after committing changes.
+- **Special Comment Options**: Parse special options from PR comments to customize how they're handled.
+
+### Usage
+
+Handle PR comments with AI assistance:
+
+```bash
+# Automatically detect the current PR and address comments
+rmplan answer-pr
+
+# Answer comments for a specific PR
+rmplan answer-pr dimfeld/llmutils#82
+
+# Use specific options (disable interactive mode and autocommit)
+rmplan answer-pr --yes --commit
+
+# Use Claude Code as the executor
+rmplan answer-pr --executor claude-code
+
+# Post replies to review threads after committing
+rmplan answer-pr --commit --comment
+
+# Dry run (prepare the prompt without executing)
+rmplan answer-pr --dry-run
+```
+
+### Options Editor
+
+When handling PR comments, an interactive options editor allows you to adjust settings before generating and executing the LLM prompt:
+
+- **Change LLM model**: Select a different model for addressing the comments.
+- **Edit rmfilter options**: Add or modify context-gathering options.
+- **Toggle autocommit**: Enable or disable automatically committing changes.
+- **Toggle review thread replies**: Enable or disable posting replies to review threads.
+
+You can also include special options in PR comments to customize how they're handled:
+
+```
+Add validation here for user input
+
+--rmpr with-tests=true with-imports=true
+```
+
 ## Usage Examples
 
 ### Using rmfilter
@@ -514,6 +607,27 @@ rmplan agent tasks/0002-refactor-it-plan.yml
 
 # Automatically execute steps using a custom configuration file
 rmplan agent tasks/0003-new-feature.yml --config path/to/my-rmplan-config.yml
+
+# Use Claude Code executor for a more integrated experience
+rmplan agent tasks/0003-new-feature.yml --executor claude-code
+```
+
+### Using answer-pr
+
+Handle PR comments:
+
+```bash
+# Detect the current PR and handle comments
+rmplan answer-pr
+
+# Handle comments for a specific PR
+rmplan answer-pr 82
+
+# Use Claude Code executor and autocommit
+rmplan answer-pr --executor claude-code --commit
+
+# Commit and reply to comments
+rmplan answer-pr --commit --comment
 ```
 
 ### Applying LLM Edits
