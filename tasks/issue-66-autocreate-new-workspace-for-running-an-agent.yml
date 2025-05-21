@@ -172,7 +172,7 @@ tasks:
                   *   Verify `createWorkspace` returns `null` and logs appropriately.
               *   Test case: `method` is 'script' but `scriptPath` is missing in config.
                   *   Verify `createWorkspace` handles this (e.g., returns `null`, logs error). This depends on how strictly `WorkspaceCreationConfig` is typed for `scriptPath` when method is 'script'. Assume it will be an error or null return.
-        done: false
+        done: true
   - title: 3. `llmutils`-Based Workspace Creation (Clone & Branch)
     description: Implement the repository cloning and branch creation logic for the
       `llmutils` workspace creation method in `WorkspaceManager`.
