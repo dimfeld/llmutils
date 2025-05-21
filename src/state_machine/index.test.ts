@@ -350,7 +350,8 @@ describe('StateMachine', () => {
 
       // Verify the final state and result
       expect(localStateMachine.store.getCurrentState()).toBe('final');
-      expect(result).toEqual({ status: 'terminal' });
+      expect(result.status).toBe('terminal');
+      expect(result.actions).toBeDefined();
 
       // We can't rely on the pendingEvents being empty after complete execution
       // because multiple things can happen to them, so we just verify we're in the final state
@@ -403,7 +404,7 @@ describe('StateMachine', () => {
     expect(stateMachine.store.getCurrentState()).toBe('processing');
 
     // Verify result
-    expect(result).toEqual({ status: 'waiting' });
+    expect(result.status).toBe('waiting');
 
     // For now, skip the detailed telemetry verification since we've mocked the OpenTelemetry API
     // and need to modify the tests to better capture spans through our mock system
@@ -531,7 +532,7 @@ describe('StateMachine', () => {
 
     // Verify state transitions completed as expected
     expect(stateMachine.store.getCurrentState()).toBe('processing');
-    expect(result).toEqual({ status: 'waiting' });
+    expect(result.status).toBe('waiting');
   });
 
   test('should handle a sequence of transitions through multiple states', async () => {
@@ -593,7 +594,7 @@ describe('StateMachine', () => {
     expect(stateMachine.store.getCurrentState()).toBe('final');
 
     // Verify result indicates terminal state
-    expect(result).toEqual({ status: 'terminal' });
+    expect(result.status).toBe('terminal');
 
     /* 
     // Telemetry verification if our mocks properly captured spans
@@ -745,7 +746,8 @@ describe('StateMachine', () => {
       expect(stateMachine.store.getCurrentState()).toBe('error');
 
       // Verify result
-      expect(result).toEqual({ status: 'terminal' });
+      expect(result.status).toBe('terminal');
+      expect(result.actions).toBeDefined();
     });
 
     test('should handle error in Node exec with node-specific onError', async () => {
@@ -786,7 +788,8 @@ describe('StateMachine', () => {
       expect(stateMachine.store.getCurrentState()).toBe('final');
 
       // Verify result
-      expect(result).toEqual({ status: 'terminal' });
+      expect(result.status).toBe('terminal');
+      expect(result.actions).toBeDefined();
     });
 
     test('should handle error in Node exec with config.onError', async () => {
@@ -832,7 +835,8 @@ describe('StateMachine', () => {
       expect(stateMachine.store.getCurrentState()).toBe('final');
 
       // Verify result
-      expect(result).toEqual({ status: 'terminal' });
+      expect(result.status).toBe('terminal');
+      expect(result.actions).toBeDefined();
     });
 
     test('should handle error in Node with no handlers, transitioning to errorState', async () => {
@@ -871,7 +875,8 @@ describe('StateMachine', () => {
       expect(stateMachine.store.getCurrentState()).toBe('error');
 
       // Verify result
-      expect(result).toEqual({ status: 'terminal' });
+      expect(result.status).toBe('terminal');
+      expect(result.actions).toBeDefined();
     });
 
     test('should call config.onError when transitioning to non-existent state', async () => {
@@ -952,7 +957,7 @@ describe('StateMachine', () => {
       );
 
       // Verify result matches what config.onError returned
-      expect(result).toEqual({ status: 'waiting' });
+      expect(result.status).toBe('waiting');
     });
   });
 
@@ -1040,7 +1045,8 @@ describe('StateMachine', () => {
       expect(stateMachine.store.getCurrentState()).toBe('error');
 
       // Verify result
-      expect(result).toEqual({ status: 'terminal' });
+      expect(result.status).toBe('terminal');
+      expect(result.actions).toBeDefined();
     });
 
     test('should handle Node prep failing then succeeding with SM configured retries', async () => {
@@ -1101,7 +1107,7 @@ describe('StateMachine', () => {
       expect(stateMachine.store.getCurrentState()).toBe('processing');
 
       // Verify the final result shows 'waiting' status from the processing node
-      expect(result).toEqual({ status: 'waiting' });
+      expect(result.status).toBe('waiting');
 
       /* 
       // Telemetry validation for retry would look like this if our mocks captured spans correctly
@@ -1266,7 +1272,7 @@ describe('StateMachine', () => {
 
       // Verify the transition happened
       expect(hookStateMachine.store.getCurrentState()).toBe('processing');
-      expect(result).toEqual({ status: 'waiting' });
+      expect(result.status).toBe('waiting');
     });
 
     test('onActions hook is defined but not currently called', async () => {

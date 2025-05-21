@@ -106,6 +106,7 @@ describe('Nested Flow State Machine', () => {
     // Verify the result
     expect(result.status).toBe('terminal');
     expect(result.actions).toBeDefined();
+    // We don't care about additional fields like context or stateName in this test
 
     // Since the final node explicitly adds its own action, make sure that action is included
     const finalAction = result.actions?.find((a) => a.payload === 'Final output');

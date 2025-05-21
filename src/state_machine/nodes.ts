@@ -312,11 +312,11 @@ export abstract class FlowNode<
       'submachine',
       // todo hooks that wrap our hooks
       {
-        onError: (error, store) => {
+        onError: (error: Error, store: any) => {
           console.error('👉 SubMachine onError:', error);
           return Promise.resolve({ status: 'terminal' });
         },
-        onTransition: (from, to, context) => {
+        onTransition: (from: string, to: string, context: any) => {
           console.log(`👉 SubMachine transition: ${from} -> ${to}, context:`, context);
         },
       }
