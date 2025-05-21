@@ -308,7 +308,7 @@ tasks:
               *   When `overrideGitRoot` is provided, ensure `getGitRoot()` is NOT called.
               *   Ensure `cwd` for the command is correctly resolved using `overrideGitRoot` if `commandConfig.workingDirectory` is relative or undefined.
               *   When `overrideGitRoot` is NOT provided, ensure `getGitRoot()` IS called and `cwd` is resolved using its result.
-        done: false
+        done: true
   - title: 5. Workspace Tracking
     description: Implement a system to track created workspaces and their
       association with tasks using a global JSON file.
