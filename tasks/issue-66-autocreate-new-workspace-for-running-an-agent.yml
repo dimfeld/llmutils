@@ -61,7 +61,7 @@ tasks:
           `workspaceCreation` field.
 
           5.  Ensure necessary Zod types are exported.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/configLoader.ts` and add tests.
 

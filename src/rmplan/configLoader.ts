@@ -9,12 +9,17 @@ import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './confi
  * Handles special cases like arrays and nested objects appropriately.
  */
 function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): RmplanConfig {
-  const merged: RmplanConfig = { ...mainConfig };
+  const merged: RmplanConfig = { ...mainConfig, ...localConfig };
+
+  // Do deep merge for select paths
 
   // Handle postApplyCommands: concatenate arrays if both exist
   if (localConfig.postApplyCommands !== undefined) {
     if (mainConfig.postApplyCommands && localConfig.postApplyCommands) {
-      merged.postApplyCommands = [...mainConfig.postApplyCommands, ...localConfig.postApplyCommands];
+      merged.postApplyCommands = [
+        ...mainConfig.postApplyCommands,
+        ...localConfig.postApplyCommands,
+      ];
     } else {
       merged.postApplyCommands = localConfig.postApplyCommands;
     }
@@ -43,11 +48,6 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
       ...mainConfig.models,
       ...localConfig.models,
     };
-  }
-
-  // Handle defaultExecutor: simple override
-  if (localConfig.defaultExecutor !== undefined) {
-    merged.defaultExecutor = localConfig.defaultExecutor;
   }
 
   return merged;
@@ -145,9 +145,9 @@ export async function loadConfig(configPath: string | null): Promise<RmplanConfi
 }
 
 /**
- * Finds the path to a local override configuration file, which is rmplan.local.yml 
+ * Finds the path to a local override configuration file, which is rmplan.local.yml
  * in the same directory as the main config file.
- * 
+ *
  * @param mainConfigPath - The path to the main configuration file
  * @returns The path to the local override config if it exists, null otherwise
  */
@@ -155,16 +155,16 @@ export async function findLocalConfigPath(mainConfigPath: string | null): Promis
   if (!mainConfigPath) {
     return null;
   }
-  
+
   const dir = path.dirname(mainConfigPath);
   const localConfigPath = path.join(dir, 'rmplan.local.yml');
   const fileExists = await Bun.file(localConfigPath).exists();
-  
+
   if (fileExists) {
     debugLog(`Found local override configuration at: ${localConfigPath}`);
     return localConfigPath;
   }
-  
+
   return null;
 }
 
@@ -192,33 +192,35 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
   try {
     // Load the main configuration
     const config = await loadConfig(configPath);
-    
+
     // Find and load local override configuration if it exists
     const localConfigPath = await findLocalConfigPath(configPath);
     if (localConfigPath) {
       try {
         // Load the local override configuration
         const localConfig = await loadConfig(localConfigPath);
-        
+
         // Merge the configurations with local overriding main
         const mergedConfig = mergeConfigs(config, localConfig);
-        
+
         if (!quiet) {
-          log('Loaded configuration files', 
-            configPath ? `Main: ${configPath}` : 'Default config', 
-            `Local override: ${localConfigPath}`);
+          log(
+            'Loaded configuration files',
+            configPath ? `Main: ${configPath}` : 'Default config',
+            `Local override: ${localConfigPath}`
+          );
         }
-        
+
         return mergedConfig;
       } catch (localErr: any) {
         // If there's a validation error in the local config, log it but continue with the main config
         warn(`Error loading local override configuration: ${localErr.message}`);
         warn('Continuing with main configuration only');
-        
+
         if (!quiet) {
           log('Loaded configuration file', configPath);
         }
-        
+
         return config;
       }
     } else {
