@@ -1,6 +1,7 @@
 import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../rmfilter/utils.js';
+import { inspect } from 'node:util';
 
 /**
  * A LoggerAdapter implementation that logs to both the console and a file.
@@ -13,7 +14,7 @@ export class ConsoleAdapter implements LoggerAdapter {
    */
   log(...args: any[]): void {
     console.log(...args);
-    writeToLogFile(args.join(' ') + '\n');
+    writeToLogFile(args.map((arg) => inspect(arg)).join(' ') + '\n');
   }
 
   /**
@@ -22,7 +23,7 @@ export class ConsoleAdapter implements LoggerAdapter {
    */
   error(...args: any[]): void {
     console.error(...args);
-    writeToLogFile(args.join(' ') + '\n');
+    writeToLogFile(args.map((arg) => inspect(arg)).join(' ') + '\n');
   }
 
   /**
@@ -31,7 +32,7 @@ export class ConsoleAdapter implements LoggerAdapter {
    */
   warn(...args: any[]): void {
     console.warn(...args);
-    writeToLogFile(args.join(' ') + '\n');
+    writeToLogFile(args.map((arg) => inspect(arg)).join(' ') + '\n');
   }
 
   /**
