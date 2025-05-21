@@ -12,6 +12,7 @@ import { loadEffectiveConfig } from './configLoader.ts';
 import { buildExecutorAndLog } from './executors/index.ts';
 import type { ExecutorCommonOptions } from './executors/types.ts';
 import { planSchema } from './planSchema.ts';
+import { WorkspaceManager } from './workspace_manager.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
   const config = await loadEffectiveConfig(globalCliOptions.config);
@@ -30,8 +31,88 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     openLogFile(logFilePath);
   }
 
+  // Determine the base directory for operations
+  let baseDir = await getGitRoot();
+
+  // Handle workspace creation if a task ID is provided
+  if (options.workspaceTaskId) {
+    log(`Workspace task ID provided: ${options.workspaceTaskId}`);
+
+    const originalPlanFile = path.resolve(planFile);
+
+    // Verify the original plan file exists
+    try {
+      // Use stat to check if file exists
+      try {
+        await Bun.file(originalPlanFile).text();
+      } catch {
+        error(`Original plan file ${originalPlanFile} does not exist or is empty.`);
+        process.exit(1);
+      }
+    } catch (err) {
+      error(`Error checking original plan file: ${String(err)}`);
+      process.exit(1);
+    }
+
+    // Create a workspace using the WorkspaceManager
+    const workspaceManager = new WorkspaceManager(baseDir);
+    const workspace = await workspaceManager.createWorkspace(
+      options.workspaceTaskId,
+      originalPlanFile,
+      config
+    );
+
+    if (workspace) {
+      log(boldMarkdownHeaders('\n## Workspace Information'));
+      log(`Task ID: ${options.workspaceTaskId}`);
+      log(`Workspace Path: ${workspace.path}`);
+      log(`Original Plan: ${originalPlanFile}`);
+
+      // Validate that the workspace is properly initialized
+      try {
+        const gitStatus = await logSpawn(['git', 'status'], {
+          cwd: workspace.path,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+
+        if (gitStatus.exitCode !== 0) {
+          warn(
+            `Workspace at ${workspace.path} may not be properly initialized. Git operations failed.`
+          );
+        }
+      } catch (err) {
+        warn(`Error validating workspace: ${String(err)}`);
+      }
+
+      // Copy the plan file to the workspace
+      const workspacePlanFile = path.join(workspace.path, path.basename(planFile));
+      try {
+        log(`Copying plan file to workspace: ${workspacePlanFile}`);
+        await Bun.write(workspacePlanFile, await Bun.file(originalPlanFile).text());
+
+        // Update the planFile to use the copy in the workspace
+        planFile = workspacePlanFile;
+        log(`Using plan file in workspace: ${planFile}`);
+      } catch (err) {
+        error(`Failed to copy plan file to workspace: ${String(err)}`);
+        error('Continuing with original plan file.');
+      }
+
+      // Use the workspace path as the base directory for operations
+      baseDir = workspace.path;
+      log('---');
+    } else {
+      error('Failed to create workspace. Continuing in the current directory.');
+      // If workspace creation is explicitly required, exit
+      if (options.requireWorkspace) {
+        error('Workspace creation was required but failed. Exiting.');
+        process.exit(1);
+      }
+    }
+  }
+
   const sharedExecutorOptions: ExecutorCommonOptions = {
-    baseDir: await getGitRoot(),
+    baseDir,
     model: agentExecutionModel,
   };
   const executor = buildExecutorAndLog(options.executor, sharedExecutorOptions, config);

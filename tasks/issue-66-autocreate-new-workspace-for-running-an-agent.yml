@@ -418,7 +418,7 @@ tasks:
 
           1.  In the `rmplan agent` command definition:
               *   Add a new option: `--workspace-task-id <id>`, description: "ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created."
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmplan/agent.ts`.
 
