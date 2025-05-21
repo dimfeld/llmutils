@@ -296,7 +296,7 @@ tasks:
                   *   Verify that `_createWithLlmUtils` continues and returns a `Workspace` object.
               *   Test case: No `postCloneCommands` are provided.
                   *   Verify `executePostApplyCommand` is not called.
-        done: false
+        done: true
       - prompt: >
           Update tests for `src/rmplan/actions.ts` (`executePostApplyCommand`).
 

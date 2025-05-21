@@ -273,6 +273,8 @@ export class WorkspaceManager {
 
       for (const commandConfig of workspaceConfig.postCloneCommands) {
         // Add task-specific environment variables to the command config
+        // Note: We don't resolve workingDirectory here, as executePostApplyCommand
+        // will resolve it against targetClonePath. This is documented in its implementation.
         const commandWithEnv: PostApplyCommand = {
           ...commandConfig,
           env: {
@@ -285,6 +287,7 @@ export class WorkspaceManager {
         log(`Running post-clone command: "${commandConfig.title || commandConfig.command}"`);
 
         // Execute the command using executePostApplyCommand with targetClonePath as the git root
+        // Note: workingDirectory will be resolved against targetClonePath by executePostApplyCommand
         const success = await executePostApplyCommand(commandWithEnv, targetClonePath);
 
         if (!success && !commandConfig.allowFailure) {
