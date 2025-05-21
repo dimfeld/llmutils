@@ -10,6 +10,8 @@ import {
   type BaseEvent,
 } from './index';
 
+type Context = object;
+
 // Basic test demonstrating that nested FlowNode can be implemented
 describe('Nested Flow State Machine', () => {
   test('demonstrates simple nested state machine with event passing', async () => {
@@ -22,12 +24,12 @@ describe('Nested Flow State Machine', () => {
     };
 
     // The SimpleInitialNode class needs to transition to "end" directly
-    class SimpleInitialNode extends Node<SimpleStates, {}, SimpleEvent> {
+    class SimpleInitialNode extends Node<SimpleStates, Context, SimpleEvent> {
       constructor() {
         super('start');
       }
 
-      async prep(store: SharedStore<{}, SimpleEvent>) {
+      async prep(store: SharedStore<Context, SimpleEvent>) {
         return {
           events: [],
           args: null,
@@ -44,7 +46,7 @@ describe('Nested Flow State Machine', () => {
 
       async post(
         result: null,
-        store: SharedStore<{}, SimpleEvent>
+        store: SharedStore<Context, SimpleEvent>
       ): Promise<StateResult<SimpleStates, SimpleEvent>> {
         // Transition directly to the end state
         return {
@@ -62,14 +64,14 @@ describe('Nested Flow State Machine', () => {
     }
 
     // Custom final node that includes actions
-    class CustomFinalNode extends FinalNode<SimpleStates, {}, SimpleEvent> {
+    class CustomFinalNode extends FinalNode<SimpleStates, Context, SimpleEvent> {
       constructor() {
         super('end');
       }
 
       async post(
         result: null,
-        store: SharedStore<{}, SimpleEvent>
+        store: SharedStore<Context, SimpleEvent>
       ): Promise<StateResult<SimpleStates, SimpleEvent>> {
         return {
           status: 'terminal',
@@ -85,7 +87,7 @@ describe('Nested Flow State Machine', () => {
     }
 
     // Create the state machine
-    const machine = new StateMachine<SimpleStates, {}, SimpleEvent>(
+    const machine = new StateMachine<SimpleStates, Context, SimpleEvent>(
       {
         initialState: 'start',
         errorState: 'start',
@@ -139,11 +141,13 @@ describe('Nested Flow State Machine', () => {
     type InnerStates = 'inner_initial' | 'inner_processing' | 'inner_waiting' | 'inner_final';
 
     // Inner state machine nodes
-    class InnerInitialNode extends Node<InnerStates, {}, ProcessEvent> {
+    class InnerInitialNode extends Node<InnerStates, Context, ProcessEvent> {
       constructor() {
         super('inner_initial');
       }
-      async prep(store: SharedStore<{}, ProcessEvent>): Promise<PrepResult<ProcessEvent, null>> {
+      async prep(
+        store: SharedStore<Context, ProcessEvent>
+      ): Promise<PrepResult<ProcessEvent, null>> {
         const events = store.getPendingEvents();
         return { events, args: null };
       }
@@ -158,7 +162,7 @@ describe('Nested Flow State Machine', () => {
 
       async post(
         result: null,
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<StateResult<InnerStates, ProcessEvent>> {
         // Start processing - transition to processing state
         return {
@@ -177,7 +181,7 @@ describe('Nested Flow State Machine', () => {
 
     class InnerProcessingNode extends Node<
       InnerStates,
-      {},
+      Context,
       ProcessEvent,
       ProcessEvent[],
       ProcessEvent[],
@@ -188,7 +192,7 @@ describe('Nested Flow State Machine', () => {
       }
 
       async prep(
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<PrepResult<ProcessEvent, ProcessEvent[]>> {
         const events = store.getPendingEvents();
         return { events, args: events };
@@ -205,7 +209,7 @@ describe('Nested Flow State Machine', () => {
 
       async post(
         result: null,
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<StateResult<InnerStates, ProcessEvent>> {
         // After processing, transition to waiting state
         return {
@@ -224,7 +228,7 @@ describe('Nested Flow State Machine', () => {
 
     class InnerWaitingNode extends Node<
       InnerStates,
-      {},
+      Context,
       ProcessEvent,
       ProcessEvent[],
       ProcessEvent[],
@@ -235,7 +239,7 @@ describe('Nested Flow State Machine', () => {
       }
 
       async prep(
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<PrepResult<ProcessEvent, ProcessEvent[]>> {
         const events = store.getPendingEvents();
         return { events, args: events };
@@ -258,7 +262,7 @@ describe('Nested Flow State Machine', () => {
 
       async post(
         result: null,
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<StateResult<InnerStates, ProcessEvent>> {
         // Get the scratchpad to see if we have input events
         const scratchpad = store.getScratchpad<ProcessEvent[]>();
@@ -283,14 +287,14 @@ describe('Nested Flow State Machine', () => {
       }
     }
 
-    class InnerFinalNode extends FinalNode<InnerStates, {}, ProcessEvent> {
+    class InnerFinalNode extends FinalNode<InnerStates, Context, ProcessEvent> {
       constructor() {
         super('inner_final');
       }
 
       async post(
         result: null,
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<StateResult<InnerStates, ProcessEvent>> {
         return {
           status: 'terminal',
@@ -306,7 +310,7 @@ describe('Nested Flow State Machine', () => {
     }
 
     // Create the inner state machine
-    const innerMachine = new StateMachine<InnerStates, {}, ProcessEvent>(
+    const innerMachine = new StateMachine<InnerStates, Context, ProcessEvent>(
       {
         initialState: 'inner_initial',
         errorState: 'inner_initial',
@@ -332,12 +336,14 @@ describe('Nested Flow State Machine', () => {
     type OuterStates = 'outer_start' | 'outer_process' | 'outer_end';
 
     // Outer state machine nodes
-    class OuterInitialNode extends Node<OuterStates, {}, ProcessEvent> {
+    class OuterInitialNode extends Node<OuterStates, Context, ProcessEvent> {
       constructor() {
         super('outer_start');
       }
 
-      async prep(store: SharedStore<{}, ProcessEvent>): Promise<PrepResult<ProcessEvent, null>> {
+      async prep(
+        store: SharedStore<Context, ProcessEvent>
+      ): Promise<PrepResult<ProcessEvent, null>> {
         const events = store.getPendingEvents();
         return { events, args: null };
       }
@@ -352,7 +358,7 @@ describe('Nested Flow State Machine', () => {
 
       async post(
         result: null,
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<StateResult<OuterStates, ProcessEvent>> {
         return {
           status: 'transition',
@@ -371,21 +377,21 @@ describe('Nested Flow State Machine', () => {
     // Flow node that wraps our inner state machine
     class ProcessFlowNode extends FlowNode<
       OuterStates,
-      {},
+      Context,
       ProcessEvent,
       ProcessEvent,
       ProcessEvent[]
     > {
-      subMachine: StateMachine<InnerStates, {}, ProcessEvent>;
+      subMachine: StateMachine<InnerStates, Context, ProcessEvent>;
 
-      constructor(innerMachine: StateMachine<InnerStates, {}, ProcessEvent>) {
+      constructor(innerMachine: StateMachine<InnerStates, Context, ProcessEvent>) {
         super('outer_process', innerMachine.config);
         this.subMachine = innerMachine;
       }
 
       // Required by Node abstract class
       async prep(
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<PrepResult<ProcessEvent, ProcessEvent[]>> {
         const events = store.getPendingEvents();
         return { events, args: events };
@@ -394,7 +400,7 @@ describe('Nested Flow State Machine', () => {
       // Required by Node abstract class
       async post(
         result: StateResult<any, ProcessEvent>,
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<StateResult<OuterStates, ProcessEvent>> {
         // If the inner state machine has reached its terminal state, transition to our final state
         if (result.status === 'terminal') {
@@ -476,14 +482,14 @@ describe('Nested Flow State Machine', () => {
       }
     }
 
-    class OuterFinalNode extends FinalNode<OuterStates, {}, ProcessEvent> {
+    class OuterFinalNode extends FinalNode<OuterStates, Context, ProcessEvent> {
       constructor() {
         super('outer_end');
       }
 
       async post(
         result: null,
-        store: SharedStore<{}, ProcessEvent>
+        store: SharedStore<Context, ProcessEvent>
       ): Promise<StateResult<OuterStates, ProcessEvent>> {
         return {
           status: 'terminal',
@@ -499,7 +505,7 @@ describe('Nested Flow State Machine', () => {
     }
 
     // Create the outer state machine
-    const outerMachine = new StateMachine<OuterStates, {}, ProcessEvent>(
+    const outerMachine = new StateMachine<OuterStates, Context, ProcessEvent>(
       {
         initialState: 'outer_start',
         errorState: 'outer_start',
