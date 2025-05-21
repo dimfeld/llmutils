@@ -22,9 +22,14 @@ await mock.module('../logging.js', () => ({
   debugLog: mockDebugLog,
 }));
 
+const mockParseCliArgsFromString = mock((cmd: string) => cmd.split(' '));
+
 await mock.module('../rmfilter/utils.js', () => ({
   spawnAndLogOutput: mockSpawnAndLogOutput,
+  parseCliArgsFromString: mockParseCliArgsFromString,
 }));
+
+const mockMkdir = mock(async () => {});
 
 await mock.module('node:fs/promises', () => ({
   stat: mockStat,
@@ -32,6 +37,7 @@ await mock.module('node:fs/promises', () => ({
   mkdtemp: mockMkdtemp,
   writeFile: mockWriteFile,
   rm: mockRm,
+  mkdir: mockMkdir,
 }));
 
 // Import the module under test after all mocks are set up
@@ -57,6 +63,7 @@ describe('WorkspaceManager', () => {
     mockMkdtemp.mockReset();
     mockWriteFile.mockReset();
     mockRm.mockReset();
+    mockMkdir.mockReset();
   });
 
   test('createWorkspace returns null when workspaceCreation is not enabled', async () => {
@@ -339,17 +346,211 @@ describe('WorkspaceManager', () => {
     );
   });
 
-  test('createWorkspace for llmutils method returns null as not implemented', async () => {
+  test('createWorkspace with llmutils method - successful clone and branch creation', async () => {
+    // Setup
+    const taskId = 'task-123';
+    const planPath = '/path/to/plan.yml';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = '/path/to/clones';
+    const targetClonePath = '/path/to/clones/repo-task-123';
+
     const config: RmplanConfig = {
       workspaceCreation: {
         method: 'llmutils',
-        repositoryUrl: 'https://github.com/example/repo.git',
+        repositoryUrl,
+        cloneLocation,
       },
     };
 
-    const result = await workspaceManager.createWorkspace('task-123', '/path/to/plan.yml', config);
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
 
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the directory creation
+    mockMkdir.mockImplementation(async () => {});
+
+    // Mock fs.stat to verify the workspace as a directory
+    mockStat.mockImplementation(async () => ({
+      isDirectory: () => true,
+    }));
+
+    // Execute
+    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(result).toEqual({
+      path: expect.stringContaining('repo-task-123'),
+      originalPlanFilePath: planPath,
+      taskId,
+    });
+
+    // Verify log calls
+    expect(mockLog).toHaveBeenCalledWith('Creating workspace using llmutils-based method');
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Cloning repository'));
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('Creating and checking out branch')
+    );
+  });
+
+  test('createWorkspace with llmutils method - infers repository URL if not provided', async () => {
+    // Setup
+    const taskId = 'task-123';
+    const planPath = '/path/to/plan.yml';
+    const inferedRepositoryUrl = 'https://github.com/inferred/repo.git';
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        method: 'llmutils',
+      },
+    };
+
+    // Mock the git remote get-url command
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: inferedRepositoryUrl,
+      stderr: '',
+    }));
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the directory creation
+    mockMkdir.mockImplementation(async () => {});
+
+    // Execute
+    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining(`Inferred repository URL: ${inferedRepositoryUrl}`)
+    );
+  });
+
+  test('createWorkspace with llmutils method - fails on clone error', async () => {
+    // Setup
+    const taskId = 'task-123';
+    const planPath = '/path/to/plan.yml';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        method: 'llmutils',
+        repositoryUrl,
+      },
+    };
+
+    // Mock the clone operation to fail
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'Failed to clone repository',
+    }));
+
+    // Mock the directory creation
+    mockMkdir.mockImplementation(async () => {});
+
+    // Execute
+    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+
+    // Verify
     expect(result).toBeNull();
-    expect(mockLog).toHaveBeenCalledWith('LLMUtils-based workspace creation not yet implemented');
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Failed to clone repository'));
+  });
+
+  test('createWorkspace with llmutils method - runs post-clone commands', async () => {
+    // Setup
+    const taskId = 'task-123';
+    const planPath = '/path/to/plan.yml';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const targetClonePath = expect.stringContaining('repo-task-123');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        method: 'llmutils',
+        repositoryUrl,
+        postCloneCommands: [
+          {
+            title: 'Install dependencies',
+            command: 'npm install',
+          },
+          {
+            title: 'Run build',
+            command: 'npm run build',
+          },
+        ],
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the npm install command
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the npm run build command
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the directory creation
+    mockMkdir.mockImplementation(async () => {});
+
+    // Mock fs.stat to verify the workspace as a directory
+    mockStat.mockImplementation(async () => ({
+      isDirectory: () => true,
+    }));
+
+    // Execute
+    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(mockLog).toHaveBeenCalledWith('Running post-clone commands');
+
+    // Verify npm install was called
+    expect(mockParseCliArgsFromString).toHaveBeenCalledWith('npm install');
+
+    // Verify npm run build was called
+    expect(mockParseCliArgsFromString).toHaveBeenCalledWith('npm run build');
   });
 });
