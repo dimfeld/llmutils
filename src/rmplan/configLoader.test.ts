@@ -94,7 +94,7 @@ postApplyCommands:
     expect(config).toHaveProperty('defaultExecutor', 'direct-call');
     expect(config).toHaveProperty('postApplyCommands');
     expect(config.postApplyCommands).toHaveLength(1);
-    expect(config.postApplyCommands[0].title).toBe('Test Command');
+    expect(config.postApplyCommands?.[0].title).toBe('Test Command');
   });
 
   test('findLocalConfigPath returns local config path when it exists', async () => {
@@ -154,7 +154,7 @@ defaultExecutor: copy-only
     // Properties not in local config should remain from main config
     expect(config).toHaveProperty('postApplyCommands');
     expect(config.postApplyCommands).toHaveLength(1);
-    expect(config.postApplyCommands[0].title).toBe('Main Command');
+    expect(config.postApplyCommands?.[0].title).toBe('Main Command');
   });
 
   test('loadEffectiveConfig uses main config when local config has validation errors', async () => {
@@ -232,8 +232,8 @@ autoexamples:
     
     // Arrays should be concatenated
     expect(config.postApplyCommands).toHaveLength(2);
-    expect(config.postApplyCommands[0].title).toBe('Main Command');
-    expect(config.postApplyCommands[1].title).toBe('Local Command');
+    expect(config.postApplyCommands?.[0].title).toBe('Main Command');
+    expect(config.postApplyCommands?.[1].title).toBe('Local Command');
     
     expect(config.autoexamples).toHaveLength(2);
     expect(config.autoexamples).toContain('main-example');
