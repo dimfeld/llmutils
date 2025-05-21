@@ -20,6 +20,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
 import { executors } from './executors/index.js';
+import { sshAwarePasteAction } from '../common/ssh_detection.ts';
 
 await loadEnv();
 
@@ -191,7 +192,7 @@ program
       if (exitRes === 0 && !options.noExtract) {
         log(
           chalk.bold(
-            '\nPlease paste the prompt into the chat interface and copy the response. Press Enter to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.'
+            `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
           )
         );
 
