@@ -1,11 +1,5 @@
 import type { BaseEvent } from './events.ts';
-import {
-  Node,
-  InitialNode,
-  FinalNode,
-  ErrorNode,
-  FlowNode,
-} from './nodes.ts';
+import { Node, InitialNode, FinalNode, ErrorNode, FlowNode } from './nodes.ts';
 import { SharedStore, type PersistenceAdapter } from './store.ts';
 import {
   initTelemetry,
@@ -79,10 +73,12 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     }
   }
 
-  async resume(events: TEvent[]): Promise<StateResult<StateName, TEvent> & {
-    stateName?: StateName; 
-    context?: TContext;
-  }> {
+  async resume(events: TEvent[]): Promise<
+    StateResult<StateName, TEvent> & {
+      stateName?: StateName;
+      context?: TContext;
+    }
+  > {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -108,7 +104,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       if (!node) throw new Error(`Unknown state: ${currentState}`);
       return await this.runNode(node);
     });
-    
+
     // Add context and current state to result for easier testing
     return {
       ...result,

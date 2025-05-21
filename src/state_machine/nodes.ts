@@ -80,16 +80,20 @@ export abstract class Node<
       return store.withRollback(async () => {
         try {
           // Prep phase
-          const prepResult = await withSpan(`node.prep.${this.id}`, attributes, async (prepSpan) => {
-            prepSpan.addEvent('node_prep_started', { node_id: this.id });
-            console.log(`👉 ${this.id} node - before prep, store:`, store.getContext());
-            const result = await store.retry(() => this._prep(store));
-            console.log(`👉 ${this.id} node - prep result:`, result);
-            prepSpan.addEvent('node_prep_completed', {
-              event_count: result.events?.length ?? 0,
-            });
-            return result;
-          });
+          const prepResult = await withSpan(
+            `node.prep.${this.id}`,
+            attributes,
+            async (prepSpan) => {
+              prepSpan.addEvent('node_prep_started', { node_id: this.id });
+              console.log(`👉 ${this.id} node - before prep, store:`, store.getContext());
+              const result = await store.retry(() => this._prep(store));
+              console.log(`👉 ${this.id} node - prep result:`, result);
+              prepSpan.addEvent('node_prep_completed', {
+                event_count: result.events?.length ?? 0,
+              });
+              return result;
+            }
+          );
 
           // Exec phase
           const result = await withSpan(`node.exec.${this.id}`, attributes, async (execSpan) => {
@@ -107,7 +111,11 @@ export abstract class Node<
             execSpan.addEvent('node_exec_started', { node_id: this.id });
             console.log(`👉 ${this.id} node - before exec with args:`, prepResult.args);
             const execResult = await store.retry(() =>
-              this._exec(prepResult.args, prepResult.events ?? [], store.getScratchpad<TScratchpad>())
+              this._exec(
+                prepResult.args,
+                prepResult.events ?? [],
+                store.getScratchpad<TScratchpad>()
+              )
             );
             console.log(`👉 ${this.id} node - exec result:`, execResult);
             execSpan.addEvent('node_exec_completed');
@@ -154,11 +162,11 @@ export abstract class Node<
 /**
  * InitialNode: The starting point of a state machine that automatically transitions to the next state.
  */
-export class InitialNode<
-  StateName extends string,
+export class InitialNode<StateName extends string, TContext, TEvent extends BaseEvent> extends Node<
+  StateName,
   TContext,
-  TEvent extends BaseEvent
-> extends Node<StateName, TContext, TEvent> {
+  TEvent
+> {
   constructor(id: StateName) {
     super(id);
   }
@@ -190,11 +198,11 @@ export class InitialNode<
 /**
  * FinalNode: A terminal state in the state machine.
  */
-export class FinalNode<
-  StateName extends string,
+export class FinalNode<StateName extends string, TContext, TEvent extends BaseEvent> extends Node<
+  StateName,
   TContext,
-  TEvent extends BaseEvent
-> extends Node<StateName, TContext, TEvent> {
+  TEvent
+> {
   constructor(id: StateName) {
     super(id);
   }
@@ -224,11 +232,11 @@ export class FinalNode<
 /**
  * ErrorNode: Handles error states in the state machine.
  */
-export class ErrorNode<
-  StateName extends string,
+export class ErrorNode<StateName extends string, TContext, TEvent extends BaseEvent> extends Node<
+  StateName,
   TContext,
-  TEvent extends BaseEvent
-> extends Node<StateName, TContext, TEvent> {
+  TEvent
+> {
   constructor(id: StateName) {
     super(id);
   }
@@ -286,7 +294,9 @@ export abstract class FlowNode<
   }
 
   // Factory method to create the sub-machine
-  private createSubMachine(config: StateMachineConfig<any, any, SubEvent>): StateMachine<any, any, SubEvent> {
+  private createSubMachine(
+    config: StateMachineConfig<any, any, SubEvent>
+  ): StateMachine<any, any, SubEvent> {
     // This is a bit of a hack to get around the circular dependency.
     // In the real code, you would import StateMachine directly.
     return new (require('./index.ts').StateMachine)(
