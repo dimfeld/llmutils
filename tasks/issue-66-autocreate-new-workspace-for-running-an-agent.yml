@@ -399,7 +399,7 @@ tasks:
           8.  Test `findWorkspacesByTaskId`:
               *   Returns correct workspaces for a taskId.
               *   Returns empty array if no workspaces match.
-        done: false
+        done: true
   - title: 6. Integrate Workspace Creation into `rmplan agent`
     description: Modify the `rmplan agent` command to use the `WorkspaceManager` to
       create and operate within a new workspace when specific options are
