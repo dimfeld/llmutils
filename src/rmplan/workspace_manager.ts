@@ -6,6 +6,7 @@ import { log, debugLog } from '../logging.js';
 import { spawnAndLogOutput, getGitRoot, parseCliArgsFromString } from '../rmfilter/utils.js';
 import type { RmplanConfig, WorkspaceCreationConfig, PostApplyCommand } from './configSchema.js';
 import { executePostApplyCommand } from './actions.js';
+import { recordWorkspace } from './workspace_tracker.js';
 
 /**
  * Interface representing a created workspace
@@ -146,12 +147,26 @@ export class WorkspaceManager {
 
     debugLog(`Successfully created workspace at ${workspacePath}`);
 
-    // Return the workspace information
-    return {
+    // Create workspace object
+    const workspace = {
       path: workspacePath,
       originalPlanFilePath,
       taskId,
     };
+    
+    // We don't know the repository URL or branch for script-created workspaces,
+    // but we can still record what we know
+    await recordWorkspace({
+      taskId,
+      originalPlanFilePath,
+      workspacePath,
+      repositoryUrl: 'unknown', // Script-created workspaces don't provide this info
+      branch: 'unknown',        // Script-created workspaces don't provide this info
+      createdAt: new Date().toISOString(),
+    });
+    
+    // Return the workspace information
+    return workspace;
   }
 
   // For testing purposes only - allows tests to override homedir
@@ -306,11 +321,24 @@ export class WorkspaceManager {
 
     debugLog(`Successfully created workspace at ${targetClonePath}`);
 
-    // Return the workspace information
-    return {
+    // Create workspace object
+    const workspace = {
       path: targetClonePath,
       originalPlanFilePath,
       taskId,
     };
+    
+    // Record the workspace info for tracking
+    await recordWorkspace({
+      taskId,
+      originalPlanFilePath,
+      repositoryUrl: repositoryUrl,
+      workspacePath: targetClonePath,
+      branch: branchName,
+      createdAt: new Date().toISOString(),
+    });
+    
+    // Return the workspace information
+    return workspace;
   }
 }
