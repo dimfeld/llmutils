@@ -153,7 +153,7 @@ export class WorkspaceManager {
       originalPlanFilePath,
       taskId,
     };
-    
+
     // We don't know the repository URL or branch for script-created workspaces,
     // but we can still record what we know
     await recordWorkspace({
@@ -161,10 +161,10 @@ export class WorkspaceManager {
       originalPlanFilePath,
       workspacePath,
       repositoryUrl: 'unknown', // Script-created workspaces don't provide this info
-      branch: 'unknown',        // Script-created workspaces don't provide this info
+      branch: 'unknown', // Script-created workspaces don't provide this info
       createdAt: new Date().toISOString(),
     });
-    
+
     // Return the workspace information
     return workspace;
   }
@@ -327,7 +327,7 @@ export class WorkspaceManager {
       originalPlanFilePath,
       taskId,
     };
-    
+
     // Record the workspace info for tracking
     await recordWorkspace({
       taskId,
@@ -337,7 +337,7 @@ export class WorkspaceManager {
       branch: branchName,
       createdAt: new Date().toISOString(),
     });
-    
+
     // Return the workspace information
     return workspace;
   }

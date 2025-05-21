@@ -30,7 +30,7 @@ mock.module('../logging.js', () => ({
 await mock.module('./workspace_tracker.js', () => {
   // Import the actual module
   const originalModule = require('./workspace_tracker.js');
-  
+
   // Replace getTrackingFilePath with our mock
   return {
     ...originalModule,
@@ -39,7 +39,13 @@ await mock.module('./workspace_tracker.js', () => {
 });
 
 // Import the module functions after mocking
-import { readTrackingData, writeTrackingData, recordWorkspace, getWorkspaceMetadata, findWorkspacesByTaskId } from './workspace_tracker.js';
+import {
+  readTrackingData,
+  writeTrackingData,
+  recordWorkspace,
+  getWorkspaceMetadata,
+  findWorkspacesByTaskId,
+} from './workspace_tracker.js';
 import type { WorkspaceInfo } from './workspace_tracker.js';
 
 describe('workspace_tracker', () => {
@@ -81,7 +87,9 @@ describe('workspace_tracker', () => {
 
     expect(result).toEqual({});
     expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Error reading workspace tracking data'));
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('Error reading workspace tracking data')
+    );
   });
 
   test('readTrackingData returns parsed data when file exists and is valid', async () => {

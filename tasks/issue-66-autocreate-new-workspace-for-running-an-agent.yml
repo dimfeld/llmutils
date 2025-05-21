@@ -356,7 +356,7 @@ tasks:
           Promise<WorkspaceInfo[]>`.
               *   Read tracking data.
               *   Return an array of `WorkspaceInfo` objects where `taskId` matches.
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmplan/workspace_manager.ts`.
 
