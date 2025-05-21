@@ -464,7 +464,7 @@ tasks:
               *   Inside this `finally` block, if `options.workspaceTaskId` was provided (meaning CWD was changed), restore the CWD: `process.chdir(originalCwd);`. Log that CWD is restored.
           9.  The existing `config.postApplyCommands` execution loop should run
           *after* the CWD is restored, so it operates on the main repository.
-        done: false
+        done: true
       - prompt: >
           Add tests for `rmplan agent` with workspace creation in a new test
           file or an existing relevant one (e.g., `src/rmplan/agent.test.ts` if

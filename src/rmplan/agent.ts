@@ -1,4 +1,6 @@
 import * as path from 'path';
+import * as os from 'node:os';
+import * as fs from 'node:fs/promises';
 import yaml from 'yaml';
 import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../logging.ts';
 import { getGitRoot, logSpawn } from '../rmfilter/utils.ts';
@@ -15,15 +17,21 @@ import { planSchema } from './planSchema.ts';
 import { WorkspaceManager } from './workspace_manager.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
+  // Store the original current working directory
+  const originalCwd = process.cwd();
+
+  // Initialize currentPlanFile (absolute path)
+  let currentPlanFile = path.resolve(planFile);
+
   const config = await loadEffectiveConfig(globalCliOptions.config);
 
   const agentExecutionModel = options.model || config.models?.execution;
 
-  let parsed = path.parse(planFile);
+  let parsed = path.parse(currentPlanFile);
   if (parsed.ext === '.md' || parsed.ext === '.' || !parsed.ext) {
     parsed.base = parsed.name + '.yml';
     parsed.ext = 'yml';
-    planFile = path.join(parsed.dir, parsed.base);
+    currentPlanFile = path.join(parsed.dir, parsed.base);
   }
 
   if (!options['no-log']) {
@@ -32,21 +40,19 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   }
 
   // Determine the base directory for operations
-  let baseDir = await getGitRoot();
+  let currentBaseDir = await getGitRoot();
 
   // Handle workspace creation if a task ID is provided
   if (options.workspaceTaskId) {
     log(`Workspace task ID provided: ${options.workspaceTaskId}`);
 
-    const originalPlanFile = path.resolve(planFile);
-
     // Verify the original plan file exists
     try {
       // Use stat to check if file exists
       try {
-        await Bun.file(originalPlanFile).text();
+        await Bun.file(currentPlanFile).text();
       } catch {
-        error(`Original plan file ${originalPlanFile} does not exist or is empty.`);
+        error(`Original plan file ${currentPlanFile} does not exist or is empty.`);
         process.exit(1);
       }
     } catch (err) {
@@ -55,10 +61,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
 
     // Create a workspace using the WorkspaceManager
-    const workspaceManager = new WorkspaceManager(baseDir);
+    const workspaceManager = new WorkspaceManager(currentBaseDir);
     const workspace = await workspaceManager.createWorkspace(
       options.workspaceTaskId,
-      originalPlanFile,
+      currentPlanFile,
       config
     );
 
@@ -66,7 +72,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       log(boldMarkdownHeaders('\n## Workspace Information'));
       log(`Task ID: ${options.workspaceTaskId}`);
       log(`Workspace Path: ${workspace.path}`);
-      log(`Original Plan: ${originalPlanFile}`);
+      log(`Original Plan: ${currentPlanFile}`);
 
       // Validate that the workspace is properly initialized
       try {
@@ -85,21 +91,26 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
 
       // Copy the plan file to the workspace
-      const workspacePlanFile = path.join(workspace.path, path.basename(planFile));
+      const planFileNameInWorkspace = '.llmutils_plan.yml';
+      const workspacePlanFile = path.join(workspace.path, planFileNameInWorkspace);
       try {
         log(`Copying plan file to workspace: ${workspacePlanFile}`);
-        await Bun.write(workspacePlanFile, await Bun.file(originalPlanFile).text());
+        await Bun.write(workspacePlanFile, await Bun.file(currentPlanFile).text());
 
         // Update the planFile to use the copy in the workspace
-        planFile = workspacePlanFile;
-        log(`Using plan file in workspace: ${planFile}`);
+        currentPlanFile = workspacePlanFile;
+        log(`Using plan file in workspace: ${currentPlanFile}`);
       } catch (err) {
         error(`Failed to copy plan file to workspace: ${String(err)}`);
         error('Continuing with original plan file.');
       }
 
       // Use the workspace path as the base directory for operations
-      baseDir = workspace.path;
+      currentBaseDir = workspace.path;
+
+      // Change the process's CWD
+      process.chdir(workspace.path);
+      log(`Changed working directory to workspace: ${workspace.path}`);
       log('---');
     } else {
       error('Failed to create workspace. Continuing in the current directory.');
@@ -112,7 +123,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   }
 
   const sharedExecutorOptions: ExecutorCommonOptions = {
-    baseDir,
+    baseDir: currentBaseDir,
     model: agentExecutionModel,
   };
 
@@ -120,7 +131,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const executorName = options.executor || config.defaultExecutor || 'copy-only';
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
-  log('Starting agent to execute plan:', planFile);
+  log('Starting agent to execute plan:', currentPlanFile);
   try {
     let hasError = false;
 
@@ -129,7 +140,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     while (stepCount < maxSteps) {
       stepCount++;
 
-      const fileContent = await Bun.file(planFile).text();
+      const fileContent = await Bun.file(currentPlanFile).text();
       let parsed;
       try {
         parsed = yaml.parse(fileContent);
@@ -158,7 +169,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       );
 
       const executorStepOptions = executor.prepareStepOptions?.() ?? {};
-      const stepPreparationResult = await prepareNextStep(config, planFile, {
+      const stepPreparationResult = await prepareNextStep(config, currentPlanFile, {
         previous: true,
         ...executorStepOptions,
         model: executorStepOptions.model || agentExecutionModel,
@@ -234,7 +245,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       try {
         log(boldMarkdownHeaders('\n## Marking done\n'));
         markResult = await markStepDone(
-          planFile,
+          currentPlanFile,
           { steps: 1, commit: true },
           { taskIndex, stepIndex }
         );
@@ -259,8 +270,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
     }
 
-    await closeLogFile();
-
     if (hasError) {
       error('Agent stopped due to error.');
       process.exit(1);
@@ -269,5 +278,13 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     error('Unexpected error during agent execution:', err);
     error('Agent stopped due to error.');
     process.exit(1);
+  } finally {
+    // Restore the original working directory if it was changed
+    if (options.workspaceTaskId && process.cwd() !== originalCwd) {
+      log('Restoring original working directory');
+      process.chdir(originalCwd);
+    }
+
+    await closeLogFile();
   }
 }
