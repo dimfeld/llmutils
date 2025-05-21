@@ -72,9 +72,8 @@ export class CopyNode extends Node<CopyOnlyState, CopyOnlyContext, CopyOnlyEvent
           id: crypto.randomUUID(),
           type: 'PROMPT',
           payload: {
-            message: chalk.bold(
-              '\nPlease paste the prompt into your agent and when it is done, press Enter to continue or `c` to copy again.'
-            ),
+            message:
+              'Please paste the prompt into your agent and when it is done, press Enter to continue or `c` to copy again.',
           },
         },
       ],
@@ -91,7 +90,7 @@ export class HandleResponseNode extends NoopNode<CopyOnlyState, CopyOnlyContext,
     _result: undefined,
     store: SharedStore<CopyOnlyContext, CopyOnlyEvent>
   ): Promise<StateResult<CopyOnlyState, CopyOnlyEvent>> {
-    const event = await store.dequeueEvent();
+    const event = store.dequeueEvent();
 
     if (event?.payload.message === 'c') {
       return {
@@ -161,6 +160,7 @@ export class CopyOnlyStateMachine {
     );
   }
 
+  // Temporary runner until the parts farther up in the system are converted.
   // Run the state machine to completion
   async run(): Promise<void> {
     // Initialize the state machine
@@ -176,14 +176,20 @@ export class CopyOnlyStateMachine {
         // The machine will handle the transition itself in the resume call
         result = await this.machine.resume([]);
       } else {
-        const response = await waitForEnter();
-        result = await this.machine.resume([
-          {
-            id: crypto.randomUUID(),
-            type: 'RESPONSE',
-            payload: { message: response },
-          },
-        ]);
+        const newEvents: CopyOnlyEvent[] = [];
+        for (const action of result.actions ?? []) {
+          if (action.type === 'PROMPT') {
+            log('\n' + chalk.bold(action.payload.message));
+            const response = await waitForEnter();
+            newEvents.push({
+              id: crypto.randomUUID(),
+              type: 'RESPONSE',
+              payload: { message: response },
+            });
+          }
+        }
+
+        result = await this.machine.resume(newEvents);
       }
     }
   }

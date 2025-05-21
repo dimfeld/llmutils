@@ -31,11 +31,13 @@ export interface PersistenceAdapter<TContext, TEvent extends BaseEvent> {
  * It provides type-safe access, persistence, rollback, retry, and observability features.
  */
 export class SharedStore<TContext, TEvent extends BaseEvent> {
-  private context: TContext;
-  private scratchpad: unknown;
-  private pendingEvents: TEvent[] = [];
-  private currentState: string | undefined;
-  private history: {
+  context: TContext;
+  scratchpad: unknown;
+  pendingEvents: TEvent[] = [];
+  currentState: string | undefined;
+  private isInRollback = false;
+  private rollbackEventQueue: TEvent[] = [];
+  history: {
     state: string;
     context: TContext;
     scratchpad: unknown;
@@ -43,13 +45,13 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
     timestamp: number;
   }[] = [];
 
-  private adapter: PersistenceAdapter<TContext, TEvent>;
+  private persistenceAdapter: PersistenceAdapter<TContext, TEvent>;
 
   public instanceId: string;
 
   // Retry configuration
-  private maxRetries: number = 3;
-  private retryDelay: (attempt: number) => number = (attempt) => 0;
+  maxRetries: number = 3;
+  retryDelay: (attempt: number) => number = (attempt) => 0;
 
   constructor(
     instanceId: string,
@@ -63,7 +65,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
     this.instanceId = instanceId;
     this.context = initialContext;
     this.scratchpad = undefined;
-    this.adapter = adapter;
+    this.persistenceAdapter = adapter;
 
     // Set retry configuration if provided
     if (options) {
@@ -95,21 +97,21 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
 
   /** Override the persistence adapter */
   setAdapter(adapter: PersistenceAdapter<TContext, TEvent>): void {
-    this.adapter = adapter;
+    this.persistenceAdapter = adapter;
   }
 
   /**
-   * Returns an immutable copy of the current context.
+   * Returns the current context.
    */
   getContext(): TContext {
-    return structuredClone(this.context); // Deep copy for immutability
+    return this.context;
   }
 
   /**
    * Updates the context using a pure function, ensuring immutability.
    * Persists the updated state based on the provided strategy.
    */
-  async updateContext(updater: (context: TContext) => TContext): Promise<void> {
+  updateContext(updater: (context: TContext) => TContext): void {
     this.context = updater(this.getContext());
   }
 
@@ -129,10 +131,10 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   }
 
   /**
-   * Returns an immutable copy of the scratchpad, or null if not set.
+   * Returns the scratchpad, or undefined if not set.
    */
   getScratchpad<TScratchpad>(): TScratchpad | undefined {
-    return this.scratchpad ? (structuredClone(this.scratchpad) as TScratchpad) : undefined;
+    return this.scratchpad as TScratchpad | undefined;
   }
 
   updateScratchpad<TScratchpad extends object>(
@@ -144,7 +146,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   /**
    * Enqueues one or more events to the pending list and persists them.
    */
-  async enqueueEvents(events: TEvent[]): Promise<void> {
+  async enqueueEvents(events: TEvent[]) {
     const attributes: StateMachineAttributes = {
       instanceId: this.instanceId,
       stateName: this.currentState,
@@ -155,7 +157,17 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
         event_count: events.length,
       });
 
-      this.pendingEvents.push(...events.map((e) => ({ ...e }))); // Deep copy for immutability
+      const eventList = structuredClone(events);
+
+      // If we're in a rollback, queue the events instead of adding them to pending
+      if (this.isInRollback) {
+        this.rollbackEventQueue.push(...eventList);
+        span.addEvent('events_queued_during_rollback', {
+          queued_count: events.length,
+        });
+      }
+
+      this.pendingEvents.push(...eventList);
       await this.persistEvents();
 
       // Record each enqueued event on the span
@@ -166,43 +178,61 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
   }
 
   /**
-   * Processes events by ID, removing them from the pending list and returning them.
-   * Throws an error for invalid IDs to prevent silent failures.
+   * Removes the specified events from the pending list by reference.
+   * @param events The events to remove
+   * @returns The number of events removed
    */
-  processEvents(eventIds: string[]): TEvent[] {
-    const processed: TEvent[] = [];
+  removeEvents(events: TEvent[]): number {
+    const initialLength = this.pendingEvents.length;
+    this.pendingEvents = this.pendingEvents.filter((event) => !events.includes(event));
+    return initialLength - this.pendingEvents.length;
+  }
+
+  /**
+   * Gets all events of a specific type
+   * @param type The event type to filter by
+   * @returns Array of matching events
+   */
+  getEventsOfType<EventType extends TEvent['type']>(type: EventType): TEvent[] {
+    return this.pendingEvents.filter((event) => event.type === type);
+  }
+
+  /**
+   * Removes and returns all events of a specific type
+   * @param type The event type to dequeue
+   * @returns Array of removed events
+   */
+  dequeueEventsOfType<EventType extends TEvent['type']>(type: EventType): TEvent[] {
+    const matching: TEvent[] = [];
     const remaining: TEvent[] = [];
 
     for (const event of this.pendingEvents) {
-      if (eventIds.includes(event.id)) {
-        processed.push(event);
+      if (event.type === type) {
+        matching.push(event);
       } else {
         remaining.push(event);
       }
     }
 
-    if (processed.length !== eventIds.length) {
-      const missing = eventIds.filter((id) => !processed.some((e) => e.id === id));
-      throw new Error(`Invalid event IDs: ${missing.join(', ')}`);
-    }
-
     this.pendingEvents = remaining;
-    return processed.map((e) => ({ ...e })); // Immutable copy
+    return matching;
   }
 
   /**
-   * Returns an immutable copy of the pending events list.
+   * Removes and returns all pending events
+   * @returns Array of all pending events
    */
-  getPendingEvents(): TEvent[] {
-    return this.pendingEvents.map((e) => ({ ...e }));
+  dequeueAllEvents(): TEvent[] {
+    const events = [...this.pendingEvents];
+    this.pendingEvents = [];
+    return events;
   }
 
   /**
    * Dequeues the oldest event, if any
    */
-  async dequeueEvent(): Promise<TEvent | undefined> {
-    const event = this.pendingEvents.shift();
-    return event ? { ...event } : undefined;
+  dequeueEvent(): TEvent | undefined {
+    return this.pendingEvents.shift();
   }
 
   /**
@@ -236,12 +266,7 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    * Returns an immutable copy of the execution history.
    */
   getExecutionTrace(): typeof this.history {
-    return this.history.map((entry) => ({
-      ...entry,
-      context: structuredClone(entry.context),
-      scratchpad: entry.scratchpad ? structuredClone(entry.scratchpad) : undefined,
-      events: entry.events.map((e) => ({ ...e })),
-    }));
+    return structuredClone(this.history);
   }
 
   /**
@@ -262,22 +287,46 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
 
     return await withSpan('store.with_rollback', attributes, async (span) => {
       const snapshot = {
-        context: this.getContext(),
-        scratchpad: this.getScratchpad(),
-        pendingEvents: this.getPendingEvents(),
+        context: structuredClone(this.getContext()),
+        scratchpad: structuredClone(this.getScratchpad()),
+        pendingEvents: structuredClone(this.pendingEvents),
       };
+
+      // Clear the rollback event queue and set the rollback flag
+      this.rollbackEventQueue = [];
+      this.isInRollback = true;
+
       try {
         return await operation();
       } catch (e) {
         span.setStatus({ code: 1, message: 'Rollback executed' });
-        span.addEvent('rollback_executed', {
-          error: e instanceof Error ? e.message : String(e),
-        });
+        const queuedEventCount = this.rollbackEventQueue.length;
 
+        // Restore the original state
         this.context = snapshot.context;
         this.scratchpad = snapshot.scratchpad;
         this.pendingEvents = snapshot.pendingEvents;
+
+        // Add any events that arrived during the rollback to the pending events
+        if (queuedEventCount > 0) {
+          this.pendingEvents.push(...this.rollbackEventQueue);
+          span.addEvent('applied_queued_events_after_rollback', {
+            queued_event_count: queuedEventCount,
+          });
+        }
+
+        // Clear the rollback flag and queue
+        this.isInRollback = false;
+        this.rollbackEventQueue = [];
+
+        // Persist the final state (with any queued events if there was a rollback)
+        await this.persist();
+
+        // Re-throw the original error
         throw e;
+      } finally {
+        // Ensure we always clear the rollback flag, even if there was an error during rollback
+        this.isInRollback = false;
       }
     });
   }
@@ -332,17 +381,17 @@ export class SharedStore<TContext, TEvent extends BaseEvent> {
    * Persists the context, scratchpad, pending events, and history to storage.
    */
   private async persist(): Promise<void> {
-    await this.adapter.write(this.instanceId, this.allState);
+    await this.persistenceAdapter.write(this.instanceId, this.allState);
   }
 
   /**
    * Persists just the pending events to storage.
    */
   private async persistEvents(strategy: 'immediate' | 'batched' = 'immediate'): Promise<void> {
-    await this.adapter.writeEvents(this.instanceId, this.pendingEvents);
+    await this.persistenceAdapter.writeEvents(this.instanceId, this.pendingEvents);
   }
 
   public async loadState(): Promise<void> {
-    this.allState = await this.adapter.read(this.instanceId);
+    this.allState = await this.persistenceAdapter.read(this.instanceId);
   }
 }

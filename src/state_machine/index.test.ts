@@ -214,7 +214,7 @@ describe('StateMachine', () => {
     // Verify the state was loaded into the store
     expect(stateMachine.store.getContext()).toEqual(mockState.context);
     expect(stateMachine.store.getScratchpad()).toEqual(mockState.scratchpad);
-    expect(stateMachine.store.getPendingEvents()).toEqual(mockState.pendingEvents);
+    expect(stateMachine.store.pendingEvents).toEqual(mockState.pendingEvents);
     expect(stateMachine.store.getExecutionTrace()).toEqual(mockState.history);
   });
 
@@ -334,7 +334,7 @@ describe('StateMachine', () => {
       // Verify the state was loaded correctly
       expect(localStateMachine.store.getContext()).toEqual(loadedState.context);
       expect(localStateMachine.store.getScratchpad()).toEqual(loadedState.scratchpad);
-      expect(localStateMachine.store.getPendingEvents()).toEqual(loadedState.pendingEvents);
+      expect(localStateMachine.store.pendingEvents).toEqual(loadedState.pendingEvents);
 
       // Resume the state machine (without new events)
       const result = await localStateMachine.resume([]);
@@ -527,7 +527,7 @@ describe('StateMachine', () => {
 
     // Since we're testing the ability to pass multiple events,
     // just verify the events get enqueued correctly
-    expect(stateMachine.store.getPendingEvents()).toContainEqual(
+    expect(stateMachine.store.pendingEvents).toContainEqual(
       expect.objectContaining({ id: event2.id })
     );
 
@@ -696,7 +696,7 @@ describe('StateMachine', () => {
 
     // Verify the action was enqueued correctly by checking pending events
     // should contain the action event that was scheduled by the initial node
-    expect(stateMachine.store.getPendingEvents()).toContainEqual(
+    expect(stateMachine.store.pendingEvents).toContainEqual(
       expect.objectContaining({ id: actionEvent.id })
     );
   });
@@ -1307,7 +1307,7 @@ describe('StateMachine', () => {
       expect(mockOnActions).not.toHaveBeenCalled();
 
       // Verify the actions were still enqueued correctly
-      expect(hookStateMachine.store.getPendingEvents()).toContainEqual(
+      expect(hookStateMachine.store.pendingEvents).toContainEqual(
         expect.objectContaining({ id: actionEvent.id })
       );
     });

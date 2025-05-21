@@ -188,7 +188,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
 
     // When a node returns a terminal result, also include the pending actions
     if (result.status === 'terminal' && !result.actions) {
-      const pendingActions = this.store.getPendingEvents();
+      const pendingActions = this.store.pendingEvents;
       if (pendingActions.length > 0) {
         return {
           ...result,

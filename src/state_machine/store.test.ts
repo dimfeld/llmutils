@@ -9,9 +9,10 @@ import {
   findSpan,
 } from './telemetry_test_utils';
 import * as telemetry from './telemetry';
+import { fail } from 'node:assert';
 
 // Define test types
-interface TestEvent extends BaseEvent<'TEST_EVENT', { data: string }> {}
+interface TestEvent extends BaseEvent<string, { data: string }> {}
 
 interface TestContext {
   counter: number;
@@ -20,9 +21,9 @@ interface TestContext {
 }
 
 // Helper function to create test events
-const createTestEvent = (id: string, data: string): TestEvent => ({
+const createTestEvent = (id: string, data: string, type: string = 'TEST_EVENT'): TestEvent => ({
   id,
-  type: 'TEST_EVENT',
+  type,
   payload: { data },
 });
 
@@ -81,20 +82,6 @@ describe('SharedStore', () => {
       expect(context).toEqual(initialContext);
     });
 
-    test('getContext() returns a deep clone of the context', () => {
-      const context = store.getContext();
-
-      // Modify the returned context
-      context.counter = 100;
-      context.user = 'test-user';
-
-      // Verify the original store context is unaffected
-      const newContext = store.getContext();
-      expect(newContext).toEqual(initialContext);
-      expect(newContext.counter).toBe(0);
-      expect(newContext.user).toBeUndefined();
-    });
-
     test('updateContext() correctly updates the context', async () => {
       // Update the context
       await store.updateContext((ctx) => ({
@@ -107,26 +94,6 @@ describe('SharedStore', () => {
       const updatedContext = store.getContext();
       expect(updatedContext.counter).toBe(1);
       expect(updatedContext.user).toBe('test-user');
-    });
-
-    test('updateContext() uses the updater function with a clone of the context', async () => {
-      // Update the context and capture the parameter passed to the updater function
-      let updaterParam: TestContext | undefined;
-
-      await store.updateContext((ctx) => {
-        updaterParam = ctx;
-        return { ...ctx, counter: 5 };
-      });
-
-      // Modify the captured parameter
-      if (updaterParam) {
-        updaterParam.counter = 100;
-      }
-
-      // Verify the store's context has the value from the updater's return value
-      // and not from the modification of the captured parameter
-      const finalContext = store.getContext();
-      expect(finalContext.counter).toBe(5);
     });
   });
 
@@ -145,24 +112,6 @@ describe('SharedStore', () => {
       // Get and verify scratchpad
       const retrievedData = store.getScratchpad();
       expect(retrievedData).toEqual(testData);
-    });
-
-    test('getScratchpad() returns a deep clone', () => {
-      const testData = { name: 'test', values: [1, 2, 3] };
-
-      // Set scratchpad
-      store.setScratchpad(testData);
-
-      // Get scratchpad and modify it
-      const retrievedData = store.getScratchpad<typeof testData>();
-      if (retrievedData) {
-        retrievedData.name = 'modified';
-        retrievedData.values.push(4);
-      }
-
-      // Verify original scratchpad in store is unaffected
-      const newRetrievedData = store.getScratchpad<typeof testData>();
-      expect(newRetrievedData).toEqual(testData);
     });
 
     test('clearScratchpad() removes the scratchpad data', () => {
@@ -230,9 +179,8 @@ describe('SharedStore', () => {
   });
 
   describe('Event Management', () => {
-    test('getPendingEvents() returns an empty array initially', () => {
-      const events = store.getPendingEvents();
-      expect(events).toEqual([]);
+    test('pendingEvents is an empty array initially', () => {
+      expect(store.pendingEvents).toEqual([]);
     });
 
     test('enqueueEvents() adds events to the pending list', async () => {
@@ -243,10 +191,9 @@ describe('SharedStore', () => {
       await store.enqueueEvents(events);
 
       // Check if events were added to the pending list
-      const pendingEvents = store.getPendingEvents();
-      expect(pendingEvents).toHaveLength(2);
-      expect(pendingEvents[0].id).toBe('event1');
-      expect(pendingEvents[1].id).toBe('event2');
+      expect(store.pendingEvents).toHaveLength(2);
+      expect(store.pendingEvents[0].id).toBe('event1');
+      expect(store.pendingEvents[1].id).toBe('event2');
     });
 
     test('enqueueEvents() creates event copies', async () => {
@@ -261,9 +208,8 @@ describe('SharedStore', () => {
       event.id = 'modified-id';
 
       // Verify the pending event has the original ID
-      const pendingEvents = store.getPendingEvents();
-      expect(pendingEvents.length).toBe(1);
-      expect(pendingEvents[0].id).toBe(originalId);
+      expect(store.pendingEvents.length).toBe(1);
+      expect(store.pendingEvents[0].id).toBe(originalId);
 
       // The implementation uses shallow copies, so we're testing what the implementation actually does
       // Note: If the implementation were to change to use deep copies in the future, this test would need updating
@@ -277,54 +223,96 @@ describe('SharedStore', () => {
       expect(mockAdapter.writeEvents).toHaveBeenCalled();
     });
 
-    test('getPendingEvents() returns event copies', async () => {
+    test('pendingEvents can be modified directly', async () => {
       // Enqueue an event
       await store.enqueueEvents([createTestEvent('event1', 'data1')]);
 
       // Get and modify events
-      const pendingEvents = store.getPendingEvents();
-      const originalId = pendingEvents[0].id;
-      pendingEvents[0].id = 'modified-id';
+      const originalId = store.pendingEvents[0].id;
+      store.pendingEvents[0].id = 'modified-id';
 
-      // Verify original event ID in store is unaffected (references are not shared)
-      const newPendingEvents = store.getPendingEvents();
-      expect(newPendingEvents.length).toBe(1);
-      expect(newPendingEvents[0].id).toBe(originalId);
-
-      // The implementation uses shallow copies, so we're testing what the implementation actually does
-      // Note: If the implementation were to change to use deep copies in the future, this test would need updating
+      // Verify the event was modified in place
+      expect(store.pendingEvents.length).toBe(1);
+      expect(store.pendingEvents[0].id).toBe('modified-id');
     });
 
-    test('processEvents() removes and returns the specified events', async () => {
+    test('removeEvents() removes events by reference', async () => {
       // Enqueue multiple events
-      const events = [
+      const newEvents = [
         createTestEvent('event1', 'data1'),
         createTestEvent('event2', 'data2'),
         createTestEvent('event3', 'data3'),
       ];
-      await store.enqueueEvents(events);
+      await store.enqueueEvents(newEvents);
 
-      // Process specific events
-      const processed = store.processEvents(['event1', 'event3']);
+      const events = store.pendingEvents;
 
-      // Verify processed events are returned
-      expect(processed).toHaveLength(2);
-      expect(processed.map((e) => e.id)).toEqual(['event1', 'event3']);
+      // Remove some events by reference
+      const removedCount = store.removeEvents([events[0], events[2]]);
 
-      // Verify remaining events
-      const remaining = store.getPendingEvents();
-      expect(remaining).toHaveLength(1);
-      expect(remaining[0].id).toBe('event2');
+      // Verify the correct number of events were removed
+      expect(removedCount).toBe(2);
+
+      // Verify only the expected event remains
+      expect(store.pendingEvents).toHaveLength(1);
+      expect(store.pendingEvents[0]).toBe(events[1]);
     });
 
-    test('processEvents() throws for invalid event IDs', async () => {
-      // Enqueue an event
-      await store.enqueueEvents([createTestEvent('event1', 'data1')]);
+    test('getEventsOfType() returns matching events', async () => {
+      // Enqueue events of different types
+      await store.enqueueEvents([
+        createTestEvent('event1', 'data1', 'data1'),
+        createTestEvent('event2', 'data2', 'data2'),
+        createTestEvent('event3', 'data1', 'data1'),
+      ]);
 
-      // Try to process a non-existent event
-      expect(() => {
-        store.processEvents(['event1', 'non-existent']);
-      }).toThrow('Invalid event IDs: non-existent');
+      const [event1, event2, event3] = store.pendingEvents;
+
+      // Get events of type 'data1'
+      const matchingEvents = store.getEventsOfType('data1');
+
+      // Should return the events with matching type
+      expect(matchingEvents).toHaveLength(2);
+      expect(matchingEvents).toContain(event1);
+      expect(matchingEvents).toContain(event3);
+      expect(matchingEvents).not.toContain(event2);
+    });
+
+    test('dequeueEventsOfType() removes and returns matching events', async () => {
+      await store.enqueueEvents([
+        createTestEvent('event1', 'data1', 'data1'),
+        createTestEvent('event2', 'data2', 'data2'),
+        createTestEvent('event3', 'data1', 'data1'),
+      ]);
+
+      const [event1, event2, event3] = store.pendingEvents;
+
+      // Dequeue events of type 'data1'
+      const dequeued = store.dequeueEventsOfType('data1');
+
+      // Should return the matching events
+      expect(dequeued).toHaveLength(2);
+      expect(dequeued).toContain(event1);
+      expect(dequeued).toContain(event3);
+
+      // Should remove them from pending events
+      expect(store.pendingEvents).toHaveLength(1);
+      expect(store.pendingEvents[0]).toBe(event2);
+    });
+
+    test('dequeueAllEvents() removes and returns all events', async () => {
+      // Enqueue some events
+      const events = [createTestEvent('event1', 'data1'), createTestEvent('event2', 'data2')];
+      await store.enqueueEvents(events);
+
+      // Dequeue all events
+      const dequeued = store.dequeueAllEvents();
+
+      // Should return all events
+      expect(dequeued).toEqual(events);
+
+      // Should remove them from pending events
+      expect(store.pendingEvents).toHaveLength(0);
     });
 
     test('dequeueEvent() removes and returns the oldest event', async () => {
@@ -335,19 +323,19 @@ describe('SharedStore', () => {
       ]);
 
       // Dequeue the first event
-      const firstEvent = await store.dequeueEvent();
+      const firstEvent = store.dequeueEvent();
 
       // Verify the dequeued event
       expect(firstEvent?.id).toBe('event1');
 
       // Verify remaining events
-      const remainingEvents = store.getPendingEvents();
+      const remainingEvents = store.pendingEvents;
       expect(remainingEvents).toHaveLength(1);
       expect(remainingEvents[0].id).toBe('event2');
     });
 
-    test('dequeueEvent() returns undefined when no events are present', async () => {
-      const event = await store.dequeueEvent();
+    test('dequeueEvent() returns undefined when no events are present', () => {
+      const event = store.dequeueEvent();
       expect(event).toBeUndefined();
     });
   });
@@ -479,7 +467,7 @@ describe('SharedStore', () => {
       expect(store.getContext()).toEqual({ counter: 100, user: 'new-user' });
       expect(store.getScratchpad()).toEqual({ custom: 'value' });
 
-      const pendingEvents = store.getPendingEvents();
+      const pendingEvents = store.pendingEvents;
       expect(pendingEvents).toHaveLength(1);
       expect(pendingEvents[0].id).toBe('pending-event');
 
@@ -518,7 +506,7 @@ describe('SharedStore', () => {
       expect(store.getScratchpad()).toEqual({ custom: 'data' });
 
       // Verify pending events were loaded
-      const pendingEvents = store.getPendingEvents();
+      const pendingEvents = store.pendingEvents;
       expect(pendingEvents).toHaveLength(1);
       expect(pendingEvents[0].id).toBe('loaded-event');
 
@@ -614,7 +602,7 @@ describe('SharedStore', () => {
       expect(finalScratchpad?.details.complete).toBe(true);
 
       // Verify events were maintained
-      const pendingEvents = store.getPendingEvents();
+      const pendingEvents = store.pendingEvents;
       expect(pendingEvents).toHaveLength(2);
       expect(pendingEvents[0].id).toBe('new-event-1');
       expect(pendingEvents[1].id).toBe('new-event-2');
@@ -654,20 +642,20 @@ describe('SharedStore', () => {
       });
 
       // Setup initial state
-      await store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
+      store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
       store.setScratchpad({ test: 'data' });
       await store.enqueueEvents([createTestEvent('initial-event', 'data')]);
 
       // Store copies of initial state for later verification
-      const initialContext = store.getContext();
-      const initialScratchpad = store.getScratchpad();
-      const initialEvents = store.getPendingEvents();
+      const initialContext = structuredClone(store.getContext());
+      const initialScratchpad = structuredClone(store.getScratchpad());
+      const initialEvents = structuredClone(store.pendingEvents);
 
       // Run operation that throws
       const error = new Error('Intentional error');
       try {
         await store.withRollback(async () => {
-          await store.updateContext((ctx) => ({ ...ctx, counter: 10 }));
+          store.updateContext((ctx) => ({ ...ctx, counter: 10 }));
           store.setScratchpad({ test: 'updated' });
           await store.enqueueEvents([createTestEvent('new-event', 'data')]);
           throw error;
@@ -682,11 +670,13 @@ describe('SharedStore', () => {
       expect(store.getContext()).toEqual(initialContext);
       expect(store.getScratchpad()).toEqual(initialScratchpad);
 
-      // Verify events are rolled back
-      const events = store.getPendingEvents();
-      expect(events).toEqual(initialEvents);
-      expect(events).toHaveLength(1);
+      // Verify events are kept. In real life the enqueued events are coming from outside
+      // the system, not from inside the executed operation.
+      const events = store.pendingEvents;
+      expect(events).toEqual([...initialEvents, createTestEvent('new-event', 'data')]);
+      expect(events).toHaveLength(2);
       expect(events[0].id).toBe('initial-event');
+      expect(events[1].id).toBe('new-event');
 
       // Get the span created during the test and verify its events
       const spans = getSpans();

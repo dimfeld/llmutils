@@ -15,7 +15,7 @@ export const executors = new Map<string, ExecutorFactory<any>>([
   [ClaudeCodeExecutor.name, ClaudeCodeExecutor],
   [CopyPasteExecutor.name, CopyPasteExecutor],
   [CopyOnlyExecutor.name, CopyOnlyExecutor],
-  [CopyOnlyStateMachineExecutor.name, CopyOnlyStateMachineExecutor],
+  // [CopyOnlyStateMachineExecutor.name, CopyOnlyStateMachineExecutor],
 ]);
 
 // Optionally, export individual executors if they need to be imported directly elsewhere.

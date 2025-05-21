@@ -163,23 +163,23 @@ tasks:
 
 
           *   `enqueueEvents(events)`:
-              *   Test enqueuing a single event. Verify `getPendingEvents()` returns it.
-              *   Test enqueuing multiple events. Verify `getPendingEvents()` returns all of them in order.
+              *   Test enqueuing a single event. Verify `pendingEvents` returns it.
+              *   Test enqueuing multiple events. Verify `pendingEvents` returns all of them in order.
               *   Verify that `adapter.writeEvents` is called with the correct instanceId and events.
               *   Verify that enqueued events are deep cloned (modify original event after enqueueing and check store's version).
-          *   `getPendingEvents()`:
+          *   `pendingEvents`:
               *   Test that it returns an empty array initially.
               *   Test that it returns a deep clone of the pending events.
           *   `processEvents(eventIds)`:
               *   Enqueue a few events.
-              *   Test processing a subset of events by their IDs. Verify returned events and that `getPendingEvents()` reflects the removal.
+              *   Test processing a subset of events by their IDs. Verify returned events and that `pendingEvents` reflects the removal.
               *   Test that processed events are deep cloned.
               *   Test that it throws an error if an invalid event ID is provided.
               *   Test processing all events.
           *   `dequeueEvent()`:
               *   Enqueue multiple events.
               *   Test dequeuing events one by one. Verify the correct event is returned in FIFO order.
-              *   Verify `getPendingEvents()` is updated.
+              *   Verify `pendingEvents` is updated.
               *   Test that it returns `undefined` when the queue is empty.
               *   Test that dequeued event is a deep clone.
         done: true
@@ -236,7 +236,7 @@ tasks:
           *   `loadState()`:
               *   Set up `mockPersistenceAdapter.read` to return a specific `AllState<TestContext, TestEvent>` object.
               *   Call `store.loadState()`.
-              *   Verify that `store.getContext()`, `store.getScratchpad()`, `store.getPendingEvents()`, and `store.getExecutionTrace()` reflect the loaded state.
+              *   Verify that `store.getContext()`, `store.getScratchpad()`, `store.pendingEvents`, and `store.getExecutionTrace()` reflect the loaded state.
               *   Verify `mockPersistenceAdapter.read` was called with `instanceId`.
           *   Private `persist()` (tested via public methods that call it, like
           `updateContext` if it were to call persist, though it doesn't
@@ -826,7 +826,7 @@ tasks:
               *   Call `await stateMachine.loadPersistedState()`.
               *   Verify `stateMachine.store.getCurrentState()` is the loaded state.
               *   Verify `stateMachine.store.getContext()` matches the loaded context.
-              *   Verify `stateMachine.store.getPendingEvents()` matches the loaded events.
+              *   Verify `stateMachine.store.pendingEvents` matches the loaded events.
               *   Now, call `await stateMachine.resume([])` (or with new events).
               *   The machine should resume from the loaded state. If there were pending events in `loadedAllState`, the `ProcessingNode` (or whatever the loaded state is) should process them in its `prep` phase.
               *   Set up the `ProcessingNode`'s mocks to handle these pending events and transition or wait.

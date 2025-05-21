@@ -145,7 +145,7 @@ describe('Nested Flow State Machine', () => {
       async prep(
         store: SharedStore<Context, ProcessEvent>
       ): Promise<PrepResult<ProcessEvent, null>> {
-        const events = store.getPendingEvents();
+        const events = store.pendingEvents;
         return { events, args: null };
       }
 
@@ -191,7 +191,7 @@ describe('Nested Flow State Machine', () => {
       async prep(
         store: SharedStore<Context, ProcessEvent>
       ): Promise<PrepResult<ProcessEvent, ProcessEvent[]>> {
-        const events = store.getPendingEvents();
+        const events = store.pendingEvents;
         return { events, args: events };
       }
 
@@ -238,7 +238,7 @@ describe('Nested Flow State Machine', () => {
       async prep(
         store: SharedStore<Context, ProcessEvent>
       ): Promise<PrepResult<ProcessEvent, ProcessEvent[]>> {
-        const events = store.getPendingEvents();
+        const events = store.pendingEvents;
         return { events, args: events };
       }
 
@@ -341,7 +341,7 @@ describe('Nested Flow State Machine', () => {
       async prep(
         store: SharedStore<Context, ProcessEvent>
       ): Promise<PrepResult<ProcessEvent, null>> {
-        const events = store.getPendingEvents();
+        const events = store.pendingEvents;
         return { events, args: null };
       }
 
@@ -390,7 +390,7 @@ describe('Nested Flow State Machine', () => {
       async prep(
         store: SharedStore<Context, ProcessEvent>
       ): Promise<PrepResult<ProcessEvent, ProcessEvent[]>> {
-        const events = store.getPendingEvents();
+        const events = store.pendingEvents;
         return { events, args: events };
       }
 
