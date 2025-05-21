@@ -37,7 +37,7 @@ export class CopyOnlyExecutor implements Executor {
       await clipboard.write(contextContent);
       log(
         chalk.bold(
-          '\nPlease paste the prompt into your agent and when it is done, ${} continue or `c` to copy again.'
+          '\nPlease paste the prompt into your agent and when it is done, press Enter to continue or `c` to copy again.'
         )
       );
       const pressed = await waitForEnter();

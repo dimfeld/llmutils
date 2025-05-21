@@ -2,6 +2,7 @@ import { error, log } from '../../logging.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import { ClaudeCodeExecutor } from './claude_code.ts';
 import { CopyOnlyExecutor } from './copy_only.ts';
+import { CopyOnlyStateMachineExecutor } from './copy_only_statemachine.ts';
 import { CopyPasteExecutor } from './copy_paste.ts';
 import { OneCallExecutor } from './one-call';
 import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
@@ -14,6 +15,7 @@ export const executors = new Map<string, ExecutorFactory<any>>([
   [ClaudeCodeExecutor.name, ClaudeCodeExecutor],
   [CopyPasteExecutor.name, CopyPasteExecutor],
   [CopyOnlyExecutor.name, CopyOnlyExecutor],
+  [CopyOnlyStateMachineExecutor.name, CopyOnlyStateMachineExecutor],
 ]);
 
 // Optionally, export individual executors if they need to be imported directly elsewhere.

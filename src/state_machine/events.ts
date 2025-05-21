@@ -1,7 +1,7 @@
 export interface BaseEvent<T extends string = string, P = unknown> {
   id: string;
   type: T;
-  payload: P;
+  payload?: P;
 }
 
 export interface BaseAction<T extends string = string, P = unknown> {
@@ -11,7 +11,17 @@ export interface BaseAction<T extends string = string, P = unknown> {
 }
 
 // Helper type for creating discriminated unions
-export type Event<T extends string, P> = BaseEvent<T, P>;
+export type Event<T extends string, P> = P extends undefined
+  ? {
+      id: string;
+      type: T;
+      payload?: P;
+    }
+  : {
+      id: string;
+      type: T;
+      payload: P;
+    };
 
 // Example usage:
 // type AppEvent =

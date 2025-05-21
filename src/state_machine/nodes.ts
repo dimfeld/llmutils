@@ -67,6 +67,96 @@ export abstract class Node<
     store: SharedStore<TContext, TEvent>
   ) => Promise<StateResult<StateName, TEvent>>;
 
+  protected doPrep(
+    store: SharedStore<TContext, TEvent>,
+    attributes: StateMachineAttributes
+  ): Promise<PrepResult<TEvent, EXECARGS>> {
+    // Prep phase
+    return withSpan(`node.prep.${this.id}`, attributes, async (prepSpan) => {
+      prepSpan.addEvent('node_prep_started', { node_id: this.id });
+      console.log(`👉 ${this.id} node - before prep, store:`, store.getContext());
+      const result = await store.retry(() => this._prep(store));
+      console.log(`👉 ${this.id} node - prep result:`, result);
+      prepSpan.addEvent('node_prep_completed', {
+        event_count: result.events?.length ?? 0,
+      });
+      return result;
+    });
+  }
+
+  protected async doExec(
+    store: SharedStore<TContext, TEvent>,
+    prepResult: PrepResult<TEvent, EXECARGS>,
+    attributes: StateMachineAttributes
+  ) {
+    const result = await withSpan(`node.exec.${this.id}`, attributes, async (execSpan) => {
+      execSpan.setAttributes({
+        event_count: prepResult.events?.length ?? 0,
+      });
+
+      // Record events being processed in exec phase
+      if (prepResult.events?.length) {
+        for (const event of prepResult.events) {
+          recordEvent(execSpan, event.type, event.id, this.id as string);
+        }
+      }
+
+      execSpan.addEvent('node_exec_started', { node_id: this.id });
+      console.log(`👉 ${this.id} node - before exec with args:`, prepResult.args);
+      const execResult = await store.retry(() =>
+        this._exec(prepResult.args, prepResult.events ?? [], store.getScratchpad<TScratchpad>())
+      );
+      console.log(`👉 ${this.id} node - exec result:`, execResult);
+      execSpan.addEvent('node_exec_completed');
+      return execResult;
+    });
+
+    store.setScratchpad(result.scratchpad);
+    return result.result;
+  }
+
+  protected async doPost(
+    result: EXECRESULT,
+    store: SharedStore<TContext, TEvent>,
+    attributes: StateMachineAttributes
+  ) {
+    return withSpan(`node.post.${this.id}`, attributes, async (postSpan) => {
+      postSpan.addEvent('node_post_started', { node_id: this.id });
+      console.log(`👉 ${this.id} node - before post with result:`, result);
+      const stateResult = await this._post(result, store);
+      console.log(`👉 ${this.id} node - post result:`, stateResult);
+
+      postSpan.setAttributes({
+        result_status: stateResult.status,
+        ...(stateResult.status === 'transition' &&
+          stateResult.to && {
+            next_state: stateResult.to as string,
+          }),
+      });
+
+      postSpan.addEvent('node_post_completed', {
+        status: stateResult.status,
+        ...(stateResult.status === 'transition' &&
+          stateResult.to && {
+            next_state: stateResult.to as string,
+          }),
+        has_actions: stateResult.actions !== undefined && stateResult.actions.length > 0,
+      });
+
+      return stateResult;
+    });
+  }
+
+  async _run(
+    store: SharedStore<TContext, TEvent>,
+    attributes: StateMachineAttributes
+  ): Promise<StateResult<StateName, TEvent>> {
+    const prepResult = await this.doPrep(store, attributes);
+    const result = await this.doExec(store, prepResult, attributes);
+    const stateResult = await this.doPost(result, store, attributes);
+    return stateResult;
+  }
+
   /** Perform the entire node running process, including prep, exec, and post.
    * Don't override this unless you are creating a wholly new node type
    * */
@@ -77,85 +167,32 @@ export abstract class Node<
     };
 
     return await withSpan(`node.run.${this.id}`, attributes, async (span) => {
-      return store.withRollback(async () => {
-        try {
-          // Prep phase
-          const prepResult = await withSpan(
-            `node.prep.${this.id}`,
-            attributes,
-            async (prepSpan) => {
-              prepSpan.addEvent('node_prep_started', { node_id: this.id });
-              console.log(`👉 ${this.id} node - before prep, store:`, store.getContext());
-              const result = await store.retry(() => this._prep(store));
-              console.log(`👉 ${this.id} node - prep result:`, result);
-              prepSpan.addEvent('node_prep_completed', {
-                event_count: result.events?.length ?? 0,
-              });
-              return result;
-            }
-          );
-
-          // Exec phase
-          const result = await withSpan(`node.exec.${this.id}`, attributes, async (execSpan) => {
-            execSpan.setAttributes({
-              event_count: prepResult.events?.length ?? 0,
-            });
-
-            // Record events being processed in exec phase
-            if (prepResult.events?.length) {
-              for (const event of prepResult.events) {
-                recordEvent(execSpan, event.type, event.id, this.id as string);
-              }
-            }
-
-            execSpan.addEvent('node_exec_started', { node_id: this.id });
-            console.log(`👉 ${this.id} node - before exec with args:`, prepResult.args);
-            const execResult = await store.retry(() =>
-              this._exec(
-                prepResult.args,
-                prepResult.events ?? [],
-                store.getScratchpad<TScratchpad>()
-              )
-            );
-            console.log(`👉 ${this.id} node - exec result:`, execResult);
-            execSpan.addEvent('node_exec_completed');
-            return execResult;
-          });
-
-          store.setScratchpad(result.scratchpad);
-
-          // Post phase
-          return await withSpan(`node.post.${this.id}`, attributes, async (postSpan) => {
-            postSpan.addEvent('node_post_started', { node_id: this.id });
-            console.log(`👉 ${this.id} node - before post with result:`, result.result);
-            const stateResult = await this._post(result.result, store);
-            console.log(`👉 ${this.id} node - post result:`, stateResult);
-
-            postSpan.setAttributes({
-              result_status: stateResult.status,
-              ...(stateResult.status === 'transition' &&
-                stateResult.to && {
-                  next_state: stateResult.to as string,
-                }),
-            });
-
-            postSpan.addEvent('node_post_completed', {
-              status: stateResult.status,
-              ...(stateResult.status === 'transition' &&
-                stateResult.to && {
-                  next_state: stateResult.to as string,
-                }),
-              has_actions: stateResult.actions !== undefined && stateResult.actions.length > 0,
-            });
-
-            return stateResult;
-          });
-        } catch (e) {
-          console.error(`👉 ${this.id} node ERROR:`, e);
-          throw e;
-        }
-      });
+      return store.withRollback(() => this._run(store, attributes));
     });
+  }
+}
+
+/** A node that has no execution but may transition based on events or other state. */
+export abstract class NoopNode<
+  StateName extends string,
+  TContext,
+  TEvent extends BaseEvent,
+  TScratchpad = undefined,
+> extends Node<StateName, TContext, TEvent, TScratchpad, undefined, undefined> {
+  async prep(store: SharedStore<TContext, TEvent>): Promise<PrepResult<TEvent, undefined>> {
+    return { events: [], args: undefined };
+  }
+
+  async exec(
+    args: undefined,
+    events: TEvent[],
+    scratchpad: any
+  ): Promise<{ result: undefined; scratchpad: any }> {
+    return { result: undefined, scratchpad };
+  }
+
+  async _run(store: SharedStore<TContext, TEvent>, attributes: StateMachineAttributes) {
+    return this.doPost(undefined, store, attributes);
   }
 }
 
