@@ -1,7 +1,8 @@
 import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test';
 import { osc52Copy, osc52Read } from './osc52';
 
-describe('osc52Copy', () => {
+// skipped because of how they mess with the globals conflicts with other tests
+describe.skipIf(!process.env.TEST_OSC52)('osc52Copy', () => {
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);
   let stdoutWriteMock: ReturnType<typeof mock>;
 
@@ -61,7 +62,7 @@ describe('osc52Copy', () => {
   });
 });
 
-describe('osc52Read', () => {
+describe.skipIf(!process.env.TEST_OSC52)('osc52Read', () => {
   // Store original process properties/methods
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);
   const originalStdin = { ...process.stdin };

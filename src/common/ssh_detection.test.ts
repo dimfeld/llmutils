@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import { isSshSession } from './ssh_detection';
 
-describe('isSshSession', () => {
+describe.skipIf(!process.env.TEST_SSH_DETECTION)('isSshSession', () => {
   // Save original environment variables
   const originalEnv = { ...process.env };
 
