@@ -1323,11 +1323,7 @@ describe('FlowNode', () => {
     subMachineConfig = {
       initialState: 'subA',
       errorState: 'subError',
-      nodes: new Map([
-        ['subA', subNodeA],
-        ['subB', subNodeB],
-        ['subError', subErrorNode],
-      ]),
+      nodes: [subNodeA, subNodeB, subErrorNode],
     };
 
     // Create a mock persistence adapter
@@ -1627,8 +1623,8 @@ describe('FlowNode', () => {
     testFlowNode.translateActionsMock.mockReturnValue([parentAction]);
 
     // Mock the sub-machine nodes first
-    const subNodeA = testFlowNode.subMachine.config.nodes.get('subA') as SubNodeA;
-    const subNodeB = testFlowNode.subMachine.config.nodes.get('subB') as SubNodeB;
+    const subNodeA = testFlowNode.subMachine.config.nodes.find(node => node.id === 'subA') as SubNodeA;
+    const subNodeB = testFlowNode.subMachine.config.nodes.find(node => node.id === 'subB') as SubNodeB;
 
     // Configure SubNodeA to transition to SubNodeB
     subNodeA.prepMock.mockResolvedValue({
@@ -1758,8 +1754,8 @@ describe('FlowNode', () => {
     testFlowNode.translateActionsMock.mockReturnValue([]);
 
     // Get references to sub nodes
-    const subNodeA = testFlowNode.subMachine.config.nodes.get('subA') as SubNodeA;
-    const subNodeB = testFlowNode.subMachine.config.nodes.get('subB') as SubNodeB;
+    const subNodeA = testFlowNode.subMachine.config.nodes.find(node => node.id === 'subA') as SubNodeA;
+    const subNodeB = testFlowNode.subMachine.config.nodes.find(node => node.id === 'subB') as SubNodeB;
 
     // Set up SubNodeB to process the new event and reach terminal state
     subNodeB.prepMock.mockResolvedValue({
