@@ -553,4 +553,139 @@ describe('WorkspaceManager', () => {
     // Verify npm run build was called
     expect(mockParseCliArgsFromString).toHaveBeenCalledWith('npm run build');
   });
+
+  test('createWorkspace with llmutils method - uses default clone location when not specified', async () => {
+    // Setup
+    const taskId = 'task-123';
+    const planPath = '/path/to/plan.yml';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const homeDir = '/mock/home/dir';
+    const expectedDefaultLocation = path.join(homeDir, '.llmutils', 'workspaces');
+
+    // Instead of trying to mock os.homedir, we'll check the mkdir call directly
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        method: 'llmutils',
+        repositoryUrl,
+      },
+    };
+
+    // We'll need to modify the workspace manager implementation to use a fake homedir
+    const workspaceManagerWithFakeHome = new WorkspaceManager(mainRepoRoot);
+    // @ts-expect-error - We're purposely accessing a private property for testing
+    workspaceManagerWithFakeHome._homeDirForTests = homeDir;
+
+    // Mock the mkdir call to ensure it's called correctly
+    let mkdirCalledWithPath: string | null = null;
+    mockMkdir.mockImplementation(async (dirPath: string, options: any) => {
+      mkdirCalledWithPath = dirPath;
+    });
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock fs.stat to verify the workspace as a directory
+    mockStat.mockImplementation(async () => ({
+      isDirectory: () => true,
+    }));
+
+    // Execute
+    const result = await workspaceManagerWithFakeHome.createWorkspace(taskId, planPath, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+
+    // Verify that mkdir was called with a path that includes .llmutils/workspaces
+    expect(mkdirCalledWithPath).not.toBeNull();
+    expect(mkdirCalledWithPath).toEqual(expect.stringContaining('.llmutils/workspaces'));
+  });
+
+  test('createWorkspace with llmutils method - branch creation fails', async () => {
+    // Setup
+    const taskId = 'task-123';
+    const planPath = '/path/to/plan.yml';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = '/path/to/clones';
+    const targetClonePath = path.join(cloneLocation, `repo-${taskId}`);
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        method: 'llmutils',
+        repositoryUrl,
+        cloneLocation,
+      },
+    };
+
+    // Mock the clone operation to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock the branch creation to fail
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'Failed to create branch',
+    }));
+
+    // Mock the directory creation
+    mockMkdir.mockImplementation(async () => {});
+
+    // Mock fs.rm to verify cleanup attempt
+    mockRm.mockImplementationOnce(async (path: string, options: any) => {
+      expect(path).toEqual(expect.stringContaining(`repo-${taskId}`));
+      expect(options.recursive).toBe(true);
+      expect(options.force).toBe(true);
+    });
+
+    // Execute
+    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+
+    // Verify
+    expect(result).toBeNull();
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to create and checkout branch')
+    );
+    expect(mockRm).toHaveBeenCalled();
+  });
+
+  test('createWorkspace with llmutils method - repositoryUrl cannot be inferred and is not provided', async () => {
+    // Setup
+    const taskId = 'task-123';
+    const planPath = '/path/to/plan.yml';
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        method: 'llmutils',
+        // No repositoryUrl provided
+      },
+    };
+
+    // Mock git remote get-url to fail
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'fatal: not a git repository',
+    }));
+
+    // Execute
+    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+
+    // Verify
+    expect(result).toBeNull();
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Failed to infer repository URL'));
+  });
 });

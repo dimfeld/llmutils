@@ -153,6 +153,9 @@ export class WorkspaceManager {
     };
   }
 
+  // For testing purposes only - allows tests to override homedir
+  private _homeDirForTests?: string;
+
   /**
    * Creates a workspace by cloning a repository and creating a new branch using llmutils method
    * @param taskId Unique identifier for the task
@@ -198,7 +201,9 @@ export class WorkspaceManager {
         : path.resolve(this.mainRepoRoot, workspaceConfig.cloneLocation);
     } else {
       // Default location is ~/.llmutils/workspaces
-      cloneLocationBase = path.join(os.homedir(), '.llmutils', 'workspaces');
+      // Use _homeDirForTests if provided (for testing only), otherwise use os.homedir()
+      const homeDir = this._homeDirForTests || os.homedir();
+      cloneLocationBase = path.join(homeDir, '.llmutils', 'workspaces');
     }
 
     // Ensure the base clone directory exists
