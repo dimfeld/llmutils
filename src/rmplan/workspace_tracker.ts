@@ -62,7 +62,7 @@ export async function writeTrackingData(data: Record<string, WorkspaceInfo>): Pr
     const trackingPath = getTrackingFilePath();
     // Ensure the directory exists
     await fs.mkdir(path.dirname(trackingPath), { recursive: true });
-    
+
     // Write the data to the file, pretty-printed for readability
     await fs.writeFile(trackingPath, JSON.stringify(data, null, 2), 'utf-8');
   } catch (error) {
@@ -79,13 +79,13 @@ export async function recordWorkspace(workspaceInfo: WorkspaceInfo): Promise<voi
   try {
     // Read current tracking data
     const data = await readTrackingData();
-    
+
     // Add or update the entry for this workspace
     data[workspaceInfo.workspacePath] = workspaceInfo;
-    
+
     // Write updated tracking data
     await writeTrackingData(data);
-    
+
     log(`Recorded workspace for task ${workspaceInfo.taskId} at ${workspaceInfo.workspacePath}`);
   } catch (error) {
     log(`Failed to record workspace: ${String(error)}`);
@@ -109,6 +109,6 @@ export async function getWorkspaceMetadata(workspacePath: string): Promise<Works
  */
 export async function findWorkspacesByTaskId(taskId: string): Promise<WorkspaceInfo[]> {
   const data = await readTrackingData();
-  
-  return Object.values(data).filter(workspace => workspace.taskId === taskId);
+
+  return Object.values(data).filter((workspace) => workspace.taskId === taskId);
 }
