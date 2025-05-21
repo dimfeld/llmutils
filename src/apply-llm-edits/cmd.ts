@@ -14,6 +14,7 @@ import { setDebug } from '../rmfilter/utils.ts';
 import { applyLlmEdits, getWriteRoot } from './apply.js';
 import { createRetryRequester, type RetryRequester } from './retry.ts';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';
+import { isSshSession } from '../common/ssh_detection.ts';
 
 const { values } = parseArgs({
   options: {
@@ -43,7 +44,7 @@ if (values.help) {
   log(
     `Usage: apply-llm-edits [options]
 Options:
-  --stdin                        Read from stdin (the default if input is piped in)
+  --stdin                        Read from stdin (the default if input is piped in or in SSH)
   --clipboard                    Read from the clipboard even if stdin is available
   -f <file>, --file <file>       Read from a file
   --cwd <path>                   Write files based on the given path
@@ -61,7 +62,7 @@ Options:
 }
 
 const useClipboard = values.clipboard || false;
-const useStdin = !useClipboard && (values.stdin || !process.stdin.isTTY);
+const useStdin = !useClipboard && (values.stdin || (!process.stdin.isTTY && isSshSession()));
 const file = values.file;
 const dryRun = values['dry-run'] || false;
 const interactive = values.interactive || false;

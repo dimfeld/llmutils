@@ -316,7 +316,7 @@ describe('osc52Read', () => {
 
     // Simulate receiving large amounts of data without OSC52 pattern
     if (dataListener) {
-      const largeData = Buffer.from('x'.repeat(1025));
+      const largeData = Buffer.from('x'.repeat(1024 * 1024 + 1));
       dataListener(largeData);
     }
 

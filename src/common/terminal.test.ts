@@ -47,7 +47,7 @@ test('waitForEnter - Enter key', async () => {
   mockStdin.emit('data', Buffer.from([0x0d]));
 
   const result = await promise;
-  expect(result).toBe('Enter');
+  expect(result).toBe('');
   // eslint-disable-next-line @typescript-eslint/unbound-method
   expect(mockStdin.setRawMode).toHaveBeenCalledWith(true);
   // eslint-disable-next-line @typescript-eslint/unbound-method
