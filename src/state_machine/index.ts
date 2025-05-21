@@ -28,7 +28,7 @@ export type { StateResult, PrepResult };
 export interface StateMachineConfig<StateName extends string, TContext, TEvent extends BaseEvent> {
   initialState: StateName;
   errorState: StateName;
-  nodes: Map<StateName, Node<StateName, TContext, TEvent, any, any, any>>;
+  nodes: Node<StateName, TContext, TEvent, any, any, any>[];
   maxRetries?: number;
   retryDelay?: (attempt: number) => number;
   onError?: (
@@ -47,6 +47,7 @@ export interface StateMachineHooks<StateName extends string, TEvent extends Base
 export class StateMachine<StateName extends string, TContext, TEvent extends BaseEvent> {
   store: SharedStore<TContext, TEvent>;
   private initialized = false;
+  private nodesMap: Map<StateName, Node<StateName, TContext, TEvent, any, any, any>>;
 
   constructor(
     public config: StateMachineConfig<StateName, TContext, TEvent>,
@@ -55,6 +56,11 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     public instanceId: string,
     public hooks?: StateMachineHooks<StateName, TEvent>
   ) {
+    // Convert nodes array to Map
+    this.nodesMap = new Map(
+      config.nodes.map(node => [node.id, node] as [StateName, Node<StateName, TContext, TEvent, any, any, any>])
+    );
+
     // Pass retry configuration from config to store
     this.store = new SharedStore<TContext, TEvent>(instanceId, initialContext, adapter, {
       maxRetries: config.maxRetries,
@@ -100,7 +106,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       }
 
       await this.store.enqueueEvents(events);
-      const node = this.config.nodes.get(currentState);
+      const node = this.nodesMap.get(currentState);
       if (!node) throw new Error(`Unknown state: ${currentState}`);
       return await this.runNode(node);
     });
@@ -159,7 +165,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       this.store.clearScratchpad();
       this.store.setCurrentState(result.to as string);
 
-      const nextNode = this.config.nodes.get(result.to);
+      const nextNode = this.nodesMap.get(result.to);
       if (nextNode) {
         return new Promise((res, rej) => {
           setImmediate(() => {

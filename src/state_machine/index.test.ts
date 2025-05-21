@@ -119,23 +119,24 @@ describe('StateMachine', () => {
       items: [],
     };
 
-    // Create nodes map with mock nodes
-    nodesMap = new Map<TestSMStateName, MockNode>();
+    // Create mock nodes
     const initialNode = new MockNode('initial');
     const processingNode = new MockNode('processing');
     const finalNode = new MockNode('final');
     const errorNode = new MockNode('error');
 
+    // Keep reference to nodes for test assertions
+    nodesMap = new Map<TestSMStateName, MockNode>();
     nodesMap.set('initial', initialNode);
     nodesMap.set('processing', processingNode);
     nodesMap.set('final', finalNode);
     nodesMap.set('error', errorNode);
 
-    // Set up state machine config
+    // Set up state machine config with array of nodes
     stateMachineConfig = {
       initialState: 'initial',
       errorState: 'error',
-      nodes: nodesMap as any,
+      nodes: [initialNode, processingNode, finalNode, errorNode],
     };
 
     // Create state machine instance
@@ -1699,12 +1700,7 @@ describe('StateMachine', () => {
     const subMachineConfig: StateMachineConfig<SubStateName, SubContext, SubEvent> = {
       initialState: 'subA',
       errorState: 'subError',
-      nodes: new Map([
-        ['subA', subNodeA],
-        ['subB', subNodeB],
-        ['subC', subNodeC],
-        ['subError', subErrorNode],
-      ]),
+      nodes: [subNodeA, subNodeB, subNodeC, subErrorNode],
     };
 
     // Create the TestFlowNode
@@ -1714,12 +1710,7 @@ describe('StateMachine', () => {
     const parentMachineConfig: StateMachineConfig<ParentStateName, ParentContext, ParentEvent> = {
       initialState: 'initial',
       errorState: 'error',
-      nodes: new Map([
-        ['initial', initialNode],
-        ['flowStepNode', flowStepNode],
-        ['final', finalNode],
-        ['error', errorNode],
-      ]),
+      nodes: [initialNode, flowStepNode, finalNode, errorNode],
     };
 
     // Create persistence adapter for parent machine

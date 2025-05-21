@@ -14,7 +14,7 @@ type Context = object;
 
 // Basic test demonstrating that nested FlowNode can be implemented
 describe('Nested Flow State Machine', () => {
-  test('demonstrates simple nested state machine with event passing', async () => {
+  test('verifies array nodes conversion to internal map works', async () => {
     // Create a very simple state machine that just transitions from initial -> final
     type SimpleStates = 'start' | 'end';
     type SimpleEvent = {
@@ -91,10 +91,10 @@ describe('Nested Flow State Machine', () => {
       {
         initialState: 'start',
         errorState: 'start',
-        nodes: new Map([
-          ['start', new SimpleInitialNode()],
-          ['end', new CustomFinalNode()],
-        ]),
+        nodes: [
+          new SimpleInitialNode(),
+          new CustomFinalNode(),
+        ],
       },
       {
         write: async () => {},
@@ -314,12 +314,12 @@ describe('Nested Flow State Machine', () => {
       {
         initialState: 'inner_initial',
         errorState: 'inner_initial',
-        nodes: new Map([
-          ['inner_initial', new InnerInitialNode()],
-          ['inner_processing', new InnerProcessingNode()],
-          ['inner_waiting', new InnerWaitingNode()],
-          ['inner_final', new InnerFinalNode()],
-        ]),
+        nodes: [
+          new InnerInitialNode(),
+          new InnerProcessingNode(),
+          new InnerWaitingNode(),
+          new InnerFinalNode(),
+        ],
       },
       {
         write: async () => {},
@@ -509,11 +509,11 @@ describe('Nested Flow State Machine', () => {
       {
         initialState: 'outer_start',
         errorState: 'outer_start',
-        nodes: new Map([
-          ['outer_start', new OuterInitialNode()],
-          ['outer_process', new ProcessFlowNode(innerMachine)],
-          ['outer_end', new OuterFinalNode()],
-        ]),
+        nodes: [
+          new OuterInitialNode(),
+          new ProcessFlowNode(innerMachine),
+          new OuterFinalNode(),
+        ],
       },
       {
         write: async () => {},
