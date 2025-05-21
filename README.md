@@ -10,7 +10,7 @@ The scripts are:
 - `rmfind` - Find relevant files to use with rmfilter
 - `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks.
 
-All tools include built-in OSC52 clipboard support, making them work seamlessly over SSH sessions.
+All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
 
 Some of the features, such as dependency analysis, only work with the code I've been writing at work recently, and so
 assume a repository written with Typescript and PNPM workspaces.
@@ -84,11 +84,11 @@ llmutils now includes built-in OSC52 clipboard support for improved functionalit
   - **Copy Operations**: When running in an SSH session, automatically uses OSC52 escape sequences to copy content to your local machine's clipboard.
   - **Read Operations**: First attempts to read from the local clipboard using OSC52, with an automatic fallback to standard mechanisms if OSC52 fails or times out.
 
-- **Terminal Requirements**: For full OSC52 functionality, your terminal emulator must support OSC52 escape sequences. Modern terminal emulators like iTerm2, WezTerm, kitty, and recent versions of Windows Terminal generally have good support.
+- **Terminal Requirements**: For full OSC52 functionality, your terminal emulator must support OSC52 escape sequences. Modern terminal emulators generally have good support, but may need extra configuration to enable all features.
 
-- **Transparent Usage**: No configuration needed - all clipboard operations in `rmfilter`, `apply-llm-edits`, and other utilities automatically use the appropriate method based on your session type.
+#### Manual Pasting
 
-This feature significantly improves the experience of running llmutils over SSH, particularly when using `rmfilter` to copy prompts and `apply-llm-edits` to paste LLM-generated code changes.
+Reading from the clipboard over an SSH session doesn't work well inside of many terminal emulators or workspace managers. To accommodate that, at any time when you would normally press enter to have the tools read the clipboard, you can instead just manually paste your clipboard contents in and it will read it.
 
 ## Configuration and Presets
 
