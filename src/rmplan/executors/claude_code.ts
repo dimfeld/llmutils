@@ -299,5 +299,5 @@ function formatJsonMessage(input: string) {
 }
 
 function formatValue(value: unknown): string {
-  return yaml.stringify(value);
+  return yaml.stringify(value).trim();
 }
