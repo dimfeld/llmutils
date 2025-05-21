@@ -1,7 +1,7 @@
 import { confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
-import clipboard from 'clipboardy';
 import * as path from 'node:path';
+import * as clipboard from '../common/clipboard.ts';
 import { processSearchReplace } from '../editor/diff-editor/parse.js';
 import type {
   EditResult,

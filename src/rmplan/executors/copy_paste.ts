@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import clipboard from 'clipboardy';
 import { z } from 'zod';
+import * as clipboard from '../../common/clipboard.ts';
 import { applyLlmEdits } from '../../apply-llm-edits/apply';
 import { DEFAULT_RUN_MODEL } from '../../common/run_and_apply';
 import { waitForEnter } from '../../common/terminal.ts';
@@ -9,6 +9,7 @@ import { getGitRoot } from '../../rmfilter/utils.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, Executor } from './types';
+import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 
 const copyPasteOptionsSchema = z.object({
   executionModel: z
@@ -59,12 +60,10 @@ export class CopyPasteExecutor implements Executor {
 
     log(
       chalk.bold(
-        '\nPlease paste the prompt into the chat interface and copy the response. Then press Enter to apply the changes, or Ctrl+C to exit.'
+        `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to apply the changes, or Ctrl+C to exit.`
       )
     );
-    await waitForEnter();
-
-    const llmOutput = await clipboard.read();
+    const llmOutput = await waitForEnter(true);
 
     await applyLlmEdits({
       interactive: true,
@@ -76,11 +75,10 @@ export class CopyPasteExecutor implements Executor {
         await clipboard.write(prompt.at(-1)!.content);
         log(
           chalk.bold(
-            `Retry prompt was copied to clipboard. Please paste it into the chat interface and copy the result back.`
+            `Retry prompt was copied to clipboard. Please put it into the chat interface and ${sshAwarePasteAction()}.`
           )
         );
-        await waitForEnter();
-        const llmOutput = await clipboard.read();
+        const llmOutput = await waitForEnter(true);
         return llmOutput;
       },
       content: llmOutput,

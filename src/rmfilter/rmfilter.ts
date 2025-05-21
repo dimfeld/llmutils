@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-import clipboard from 'clipboardy';
 import { globby } from 'globby';
 import { encode } from 'gpt-tokenizer';
 import micromatch from 'micromatch';
 import path from 'node:path';
+import * as clipboard from '../common/clipboard.js';
 import { grepFor } from '../common/file_finder.ts';
 import { Resolver } from '../dependency_graph/resolve.ts';
 import { ImportWalker } from '../dependency_graph/walk_imports.ts';

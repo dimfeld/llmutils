@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
-import clipboard from 'clipboardy';
 import { parseArgs } from 'util';
 import { applyLlmEdits } from './apply-llm-edits/apply.ts';
 import { createRetryRequester } from './apply-llm-edits/retry.ts';
+import * as clipboard from './common/clipboard.ts';
 import { loadEnv } from './common/env.ts';
 import { askForModelId } from './common/model_factory.ts';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './common/run_and_apply.ts';
-import { log } from './logging.ts';
+import { log, error } from './logging.ts';
 import { setDebug } from './rmfilter/utils.ts';
 
 await loadEnv();
@@ -55,7 +55,10 @@ if (!process.stdin.isTTY) {
 } else {
   log('Reading from clipboard');
   input = await clipboard.read();
-  process.exit(1);
+  if (input === undefined || input === null || input.trim() === '') {
+    error('Clipboard is empty or could not be read. Exiting.');
+    process.exit(1);
+  }
 }
 
 const outputFile = Bun.file('repomix-result.txt');

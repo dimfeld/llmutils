@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import clipboard from 'clipboardy';
 import { z } from 'zod';
+import * as clipboard from '../../common/clipboard.ts';
 import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';
 import type { PrepareNextStepOptions } from '../actions.ts';
@@ -12,9 +12,8 @@ const copyOnlyOptionsSchema = z.object({});
 export type CopyOnlyExecutorOptions = z.infer<typeof copyOnlyOptionsSchema>;
 
 /**
- * The 'direct-call' executor.
- * This executor generates context using `rmfilter` and then directly calls an LLM
- * with that context. The LLM's response is then processed by `applyLlmEdits`.
+ * The 'copy-only' executor.
+ * This executor copies the prompt to the clipboard, for pasting into an agent.
  */
 export class CopyOnlyExecutor implements Executor {
   static name = 'copy-only';
@@ -38,10 +37,10 @@ export class CopyOnlyExecutor implements Executor {
       await clipboard.write(contextContent);
       log(
         chalk.bold(
-          '\nPlease paste the prompt into your agent and when it is done, press Enter to continue or `c` to copy again.'
+          '\nPlease paste the prompt into your agent and when it is done, ${} continue or `c` to copy again.'
         )
       );
-      const pressed = await waitForEnter(['c']);
+      const pressed = await waitForEnter();
 
       if (pressed !== 'c') {
         break;

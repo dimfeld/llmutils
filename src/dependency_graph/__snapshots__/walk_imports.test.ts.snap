@@ -15,6 +15,7 @@ exports[`getDefiningFiles walk imports from apply-llm-edits.ts 1`] = `
   "src/apply-llm-edits/failures.ts",
   "src/apply-llm-edits/interactive.ts",
   "src/apply-llm-edits/retry.ts",
+  "src/common/clipboard.ts",
   "src/editor/diff-editor/parse.ts",
   "src/editor/types.ts",
   "src/editor/udiff-simple/parse.ts",

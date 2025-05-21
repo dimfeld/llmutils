@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import { $ } from 'bun';
-import clipboard from 'clipboardy';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { debugLog, error, log, warn } from '../logging.ts';
+import * as clipboard from '../common/clipboard.ts';
 import { getGitRoot, setDebug, setQuiet } from '../rmfilter/utils.ts';
 import { findFilesCore, type RmfindOptions, type RmfindResult } from './core.ts';
 
@@ -107,7 +107,7 @@ async function main() {
 
   // Call the core finding logic
   const result: RmfindResult = await findFilesCore(options);
-  const foundFiles = result.files; // These are absolute paths
+  const foundFiles = result.files;
 
   if (foundFiles.length === 0) {
     if (!values.quiet) {
@@ -142,7 +142,7 @@ async function main() {
       {
         stdin: 'pipe',
         stdout: 'pipe',
-        stderr: 'inherit', // Show fzf UI errors
+        stderr: 'inherit',
         cwd: baseDir,
       }
     );

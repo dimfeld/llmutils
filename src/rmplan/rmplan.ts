@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import { input } from '@inquirer/prompts';
 import chalk from 'chalk';
-import clipboardy from 'clipboardy';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
 import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
 import { waitForEnter } from '../common/terminal.js';
@@ -20,6 +20,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
 import { executors } from './executors/index.js';
+import { sshAwarePasteAction } from '../common/ssh_detection.ts';
 
 await loadEnv();
 
@@ -191,13 +192,12 @@ program
       if (exitRes === 0 && !options.noExtract) {
         log(
           chalk.bold(
-            '\nPlease paste the prompt into the chat interface and copy the response. Press Enter to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.'
+            `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
           )
         );
 
-        await waitForEnter();
+        let input = await waitForEnter(true);
 
-        let input = await clipboardy.read();
         let outputFilename: string | undefined;
         if (planFile) {
           outputFilename = path.join(
@@ -249,7 +249,7 @@ program
     } else if (!process.stdin.isTTY) {
       inputText = await Bun.stdin.text();
     } else {
-      inputText = await clipboardy.read();
+      inputText = await clipboard.read();
     }
 
     if (options.plan && !options.output) {
@@ -347,7 +347,7 @@ program
         log('\n----- LLM PROMPT -----\n');
         log(result.prompt);
         log('\n---------------------\n');
-        await clipboardy.write(result.prompt);
+        await clipboard.write(result.prompt);
         log('Prompt copied to clipboard');
       }
     } catch (err) {

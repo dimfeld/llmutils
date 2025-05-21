@@ -1,0 +1,694 @@
+goal: Implement OSC52 copy/paste support in `llmutils` to enhance functionality
+  within SSH sessions, falling back to the existing `clipboardy` mechanism when
+  not in SSH or when OSC52 is not available/fails.
+details: >-
+  The project involves detecting SSH sessions, implementing OSC52-compliant copy
+  and read operations, creating a wrapper around clipboard functionalities, and
+  refactoring existing code to use this new wrapper.
+
+
+  **SSH Detection:**
+
+  A utility function will check environment variables like `SSH_CLIENT`,
+  `SSH_CONNECTION`, and `SSH_TTY` to determine if the application is running
+  within an SSH session.
+
+
+  **OSC52 Operations:**
+
+  -   **Copy (`osc52Copy`):** This function will take a string, encode it in
+  Base64, and print the OSC52 escape sequence (`\x1b]52;c;BASE64_TEXT\x07`) to
+  `process.stdout`.
+
+  -   **Read (`osc52Read`):** This function will attempt to read from the
+  clipboard via OSC52. It will send a request sequence (`\x1b]52;p;?\x07`) to
+  `process.stdout` and then attempt to read the terminal's response
+  (`\x1b]52;p;BASE64_DATA\x07`) from `process.stdin`. This operation is complex,
+  involving raw mode for stdin, non-blocking reads, and a timeout. It will
+  return the decoded string or `null` if unsuccessful.
+
+
+  **Clipboard Wrapper (`src/common/clipboard.ts`):**
+
+  This module will provide `read(): Promise<string>` and `write(text: string):
+  Promise<void>` functions.
+
+  -   `write(text)`: If in an SSH session, it will use `osc52Copy`. Otherwise,
+  it will use `clipboardy.write(text)`.
+
+  -   `read()`: If in an SSH session, it will first attempt `osc52Read()`. If
+  `osc52Read()` is successful and returns text, that text is used. If
+  `osc52Read()` fails (returns `null` or throws an error, e.g., due to timeout
+  or lack of terminal support), it will fall back to `clipboardy.read()`. If not
+  in an SSH session, it will directly use `clipboardy.read()`.
+
+
+  **Refactoring:**
+
+  All existing direct usages of `clipboardy.read()` and `clipboardy.write()`
+  throughout the codebase will be replaced with calls to the new wrapper
+  functions.
+
+
+  This approach aims for a robust solution that enhances SSH usability while
+  maintaining existing functionality in local environments. The OSC52 read
+  operation is the most complex and will be implemented with a fallback
+  mechanism.
+tasks:
+  - title: 1. SSH Detection Utility
+    description: Create a utility function to detect if the current session is an
+      SSH session by checking standard environment variables.
+    files:
+      - src/common/ssh_detection.ts
+      - src/common/ssh_detection.test.ts
+    include_imports: false
+    include_importers: false
+    steps:
+      - prompt: >
+          Create a new file `src/common/ssh_detection.ts`.
+
+          In this file, implement a function `export function isSshSession():
+          boolean`.
+
+          This function should check for the presence of any of the following
+          environment variables:
+
+          - `SSH_CLIENT`
+
+          - `SSH_CONNECTION`
+
+          - `SSH_TTY`
+
+          If any of these environment variables are set (i.e.,
+          `process.env.VAR_NAME` is not undefined and not an empty string), the
+          function should return `true`. Otherwise, it should return `false`.
+
+          Ensure the function correctly accesses `process.env`.
+        done: true
+      - prompt: >
+          Create a new test file `src/common/ssh_detection.test.ts`.
+
+          Write unit tests for the `isSshSession` function in
+          `src/common/ssh_detection.ts`.
+
+          Use `bun:test` for the test suite.
+
+          The tests should cover the following scenarios:
+
+          1.  No SSH-related environment variables are set: `isSshSession()`
+          should return `false`.
+
+          2.  `SSH_CLIENT` is set: `isSshSession()` should return `true`.
+
+          3.  `SSH_CONNECTION` is set: `isSshSession()` should return `true`.
+
+          4.  `SSH_TTY` is set: `isSshSession()` should return `true`.
+
+          5.  Multiple SSH-related environment variables are set:
+          `isSshSession()` should return `true`.
+
+          6.  An SSH-related environment variable is set to an empty string:
+          `isSshSession()` should return `false` for that specific variable
+          check (if an empty string for `SSH_CLIENT` while others are unset, it
+          should be `false`).
+
+
+          To mock `process.env` for testing, you can temporarily assign values
+          to `process.env` properties within each test case and restore them
+          afterwards, or use a more robust mocking strategy if Bun's test
+          environment requires it (e.g., saving original values and restoring in
+          `afterEach`). A simple approach:
+
+          ```typescript
+
+          // Inside a test case
+
+          const originalSshClient = process.env.SSH_CLIENT;
+
+          process.env.SSH_CLIENT = 'some_value';
+
+          // ... your expect() call ...
+
+          process.env.SSH_CLIENT = originalSshClient; // Restore
+
+          ```
+
+          Make sure to handle the `undefined` case for restoration correctly.
+        done: true
+  - title: 2. OSC52 Core Functions (Copy and Read)
+    description: Implement the core OSC52 copy and read functionalities. `osc52Copy`
+      will send data to the terminal clipboard. `osc52Read` will attempt to
+      request and read data from the terminal clipboard.
+    files:
+      - src/common/osc52.ts
+      - src/common/osc52.test.ts
+    include_imports: false
+    include_importers: false
+    steps:
+      - prompt: >
+          Create a new file `src/common/osc52.ts`.
+
+          In this file, implement an asynchronous function `export async
+          function osc52Copy(text: string): Promise<void>`.
+
+          This function should:
+
+          1.  Encode the input `text` string into a Base64 string. Use
+          `Buffer.from(text).toString('base64')`.
+
+          2.  Construct the OSC52 escape sequence for copying to the clipboard:
+          `\x1b]52;c;${base64EncodedText}\x07`.
+              (Note: `c` specifies the clipboard selection. Primary selection would be `p`.)
+          3.  Write this escape sequence to `process.stdout`. You can use
+          `process.stdout.write()`.
+
+          4.  The function is `async` but the write operation is synchronous. It
+          can return `Promise.resolve()`.
+
+
+          Consider that very long text might exceed terminal buffer limits for
+          OSC52 sequences. For this initial implementation, do not implement
+          chunking; assume the text length is manageable. We can add chunking
+          later if needed.
+        done: true
+      - prompt: >
+          In `src/common/osc52.ts`, implement an asynchronous function `export
+          async function osc52Read(): Promise<string | null>`.
+
+          This function should attempt to read from the terminal's clipboard
+          using OSC52.
+
+          The steps are:
+
+          1.  Check if `process.stdin.isTTY` is `false`. If so, it means stdin
+          is not a TTY (e.g., it's piped), so OSC52 interaction is not feasible.
+          In this case, return `null` immediately.
+
+          2.  Store the original properties of `process.stdin` (isRaw,
+          isPaused).
+
+          3.  Set `process.stdin.setRawMode(true)` to enable reading raw escape
+          sequences.
+
+          4.  Ensure `process.stdin` is not paused by calling
+          `process.stdin.resume()`.
+
+          5.  Write the OSC52 request sequence `\x1b]52;c;?\x07` to
+          `process.stdout` (requesting content from clipboard 'c').
+
+          6.  Listen for data on `process.stdin`. Accumulate incoming data
+          chunks into a buffer or string.
+
+          7.  Implement a timeout mechanism (e.g., 500ms). If no complete
+          response is received within this time, consider it a failure.
+
+          8.  The expected response format is `\x1b]52;c;BASE64_DATA\x07`. Parse
+          this response:
+              - Extract the `BASE64_DATA` part.
+              - Decode it from Base64 to a UTF-8 string.
+              - If parsing is successful, return the decoded string.
+          9.  If the timeout occurs, or if the received data doesn't match the
+          expected format, or if any error occurs, return `null`.
+
+          10. Crucially, in a `finally` block or before returning, restore
+          `process.stdin` to its original raw mode state
+          (`process.stdin.setRawMode(originalIsRaw)`) and pause it if it was
+          originally paused (`if (originalIsPaused) process.stdin.pause()`).
+          Remove any 'data' listeners you added.
+
+
+          This function is complex due to the nature of stdin interaction. Use
+          `Promise` with `setTimeout` for the timeout. Be careful with event
+          listeners on `process.stdin` to avoid leaks.
+
+
+          Example structure for handling stdin:
+
+          ```typescript
+
+          return new Promise<string | null>((resolve) => {
+            let receivedData = '';
+            const timeoutId = setTimeout(() => {
+              // Cleanup and resolve(null)
+            }, 500);
+
+            const onData = (chunk: Buffer) => {
+              receivedData += chunk.toString();
+              // Check if receivedData contains the full OSC52 response
+              // If yes, clearTimeout, cleanup, parse, and resolve with data or null
+              // If response is partial but looks like OSC52, wait for more.
+              // If it's clearly not OSC52, or too much data without matching, cleanup and resolve(null).
+            };
+
+            const onError = (err: Error) => {
+              // clearTimeout, cleanup, and resolve(null)
+            };
+
+            process.stdin.on('data', onData);
+            process.stdin.on('error', onError);
+
+            // Function to cleanup listeners and restore stdin state
+            const cleanup = () => {
+              process.stdin.removeListener('data', onData);
+              process.stdin.removeListener('error', onError);
+              // Restore stdin raw mode and pause state
+            };
+
+            // ... send OSC52 request to stdout ...
+          });
+
+          ```
+
+          The response from the terminal will be `\x1b]52;c;BASE64_DATA\x07`.
+          You need to parse this.
+        done: true
+      - prompt: >
+          Create a new test file `src/common/osc52.test.ts`.
+
+          Write unit tests for `osc52Copy` and `osc52Read` from
+          `src/common/osc52.ts`.
+
+
+          For `osc52Copy`:
+
+          1.  Mock `process.stdout.write`.
+
+          2.  Call `osc52Copy("hello")`.
+
+          3.  Verify that `process.stdout.write` was called with the correct
+          OSC52 sequence (`\x1b]52;c;aGVsbG8=\x07`).
+
+          4.  Test with an empty string.
+
+          5.  Test with a string containing special characters.
+
+
+          For `osc52Read`: This is harder to test perfectly due to
+          `process.stdin` interaction.
+
+          1.  Mock `process.stdout.write` to verify the request sequence is
+          sent.
+
+          2.  Mock `process.stdin`:
+              -   You'll need to simulate `process.stdin.isTTY`, `setRawMode`, `resume`, `pause`, and emitting 'data' events. Bun's `mock.module` might be useful here, or more granular jest-style mocks on `process.stdin` methods.
+              -   Test case 1: Simulate stdin not being a TTY. `osc52Read` should return `null` immediately.
+              -   Test case 2: Simulate a successful response. `process.stdin` emits the correct OSC52 sequence (`\x1b]52;c;aGVsbG8=\x07`). Verify `osc52Read` returns "hello".
+              -   Test case 3: Simulate a timeout. `process.stdin` emits no data or incomplete data. Verify `osc52Read` returns `null`.
+              -   Test case 4: Simulate an invalid response. Verify `osc52Read` returns `null`.
+          3.  Ensure `process.stdin.setRawMode` is called correctly (true then
+          back to original) and `pause`/`resume` are managed.
+
+          4.  Verify `process.stdout.write` is called with `\x1b]52;c;?\x07`.
+
+
+          This will require careful mocking of `process.stdin` and
+          `process.stdout`.
+
+          Example for mocking `process.stdin` data event:
+
+          ```typescript
+
+          // In your test setup
+
+          const mockStdin = oggetti.fn(); // or a more complex mock object
+
+          mock.module('node:process', () => ({
+            ...process, // spread original process
+            stdin: {
+              ...process.stdin,
+              isTTY: true,
+              setRawMode: oggetti.fn(),
+              resume: oggetti.fn(),
+              pause: oggetti.fn(),
+              on: mockStdin,
+              removeListener: oggetti.fn(),
+            },
+            stdout: {
+              ...process.stdout,
+              write: oggetti.fn()
+            }
+          }));
+
+
+          // In a test case, to simulate data:
+
+          // mockStdin.mock.calls[0][1](Buffer.from('\x1b]52;c;aGVsbG8=\x07'));
+          // Simulates emitting 'data' event
+
+          ```
+
+          Adjust mocking strategy as needed for Bun's test environment.
+          `oggetti.fn()` is a placeholder for Bun's mocking function if it's not
+          `jest.fn()`. It's `mock()` from `bun:test`.
+        done: true
+  - title: 3. Clipboard Wrapper Implementation
+    description: Create a wrapper module for clipboard operations. It will use OSC52
+      functions if in an SSH session and `clipboardy` otherwise. Initially,
+      `read` will always use `clipboardy` or OSC52 if it succeeds, with
+      `clipboardy` as a fallback.
+    files:
+      - src/common/clipboard.ts
+      - src/common/clipboard.test.ts
+      - src/common/ssh_detection.ts
+      - src/common/osc52.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Create a new file `src/common/clipboard.ts`.
+
+          This module will provide wrapper functions for clipboard read and
+          write operations.
+
+
+          1.  Import `isSshSession` from `./ssh_detection.ts`.
+
+          2.  Import `osc52Copy` and `osc52Read` from `./osc52.ts`.
+
+          3.  Import `clipboardy` (default import): `import clipboard from
+          'clipboardy';`.
+
+          4.  Import `log` and `debugLog` from `../logging.ts`.
+
+
+          Implement `export async function write(text: string): Promise<void>`:
+
+          -   If `isSshSession()` returns `true`:
+              -   Call `await osc52Copy(text)`.
+              -   Add a `try...catch` block around `osc52Copy`. If it throws an error:
+                  -   `debugLog` the error: `debugLog('OSC52 copy failed, falling back to clipboardy:', error);`
+                  -   Fall back to `await clipboard.write(text);`.
+          -   Else (not an SSH session):
+              -   Call `await clipboard.write(text);`.
+
+          Implement `export async function read(): Promise<string>`:
+
+          -   If `isSshSession()` returns `true`:
+              -   Call `const oscText = await osc52Read();`.
+              -   If `oscText` is a non-null string:
+                  -   `debugLog('Successfully read from clipboard using OSC52.');`
+                  -   Return `oscText`.
+              -   Else (`oscText` is `null`, meaning OSC52 read failed or timed out):
+                  -   `debugLog('OSC52 read failed or timed out, falling back to clipboardy.read().');`
+                  -   Return `await clipboard.read();`.
+              -   Wrap the `osc52Read()` call in a `try...catch`. If an error occurs:
+                  -   `debugLog('Error during OSC52 read, falling back to clipboardy.read():', error);`
+                  -   Return `await clipboard.read();`.
+          -   Else (not in an SSH session):
+              -   Return `await clipboard.read();`.
+        done: true
+      - prompt: >
+          Create a new test file `src/common/clipboard.test.ts`.
+
+          Write unit tests for the `read` and `write` functions in
+          `src/common/clipboard.ts`.
+
+
+          Mock the imported modules:
+
+          - `src/common/ssh_detection.ts` (`isSshSession`)
+
+          - `src/common/osc52.ts` (`osc52Copy`, `osc52Read`)
+
+          - `clipboardy` (its `read` and `write` methods)
+
+          - `src/logging.ts` (`debugLog`)
+
+
+          Use `mock.module` from `bun:test` for mocking.
+
+
+          For `write(text)`:
+
+          1.  Test case: SSH session is true.
+              -   `isSshSession` returns `true`.
+              -   `osc52Copy` resolves successfully.
+              -   Verify `osc52Copy` is called with the correct text.
+              -   Verify `clipboardy.write` is NOT called.
+          2.  Test case: SSH session is true, `osc52Copy` fails.
+              -   `isSshSession` returns `true`.
+              -   `osc52Copy` rejects with an error.
+              -   Verify `osc52Copy` is called.
+              -   Verify `clipboardy.write` IS called with the correct text (fallback).
+              -   Verify `debugLog` is called.
+          3.  Test case: SSH session is false.
+              -   `isSshSession` returns `false`.
+              -   Verify `clipboardy.write` is called with the correct text.
+              -   Verify `osc52Copy` is NOT called.
+
+          For `read()`:
+
+          1.  Test case: SSH session is true, `osc52Read` succeeds.
+              -   `isSshSession` returns `true`.
+              -   `osc52Read` resolves to "osc_text".
+              -   Verify `osc52Read` is called.
+              -   Verify the function returns "osc_text".
+              -   Verify `clipboardy.read` is NOT called.
+              -   Verify `debugLog` is called for success.
+          2.  Test case: SSH session is true, `osc52Read` returns `null`
+          (fails/times out).
+              -   `isSshSession` returns `true`.
+              -   `osc52Read` resolves to `null`.
+              -   `clipboardy.read` resolves to "clipboardy_text".
+              -   Verify `osc52Read` is called.
+              -   Verify the function returns "clipboardy_text".
+              -   Verify `debugLog` is called for fallback.
+          3.  Test case: SSH session is true, `osc52Read` throws an error.
+              -   `isSshSession` returns `true`.
+              -   `osc52Read` rejects with an error.
+              -   `clipboardy.read` resolves to "clipboardy_text".
+              -   Verify `osc52Read` is called.
+              -   Verify the function returns "clipboardy_text".
+              -   Verify `debugLog` is called for error and fallback.
+          4.  Test case: SSH session is false.
+              -   `isSshSession` returns `false`.
+              -   `clipboardy.read` resolves to "clipboardy_text".
+              -   Verify `clipboardy.read` is called.
+              -   Verify the function returns "clipboardy_text".
+              -   Verify `osc52Read` is NOT called.
+
+          This will require careful mocking of `process.stdin` and
+          `process.stdout`.
+
+          Example for mocking `process.stdin` data event:
+
+          ```typescript
+
+          // In your test setup
+
+          const mockStdin = oggetti.fn(); // or a more complex mock object
+
+          mock.module('node:process', () => ({
+            ...process, // spread original process
+            stdin: {
+              ...process.stdin,
+              isTTY: true,
+              setRawMode: oggetti.fn(),
+              resume: oggetti.fn(),
+              pause: oggetti.fn(),
+              on: mockStdin,
+              removeListener: oggetti.fn(),
+            },
+            stdout: {
+              ...process.stdout,
+              write: oggetti.fn()
+            }
+          }));
+
+
+          // In a test case, to simulate data:
+
+          // mockStdin.mock.calls[0][1](Buffer.from('\x1b]52;c;aGVsbG8=\x07'));
+          // Simulates emitting 'data' event
+
+          ```
+
+          Adjust mocking strategy as needed for Bun's test environment.
+          `oggetti.fn()` is a placeholder for Bun's mocking function if it's not
+          `jest.fn()`. It's `mock()` from `bun:test`.
+        done: true
+  - title: 4. Refactor Existing Code to Use Clipboard Wrapper
+    description: Systematically replace all direct usages of `clipboardy` with the
+      new clipboard wrapper functions. This task is broken down per file for
+      incremental changes and testing.
+    files:
+      - src/rmfilter/rmfilter.ts
+      - src/rmfind/rmfind.ts
+      - src/rmplan/executors/copy_only.ts
+      - src/rmplan/executors/copy_paste.ts
+      - src/rmplan/rmplan.ts
+      - src/apply-llm-edits/apply.ts
+      - src/apply-llm-edits/cmd.ts
+      - src/rmrun.ts
+      - src/common/clipboard.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          In `src/rmfilter/rmfilter.ts`:
+
+          1.  Remove the import of `clipboardy`.
+
+          2.  Import the `write` function from `../common/clipboard.ts` (adjust
+          path as necessary).
+
+          3.  Find the line `await clipboard.write(finalOutput);`.
+
+          4.  Replace it with `await write(finalOutput);`.
+
+          5.  Ensure all other parts of the file remain unchanged.
+        done: true
+      - prompt: >
+          In `src/rmfind/rmfind.ts`:
+
+          1.  Remove the import of `clipboardy`.
+
+          2.  Import the `write` function from `../common/clipboard.ts` (adjust
+          path as necessary).
+
+          3.  Find the line `await clipboard.write(output);`.
+
+          4.  Replace it with `await write(output);`.
+        done: true
+      - prompt: >
+          In `src/rmplan/executors/copy_only.ts`:
+
+          1.  Remove the import of `clipboardy`.
+
+          2.  Import the `write` function from `../../common/clipboard.ts`
+          (adjust path as necessary).
+
+          3.  Find the line `await clipboard.write(contextContent);`.
+
+          4.  Replace it with `await write(contextContent);`.
+        done: true
+      - prompt: >
+          In `src/rmplan/executors/copy_paste.ts`:
+
+          1.  Remove the import of `clipboardy`.
+
+          2.  Import the `read` and `write` functions from
+          `../../common/clipboard.ts` (adjust path as necessary).
+
+          3.  Replace `await clipboard.write(contextContent);` with `await
+          write(contextContent);`.
+
+          4.  Replace `const llmOutput = await clipboard.read();` (first
+          instance) with `const llmOutput = await read();`.
+
+          5.  Inside the `retryRequester` callback, replace `await
+          clipboard.write(prompt.at(-1)!.content);` with `await
+          write(prompt.at(-1)!.content);`.
+
+          6.  Inside the `retryRequester` callback, replace `const llmOutput =
+          await clipboard.read();` (second instance) with `const llmOutputRetry
+          = await read();` and use `llmOutputRetry`.
+        done: true
+      - prompt: >
+          In `src/rmplan/rmplan.ts`:
+
+          1.  Remove the import of `clipboardy`.
+
+          2.  Import the `write` function from `../common/clipboard.js` (adjust
+          path as necessary, note the `.js` extension if that's how it's
+          resolved in this file).
+
+          3.  In the `next` command's action handler, within the `else` block
+          (where `options.rmfilter` is false):
+              - Find `await clipboardy.write(result.prompt);`.
+              - Replace it with `await write(result.prompt);`.
+        done: true
+      - prompt: >
+          In `src/apply-llm-edits/apply.ts`:
+
+          1.  Remove the import of `clipboardy`.
+
+          2.  Import the `write` function from `../common/clipboard.ts` (adjust
+          path as necessary).
+
+          3.  In the `applyLlmEdits` function, within the `else` block for
+          non-interactive mode failures:
+              - Find `await clipboard.write(retryMessage);`.
+              - Replace it with `await write(retryMessage);`.
+        done: true
+      - prompt: >
+          In `src/apply-llm-edits/cmd.ts`:
+
+          1.  Remove the import of `clipboardy`.
+
+          2.  Import the `read` function from `../common/clipboard.ts` (adjust
+          path as necessary).
+
+          3.  Find the lines:
+              ```typescript
+              content = useStdin ? await Bun.stdin.text() : await clipboard.read();
+              if (!content) {
+                content = await clipboard.read();
+              }
+              ```
+          4.  Replace them with:
+              ```typescript
+              if (useStdin) {
+                content = await Bun.stdin.text();
+              } else {
+                content = await read();
+              }
+              ```
+        done: true
+      - prompt: >
+          In `src/rmrun.ts`:
+
+          1.  Remove the import of `clipboardy`.
+
+          2.  Import the `read` function from `./common/clipboard.ts` (adjust
+          path as necessary).
+
+          3.  Find the lines:
+              ```typescript
+              } else {
+                log('Reading from clipboard');
+                input = await clipboard.read();
+                process.exit(1); // This exit seems incorrect if clipboard read is successful.
+                                 // It was likely a bug or placeholder. Let's assume it should proceed.
+              }
+              ```
+          4.  The `process.exit(1)` after `clipboard.read()` in `rmrun.ts` seems
+          like a bug if the intention was to use the clipboard content. If
+          clipboard read is successful, it should proceed. If it's meant to exit
+          if clipboard is the *only* source and it's empty, that's different.
+              Let's assume the `process.exit(1)` was an error and it should proceed if clipboard content is read.
+              Replace the block with:
+              ```typescript
+              } else {
+                log('Reading from clipboard');
+                input = await read();
+                if (input === undefined || input === null || input.trim() === "") { // Check if clipboard was empty or read failed
+                  error('Clipboard is empty or could not be read. Exiting.');
+                  process.exit(1); // Exit if clipboard is effectively empty
+                }
+                // No process.exit(1) here if read was successful
+              }
+              ```
+        done: true
+  - title: 5. Documentation Update
+    description: Update the README.md to inform users about the new OSC52 copy/paste
+      support, especially its benefits for SSH users, and any terminal
+      requirements.
+    files:
+      - README.md
+    include_imports: false
+    include_importers: false
+    steps:
+      - prompt: >
+          Update `README.md`.
+
+          1.  Add a new section, perhaps under "Key Features" or as a top-level
+          feature, explaining the OSC52 copy/paste support.
+              -   Mention that this feature improves clipboard interaction when running `llmutils` commands over SSH.
+              -   Explain that for `write` operations (e.g., copying a generated prompt), it uses OSC52 sequences to interact with the local machine's clipboard if an SSH session is detected.
+              -   Explain that for `read` operations (e.g., pasting LLM output for `apply-llm-edits`), it will attempt to use OSC52 to read from the local clipboard, falling back to standard clipboard methods if OSC52 read is not supported by the terminal or times out.
+              -   Note that terminal emulator support for OSC52 (especially for the read/paste query) is required for this feature to work fully in SSH. Common modern terminals like iTerm2, WezTerm, and recent versions of Windows Terminal often have good support.
+          2.  Briefly mention this in the general introduction or a relevant
+          tool's section if applicable (e.g., `rmfilter` or `apply-llm-edits`
+          often involve clipboard).
+        done: true
