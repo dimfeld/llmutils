@@ -141,7 +141,7 @@ tasks:
               *   Return a `Workspace` object.
           7.  For now, if `method` is `llmutils`, log "LLMUtils-based workspace
           creation not yet implemented" and return `null`.
-        done: false
+        done: true
       - prompt: >
           Create a test file `src/rmplan/workspace_manager.test.ts`.
 
