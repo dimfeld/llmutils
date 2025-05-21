@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
+import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
 import * as path from 'node:path';
 import { type RmplanConfig, type WorkspaceCreationConfig } from './configSchema.js';
 
