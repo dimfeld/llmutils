@@ -91,7 +91,7 @@ tasks:
 
           For schema validation failures, `loadConfig` is expected to throw an
           error. For file read/parse errors, it returns default config.
-        done: false
+        done: true
   - title: 2. WorkspaceManager Structure and Script-Based Creation
     description: Create the `WorkspaceManager` class and implement the script-based
       method for workspace creation.
