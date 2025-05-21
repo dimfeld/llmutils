@@ -5,45 +5,41 @@ import { rmplanConfigSchema } from './configSchema.js';
 const testConfigs = [
   // Empty config
   {},
-  
+
   // Config with postApplyCommands
   {
-    postApplyCommands: [
-      { title: 'Test Command', command: 'echo hello' }
-    ]
+    postApplyCommands: [{ title: 'Test Command', command: 'echo hello' }],
   },
-  
+
   // Config with workspaceCreation method script
   {
     workspaceCreation: {
       method: 'script',
-      scriptPath: '/path/to/script.sh'
-    }
+      scriptPath: '/path/to/script.sh',
+    },
   },
-  
+
   // Config with workspaceCreation method llmutils
   {
     workspaceCreation: {
       method: 'llmutils',
       repositoryUrl: 'https://github.com/example/repo.git',
       cloneLocation: '~/llmutils-workspaces',
-      postCloneCommands: [
-        { title: 'Install Dependencies', command: 'npm install' }
-      ]
-    }
+      postCloneCommands: [{ title: 'Install Dependencies', command: 'npm install' }],
+    },
   },
-  
+
   // Config with empty workspaceCreation
   {
-    workspaceCreation: {}
-  }
+    workspaceCreation: {},
+  },
 ];
 
 // Invalid config: script without scriptPath
 const invalidConfig = {
   workspaceCreation: {
-    method: 'script'
-  }
+    method: 'script',
+  },
 };
 
 console.log('Testing valid configurations:');
@@ -61,7 +57,9 @@ testConfigs.forEach((config, index) => {
 
 console.log('\nTesting invalid configuration:');
 const invalidResult = rmplanConfigSchema.safeParse(invalidConfig);
-console.log(`Invalid config: ${invalidResult.success ? 'VALID (UNEXPECTED!)' : 'INVALID (EXPECTED)'}`);
+console.log(
+  `Invalid config: ${invalidResult.success ? 'VALID (UNEXPECTED!)' : 'INVALID (EXPECTED)'}`
+);
 if (!invalidResult.success) {
   console.log('  Error:', invalidResult.error.errors[0].message);
 }
