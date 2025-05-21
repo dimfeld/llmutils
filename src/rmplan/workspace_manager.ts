@@ -5,6 +5,7 @@ import { $ } from 'bun';
 import { log, debugLog } from '../logging.js';
 import { spawnAndLogOutput, getGitRoot, parseCliArgsFromString } from '../rmfilter/utils.js';
 import type { RmplanConfig, WorkspaceCreationConfig, PostApplyCommand } from './configSchema.js';
+import { executePostApplyCommand } from './actions.js';
 
 /**
  * Interface representing a created workspace
@@ -270,39 +271,32 @@ export class WorkspaceManager {
     if (workspaceConfig.postCloneCommands?.length) {
       log('Running post-clone commands');
 
-      for (const command of workspaceConfig.postCloneCommands) {
-        try {
-          const { exitCode, stdout, stderr } = await spawnAndLogOutput(
-            parseCliArgsFromString(command.command),
-            {
-              cwd: command.workingDirectory
-                ? path.resolve(targetClonePath, command.workingDirectory)
-                : targetClonePath,
-              env: {
-                ...process.env,
-                ...command.env,
-                LLMUTILS_TASK_ID: taskId,
-                LLMUTILS_PLAN_FILE_PATH: originalPlanFilePath,
-              },
-            }
-          );
+      for (const commandConfig of workspaceConfig.postCloneCommands) {
+        // Add task-specific environment variables to the command config
+        const commandWithEnv: PostApplyCommand = {
+          ...commandConfig,
+          env: {
+            ...commandConfig.env,
+            LLMUTILS_TASK_ID: taskId,
+            LLMUTILS_PLAN_FILE_PATH: originalPlanFilePath,
+          },
+        };
 
-          if (exitCode !== 0 && !command.allowFailure) {
-            log(`Post-clone command failed: ${command.title || command.command}`);
-            log(`Command output: ${stderr}`);
-            // Consider cleaning up the clone
-            try {
-              await fs.rm(targetClonePath, { recursive: true, force: true });
-            } catch {
-              // Ignore cleanup errors
-            }
-            return null;
+        log(`Running post-clone command: "${commandConfig.title || commandConfig.command}"`);
+
+        // Execute the command using executePostApplyCommand with targetClonePath as the git root
+        const success = await executePostApplyCommand(commandWithEnv, targetClonePath);
+
+        if (!success && !commandConfig.allowFailure) {
+          log(`Post-clone command failed and failure is not allowed. Cleaning up workspace.`);
+          // Clean up the clone
+          try {
+            await fs.rm(targetClonePath, { recursive: true, force: true });
+          } catch (error) {
+            // Ignore cleanup errors
+            log(`Note: Failed to clean up workspace directory: ${String(error)}`);
           }
-        } catch (error) {
-          if (!command.allowFailure) {
-            log(`Error running post-clone command: ${String(error)}`);
-            return null;
-          }
+          return null;
         }
       }
     }
