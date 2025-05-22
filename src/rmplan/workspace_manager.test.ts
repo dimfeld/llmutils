@@ -82,7 +82,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
       },
@@ -139,7 +138,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         cloneLocation,
       },
     };
@@ -188,7 +186,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
       },
@@ -219,7 +216,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -293,7 +289,7 @@ describe('WorkspaceManager', () => {
     );
   });
 
-  test('createWorkspace with rmplan method - throws error when cloneLocation is not specified', async () => {
+  test('createWorkspace throws error when cloneLocation is not specified', async () => {
     // Setup
     const taskId = 'task-123';
     const planPath = '/path/to/plan.yml';
@@ -301,7 +297,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         // No cloneLocation specified
       },
@@ -323,7 +318,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
       },
@@ -373,7 +367,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         cloneLocation,
         // No repositoryUrl provided
       },
@@ -404,7 +397,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -466,7 +458,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -530,7 +521,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         // No postCloneCommands provided
@@ -585,7 +575,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -669,7 +658,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands,
