@@ -43,18 +43,12 @@ export class WorkspaceManager {
     config: RmplanConfig
   ): Promise<Workspace | null> {
     // Check if workspace creation is enabled in the config
-    if (!config.workspaceCreation || !config.workspaceCreation.method) {
+    if (!config.workspaceCreation) {
       log('Workspace creation not enabled in config');
       return null;
     }
 
-    // Create workspace based on configured method
-    if (config.workspaceCreation.method === 'rmplan') {
-      return this._createWithLlmUtils(taskId, originalPlanFilePath, config.workspaceCreation);
-    }
-
-    log(`Unsupported workspace creation method: ${config.workspaceCreation.method}`);
-    return null;
+    return this._createWithLlmUtils(taskId, originalPlanFilePath, config.workspaceCreation);
   }
 
   // For testing purposes only - allows tests to override homedir

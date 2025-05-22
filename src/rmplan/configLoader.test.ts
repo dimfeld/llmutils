@@ -304,25 +304,9 @@ autoexamples:
   });
 
   describe('config with workspaceCreation configurations', () => {
-    test('should load config with workspaceCreation method script', async () => {
+    test('should load config with workspaceCreation', async () => {
       const configYaml = `
 workspaceCreation:
-  method: script
-  scriptPath: /path/to/script.sh
-`;
-      const configPath = path.join(tempDir, 'config.yml');
-      await createTestFile(configPath, configYaml);
-
-      const config = await loadConfig(configPath);
-      expect(config.workspaceCreation).toBeDefined();
-      expect(config.workspaceCreation!.method).toBe('script');
-      expect(config.workspaceCreation!.scriptPath).toBe('/path/to/script.sh');
-    });
-
-    test('should load config with workspaceCreation method rmplan', async () => {
-      const configYaml = `
-workspaceCreation:
-  method: rmplan
   repositoryUrl: https://github.com/example/repo.git
   cloneLocation: ~/llmutils-workspaces
   postCloneCommands:
@@ -334,24 +318,10 @@ workspaceCreation:
 
       const config = await loadConfig(configPath);
       expect(config.workspaceCreation).toBeDefined();
-      expect(config.workspaceCreation!.method).toBe('rmplan');
       expect(config.workspaceCreation!.repositoryUrl).toBe('https://github.com/example/repo.git');
       expect(config.workspaceCreation!.cloneLocation).toBe('~/llmutils-workspaces');
       expect(config.workspaceCreation!.postCloneCommands).toHaveLength(1);
       expect(config.workspaceCreation!.postCloneCommands![0].title).toBe('Install Dependencies');
-    });
-
-    test('should fail validation when method is script but scriptPath is missing', async () => {
-      const configYaml = `
-workspaceCreation:
-  method: script
-`;
-      const configPath = path.join(tempDir, 'config.yml');
-      await createTestFile(configPath, configYaml);
-
-      expect(loadConfig(configPath)).rejects.toThrow(
-        /When method is 'script', scriptPath must be provided/
-      );
     });
 
     test('should handle empty workspaceCreation object', async () => {

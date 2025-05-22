@@ -72,30 +72,6 @@ describe('WorkspaceManager', () => {
     expect(mockLog).toHaveBeenCalledWith('Workspace creation not enabled in config');
   });
 
-  test('createWorkspace returns null when workspaceCreation method is not specified', async () => {
-    const config: RmplanConfig = {
-      workspaceCreation: {},
-    };
-
-    const result = await workspaceManager.createWorkspace('task-123', '/path/to/plan.yml', config);
-
-    expect(result).toBeNull();
-    expect(mockLog).toHaveBeenCalledWith('Workspace creation not enabled in config');
-  });
-
-  test('createWorkspace returns null when method is unsupported', async () => {
-    const config: RmplanConfig = {
-      workspaceCreation: {
-        method: 'script' as any,
-      },
-    };
-
-    const result = await workspaceManager.createWorkspace('task-123', '/path/to/plan.yml', config);
-
-    expect(result).toBeNull();
-    expect(mockLog).toHaveBeenCalledWith('Unsupported workspace creation method: script');
-  });
-
   test('createWorkspace with rmplan method - successful clone and branch creation', async () => {
     // Setup
     const taskId = 'task-123';
