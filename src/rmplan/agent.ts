@@ -76,7 +76,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
       // Validate that the workspace is properly initialized
       try {
-        const gitStatus = await logSpawn(['git', 'status'], {
+        const gitStatus = logSpawn(['git', 'status'], {
           cwd: workspace.path,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
