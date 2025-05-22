@@ -178,6 +178,8 @@ You can check if compilation works using `bun run check`
 
 ## Code Quality Best Practices
 
+- Use @inquirer/prompts for asking questions to the user
+
 ### Process Management
 
 - **Avoid `process.chdir()`**: Changes global working directory for entire process, causing side effects

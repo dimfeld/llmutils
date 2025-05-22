@@ -379,7 +379,7 @@ program
       undefined,
       gitRoot
     );
-    
+
     // If plan is complete and we're in a workspace, release the lock
     if (result.planComplete) {
       try {
@@ -494,18 +494,12 @@ program
     '--workspace <id>',
     'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
   )
-  .option(
-    '--auto-workspace', 
-    'Automatically select an available workspace or create a new one'
-  )
+  .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
   .option(
     '--prefer-new-workspace',
     'When using --auto-workspace, prefer creating a new workspace over using existing ones'
   )
-  .option(
-    '--non-interactive',
-    'Do not prompt for user input (e.g., when clearing stale locks)'
-  )
+  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
   .allowExcessArguments(true)
   .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
@@ -529,7 +523,7 @@ program
           process.exit(1);
         }
       }
-      
+
       await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl);
     } catch (err) {
       error('Failed to list workspaces:', err);

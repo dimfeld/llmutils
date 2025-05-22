@@ -50,7 +50,7 @@ describe('workspace_tracker', () => {
   afterEach(async () => {
     // Clear test tracking file path
     _setTestTrackingFilePath(undefined);
-    
+
     // Clean up temporary directory
     try {
       await fs.rm(tempDir, { recursive: true, force: true });

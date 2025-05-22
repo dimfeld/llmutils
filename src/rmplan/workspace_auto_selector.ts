@@ -27,7 +27,7 @@ export interface SelectedWorkspace {
   workspace: WorkspaceInfo;
   /** Whether this is a newly created workspace */
   isNew: boolean;
-  /** Whether a stale lock was cleared */  
+  /** Whether a stale lock was cleared */
   clearedStaleLock: boolean;
 }
 
@@ -96,7 +96,7 @@ export class WorkspaceAutoSelector {
 
       // Check if lock is stale
       const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
-      if (lockInfo && await WorkspaceLock.isLockStale(lockInfo)) {
+      if (lockInfo && (await WorkspaceLock.isLockStale(lockInfo))) {
         const cleared = await this.handleStaleLock(workspace, lockInfo, interactive);
         if (cleared) {
           log(`Selected workspace after clearing stale lock: ${workspace.workspacePath}`);
@@ -108,7 +108,7 @@ export class WorkspaceAutoSelector {
     // All workspaces are locked, create a new one
     log('All existing workspaces are locked, creating a new workspace');
     const newWorkspace = await this.createNewWorkspace(taskId, planFilePath);
-    
+
     if (newWorkspace) {
       return { workspace: newWorkspace, isNew: true, clearedStaleLock: false };
     }
@@ -127,14 +127,14 @@ export class WorkspaceAutoSelector {
   ): Promise<boolean> {
     const lockAge = Date.now() - new Date(lockInfo.startedAt).getTime();
     const lockAgeHours = Math.round(lockAge / (1000 * 60 * 60));
-    
+
     if (interactive) {
       console.log(chalk.yellow('\nFound a stale lock:'));
       console.log(`  Workspace: ${workspace.workspacePath}`);
       console.log(`  Task ID: ${workspace.taskId}`);
       console.log(`  Locked by PID: ${lockInfo.pid} on ${lockInfo.hostname}`);
       console.log(`  Lock age: ${lockAgeHours} hours`);
-      
+
       const shouldClear = await confirm({
         message: 'Clear this stale lock and use the workspace?',
         default: true,
@@ -144,7 +144,9 @@ export class WorkspaceAutoSelector {
         return false;
       }
     } else {
-      log(`Auto-clearing stale lock for workspace ${workspace.workspacePath} (${lockAgeHours} hours old)`);
+      log(
+        `Auto-clearing stale lock for workspace ${workspace.workspacePath} (${lockAgeHours} hours old)`
+      );
     }
 
     try {
@@ -175,7 +177,7 @@ export class WorkspaceAutoSelector {
 
     // Get the workspace info from tracker
     const workspaces = await findWorkspacesByTaskId(taskId);
-    return workspaces.find(w => w.workspacePath === workspace.path) || null;
+    return workspaces.find((w) => w.workspacePath === workspace.path) || null;
   }
 
   /**
@@ -195,13 +197,13 @@ export class WorkspaceAutoSelector {
       const status = workspace.lockedBy
         ? chalk.red(`🔒 Locked by PID ${workspace.lockedBy.pid} on ${workspace.lockedBy.hostname}`)
         : chalk.green('🔓 Available');
-      
+
       console.log(`\n${status}`);
       console.log(`  Path: ${workspace.workspacePath}`);
       console.log(`  Task: ${workspace.taskId}`);
       console.log(`  Branch: ${workspace.branch}`);
       console.log(`  Created: ${new Date(workspace.createdAt).toLocaleString()}`);
-      
+
       if (workspace.lockedBy) {
         const lockAge = Date.now() - new Date(workspace.lockedBy.startedAt).getTime();
         const lockAgeHours = Math.round(lockAge / (1000 * 60 * 60));

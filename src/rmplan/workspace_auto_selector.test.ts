@@ -30,10 +30,10 @@ describe('WorkspaceAutoSelector', () => {
 
   beforeEach(async () => {
     testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-auto-selector-test-'));
-    
+
     // Set test tracking file path to avoid interference
     (workspaceTracker._setTestTrackingFilePath as any)(path.join(testDir, 'test-workspaces.json'));
-    
+
     // Setup test config
     config = {
       modelSettings: {
@@ -83,7 +83,9 @@ describe('WorkspaceAutoSelector', () => {
     (workspaceTracker.findWorkspacesByRepoUrl as any).mockReturnValue(mockWorkspaces);
     (workspaceTracker.updateWorkspaceLockStatus as any).mockReturnValue(mockWorkspaces);
 
-    const result = await selector.selectWorkspace('task-3', '/test/plan3.yml', { interactive: false });
+    const result = await selector.selectWorkspace('task-3', '/test/plan3.yml', {
+      interactive: false,
+    });
 
     expect(result).not.toBeNull();
     expect(result?.workspace.taskId).toBe('task-1');
@@ -127,7 +129,9 @@ describe('WorkspaceAutoSelector', () => {
     (workspaceTracker.findWorkspacesByRepoUrl as any).mockReturnValue(mockWorkspaces);
     (workspaceTracker.updateWorkspaceLockStatus as any).mockReturnValue(mockWorkspaces);
 
-    const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', { interactive: false });
+    const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
+      interactive: false,
+    });
 
     expect(result).not.toBeNull();
     expect(result?.workspace.taskId).toBe('task-stale');
@@ -135,7 +139,8 @@ describe('WorkspaceAutoSelector', () => {
     expect(result?.clearedStaleLock).toBe(true);
 
     // Verify lock was cleared
-    const lockExists = await fs.promises.access(path.join(workspacePath, '.rmplan.lock'))
+    const lockExists = await fs.promises
+      .access(path.join(workspacePath, '.rmplan.lock'))
       .then(() => true)
       .catch(() => false);
     expect(lockExists).toBe(false);
@@ -165,7 +170,9 @@ describe('WorkspaceAutoSelector', () => {
     const createWorkspaceMock = mock(() => null);
     workspaceManager.createWorkspace = createWorkspaceMock;
 
-    const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', { interactive: false });
+    const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
+      interactive: false,
+    });
 
     expect(createWorkspaceMock).toHaveBeenCalledWith('task-new', '/test/plan-new.yml', config);
   });
@@ -183,30 +190,31 @@ describe('WorkspaceAutoSelector', () => {
     ];
 
     (workspaceTracker.findWorkspacesByRepoUrl as any).mockReturnValue(mockWorkspaces);
-    
+
     // Mock workspace creation
     const newWorkspace = {
       path: path.join(testDir, 'workspace-new'),
       originalPlanFilePath: '/test/plan-new.yml',
       taskId: 'task-new',
     };
-    
+
     const createWorkspaceMock = mock(() => newWorkspace);
     workspaceManager.createWorkspace = createWorkspaceMock;
-    
-    (workspaceTracker.findWorkspacesByTaskId as any).mockReturnValue([{
-      ...newWorkspace,
-      workspacePath: newWorkspace.path,
-      repositoryUrl: 'https://github.com/test/repo.git',
-      branch: 'llmutils-task/task-new',
-      createdAt: new Date().toISOString(),
-    }]);
 
-    const result = await selector.selectWorkspace(
-      'task-new', 
-      '/test/plan-new.yml', 
-      { interactive: false, preferNewWorkspace: true }
-    );
+    (workspaceTracker.findWorkspacesByTaskId as any).mockReturnValue([
+      {
+        ...newWorkspace,
+        workspacePath: newWorkspace.path,
+        repositoryUrl: 'https://github.com/test/repo.git',
+        branch: 'llmutils-task/task-new',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+
+    const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
+      interactive: false,
+      preferNewWorkspace: true,
+    });
 
     expect(createWorkspaceMock).toHaveBeenCalled();
     expect(result?.isNew).toBe(true);

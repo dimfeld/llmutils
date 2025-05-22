@@ -34,10 +34,7 @@
                 "default": false
               }
             },
-            "required": [
-              "title",
-              "command"
-            ],
+            "required": ["title", "command"],
             "additionalProperties": false
           }
         },
@@ -77,10 +74,7 @@
                     "description": "Example string to pass as --example argument when find matches."
                   }
                 },
-                "required": [
-                  "find",
-                  "example"
-                ],
+                "required": ["find", "example"],
                 "additionalProperties": false
               }
             ]
@@ -147,10 +141,7 @@
                     "default": false
                   }
                 },
-                "required": [
-                  "title",
-                  "command"
-                ],
+                "required": ["title", "command"],
                 "additionalProperties": false
               }
             }

@@ -25,10 +25,10 @@ export class WorkspaceLock {
 
   static async acquireLock(workspacePath: string, command: string): Promise<LockInfo> {
     const lockFilePath = this.getLockFilePath(workspacePath);
-    
+
     // Check if lock already exists
     const existingLock = await this.getLockInfo(workspacePath);
-    if (existingLock && !await this.isLockStale(existingLock)) {
+    if (existingLock && !(await this.isLockStale(existingLock))) {
       throw new Error(`Workspace is already locked by process ${existingLock.pid}`);
     }
 
@@ -51,7 +51,7 @@ export class WorkspaceLock {
       try {
         await fs.promises.unlink(tempFile);
       } catch {}
-      
+
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         throw new Error('Lock file already exists');
       }
@@ -63,7 +63,7 @@ export class WorkspaceLock {
 
   static async releaseLock(workspacePath: string): Promise<void> {
     const lockFilePath = this.getLockFilePath(workspacePath);
-    
+
     // Verify we own the lock before releasing
     const lockInfo = await this.getLockInfo(workspacePath);
     if (lockInfo && lockInfo.pid === process.pid) {
@@ -79,7 +79,7 @@ export class WorkspaceLock {
 
   static async getLockInfo(workspacePath: string): Promise<LockInfo | null> {
     const lockFilePath = this.getLockFilePath(workspacePath);
-    
+
     try {
       const content = await fs.promises.readFile(lockFilePath, 'utf-8');
       return JSON.parse(content) as LockInfo;
@@ -94,8 +94,8 @@ export class WorkspaceLock {
   static async isLocked(workspacePath: string): Promise<boolean> {
     const lockInfo = await this.getLockInfo(workspacePath);
     if (!lockInfo) return false;
-    
-    return !await this.isLockStale(lockInfo);
+
+    return !(await this.isLockStale(lockInfo));
   }
 
   static async isLockStale(lockInfo: LockInfo): Promise<boolean> {
@@ -106,13 +106,13 @@ export class WorkspaceLock {
     }
 
     // Check if process is still alive
-    if (!await this.isProcessAlive(lockInfo.pid)) {
+    if (!(await this.isProcessAlive(lockInfo.pid))) {
       return true;
     }
 
     // On same host, check if process is rmplan
     if (lockInfo.hostname === os.hostname()) {
-      return !await this.isRmplanProcess(lockInfo.pid);
+      return !(await this.isRmplanProcess(lockInfo.pid));
     }
 
     // Can't verify process on different host, assume not stale
@@ -130,7 +130,7 @@ export class WorkspaceLock {
 
   static async isRmplanProcess(pid: number): Promise<boolean> {
     const platform = process.platform;
-    
+
     try {
       if (platform === 'linux') {
         const cmdlinePath = `/proc/${pid}/cmdline`;
@@ -147,13 +147,13 @@ export class WorkspaceLock {
       // If we can't determine, assume it's not rmplan
       return false;
     }
-    
+
     return false;
   }
 
   static async clearStaleLock(workspacePath: string): Promise<void> {
     const lockInfo = await this.getLockInfo(workspacePath);
-    if (lockInfo && await this.isLockStale(lockInfo)) {
+    if (lockInfo && (await this.isLockStale(lockInfo))) {
       await fs.promises.unlink(this.getLockFilePath(workspacePath));
     }
   }

@@ -141,11 +141,11 @@ export async function findWorkspacesByTaskId(taskId: string): Promise<WorkspaceI
  */
 export async function findWorkspacesByRepoUrl(repositoryUrl: string): Promise<WorkspaceInfo[]> {
   const data = await readTrackingData();
-  
+
   // Normalize URLs for comparison (remove trailing .git and slashes)
   const normalizeUrl = (url: string) => url.replace(/\.git$/, '').replace(/\/$/, '');
   const normalizedSearchUrl = normalizeUrl(repositoryUrl);
-  
+
   return Object.values(data).filter(
     (workspace) => normalizeUrl(workspace.repositoryUrl) === normalizedSearchUrl
   );
@@ -162,7 +162,7 @@ export async function updateWorkspaceLockStatus(
   return Promise.all(
     workspaces.map(async (workspace) => {
       const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
-      
+
       if (lockInfo && !(await WorkspaceLock.isLockStale(lockInfo))) {
         return {
           ...workspace,
@@ -173,7 +173,7 @@ export async function updateWorkspaceLockStatus(
           },
         };
       }
-      
+
       // Remove stale lock info if present
       const { lockedBy, ...workspaceWithoutLock } = workspace;
       return workspaceWithoutLock;

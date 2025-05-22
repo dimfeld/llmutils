@@ -62,29 +62,25 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     const workspaceManager = new WorkspaceManager(currentBaseDir);
     let workspace;
     let selectedWorkspace;
-    
+
     if (options.autoWorkspace) {
       // Use auto-selector to find or create a workspace
       log('Auto-selecting workspace...');
       const selector = new WorkspaceAutoSelector(workspaceManager, config);
       const taskId = options.workspace || `auto-${Date.now()}`;
-      
-      selectedWorkspace = await selector.selectWorkspace(
-        taskId,
-        currentPlanFile,
-        {
-          interactive: !options.nonInteractive,
-          preferNewWorkspace: options.preferNewWorkspace,
-        }
-      );
-      
+
+      selectedWorkspace = await selector.selectWorkspace(taskId, currentPlanFile, {
+        interactive: !options.nonInteractive,
+        preferNewWorkspace: options.preferNewWorkspace,
+      });
+
       if (selectedWorkspace) {
         workspace = {
           path: selectedWorkspace.workspace.workspacePath,
           originalPlanFilePath: selectedWorkspace.workspace.originalPlanFilePath,
           taskId: selectedWorkspace.workspace.taskId,
         };
-        
+
         if (selectedWorkspace.isNew) {
           log(`Created new workspace for task: ${workspace.taskId}`);
         } else {
@@ -143,17 +139,20 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       // Use the workspace path as the base directory for operations
       currentBaseDir = workspace.path;
       log(`Using workspace as base directory: ${workspace.path}`);
-      
+
       // Acquire lock if we didn't already (auto-selector doesn't create new workspaces)
       if (selectedWorkspace && !selectedWorkspace.isNew) {
         try {
-          await WorkspaceLock.acquireLock(workspace.path, `rmplan agent --workspace ${workspace.taskId}`);
+          await WorkspaceLock.acquireLock(
+            workspace.path,
+            `rmplan agent --workspace ${workspace.taskId}`
+          );
           WorkspaceLock.setupCleanupHandlers(workspace.path);
         } catch (error) {
           log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
         }
       }
-      
+
       log('---');
     } else {
       error('Failed to create workspace. Continuing in the current directory.');
