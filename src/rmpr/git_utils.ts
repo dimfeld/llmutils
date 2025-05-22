@@ -220,7 +220,7 @@ export async function getCurrentBranchName(cwd?: string): Promise<string | null>
 }
 
 /**
- * Gets the SHA of the current commit (HEAD for git, @ for jj).
+ * Gets the SHA of the current commit (HEAD for git, @- for jj).
  * @param cwd The working directory to run the command in. Defaults to process.cwd().
  * @returns A promise that resolves to the commit SHA string if successful, or null if an error occurs.
  */
@@ -236,8 +236,8 @@ export async function getCurrentCommitSha(cwd?: string): Promise<string | null> 
 
   try {
     if (hasJj) {
-      // For jj, get the current commit ID
-      const proc = logSpawn(['jj', 'log', '-r', '@', '--no-graph', '-T', 'commit_id'], {
+      // For jj, get the last commit ID
+      const proc = logSpawn(['jj', 'log', '-r', '@-', '--no-graph', '-T', 'commit_id'], {
         cwd: workingDir,
         stdout: 'pipe',
         stderr: 'pipe',
