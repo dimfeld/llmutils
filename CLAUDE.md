@@ -209,3 +209,7 @@ You can check if compilation works using `bun run check`
 
 - When you learn something about the codebase, update CLAUDE.md
 - When making a change, always look for related tests that need to be updated or written as well
+
+## Review Notes
+
+- When reviewing PRs, the text in the YAML files are just for planning. Prefer to look at the actual code when analyzing functionality.
