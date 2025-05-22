@@ -67,7 +67,7 @@ export class WorkspaceManager {
         originalPlanFilePath,
         config.workspaceCreation as WorkspaceCreationConfigRequired
       );
-    } else if (config.workspaceCreation.method === 'llmutils') {
+    } else if (config.workspaceCreation.method === 'rmplan') {
       return this._createWithLlmUtils(taskId, originalPlanFilePath, config.workspaceCreation);
     }
 
