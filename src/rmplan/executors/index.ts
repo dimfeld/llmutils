@@ -18,9 +18,6 @@ export const executors = new Map<string, ExecutorFactory<any>>([
   // [CopyOnlyStateMachineExecutor.name, CopyOnlyStateMachineExecutor],
 ]);
 
-// Optionally, export individual executors if they need to be imported directly elsewhere.
-export { OneCallExecutor };
-
 export function createExecutor(
   name: string,
   options: any,

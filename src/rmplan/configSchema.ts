@@ -65,8 +65,8 @@ export type PostApplyCommand = z.infer<typeof postApplyCommandSchema>;
  * This is used when no configuration file is found or specified.
  */
 export function getDefaultConfig(): RmplanConfig {
-  return { 
+  return {
     postApplyCommands: [],
-    defaultExecutor: 'CopyOnlyExecutor'
+    defaultExecutor: 'copy-only',
   };
 }
