@@ -420,7 +420,7 @@ program
     "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",
     'inline-comments'
   )
-  .option(`-x, --executor <name>`, 'The executor to use for execution', 'direct-call')
+  .option(`-x, --executor <name>`, 'The executor to use for execution')
   .addHelpText('after', `Available executors: ${executorNames}`)
   .option(
     '--yes',

@@ -14,7 +14,7 @@ import { debugLog, error, log, warn } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
 import { commitAll, getGitRoot, parseCliArgsFromString, secureWrite } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
-import { buildExecutorAndLog } from '../rmplan/executors/index.js';
+import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../rmplan/executors/index.js';
 import {
   argsFromRmprOptions,
   combineRmprOptions,
@@ -210,6 +210,8 @@ export async function handleRmprCommand(
   let modelForLlmEdit = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
   let additionalUserRmFilterArgs: string[] = [];
 
+  const defaultExecutor = options.executor || config?.defaultExecutor || DEFAULT_EXECUTOR;
+
   if (!options.yes) {
     log('\nSettings can be adjusted before generating the LLM prompt.');
     if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
@@ -220,7 +222,7 @@ export async function handleRmprCommand(
 
     const promptResults = await optionsPrompt({
       modelForLlmEdit,
-      executor: options.executor,
+      executor: defaultExecutor,
       commit: options.commit,
       comment: options.comment,
       showCommentOption: true,
@@ -461,7 +463,7 @@ async function optionsPrompt(initialOptions: {
       message: 'What would you like to do?',
       default: 'continue',
       choices: [
-        { name: 'Continue to generate LLM prompt', value: 'continue' },
+        { name: `Execute (${result.executor})`, value: 'continue' },
         { name: 'Change LLM model for editing', value: 'model' },
         { name: 'Edit rmfilter options for context', value: 'rmfilter' },
         result.commit

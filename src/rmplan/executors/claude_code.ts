@@ -94,8 +94,17 @@ export class ClaudeCodeExecutor implements Executor {
     if (disallowedTools) {
       args.push('--disallowedTools', disallowedTools.join(','));
     }
+
     if (mcpConfigFile) {
       args.push('--mcp-config', mcpConfigFile);
+    }
+
+    if (
+      this.sharedOptions.model?.includes('haiku') ||
+      this.sharedOptions.model?.includes('sonnet') ||
+      this.sharedOptions.model?.includes('opus')
+    ) {
+      args.push('--model', this.sharedOptions.model);
     }
 
     args.push('-p', contextContent);

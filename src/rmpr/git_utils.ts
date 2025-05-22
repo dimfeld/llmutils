@@ -133,7 +133,12 @@ export async function getCurrentJujutsuBranch(cwd?: string): Promise<string | nu
     }
 
     if (branchNames.length === 1) {
-      return branchNames[0];
+      const branch = branchNames[0];
+      if (branch.endsWith('*')) {
+        return branch.slice(0, -1);
+      } else {
+        return branch;
+      }
     }
 
     // Filter out 'main' and 'master' branches
@@ -142,7 +147,12 @@ export async function getCurrentJujutsuBranch(cwd?: string): Promise<string | nu
     );
 
     // Return the first non-main/master branch if any exist, otherwise first branch from original list
-    return filteredBranches.length > 0 ? filteredBranches[0] : branchNames[0];
+    const branch = filteredBranches.length > 0 ? filteredBranches[0] : branchNames[0];
+    if (branch.endsWith('*')) {
+      return branch.slice(0, -1);
+    } else {
+      return branch;
+    }
   } catch (error) {
     if (debug) {
       debugLog('Error getting current Jujutsu branch: %o', error);
