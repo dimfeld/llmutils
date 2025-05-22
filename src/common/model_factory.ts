@@ -9,10 +9,12 @@ import { openrouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
 import { search } from '@inquirer/prompts';
 import { debugLog } from '../logging.ts';
-import { CopyOnlyExecutor } from '../rmplan/executors/copy_only.ts';
-import { ClaudeCodeExecutor } from '../rmplan/executors/claude_code.ts';
-import { CopyPasteExecutor } from '../rmplan/executors/copy_paste.ts';
-import { OneCallExecutor } from '../rmplan/executors/one-call.ts';
+import {
+  CopyOnlyExecutor,
+  ClaudeCodeExecutor,
+  CopyPasteExecutor,
+  OneCallExecutor,
+} from '../rmplan/executors/index.ts';
 
 /**
  * Creates a language model instance based on the provided model string in the format `provider/model-name`.
