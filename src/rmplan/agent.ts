@@ -17,7 +17,6 @@ import { planSchema } from './planSchema.ts';
 import { WorkspaceManager } from './workspace_manager.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
-
   // Initialize currentPlanFile (absolute path)
   let currentPlanFile = path.resolve(planFile);
 
@@ -89,8 +88,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
 
       // Copy the plan file to the workspace
-      const planFileNameInWorkspace = '.llmutils_plan.yml';
-      const workspacePlanFile = path.join(workspace.path, planFileNameInWorkspace);
+      const workspacePlanFile = path.join(workspace.path, currentPlanFile);
       try {
         log(`Copying plan file to workspace: ${workspacePlanFile}`);
         await Bun.write(workspacePlanFile, await Bun.file(currentPlanFile).text());
@@ -164,12 +162,17 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       );
 
       const executorStepOptions = executor.prepareStepOptions?.() ?? {};
-      const stepPreparationResult = await prepareNextStep(config, currentPlanFile, {
-        previous: true,
-        ...executorStepOptions,
-        model: executorStepOptions.model || agentExecutionModel,
-        selectSteps: false,
-      }, currentBaseDir).catch((err) => {
+      const stepPreparationResult = await prepareNextStep(
+        config,
+        currentPlanFile,
+        {
+          previous: true,
+          ...executorStepOptions,
+          model: executorStepOptions.model || agentExecutionModel,
+          selectSteps: false,
+        },
+        currentBaseDir
+      ).catch((err) => {
         error('Failed to prepare next step:', err);
         hasError = true;
         return null;

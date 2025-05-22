@@ -1,54 +1,30 @@
-import { describe, expect, test, mock, beforeEach } from 'bun:test';
+import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test';
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-
-// Create a mock for the tracking file path
-const TEST_TRACKING_PATH = '/mock/home/.llmutils/workspaces.json';
-
-// Mock the fs module
-const mockReadFile = mock(async () => '{}');
-const mockWriteFile = mock(async () => {});
-const mockMkdir = mock(async () => {});
-
-// Mock the getTrackingFilePath function
-const mockGetTrackingFilePath = mock(() => TEST_TRACKING_PATH);
+import * as os from 'node:os';
 
 // Mock logging
 const mockLog = mock((...args: any[]) => {});
-
-// Mock modules
-mock.module('node:fs/promises', () => ({
-  readFile: mockReadFile,
-  writeFile: mockWriteFile,
-  mkdir: mockMkdir,
-}));
 
 mock.module('../logging.js', () => ({
   log: mockLog,
 }));
 
-// Mock workspace_tracker module
-await mock.module('./workspace_tracker.js', () => {
-  // Import the actual module
-  const originalModule = require('./workspace_tracker.js');
-
-  // Replace getTrackingFilePath with our mock
-  return {
-    ...originalModule,
-    getTrackingFilePath: mockGetTrackingFilePath,
-  };
-});
-
-// Import the module functions after mocking
+// Import the module functions after mocking logging
 import {
   readTrackingData,
   writeTrackingData,
   recordWorkspace,
   getWorkspaceMetadata,
   findWorkspacesByTaskId,
+  getTrackingFilePath,
 } from './workspace_tracker.js';
 import type { WorkspaceInfo } from './workspace_tracker.js';
 
 describe('workspace_tracker', () => {
+  let tempDir: string;
+  let testTrackingPath: string;
+
   // Sample workspace data
   const testWorkspace: WorkspaceInfo = {
     taskId: 'task-123',
@@ -59,34 +35,45 @@ describe('workspace_tracker', () => {
     createdAt: new Date().toISOString(),
   };
 
-  beforeEach(() => {
-    // Reset all mocks
-    mockReadFile.mockReset();
-    mockWriteFile.mockReset();
-    mockMkdir.mockReset();
+  beforeEach(async () => {
+    // Create a temporary directory for each test
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-tracker-test-'));
+    testTrackingPath = path.join(tempDir, 'workspaces.json');
+    
+    // Mock getTrackingFilePath to use our temp directory
+    mock.module('./workspace_tracker.js', () => {
+      const originalModule = require('./workspace_tracker.js');
+      return {
+        ...originalModule,
+        getTrackingFilePath: () => testTrackingPath,
+      };
+    });
+
+    // Reset logging mock
     mockLog.mockReset();
   });
 
+  afterEach(async () => {
+    // Clean up temporary directory
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } catch (error) {
+      // Ignore cleanup errors
+    }
+  });
+
   test('readTrackingData returns empty object when file does not exist', async () => {
-    // Mock readFile to throw ENOENT error
-    const error = new Error('File not found') as NodeJS.ErrnoException;
-    error.code = 'ENOENT';
-    mockReadFile.mockRejectedValue(error);
-
     const result = await readTrackingData();
-
     expect(result).toEqual({});
-    expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
   });
 
   test('readTrackingData returns empty object when file exists but parsing fails', async () => {
-    // Mock readFile to return invalid JSON
-    mockReadFile.mockResolvedValue('invalid json');
+    // Write invalid JSON to the tracking file
+    await fs.writeFile(testTrackingPath, 'invalid json', 'utf-8');
 
     const result = await readTrackingData();
 
     expect(result).toEqual({});
-    expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining('Error reading workspace tracking data')
     );
@@ -98,12 +85,11 @@ describe('workspace_tracker', () => {
       '/path/to/workspace2': { taskId: 'task-2', workspacePath: '/path/to/workspace2' },
     };
 
-    mockReadFile.mockResolvedValue(JSON.stringify(mockData));
+    await fs.writeFile(testTrackingPath, JSON.stringify(mockData), 'utf-8');
 
     const result = await readTrackingData();
 
     expect(result).toEqual(mockData);
-    expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
   });
 
   test('writeTrackingData creates directory and writes data', async () => {
@@ -113,12 +99,12 @@ describe('workspace_tracker', () => {
 
     await writeTrackingData(mockData);
 
-    expect(mockMkdir).toHaveBeenCalledWith(path.dirname(TEST_TRACKING_PATH), { recursive: true });
-    expect(mockWriteFile).toHaveBeenCalledWith(
-      TEST_TRACKING_PATH,
-      JSON.stringify(mockData, null, 2),
-      'utf-8'
-    );
+    // Verify the file was created and contains the expected data
+    const fileExists = await fs.access(testTrackingPath).then(() => true).catch(() => false);
+    expect(fileExists).toBe(true);
+
+    const fileContents = await fs.readFile(testTrackingPath, 'utf-8');
+    expect(JSON.parse(fileContents)).toEqual(mockData);
   });
 
   test('recordWorkspace adds workspace to tracking data', async () => {
@@ -134,24 +120,20 @@ describe('workspace_tracker', () => {
       },
     };
 
-    mockReadFile.mockResolvedValue(JSON.stringify(existingData));
+    await fs.writeFile(testTrackingPath, JSON.stringify(existingData), 'utf-8');
 
     await recordWorkspace(testWorkspace);
 
-    // Verify we read the existing data
-    expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
+    // Verify the updated data was written
+    const fileContents = await fs.readFile(testTrackingPath, 'utf-8');
+    const updatedData = JSON.parse(fileContents);
 
-    // Verify we wrote the updated data
     const expectedData = {
       ...existingData,
       [testWorkspace.workspacePath]: testWorkspace,
     };
 
-    expect(mockWriteFile).toHaveBeenCalledWith(
-      TEST_TRACKING_PATH,
-      JSON.stringify(expectedData, null, 2),
-      'utf-8'
-    );
+    expect(updatedData).toEqual(expectedData);
 
     // Verify we logged the action
     expect(mockLog).toHaveBeenCalledWith(
@@ -160,12 +142,11 @@ describe('workspace_tracker', () => {
   });
 
   test('getWorkspaceMetadata returns null for non-existent workspace', async () => {
-    mockReadFile.mockResolvedValue('{}');
+    await fs.writeFile(testTrackingPath, '{}', 'utf-8');
 
     const result = await getWorkspaceMetadata('/path/to/nonexistent');
 
     expect(result).toBeNull();
-    expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
   });
 
   test('getWorkspaceMetadata returns workspace info for existing workspace', async () => {
@@ -174,21 +155,19 @@ describe('workspace_tracker', () => {
       '/path/to/other': { taskId: 'other', workspacePath: '/path/to/other' },
     };
 
-    mockReadFile.mockResolvedValue(JSON.stringify(mockData));
+    await fs.writeFile(testTrackingPath, JSON.stringify(mockData), 'utf-8');
 
     const result = await getWorkspaceMetadata(testWorkspace.workspacePath);
 
     expect(result).toEqual(testWorkspace);
-    expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
   });
 
   test('findWorkspacesByTaskId returns empty array for non-existent task', async () => {
-    mockReadFile.mockResolvedValue('{}');
+    await fs.writeFile(testTrackingPath, '{}', 'utf-8');
 
     const result = await findWorkspacesByTaskId('nonexistent');
 
     expect(result).toEqual([]);
-    expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
   });
 
   test('findWorkspacesByTaskId returns all workspaces for a task', async () => {
@@ -214,7 +193,7 @@ describe('workspace_tracker', () => {
       [otherWorkspace.workspacePath]: otherWorkspace,
     };
 
-    mockReadFile.mockResolvedValue(JSON.stringify(mockData));
+    await fs.writeFile(testTrackingPath, JSON.stringify(mockData), 'utf-8');
 
     const result = await findWorkspacesByTaskId(testWorkspace.taskId);
 
@@ -222,6 +201,5 @@ describe('workspace_tracker', () => {
     expect(result).toContainEqual(workspace1);
     expect(result).toContainEqual(workspace2);
     expect(result).not.toContainEqual(otherWorkspace);
-    expect(mockReadFile).toHaveBeenCalledWith(TEST_TRACKING_PATH, 'utf-8');
   });
 });
