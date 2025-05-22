@@ -61,6 +61,9 @@ export class ClaudeCodeExecutor implements Executor {
           'Bash(cp:*)',
           'Bash(find:*)',
           'Bash(cwd)',
+          'Bash(jj status)',
+          'Bash(jj log:*)',
+          'Bash(jj commit:*)',
           ...jsTaskRunners.flatMap((name) => [
             `Bash(${name} test:*)`,
             `Bash(${name} run build:*)`,
