@@ -17,6 +17,7 @@ void mock.module('../logging.js', () => ({
   warn: () => {},
 }));
 import { type RmplanConfig, type WorkspaceCreationConfig } from './configSchema.js';
+import { DEFAULT_EXECUTOR } from './executors/index.js';
 
 // Since js-yaml isn't working in tests, we'll use yaml
 import yaml from 'yaml';
@@ -122,14 +123,14 @@ describe('configLoader', () => {
 
     expect(config).toHaveProperty('postApplyCommands');
     expect(config.postApplyCommands).toEqual([]);
-    expect(config).toHaveProperty('defaultExecutor', 'copy-only'); // Our new default
+    expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR); // Our new default
   });
 
   describe('loadConfig with workspaceCreation', () => {
     test('should return default config when configPath is null', async () => {
       const config = await loadConfig(null);
       expect(config).toEqual({
-        defaultExecutor: 'copy-only',
+        defaultExecutor: DEFAULT_EXECUTOR,
         postApplyCommands: [],
         workspaceCreation: undefined,
       });
@@ -146,7 +147,7 @@ postApplyCommands:
 
       const config = await loadConfig(configPath);
 
-      expect(config).toHaveProperty('defaultExecutor', 'copy-only');
+      expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR);
       expect(config).toHaveProperty('postApplyCommands');
       expect(config.postApplyCommands).toHaveLength(1);
       expect(config.postApplyCommands?.[0].title).toBe('Test Command');
@@ -157,7 +158,7 @@ postApplyCommands:
       const localConfigPath = path.join(configDir, 'rmplan.local.yml');
 
       await fs.writeFile(mainConfigPath, 'defaultExecutor: direct-call');
-      await fs.writeFile(localConfigPath, 'defaultExecutor: copy-only');
+      await fs.writeFile(localConfigPath, `defaultExecutor: ${DEFAULT_EXECUTOR}`);
 
       const result = await findLocalConfigPath(mainConfigPath);
       expect(result).toBe(localConfigPath);
@@ -197,14 +198,14 @@ postApplyCommands:
       await fs.writeFile(
         localConfigPath,
         `
-defaultExecutor: copy-only
+defaultExecutor: ${DEFAULT_EXECUTOR}
 `
       );
 
       const config = await loadEffectiveConfig();
 
       // Local config should override main config
-      expect(config).toHaveProperty('defaultExecutor', 'copy-only');
+      expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR);
 
       // Properties not in local config should remain from main config
       expect(config).toHaveProperty('postApplyCommands');
@@ -267,7 +268,7 @@ autoexamples:
       await fs.writeFile(
         localConfigPath,
         `
-defaultExecutor: copy-only
+defaultExecutor: ${DEFAULT_EXECUTOR}
 postApplyCommands:
   - title: Local Command
     command: echo "local"
@@ -283,7 +284,7 @@ autoexamples:
       const config = await loadEffectiveConfig();
 
       // Local should override main for simple properties
-      expect(config.defaultExecutor).toBe('copy-only');
+      expect(config.defaultExecutor).toBe(DEFAULT_EXECUTOR);
 
       // Arrays should be concatenated
       expect(config.postApplyCommands).toHaveLength(2);

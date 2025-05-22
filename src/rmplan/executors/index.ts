@@ -7,6 +7,8 @@ import { CopyPasteExecutor } from './copy_paste.ts';
 import { OneCallExecutor } from './one-call';
 import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
 
+export const DEFAULT_EXECUTOR = CopyOnlyExecutor.name;
+
 /**
  * A map of available executors, keyed by their names.
  */

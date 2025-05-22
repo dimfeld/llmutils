@@ -390,7 +390,7 @@ program
   .option('--steps <steps>', 'Number of steps to execute')
   .option('--no-log', 'Do not log to file')
   .option(
-    '--workspace-task-id <id>',
+    '--workspace <id>',
     'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
   )
   .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)

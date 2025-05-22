@@ -11,7 +11,7 @@ import {
   prepareNextStep,
 } from './actions.ts';
 import { loadEffectiveConfig } from './configLoader.ts';
-import { buildExecutorAndLog } from './executors/index.ts';
+import { buildExecutorAndLog, DEFAULT_EXECUTOR } from './executors/index.ts';
 import type { ExecutorCommonOptions } from './executors/types.ts';
 import { planSchema } from './planSchema.ts';
 import { WorkspaceManager } from './workspace_manager.ts';
@@ -40,8 +40,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   let currentBaseDir = await getGitRoot();
 
   // Handle workspace creation if a task ID is provided
-  if (options.workspaceTaskId) {
-    log(`Workspace task ID provided: ${options.workspaceTaskId}`);
+  if (options.workspace) {
+    log(`Workspace task ID provided: ${options.workspace}`);
 
     // Verify the original plan file exists
     try {
@@ -60,14 +60,14 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     // Create a workspace using the WorkspaceManager
     const workspaceManager = new WorkspaceManager(currentBaseDir);
     const workspace = await workspaceManager.createWorkspace(
-      options.workspaceTaskId,
+      options.workspace,
       currentPlanFile,
       config
     );
 
     if (workspace) {
       log(boldMarkdownHeaders('\n## Workspace Information'));
-      log(`Task ID: ${options.workspaceTaskId}`);
+      log(`Task ID: ${options.workspace}`);
       log(`Workspace Path: ${workspace.path}`);
       log(`Original Plan: ${currentPlanFile}`);
 
@@ -121,7 +121,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   };
 
   // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
-  const executorName = options.executor || config.defaultExecutor || 'copy-only';
+  const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
   log('Starting agent to execute plan:', currentPlanFile);

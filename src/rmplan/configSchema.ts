@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_EXECUTOR } from './executors/index.js';
 
 /**
  * Schema for a single command to be executed after applying changes.
@@ -104,7 +105,7 @@ export const rmplanConfigSchema = z.object({
   /** Default executor to use when not specified via --executor option */
   defaultExecutor: z
     .string()
-    .default('copy-only')
+    .default(DEFAULT_EXECUTOR)
     .describe('Default executor to use for plan execution'),
   /** Configuration for automatic workspace creation. */
   workspaceCreation: workspaceCreationConfigSchema.optional(),
@@ -120,7 +121,7 @@ export type PostApplyCommand = z.infer<typeof postApplyCommandSchema>;
 export function getDefaultConfig(): RmplanConfig {
   return {
     postApplyCommands: [],
-    defaultExecutor: 'copy-only',
+    defaultExecutor: DEFAULT_EXECUTOR,
     workspaceCreation: undefined,
   };
 }
