@@ -2,6 +2,7 @@
 
 paths:
   tasks: tasks
+defaultExecutor: claude-code
 postApplyCommands:
   - title: Cleanup Extranous Comments
     command: rmplan cleanup
