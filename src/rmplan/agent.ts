@@ -34,7 +34,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     baseDir: await getGitRoot(),
     model: agentExecutionModel,
   };
-  const executor = buildExecutorAndLog(options.executor, sharedExecutorOptions, config);
+
+  // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
+  const executorName = options.executor || config.defaultExecutor || 'copy-only';
+  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
   log('Starting agent to execute plan:', planFile);
   try {

@@ -485,7 +485,7 @@ To specify an executor, use the `--executor` option:
 rmplan agent plan.yml --executor claude-code
 
 # Use direct API calls to execute the plan
-rmplan agent plan.yml --executor OneCallExecutor
+rmplan agent plan.yml --executor direct-call
 ```
 
 ## answer-pr
