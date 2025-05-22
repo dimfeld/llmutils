@@ -186,7 +186,7 @@ You can check if compilation works using `bun run check`
 ### Testing Strategies
 - **Prefer real filesystem operations**: Use `fs.mkdtemp()` for temporary directories instead of mocking filesystem calls
 - **Hybrid mocking approach**: 
-  - Mock external dependencies (logging, process spawning) for interaction verification
+  - Consider mocking complicated external dependencies (logging, process spawning) for interaction verification
   - Use real implementations for core functionality (filesystem operations) for integration confidence
 - **Real filesystem tests catch issues mocks miss**: Permission problems, path resolution bugs, cleanup behavior
 
