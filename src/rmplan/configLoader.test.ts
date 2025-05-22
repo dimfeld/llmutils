@@ -139,16 +139,17 @@ describe('configLoader', () => {
 postApplyCommands:
   - title: Test Command
     command: echo "test"
-`
-    );
+`;
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
 
-    const config = await loadConfig(configPath);
+      const config = await loadConfig(configPath);
 
-    expect(config).toHaveProperty('defaultExecutor', 'direct-call');
-    expect(config).toHaveProperty('postApplyCommands');
-    expect(config.postApplyCommands).toHaveLength(1);
-    expect(config.postApplyCommands?.[0].title).toBe('Test Command');
-  });
+      expect(config).toHaveProperty('defaultExecutor', 'direct-call');
+      expect(config).toHaveProperty('postApplyCommands');
+      expect(config.postApplyCommands).toHaveLength(1);
+      expect(config.postApplyCommands?.[0].title).toBe('Test Command');
+    });
 
   test('findLocalConfigPath returns local config path when it exists', async () => {
     const mainConfigPath = path.join(configDir, 'rmplan.yml');
@@ -299,17 +300,8 @@ autoexamples:
     expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
   });
 });
-    command: echo hello
-`;
-      const configPath = path.join(tempDir, 'config.yml');
-      await createTestFile(configPath, configYaml);
 
-      const config = await loadConfig(configPath);
-      expect(config.postApplyCommands).toHaveLength(1);
-      expect(config.postApplyCommands![0].title).toBe('Test Command');
-      expect(config.workspaceCreation).toBeUndefined();
-    });
-
+  describe('config with workspaceCreation configurations', () => {
     test('should load config with workspaceCreation method script', async () => {
       const configYaml = `
 workspaceCreation:

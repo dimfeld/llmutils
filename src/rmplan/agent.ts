@@ -17,8 +17,6 @@ import { planSchema } from './planSchema.ts';
 import { WorkspaceManager } from './workspace_manager.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
-  // Store the original current working directory
-  const originalCwd = process.cwd();
 
   // Initialize currentPlanFile (absolute path)
   let currentPlanFile = path.resolve(planFile);
@@ -107,10 +105,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
       // Use the workspace path as the base directory for operations
       currentBaseDir = workspace.path;
-
-      // Change the process's CWD
-      process.chdir(workspace.path);
-      log(`Changed working directory to workspace: ${workspace.path}`);
+      log(`Using workspace as base directory: ${workspace.path}`);
       log('---');
     } else {
       error('Failed to create workspace. Continuing in the current directory.');
@@ -174,7 +169,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         ...executorStepOptions,
         model: executorStepOptions.model || agentExecutionModel,
         selectSteps: false,
-      }).catch((err) => {
+      }, currentBaseDir).catch((err) => {
         error('Failed to prepare next step:', err);
         hasError = true;
         return null;
@@ -199,6 +194,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         log(boldMarkdownHeaders('\n## Generating Context with rmfilter\n'));
         const rmfilterOutputPath = promptFilePath.replace('.md', '.xml');
         const proc = logSpawn(['rmfilter', '--output', rmfilterOutputPath, ...rmfilterArgs], {
+          cwd: currentBaseDir,
           stdio: ['inherit', 'inherit', 'inherit'],
         });
         const exitRes = await proc.exited;
@@ -228,7 +224,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       if (config.postApplyCommands && config.postApplyCommands.length > 0) {
         log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
         for (const commandConfig of config.postApplyCommands) {
-          const commandSucceeded = await executePostApplyCommand(commandConfig);
+          const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
           if (!commandSucceeded) {
             // Error logging is handled within executePostApplyCommand
             error(`Agent stopping because required command "${commandConfig.title}" failed.`);
@@ -247,7 +243,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         markResult = await markStepDone(
           currentPlanFile,
           { steps: 1, commit: true },
-          { taskIndex, stepIndex }
+          { taskIndex, stepIndex },
+          currentBaseDir
         );
         log(`Marked step as done: ${markResult.message.split('\n')[0]}`);
         if (markResult.planComplete) {
@@ -279,12 +276,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     error('Agent stopped due to error.');
     process.exit(1);
   } finally {
-    // Restore the original working directory if it was changed
-    if (options.workspaceTaskId && process.cwd() !== originalCwd) {
-      log('Restoring original working directory');
-      process.chdir(originalCwd);
-    }
-
     await closeLogFile();
   }
 }
