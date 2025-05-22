@@ -19,6 +19,8 @@ import {
 import type { ExecutorCommonOptions } from './executors/types.ts';
 import { planSchema } from './planSchema.ts';
 import { WorkspaceManager } from './workspace_manager.ts';
+import { WorkspaceAutoSelector } from './workspace_auto_selector.ts';
+import { WorkspaceLock } from './workspace_lock.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
   // Initialize currentPlanFile (absolute path)
@@ -41,10 +43,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   // Determine the base directory for operations
   let currentBaseDir = await getGitRoot();
 
-  // Handle workspace creation if a task ID is provided
-  if (options.workspace) {
-    log(`Workspace task ID provided: ${options.workspace}`);
-
+  // Handle workspace creation or auto-selection
+  if (options.workspace || options.autoWorkspace) {
     // Verify the original plan file exists
     try {
       // Use stat to check if file exists
@@ -59,13 +59,50 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       process.exit(1);
     }
 
-    // Create a workspace using the WorkspaceManager
     const workspaceManager = new WorkspaceManager(currentBaseDir);
-    const workspace = await workspaceManager.createWorkspace(
-      options.workspace,
-      currentPlanFile,
-      config
-    );
+    let workspace;
+    let selectedWorkspace;
+    
+    if (options.autoWorkspace) {
+      // Use auto-selector to find or create a workspace
+      log('Auto-selecting workspace...');
+      const selector = new WorkspaceAutoSelector(workspaceManager, config);
+      const taskId = options.workspace || `auto-${Date.now()}`;
+      
+      selectedWorkspace = await selector.selectWorkspace(
+        taskId,
+        currentPlanFile,
+        {
+          interactive: !options.nonInteractive,
+          preferNewWorkspace: options.preferNewWorkspace,
+        }
+      );
+      
+      if (selectedWorkspace) {
+        workspace = {
+          path: selectedWorkspace.workspace.workspacePath,
+          originalPlanFilePath: selectedWorkspace.workspace.originalPlanFilePath,
+          taskId: selectedWorkspace.workspace.taskId,
+        };
+        
+        if (selectedWorkspace.isNew) {
+          log(`Created new workspace for task: ${workspace.taskId}`);
+        } else {
+          log(`Selected existing workspace for task: ${selectedWorkspace.workspace.taskId}`);
+          if (selectedWorkspace.clearedStaleLock) {
+            log('(Cleared stale lock)');
+          }
+        }
+      }
+    } else {
+      // Create a workspace with the specified task ID
+      log(`Creating workspace for task: ${options.workspace}`);
+      workspace = await workspaceManager.createWorkspace(
+        options.workspace,
+        currentPlanFile,
+        config
+      );
+    }
 
     if (workspace) {
       log(boldMarkdownHeaders('\n## Workspace Information'));
@@ -106,6 +143,17 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       // Use the workspace path as the base directory for operations
       currentBaseDir = workspace.path;
       log(`Using workspace as base directory: ${workspace.path}`);
+      
+      // Acquire lock if we didn't already (auto-selector doesn't create new workspaces)
+      if (selectedWorkspace && !selectedWorkspace.isNew) {
+        try {
+          await WorkspaceLock.acquireLock(workspace.path, `rmplan agent --workspace ${workspace.taskId}`);
+          WorkspaceLock.setupCleanupHandlers(workspace.path);
+        } catch (error) {
+          log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
+        }
+      }
+      
       log('---');
     } else {
       error('Failed to create workspace. Continuing in the current directory.');

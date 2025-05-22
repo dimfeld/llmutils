@@ -7,6 +7,7 @@ import { spawnAndLogOutput, getGitRoot, parseCliArgsFromString } from '../rmfilt
 import type { RmplanConfig, WorkspaceCreationConfig, PostApplyCommand } from './configSchema.js';
 import { executePostApplyCommand } from './actions.js';
 import { recordWorkspace } from './workspace_tracker.js';
+import { WorkspaceLock } from './workspace_lock.js';
 
 /**
  * Interface representing a created workspace
@@ -217,6 +218,15 @@ export class WorkspaceManager {
       branch: branchName,
       createdAt: new Date().toISOString(),
     });
+
+    // Acquire lock for the workspace
+    try {
+      await WorkspaceLock.acquireLock(targetClonePath, `rmplan agent --workspace ${taskId}`);
+      WorkspaceLock.setupCleanupHandlers(targetClonePath);
+    } catch (error) {
+      log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
+      // Continue without lock - this isn't fatal
+    }
 
     // Return the workspace information
     return workspace;

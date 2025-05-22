@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import { log } from '../logging.js';
+import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 
 /**
  * Interface representing detailed information about a created workspace
@@ -19,6 +20,23 @@ export interface WorkspaceInfo {
   branch: string;
   /** ISO date string when the workspace was created */
   createdAt: string;
+  /** Lock information if workspace is currently locked */
+  lockedBy?: {
+    pid: number;
+    startedAt: string;
+    hostname: string;
+  };
+}
+
+// For testing purposes - allows overriding the tracking file path
+let _testTrackingFilePath: string | undefined;
+
+/**
+ * Sets a custom tracking file path for testing
+ * @internal
+ */
+export function _setTestTrackingFilePath(path: string | undefined): void {
+  _testTrackingFilePath = path;
 }
 
 /**
@@ -26,6 +44,9 @@ export interface WorkspaceInfo {
  * @returns The path to the tracking file
  */
 export function getTrackingFilePath(): string {
+  if (_testTrackingFilePath) {
+    return _testTrackingFilePath;
+  }
   return path.join(os.homedir(), '.config', 'rmfilter', 'workspaces.json');
 }
 
@@ -111,4 +132,51 @@ export async function findWorkspacesByTaskId(taskId: string): Promise<WorkspaceI
   const data = await readTrackingData();
 
   return Object.values(data).filter((workspace) => workspace.taskId === taskId);
+}
+
+/**
+ * Finds all workspaces for a given repository URL
+ * @param repositoryUrl The repository URL to search for
+ * @returns An array of workspace information objects
+ */
+export async function findWorkspacesByRepoUrl(repositoryUrl: string): Promise<WorkspaceInfo[]> {
+  const data = await readTrackingData();
+  
+  // Normalize URLs for comparison (remove trailing .git and slashes)
+  const normalizeUrl = (url: string) => url.replace(/\.git$/, '').replace(/\/$/, '');
+  const normalizedSearchUrl = normalizeUrl(repositoryUrl);
+  
+  return Object.values(data).filter(
+    (workspace) => normalizeUrl(workspace.repositoryUrl) === normalizedSearchUrl
+  );
+}
+
+/**
+ * Updates workspace information with current lock status
+ * @param workspaces Array of workspace information to update
+ * @returns Updated workspace information with lock status
+ */
+export async function updateWorkspaceLockStatus(
+  workspaces: WorkspaceInfo[]
+): Promise<WorkspaceInfo[]> {
+  return Promise.all(
+    workspaces.map(async (workspace) => {
+      const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
+      
+      if (lockInfo && !(await WorkspaceLock.isLockStale(lockInfo))) {
+        return {
+          ...workspace,
+          lockedBy: {
+            pid: lockInfo.pid,
+            startedAt: lockInfo.startedAt,
+            hostname: lockInfo.hostname,
+          },
+        };
+      }
+      
+      // Remove stale lock info if present
+      const { lockedBy, ...workspaceWithoutLock } = workspace;
+      return workspaceWithoutLock;
+    })
+  );
 }

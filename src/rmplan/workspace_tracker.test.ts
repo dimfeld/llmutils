@@ -17,7 +17,7 @@ import {
   recordWorkspace,
   getWorkspaceMetadata,
   findWorkspacesByTaskId,
-  getTrackingFilePath,
+  _setTestTrackingFilePath,
 } from './workspace_tracker.js';
 import type { WorkspaceInfo } from './workspace_tracker.js';
 
@@ -40,20 +40,17 @@ describe('workspace_tracker', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-tracker-test-'));
     testTrackingPath = path.join(tempDir, 'workspaces.json');
 
-    // Mock getTrackingFilePath to use our temp directory
-    mock.module('./workspace_tracker.js', () => {
-      const originalModule = require('./workspace_tracker.js');
-      return {
-        ...originalModule,
-        getTrackingFilePath: () => testTrackingPath,
-      };
-    });
+    // Set test tracking file path
+    _setTestTrackingFilePath(testTrackingPath);
 
     // Reset logging mock
     mockLog.mockReset();
   });
 
   afterEach(async () => {
+    // Clear test tracking file path
+    _setTestTrackingFilePath(undefined);
+    
     // Clean up temporary directory
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -99,46 +96,38 @@ describe('workspace_tracker', () => {
 
     await writeTrackingData(mockData);
 
-    // Verify the file was created and contains the expected data
-    const fileExists = await fs
-      .access(testTrackingPath)
-      .then(() => true)
-      .catch(() => false);
-    expect(fileExists).toBe(true);
+    // Read the file and verify contents
+    const fileContent = await fs.readFile(testTrackingPath, 'utf-8');
+    const parsedContent = JSON.parse(fileContent);
 
-    const fileContents = await fs.readFile(testTrackingPath, 'utf-8');
-    expect(JSON.parse(fileContents)).toEqual(mockData);
+    expect(parsedContent).toEqual(mockData);
   });
 
   test('recordWorkspace adds workspace to tracking data', async () => {
-    // Setup existing data
+    // Write initial data
     const existingData = {
       '/path/to/existing': {
         taskId: 'task-existing',
-        workspacePath: '/path/to/existing',
         originalPlanFilePath: '/repo/tasks/existing.yml',
         repositoryUrl: 'https://github.com/example/repo.git',
+        workspacePath: '/path/to/existing',
         branch: 'existing-branch',
         createdAt: '2023-01-01T00:00:00.000Z',
       },
     };
-
     await fs.writeFile(testTrackingPath, JSON.stringify(existingData), 'utf-8');
 
+    // Record new workspace
     await recordWorkspace(testWorkspace);
 
-    // Verify the updated data was written
-    const fileContents = await fs.readFile(testTrackingPath, 'utf-8');
-    const updatedData = JSON.parse(fileContents);
-
+    // Verify the workspace was added
+    const updatedData = await readTrackingData();
     const expectedData = {
       ...existingData,
       [testWorkspace.workspacePath]: testWorkspace,
     };
 
     expect(updatedData).toEqual(expectedData);
-
-    // Verify we logged the action
     expect(mockLog).toHaveBeenCalledWith(
       `Recorded workspace for task ${testWorkspace.taskId} at ${testWorkspace.workspacePath}`
     );
@@ -147,7 +136,7 @@ describe('workspace_tracker', () => {
   test('getWorkspaceMetadata returns null for non-existent workspace', async () => {
     await fs.writeFile(testTrackingPath, '{}', 'utf-8');
 
-    const result = await getWorkspaceMetadata('/path/to/nonexistent');
+    const result = await getWorkspaceMetadata('/non/existent/path');
 
     expect(result).toBeNull();
   });
@@ -155,9 +144,7 @@ describe('workspace_tracker', () => {
   test('getWorkspaceMetadata returns workspace info for existing workspace', async () => {
     const mockData = {
       [testWorkspace.workspacePath]: testWorkspace,
-      '/path/to/other': { taskId: 'other', workspacePath: '/path/to/other' },
     };
-
     await fs.writeFile(testTrackingPath, JSON.stringify(mockData), 'utf-8');
 
     const result = await getWorkspaceMetadata(testWorkspace.workspacePath);
@@ -174,26 +161,18 @@ describe('workspace_tracker', () => {
   });
 
   test('findWorkspacesByTaskId returns all workspaces for a task', async () => {
-    const workspace1 = {
+    const workspace1 = { ...testWorkspace, workspacePath: '/path/1' };
+    const workspace2 = { ...testWorkspace, workspacePath: '/path/2' };
+    const workspace3 = {
       ...testWorkspace,
-      workspacePath: '/path/to/workspace1',
-    };
-
-    const workspace2 = {
-      ...testWorkspace,
-      workspacePath: '/path/to/workspace2',
-    };
-
-    const otherWorkspace = {
-      ...testWorkspace,
-      taskId: 'other-task',
-      workspacePath: '/path/to/other',
+      taskId: 'different-task',
+      workspacePath: '/path/3',
     };
 
     const mockData = {
-      [workspace1.workspacePath]: workspace1,
-      [workspace2.workspacePath]: workspace2,
-      [otherWorkspace.workspacePath]: otherWorkspace,
+      '/path/1': workspace1,
+      '/path/2': workspace2,
+      '/path/3': workspace3,
     };
 
     await fs.writeFile(testTrackingPath, JSON.stringify(mockData), 'utf-8');
@@ -203,6 +182,5 @@ describe('workspace_tracker', () => {
     expect(result).toHaveLength(2);
     expect(result).toContainEqual(workspace1);
     expect(result).toContainEqual(workspace2);
-    expect(result).not.toContainEqual(otherWorkspace);
   });
 });
