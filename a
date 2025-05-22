@@ -1,0 +1,1164 @@
+bun test v1.2.13 (64ed68c9)
+
+src/state_machine/nodes.test.ts:
+(pass) Node > should execute lifecycle methods in order: prep, exec, post [2.00ms]
+(pass) Node > should handle errors in exec and perform rollback
+(pass) Node > should handle retry for transient failures [1.00ms]
+(pass) Node > handles waiting state with no next state
+(pass) Node > handles terminal state with no next state
+(pass) Node > emits actions returned from post
+(pass) Node > delegation methods should call their corresponding implementation methods [1.00ms]
+(pass) Node > run method should execute the full lifecycle with correct telemetry
+(pass) Node > should handle error in prep with onError handler
+(pass) Node > should propagate error from prep when no onError handler [1.00ms]
+(pass) Node > should handle error in exec with onError handler
+(pass) Node > should handle error in post with onError handler
+(pass) Node > should rollback context changes on exec failure [1.00ms]
+(pass) Node > should perform multiple retries before succeeding [2.00ms]
+(pass) FlowNode > should create FlowNode with submachine
+(pass) FlowNode > should translate events and execute submachine [1.00ms]
+(pass) FlowNode > should resume submachine from existing state in scratchpad
+(pass) FlowNode > should integrate with full Node lifecycle [1.00ms]
+(pass) FlowNode > should run sub-machine to completion in exec
+(pass) FlowNode > should resume sub-machine from existing state in scratchpad [1.00ms]
+(pass) FlowNode > should handle errors in submachine execution
+
+src/state_machine/telemetry_setup.test.ts:
+(pass) Telemetry utility functions > recordStateTransition records the event correctly
+(pass) Telemetry utility functions > recordEvent records the event correctly
+(pass) Telemetry utility functions > recordError records exceptions with context
+(pass) Telemetry utility functions > setStateMachineAttributes sets flattened attributes on span
+
+src/state_machine/store.test.ts:
+(pass) SharedStore > Context Management > getContext() returns the current context
+(pass) SharedStore > Context Management > updateContext() correctly updates the context
+(pass) SharedStore > Scratchpad Management > getScratchpad() returns undefined initially
+(pass) SharedStore > Scratchpad Management > setScratchpad() and getScratchpad() work correctly
+(pass) SharedStore > Scratchpad Management > clearScratchpad() removes the scratchpad data
+(pass) SharedStore > Scratchpad Management > updateScratchpad() correctly updates with the updater function
+(pass) SharedStore > Scratchpad Management > updateScratchpad() handles initially undefined scratchpad
+(pass) SharedStore > Event Management > pendingEvents is an empty array initially
+(pass) SharedStore > Event Management > enqueueEvents() adds events to the pending list [1.00ms]
+(pass) SharedStore > Event Management > enqueueEvents() creates event copies
+(pass) SharedStore > Event Management > enqueueEvents() calls adapter.writeEvents
+(pass) SharedStore > Event Management > pendingEvents can be modified directly
+(pass) SharedStore > Event Management > removeEvents() removes events by reference
+(pass) SharedStore > Event Management > getEventsOfType() returns matching events
+(pass) SharedStore > Event Management > dequeueEventsOfType() removes and returns matching events
+(pass) SharedStore > Event Management > dequeueAllEvents() removes and returns all events
+(pass) SharedStore > Event Management > dequeueEvent() removes and returns the oldest event [1.00ms]
+(pass) SharedStore > Event Management > dequeueEvent() returns undefined when no events are present
+(pass) SharedStore > State and History Management > getCurrentState() returns undefined initially
+(pass) SharedStore > State and History Management > setCurrentState() and getCurrentState() work correctly
+(pass) SharedStore > State and History Management > logTransition() adds an entry to the execution history
+(pass) SharedStore > State and History Management > getExecutionTrace() returns a clone of the history
+(pass) SharedStore > State and History Management > exportTrace() returns a JSON string of the execution trace
+(pass) SharedStore > Persistence > allState getter returns the current store state
+(pass) SharedStore > Persistence > allState setter updates all store properties
+(pass) SharedStore > Persistence > loadState() loads state from the persistence adapter
+(pass) SharedStore > Persistence > setAdapter() changes the persistence adapter
+(pass) SharedStore > Rollback and Retry > withRollback() maintains state on success
+(pass) SharedStore > Rollback and Retry > withRollback() maintains all changes on success, including events
+(pass) SharedStore > Rollback and Retry > withRollback() restores state on failure
+(pass) SharedStore > Rollback and Retry > retry() succeeds after multiple attempts [1.00ms]
+(pass) SharedStore > Rollback and Retry > retry() throws after max attempts
+(pass) SharedStore > Rollback and Retry > retry() respects maxAttemptsOverride
+(pass) SharedStore > Rollback and Retry > retry() with null span still functions correctly
+(pass) SharedStore > Rollback and Retry > retry() correctly uses timeouts between attempts
+
+src/state_machine/nested_flow.test.ts:
+(pass) Nested Flow State Machine > verifies array nodes conversion to internal map works [1.00ms]
+(pass) Nested Flow State Machine > demonstrates a state machine that processes, waits, and then continues [3.00ms]
+
+src/state_machine/telemetry.test.ts:
+(pass) telemetry_test_utils > MockSpan correctly tracks events and status
+(pass) telemetry_test_utils > getSpans and resetSpans work correctly
+(pass) telemetry module direct usage > createSpan function creates spans with correct attributes
+(pass) telemetry module direct usage > recordStateTransition adds correct event to span
+(pass) telemetry module direct usage > recordError adds exception and details to span
+(pass) toSpanAttributeValue > handles primitive types
+(pass) toSpanAttributeValue > handles arrays of primitives
+(pass) toSpanAttributeValue > stringifies objects
+(pass) toSpanAttributeValue > handles null and undefined
+(pass) objectToSpanAttributeValues > handles simple flat objects
+(pass) objectToSpanAttributeValues > stringifies nested objects
+(pass) objectToSpanAttributeValues > applies prefix to keys when provided
+(pass) objectToSpanAttributeValues > returns undefined for null or undefined input
+(pass) objectToSpanAttributeValues > handles objects with various types
+(pass) flattenAttributes (via exported functions) > flattens StateMachineAttributes with all fields [1.00ms]
+(pass) flattenAttributes (via exported functions) > flattens StateMachineAttributes with only some fields
+(pass) flattenAttributes (via exported functions) > returns undefined for undefined input
+(pass) flattenAttributes (via exported functions) > handles StateMachineAttributes with empty metadata
+
+src/state_machine/index.test.ts:
+(pass) StateMachine > Persistence integration > should call writeEvents when enqueue events in resume() [1.00ms]
+(pass) StateMachine > Persistence integration > should load persisted state and resume from loaded state
+(pass) StateMachine > Error handling > should handle error in Node exec without node-specific onError, transitioning to errorState [1.00ms]
+(pass) StateMachine > Error handling > should handle error in Node exec with node-specific onError
+(pass) StateMachine > Error handling > should handle error in Node exec with config.onError [1.00ms]
+(pass) StateMachine > Error handling > should handle error in Node with no handlers, transitioning to errorState
+(pass) StateMachine > Error handling > should call config.onError when transitioning to non-existent state
+(pass) StateMachine > Error handling > should receive error in config.onError when node returns non-existent state
+(pass) StateMachine > Retry mechanism > should verify that retry logic exists in shared store [2.00ms]
+(pass) StateMachine > Retry mechanism > should fail after exhausting all retries
+(pass) StateMachine > Retry mechanism > should handle Node prep failing then succeeding with SM configured retries
+(pass) StateMachine > Retry mechanism > should configure retryDelay function via constructor
+(pass) StateMachine > Retry mechanism > should document hooks interface for onRetry [1.00ms]
+(pass) StateMachine > Hooks > onTransition hook should be called when state transitions
+(pass) StateMachine > Hooks > onActions hook is defined but not currently called
+(pass) StateMachine > Hooks > When node.onError exists, StateMachine level onError hook is not used [1.00ms]
+(pass) StateMachine > Hooks > StateMachine hook.onError is not used when falling back to default error behavior
+(pass) StateMachine > Hooks > onRetry hook is defined but not currently used by retry mechanism
+(pass) StateMachine > initialize() should call initTelemetry
+(pass) StateMachine > initialize() can be called multiple times without issues
+(pass) StateMachine > loadPersistedState() should load state from the adapter
+(pass) StateMachine > should handle a basic state transition from initial to processing
+(pass) StateMachine > should handle multiple events from resume call
+(pass) StateMachine > should handle a sequence of transitions through multiple states [1.00ms]
+(pass) StateMachine > should handle actions in StateResult
+(pass) StateMachine > should integrate FlowNode in a StateMachine [3.00ms]
+
+src/common/ssh_detection.test.ts:
+(skip) isSshSession > should return false when no SSH-related environment variables are set
+(skip) isSshSession > should return true when SSH_CLIENT is set
+(skip) isSshSession > should return true when SSH_CONNECTION is set
+(skip) isSshSession > should return true when SSH_TTY is set
+(skip) isSshSession > should return true when multiple SSH-related environment variables are set
+(skip) isSshSession > should return false when SSH_CLIENT is an empty string
+(skip) isSshSession > should return false when SSH_CONNECTION is an empty string
+(skip) isSshSession > should return false when SSH_TTY is an empty string
+
+src/common/terminal.test.ts:
+(pass) teardown
+(pass) waitForEnter - Enter key
+(pass) waitForEnter - any other key triggers stdin reading [1.00ms]
+(pass) readStdinUntilTimeout - basic functionality [250.00ms]
+(pass) readStdinUntilTimeout - with additional data
+
+src/common/osc52.test.ts:
+(skip) osc52Copy > should send correct OSC52 sequence for basic string
+(skip) osc52Copy > should handle empty string
+(skip) osc52Copy > should handle string with special characters
+(skip) osc52Copy > should handle unicode characters
+(skip) osc52Read > should return null when stdin is not a TTY
+(skip) osc52Read > should send the correct OSC52 request sequence
+(skip) osc52Read > should properly handle a successful response
+(skip) osc52Read > should handle empty or inaccessible clipboard
+(skip) osc52Read > should handle invalid base64 data in response
+(skip) osc52Read > should handle error event
+(skip) osc52Read > should handle exception during setup
+(skip) osc52Read > should handle too much received data without a match
+
+src/common/clipboard.test.ts:
+(pass) write - SSH session, OSC52 success
+(pass) write - SSH session, OSC52 failure
+(pass) write - not SSH session
+(pass) read - SSH session, OSC52 success
+(pass) read - SSH session, OSC52 returns null
+(pass) read - SSH session, OSC52 throws error [1.00ms]
+(pass) read - not SSH session
+
+src/editor/closest_match.test.ts:
+(pass) findClosestMatches > should find an exact match [1.00ms]
+(pass) findClosestMatches > should find a close match [1.00ms]
+(pass) findClosestMatches > should return empty if below threshold
+(pass) findClosestMatches > should return multiple matches when requested
+(pass) findClosestMatches > should handle no matches in file [1.00ms]
+(pass) findClosestMatches > should handle empty file content
+(pass) findClosestMatches > should handle empty search lines
+(pass) findClosestMatches > should handle whitespace differences
+(pass) findClosestMatches > should handle case differences
+(pass) findClosestMatches > should handle small typos
+(pass) findClosestMatches > should handle last line without newline
+(pass) findClosestMatches > should handle search lines longer than file content
+(pass) findClosestMatches > should return best match first when multiple matches exist
+
+src/treesitter/extract.test.ts:
+(pass) typescript [28.00ms]
+(skip) svelte
+
+src/rmfix/command.test.ts:
+[rmfix] Warning: Could not parse /home/dimfeld/projects/llmutils2/package.json. Error: Unexpected Bun.file call with path: /home/dimfeld/projects/llmutils2/package.json
+(pass) prepareCommand > should return the command as is if package.json does not exist [2.00ms]
+[rmfix] Warning: Could not parse /home/dimfeld/projects/llmutils2/package.json. Error: Unexpected Bun.file call with path: /home/dimfeld/projects/llmutils2/package.json
+(pass) prepareCommand > should return the command as is if it is not in package.json scripts
+(pass) prepareCommand > should use npm for a known script when package manager is npm [1.00ms]
+(pass) prepareCommand > should use bun for a known script when package manager is bun
+(pass) prepareCommand > should use yarn for a known script when package manager is yarn
+(pass) prepareCommand > should handle npm script with no additional args [1.00ms]
+(pass) prepareCommand > should handle missing scripts object in package.json
+(pass) prepareCommand > should handle null scripts object in package.json
+(pass) prepareCommand > should handle unparseable package.json gracefully and warn
+(pass) prepareCommand > should inject --json for direct jest command if no reporter specified [1.00ms]
+(pass) prepareCommand > should inject --json for direct jest command if format is json
+(pass) prepareCommand > should not inject for direct jest if --reporters=some-json.js is present
+(pass) prepareCommand > should not inject for direct jest if --reporters ... some-json.js is present [1.00ms]
+(pass) prepareCommand > should not inject --json for direct jest command if --json is already present
+(pass) prepareCommand > should inject --json for direct jest command even if --outputFile is present (prioritizing stdout)
+(pass) prepareCommand > should inject --reporter=json for direct vitest command if no reporter specified
+(pass) prepareCommand > should inject --reporter=json for direct vitest command if format is json
+(pass) prepareCommand > should not inject --reporter=json for direct vitest command if --reporter=json is present [1.00ms]
+(pass) prepareCommand > should not inject --reporter=json for direct vitest command if --reporter json is present
+(pass) prepareCommand > should not inject for direct vitest if --reporter=custom-json.js is present
+(pass) prepareCommand > should not inject for direct vitest if --reporter custom-json.js is present
+(pass) prepareCommand > should inject --json into npm script args for jest runner
+(pass) prepareCommand > should inject --reporter=json into npm script args for vitest runner [1.00ms]
+(pass) prepareCommand > should not inject if npm script for jest already has --json
+(pass) prepareCommand > should not inject if npm script for jest already has --reporters=some-json.js
+(pass) prepareCommand > should not inject if npm script for vitest already has --reporter=custom-json.js
+(pass) prepareCommand > should not inject if user args for npm jest script provide --json
+(pass) prepareCommand > should not inject if user args for npm vitest script provide --reporter=json [1.00ms]
+(pass) prepareCommand > should inject --json for `npx jest` command
+(pass) prepareCommand > should inject --reporter=json for `pnpm vitest` command
+(pass) prepareCommand > should inject --reporter=json for `yarn dlx vitest` command
+(pass) prepareCommand > should not inject for `npx jest --json` command
+(pass) prepareCommand > should not inject for `npx jest --reporters=custom-json.js` command [1.00ms]
+(pass) prepareCommand > should handle npm script that runs npx jest
+(pass) prepareCommand > should handle path-like commands for jest
+(pass) prepareCommand > should handle path-like commands for vitest in an npm script [1.00ms]
+(pass) prepareCommand > should NOT inject --json for direct jest if currentFormat is "tap"
+(pass) prepareCommand > should NOT inject --reporter=json for direct vitest if currentFormat is "text" [1.00ms]
+(pass) prepareCommand > should NOT inject --json into npm script for jest if currentFormat is "tap"
+(pass) prepareCommand > should NOT inject --reporter=json into npm script for vitest if currentFormat is "tap"
+
+src/rmfix/parsers.test.ts:
+(pass) parseJestJsonOutput > Test Case 1: should parse valid Jest JSON with failures [1.00ms]
+(pass) parseJestJsonOutput > Test Case 2: should return an empty array for valid Jest JSON with no failures
+(pass) parseJestJsonOutput > Test Case 3: should return an empty array for an invalid JSON string
+(pass) parseJestJsonOutput > Test Case 4: should return an empty array for JSON that is not Jest/Vitest format
+(pass) parseJestJsonOutput > should handle missing fullName or failureMessages gracefully
+
+src/rmfilter/utils.test.ts:
+(pass) validatePath > should return absolute path for valid relative path within base directory
+(pass) validatePath > should allow operations on the base directory itself
+(pass) validatePath > should handle nested paths correctly
+(pass) validatePath > should throw error for path traversal attempts
+(pass) validatePath > should throw error for absolute path outside base directory
+(pass) validatePath > should handle complex path with dot and dot-dot
+(pass) validatePath > should throw error for path attempting to escape with multiple dot-dot
+(pass) parseCliArgsFromString > should parse simple arguments without quotes
+(pass) parseCliArgsFromString > should parse arguments with equals signs correctly
+(pass) parseCliArgsFromString > should parse arguments with double quotes
+(pass) parseCliArgsFromString > should parse arguments with single quotes
+(pass) parseCliArgsFromString > should handle escaped double quotes inside double-quoted strings
+(pass) parseCliArgsFromString > should handle escaped single quotes inside single-quoted strings
+(pass) parseCliArgsFromString > should handle escaped backslashes inside quoted strings
+(pass) parseCliArgsFromString > should handle mixed quoted and unquoted arguments
+(pass) parseCliArgsFromString > should return an empty array for an empty string input
+(pass) parseCliArgsFromString > should return an empty array for a string with only whitespace
+(pass) parseCliArgsFromString > should handle arguments with special characters
+(pass) parseCliArgsFromString > should preserve leading/trailing whitespace within quotes
+(pass) parseCliArgsFromString > should handle arguments separated by multiple spaces
+
+src/rmfilter/mdc.test.ts:
+(pass) MDC Utilities > parseMdcFile > should parse a valid MDC file with all fields [1.00ms]
+(pass) MDC Utilities > parseMdcFile > should parse a file with minimal frontmatter (only description) [1.00ms]
+(pass) MDC Utilities > parseMdcFile > should parse a file with no frontmatter
+[MDC] Error processing file /tmp/rmfilter-mdc-test-wT0hHf/nonexistent.mdc: Error: ENOENT: no such file or directory, open '/tmp/rmfilter-mdc-test-wT0hHf/nonexistent.mdc'
+(pass) MDC Utilities > parseMdcFile > should handle non-existent file path [1.00ms]
+(pass) MDC Utilities > parseMdcFile > should parse unquoted globs and mixed quoted/unquoted
+(pass) MDC Utilities > parseMdcFile > should handle empty file
+(pass) MDC Utilities > findMdcFiles > should find files in both project and user locations, including nested [5.00ms]
+(pass) MDC Utilities > findMdcFiles > should handle case where project rules directory does not exist [1.00ms]
+(pass) MDC Utilities > findMdcFiles > should handle case where user rules directory does not exist [1.00ms]
+(pass) MDC Utilities > findMdcFiles > should return an empty array if no .mdc files are found
+(pass) MDC Utilities > findMdcFiles > should return an empty array if neither rules directory exists
+(pass) MDC Utilities > filterMdcFiles > should include files with alwaysApply: true
+(pass) MDC Utilities > filterMdcFiles > should exclude files with alwaysApply: false and no rules
+(pass) MDC Utilities > filterMdcFiles > should include files with alwaysApply: false and matching rules
+(pass) MDC Utilities > filterMdcFiles > should include files with no rules and alwaysApply absent (default)
+(pass) MDC Utilities > filterMdcFiles > should include files with empty/whitespace rules and alwaysApply absent (default)
+(pass) MDC Utilities > filterMdcFiles > should exclude files with alwaysApply absent and non-matching rules [1.00ms]
+(pass) MDC Utilities > filterMdcFiles > should include files matching glob patterns
+(pass) MDC Utilities > filterMdcFiles > should not include files where globs do not match
+(pass) MDC Utilities > filterMdcFiles > should include files matching grep terms (case-insensitive) [2.00ms]
+(pass) MDC Utilities > filterMdcFiles > should not include files where grep terms do not match
+(pass) MDC Utilities > filterMdcFiles > should exclude files if glob misses but grep matches [1.00ms]
+(pass) MDC Utilities > filterMdcFiles > should exclude files if glob matches but grep misses [1.00ms]
+(pass) MDC Utilities > filterMdcFiles > should handle a mix of matching and non-matching files correctly [1.00ms]
+(pass) MDC Utilities > filterMdcFiles > should return empty array if no mdc files are provided
+(pass) MDC Utilities > filterMdcFiles > should return empty array if no active source files are provided (and no default includes) [1.00ms]
+(pass) MDC Utilities > filterMdcFiles > should return only default includes if no active source files are provided
+
+src/rmfilter/additional_docs.test.ts:
+(pass) getAdditionalDocs > parseJjRename > should correctly parse a jj diff rename line
+(pass) getAdditionalDocs > parseJjRename > should handle a simple rename with no nested paths
+(pass) getAdditionalDocs > parseJjRename > should return empty string for invalid rename format
+(pass) getAdditionalDocs > parseJjRename > should handle empty after segment
+(pass) getAdditionalDocs > should format a single --docs file correctly [7.00ms]
+(pass) getAdditionalDocs > should format multiple --docs files correctly
+(pass) getAdditionalDocs > should format a single --rules file correctly
+(pass) getAdditionalDocs > should format multiple --rules files correctly [1.00ms]
+(pass) getAdditionalDocs > should include .cursorrules by default
+(pass) getAdditionalDocs > should omit .cursorrules when --omit-cursorrules is true
+(pass) getAdditionalDocs > should include MDC file with type "docs" and description
+(pass) getAdditionalDocs > should include MDC file with type "rules" and description (with escaped quotes) [1.00ms]
+(pass) getAdditionalDocs > should default MDC file type to "docs" if missing
+(pass) getAdditionalDocs > should handle MDC file with missing description
+(pass) getAdditionalDocs > should combine manual --docs and MDC docs
+(pass) getAdditionalDocs > should combine manual --rules, .cursorrules, and MDC rules
+(pass) getAdditionalDocs > should return empty tags when no docs, rules, or MDCs are provided
+(pass) getAdditionalDocs > should handle empty filteredMdcFiles array [1.00ms]
+
+src/apply-llm-edits/apply.test.ts:
+(pass) extractRmfilterCommandArgs > extracts command args from content with rmfilter_command tag
+(pass) extractRmfilterCommandArgs > returns null when no rmfilter_command tag is found
+(pass) extractRmfilterCommandArgs > returns null when rmfilter_command tag is empty
+(pass) extractRmfilterCommandArgs > handles multiline command args
+(pass) extractRmfilterCommandArgs > handles quoted arguments correctly
+(pass) extractRmfilterCommandArgs > handles escaped quotes inside quoted strings
+(pass) extractRmfilterCommandArgs > handles single quotes
+(pass) extractRmfilterCommandArgs > returns only first rmfilter_command tag when multiple exist
+(pass) extractRmfilterCommandArgs > handles whitespace-only content in rmfilter_command tag
+(pass) extractRmfilterCommandArgs > returns promptMessage when command IDs mismatch
+(pass) extractRmfilterCommandArgs > returns promptMessage when response lacks command ID
+(pass) extractRmfilterCommandArgs > includes instructions in command string
+Processing as Unified Diff...
+Applying diff to test.txt
+Processing complete. Success: 1, No Match: 0, Not Unique: 0
+(pass) applyEditsInternal > processes unified diff content correctly [7.00ms]
+Processing as Search/Replace Diff...
+Applying diff to test.txt
+(pass) applyEditsInternal > processes search/replace diff content correctly [1.00ms]
+Processing as XML Whole Files...
+Applying diff to test.txt
+(pass) applyEditsInternal > processes XML whole files content correctly [5.00ms]
+Processing as Whole Files...
+Wrote 2 lines to file: ./test.txt
+(pass) applyEditsInternal > processes whole files content correctly [1.00ms]
+Processing as Unified Diff...
+Applying diff to test.txt
+Processing complete. Success: 1, No Match: 0, Not Unique: 0
+(pass) applyEditsInternal > auto-detects unified diff mode [1.00ms]
+Processing as Search/Replace Diff...
+Applying diff to test.txt
+(pass) applyEditsInternal > auto-detects search/replace diff mode
+Processing as XML Whole Files...
+Applying diff to test.txt
+(pass) applyEditsInternal > auto-detects XML mode [1.00ms]
+Processing as Unified Diff...
+Applying diff to test.txt
+Processing complete. Success: 1, No Match: 0, Not Unique: 0
+(pass) applyEditsInternal > respects dry run mode [1.00ms]
+Processing as Unified Diff...
+Processing complete. Success: 0, No Match: 0, Not Unique: 1
+Processing as Unified Diff...
+Processing complete. Success: 0, No Match: 0, Not Unique: 3
+Auto-applying edit for "test.txt" as it was specified 3 times for 3 locations.
+Auto-applied 3 instances of the edit to test.txt
+(pass) handleAutoApplyNotUnique > auto-applies edits when number of failures matches number of locations [2.00ms]
+Processing as Unified Diff...
+Applying diff to test.txt
+Processing complete. Success: 1, No Match: 0, Not Unique: 0
+All edits applied successfully.
+(pass) applyLlmEdits > applies edits and returns results [2.00ms]
+Encountered 1 edit application failure(s):
+
+Failure 1:
+  File: test.txt
+  Reason: Text not found in file.
+  Closest match (score: 0.65):
+    Line range: 1 to 2
+    Diff between closest match and expected original:
+      @@ -1,2 +1,2 @@
+      -Different content
+      -Second line
+      \ No newline at end of file
+      +Original content
+      +Second line
+      
+Failed to apply 1 edits.
+Resolution options:
+  --interactive: Interactively resolve errors
+  --apply-partial: Apply successful edits before resolving errors
+  --copy-retry-prompt, --cr: Copy the retry prompt to the clipboard
+(pass) applyLlmEdits > handles failures without interactive mode [2.00ms]
+Processing as Unified Diff...
+Applying diff to test1.txt
+Processing complete. Success: 1, No Match: 1, Not Unique: 0
+Encountered 1 edit application failure(s):
+
+Failure 1:
+  File: test2.txt
+  Reason: Text not found in file.
+  Closest match (score: 0.65):
+    Line range: 1 to 2
+    Diff between closest match and expected original:
+      @@ -1,2 +1,2 @@
+      -Different content
+      -Second line
+      \ No newline at end of file
+      +Original content
+      +Second line
+      
+Failed to apply 1 edits.
+Resolution options:
+  --interactive: Interactively resolve errors
+  --apply-partial: Apply successful edits before resolving errors
+  --copy-retry-prompt, --cr: Copy the retry prompt to the clipboard
+(pass) applyLlmEdits > applies successful edits with --apply-partial despite failures [1.00ms]
+Found 0 proper edits and 1 errors in the proposed edits.
+Entering interactive mode to resolve 1 edit failure(s)...
+
+--- Failure: No Exact Match ---
+File: test2.txt
+Reason: The text block to be replaced was not found.
+
+Closest match found (score: 1.00) starting at line 1
+
+Diff between closest match and expected original:
+  @@ -1,2 +1,2 @@
+  -Different content
+  -Second line
+  \ No newline at end of file
+  +Original content
+  +Second line
+  
+
+Proposed change at closest match location:
+@@ -1,2 +1,2 @@
+-Different content
+-Second line
+\ No newline at end of file
++Modified content
++Second line
+
+Skipping diff for test2.txt
+---
+Finished interactive resolution.
+(pass) applyLlmEdits > exits without applying edits in interactive mode if user declines [2.00ms]
+Processing as Unified Diff...
+Processing complete. Success: 0, No Match: 1, Not Unique: 0
+Initial application failed for 1 edits. Attempting automatic retry via LLM...
+Sending request to LLM for corrections...
+Received retry response from LLM.
+Applying edits from LLM retry response...
+Processing as Unified Diff...
+Applying diff to test.txt
+Processing complete. Success: 1, No Match: 0, Not Unique: 0
+Retry attempt finished. 1 edits applied successfully, 0 failures remain.
+All edits applied successfully.
+(pass) applyLlmEdits > attempts LLM retry when provided with retryRequester [6.00ms]
+Processing as Unified Diff...
+Applying diff to test1.txt
+Processing complete. Success: 1, No Match: 1, Not Unique: 0
+Initial application failed for 1 edits. Attempting automatic retry via LLM...
+Sending request to LLM for corrections...
+Received retry response from LLM.
+Applying edits from LLM retry response...
+Processing as Unified Diff...
+Applying diff to test2.txt
+Processing complete. Success: 1, No Match: 0, Not Unique: 0
+Retry attempt finished. 1 edits applied successfully, 0 failures remain.
+All edits applied successfully.
+(pass) applyLlmEdits > applies success-only files first and retries with missing successes [4.00ms]
+(pass) getWriteRoot > returns provided cwd when specified
+(pass) getWriteRoot > falls back to process.cwd() when no cwd provided and getGitRoot fails
+
+src/apply-llm-edits/failures.test.ts:
+(pass) formatFailuresForLlm > should return a minimal message for an empty failures array
+(pass) formatFailuresForLlm > should format a single NoMatchFailure without closest match
+(pass) formatFailuresForLlm > should format a single NoMatchFailure with closest match [1.00ms]
+(pass) formatFailuresForLlm > should format a single NotUniqueFailure
+(pass) formatFailuresForLlm > should format a mix of failure types
+(pass) formatFailuresForLlm > should trim long text blocks
+
+src/apply-llm-edits/retry.test.ts:
+(pass) getOriginalRequestContext > returns originalPrompt when provided [1.00ms]
+(pass) getOriginalRequestContext > throws when cache file does not exist
+(pass) getOriginalRequestContext > throws when rmfilter_command is missing in cached content
+(pass) getOriginalRequestContext > prompts user when command IDs mismatch and proceeds if confirmed
+(pass) getOriginalRequestContext > throws when user declines command ID mismatch prompt
+(pass) getOriginalRequestContext > prompts when response lacks command ID and proceeds if confirmed
+
+src/rmplan/cleanup.test.ts:
+(pass) cleanComments > removes TypeScript EOL comments [1.00ms]
+(pass) cleanComments > removes Python EOL comments
+(pass) cleanComments > handles Svelte invalid template comments
+(pass) cleanComments > returns unchanged content for unsupported extension
+Automatically selected the only pending step: [1] This step includes example1 in its prompt...
+(pass) prepareNextStep includes autoexamples when present in prompt [16.00ms]
+
+src/rmplan/workspace_tracker.test.ts:
+(pass) workspace_tracker > readTrackingData returns empty object when file does not exist [1.00ms]
+(pass) workspace_tracker > readTrackingData returns empty object when file exists but parsing fails
+(pass) workspace_tracker > readTrackingData returns parsed data when file exists and is valid
+(pass) workspace_tracker > writeTrackingData creates directory and writes data
+(pass) workspace_tracker > recordWorkspace adds workspace to tracking data
+(pass) workspace_tracker > getWorkspaceMetadata returns null for non-existent workspace
+(pass) workspace_tracker > getWorkspaceMetadata returns workspace info for existing workspace
+(pass) workspace_tracker > findWorkspacesByTaskId returns empty array for non-existent task
+(pass) workspace_tracker > findWorkspacesByTaskId returns all workspaces for a task
+
+src/rmplan/actions.test.ts:
+(pass) executePostApplyCommand directory resolution > should use overrideGitRoot for cwd when workingDirectory is undefined [1.00ms]
+(pass) executePostApplyCommand directory resolution > should use overrideGitRoot to resolve relative workingDirectory
+(pass) executePostApplyCommand directory resolution > should use getGitRoot to resolve relative workingDirectory when overrideGitRoot not provided
+(pass) executePostApplyCommand directory resolution > should use absolute workingDirectory as is, regardless of overrideGitRoot
+(pass) executePostApplyCommand verified behavior summary
+
+src/rmplan/agent.test.ts:
+(pass) rmplanAgent with workspace creation - unit tests > creates workspace successfully and uses it
+(pass) rmplanAgent with workspace creation - unit tests > continues without workspace when creation fails
+(pass) rmplanAgent with workspace creation - unit tests > exits when workspace creation fails and requireWorkspace is true
+(pass) rmplanAgent with workspace creation - unit tests > skips workspace creation when no task ID provided
+(pass) WorkspaceManager.createWorkspace > createWorkspace basic integration with script method [1.00ms]
+
+src/rmplan/workspace_manager.test.ts:
+(pass) WorkspaceManager > createWorkspace returns null when workspaceCreation is not enabled [1.00ms]
+(pass) WorkspaceManager > createWorkspace returns null when workspaceCreation method is not specified
+(pass) WorkspaceManager > createWorkspace returns null when method is script but scriptPath is missing
+(pass) WorkspaceManager > createWorkspace with script method - script executes successfully
+(pass) WorkspaceManager > createWorkspace with script method - script fails with non-zero exit code
+(pass) WorkspaceManager > createWorkspace with script method - script executes but outputs nothing
+(pass) WorkspaceManager > createWorkspace with script method - script outputs a path that is not a directory [1.00ms]
+(pass) WorkspaceManager > createWorkspace with script method - script outputs a path that does not exist
+(pass) WorkspaceManager > createWorkspace with llmutils method - successful clone and branch creation [1.00ms]
+(pass) WorkspaceManager > createWorkspace with llmutils method - infers repository URL if not provided
+(pass) WorkspaceManager > createWorkspace with llmutils method - fails on clone error
+(pass) WorkspaceManager > createWorkspace with llmutils method - runs post-clone commands
+(pass) WorkspaceManager > createWorkspace with llmutils method - uses default clone location when not specified
+(pass) WorkspaceManager > createWorkspace with llmutils method - branch creation fails
+(pass) WorkspaceManager > createWorkspace with llmutils method - repositoryUrl cannot be inferred and is not provided [1.00ms]
+(pass) WorkspaceManager > createWorkspace with llmutils method - post-clone command fails and cleans up workspace
+(pass) WorkspaceManager > createWorkspace with llmutils method - post-clone command fails but allowFailure is true
+(pass) WorkspaceManager > createWorkspace with llmutils method - no postCloneCommands provided
+(pass) WorkspaceManager > createWorkspace with llmutils method - postCloneCommands with relative workingDirectory [1.00ms]
+(pass) WorkspaceManager > createWorkspace with llmutils method - successfully executes multiple post-clone commands
+
+src/rmplan/configLoader.test.ts:
+(pass) configLoader > loadConfig with workspaceCreation > should return default config when configPath is null
+68 |       const configYaml = `
+69 | postApplyCommands:
+70 |   - title: Test Command
+71 |     command: echo hello
+72 | `;
+73 |       const configPath = path.join(tempDir, 'config.yml');
+                                   ^
+TypeError: The "paths[0]" property must be of type string, got undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:73:31)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:67:65)
+(fail) configLoader > loadConfig with workspaceCreation > should load config with workspaceCreation undefined
+83 |       const configYaml = `
+84 | workspaceCreation:
+85 |   method: script
+86 |   scriptPath: /path/to/script.sh
+87 | `;
+88 |       const configPath = path.join(tempDir, 'config.yml');
+                                   ^
+TypeError: The "paths[0]" property must be of type string, got undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:88:31)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:82:69)
+(fail) configLoader > loadConfig with workspaceCreation > should load config with workspaceCreation method script
+102 |   cloneLocation: ~/llmutils-workspaces
+103 |   postCloneCommands:
+104 |     - title: Install Dependencies
+105 |       command: npm install
+106 | `;
+107 |       const configPath = path.join(tempDir, 'config.yml');
+                                    ^
+TypeError: The "paths[0]" property must be of type string, got undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:107:31)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:97:71)
+(fail) configLoader > loadConfig with workspaceCreation > should load config with workspaceCreation method llmutils
+119 |     test('should fail validation when method is script but scriptPath is missing', async () => {
+120 |       const configYaml = `
+121 | workspaceCreation:
+122 |   method: script
+123 | `;
+124 |       const configPath = path.join(tempDir, 'config.yml');
+                                    ^
+TypeError: The "paths[0]" property must be of type string, got undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:124:31)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:119:84)
+(fail) configLoader > loadConfig with workspaceCreation > should fail validation when method is script but scriptPath is missing
+131 | 
+132 |     test('should handle empty workspaceCreation object', async () => {
+133 |       const configYaml = `
+134 | workspaceCreation: {}
+135 | `;
+136 |       const configPath = path.join(tempDir, 'config.yml');
+                                    ^
+TypeError: The "paths[0]" property must be of type string, got undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:136:31)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmplan/configLoader.test.ts:132:58)
+(fail) configLoader > loadConfig with workspaceCreation > should handle empty workspaceCreation object
+
+src/dependency_graph/walk_imports.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+46 | 
+47 |   async function setupImporterTestStructure(): Promise<string> {
+48 |     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'importer-test-'));
+49 | 
+50 |     // pkg-a
+51 |     await fs.mkdir(path.join(tempDir, 'pkg-a'));
+                             ^
+TypeError: The "paths[0]" property must be of type string, got undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at setupImporterTestStructure (/home/dimfeld/projects/llmutils2/src/dependency_graph/walk_imports.test.ts:51:25)
+      at /home/dimfeld/projects/llmutils2/src/dependency_graph/walk_imports.test.ts:44:1
+-------------------------------
+
+(fail) findImporters > findImporters for a local file (pkg-a/utils.ts)
+(fail) findImporters > findImporters for a local file in a subdirectory (pkg-a/anotherDir/anotherUtil.ts)
+(fail) findImporters > findImporters for an exported file in another package (pkg-b/src/feature.ts)
+(fail) findImporters > findImporters for a wildcard exported file (pkg-b/src/utils/helper.ts)
+(fail) findImporters > findImporters for a package root export (pkg-b/main.ts)
+(fail) findImporters > findImporters for a reexported file (pkg-b/src/utils/helper.ts reexported)
+(fail) findImporters > findImporters for a file with no importers
+20 |     const relativeImports = imports
+21 |       .values()
+22 |       .map((f) => path.relative(rootDir, f))
+23 |       .toArray()
+24 |       .sort();
+25 |     expect(relativeImports).toMatchSnapshot();
+                                 ^
+error: expect(received).toMatchSnapshot(expected)
+
+Expected: 
+[
+  "src/common/file_finder.ts",
+  "src/dependency_graph/filenames.ts",
+  "src/dependency_graph/resolve.ts",
+  "src/logging.ts",
+  "src/treesitter/extract.ts",
+]
+
+Received: []
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/dependency_graph/walk_imports.test.ts:25:29)
+(fail) getDefiningFiles > walk imports from walk_imports.ts [3.00ms]
+35 |     const relativeImports = imports
+36 |       .values()
+37 |       .map((f) => path.relative(rootDir, f))
+38 |       .toArray()
+39 |       .sort();
+40 |     expect(relativeImports).toMatchSnapshot();
+                                 ^
+error: expect(received).toMatchSnapshot(expected)
+
+Expected: 
+[
+  "src/apply-llm-edits/failures.ts",
+  "src/apply-llm-edits/interactive.ts",
+  "src/apply-llm-edits/retry.ts",
+  "src/common/clipboard.ts",
+  "src/editor/diff-editor/parse.ts",
+  "src/editor/types.ts",
+  "src/editor/udiff-simple/parse.ts",
+  "src/editor/whole-file/parse_raw_edits.ts",
+  "src/editor/xml/parse_xml.ts",
+  "src/logging.ts",
+  "src/rmfilter/utils.ts",
+]
+
+Received: []
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/dependency_graph/walk_imports.test.ts:40:29)
+(fail) getDefiningFiles > walk imports from apply-llm-edits.ts
+
+src/dependency_graph/resolve.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+ 6 | 
+ 7 | async function setupMockStructure(): Promise<string> {
+ 8 |   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'resolver-test-'));
+ 9 | 
+10 |   // Create src directory
+11 |   await fs.mkdir(path.join(tempDir, 'src'));
+                           ^
+TypeError: The "paths[0]" property must be of type string, got undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at setupMockStructure (/home/dimfeld/projects/llmutils2/src/dependency_graph/resolve.test.ts:11:23)
+      at /home/dimfeld/projects/llmutils2/src/dependency_graph/resolve.test.ts:82:1
+      at loadAndEvaluateModule (2:1)
+-------------------------------
+
+(fail) Resolver > resolves relative import to file
+(fail) Resolver > resolves relative import to directory with index
+(fail) Resolver > resolves package import from node_modules
+(fail) Resolver > resolves package import with main field
+(fail) Resolver > resolves workspace package import
+(fail) Resolver > resolves package import with export map
+(fail) Resolver > skips built-in modules
+(fail) Resolver > handles non-existent relative import
+(fail) Resolver > handles non-existent package import
+
+src/rmpr/git_utils.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+21 |   let commit4Sha: string;
+22 | 
+23 |   beforeAll(async () => {
+24 |     originalCwd = process.cwd();
+25 |     tmpRepoPath = await fs.mkdtemp(path.join(tmpdir(), 'rmpr-git-utils-test-'));
+26 |     process.chdir(tmpRepoPath);
+                 ^
+TypeError: The "directory" argument must be of type string. Received undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:26:13)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:65:3)
+      at /home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:15:1
+      at loadAndEvaluateModule (2:1)
+-------------------------------
+
+(fail) Git Utilities > getCurrentGitBranch > should return the current branch name
+(fail) Git Utilities > getCurrentGitBranch > should return null in detached HEAD state
+(fail) Git Utilities > getCurrentGitBranch > should return null when not in a Git repository
+48 |  */
+49 | export async function getFileContentAtRef(filePath: string, ref: string): Promise<string> {
+50 |   const gitRoot = await getGitRoot();
+51 |   const command = ['git', 'show', `${ref}:${filePath}`];
+52 | 
+53 |   const proc = logSpawn(command, {
+                    ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getFileContentAtRef (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:53:16)
+(fail) Git Utilities > getFileContentAtRef > should fetch content of an existing file at a specific commit [1.00ms]
+48 |  */
+49 | export async function getFileContentAtRef(filePath: string, ref: string): Promise<string> {
+50 |   const gitRoot = await getGitRoot();
+51 |   const command = ['git', 'show', `${ref}:${filePath}`];
+52 | 
+53 |   const proc = logSpawn(command, {
+                    ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getFileContentAtRef (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:53:16)
+(fail) Git Utilities > getFileContentAtRef > should fetch content of a modified file at a later commit
+48 |  */
+49 | export async function getFileContentAtRef(filePath: string, ref: string): Promise<string> {
+50 |   const gitRoot = await getGitRoot();
+51 |   const command = ['git', 'show', `${ref}:${filePath}`];
+52 | 
+53 |   const proc = logSpawn(command, {
+                    ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getFileContentAtRef (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:53:16)
+(fail) Git Utilities > getFileContentAtRef > should fetch content of a newly added file [1.00ms]
+111 |       expect(content).toBe('Content for file2\n');
+112 |     });
+113 | 
+114 |     test('should throw an error when fetching a non-existent file', async () => {
+115 |       // eslint-disable-next-line @typescript-eslint/await-thenable
+116 |       await expect(getFileContentAtRef('nonexistent.txt', commit1Sha)).rejects.toThrow(
+                                                                                     ^
+error: expect(received).toThrow(expected)
+
+Expected pattern: /Failed to get file content for 'nonexistent\.txt' at ref 'undefined'\. Git command: 'git show undefined:nonexistent\.txt' \(cwd: .+\)\. Exit code: 128\. Stderr: fatal: path 'nonexistent\.txt' does not exist in 'undefined'/
+Received message: "ENOENT: no such file or directory, posix_spawn 'git'"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:116:80)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:114:69)
+(fail) Git Utilities > getFileContentAtRef > should throw an error when fetching a non-existent file
+122 |       );
+123 |     });
+124 | 
+125 |     test('should throw an error when fetching a deleted file at a commit after its deletion', async () => {
+126 |       // eslint-disable-next-line @typescript-eslint/await-thenable
+127 |       await expect(getFileContentAtRef('file1.txt', commit4Sha)).rejects.toThrow(
+                                                                               ^
+error: expect(received).toThrow(expected)
+
+Expected pattern: /Failed to get file content for 'file1\.txt' at ref 'undefined'\. Git command: 'git show undefined:file1\.txt' \(cwd: .+\)\. Exit code: 128\. Stderr: fatal: path 'file1\.txt' (exists on disk, but not in|does not exist in) 'undefined'/
+Received message: "ENOENT: no such file or directory, posix_spawn 'git'"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:127:74)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:125:95)
+(fail) Git Utilities > getFileContentAtRef > should throw an error when fetching a deleted file at a commit after its deletion [1.00ms]
+ 95 |     }
+ 96 |     env(newEnv) {
+ 97 |       if (this.#throwIfRunning(), typeof newEnv === "undefined")
+ 98 |         newEnv = defaultEnv;
+ 99 |       return this.#args.setEnv(newEnv), this;
+100 |     #run() {
+              ^
+error: No such file or directory
+    path: "/home/dimfeld/projects/llmutils2/undefined",
+ syscall: "open",
+   errno: -2,
+    code: "ENOENT"
+
+      at #run (100:9)
+      at then (150:9)
+(fail) Git Utilities > getFileContentAtRef > should fetch content of a file using "HEAD" as ref
+48 |  */
+49 | export async function getFileContentAtRef(filePath: string, ref: string): Promise<string> {
+50 |   const gitRoot = await getGitRoot();
+51 |   const command = ['git', 'show', `${ref}:${filePath}`];
+52 | 
+53 |   const proc = logSpawn(command, {
+                    ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getFileContentAtRef (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:53:16)
+(fail) Git Utilities > getFileContentAtRef > should fetch content of a file using a branch name as ref (main)
+ 95 |     }
+ 96 |     env(newEnv) {
+ 97 |       if (this.#throwIfRunning(), typeof newEnv === "undefined")
+ 98 |         newEnv = defaultEnv;
+ 99 |       return this.#args.setEnv(newEnv), this;
+100 |     #run() {
+              ^
+error: No such file or directory
+    path: "/home/dimfeld/projects/llmutils2/undefined",
+ syscall: "open",
+   errno: -2,
+    code: "ENOENT"
+
+      at #run (100:9)
+      at then (150:9)
+(fail) Git Utilities > getCurrentCommitSha > should return the current commit SHA when in a Git repository
+162 |         process.chdir(tempDir);
+163 |         const sha = await gitUtils.getCurrentCommitSha();
+164 |         expect(sha).toBeNull();
+165 |       } finally {
+166 |         // Clean up and return to the test repo
+167 |         process.chdir(tmpRepoPath);
+                      ^
+TypeError: The "directory" argument must be of type string. Received undefined
+ code: "ERR_INVALID_ARG_TYPE"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:167:17)
+(fail) Git Utilities > getCurrentCommitSha > should return null when not in a Git repository
+153 |  */
+154 | export async function getDiff(filePath: string, baseRef: string, headRef: string): Promise<string> {
+155 |   const gitRoot = await getGitRoot();
+156 |   const command = ['git', 'diff', '--patch', `${baseRef}..${headRef}`, '--', filePath];
+157 | 
+158 |   const proc = logSpawn(command, {
+                     ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getDiff (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:158:16)
+(fail) Git Utilities > getDiff > should get a diff for a modified file [1.00ms]
+153 |  */
+154 | export async function getDiff(filePath: string, baseRef: string, headRef: string): Promise<string> {
+155 |   const gitRoot = await getGitRoot();
+156 |   const command = ['git', 'diff', '--patch', `${baseRef}..${headRef}`, '--', filePath];
+157 | 
+158 |   const proc = logSpawn(command, {
+                     ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getDiff (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:158:16)
+(fail) Git Utilities > getDiff > should get a diff for an added file
+153 |  */
+154 | export async function getDiff(filePath: string, baseRef: string, headRef: string): Promise<string> {
+155 |   const gitRoot = await getGitRoot();
+156 |   const command = ['git', 'diff', '--patch', `${baseRef}..${headRef}`, '--', filePath];
+157 | 
+158 |   const proc = logSpawn(command, {
+                     ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getDiff (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:158:16)
+(fail) Git Utilities > getDiff > should get a diff for a deleted file [1.00ms]
+153 |  */
+154 | export async function getDiff(filePath: string, baseRef: string, headRef: string): Promise<string> {
+155 |   const gitRoot = await getGitRoot();
+156 |   const command = ['git', 'diff', '--patch', `${baseRef}..${headRef}`, '--', filePath];
+157 | 
+158 |   const proc = logSpawn(command, {
+                     ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getDiff (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:158:16)
+(fail) Git Utilities > getDiff > should return an empty string for an unchanged file between two refs
+153 |  */
+154 | export async function getDiff(filePath: string, baseRef: string, headRef: string): Promise<string> {
+155 |   const gitRoot = await getGitRoot();
+156 |   const command = ['git', 'diff', '--patch', `${baseRef}..${headRef}`, '--', filePath];
+157 | 
+158 |   const proc = logSpawn(command, {
+                     ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getDiff (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:158:16)
+(fail) Git Utilities > getDiff > should return an empty string for a file diffed against the same ref [1.00ms]
+212 |     });
+213 | 
+214 |     test('should throw an error if one of the refs is invalid for diff', async () => {
+215 |       const invalidRef = 'nonexistentref';
+216 |       // eslint-disable-next-line @typescript-eslint/await-thenable
+217 |       await expect(getDiff('file1.txt', invalidRef, commit2Sha)).rejects.toThrow(
+                                                                               ^
+error: expect(received).toThrow(expected)
+
+Expected pattern: /Failed to get diff for 'file1\.txt' between 'nonexistentref' and 'undefined'\. Git command: 'git diff --patch nonexistentref\.\.undefined -- file1\.txt' \(cwd: .+\)\. Exit code: 128\. Stderr: fatal: bad revision 'nonexistentref\.\.undefined'/
+Received message: "ENOENT: no such file or directory, posix_spawn 'git'"
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:217:74)
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.test.ts:214:74)
+(fail) Git Utilities > getDiff > should throw an error if one of the refs is invalid for diff
+153 |  */
+154 | export async function getDiff(filePath: string, baseRef: string, headRef: string): Promise<string> {
+155 |   const gitRoot = await getGitRoot();
+156 |   const command = ['git', 'diff', '--patch', `${baseRef}..${headRef}`, '--', filePath];
+157 | 
+158 |   const proc = logSpawn(command, {
+                     ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getDiff (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:158:16)
+(fail) Git Utilities > getDiff > should get a diff for a file that does not exist in baseRef but exists in headRef (overall addition)
+153 |  */
+154 | export async function getDiff(filePath: string, baseRef: string, headRef: string): Promise<string> {
+155 |   const gitRoot = await getGitRoot();
+156 |   const command = ['git', 'diff', '--patch', `${baseRef}..${headRef}`, '--', filePath];
+157 | 
+158 |   const proc = logSpawn(command, {
+                     ^
+ENOENT: no such file or directory, posix_spawn 'git'
+    path: "git",
+ syscall: "posix_spawn",
+   errno: -2,
+    code: "ENOENT"
+
+      at getDiff (/home/dimfeld/projects/llmutils2/src/rmpr/git_utils.ts:158:16)
+(fail) Git Utilities > getDiff > should get a diff for a file that exists in baseRef but not in headRef (overall deletion)
+
+src/rmpr/comment_options.test.ts:
+(pass) parseRmprOptions > parses single --rmpr line with multiple options and returns cleaned comment
+(pass) parseRmprOptions > parses multiple --rmpr lines and returns cleaned comment
+(pass) parseRmprOptions > parses --rmpr include with multiple paths and returns cleaned comment
+(pass) parseRmprOptions > parses --rmpr rmfilter with additional options and returns cleaned comment
+(pass) parseRmprOptions > returns null options for comment with no --rmpr lines and full comment
+(pass) parseRmprOptions > handles empty --rmpr line and returns cleaned comment
+75 | 
+76 |   test('parses mixed options with quoted paths and returns cleaned comment', () => {
+77 |     const commentBody =
+78 |       'Update imports\n--rmpr include "src/utils.ts"\nrmpr: with-imports\n--rmpr rmfilter "--grep example"';
+79 |     const result = parseRmprOptions(commentBody);
+80 |     expect(result).toEqual({
+                        ^
+error: expect(received).toEqual(expected)
+
+  {
+    cleanedComment: "Update imports",
+    options: {
+      include: [
++       "\"src/utils.ts\""
+-       "src/utils.ts"
+      ],
+      rmfilter: [
+        "--",
++       "\"--grep",
++       "example\""
+-       "--grep",
+-       "example"
+      ],
+      withImports: true,
+    },
+  }
+
+- Expected  - 3
++ Received  + 3
+
+      at <anonymous> (/home/dimfeld/projects/llmutils2/src/rmpr/comment_options.test.ts:80:20)
+(fail) parseRmprOptions > parses mixed options with quoted paths and returns cleaned comment [1.00ms]
+(pass) argsFromRmprOptions > includes standard options without PR
+Skipping PR-specific include directive in generic context: pr:src/file.ts
+Skipping PR-specific "include-all" directive in generic context.
+(pass) argsFromRmprOptions > skips PR-specific options with warnings when no PR provided
+(pass) argsFromRmprOptions > handles empty options without PR
+(pass) argsFromRmprOptions > includes PR-specific options when PR is provided
+
+src/common/github/identifiers.test.ts:
+(pass) parsePrIdentifier > invalid formats > should return null for missing PR number in URL
+(pass) parsePrIdentifier > invalid formats > should return null for non-numeric PR number in URL
+(pass) parsePrIdentifier > invalid formats > should return null for missing PR number in short format [3.00ms]
+(pass) parsePrIdentifier > invalid formats > should return null for non-numeric PR number in short format [1.00ms]
+(pass) parsePrIdentifier > invalid formats > should return null for missing PR number in alternative short format
+(pass) parsePrIdentifier > invalid formats > should return null for non-numeric PR number in alternative short format
+(pass) parsePrIdentifier > invalid formats > should return null for incomplete owner/repo
+(pass) parsePrIdentifier > invalid formats > should return null for just owner/repo
+(pass) parsePrIdentifier > invalid formats > should return null for a completely random string
+(pass) parsePrIdentifier > invalid formats > should return null for URL with missing owner
+(pass) parsePrIdentifier > invalid formats > should return null for URL with missing repo
+(pass) parsePrIdentifier > should parse valid full URL
+(pass) parsePrIdentifier > should parse valid short format (owner/repo#123)
+(pass) parsePrIdentifier > should parse valid alternative short format (owner/repo/123)
+
+src/common/github/issues.test.ts:
+(pass) getInstructionsFromGithubIssue > parses and combines RmprOptions from issue body and comments [1.00ms]
+(pass) getInstructionsFromGithubIssue > handles issue with no RmprOptions
+
+src/editor/udiff-simple/parse.test.ts:
+(pass) find_diffs > find_diffs single hunk
+(pass) find_diffs > find_diffs dev null
+(pass) find_diffs > find_diffs dirname with spaces
+(pass) find_diffs > find_diffs without fenced block
+(pass) find_diffs > find multi diffs
+(pass) find_diffs > find nested diff block [1.00ms]
+(pass) doReplace > handles slightly incorrect hunks
+(pass) doReplace > multiple sections [1.00ms]
+(pass) doReplace > addition to end of file
+
+src/rmpr/modes/separate_context.test.ts:
+(pass) Separate Context Mode Logic > formatReviewCommentsForSeparateContext > should format a single comment with distinct start and end lines, injecting comment in diff
+(pass) Separate Context Mode Logic > formatReviewCommentsForSeparateContext > should format a single comment with same start and end lines (or null startLine), injecting comment in diff
+(pass) Separate Context Mode Logic > formatReviewCommentsForSeparateContext > should format multiple comments, joined by ---, with comments injected in diffs
+(pass) Separate Context Mode Logic > formatReviewCommentsForSeparateContext > should return an empty string if no comments are provided
+
+src/rmpr/modes/inline_comments.test.ts:
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - Handling Modified Files with diffForContext > should insert comment at matched location when file has been modified [1.00ms]
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - Handling Modified Files with diffForContext > should choose closest match to original line when multiple matches exist
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - Handling Modified Files with diffForContext > should insert block comment at matched location
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - Handling Modified Files with diffForContext > should not make an edit if no match found
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - Handling Modified Files with diffForContext > should adjust comment insertion based on diff context offset [1.00ms]
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - TypeScript (.ts) > should insert a single-line comment
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - TypeScript (.ts) > should insert a multi-line comment (block comment)
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - TypeScript (.ts) > should insert multiple comments (single-line and multi-line), respecting sort order
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - TypeScript (.ts) > should insert comments at the beginning, middle, and end of the file
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - TypeScript (.ts) > should handle single-line comments on an empty file content ("")
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - TypeScript (.ts) > should correctly sort and insert multiple comments affecting same/adjacent lines based on IDs
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - Other File Types > should use # for Python files (.py)
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - Other File Types > should use <!-- --> for HTML files (.html)
+(pass) AI Comments Mode Logic > insertAiCommentsIntoFileContent - Other File Types > should use // for Svelte <script> and <!-- --> for template
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should remove "// AI: " prefixed lines and markers for TypeScript files
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should remove "# AI: " prefixed lines and markers for Python files
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should remove "<!-- AI: -->" prefixed lines and markers for HTML files
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should remove both "// AI: " and "<!-- AI: -->" for Svelte files (script and template)
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should leave content with no markers or AI prefixes unchanged
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should handle markers with leading/trailing whitespace on their line
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should not remove malformed markers (e.g., wrong prefix)
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should handle empty string input
+(pass) AI Comments Mode Logic > removeAiCommentMarkers > should handle content with only AI comments and markers, resulting in empty string
+
+21 tests skipped:
+(skip) isSshSession > should return false when no SSH-related environment variables are set
+(skip) isSshSession > should return true when SSH_CLIENT is set
+(skip) isSshSession > should return true when SSH_CONNECTION is set
+(skip) isSshSession > should return true when SSH_TTY is set
+(skip) isSshSession > should return true when multiple SSH-related environment variables are set
+(skip) isSshSession > should return false when SSH_CLIENT is an empty string
+(skip) isSshSession > should return false when SSH_CONNECTION is an empty string
+(skip) isSshSession > should return false when SSH_TTY is an empty string
+(skip) osc52Copy > should send correct OSC52 sequence for basic string
+(skip) osc52Copy > should handle empty string
+(skip) osc52Copy > should handle string with special characters
+(skip) osc52Copy > should handle unicode characters
+(skip) osc52Read > should return null when stdin is not a TTY
+(skip) osc52Read > should send the correct OSC52 request sequence
+(skip) osc52Read > should properly handle a successful response
+(skip) osc52Read > should handle empty or inaccessible clipboard
+(skip) osc52Read > should handle invalid base64 data in response
+(skip) osc52Read > should handle error event
+(skip) osc52Read > should handle exception during setup
+(skip) osc52Read > should handle too much received data without a match
+(skip) svelte
+
+
+44 tests failed:
+(fail) configLoader > loadConfig with workspaceCreation > should load config with workspaceCreation undefined
+(fail) configLoader > loadConfig with workspaceCreation > should load config with workspaceCreation method script
+(fail) configLoader > loadConfig with workspaceCreation > should load config with workspaceCreation method llmutils
+(fail) configLoader > loadConfig with workspaceCreation > should fail validation when method is script but scriptPath is missing
+(fail) configLoader > loadConfig with workspaceCreation > should handle empty workspaceCreation object
+(fail) findImporters > findImporters for a local file (pkg-a/utils.ts)
+(fail) findImporters > findImporters for a local file in a subdirectory (pkg-a/anotherDir/anotherUtil.ts)
+(fail) findImporters > findImporters for an exported file in another package (pkg-b/src/feature.ts)
+(fail) findImporters > findImporters for a wildcard exported file (pkg-b/src/utils/helper.ts)
+(fail) findImporters > findImporters for a package root export (pkg-b/main.ts)
+(fail) findImporters > findImporters for a reexported file (pkg-b/src/utils/helper.ts reexported)
+(fail) findImporters > findImporters for a file with no importers
+(fail) getDefiningFiles > walk imports from walk_imports.ts [3.00ms]
+(fail) getDefiningFiles > walk imports from apply-llm-edits.ts
+(fail) Resolver > resolves relative import to file
+(fail) Resolver > resolves relative import to directory with index
+(fail) Resolver > resolves package import from node_modules
+(fail) Resolver > resolves package import with main field
+(fail) Resolver > resolves workspace package import
+(fail) Resolver > resolves package import with export map
+(fail) Resolver > skips built-in modules
+(fail) Resolver > handles non-existent relative import
+(fail) Resolver > handles non-existent package import
+(fail) Git Utilities > getCurrentGitBranch > should return the current branch name
+(fail) Git Utilities > getCurrentGitBranch > should return null in detached HEAD state
+(fail) Git Utilities > getCurrentGitBranch > should return null when not in a Git repository
+(fail) Git Utilities > getFileContentAtRef > should fetch content of an existing file at a specific commit [1.00ms]
+(fail) Git Utilities > getFileContentAtRef > should fetch content of a modified file at a later commit
+(fail) Git Utilities > getFileContentAtRef > should fetch content of a newly added file [1.00ms]
+(fail) Git Utilities > getFileContentAtRef > should throw an error when fetching a non-existent file
+(fail) Git Utilities > getFileContentAtRef > should throw an error when fetching a deleted file at a commit after its deletion [1.00ms]
+(fail) Git Utilities > getFileContentAtRef > should fetch content of a file using "HEAD" as ref
+(fail) Git Utilities > getFileContentAtRef > should fetch content of a file using a branch name as ref (main)
+(fail) Git Utilities > getCurrentCommitSha > should return the current commit SHA when in a Git repository
+(fail) Git Utilities > getCurrentCommitSha > should return null when not in a Git repository
+(fail) Git Utilities > getDiff > should get a diff for a modified file [1.00ms]
+(fail) Git Utilities > getDiff > should get a diff for an added file
+(fail) Git Utilities > getDiff > should get a diff for a deleted file [1.00ms]
+(fail) Git Utilities > getDiff > should return an empty string for an unchanged file between two refs
+(fail) Git Utilities > getDiff > should return an empty string for a file diffed against the same ref [1.00ms]
+(fail) Git Utilities > getDiff > should throw an error if one of the refs is invalid for diff
+(fail) Git Utilities > getDiff > should get a diff for a file that does not exist in baseRef but exists in headRef (overall addition)
+(fail) Git Utilities > getDiff > should get a diff for a file that exists in baseRef but not in headRef (overall deletion)
+(fail) parseRmprOptions > parses mixed options with quoted paths and returns cleaned comment [1.00ms]
+
+ 390 pass
+ 21 skip
+ 44 fail
+ 3 errors
+ snapshots: 2 failed
+ 1054 expect() calls
+Ran 455 tests across 35 files. [952.00ms]
