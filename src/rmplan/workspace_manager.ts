@@ -6,7 +6,7 @@ import { log, debugLog } from '../logging.js';
 import { spawnAndLogOutput, getGitRoot, parseCliArgsFromString } from '../rmfilter/utils.js';
 import type { RmplanConfig, WorkspaceCreationConfig, PostApplyCommand } from './configSchema.js';
 import { executePostApplyCommand } from './actions.js';
-import { recordWorkspace } from './workspace_tracker.js';
+import { recordWorkspace, getDefaultTrackingFilePath } from './workspace_tracker.js';
 import { WorkspaceLock } from './workspace_lock.js';
 
 /**
@@ -49,7 +49,7 @@ export class WorkspaceManager {
       return null;
     }
 
-    return this._createWithLlmUtils(taskId, originalPlanFilePath, config.workspaceCreation);
+    return this._createWithLlmUtils(taskId, originalPlanFilePath, config);
   }
 
   // For testing purposes only - allows tests to override homedir
@@ -59,15 +59,17 @@ export class WorkspaceManager {
    * Creates a workspace by cloning a repository and creating a new branch using llmutils method
    * @param taskId Unique identifier for the task
    * @param originalPlanFilePath Absolute path to the original plan file
-   * @param workspaceConfig Workspace creation configuration
+   * @param config The full rmplan configuration
    * @returns A Workspace object if successful, null otherwise
    */
   private async _createWithLlmUtils(
     taskId: string,
     originalPlanFilePath: string,
-    workspaceConfig: WorkspaceCreationConfig
+    config: RmplanConfig
   ): Promise<Workspace | null> {
     log('Creating workspace using llmutils-based method');
+    
+    const workspaceConfig = config.workspaceCreation!;
 
     // Step 1: Infer repository URL if not provided
     let repositoryUrl = workspaceConfig.repositoryUrl;
@@ -210,6 +212,7 @@ export class WorkspaceManager {
     };
 
     // Record the workspace info for tracking
+    const trackingFilePath = config.paths?.trackingFile || getDefaultTrackingFilePath();
     await recordWorkspace({
       taskId,
       originalPlanFilePath,
@@ -217,7 +220,7 @@ export class WorkspaceManager {
       workspacePath: targetClonePath,
       branch: branchName,
       createdAt: new Date().toISOString(),
-    });
+    }, trackingFilePath);
 
     // Acquire lock for the workspace
     try {

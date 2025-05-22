@@ -510,6 +510,10 @@ program
   .option('--repo <url>', 'Filter by repository URL (defaults to current repo)')
   .action(async (options) => {
     try {
+      const globalOpts = program.opts();
+      const config = await loadEffectiveConfig(globalOpts.config);
+      const trackingFilePath = config.paths?.trackingFile;
+      
       let repoUrl = options.repo;
       if (!repoUrl) {
         // Try to get repo URL from current directory
@@ -524,7 +528,7 @@ program
         }
       }
 
-      await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl);
+      await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
     } catch (err) {
       error('Failed to list workspaces:', err);
       process.exit(1);

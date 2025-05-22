@@ -28,38 +28,23 @@ export interface WorkspaceInfo {
   };
 }
 
-// For testing purposes - allows overriding the tracking file path
-let _testTrackingFilePath: string | undefined;
 
 /**
- * Sets a custom tracking file path for testing
- * @internal
+ * Gets the default path to the global workspaces tracking file
+ * @returns The default path to the tracking file
  */
-export function _setTestTrackingFilePath(path: string | undefined): void {
-  _testTrackingFilePath = path;
-}
-
-/**
- * Gets the path to the global workspaces tracking file
- * @returns The path to the tracking file
- */
-export function getTrackingFilePath(): string {
-  if (_testTrackingFilePath) {
-    return _testTrackingFilePath;
-  }
+export function getDefaultTrackingFilePath(): string {
   return path.join(os.homedir(), '.config', 'rmfilter', 'workspaces.json');
 }
 
-/** Path to the global workspaces tracking file */
-export const TRACKING_FILE_PATH = getTrackingFilePath();
-
 /**
  * Reads the workspace tracking data from the tracking file
+ * @param trackingFilePath The path to the tracking file (optional, uses default if not provided)
  * @returns A record mapping workspace paths to their metadata
  */
-export async function readTrackingData(): Promise<Record<string, WorkspaceInfo>> {
+export async function readTrackingData(trackingFilePath?: string): Promise<Record<string, WorkspaceInfo>> {
   try {
-    const trackingPath = getTrackingFilePath();
+    const trackingPath = trackingFilePath || getDefaultTrackingFilePath();
     const fileContents = await fs.readFile(trackingPath, 'utf-8');
     return JSON.parse(fileContents);
   } catch (error) {
@@ -77,10 +62,11 @@ export async function readTrackingData(): Promise<Record<string, WorkspaceInfo>>
 /**
  * Writes workspace tracking data to the tracking file
  * @param data The workspace data to write
+ * @param trackingFilePath The path to the tracking file (optional, uses default if not provided)
  */
-export async function writeTrackingData(data: Record<string, WorkspaceInfo>): Promise<void> {
+export async function writeTrackingData(data: Record<string, WorkspaceInfo>, trackingFilePath?: string): Promise<void> {
   try {
-    const trackingPath = getTrackingFilePath();
+    const trackingPath = trackingFilePath || getDefaultTrackingFilePath();
     // Ensure the directory exists
     await fs.mkdir(path.dirname(trackingPath), { recursive: true });
 
@@ -95,17 +81,18 @@ export async function writeTrackingData(data: Record<string, WorkspaceInfo>): Pr
 /**
  * Records a workspace in the tracking file
  * @param workspaceInfo The workspace information to record
+ * @param trackingFilePath The path to the tracking file (optional, uses default if not provided)
  */
-export async function recordWorkspace(workspaceInfo: WorkspaceInfo): Promise<void> {
+export async function recordWorkspace(workspaceInfo: WorkspaceInfo, trackingFilePath?: string): Promise<void> {
   try {
     // Read current tracking data
-    const data = await readTrackingData();
+    const data = await readTrackingData(trackingFilePath);
 
     // Add or update the entry for this workspace
     data[workspaceInfo.workspacePath] = workspaceInfo;
 
     // Write updated tracking data
-    await writeTrackingData(data);
+    await writeTrackingData(data, trackingFilePath);
 
     log(`Recorded workspace for task ${workspaceInfo.taskId} at ${workspaceInfo.workspacePath}`);
   } catch (error) {
@@ -116,20 +103,22 @@ export async function recordWorkspace(workspaceInfo: WorkspaceInfo): Promise<voi
 /**
  * Gets metadata for a specific workspace
  * @param workspacePath The absolute path to the workspace
+ * @param trackingFilePath The path to the tracking file (optional, uses default if not provided)
  * @returns The workspace metadata if it exists, null otherwise
  */
-export async function getWorkspaceMetadata(workspacePath: string): Promise<WorkspaceInfo | null> {
-  const data = await readTrackingData();
+export async function getWorkspaceMetadata(workspacePath: string, trackingFilePath?: string): Promise<WorkspaceInfo | null> {
+  const data = await readTrackingData(trackingFilePath);
   return data[workspacePath] || null;
 }
 
 /**
  * Finds all workspaces associated with a specific task ID
  * @param taskId The task ID to search for
+ * @param trackingFilePath The path to the tracking file (optional, uses default if not provided)
  * @returns An array of workspace information objects
  */
-export async function findWorkspacesByTaskId(taskId: string): Promise<WorkspaceInfo[]> {
-  const data = await readTrackingData();
+export async function findWorkspacesByTaskId(taskId: string, trackingFilePath?: string): Promise<WorkspaceInfo[]> {
+  const data = await readTrackingData(trackingFilePath);
 
   return Object.values(data).filter((workspace) => workspace.taskId === taskId);
 }
@@ -137,10 +126,11 @@ export async function findWorkspacesByTaskId(taskId: string): Promise<WorkspaceI
 /**
  * Finds all workspaces for a given repository URL
  * @param repositoryUrl The repository URL to search for
+ * @param trackingFilePath The path to the tracking file (optional, uses default if not provided)
  * @returns An array of workspace information objects
  */
-export async function findWorkspacesByRepoUrl(repositoryUrl: string): Promise<WorkspaceInfo[]> {
-  const data = await readTrackingData();
+export async function findWorkspacesByRepoUrl(repositoryUrl: string, trackingFilePath?: string): Promise<WorkspaceInfo[]> {
+  const data = await readTrackingData(trackingFilePath);
 
   // Normalize URLs for comparison (remove trailing .git and slashes)
   const normalizeUrl = (url: string) => url.replace(/\.git$/, '').replace(/\/$/, '');

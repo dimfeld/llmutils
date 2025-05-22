@@ -8,6 +8,7 @@ import {
   findWorkspacesByRepoUrl,
   findWorkspacesByTaskId,
   updateWorkspaceLockStatus,
+  getDefaultTrackingFilePath,
   type WorkspaceInfo,
 } from './workspace_tracker.js';
 import type { RmplanConfig } from './configSchema.js';
@@ -77,7 +78,8 @@ export class WorkspaceAutoSelector {
     }
 
     // Find existing workspaces for this repository
-    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl);
+    const trackingFilePath = this.config.paths?.trackingFile || getDefaultTrackingFilePath();
+    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath);
     const workspacesWithLockStatus = await updateWorkspaceLockStatus(workspaces);
 
     // Sort workspaces: unlocked first, then by creation date (newest first)
@@ -176,15 +178,16 @@ export class WorkspaceAutoSelector {
     }
 
     // Get the workspace info from tracker
-    const workspaces = await findWorkspacesByTaskId(taskId);
+    const trackingFilePath = this.config.paths?.trackingFile || getDefaultTrackingFilePath();
+    const workspaces = await findWorkspacesByTaskId(taskId, trackingFilePath);
     return workspaces.find((w) => w.workspacePath === workspace.path) || null;
   }
 
   /**
    * List all workspaces with their lock status
    */
-  static async listWorkspacesWithStatus(repositoryUrl: string): Promise<void> {
-    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl);
+  static async listWorkspacesWithStatus(repositoryUrl: string, trackingFilePath?: string): Promise<void> {
+    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath);
     const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
 
     if (workspacesWithStatus.length === 0) {

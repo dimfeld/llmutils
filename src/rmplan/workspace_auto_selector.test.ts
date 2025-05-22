@@ -14,7 +14,7 @@ mock.module('./workspace_tracker', () => ({
   updateWorkspaceLockStatus: mock((workspaces: any[]) => workspaces),
   findWorkspacesByTaskId: mock(() => []),
   recordWorkspace: mock(() => Promise.resolve()),
-  _setTestTrackingFilePath: mock(() => {}),
+  getDefaultTrackingFilePath: mock(() => '/default/tracking/path.json'),
 }));
 
 // Mock @inquirer/prompts for non-interactive tests
@@ -31,8 +31,6 @@ describe('WorkspaceAutoSelector', () => {
   beforeEach(async () => {
     testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-auto-selector-test-'));
 
-    // Set test tracking file path to avoid interference
-    (workspaceTracker._setTestTrackingFilePath as any)(path.join(testDir, 'test-workspaces.json'));
 
     // Setup test config
     config = {

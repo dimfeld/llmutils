@@ -17,7 +17,6 @@ import {
   recordWorkspace,
   getWorkspaceMetadata,
   findWorkspacesByTaskId,
-  _setTestTrackingFilePath,
 } from './workspace_tracker.js';
 import type { WorkspaceInfo } from './workspace_tracker.js';
 
@@ -40,16 +39,12 @@ describe('workspace_tracker', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-tracker-test-'));
     testTrackingPath = path.join(tempDir, 'workspaces.json');
 
-    // Set test tracking file path
-    _setTestTrackingFilePath(testTrackingPath);
 
     // Reset logging mock
     mockLog.mockReset();
   });
 
   afterEach(async () => {
-    // Clear test tracking file path
-    _setTestTrackingFilePath(undefined);
 
     // Clean up temporary directory
     try {
@@ -60,7 +55,7 @@ describe('workspace_tracker', () => {
   });
 
   test('readTrackingData returns empty object when file does not exist', async () => {
-    const result = await readTrackingData();
+    const result = await readTrackingData(testTrackingPath);
     expect(result).toEqual({});
   });
 
@@ -68,7 +63,7 @@ describe('workspace_tracker', () => {
     // Write invalid JSON to the tracking file
     await fs.writeFile(testTrackingPath, 'invalid json', 'utf-8');
 
-    const result = await readTrackingData();
+    const result = await readTrackingData(testTrackingPath);
 
     expect(result).toEqual({});
     expect(mockLog).toHaveBeenCalledWith(
@@ -84,7 +79,7 @@ describe('workspace_tracker', () => {
 
     await fs.writeFile(testTrackingPath, JSON.stringify(mockData), 'utf-8');
 
-    const result = await readTrackingData();
+    const result = await readTrackingData(testTrackingPath);
 
     expect(result).toEqual(mockData);
   });
@@ -94,7 +89,7 @@ describe('workspace_tracker', () => {
       '/path/to/workspace1': { taskId: 'task-1', workspacePath: '/path/to/workspace1' },
     };
 
-    await writeTrackingData(mockData);
+    await writeTrackingData(mockData, testTrackingPath);
 
     // Read the file and verify contents
     const fileContent = await fs.readFile(testTrackingPath, 'utf-8');
@@ -118,10 +113,10 @@ describe('workspace_tracker', () => {
     await fs.writeFile(testTrackingPath, JSON.stringify(existingData), 'utf-8');
 
     // Record new workspace
-    await recordWorkspace(testWorkspace);
+    await recordWorkspace(testWorkspace, testTrackingPath);
 
     // Verify the workspace was added
-    const updatedData = await readTrackingData();
+    const updatedData = await readTrackingData(testTrackingPath);
     const expectedData = {
       ...existingData,
       [testWorkspace.workspacePath]: testWorkspace,
@@ -136,7 +131,7 @@ describe('workspace_tracker', () => {
   test('getWorkspaceMetadata returns null for non-existent workspace', async () => {
     await fs.writeFile(testTrackingPath, '{}', 'utf-8');
 
-    const result = await getWorkspaceMetadata('/non/existent/path');
+    const result = await getWorkspaceMetadata('/non/existent/path', testTrackingPath);
 
     expect(result).toBeNull();
   });
@@ -147,7 +142,7 @@ describe('workspace_tracker', () => {
     };
     await fs.writeFile(testTrackingPath, JSON.stringify(mockData), 'utf-8');
 
-    const result = await getWorkspaceMetadata(testWorkspace.workspacePath);
+    const result = await getWorkspaceMetadata(testWorkspace.workspacePath, testTrackingPath);
 
     expect(result).toEqual(testWorkspace);
   });
@@ -155,7 +150,7 @@ describe('workspace_tracker', () => {
   test('findWorkspacesByTaskId returns empty array for non-existent task', async () => {
     await fs.writeFile(testTrackingPath, '{}', 'utf-8');
 
-    const result = await findWorkspacesByTaskId('nonexistent');
+    const result = await findWorkspacesByTaskId('nonexistent', testTrackingPath);
 
     expect(result).toEqual([]);
   });
@@ -177,7 +172,7 @@ describe('workspace_tracker', () => {
 
     await fs.writeFile(testTrackingPath, JSON.stringify(mockData), 'utf-8');
 
-    const result = await findWorkspacesByTaskId(testWorkspace.taskId);
+    const result = await findWorkspacesByTaskId(testWorkspace.taskId, testTrackingPath);
 
     expect(result).toHaveLength(2);
     expect(result).toContainEqual(workspace1);

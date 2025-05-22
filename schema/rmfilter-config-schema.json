@@ -10,7 +10,15 @@
         },
         "edit-format": {
           "type": "string",
-          "enum": ["whole-xml", "diff", "diff-orig", "diff-fenced", "udiff-simple", "whole", "none"]
+          "enum": [
+            "whole-xml",
+            "diff",
+            "diff-orig",
+            "diff-fenced",
+            "udiff-simple",
+            "whole",
+            "none"
+          ]
         },
         "output": {
           "type": "string"

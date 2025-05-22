@@ -34,7 +34,10 @@
                 "default": false
               }
             },
-            "required": ["title", "command"],
+            "required": [
+              "title",
+              "command"
+            ],
             "additionalProperties": false
           }
         },
@@ -51,6 +54,10 @@
                 "type": "string"
               },
               "description": "Paths to directories to search for .md and .mdc documentation files to auto-include"
+            },
+            "trackingFile": {
+              "type": "string",
+              "description": "Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)"
             }
           },
           "additionalProperties": false
@@ -74,7 +81,10 @@
                     "description": "Example string to pass as --example argument when find matches."
                   }
                 },
-                "required": ["find", "example"],
+                "required": [
+                  "find",
+                  "example"
+                ],
                 "additionalProperties": false
               }
             ]
@@ -141,7 +151,10 @@
                     "default": false
                   }
                 },
-                "required": ["title", "command"],
+                "required": [
+                  "title",
+                  "command"
+                ],
                 "additionalProperties": false
               }
             }

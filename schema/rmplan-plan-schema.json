@@ -61,17 +61,28 @@
                       "default": false
                     }
                   },
-                  "required": ["prompt"],
+                  "required": [
+                    "prompt"
+                  ],
                   "additionalProperties": false
                 }
               }
             },
-            "required": ["title", "description", "files", "steps"],
+            "required": [
+              "title",
+              "description",
+              "files",
+              "steps"
+            ],
             "additionalProperties": false
           }
         }
       },
-      "required": ["goal", "details", "tasks"],
+      "required": [
+        "goal",
+        "details",
+        "tasks"
+      ],
       "additionalProperties": false,
       "description": "rmplan plan file schema"
     }
