@@ -24,7 +24,10 @@ export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = 
 
   optionsSchema: SCHEMA;
 
-  defaultModel?: string;
+  defaultModel?: {
+    execution?: string;
+    answerPr?: string;
+  };
 }
 
 /**

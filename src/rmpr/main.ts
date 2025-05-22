@@ -214,7 +214,10 @@ export async function handleRmprCommand(
   // Initialize state variables for interactive settings adjustment
   const defaultExecutor = options.executor || config?.defaultExecutor || DEFAULT_EXECUTOR;
   let modelForLlmEdit =
-    options.model || config?.models?.execution || defaultModelForExecutor(defaultExecutor);
+    options.model ||
+    config?.models?.answerPr ||
+    config?.models?.execution ||
+    defaultModelForExecutor(defaultExecutor, 'answerPr');
   let additionalUserRmFilterArgs: string[] = [];
 
   if (!options.yes) {

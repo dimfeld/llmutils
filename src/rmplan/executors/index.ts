@@ -5,6 +5,7 @@ import { CopyOnlyExecutor } from './copy_only.ts';
 import { CopyOnlyStateMachineExecutor } from './copy_only_statemachine.ts';
 import { CopyPasteExecutor } from './copy_paste.ts';
 import { OneCallExecutor } from './one-call';
+import type { ExecutorFactory } from './types.ts';
 
 export const DEFAULT_EXECUTOR = CopyOnlyExecutor.name;
 
@@ -17,7 +18,8 @@ export {
   OneCallExecutor,
 };
 
-export function defaultModelForExecutor(executorId: string) {
+export function defaultModelForExecutor(executorId: string, modelType: 'execution' | 'answerPr') {
   const executor = executors.get(executorId);
-  return executor?.defaultModel ?? DEFAULT_RUN_MODEL;
+  modelType = modelType ?? 'execution';
+  return executor?.defaultModel?.[modelType] ?? DEFAULT_RUN_MODEL;
 }

@@ -27,7 +27,10 @@ export class ClaudeCodeExecutor implements Executor {
   static name = 'claude-code';
   static description = 'Executes the plan using Claude Code';
   static optionsSchema = claudeCodeOptionsSchema;
-  static defaultModel = 'auto';
+  static defaultModel = {
+    execution: 'auto',
+    answerPr: 'sonnet',
+  };
 
   // readonly forceReviewCommentsMode = 'separate-context';
 

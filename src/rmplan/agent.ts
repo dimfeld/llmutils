@@ -11,7 +11,11 @@ import {
   prepareNextStep,
 } from './actions.ts';
 import { loadEffectiveConfig } from './configLoader.ts';
-import { buildExecutorAndLog, DEFAULT_EXECUTOR } from './executors/index.ts';
+import {
+  buildExecutorAndLog,
+  DEFAULT_EXECUTOR,
+  defaultModelForExecutor,
+} from './executors/index.ts';
 import type { ExecutorCommonOptions } from './executors/types.ts';
 import { planSchema } from './planSchema.ts';
 import { WorkspaceManager } from './workspace_manager.ts';
@@ -21,8 +25,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   let currentPlanFile = path.resolve(planFile);
 
   const config = await loadEffectiveConfig(globalCliOptions.config);
-
-  const agentExecutionModel = options.model || config.models?.execution;
 
   let parsed = path.parse(currentPlanFile);
   if (parsed.ext === '.md' || parsed.ext === '.' || !parsed.ext) {
@@ -115,13 +117,16 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   }
 
+  // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
+  const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
+  const agentExecutionModel =
+    options.model || config.models?.execution || defaultModelForExecutor(executorName, 'execution');
+
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: currentBaseDir,
     model: agentExecutionModel,
   };
 
-  // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
-  const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
   log('Starting agent to execute plan:', currentPlanFile);

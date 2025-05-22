@@ -96,6 +96,7 @@ export const rmplanConfigSchema = z.object({
   models: z
     .object({
       execution: z.string().optional().describe('Model spec for rmplan run model'),
+      answerPr: z.string().optional().describe('Model spec for rmplan answer-pr model'),
       convert_yaml: z
         .string()
         .optional()
