@@ -46,47 +46,51 @@ export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSche
 /**
  * Main configuration schema for rmplan.
  */
-export const rmplanConfigSchema = z.object({
-  /** An array of commands to run after changes are successfully applied by the agent. */
-  postApplyCommands: z.array(postApplyCommandSchema).optional(),
-  paths: z
-    .object({
-      tasks: z.string().optional().describe('Path to directory containing task definitions'),
-    })
-    .optional(),
-  /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */
-  autoexamples: z
-    .array(
-      z.union([
-        z.string(),
-        z.object({
-          find: z.string().describe('String to search for in the prompt to trigger this example.'),
-          example: z
-            .string()
-            .describe('Example string to pass as --example argument when find matches.'),
-        }),
-      ])
-    )
-    .optional(),
-  /** Model specifications for different rmplan operations */
-  models: z
-    .object({
-      execution: z.string().optional().describe('Model spec for rmplan run model'),
-      answerPr: z.string().optional().describe('Model spec for rmplan answer-pr model'),
-      convert_yaml: z
-        .string()
-        .optional()
-        .describe('Model spec for rmplan markdown-to-yaml extraction'),
-    })
-    .optional(),
-  /** Default executor to use when not specified via --executor option */
-  defaultExecutor: z
-    .string()
-    .default(DEFAULT_EXECUTOR)
-    .describe('Default executor to use for plan execution'),
-  /** Configuration for automatic workspace creation. */
-  workspaceCreation: workspaceCreationConfigSchema.optional(),
-});
+export const rmplanConfigSchema = z
+  .object({
+    /** An array of commands to run after changes are successfully applied by the agent. */
+    postApplyCommands: z.array(postApplyCommandSchema).optional(),
+    paths: z
+      .object({
+        tasks: z.string().optional().describe('Path to directory containing task definitions'),
+      })
+      .optional(),
+    /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */
+    autoexamples: z
+      .array(
+        z.union([
+          z.string(),
+          z.object({
+            find: z
+              .string()
+              .describe('String to search for in the prompt to trigger this example.'),
+            example: z
+              .string()
+              .describe('Example string to pass as --example argument when find matches.'),
+          }),
+        ])
+      )
+      .optional(),
+    /** Model specifications for different rmplan operations */
+    models: z
+      .object({
+        execution: z.string().optional().describe('Model spec for rmplan run model'),
+        answerPr: z.string().optional().describe('Model spec for rmplan answer-pr model'),
+        convert_yaml: z
+          .string()
+          .optional()
+          .describe('Model spec for rmplan markdown-to-yaml extraction'),
+      })
+      .optional(),
+    /** Default executor to use when not specified via --executor option */
+    defaultExecutor: z
+      .string()
+      .default(DEFAULT_EXECUTOR)
+      .describe('Default executor to use for plan execution'),
+    /** Configuration for automatic workspace creation. */
+    workspaceCreation: workspaceCreationConfigSchema.optional(),
+  })
+  .describe('Repository-level configuration for rmplan');
 
 export type RmplanConfig = z.infer<typeof rmplanConfigSchema>;
 export type PostApplyCommand = z.infer<typeof postApplyCommandSchema>;

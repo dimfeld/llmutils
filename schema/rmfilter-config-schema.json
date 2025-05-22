@@ -1,169 +1,231 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "rmfilter Configuration Schema",
-  "description": "Configuration for rmfilter, specifying global options and commands for file filtering.",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "description": {
-      "type": "string",
-      "description": "A description of this config file"
-    },
-    "edit-format": {
-      "type": "string",
-      "enum": ["whole-xml", "diff", "diff-orig", "diff-fenced", "udiff-simple", "whole", "none"],
-      "description": "Set edit format: 'whole-xml', 'diff', 'diff-orig', 'udiff-simple', 'whole', or 'none'."
-    },
-    "output": {
-      "type": "string",
-      "description": "Specify output file path."
-    },
-    "quiet": {
-      "type": "boolean",
-      "description": "Suppress all console output"
-    },
-    "copy": {
-      "type": "boolean",
-      "description": "Copy output to clipboard."
-    },
-    "cwd": {
-      "type": "string",
-      "description": "Set working directory."
-    },
-    "gitroot": {
-      "type": "boolean",
-      "description": "Use Git root as working directory."
-    },
-    "debug": {
-      "type": "boolean",
-      "description": "Print executed commands for debugging."
-    },
-    "instructions": {
-      "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-      "description": "Add instructions (prefix '@' for files)."
-    },
-    "instruction": {
-      "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-      "description": "Alias for instructions (merged with instructions)."
-    },
-    "docs": {
-      "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-      "description": "Add documentation file globs."
-    },
-    "rules": {
-      "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-      "description": "Add rules file globs."
-    },
-    "omit-cursorrules": {
-      "type": "boolean",
-      "description": "Skip loading .cursorrules."
-    },
-    "omit-instructions-tag": {
-      "type": "boolean",
-      "description": "Do not wrap instructions in <instructions> tag."
-    },
-    "no-autodocs": {
-      "type": "boolean",
-      "description": "Do not autoload documentation files"
-    },
-    "with-diff": {
-      "type": "boolean",
-      "description": "Include Git diff against main/master in output."
-    },
-    "diff-from": {
-      "type": "string",
-      "description": "Diff from specified branch or revision instead of main."
-    },
-    "instructions-editor": {
-      "type": "boolean",
-      "description": "Open editor for instructions in $EDITOR."
-    },
-    "bare": {
-      "type": "boolean",
-      "description": "Omit extra rules and formatting instructions."
-    },
-    "compress": {
-      "type": "boolean",
-      "description": "Set the repomix --compress flag."
-    },
-    "commands": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "globs": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "List of file globs to process."
-          },
-          "base": {
-            "type": "string",
-            "description": "Base path for globs."
-          },
-          "grep": {
-            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-            "description": "Include files matching these patterns."
-          },
-          "changed-files": {
-            "type": "boolean",
-            "description": "Include the full contents of all files in the diff."
-          },
-          "ignore": {
-            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-            "description": "Exclude files matching these patterns."
-          },
-          "whole-word": {
-            "type": "boolean",
-            "description": "Match whole words in grep."
-          },
-          "expand": {
-            "type": "boolean",
-            "description": "Expand grep patterns (snake_case, camelCase)."
-          },
-          "no-expand-pages": {
-            "type": "boolean",
-            "description": "Disable inclusion of matching page/server route files."
-          },
-          "no-expand-tests": {
-            "type": "boolean",
-            "description": "Disable automatic inclusion of corresponding test files (NAME.test.EXT) for each file (NAME.EXT) found."
-          },
-          "with-imports": {
-            "type": "boolean",
-            "description": "Include direct imports of files."
-          },
-          "with-all-imports": {
-            "type": "boolean",
-            "description": "Include entire import tree."
-          },
-          "with-importers": {
-            "type": "boolean",
-            "description": "Include files that import the files found by previous filters/options."
-          },
-          "upstream": {
-            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-            "description": "Include upstream dependencies."
-          },
-          "downstream": {
-            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-            "description": "Include downstream dependents."
-          },
-          "largest": {
-            "type": "string",
-            "description": "Keep only the N largest files (number as string)."
-          },
-          "example": {
-            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-            "description": "Include the largest file matching the pattern."
-          },
-          "example-file": {
-            "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }],
-            "description": "Specify a particular example file for a pattern using TERM=PATH syntax."
+  "$ref": "#/definitions/RmfilterConfig",
+  "definitions": {
+    "RmfilterConfig": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "edit-format": {
+          "type": "string",
+          "enum": [
+            "whole-xml",
+            "diff",
+            "diff-orig",
+            "diff-fenced",
+            "udiff-simple",
+            "whole",
+            "none"
+          ]
+        },
+        "output": {
+          "type": "string"
+        },
+        "copy": {
+          "type": "boolean"
+        },
+        "quiet": {
+          "type": "boolean"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "gitroot": {
+          "type": "boolean"
+        },
+        "debug": {
+          "type": "boolean"
+        },
+        "instructions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "instruction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "docs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "rules": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "omit-cursorrules": {
+          "type": "boolean"
+        },
+        "omit-instructions-tag": {
+          "type": "boolean"
+        },
+        "with-diff": {
+          "type": "boolean"
+        },
+        "no-autodocs": {
+          "type": "boolean",
+          "description": "Disable automatic loading of .mdc rule/doc files"
+        },
+        "diff-from": {
+          "type": "string"
+        },
+        "instructions-editor": {
+          "type": "boolean"
+        },
+        "omit-top-instructions": {
+          "type": "boolean",
+          "description": "Omit instructions from the start of the prompt"
+        },
+        "bare": {
+          "type": "boolean"
+        },
+        "compress": {
+          "type": "boolean"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "base": {
+                "type": "string",
+                "description": "Base directory for globs for this command"
+              },
+              "globs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "grep": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "ignore": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "whole-word": {
+                "type": "boolean"
+              },
+              "expand": {
+                "type": "boolean"
+              },
+              "no-expand-pages": {
+                "type": "boolean"
+              },
+              "no-expand-tests": {
+                "type": "boolean"
+              },
+              "with-imports": {
+                "type": "boolean"
+              },
+              "with-all-imports": {
+                "type": "boolean"
+              },
+              "with-importers": {
+                "type": "boolean"
+              },
+              "changed-files": {
+                "type": "boolean"
+              },
+              "upstream": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "downstream": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "largest": {
+                "type": "string"
+              },
+              "example": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
           }
         }
       },
-      "description": "List of commands with file globs and options."
+      "additionalProperties": false,
+      "description": "rmfilter configuration file"
     }
   }
 }

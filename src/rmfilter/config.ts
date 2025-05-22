@@ -107,7 +107,8 @@ export const ConfigSchema = z
     compress: z.boolean().optional(),
     commands: CommandConfigSchema.array().optional(),
   })
-  .strict();
+  .strict()
+  .describe('rmfilter configuration file');
 
 // Function to search for preset YAML file
 export async function findPresetFile(preset: string, gitRoot: string): Promise<string | null> {
