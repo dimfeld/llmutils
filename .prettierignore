@@ -9,3 +9,4 @@ tasks
 **/dist/
 
 **/temp_*.md
+schema/*
