@@ -14,7 +14,12 @@ import { debugLog, error, log, warn } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
 import { commitAll, getGitRoot, parseCliArgsFromString, secureWrite } from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
-import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../rmplan/executors/index.js';
+import {
+  buildExecutorAndLog,
+  ClaudeCodeExecutor,
+  DEFAULT_EXECUTOR,
+  defaultModelForExecutor,
+} from '../rmplan/executors/index.js';
 import {
   argsFromRmprOptions,
   combineRmprOptions,
@@ -207,10 +212,10 @@ export async function handleRmprCommand(
   const filesProcessedWithAiComments = new Map<string, string>();
 
   // Initialize state variables for interactive settings adjustment
-  let modelForLlmEdit = options.model || config?.models?.execution || DEFAULT_RUN_MODEL;
-  let additionalUserRmFilterArgs: string[] = [];
-
   const defaultExecutor = options.executor || config?.defaultExecutor || DEFAULT_EXECUTOR;
+  let modelForLlmEdit =
+    options.model || config?.models?.execution || defaultModelForExecutor(defaultExecutor);
+  let additionalUserRmFilterArgs: string[] = [];
 
   if (!options.yes) {
     log('\nSettings can be adjusted before generating the LLM prompt.');
@@ -463,7 +468,7 @@ async function optionsPrompt(initialOptions: {
       message: 'What would you like to do?',
       default: 'continue',
       choices: [
-        { name: `Execute (${result.executor})`, value: 'continue' },
+        { name: `Execute (${result.executor} - ${result.model})`, value: 'continue' },
         { name: 'Change LLM model for editing', value: 'model' },
         { name: 'Edit rmfilter options for context', value: 'rmfilter' },
         result.commit
