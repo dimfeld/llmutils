@@ -19,6 +19,17 @@ export class WorkspaceLock {
   private static readonly LOCK_VERSION = 1;
   private static readonly STALE_LOCK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+  // Allow overriding process.pid for testing
+  public static pid = process.pid;
+
+  /**
+   * Set a custom PID for testing purposes
+   * @param pid The PID to use (pass undefined to reset to process.pid)
+   */
+  public static setTestPid(pid: number | undefined): void {
+    this.pid = pid ?? process.pid;
+  }
+
   static getLockFilePath(workspacePath: string): string {
     return path.join(workspacePath, this.LOCK_FILE_NAME);
   }
@@ -34,7 +45,7 @@ export class WorkspaceLock {
 
     // Create lock info
     const lockInfo: LockInfo = {
-      pid: process.pid,
+      pid: this.pid,
       command,
       startedAt: new Date().toISOString(),
       hostname: os.hostname(),
@@ -42,7 +53,7 @@ export class WorkspaceLock {
     };
 
     // Write lock file atomically
-    const tempFile = `${lockFilePath}.${process.pid}.tmp`;
+    const tempFile = `${lockFilePath}.${this.pid}.tmp`;
     try {
       await fs.promises.writeFile(tempFile, JSON.stringify(lockInfo, null, 2), { flag: 'wx' });
       await fs.promises.rename(tempFile, lockFilePath);
@@ -50,7 +61,9 @@ export class WorkspaceLock {
       // Clean up temp file if it exists
       try {
         await fs.promises.unlink(tempFile);
-      } catch {}
+      } catch {
+        // ignore
+      }
 
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         throw new Error('Lock file already exists');
@@ -66,7 +79,7 @@ export class WorkspaceLock {
 
     // Verify we own the lock before releasing
     const lockInfo = await this.getLockInfo(workspacePath);
-    if (lockInfo && lockInfo.pid === process.pid) {
+    if (lockInfo && lockInfo.pid === this.pid) {
       try {
         await fs.promises.unlink(lockFilePath);
       } catch (error) {
@@ -164,7 +177,7 @@ export class WorkspaceLock {
         // Use sync version in exit handlers
         const lockFilePath = this.getLockFilePath(workspacePath);
         const lockInfo = JSON.parse(fs.readFileSync(lockFilePath, 'utf-8')) as LockInfo;
-        if (lockInfo.pid === process.pid) {
+        if (lockInfo.pid === this.pid) {
           fs.unlinkSync(lockFilePath);
         }
       } catch {

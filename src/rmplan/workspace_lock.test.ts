@@ -8,16 +8,28 @@ describe('WorkspaceLock', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-lock-test-'));
+    // Create a unique test directory with timestamp and random suffix to avoid conflicts
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `workspace-lock-test-${uniqueSuffix}-`));
   });
 
   afterEach(async () => {
-    await fs.promises.rm(testDir, { recursive: true, force: true });
+    // Reset test PID
+    WorkspaceLock.setTestPid(undefined);
+    
+    try {
+      await fs.promises.rm(testDir, { recursive: true, force: true });
+    } catch (error) {
+      // Ignore cleanup errors
+    }
   });
 
   test('acquireLock creates lock file with correct info', async () => {
     const command = 'rmplan agent --workspace test-123';
-    const lockInfo = await WorkspaceLock.acquireLock(testDir, command);
+    // Use a subdirectory to ensure no conflicts
+    const lockDir = path.join(testDir, 'lock-test-1');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    const lockInfo = await WorkspaceLock.acquireLock(lockDir, command);
 
     expect(lockInfo.pid).toBe(process.pid);
     expect(lockInfo.command).toBe(command);
@@ -26,23 +38,40 @@ describe('WorkspaceLock', () => {
     expect(new Date(lockInfo.startedAt).getTime()).toBeCloseTo(Date.now(), -2);
 
     // Verify file exists
-    const lockFilePath = WorkspaceLock.getLockFilePath(testDir);
+    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
     const fileContent = await fs.promises.readFile(lockFilePath, 'utf-8');
     const fileLockInfo = JSON.parse(fileContent);
     expect(fileLockInfo).toEqual(lockInfo);
   });
 
   test('acquireLock fails when lock already exists', async () => {
-    await WorkspaceLock.acquireLock(testDir, 'first command');
-
-    await expect(WorkspaceLock.acquireLock(testDir, 'second command')).rejects.toThrow(
-      'Workspace is already locked'
+    const lockDir = path.join(testDir, 'lock-test-2');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    
+    // Create a lock from a "different host" to prevent stale detection
+    const lockInfo: LockInfo = {
+      pid: 12345,
+      command: 'first command',
+      startedAt: new Date().toISOString(),
+      hostname: 'different-host',  // Different hostname prevents isRmplanProcess check
+      version: 1,
+    };
+    
+    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
+    await fs.promises.writeFile(lockFilePath, JSON.stringify(lockInfo, null, 2));
+    
+    // Try to acquire lock, should fail
+    await expect(WorkspaceLock.acquireLock(lockDir, 'second command')).rejects.toThrow(
+      'Workspace is already locked by process 12345'
     );
   });
 
   test('releaseLock removes lock file when owned by current process', async () => {
-    await WorkspaceLock.acquireLock(testDir, 'test command');
-    const lockFilePath = WorkspaceLock.getLockFilePath(testDir);
+    const lockDir = path.join(testDir, 'lock-test-3');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    
+    await WorkspaceLock.acquireLock(lockDir, 'test command');
+    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
 
     expect(
       await fs.promises
@@ -51,7 +80,7 @@ describe('WorkspaceLock', () => {
         .catch(() => false)
     ).toBe(true);
 
-    await WorkspaceLock.releaseLock(testDir);
+    await WorkspaceLock.releaseLock(lockDir);
 
     expect(
       await fs.promises
@@ -62,6 +91,9 @@ describe('WorkspaceLock', () => {
   });
 
   test('releaseLock does not remove lock owned by different process', async () => {
+    const lockDir = path.join(testDir, 'lock-test-4');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    
     const lockInfo: LockInfo = {
       pid: process.pid + 1,
       command: 'other command',
@@ -70,10 +102,10 @@ describe('WorkspaceLock', () => {
       version: 1,
     };
 
-    const lockFilePath = WorkspaceLock.getLockFilePath(testDir);
+    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
     await fs.promises.writeFile(lockFilePath, JSON.stringify(lockInfo));
 
-    await WorkspaceLock.releaseLock(testDir);
+    await WorkspaceLock.releaseLock(lockDir);
 
     // Lock should still exist
     expect(
@@ -85,25 +117,34 @@ describe('WorkspaceLock', () => {
   });
 
   test('getLockInfo returns null when no lock exists', async () => {
-    const lockInfo = await WorkspaceLock.getLockInfo(testDir);
+    const lockDir = path.join(testDir, 'lock-test-5');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    
+    const lockInfo = await WorkspaceLock.getLockInfo(lockDir);
     expect(lockInfo).toBeNull();
   });
 
   test('getLockInfo returns lock information when lock exists', async () => {
-    const originalLockInfo = await WorkspaceLock.acquireLock(testDir, 'test command');
-    const retrievedLockInfo = await WorkspaceLock.getLockInfo(testDir);
+    const lockDir = path.join(testDir, 'lock-test-6');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    
+    const originalLockInfo = await WorkspaceLock.acquireLock(lockDir, 'test command');
+    const retrievedLockInfo = await WorkspaceLock.getLockInfo(lockDir);
 
     expect(retrievedLockInfo).toEqual(originalLockInfo);
   });
 
   test('isLocked returns correct status', async () => {
-    expect(await WorkspaceLock.isLocked(testDir)).toBe(false);
+    const lockDir = path.join(testDir, 'lock-test-7');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    
+    expect(await WorkspaceLock.isLocked(lockDir)).toBe(false);
 
-    await WorkspaceLock.acquireLock(testDir, 'test command');
-    expect(await WorkspaceLock.isLocked(testDir)).toBe(true);
+    await WorkspaceLock.acquireLock(lockDir, 'test command');
+    expect(await WorkspaceLock.isLocked(lockDir)).toBe(true);
 
-    await WorkspaceLock.releaseLock(testDir);
-    expect(await WorkspaceLock.isLocked(testDir)).toBe(false);
+    await WorkspaceLock.releaseLock(lockDir);
+    expect(await WorkspaceLock.isLocked(lockDir)).toBe(false);
   });
 
   test('isProcessAlive correctly detects running process', async () => {
@@ -136,6 +177,9 @@ describe('WorkspaceLock', () => {
   });
 
   test('clearStaleLock removes only stale locks', async () => {
+    const lockDir = path.join(testDir, 'lock-test-8');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    
     // Create a stale lock
     const staleLockInfo: LockInfo = {
       pid: 999999,
@@ -145,10 +189,10 @@ describe('WorkspaceLock', () => {
       version: 1,
     };
 
-    const lockFilePath = WorkspaceLock.getLockFilePath(testDir);
+    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
     await fs.promises.writeFile(lockFilePath, JSON.stringify(staleLockInfo));
 
-    await WorkspaceLock.clearStaleLock(testDir);
+    await WorkspaceLock.clearStaleLock(lockDir);
     expect(
       await fs.promises
         .access(lockFilePath)
@@ -157,8 +201,8 @@ describe('WorkspaceLock', () => {
     ).toBe(false);
 
     // Create a fresh lock
-    await WorkspaceLock.acquireLock(testDir, 'fresh command');
-    await WorkspaceLock.clearStaleLock(testDir);
+    await WorkspaceLock.acquireLock(lockDir, 'fresh command');
+    await WorkspaceLock.clearStaleLock(lockDir);
     expect(
       await fs.promises
         .access(lockFilePath)
@@ -168,6 +212,9 @@ describe('WorkspaceLock', () => {
   });
 
   test('acquireLock replaces stale lock', async () => {
+    const lockDir = path.join(testDir, 'lock-test-9');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    
     // Create a stale lock
     const staleLockInfo: LockInfo = {
       pid: 999999,
@@ -177,11 +224,11 @@ describe('WorkspaceLock', () => {
       version: 1,
     };
 
-    const lockFilePath = WorkspaceLock.getLockFilePath(testDir);
+    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
     await fs.promises.writeFile(lockFilePath, JSON.stringify(staleLockInfo));
 
     // Should succeed in acquiring lock
-    const newLockInfo = await WorkspaceLock.acquireLock(testDir, 'new command');
+    const newLockInfo = await WorkspaceLock.acquireLock(lockDir, 'new command');
     expect(newLockInfo.pid).toBe(process.pid);
     expect(newLockInfo.command).toBe('new command');
   });
