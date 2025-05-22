@@ -208,3 +208,4 @@ You can check if compilation works using `bun run check`
 ## Personal Workflow Notes
 
 - When you learn something about the codebase, update CLAUDE.md
+- When making a change, always look for related tests that need to be updated or written as well

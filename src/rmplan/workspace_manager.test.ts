@@ -82,10 +82,10 @@ describe('WorkspaceManager', () => {
     expect(mockLog).toHaveBeenCalledWith('Workspace creation not enabled in config');
   });
 
-  test('createWorkspace returns null when method is script but scriptPath is missing', async () => {
+  test('createWorkspace returns null when method is unsupported', async () => {
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'script',
+        method: 'script' as any,
       },
     };
 
@@ -93,202 +93,14 @@ describe('WorkspaceManager', () => {
 
     expect(result).toBeNull();
     expect(mockLog).toHaveBeenCalledWith(
-      'Script path not specified for script-based workspace creation'
+      'Unsupported workspace creation method: script'
     );
   });
 
-  test('createWorkspace with script method - script executes successfully', async () => {
-    // Setup
-    const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
-    const workspacePath = path.join(testTempDir, 'workspace');
-    const scriptPath = 'create-workspace.sh';
-    const absoluteScriptPath = path.join(mainRepoRoot, scriptPath);
 
-    // Create the script file
-    await fs.writeFile(absoluteScriptPath, '#!/bin/bash\necho "workspace created"', 'utf-8');
-    await fs.chmod(absoluteScriptPath, 0o755);
 
-    // Create the workspace directory that the script would create
-    await fs.mkdir(workspacePath, { recursive: true });
 
-    // Mock the script execution to return the workspace path
-    mockSpawnAndLogOutput.mockImplementation(async () => ({
-      exitCode: 0,
-      stdout: workspacePath,
-      stderr: '',
-    }));
 
-    const config: RmplanConfig = {
-      workspaceCreation: {
-        method: 'script',
-        scriptPath,
-      },
-    };
-
-    // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
-
-    // Verify
-    expect(result).not.toBeNull();
-    expect(result).toEqual({
-      path: workspacePath,
-      originalPlanFilePath: planPath,
-      taskId,
-    });
-
-    // Verify the script was executed with correct environment variables
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith([absoluteScriptPath], {
-      cwd: mainRepoRoot,
-      env: expect.objectContaining({
-        LLMUTILS_TASK_ID: taskId,
-        LLMUTILS_PLAN_FILE_PATH: planPath,
-      }),
-    });
-  });
-
-  test('createWorkspace with script method - script fails with non-zero exit code', async () => {
-    // Setup
-    const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
-    const scriptPath = 'create-workspace.sh';
-    const absoluteScriptPath = path.join(mainRepoRoot, scriptPath);
-
-    // Create the script file
-    await fs.writeFile(absoluteScriptPath, '#!/bin/bash\nexit 1', 'utf-8');
-    await fs.chmod(absoluteScriptPath, 0o755);
-
-    // Mock the script execution with failure
-    mockSpawnAndLogOutput.mockImplementation(async () => ({
-      exitCode: 1,
-      stdout: '',
-      stderr: 'Error: Script failed',
-    }));
-
-    const config: RmplanConfig = {
-      workspaceCreation: {
-        method: 'script',
-        scriptPath,
-      },
-    };
-
-    // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
-
-    // Verify
-    expect(result).toBeNull();
-    expect(mockLog).toHaveBeenCalledWith('Workspace creation script failed with exit code 1');
-  });
-
-  test('createWorkspace with script method - script executes but outputs nothing', async () => {
-    // Setup
-    const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
-    const scriptPath = 'create-workspace.sh';
-    const absoluteScriptPath = path.join(mainRepoRoot, scriptPath);
-
-    // Create the script file
-    await fs.writeFile(absoluteScriptPath, '#!/bin/bash\n# no output', 'utf-8');
-    await fs.chmod(absoluteScriptPath, 0o755);
-
-    // Mock the script execution with empty output
-    mockSpawnAndLogOutput.mockImplementation(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    const config: RmplanConfig = {
-      workspaceCreation: {
-        method: 'script',
-        scriptPath,
-      },
-    };
-
-    // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
-
-    // Verify
-    expect(result).toBeNull();
-    expect(mockLog).toHaveBeenCalledWith('Workspace creation script did not output a path');
-  });
-
-  test('createWorkspace with script method - script outputs a path that is not a directory', async () => {
-    // Setup
-    const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
-    const workspacePath = path.join(testTempDir, 'not-a-directory');
-    const scriptPath = 'create-workspace.sh';
-    const absoluteScriptPath = path.join(mainRepoRoot, scriptPath);
-
-    // Create the script file
-    await fs.writeFile(absoluteScriptPath, '#!/bin/bash\necho "workspace created"', 'utf-8');
-    await fs.chmod(absoluteScriptPath, 0o755);
-
-    // Create a file (not directory) at the workspace path
-    await fs.writeFile(workspacePath, 'this is a file, not a directory');
-
-    // Mock the script execution
-    mockSpawnAndLogOutput.mockImplementation(async () => ({
-      exitCode: 0,
-      stdout: workspacePath,
-      stderr: '',
-    }));
-
-    const config: RmplanConfig = {
-      workspaceCreation: {
-        method: 'script',
-        scriptPath,
-      },
-    };
-
-    // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
-
-    // Verify
-    expect(result).toBeNull();
-    expect(mockLog).toHaveBeenCalledWith(
-      `Path returned by script is not a directory: ${workspacePath}`
-    );
-  });
-
-  test('createWorkspace with script method - script outputs a path that does not exist', async () => {
-    // Setup
-    const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
-    const workspacePath = path.join(testTempDir, 'nonexistent-workspace');
-    const scriptPath = 'create-workspace.sh';
-    const absoluteScriptPath = path.join(mainRepoRoot, scriptPath);
-
-    // Create the script file
-    await fs.writeFile(absoluteScriptPath, '#!/bin/bash\necho "workspace created"', 'utf-8');
-    await fs.chmod(absoluteScriptPath, 0o755);
-
-    // Don't create the workspace path - it should not exist
-
-    // Mock the script execution
-    mockSpawnAndLogOutput.mockImplementation(async () => ({
-      exitCode: 0,
-      stdout: workspacePath,
-      stderr: '',
-    }));
-
-    const config: RmplanConfig = {
-      workspaceCreation: {
-        method: 'script',
-        scriptPath,
-      },
-    };
-
-    // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
-
-    // Verify
-    expect(result).toBeNull();
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining(`Error accessing workspace at ${workspacePath}`)
-    );
-  });
 
   test('createWorkspace with rmplan method - successful clone and branch creation', async () => {
     // Setup
@@ -511,59 +323,24 @@ describe('WorkspaceManager', () => {
     );
   });
 
-  test('createWorkspace with rmplan method - uses default clone location when not specified', async () => {
+  test('createWorkspace with rmplan method - throws error when cloneLocation is not specified', async () => {
     // Setup
     const taskId = 'task-123';
     const planPath = '/path/to/plan.yml';
     const repositoryUrl = 'https://github.com/example/repo.git';
-    const homeDir = path.join(testTempDir, 'home');
-
-    // Create the home directory
-    await fs.mkdir(homeDir, { recursive: true });
 
     const config: RmplanConfig = {
       workspaceCreation: {
         method: 'rmplan',
         repositoryUrl,
+        // No cloneLocation specified
       },
     };
 
-    // Create a workspace manager with a fake home directory
-    const workspaceManagerWithFakeHome = new WorkspaceManager(mainRepoRoot);
-    // @ts-expect-error - We're purposely accessing a private property for testing
-    workspaceManagerWithFakeHome._homeDirForTests = homeDir;
-
-    const expectedDefaultLocation = path.join(homeDir, '.llmutils', 'workspaces');
-    const targetClonePath = path.join(expectedDefaultLocation, 'repo-task-123');
-
-    // Mock the clone operation
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
-      // Simulate git clone by creating the target directory
-      await fs.mkdir(targetClonePath, { recursive: true });
-      return {
-        exitCode: 0,
-        stdout: '',
-        stderr: '',
-      };
-    });
-
-    // Mock the branch creation
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Execute
-    const result = await workspaceManagerWithFakeHome.createWorkspace(taskId, planPath, config);
-
-    // Verify
-    expect(result).not.toBeNull();
-
-    // Verify that the workspace was created in the expected location
-    expect(result!.path).toContain('.llmutils');
-    const stats = await fs.stat(result!.path);
-    expect(stats.isDirectory()).toBe(true);
+    // Execute and verify it throws an error
+    await expect(workspaceManager.createWorkspace(taskId, planPath, config)).rejects.toThrow(
+      'cloneLocation must be set in workspace configuration to clone a new workspace'
+    );
   });
 
   test('createWorkspace with rmplan method - branch creation fails', async () => {
@@ -622,10 +399,12 @@ describe('WorkspaceManager', () => {
     // Setup
     const taskId = 'task-123';
     const planPath = '/path/to/plan.yml';
+    const cloneLocation = path.join(testTempDir, 'clones');
 
     const config: RmplanConfig = {
       workspaceCreation: {
         method: 'rmplan',
+        cloneLocation,
         // No repositoryUrl provided
       },
     };
