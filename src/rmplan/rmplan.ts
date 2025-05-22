@@ -399,7 +399,7 @@ program
     "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",
     'inline-comments'
   )
-  .option(`-x, --executor <name>`, 'The executor to use for execution', 'direct-call')
+  .option(`-x, --executor <name>`, 'The executor to use for execution')
   .addHelpText('after', `Available executors: ${executorNames}`)
   .option(
     '--yes',
@@ -421,6 +421,12 @@ program
     // Pass global options (like --debug) along with command-specific options
     const globalOpts = program.opts();
     const config = await loadEffectiveConfig(globalOpts.config);
+
+    // Use executor from CLI options, fallback to config defaultExecutor, or fallback to 'copy-only'
+    if (!options.executor) {
+      options.executor = config.defaultExecutor || 'copy-only';
+    }
+
     await handleRmprCommand(prIdentifier, options, globalOpts, config);
   });
 
