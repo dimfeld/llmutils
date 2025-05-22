@@ -431,15 +431,9 @@ The `workspaceCreation` section allows you to configure how `rmplan agent` autom
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
 
 workspaceCreation:
-  # Method can be 'script' or 'rmplan'
   method: 'rmplan'
-
-  # For method: 'script'
-  scriptPath: './scripts/create-workspace.sh'
-
-  # For method: 'rmplan'
   repositoryUrl: 'https://github.com/username/repo.git' # Optional, inferred from current repo if not specified
-  cloneLocation: '~/.rmfilter/workspaces' # Default location for new workspaces
+  cloneLocation: '/path/to/workspaces' # Required: location for new workspaces
   postCloneCommands: # Commands to run after cloning (optional)
     - 'npm install'
     - 'npm run build'
@@ -447,22 +441,15 @@ workspaceCreation:
 
 **Key Features:**
 
-- **Two Creation Methods**:
-
-  - `script`: Use a custom script to handle workspace creation (the script should output the absolute workspace path to stdout)
-  - `rmplan`: Let rmplan manage Git clone/worktree creation and setup
-
-- **Script Integration**:
-
-  - When using `method: 'script'`, your script receives environment variables:
-    - `LLMUTILS_TASK_ID`: The unique task identifier
-    - `LLMUTILS_PLAN_FILE_PATH`: The path to the plan file
-
-- **llmutils-Managed Workspaces**:
+- **Automatic Workspace Management**:
   - Automatically clones your repository
   - Creates a task-specific branch
   - Runs configurable post-clone commands
-  - Tracks workspaces in `~/.rmfilter/workspaces.json`
+  - Tracks workspaces in `~/.config/rmfilter/workspaces.json`
+
+- **Required Configuration**:
+  - `cloneLocation` must be specified in the configuration
+  - Repository URL can be inferred from the current Git repository or explicitly set
 
 **Usage:**
 
@@ -475,7 +462,7 @@ rmplan agent plan.yml --workspace-task-id my-feature-123
 
 **Workspace Tracking:**
 
-Workspaces are tracked in `~/.rmfilter/workspaces.json`, which maintains a record of:
+Workspaces are tracked in `~/.config/rmfilter/workspaces.json`, which maintains a record of:
 
 - The task ID each workspace was created for
 - The absolute path to each workspace
