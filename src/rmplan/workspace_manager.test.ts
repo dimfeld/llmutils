@@ -364,7 +364,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
       },
@@ -419,7 +419,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
       },
     };
 
@@ -465,7 +465,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
       },
     };
@@ -497,7 +497,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
         postCloneCommands: [
           {
@@ -585,7 +585,7 @@ describe('WorkspaceManager', () => {
     // Instead of trying to mock os.homedir, we'll check the mkdir call directly
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
       },
     };
@@ -642,7 +642,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
       },
@@ -690,7 +690,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         // No repositoryUrl provided
       },
     };
@@ -720,7 +720,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -780,7 +780,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -844,7 +844,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         // No postCloneCommands provided
@@ -902,7 +902,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -990,7 +990,7 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'llmutils',
+        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands,
