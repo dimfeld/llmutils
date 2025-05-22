@@ -41,7 +41,7 @@ describe('WorkspaceManager', () => {
   beforeEach(async () => {
     // Create a temporary directory for each test
     testTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-manager-test-'));
-    
+
     // Create a mock main repo root within the temp directory
     mainRepoRoot = path.join(testTempDir, 'main-repo');
     await fs.mkdir(mainRepoRoot, { recursive: true });
@@ -517,7 +517,7 @@ describe('WorkspaceManager', () => {
     const planPath = '/path/to/plan.yml';
     const repositoryUrl = 'https://github.com/example/repo.git';
     const homeDir = path.join(testTempDir, 'home');
-    
+
     // Create the home directory
     await fs.mkdir(homeDir, { recursive: true });
 
@@ -765,7 +765,7 @@ describe('WorkspaceManager', () => {
     // Verify that we logged the command failure but continued
     expect(mockLog).toHaveBeenCalledWith('Running post-clone commands');
     expect(mockExecutePostApplyCommand).toHaveBeenCalledTimes(1);
-    
+
     // Verify the workspace directory still exists
     const stats = await fs.stat(result!.path);
     expect(stats.isDirectory()).toBe(true);

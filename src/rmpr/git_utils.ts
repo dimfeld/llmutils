@@ -49,8 +49,12 @@ export async function getCurrentGitBranch(cwd?: string): Promise<string | null> 
  * @returns A promise that resolves to the file content as a string.
  * @throws An error if the Git command fails or the file is not found at the specified ref.
  */
-export async function getFileContentAtRef(filePath: string, ref: string, cwd?: string): Promise<string> {
-  const gitRoot = cwd || await getGitRoot();
+export async function getFileContentAtRef(
+  filePath: string,
+  ref: string,
+  cwd?: string
+): Promise<string> {
+  const gitRoot = cwd || (await getGitRoot());
   const command = ['git', 'show', `${ref}:${filePath}`];
 
   const proc = logSpawn(command, {
@@ -157,8 +161,13 @@ export async function getCurrentJujutsuBranch(cwd?: string): Promise<string | nu
  *          Returns an empty string if there is no diff for the file.
  * @throws An error if the Git command fails.
  */
-export async function getDiff(filePath: string, baseRef: string, headRef: string, cwd?: string): Promise<string> {
-  const gitRoot = cwd || await getGitRoot();
+export async function getDiff(
+  filePath: string,
+  baseRef: string,
+  headRef: string,
+  cwd?: string
+): Promise<string> {
+  const gitRoot = cwd || (await getGitRoot());
   const command = ['git', 'diff', '--patch', `${baseRef}..${headRef}`, '--', filePath];
 
   const proc = logSpawn(command, {

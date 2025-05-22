@@ -186,7 +186,10 @@ program
         '--instructions',
         `@${tmpPromptPath}`,
       ];
-      const proc = logSpawn(rmfilterFullArgs, { cwd: gitRoot, stdio: ['inherit', 'inherit', 'inherit'] });
+      const proc = logSpawn(rmfilterFullArgs, {
+        cwd: gitRoot,
+        stdio: ['inherit', 'inherit', 'inherit'],
+      });
       exitRes = await proc.exited;
 
       if (exitRes === 0 && !options.noExtract) {
@@ -288,11 +291,16 @@ program
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
     const gitRoot = (await getGitRoot()) || process.cwd();
-    await markStepDone(planFile, {
-      task: options.task,
-      steps: options.steps ? parseInt(options.steps, 10) : 1,
-      commit: options.commit,
-    }, undefined, gitRoot);
+    await markStepDone(
+      planFile,
+      {
+        task: options.task,
+        steps: options.steps ? parseInt(options.steps, 10) : 1,
+        commit: options.commit,
+      },
+      undefined,
+      gitRoot
+    );
   });
 
 program
@@ -317,16 +325,21 @@ program
     const gitRoot = (await getGitRoot()) || process.cwd();
 
     try {
-      const result = await prepareNextStep(config, planFile, {
-        rmfilter: options.rmfilter,
-        previous: options.previous,
-        withImports: options.withImports,
-        withAllImports: options.withAllImports,
-        withImporters: options.withImporters,
-        selectSteps: true,
-        autofind: options.autofind,
-        rmfilterArgs: cmdLineRmfilterArgs,
-      }, gitRoot);
+      const result = await prepareNextStep(
+        config,
+        planFile,
+        {
+          rmfilter: options.rmfilter,
+          previous: options.previous,
+          withImports: options.withImports,
+          withAllImports: options.withAllImports,
+          withImporters: options.withImporters,
+          selectSteps: true,
+          autofind: options.autofind,
+          rmfilterArgs: cmdLineRmfilterArgs,
+        },
+        gitRoot
+      );
 
       if (options.rmfilter && result.promptFilePath && result.rmfilterArgs) {
         try {

@@ -39,7 +39,7 @@ describe('workspace_tracker', () => {
     // Create a temporary directory for each test
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-tracker-test-'));
     testTrackingPath = path.join(tempDir, 'workspaces.json');
-    
+
     // Mock getTrackingFilePath to use our temp directory
     mock.module('./workspace_tracker.js', () => {
       const originalModule = require('./workspace_tracker.js');
@@ -100,7 +100,10 @@ describe('workspace_tracker', () => {
     await writeTrackingData(mockData);
 
     // Verify the file was created and contains the expected data
-    const fileExists = await fs.access(testTrackingPath).then(() => true).catch(() => false);
+    const fileExists = await fs
+      .access(testTrackingPath)
+      .then(() => true)
+      .catch(() => false);
     expect(fileExists).toBe(true);
 
     const fileContents = await fs.readFile(testTrackingPath, 'utf-8');
