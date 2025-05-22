@@ -1,17 +1,8 @@
-import { test, describe, expect, afterAll, beforeEach, mock } from 'bun:test';
+import { test, describe, expect, afterEach, beforeEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import { findConfigPath, loadConfig, findLocalConfigPath, loadEffectiveConfig } from './configLoader';
-
-// Create a temporary directory for test files
-const testDir = path.join(process.cwd(), 'test-config-tmp');
-const configDir = path.join(testDir, '.rmfilter', 'config');
-
-// Mock the getGitRoot function to return our test directory
-void mock.module('../rmfilter/utils.js', () => ({
-  getGitRoot: async () => testDir,
-  quiet: false,
-}));
 
 // Silence logs during tests
 void mock.module('../logging.js', () => ({
@@ -22,12 +13,25 @@ void mock.module('../logging.js', () => ({
 }));
 
 describe('configLoader', () => {
+  let testDir: string;
+  let configDir: string;
+
   beforeEach(async () => {
+    // Create a unique temporary directory for each test
+    testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-config-test-'));
+    configDir = path.join(testDir, '.rmfilter', 'config');
+    
+    // Mock the getGitRoot function to return our test directory
+    void mock.module('../rmfilter/utils.js', () => ({
+      getGitRoot: async () => testDir,
+      quiet: false,
+    }));
+    
     // Create test directories
     await fs.mkdir(configDir, { recursive: true });
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     // Cleanup test directory
     await fs.rm(testDir, { recursive: true, force: true });
   });
