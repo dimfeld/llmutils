@@ -1,4 +1,4 @@
-import { test, expect, describe, beforeEach, afterEach, mock } from 'bun:test';
+import { test, expect, describe, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -7,15 +7,6 @@ import { WorkspaceManager } from './workspace_manager';
 import { WorkspaceLock } from './workspace_lock';
 import * as workspaceTracker from './workspace_tracker';
 import type { RmplanConfig, WorkspaceInfo } from './configSchema';
-
-// Mock the workspace tracker module
-mock.module('./workspace_tracker', () => ({
-  findWorkspacesByRepoUrl: mock(() => []),
-  updateWorkspaceLockStatus: mock((workspaces: any[]) => workspaces),
-  findWorkspacesByTaskId: mock(() => []),
-  recordWorkspace: mock(() => Promise.resolve()),
-  getDefaultTrackingFilePath: mock(() => '/default/tracking/path.json'),
-}));
 
 // Mock @inquirer/prompts for non-interactive tests
 mock.module('@inquirer/prompts', () => ({
@@ -27,10 +18,21 @@ describe('WorkspaceAutoSelector', () => {
   let workspaceManager: WorkspaceManager;
   let selector: WorkspaceAutoSelector;
   let config: RmplanConfig;
+  let findWorkspacesByRepoUrlSpy: any;
+  let updateWorkspaceLockStatusSpy: any;
+  let findWorkspacesByTaskIdSpy: any;
+  let recordWorkspaceSpy: any;
+  let getDefaultTrackingFilePathSpy: any;
 
   beforeEach(async () => {
     testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-auto-selector-test-'));
 
+    // Setup spies for workspace tracker functions
+    findWorkspacesByRepoUrlSpy = spyOn(workspaceTracker, 'findWorkspacesByRepoUrl').mockResolvedValue([]);
+    updateWorkspaceLockStatusSpy = spyOn(workspaceTracker, 'updateWorkspaceLockStatus').mockImplementation((workspaces: any[]) => Promise.resolve(workspaces));
+    findWorkspacesByTaskIdSpy = spyOn(workspaceTracker, 'findWorkspacesByTaskId').mockResolvedValue([]);
+    recordWorkspaceSpy = spyOn(workspaceTracker, 'recordWorkspace').mockResolvedValue(undefined);
+    getDefaultTrackingFilePathSpy = spyOn(workspaceTracker, 'getDefaultTrackingFilePath').mockReturnValue('/default/tracking/path.json');
 
     // Setup test config
     config = {
@@ -78,8 +80,8 @@ describe('WorkspaceAutoSelector', () => {
       },
     ];
 
-    (workspaceTracker.findWorkspacesByRepoUrl as any).mockReturnValue(mockWorkspaces);
-    (workspaceTracker.updateWorkspaceLockStatus as any).mockReturnValue(mockWorkspaces);
+    findWorkspacesByRepoUrlSpy.mockResolvedValue(mockWorkspaces);
+    updateWorkspaceLockStatusSpy.mockResolvedValue(mockWorkspaces);
 
     const result = await selector.selectWorkspace('task-3', '/test/plan3.yml', {
       interactive: false,
@@ -124,8 +126,8 @@ describe('WorkspaceAutoSelector', () => {
       },
     ];
 
-    (workspaceTracker.findWorkspacesByRepoUrl as any).mockReturnValue(mockWorkspaces);
-    (workspaceTracker.updateWorkspaceLockStatus as any).mockReturnValue(mockWorkspaces);
+    findWorkspacesByRepoUrlSpy.mockResolvedValue(mockWorkspaces);
+    updateWorkspaceLockStatusSpy.mockResolvedValue(mockWorkspaces);
 
     const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
       interactive: false,
@@ -161,8 +163,8 @@ describe('WorkspaceAutoSelector', () => {
       },
     ];
 
-    (workspaceTracker.findWorkspacesByRepoUrl as any).mockReturnValue(mockWorkspaces);
-    (workspaceTracker.updateWorkspaceLockStatus as any).mockReturnValue(mockWorkspaces);
+    findWorkspacesByRepoUrlSpy.mockResolvedValue(mockWorkspaces);
+    updateWorkspaceLockStatusSpy.mockResolvedValue(mockWorkspaces);
 
     // Mock workspace creation
     const createWorkspaceMock = mock(() => null);
@@ -187,7 +189,7 @@ describe('WorkspaceAutoSelector', () => {
       },
     ];
 
-    (workspaceTracker.findWorkspacesByRepoUrl as any).mockReturnValue(mockWorkspaces);
+    findWorkspacesByRepoUrlSpy.mockResolvedValue(mockWorkspaces);
 
     // Mock workspace creation
     const newWorkspace = {
@@ -199,7 +201,7 @@ describe('WorkspaceAutoSelector', () => {
     const createWorkspaceMock = mock(() => newWorkspace);
     workspaceManager.createWorkspace = createWorkspaceMock;
 
-    (workspaceTracker.findWorkspacesByTaskId as any).mockReturnValue([
+    findWorkspacesByTaskIdSpy.mockResolvedValue([
       {
         ...newWorkspace,
         workspacePath: newWorkspace.path,
