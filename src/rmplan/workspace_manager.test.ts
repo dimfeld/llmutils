@@ -14,12 +14,13 @@ await mock.module('../logging.js', () => ({
   debugLog: mockDebugLog,
 }));
 
-const mockParseCliArgsFromString = mock((cmd: string) => cmd.split(' '));
-
-await mock.module('../rmfilter/utils.js', () => ({
-  spawnAndLogOutput: mockSpawnAndLogOutput,
-  parseCliArgsFromString: mockParseCliArgsFromString,
-}));
+await mock.module('../rmfilter/utils.js', () => {
+  const utils = require('../rmfilter/utils.js');
+  return {
+    ...utils,
+    spawnAndLogOutput: mockSpawnAndLogOutput,
+  };
+});
 
 // Mock executePostApplyCommand function
 const mockExecutePostApplyCommand = mock(async () => true);
@@ -92,15 +93,8 @@ describe('WorkspaceManager', () => {
     const result = await workspaceManager.createWorkspace('task-123', '/path/to/plan.yml', config);
 
     expect(result).toBeNull();
-    expect(mockLog).toHaveBeenCalledWith(
-      'Unsupported workspace creation method: script'
-    );
+    expect(mockLog).toHaveBeenCalledWith('Unsupported workspace creation method: script');
   });
-
-
-
-
-
 
   test('createWorkspace with rmplan method - successful clone and branch creation', async () => {
     // Setup

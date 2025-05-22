@@ -442,6 +442,7 @@ workspaceCreation:
 **Key Features:**
 
 - **Automatic Workspace Management**:
+
   - Automatically clones your repository
   - Creates a task-specific branch
   - Runs configurable post-clone commands

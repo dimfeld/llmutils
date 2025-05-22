@@ -20,7 +20,6 @@ export interface Workspace {
   taskId: string;
 }
 
-
 /**
  * Class responsible for creating and managing workspaces for rmplan agents
  */
@@ -57,7 +56,6 @@ export class WorkspaceManager {
     log(`Unsupported workspace creation method: ${config.workspaceCreation.method}`);
     return null;
   }
-
 
   // For testing purposes only - allows tests to override homedir
   private _homeDirForTests?: string;
@@ -100,9 +98,11 @@ export class WorkspaceManager {
 
     // Step 2: Determine clone location
     if (!workspaceConfig.cloneLocation) {
-      throw new Error('cloneLocation must be set in workspace configuration to clone a new workspace');
+      throw new Error(
+        'cloneLocation must be set in workspace configuration to clone a new workspace'
+      );
     }
-    
+
     // If relative, resolve against mainRepoRoot
     const cloneLocationBase = path.isAbsolute(workspaceConfig.cloneLocation)
       ? workspaceConfig.cloneLocation
