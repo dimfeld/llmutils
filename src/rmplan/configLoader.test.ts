@@ -1,61 +1,54 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
 import * as path from 'node:path';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { type RmplanConfig, type WorkspaceCreationConfig } from './configSchema.js';
 
 // Since js-yaml isn't working in tests, we'll use yaml
 import yaml from 'yaml';
 
-beforeEach(() => {
+// Test state
+let tempDir: string;
+
+// Helper function to create a temporary directory structure for testing
+async function createTempTestDir() {
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'configLoader-test-'));
+  return tempDir;
+}
+
+// Helper function to create test files
+async function createTestFile(filePath: string, content: string) {
+  await writeFile(filePath, content, 'utf-8');
+}
+
+beforeEach(async () => {
   // Mock js-yaml to use yaml package
-  mock.module('js-yaml', () => ({
+  await mock.module('js-yaml', () => ({
     load: (content: string) => yaml.parse(content),
   }));
 
   // Mock logging
-  mock.module('../logging.js', () => ({
-    debugLog: mock.fn(),
-    error: mock.fn(),
-    log: mock.fn(),
+  await mock.module('../logging.js', () => ({
+    debugLog: mock(() => {}),
+    error: mock(() => {}),
+    log: mock(() => {}),
   }));
 
   // Mock utils
-  mock.module('../rmfilter/utils.js', () => ({
-    getGitRoot: mock.fn(() => Promise.resolve('/fake/git/root')),
+  await mock.module('../rmfilter/utils.js', () => ({
+    getGitRoot: mock(() => Promise.resolve('/fake/git/root')),
     quiet: false,
   }));
 
-  // Setup mock for Bun.file
-  const mockFileContents = new Map<string, string>();
+  // Create temporary directory for test files
+  tempDir = await createTempTestDir();
+});
 
-  // Default mock file implementation
-  const mockFile = {
-    text: mock.fn().mockImplementation(async function () {
-      const path = (this as any).__path;
-      return mockFileContents.get(path) || '';
-    }),
-    exists: mock.fn().mockImplementation(async function () {
-      const path = (this as any).__path;
-      return mockFileContents.has(path);
-    }),
-  };
-
-  // Override Bun.file
-  const originalBunFile = Bun.file;
-  Bun.file = function (path: string) {
-    const mockResult = { ...mockFile, __path: path };
-    return mockResult as any;
-  } as any;
-
-  // Add test helper to global context
-  (global as any).addMockFile = (path: string, content: string) => {
-    mockFileContents.set(path, content);
-  };
-
-  // Cleanup helper
-  (global as any).cleanupMockFiles = () => {
-    mockFileContents.clear();
-    Bun.file = originalBunFile;
-  };
+afterEach(async () => {
+  // Clean up temporary directory
+  if (tempDir) {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 // Import after mocks are set up
@@ -77,9 +70,10 @@ postApplyCommands:
   - title: Test Command
     command: echo hello
 `;
-      (global as any).addMockFile('/test/config.yml', configYaml);
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
 
-      const config = await loadConfig('/test/config.yml');
+      const config = await loadConfig(configPath);
       expect(config.postApplyCommands).toHaveLength(1);
       expect(config.postApplyCommands![0].title).toBe('Test Command');
       expect(config.workspaceCreation).toBeUndefined();
@@ -91,9 +85,10 @@ workspaceCreation:
   method: script
   scriptPath: /path/to/script.sh
 `;
-      (global as any).addMockFile('/test/config.yml', configYaml);
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
 
-      const config = await loadConfig('/test/config.yml');
+      const config = await loadConfig(configPath);
       expect(config.workspaceCreation).toBeDefined();
       expect(config.workspaceCreation!.method).toBe('script');
       expect(config.workspaceCreation!.scriptPath).toBe('/path/to/script.sh');
@@ -109,9 +104,10 @@ workspaceCreation:
     - title: Install Dependencies
       command: npm install
 `;
-      (global as any).addMockFile('/test/config.yml', configYaml);
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
 
-      const config = await loadConfig('/test/config.yml');
+      const config = await loadConfig(configPath);
       expect(config.workspaceCreation).toBeDefined();
       expect(config.workspaceCreation!.method).toBe('llmutils');
       expect(config.workspaceCreation!.repositoryUrl).toBe('https://github.com/example/repo.git');
@@ -125,9 +121,10 @@ workspaceCreation:
 workspaceCreation:
   method: script
 `;
-      (global as any).addMockFile('/test/config.yml', configYaml);
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
 
-      await expect(loadConfig('/test/config.yml')).rejects.toThrow(
+      expect(loadConfig(configPath)).rejects.toThrow(
         /When method is 'script', scriptPath must be provided/
       );
     });
@@ -136,14 +133,11 @@ workspaceCreation:
       const configYaml = `
 workspaceCreation: {}
 `;
-      (global as any).addMockFile('/test/config.yml', configYaml);
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
 
-      const config = await loadConfig('/test/config.yml');
+      const config = await loadConfig(configPath);
       expect(config.workspaceCreation).toEqual({});
-    });
-
-    afterEach(() => {
-      (global as any).cleanupMockFiles();
     });
   });
 });

@@ -175,3 +175,7 @@ You can check if compilation works using `bun run check`
 ## Workflow Tips
 
 - Run `pnpm format` to format code after making changes
+
+## Personal Workflow Notes
+
+- When you learn something about the codebase, update CLAUDE.md
