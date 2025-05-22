@@ -9,6 +9,12 @@ import { openrouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
 import { search } from '@inquirer/prompts';
 import { debugLog } from '../logging.ts';
+import {
+  CopyOnlyExecutor,
+  ClaudeCodeExecutor,
+  CopyPasteExecutor,
+  OneCallExecutor,
+} from '../rmplan/executors/index.ts';
 
 /**
  * Creates a language model instance based on the provided model string in the format `provider/model-name`.
@@ -66,9 +72,13 @@ export async function askForModelId(options?: {
     'openai/gpt-4.1',
     'openai/gpt-4.1-mini',
     'openai/gpt-4.1-nano',
+    'anthropic/claude-4-opus-latest',
+    'anthropic/claude-4-sonnet-latest',
     'anthropic/claude-3.5-sonnet-latest',
     'anthropic/claude-3.5-haiku-latest',
     'anthropic/claude-3.7-sonnet-latest',
+    'openrouter/anthropic/claude-opus-4',
+    'openrouter/anthropic/claude-sonnet-4',
     'openrouter/anthropic/claude-3.5-sonnet',
     'openrouter/anthropic/claude-3.7-sonnet',
     'openrouter/anthropic/claude-3.5-haiku',
@@ -78,23 +88,25 @@ export async function askForModelId(options?: {
     'openrouter/openai/o4-mini',
     'openrouter/google/gemini-2.5-pro-preview',
     'openrouter/google/gemini-2.5-flash-preview',
-    { name: 'Claude Web', value: 'claude', executor: 'copy-paste' },
-    { name: 'Gemini AI Studio', value: 'gemini', executor: 'copy-paste' },
-    { name: 'Grok Web', value: 'grok', executor: 'copy-paste' },
-    { name: 'Claude Code', value: 'claude_code', executor: 'claude-code' },
-    { name: 'Paste into Agent', value: 'paste_into_agent', executor: 'copy-only' },
+    { name: 'Claude Web', value: 'claude', executor: CopyPasteExecutor.name },
+    { name: 'Gemini AI Studio', value: 'gemini', executor: CopyPasteExecutor.name },
+    { name: 'Grok Web', value: 'grok', executor: CopyPasteExecutor.name },
+    { name: 'Claude Code', value: 'claude_code', executor: ClaudeCodeExecutor.name },
+    { name: 'Claude Code (Sonnet)', value: 'sonnnet', executor: ClaudeCodeExecutor.name },
+    { name: 'Claude Code (Opus)', value: 'opus', executor: ClaudeCodeExecutor.name },
+    { name: 'Paste into Agent', value: 'paste_into_agent', executor: CopyOnlyExecutor.name },
   ].map((m) =>
     typeof m === 'string'
       ? {
           name: m,
           value: m,
-          executor: 'direct-call',
+          executor: OneCallExecutor.name,
         }
       : m
   );
 
   if (options?.onlyDirectCall) {
-    availableModels = availableModels.filter((m) => m.executor === 'direct-call');
+    availableModels = availableModels.filter((m) => m.executor === OneCallExecutor.name);
   }
 
   let newModel = await search({

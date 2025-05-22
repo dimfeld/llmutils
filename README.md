@@ -44,6 +44,9 @@ assume a repository written with Typescript and PNPM workspaces.
   - [Requirements](#requirements-1)
   - [Notes](#notes-1)
   - [Configuration](#configuration)
+    - [Paths](#paths)
+    - [Workspace Auto-Creation](#workspace-auto-creation)
+    - [Automatic Examples](#automatic-examples)
     - [Post-Apply Commands](#post-apply-commands)
   - [Executors](#executors)
     - [Available Executors](#available-executors)
@@ -286,6 +289,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
+- **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
 
 ### Usage
 
@@ -345,6 +349,9 @@ rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
 
 # Execute a specific number of steps automatically
 rmplan agent plan.yml --steps 3
+
+# Execute plan with auto-created workspace
+rmplan agent plan.yml --workspace-task-id task-123
 
 # Clean up end-of-line comments from changed files (by git diff, jj diff)
 rmplan cleanup
@@ -413,6 +420,57 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 
 The `paths.tasks` setting allows you to specify the directory where the task documents are locations. This is used when automatically
 writing a plan from a GitHub issue.
+
+#### Workspace Auto-Creation
+
+The `workspaceCreation` section allows you to configure how `rmplan agent` automatically creates isolated workspaces for tasks. This feature provides a clean, dedicated environment for each task execution, avoiding conflicts with other work in your main repository.
+
+**Configuration in `rmplan.yml`:**
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+
+workspaceCreation:
+  method: 'rmplan'
+  repositoryUrl: 'https://github.com/username/repo.git' # Optional, inferred from current repo if not specified
+  cloneLocation: '/path/to/workspaces' # Required: location for new workspaces
+  postCloneCommands: # Commands to run after cloning (optional)
+    - 'npm install'
+    - 'npm run build'
+```
+
+**Key Features:**
+
+- **Automatic Workspace Management**:
+
+  - Automatically clones your repository
+  - Creates a task-specific branch
+  - Runs configurable post-clone commands
+  - Tracks workspaces in `~/.config/rmfilter/workspaces.json`
+
+- **Required Configuration**:
+  - `cloneLocation` must be specified in the configuration
+  - Repository URL can be inferred from the current Git repository or explicitly set
+
+**Usage:**
+
+```bash
+# Create a workspace with a specific task ID
+rmplan agent plan.yml --workspace-task-id my-feature-123
+
+# The agent runs in the new workspace automatically
+```
+
+**Workspace Tracking:**
+
+Workspaces are tracked in `~/.config/rmfilter/workspaces.json`, which maintains a record of:
+
+- The task ID each workspace was created for
+- The absolute path to each workspace
+- Creation timestamp
+- Original repository URL
+
+This tracking allows for workspace reuse when the same task ID is specified multiple times.
 
 #### Automatic Examples
 
@@ -611,6 +669,9 @@ rmplan agent tasks/0003-new-feature.yml --config path/to/my-rmplan-config.yml
 
 # Use Claude Code executor for a more integrated experience
 rmplan agent tasks/0003-new-feature.yml --executor claude-code
+
+# Execute a plan in a newly created, isolated workspace
+rmplan agent tasks/my-feature.yml --workspace-task-id feature-xyz
 ```
 
 ### Using answer-pr

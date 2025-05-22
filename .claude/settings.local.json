@@ -1,6 +1,0 @@
-{
-  "permissions": {
-    "allow": ["Bash(grep:*)", "Bash(bun run:*)", "Bash(bun test:*)", "Bash(jj commit:*)"],
-    "deny": []
-  }
-}

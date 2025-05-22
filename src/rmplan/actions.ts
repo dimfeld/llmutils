@@ -19,7 +19,7 @@ export interface PrepareNextStepOptions {
   rmfilter?: boolean;
   previous?: boolean;
   withImports?: boolean;
-  withAllImports?: boolean; // Used by 'next' command, agent uses prepareNextStep with selectSteps: false
+  withAllImports?: boolean;
   withImporters?: boolean;
   selectSteps?: boolean;
   rmfilterArgs?: string[];
@@ -53,7 +53,8 @@ export function findPendingTask(plan: PlanSchema): PendingTaskResult | null {
 export async function prepareNextStep(
   config: RmplanConfig,
   planFile: string,
-  options: PrepareNextStepOptions = {}
+  options: PrepareNextStepOptions = {},
+  baseDir?: string
 ): Promise<{
   prompt: string;
   promptFilePath: string | null;
@@ -69,7 +70,7 @@ export async function prepareNextStep(
     withAllImports = false,
     withImporters = false,
     selectSteps = true,
-    rmfilterArgs: initialRmfilterArgs = [], // Renamed to avoid conflict
+    rmfilterArgs: initialRmfilterArgs = [],
     autofind = false,
     model,
   } = options;
@@ -102,7 +103,7 @@ export async function prepareNextStep(
   // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
   const cleanFiles = activeTask.files.map((file) => file.replace(/\s*\([^)]*\)\s*$/, '').trim());
 
-  const gitRoot = await getGitRoot();
+  const gitRoot = await getGitRoot(baseDir);
   let files = (
     await Promise.all(
       cleanFiles.map(async (file) => {
@@ -375,7 +376,8 @@ export async function prepareNextStep(
 export async function markStepDone(
   planFile: string,
   options: { task?: boolean; steps?: number; commit?: boolean },
-  currentTask?: { taskIndex: number; stepIndex: number }
+  currentTask?: { taskIndex: number; stepIndex: number },
+  baseDir?: string
 ): Promise<{ planComplete: boolean; message: string }> {
   // 1. Load and parse the plan file
   const planText = await Bun.file(planFile).text();
@@ -478,7 +480,7 @@ export async function markStepDone(
   log(boldMarkdownHeaders(message));
   if (options.commit) {
     log('');
-    await commitAll(message);
+    await commitAll(message, baseDir);
   }
 
   // 7. Check if plan is now complete
@@ -492,27 +494,35 @@ export async function markStepDone(
 /**
  * Executes a single post-apply command as defined in the configuration.
  * @param commandConfig The configuration object for the command.
+ * @param overrideGitRoot Optional parameter to override the Git root directory.
  * @returns A promise resolving to `true` if the command succeeded or if failure was allowed,
  *          and `false` if the command failed and failure was not allowed.
  */
-export async function executePostApplyCommand(commandConfig: PostApplyCommand): Promise<boolean> {
-  let gitRoot: string;
+export async function executePostApplyCommand(
+  commandConfig: PostApplyCommand,
+  overrideGitRoot?: string
+): Promise<boolean> {
+  let effectiveGitRoot: string;
   try {
-    gitRoot = await getGitRoot();
-    if (!gitRoot) {
-      // getGitRoot usually falls back to cwd, but handle defensively
-      throw new Error('Could not determine Git repository root.');
+    if (overrideGitRoot) {
+      effectiveGitRoot = overrideGitRoot;
+    } else {
+      effectiveGitRoot = await getGitRoot();
+      if (!effectiveGitRoot) {
+        // getGitRoot usually falls back to cwd, but handle defensively
+        throw new Error('Could not determine Git repository root.');
+      }
     }
   } catch (e) {
     error(
-      `e getting Git root for post-apply command: ${e instanceof Error ? e.message : String(e)}`
+      `Error getting Git root for post-apply command: ${e instanceof Error ? e.message : String(e)}`
     );
     return false;
   }
 
   const cwd = commandConfig.workingDirectory
-    ? path.resolve(gitRoot, commandConfig.workingDirectory)
-    : gitRoot;
+    ? path.resolve(effectiveGitRoot, commandConfig.workingDirectory)
+    : effectiveGitRoot;
 
   const env = {
     ...process.env,

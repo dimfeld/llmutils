@@ -38,7 +38,7 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-import { buildExecutorAndLog } from '../rmplan/executors/index.ts';
+import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../rmplan/executors/index.ts';
 import type { RmplanConfig } from '../rmplan/configSchema.ts';
 import type { ExecutorCommonOptions } from '../rmplan/executors/types';
 
@@ -905,6 +905,7 @@ export async function fullRmfilterRun(options?: {
     // Create a minimal RmplanConfig
     const rmplanConfig: RmplanConfig = {
       models: globalValues.model ? { execution: globalValues.model } : undefined,
+      defaultExecutor: DEFAULT_EXECUTOR,
     };
 
     try {

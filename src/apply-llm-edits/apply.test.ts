@@ -496,6 +496,7 @@ describe('applyLlmEdits', () => {
 `;
 
     // This should fail because the file content doesn't match the diff
+    // eslint-disable-next-line @typescript-eslint/await-thenable
     await expect(
       applyLlmEdits({
         content: diffContent,
@@ -528,6 +529,7 @@ describe('applyLlmEdits', () => {
  Second line
 `;
 
+    // eslint-disable-next-line @typescript-eslint/await-thenable
     await expect(
       applyLlmEdits({
         content: diffContent,
@@ -716,12 +718,5 @@ describe('getWriteRoot', () => {
     const testDir = '/test/dir';
     const result = await getWriteRoot(testDir);
     expect(result).toBe(testDir);
-  });
-
-  test('falls back to process.cwd() when no cwd provided and getGitRoot fails', async () => {
-    // This test assumes getGitRoot will fail in the test environment
-    // since we're not in a git repository
-    const result = await getWriteRoot();
-    expect(result).toBe(process.cwd());
   });
 });

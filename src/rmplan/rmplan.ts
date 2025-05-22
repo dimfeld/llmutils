@@ -186,7 +186,10 @@ program
         '--instructions',
         `@${tmpPromptPath}`,
       ];
-      const proc = logSpawn(rmfilterFullArgs, { stdio: ['inherit', 'inherit', 'inherit'] });
+      const proc = logSpawn(rmfilterFullArgs, {
+        cwd: gitRoot,
+        stdio: ['inherit', 'inherit', 'inherit'],
+      });
       exitRes = await proc.exited;
 
       if (exitRes === 0 && !options.noExtract) {
@@ -287,11 +290,17 @@ program
   .option('--task', 'Mark all steps in the current task as done')
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
-    await markStepDone(planFile, {
-      task: options.task,
-      steps: options.steps ? parseInt(options.steps, 10) : 1,
-      commit: options.commit,
-    });
+    const gitRoot = (await getGitRoot()) || process.cwd();
+    await markStepDone(
+      planFile,
+      {
+        task: options.task,
+        steps: options.steps ? parseInt(options.steps, 10) : 1,
+        commit: options.commit,
+      },
+      undefined,
+      gitRoot
+    );
   });
 
 program
@@ -313,22 +322,29 @@ program
     const doubleDashIdx = process.argv.indexOf('--');
     const cmdLineRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
     const config = await loadEffectiveConfig(options.config);
+    const gitRoot = (await getGitRoot()) || process.cwd();
 
     try {
-      const result = await prepareNextStep(config, planFile, {
-        rmfilter: options.rmfilter,
-        previous: options.previous,
-        withImports: options.withImports,
-        withAllImports: options.withAllImports,
-        withImporters: options.withImporters,
-        selectSteps: true,
-        autofind: options.autofind,
-        rmfilterArgs: cmdLineRmfilterArgs,
-      });
+      const result = await prepareNextStep(
+        config,
+        planFile,
+        {
+          rmfilter: options.rmfilter,
+          previous: options.previous,
+          withImports: options.withImports,
+          withAllImports: options.withAllImports,
+          withImporters: options.withImporters,
+          selectSteps: true,
+          autofind: options.autofind,
+          rmfilterArgs: cmdLineRmfilterArgs,
+        },
+        gitRoot
+      );
 
       if (options.rmfilter && result.promptFilePath && result.rmfilterArgs) {
         try {
           const proc = logSpawn(['rmfilter', '--copy', ...result.rmfilterArgs], {
+            cwd: gitRoot,
             stdio: ['inherit', 'inherit', 'inherit'],
           });
           const exitRes = await proc.exited;
@@ -386,6 +402,11 @@ program
   .addHelpText('after', `Available executors: ${executorNames}`)
   .option('--steps <steps>', 'Number of steps to execute')
   .option('--no-log', 'Do not log to file')
+  .option(
+    '--workspace <id>',
+    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
+  )
+  .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
   .allowExcessArguments(true)
   .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
 

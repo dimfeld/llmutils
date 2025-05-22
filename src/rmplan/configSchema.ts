@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_EXECUTOR } from './executors/index.js';
 
 /**
  * Schema for a single command to be executed after applying changes.
@@ -17,6 +18,54 @@ export const postApplyCommandSchema = z.object({
   /** Whether to hide command output only the command succeeds. Defaults to false. */
   hideOutputOnSuccess: z.boolean().optional().default(false),
 });
+
+/**
+ * Valid methods for workspace creation.
+ */
+export const workspaceCreationMethodSchema = z.enum(['script', 'rmplan']);
+export type WorkspaceCreationMethod = z.infer<typeof workspaceCreationMethodSchema>;
+
+/**
+ * Schema for workspace creation configuration.
+ */
+export const workspaceCreationConfigSchema = z
+  .object({
+    /** Method to use for workspace creation. If not provided, workspace creation is disabled. */
+    method: workspaceCreationMethodSchema.optional(),
+    /** Path to a script for workspace creation. Required if method is 'script'. */
+    scriptPath: z.string().optional(),
+    /**
+     * URL of the repository to clone.
+     * If method is 'rmplan' and this is not provided, it will be inferred from the current repository's remote origin.
+     */
+    repositoryUrl: z.string().optional(),
+    /**
+     * Directory where clones should be created.
+     * Defaults to ~/.rmfilter/workspaces/.
+     * Can be an absolute path or relative to the main repository root.
+     */
+    cloneLocation: z.string().optional(),
+    /**
+     * Array of commands to run after a clone is created and a new branch is checked out.
+     * Only applicable if method is 'rmplan'.
+     */
+    postCloneCommands: z.array(postApplyCommandSchema).optional(),
+  })
+  .refine(
+    (data) => {
+      // If method is 'script', scriptPath must be provided
+      if (data.method === 'script' && !data.scriptPath) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "When method is 'script', scriptPath must be provided",
+      path: ['scriptPath'],
+    }
+  );
+
+export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSchema>;
 
 /**
  * Main configuration schema for rmplan.
@@ -54,7 +103,12 @@ export const rmplanConfigSchema = z.object({
     })
     .optional(),
   /** Default executor to use when not specified via --executor option */
-  defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
+  defaultExecutor: z
+    .string()
+    .default(DEFAULT_EXECUTOR)
+    .describe('Default executor to use for plan execution'),
+  /** Configuration for automatic workspace creation. */
+  workspaceCreation: workspaceCreationConfigSchema.optional(),
 });
 
 export type RmplanConfig = z.infer<typeof rmplanConfigSchema>;
@@ -67,6 +121,7 @@ export type PostApplyCommand = z.infer<typeof postApplyCommandSchema>;
 export function getDefaultConfig(): RmplanConfig {
   return {
     postApplyCommands: [],
-    defaultExecutor: 'copy-only',
+    defaultExecutor: DEFAULT_EXECUTOR,
+    workspaceCreation: undefined,
   };
 }

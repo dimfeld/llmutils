@@ -7,7 +7,7 @@ import {
   loadConfig,
   findLocalConfigPath,
   loadEffectiveConfig,
-} from './configLoader';
+} from './configLoader.ts';
 
 // Silence logs during tests
 void mock.module('../logging.js', () => ({
@@ -16,6 +16,55 @@ void mock.module('../logging.js', () => ({
   error: () => {},
   warn: () => {},
 }));
+import { type RmplanConfig, type WorkspaceCreationConfig } from './configSchema.js';
+import { DEFAULT_EXECUTOR } from './executors/index.js';
+
+// Since js-yaml isn't working in tests, we'll use yaml
+import yaml from 'yaml';
+
+// Test state
+let tempDir: string;
+
+// Helper function to create a temporary directory structure for testing
+async function createTempTestDir() {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'configLoader-test-'));
+  return tempDir;
+}
+
+// Helper function to create test files
+async function createTestFile(filePath: string, content: string) {
+  await fs.writeFile(filePath, content, 'utf-8');
+}
+
+beforeEach(async () => {
+  // Mock js-yaml to use yaml package
+  await mock.module('js-yaml', () => ({
+    load: (content: string) => yaml.parse(content),
+  }));
+
+  // Mock logging
+  await mock.module('../logging.js', () => ({
+    debugLog: mock(() => {}),
+    error: mock(() => {}),
+    log: mock(() => {}),
+  }));
+
+  // Mock utils
+  await mock.module('../rmfilter/utils.js', () => ({
+    getGitRoot: mock(() => Promise.resolve('/fake/git/root')),
+    quiet: false,
+  }));
+
+  // Create temporary directory for test files
+  tempDir = await createTempTestDir();
+});
+
+afterEach(async () => {
+  // Clean up temporary directory
+  if (tempDir) {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
 
 describe('configLoader', () => {
   let testDir: string;
@@ -74,128 +123,135 @@ describe('configLoader', () => {
 
     expect(config).toHaveProperty('postApplyCommands');
     expect(config.postApplyCommands).toEqual([]);
-    expect(config).toHaveProperty('defaultExecutor', 'copy-only'); // Our new default
+    expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR); // Our new default
   });
 
-  test('loadConfig loads valid config file', async () => {
-    const configPath = path.join(testDir, 'valid-config.yml');
-    await fs.writeFile(
-      configPath,
-      `
-defaultExecutor: direct-call
+  describe('loadConfig with workspaceCreation', () => {
+    test('should return default config when configPath is null', async () => {
+      const config = await loadConfig(null);
+      expect(config).toEqual({
+        defaultExecutor: DEFAULT_EXECUTOR,
+        postApplyCommands: [],
+        workspaceCreation: undefined,
+      });
+    });
+
+    test('should load config with workspaceCreation undefined', async () => {
+      const configYaml = `
 postApplyCommands:
   - title: Test Command
     command: echo "test"
-`
-    );
+`;
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
 
-    const config = await loadConfig(configPath);
+      const config = await loadConfig(configPath);
 
-    expect(config).toHaveProperty('defaultExecutor', 'direct-call');
-    expect(config).toHaveProperty('postApplyCommands');
-    expect(config.postApplyCommands).toHaveLength(1);
-    expect(config.postApplyCommands[0].title).toBe('Test Command');
-  });
+      expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR);
+      expect(config).toHaveProperty('postApplyCommands');
+      expect(config.postApplyCommands).toHaveLength(1);
+      expect(config.postApplyCommands?.[0].title).toBe('Test Command');
+    });
 
-  test('findLocalConfigPath returns local config path when it exists', async () => {
-    const mainConfigPath = path.join(configDir, 'rmplan.yml');
-    const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+    test('findLocalConfigPath returns local config path when it exists', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
 
-    await fs.writeFile(mainConfigPath, 'defaultExecutor: direct-call');
-    await fs.writeFile(localConfigPath, 'defaultExecutor: copy-only');
+      await fs.writeFile(mainConfigPath, 'defaultExecutor: direct-call');
+      await fs.writeFile(localConfigPath, `defaultExecutor: ${DEFAULT_EXECUTOR}`);
 
-    const result = await findLocalConfigPath(mainConfigPath);
-    expect(result).toBe(localConfigPath);
-  });
+      const result = await findLocalConfigPath(mainConfigPath);
+      expect(result).toBe(localConfigPath);
+    });
 
-  test('findLocalConfigPath returns null when local config does not exist', async () => {
-    const mainConfigPath = path.join(configDir, 'rmplan.yml');
-    const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+    test('findLocalConfigPath returns null when local config does not exist', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
 
-    await fs.writeFile(mainConfigPath, 'defaultExecutor: direct-call');
+      await fs.writeFile(mainConfigPath, 'defaultExecutor: direct-call');
 
-    // Remove any existing local config
-    try {
-      await fs.unlink(localConfigPath);
-    } catch (e) {
-      // Ignore errors if file doesn't exist
-    }
+      // Remove any existing local config
+      try {
+        await fs.unlink(localConfigPath);
+      } catch (e) {
+        // Ignore errors if file doesn't exist
+      }
 
-    const result = await findLocalConfigPath(mainConfigPath);
-    expect(result).toBeNull();
-  });
+      const result = await findLocalConfigPath(mainConfigPath);
+      expect(result).toBeNull();
+    });
 
-  test('loadEffectiveConfig loads and merges local config', async () => {
-    const mainConfigPath = path.join(configDir, 'rmplan.yml');
-    const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+    test('loadEffectiveConfig loads and merges local config', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
 
-    await fs.writeFile(
-      mainConfigPath,
-      `
+      await fs.writeFile(
+        mainConfigPath,
+        `
 defaultExecutor: direct-call
 postApplyCommands:
   - title: Main Command
     command: echo "main"
 `
-    );
+      );
 
-    await fs.writeFile(
-      localConfigPath,
-      `
-defaultExecutor: copy-only
+      await fs.writeFile(
+        localConfigPath,
+        `
+defaultExecutor: ${DEFAULT_EXECUTOR}
 `
-    );
+      );
 
-    const config = await loadEffectiveConfig();
+      const config = await loadEffectiveConfig();
 
-    // Local config should override main config
-    expect(config).toHaveProperty('defaultExecutor', 'copy-only');
+      // Local config should override main config
+      expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR);
 
-    // Properties not in local config should remain from main config
-    expect(config).toHaveProperty('postApplyCommands');
-    expect(config.postApplyCommands).toHaveLength(1);
-    expect(config.postApplyCommands[0].title).toBe('Main Command');
-  });
+      // Properties not in local config should remain from main config
+      expect(config).toHaveProperty('postApplyCommands');
+      expect(config.postApplyCommands).toHaveLength(1);
+      expect(config.postApplyCommands?.[0].title).toBe('Main Command');
+    });
 
-  test('loadEffectiveConfig uses main config when local config has validation errors', async () => {
-    const mainConfigPath = path.join(configDir, 'rmplan.yml');
-    const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+    test('loadEffectiveConfig uses main config when local config has validation errors', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
 
-    await fs.writeFile(
-      mainConfigPath,
-      `
+      await fs.writeFile(
+        mainConfigPath,
+        `
 defaultExecutor: direct-call
 postApplyCommands:
   - title: Main Command
     command: echo "main"
 `
-    );
+      );
 
-    // Invalid configuration (not invalid YAML) in local config
-    await fs.writeFile(
-      localConfigPath,
-      `
+      // Invalid configuration (not invalid YAML) in local config
+      await fs.writeFile(
+        localConfigPath,
+        `
 defaultExecutor: direct-call
 postApplyCommands:
   - title: Missing command field
 `
-    );
+      );
 
-    const config = await loadEffectiveConfig();
+      const config = await loadEffectiveConfig();
 
-    // Should fall back to main config
-    expect(config).toHaveProperty('defaultExecutor', 'direct-call');
-    expect(config).toHaveProperty('postApplyCommands');
-    expect(config.postApplyCommands).toHaveLength(1);
-  });
+      // Should fall back to main config
+      expect(config).toHaveProperty('defaultExecutor', 'direct-call');
+      expect(config).toHaveProperty('postApplyCommands');
+      expect(config.postApplyCommands).toHaveLength(1);
+    });
 
-  test('loadEffectiveConfig deeply merges nested objects and arrays', async () => {
-    const mainConfigPath = path.join(configDir, 'rmplan.yml');
-    const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+    test('loadEffectiveConfig deeply merges nested objects and arrays', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
 
-    await fs.writeFile(
-      mainConfigPath,
-      `
+      await fs.writeFile(
+        mainConfigPath,
+        `
 defaultExecutor: direct-call
 postApplyCommands:
   - title: Main Command
@@ -207,12 +263,12 @@ models:
 autoexamples:
   - "main-example"
 `
-    );
+      );
 
-    await fs.writeFile(
-      localConfigPath,
-      `
-defaultExecutor: copy-only
+      await fs.writeFile(
+        localConfigPath,
+        `
+defaultExecutor: ${DEFAULT_EXECUTOR}
 postApplyCommands:
   - title: Local Command
     command: echo "local"
@@ -223,26 +279,90 @@ models:
 autoexamples:
   - "local-example"
 `
-    );
+      );
 
-    const config = await loadEffectiveConfig();
+      const config = await loadEffectiveConfig();
 
-    // Local should override main for simple properties
-    expect(config.defaultExecutor).toBe('copy-only');
-    
-    // Arrays should be concatenated
-    expect(config.postApplyCommands).toHaveLength(2);
-    expect(config.postApplyCommands[0].title).toBe('Main Command');
-    expect(config.postApplyCommands[1].title).toBe('Local Command');
-    
-    expect(config.autoexamples).toHaveLength(2);
-    expect(config.autoexamples).toContain('main-example');
-    expect(config.autoexamples).toContain('local-example');
-    
-    // Objects should be deeply merged
-    expect(config.paths?.tasks).toBe('./local-tasks'); // local overrides main
-    
-    expect(config.models?.execution).toBe('claude-3-sonnet'); // from main
-    expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
+      // Local should override main for simple properties
+      expect(config.defaultExecutor).toBe(DEFAULT_EXECUTOR);
+
+      // Arrays should be concatenated
+      expect(config.postApplyCommands).toHaveLength(2);
+      expect(config.postApplyCommands?.[0].title).toBe('Main Command');
+      expect(config.postApplyCommands?.[1].title).toBe('Local Command');
+
+      expect(config.autoexamples).toHaveLength(2);
+      expect(config.autoexamples).toContain('main-example');
+      expect(config.autoexamples).toContain('local-example');
+
+      // Objects should be deeply merged
+      expect(config.paths?.tasks).toBe('./local-tasks'); // local overrides main
+
+      expect(config.models?.execution).toBe('claude-3-sonnet'); // from main
+      expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
+    });
+  });
+
+  describe('config with workspaceCreation configurations', () => {
+    test('should load config with workspaceCreation method script', async () => {
+      const configYaml = `
+workspaceCreation:
+  method: script
+  scriptPath: /path/to/script.sh
+`;
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
+
+      const config = await loadConfig(configPath);
+      expect(config.workspaceCreation).toBeDefined();
+      expect(config.workspaceCreation!.method).toBe('script');
+      expect(config.workspaceCreation!.scriptPath).toBe('/path/to/script.sh');
+    });
+
+    test('should load config with workspaceCreation method rmplan', async () => {
+      const configYaml = `
+workspaceCreation:
+  method: rmplan
+  repositoryUrl: https://github.com/example/repo.git
+  cloneLocation: ~/llmutils-workspaces
+  postCloneCommands:
+    - title: Install Dependencies
+      command: npm install
+`;
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
+
+      const config = await loadConfig(configPath);
+      expect(config.workspaceCreation).toBeDefined();
+      expect(config.workspaceCreation!.method).toBe('rmplan');
+      expect(config.workspaceCreation!.repositoryUrl).toBe('https://github.com/example/repo.git');
+      expect(config.workspaceCreation!.cloneLocation).toBe('~/llmutils-workspaces');
+      expect(config.workspaceCreation!.postCloneCommands).toHaveLength(1);
+      expect(config.workspaceCreation!.postCloneCommands![0].title).toBe('Install Dependencies');
+    });
+
+    test('should fail validation when method is script but scriptPath is missing', async () => {
+      const configYaml = `
+workspaceCreation:
+  method: script
+`;
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
+
+      expect(loadConfig(configPath)).rejects.toThrow(
+        /When method is 'script', scriptPath must be provided/
+      );
+    });
+
+    test('should handle empty workspaceCreation object', async () => {
+      const configYaml = `
+workspaceCreation: {}
+`;
+      const configPath = path.join(tempDir, 'config.yml');
+      await createTestFile(configPath, configYaml);
+
+      const config = await loadConfig(configPath);
+      expect(config.workspaceCreation).toEqual({});
+    });
   });
 });

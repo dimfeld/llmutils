@@ -175,3 +175,41 @@ You can check if compilation works using `bun run check`
 ## Workflow Tips
 
 - Run `pnpm format` to format code after making changes
+
+## Code Quality Best Practices
+
+### Process Management
+
+- **Avoid `process.chdir()`**: Changes global working directory for entire process, causing side effects
+- **Use `cwd` parameters**: Pass directory context to individual operations (like `logSpawn`) for isolation
+- **Thread parameters through call chains**: When removing global state, update function signatures systematically
+
+### Testing Strategies
+
+- **Prefer real filesystem operations**: Use `fs.mkdtemp()` for temporary directories instead of mocking filesystem calls
+- **Hybrid mocking approach**:
+  - Consider mocking complicated external dependencies (logging, process spawning) for interaction verification
+  - Use real implementations for core functionality (filesystem operations) for integration confidence
+- **Real filesystem tests catch issues mocks miss**: Permission problems, path resolution bugs, cleanup behavior
+
+### Refactoring Approach
+
+- **Work bottom-up**: Update utility functions first, then callers to minimize compilation errors
+- **Use todo lists**: Break complex changes into trackable items for systematic progress
+- **Run type checks frequently**: Catch signature mismatches early in the refactoring process
+- **Make incremental commits**: Each commit should focus on a single logical change
+
+### Function Signature Evolution
+
+- **Update call chains systematically**: `commitAll()` → `markStepDone()` → `prepareNextStep()` → calling code
+- **Let TypeScript guide you**: Use compilation errors to find all call sites that need updates
+- **Maintain backward compatibility when possible**: Add optional parameters before making them required
+
+## Personal Workflow Notes
+
+- When you learn something about the codebase, update CLAUDE.md
+- When making a change, always look for related tests that need to be updated or written as well
+
+## Review Notes
+
+- When reviewing PRs, the text in the YAML files are just for planning. Prefer to look at the actual code when analyzing functionality.

@@ -197,15 +197,17 @@ export async function getGitRepository() {
   return cachedGitRepository;
 }
 
-export async function commitAll(message: string): Promise<number> {
+export async function commitAll(message: string, cwd?: string): Promise<number> {
   const usingJj = await getUsingJj();
 
   if (usingJj) {
     return await logSpawn(['jj', 'commit', '-m', message], {
+      cwd,
       stdio: ['ignore', 'inherit', 'inherit'],
     }).exited;
   } else {
     return await logSpawn(['git', 'commit', '-a', '-m', message], {
+      cwd,
       stdio: ['ignore', 'inherit', 'inherit'],
     }).exited;
   }
