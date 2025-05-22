@@ -12,7 +12,13 @@ import { askForModelId } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import { commitAll, getGitRoot, parseCliArgsFromString, secureWrite } from '../rmfilter/utils.js';
+import {
+  commitAll,
+  getGitRoot,
+  hasUncommittedChanges,
+  parseCliArgsFromString,
+  secureWrite,
+} from '../rmfilter/utils.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {
   buildExecutorAndLog,
@@ -364,76 +370,85 @@ export async function handleRmprCommand(
 
   if (options.commit) {
     const prUrl = `https://github.com/${resolvedPrIdentifier.owner}/${resolvedPrIdentifier.repo}/pull/${resolvedPrIdentifier.number}`;
-    log('Committing changes...');
 
-    let firstLine: string;
-    if (selectedComments.length === 1) {
-      const firstCommentBody =
-        selectedComments[0].cleanedComment || selectedComments[0].comment.body;
-      const bodyFirstLine =
-        firstCommentBody.split('\n').find((l) => l.trim().length > 0) || 'Empty comment';
-      let slicedBodyFirstLine = bodyFirstLine.slice(0, 50);
-      if (slicedBodyFirstLine !== bodyFirstLine) {
-        let lastSpace = slicedBodyFirstLine.lastIndexOf(' ');
-        if (lastSpace !== -1) {
-          slicedBodyFirstLine = slicedBodyFirstLine.slice(0, lastSpace);
-        }
-        slicedBodyFirstLine += '…';
-      }
-      firstLine = `Address PR comment: ${slicedBodyFirstLine}`;
-    } else {
-      firstLine = `Address ${selectedComments.length} PR comments`;
-    }
-    const commitMessageParts: string[] = [
-      firstLine,
-      '',
-      'Changes address the following review comments:\n',
-      selectedComments
-        .map((c) => {
-          const { thread, comment, cleanedComment } = c;
-          const body = cleanedComment || comment.body;
-          const url = `${prUrl}#discussion_r${comment.databaseId}`;
-          return `## ${thread.path}:${thread.line} -- (${url})\n${body}`;
-        })
-        .join('\n\n'),
-    ];
-    const commitMessage = commitMessageParts.join('\n');
-    const exitCode = await commitAll(commitMessage);
-    if (exitCode === 0) {
-      log('Changes committed successfully.');
+    // Check if there are uncommitted changes
+    const hasChanges = await hasUncommittedChanges();
 
-      // Only post replies if the comment option is enabled
-      if (options.comment) {
-        log('Posting replies to handled review threads...');
-        const commitSha = await getCurrentCommitSha();
+    let commitSha: string | null = null;
 
-        if (!commitSha) {
-          warn('Could not retrieve commit SHA. Skipping posting replies to PR threads.');
-        } else {
-          const { owner, repo } = resolvedPrIdentifier;
-          const commitUrl = `https://github.com/${owner}/${repo}/commit/${commitSha}`;
-          const shortSha = commitSha.slice(0, 7);
+    if (hasChanges) {
+      log('Committing changes...');
 
-          for (const { thread } of selectedComments) {
-            const replyMessage = `rmplan: Addressed in commit [${shortSha}](${commitUrl}).`;
-            const success = await addReplyToReviewThread(thread.id, replyMessage);
-
-            if (success) {
-              log(
-                `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
-              );
-            } else {
-              debugLog(
-                `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
-              );
-            }
+      let firstLine: string;
+      if (selectedComments.length === 1) {
+        const firstCommentBody =
+          selectedComments[0].cleanedComment || selectedComments[0].comment.body;
+        const bodyFirstLine =
+          firstCommentBody.split('\n').find((l) => l.trim().length > 0) || 'Empty comment';
+        let slicedBodyFirstLine = bodyFirstLine.slice(0, 50);
+        if (slicedBodyFirstLine !== bodyFirstLine) {
+          let lastSpace = slicedBodyFirstLine.lastIndexOf(' ');
+          if (lastSpace !== -1) {
+            slicedBodyFirstLine = slicedBodyFirstLine.slice(0, lastSpace);
           }
+          slicedBodyFirstLine += '…';
         }
+        firstLine = `Address PR comment: ${slicedBodyFirstLine}`;
       } else {
-        debugLog('Skipping posting replies to review threads (--comment not enabled)');
+        firstLine = `Address ${selectedComments.length} PR comments`;
+      }
+      const commitMessageParts: string[] = [
+        firstLine,
+        '',
+        'Changes address the following review comments:\n',
+        selectedComments
+          .map((c) => {
+            const { thread, comment, cleanedComment } = c;
+            const body = cleanedComment || comment.body;
+            const url = `${prUrl}#discussion_r${comment.databaseId}`;
+            return `## ${thread.path}:${thread.line} -- (${url})\n${body}`;
+          })
+          .join('\n\n'),
+      ];
+      const commitMessage = commitMessageParts.join('\n');
+      const exitCode = await commitAll(commitMessage);
+      if (exitCode === 0) {
+        log('Changes committed successfully.');
+        commitSha = await getCurrentCommitSha();
+      } else {
+        error(`Commit failed with exit code ${exitCode}.`);
       }
     } else {
-      error(`Commit failed with exit code ${exitCode}.`);
+      log('No uncommitted changes detected. Executor appears to have already committed.');
+      commitSha = await getCurrentCommitSha();
+    }
+
+    // Only post replies if the comment option is enabled and we have a commit SHA
+    if (options.comment && commitSha) {
+      log('Posting replies to handled review threads...');
+
+      const { owner, repo } = resolvedPrIdentifier;
+      const commitUrl = `https://github.com/${owner}/${repo}/commit/${commitSha}`;
+      const shortSha = commitSha.slice(0, 7);
+
+      for (const { thread } of selectedComments) {
+        const replyMessage = `rmplan: Addressed in commit [${shortSha}](${commitUrl}).`;
+        const success = await addReplyToReviewThread(thread.id, replyMessage);
+
+        if (success) {
+          log(
+            `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+          );
+        } else {
+          debugLog(
+            `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+          );
+        }
+      }
+    } else if (options.comment && !commitSha) {
+      warn('Could not retrieve commit SHA. Skipping posting replies to PR threads.');
+    } else {
+      debugLog('Skipping posting replies to review threads (--comment not enabled)');
     }
   }
 }

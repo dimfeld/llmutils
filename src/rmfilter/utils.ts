@@ -197,6 +197,30 @@ export async function getGitRepository() {
   return cachedGitRepository;
 }
 
+export async function hasUncommittedChanges(cwd?: string): Promise<boolean> {
+  // Check if jj exists in the provided directory
+  const workingDir = cwd || process.cwd();
+  const jjPath = path.join(workingDir, '.jj');
+  const hasJj = await Bun.file(jjPath)
+    .stat()
+    .then((s) => s.isDirectory())
+    .catch(() => false);
+
+  if (hasJj) {
+    const proc = $`jj diff`.cwd(workingDir).quiet().nothrow();
+    const result = await proc;
+
+    return result.exitCode === 0 && result.stdout.toString().trim().length > 0;
+  } else {
+    // Use git status --porcelain which is more reliable
+    const proc = $`git status --porcelain`.cwd(workingDir).quiet().nothrow();
+    const result = await proc;
+
+    // If there's any output from git status --porcelain, there are changes
+    return result.exitCode === 0 && result.stdout.toString().trim().length > 0;
+  }
+}
+
 export async function commitAll(message: string, cwd?: string): Promise<number> {
   const usingJj = await getUsingJj();
 

@@ -1,5 +1,6 @@
 import { getGitRoot, logSpawn, debug } from '../rmfilter/utils.js';
 import { debugLog } from '../logging.js';
+import * as path from 'node:path';
 
 /**
  * Gets the name of the current Git branch.
@@ -219,34 +220,70 @@ export async function getCurrentBranchName(cwd?: string): Promise<string | null>
 }
 
 /**
- * Gets the SHA of the current Git commit (HEAD).
- * @param cwd The working directory to run the git command in. Defaults to process.cwd().
+ * Gets the SHA of the current commit (HEAD for git, @ for jj).
+ * @param cwd The working directory to run the command in. Defaults to process.cwd().
  * @returns A promise that resolves to the commit SHA string if successful, or null if an error occurs.
  */
 export async function getCurrentCommitSha(cwd?: string): Promise<string | null> {
+  const workingDir = cwd || process.cwd();
+
+  // Check if jj exists in the provided directory
+  const jjPath = path.join(workingDir, '.jj');
+  const hasJj = await Bun.file(jjPath)
+    .stat()
+    .then((s) => s.isDirectory())
+    .catch(() => false);
+
   try {
-    const proc = logSpawn(['git', 'rev-parse', 'HEAD'], {
-      cwd: cwd || process.cwd(),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
+    if (hasJj) {
+      // For jj, get the current commit ID
+      const proc = logSpawn(['jj', 'log', '-r', '@', '--no-graph', '-T', 'commit_id'], {
+        cwd: workingDir,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
 
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout as ReadableStream).text(),
-      new Response(proc.stderr as ReadableStream).text(),
-    ]);
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout as ReadableStream).text(),
+        new Response(proc.stderr as ReadableStream).text(),
+      ]);
 
-    if (exitCode === 0) {
-      return stdout.trim();
+      if (exitCode === 0) {
+        return stdout.trim();
+      }
+
+      debugLog(
+        'Failed to get current jj commit ID. Exit code: %d, stderr: %s',
+        exitCode,
+        stderr.trim()
+      );
+      return null;
+    } else {
+      // For git, use rev-parse HEAD
+      const proc = logSpawn(['git', 'rev-parse', 'HEAD'], {
+        cwd: workingDir,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout as ReadableStream).text(),
+        new Response(proc.stderr as ReadableStream).text(),
+      ]);
+
+      if (exitCode === 0) {
+        return stdout.trim();
+      }
+
+      debugLog(
+        'Failed to get current git commit SHA. Exit code: %d, stderr: %s',
+        exitCode,
+        stderr.trim()
+      );
+      return null;
     }
-
-    debugLog(
-      'Failed to get current commit SHA. Exit code: %d, stderr: %s',
-      exitCode,
-      stderr.trim()
-    );
-    return null;
   } catch (error) {
     debugLog('Error getting current commit SHA: %o', error);
     return null;
