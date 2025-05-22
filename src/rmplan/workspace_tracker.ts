@@ -26,7 +26,7 @@ export interface WorkspaceInfo {
  * @returns The path to the tracking file
  */
 export function getTrackingFilePath(): string {
-  return path.join(os.homedir(), '.rmfilter', 'workspaces.json');
+  return path.join(os.homedir(), '.config', 'rmfilter', 'workspaces.json');
 }
 
 /** Path to the global workspaces tracking file */

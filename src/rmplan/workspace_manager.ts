@@ -20,12 +20,6 @@ export interface Workspace {
   taskId: string;
 }
 
-/**
- * Type for WorkspaceCreationConfig with required script path
- */
-type WorkspaceCreationConfigRequired = WorkspaceCreationConfig & {
-  scriptPath: string;
-};
 
 /**
  * Class responsible for creating and managing workspaces for rmplan agents
@@ -56,118 +50,14 @@ export class WorkspaceManager {
     }
 
     // Create workspace based on configured method
-    if (config.workspaceCreation.method === 'script') {
-      if (!config.workspaceCreation.scriptPath) {
-        log('Script path not specified for script-based workspace creation');
-        return null;
-      }
-
-      return this._createWithScript(
-        taskId,
-        originalPlanFilePath,
-        config.workspaceCreation as WorkspaceCreationConfigRequired
-      );
-    } else if (config.workspaceCreation.method === 'rmplan') {
+    if (config.workspaceCreation.method === 'rmplan') {
       return this._createWithLlmUtils(taskId, originalPlanFilePath, config.workspaceCreation);
     }
 
+    log(`Unsupported workspace creation method: ${config.workspaceCreation.method}`);
     return null;
   }
 
-  /**
-   * Creates a workspace using a user-defined script
-   * @param taskId Unique identifier for the task
-   * @param originalPlanFilePath Absolute path to the original plan file
-   * @param workspaceConfig Workspace creation configuration
-   * @returns A Workspace object if successful, null otherwise
-   */
-  private async _createWithScript(
-    taskId: string,
-    originalPlanFilePath: string,
-    workspaceConfig: WorkspaceCreationConfigRequired
-  ): Promise<Workspace | null> {
-    log('Creating workspace using script-based method');
-
-    // Resolve script path (if relative, it's relative to mainRepoRoot)
-    const scriptPath = path.isAbsolute(workspaceConfig.scriptPath)
-      ? workspaceConfig.scriptPath
-      : path.resolve(this.mainRepoRoot, workspaceConfig.scriptPath);
-
-    // Check if script exists and is executable
-    try {
-      const stats = await fs.stat(scriptPath);
-
-      // On Unix-like systems, check if the file is executable
-      if (process.platform !== 'win32') {
-        const isExecutable = !!(stats.mode & 0o111);
-        if (!isExecutable) {
-          log(`Script ${scriptPath} exists but is not executable. Setting executable permission.`);
-          await fs.chmod(scriptPath, stats.mode | 0o111);
-        }
-      }
-    } catch (error) {
-      log(`Error accessing script at ${scriptPath}: ${String(error)}`);
-      return null;
-    }
-
-    // Execute the script with environment variables for the task
-    const { exitCode, stdout, stderr } = await spawnAndLogOutput([scriptPath], {
-      cwd: this.mainRepoRoot,
-      env: {
-        ...process.env,
-        LLMUTILS_TASK_ID: taskId,
-        LLMUTILS_PLAN_FILE_PATH: originalPlanFilePath,
-      },
-    });
-
-    // Check if script execution was successful
-    if (exitCode !== 0) {
-      log(`Workspace creation script failed with exit code ${exitCode}`);
-      return null;
-    }
-
-    // Script should output the workspace path to stdout
-    const workspacePath = stdout.trim();
-    if (!workspacePath) {
-      log('Workspace creation script did not output a path');
-      return null;
-    }
-
-    // Verify the workspace path exists and is a directory
-    try {
-      const stats = await fs.stat(workspacePath);
-      if (!stats.isDirectory()) {
-        log(`Path returned by script is not a directory: ${workspacePath}`);
-        return null;
-      }
-    } catch (error) {
-      log(`Error accessing workspace at ${workspacePath}: ${String(error)}`);
-      return null;
-    }
-
-    debugLog(`Successfully created workspace at ${workspacePath}`);
-
-    // Create workspace object
-    const workspace = {
-      path: workspacePath,
-      originalPlanFilePath,
-      taskId,
-    };
-
-    // We don't know the repository URL or branch for script-created workspaces,
-    // but we can still record what we know
-    await recordWorkspace({
-      taskId,
-      originalPlanFilePath,
-      workspacePath,
-      repositoryUrl: 'unknown', // Script-created workspaces don't provide this info
-      branch: 'unknown', // Script-created workspaces don't provide this info
-      createdAt: new Date().toISOString(),
-    });
-
-    // Return the workspace information
-    return workspace;
-  }
 
   // For testing purposes only - allows tests to override homedir
   private _homeDirForTests?: string;
@@ -209,18 +99,14 @@ export class WorkspaceManager {
     }
 
     // Step 2: Determine clone location
-    let cloneLocationBase: string;
-    if (workspaceConfig.cloneLocation) {
-      // If relative, resolve against mainRepoRoot
-      cloneLocationBase = path.isAbsolute(workspaceConfig.cloneLocation)
-        ? workspaceConfig.cloneLocation
-        : path.resolve(this.mainRepoRoot, workspaceConfig.cloneLocation);
-    } else {
-      // Default location is ~/.llmutils/workspaces
-      // Use _homeDirForTests if provided (for testing only), otherwise use os.homedir()
-      const homeDir = this._homeDirForTests || os.homedir();
-      cloneLocationBase = path.join(homeDir, '.llmutils', 'workspaces');
+    if (!workspaceConfig.cloneLocation) {
+      throw new Error('cloneLocation must be set in workspace configuration to clone a new workspace');
     }
+    
+    // If relative, resolve against mainRepoRoot
+    const cloneLocationBase = path.isAbsolute(workspaceConfig.cloneLocation)
+      ? workspaceConfig.cloneLocation
+      : path.resolve(this.mainRepoRoot, workspaceConfig.cloneLocation);
 
     // Ensure the base clone directory exists
     try {
