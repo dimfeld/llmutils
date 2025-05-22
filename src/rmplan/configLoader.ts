@@ -5,6 +5,55 @@ import { debugLog, error, log, warn } from '../logging.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
 
 /**
+ * Deeply merges two RmplanConfig objects, with localConfig overriding mainConfig.
+ * Handles special cases like arrays and nested objects appropriately.
+ */
+function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): RmplanConfig {
+  const merged: RmplanConfig = { ...mainConfig };
+
+  // Handle postApplyCommands: concatenate arrays if both exist
+  if (localConfig.postApplyCommands !== undefined) {
+    if (mainConfig.postApplyCommands && localConfig.postApplyCommands) {
+      merged.postApplyCommands = [...mainConfig.postApplyCommands, ...localConfig.postApplyCommands];
+    } else {
+      merged.postApplyCommands = localConfig.postApplyCommands;
+    }
+  }
+
+  // Handle paths: deep merge objects
+  if (localConfig.paths !== undefined) {
+    merged.paths = {
+      ...mainConfig.paths,
+      ...localConfig.paths,
+    };
+  }
+
+  // Handle autoexamples: concatenate arrays if both exist
+  if (localConfig.autoexamples !== undefined) {
+    if (mainConfig.autoexamples && localConfig.autoexamples) {
+      merged.autoexamples = [...mainConfig.autoexamples, ...localConfig.autoexamples];
+    } else {
+      merged.autoexamples = localConfig.autoexamples;
+    }
+  }
+
+  // Handle models: deep merge objects
+  if (localConfig.models !== undefined) {
+    merged.models = {
+      ...mainConfig.models,
+      ...localConfig.models,
+    };
+  }
+
+  // Handle defaultExecutor: simple override
+  if (localConfig.defaultExecutor !== undefined) {
+    merged.defaultExecutor = localConfig.defaultExecutor;
+  }
+
+  return merged;
+}
+
+/**
  * Finds the absolute path to the rmplan configuration file.
  *
  * It searches in the following order:
@@ -152,7 +201,7 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
         const localConfig = await loadConfig(localConfigPath);
         
         // Merge the configurations with local overriding main
-        const mergedConfig = { ...config, ...localConfig };
+        const mergedConfig = mergeConfigs(config, localConfig);
         
         if (!quiet) {
           log('Loaded configuration files', 

@@ -188,4 +188,61 @@ postApplyCommands:
     expect(config).toHaveProperty('postApplyCommands');
     expect(config.postApplyCommands).toHaveLength(1);
   });
+
+  test('loadEffectiveConfig deeply merges nested objects and arrays', async () => {
+    const mainConfigPath = path.join(configDir, 'rmplan.yml');
+    const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+
+    await fs.writeFile(
+      mainConfigPath,
+      `
+defaultExecutor: direct-call
+postApplyCommands:
+  - title: Main Command
+    command: echo "main"
+paths:
+  tasks: "./main-tasks"
+models:
+  execution: "claude-3-sonnet"
+autoexamples:
+  - "main-example"
+`
+    );
+
+    await fs.writeFile(
+      localConfigPath,
+      `
+defaultExecutor: copy-only
+postApplyCommands:
+  - title: Local Command
+    command: echo "local"
+paths:
+  tasks: "./local-tasks"
+models:
+  convert_yaml: "claude-3-haiku"
+autoexamples:
+  - "local-example"
+`
+    );
+
+    const config = await loadEffectiveConfig();
+
+    // Local should override main for simple properties
+    expect(config.defaultExecutor).toBe('copy-only');
+    
+    // Arrays should be concatenated
+    expect(config.postApplyCommands).toHaveLength(2);
+    expect(config.postApplyCommands[0].title).toBe('Main Command');
+    expect(config.postApplyCommands[1].title).toBe('Local Command');
+    
+    expect(config.autoexamples).toHaveLength(2);
+    expect(config.autoexamples).toContain('main-example');
+    expect(config.autoexamples).toContain('local-example');
+    
+    // Objects should be deeply merged
+    expect(config.paths?.tasks).toBe('./local-tasks'); // local overrides main
+    
+    expect(config.models?.execution).toBe('claude-3-sonnet'); // from main
+    expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
+  });
 });
