@@ -165,13 +165,17 @@ function normalizeArrayInput(input: string | string[] | undefined): string[] {
  * @param mdcFiles An array of parsed `MdcFile` objects.
  * @param activeSourceFiles An array of *absolute paths* to the source files selected by the main `rmfilter` process.
  * @param gitRoot The absolute path to the git repository root.
+ * @param instructions Optional instructions text to search for grep terms.
  * @returns A promise resolving to an array of `MdcFile` objects that meet the inclusion criteria.
  */
 export async function filterMdcFiles(
   mdcFiles: MdcFile[],
   activeSourceFiles: string[],
-  gitRoot: string
+  gitRoot: string,
+  instructions: string = ''
 ): Promise<MdcFile[]> {
+  const lowerCaseInstructions = instructions.toLowerCase();
+
   // Convert absolute source file paths to relative paths (using POSIX separators) for glob matching.
   const relativeSourceFiles = activeSourceFiles.map((absPath) =>
     path.relative(gitRoot, absPath).replace(/\\/g, '/')
@@ -202,8 +206,17 @@ export async function filterMdcFiles(
           return null;
         }
       } else if (!hasRules) {
-        // alwaysApply absent and no rules → include by default
-        debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (no rules, default include)`);
+        // alwaysApply absent and no rules → include by default for .mdc, but not .md
+        // since .md is not explicitly a "rules" file
+        if (path.extname(mdcFile.filePath) === '.md') {
+          debugLog(
+            `[MDC Filter] Excluding '${mdcFile.filePath}' (no rules, default exclude for .md)`
+          );
+          return null;
+        }
+        debugLog(
+          `[MDC Filter] Including '${mdcFile.filePath}' (no rules, default include for .mdc)`
+        );
         return mdcFile;
       }
 
@@ -219,22 +232,34 @@ export async function filterMdcFiles(
       if (grepTerms.length > 0) {
         const lowerCaseGrepTerms = grepTerms.map((term) => term.toLowerCase());
         let grepMatch = false;
-        for (const absoluteSourceFilePath of activeSourceFiles) {
-          try {
-            const content = await Bun.file(absoluteSourceFilePath).text();
-            const lowerCaseContent = content.toLowerCase();
-            if (lowerCaseGrepTerms.some((term) => lowerCaseContent.includes(term))) {
+
+        // First check in instructions if provided
+        if (instructions) {
+          if (lowerCaseGrepTerms.some((term) => lowerCaseInstructions.includes(term))) {
+            debugLog(`[MDC Filter] Including '${mdcFile.filePath}' (grep match in instructions)`);
+            grepMatch = true;
+          }
+        }
+
+        // If not found in instructions, check in source files
+        if (!grepMatch) {
+          for (const absoluteSourceFilePath of activeSourceFiles) {
+            try {
+              const content = await Bun.file(absoluteSourceFilePath).text();
+              const lowerCaseContent = content.toLowerCase();
+              if (lowerCaseGrepTerms.some((term) => lowerCaseContent.includes(term))) {
+                debugLog(
+                  `[MDC Filter] Including '${mdcFile.filePath}' (grep match in ${absoluteSourceFilePath})`
+                );
+                grepMatch = true;
+                break;
+              }
+            } catch (err: any) {
+              // Log error reading source file but continue checking other source files for this MDC
               debugLog(
-                `[MDC Filter] Including '${mdcFile.filePath}' (grep match in ${absoluteSourceFilePath})`
+                `[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${err.message}`
               );
-              grepMatch = true;
-              break;
             }
-          } catch (err: any) {
-            // Log error reading source file but continue checking other source files for this MDC
-            debugLog(
-              `[MDC Filter] Warning: Could not read source file ${absoluteSourceFilePath} for grep matching: ${err.message}`
-            );
           }
         }
 

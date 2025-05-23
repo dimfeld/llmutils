@@ -35,6 +35,40 @@ export async function getAdditionalDocs(
 ) {
   const gitRoot = await getGitRoot();
 
+  // First, build the instructions content that will be used for MDC filtering
+  let instructionValues = [...(values.instructions || []), ...(values.instruction || [])];
+  let rawInstructions = '';
+  if (instructionValues.length) {
+    let instructionsContent: string[] = [];
+
+    for (let instruction of instructionValues) {
+      if (instruction.startsWith('@')) {
+        const pattern = instruction.slice(1);
+        const matches = await glob(pattern);
+        if (matches.length === 0) {
+          error(`No files found matching instructions pattern: ${pattern}`);
+          process.exit(1);
+        }
+        for (const file of matches) {
+          try {
+            instructionsContent.push(await Bun.file(file).text());
+          } catch (e) {
+            error(`Error reading instructions file: ${file}`);
+            process.exit(1);
+          }
+        }
+      } else {
+        instructionsContent.push(instruction);
+      }
+    }
+
+    rawInstructions = instructionsContent
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join('\n\n')
+      .trim();
+  }
+
   // MDC processing
   let filteredMdcFiles: MdcFile[] = [];
   if (!values['no-autodocs']) {
@@ -93,7 +127,12 @@ export async function getAdditionalDocs(
           const absoluteSourceFiles = Array.from(allFilesSet, (p) => path.resolve(gitRoot, p));
           debugLog(`[MDC] Filtering against ${absoluteSourceFiles.length} active source files.`);
 
-          filteredMdcFiles = await filterMdcFiles(parsedMdcFiles, absoluteSourceFiles, gitRoot);
+          filteredMdcFiles = await filterMdcFiles(
+            parsedMdcFiles,
+            absoluteSourceFiles,
+            gitRoot,
+            rawInstructions
+          );
           debugLog(`[MDC] Filtered MDC files included: ${filteredMdcFiles.length}`);
         }
       } else {
@@ -108,7 +147,7 @@ export async function getAdditionalDocs(
     debugLog('[MDC] MDC processing disabled via --no-autodocs flag.');
   }
 
-  return gatherDocsInternal(baseDir, values, filteredMdcFiles);
+  return gatherDocsInternal(baseDir, values, filteredMdcFiles, rawInstructions);
 }
 
 export async function gatherDocsInternal(
@@ -122,47 +161,17 @@ export async function gatherDocsInternal(
     'omit-instructions-tag'?: boolean;
     'no-autodocs'?: boolean;
   },
-  filteredMdcFiles: MdcFile[] = []
+  filteredMdcFiles: MdcFile[] = [],
+  rawInstructions: string = ''
 ) {
   const gitRoot = await getGitRoot();
   let instructionsTag = '';
-  let rawInstructions = '';
-  let instructionValues = [...(values.instructions || []), ...(values.instruction || [])];
-  if (instructionValues.length) {
-    let instructionsContent: string[] = [];
 
-    for (let instruction of instructionValues) {
-      if (instruction.startsWith('@')) {
-        const pattern = instruction.slice(1);
-        const matches = await glob(pattern);
-        if (matches.length === 0) {
-          error(`No files found matching instructions pattern: ${pattern}`);
-          process.exit(1);
-        }
-        for (const file of matches) {
-          try {
-            instructionsContent.push(await Bun.file(file).text());
-          } catch (e) {
-            error(`Error reading instructions file: ${file}`);
-            process.exit(1);
-          }
-        }
-      } else {
-        instructionsContent.push(instruction);
-      }
-    }
-
-    rawInstructions = instructionsContent
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .join('\n\n')
-      .trim();
-    if (rawInstructions) {
-      if (values['omit-instructions-tag']) {
-        instructionsTag = rawInstructions;
-      } else {
-        instructionsTag = `<instructions>\n${rawInstructions}\n</instructions>`;
-      }
+  if (rawInstructions) {
+    if (values['omit-instructions-tag']) {
+      instructionsTag = rawInstructions;
+    } else {
+      instructionsTag = `<instructions>\n${rawInstructions}\n</instructions>`;
     }
   }
 

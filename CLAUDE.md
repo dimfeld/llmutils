@@ -174,7 +174,7 @@ You can check if compilation works using `bun run check`
 
 ## Workflow Tips
 
-- Run `pnpm format` to format code after making changes
+- Run `bun run format` to format code after making changes
 
 ## Code Quality Best Practices
 
@@ -213,3 +213,5 @@ You can check if compilation works using `bun run check`
 ## Review Notes
 
 - When reviewing PRs, the text in the YAML files are just for planning. Prefer to look at the actual code when analyzing functionality.
+
+- Format the code with `bun run format` after making changes
