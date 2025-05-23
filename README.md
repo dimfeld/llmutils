@@ -45,6 +45,7 @@ assume a repository written with Typescript and PNPM workspaces.
   - [Notes](#notes-1)
   - [Configuration](#configuration)
     - [Paths](#paths)
+    - [Documentation Search Paths](#documentation-search-paths)
     - [Workspace Auto-Creation](#workspace-auto-creation)
     - [Automatic Examples](#automatic-examples)
     - [Post-Apply Commands](#post-apply-commands)
@@ -195,7 +196,7 @@ This uses the `example` preset but changes the edit format to `diff` and adds an
 
 - **Automatic Detection**: `rmfilter` searches for `.mdc` files in the `.cursor/rules/` directory of your project and in `~/.config/rmfilter/rules/`. It includes these files based on their relevance to the active source files.
 - **Glob-based Filtering**: MDC files can specify `globs` in their frontmatter (e.g., `*.tsx`, `app/controllers/**/*.rb`) to indicate which source files they apply to. Only MDC files matching the active source files are included.
-- **Grep-based Filtering**: MDC files can include a `grep` field (e.g., `grep: superform, supervalidate`) to match source files containing specific terms (case-insensitive). This ensures only relevant MDC files are included.
+- **Grep-based Filtering**: MDC files can include a `grep` field (e.g., `grep: superform, supervalidate`) to match against specific terms (case-insensitive). The grep terms are searched in both the instructions passed to `rmfilter` and the source file contents. This ensures only relevant MDC files are included based on the current task context.
 - **Type Classification**: MDC files can have a `type` field (e.g., `docs` or `rules`) to categorize them as documentation or coding rules. These are organized into `<documents>` or `<rules>` tags in the output, respectively. The default value is `rules`.
 - **Suppression Option**: Use the `--no-autodocs` CLI flag to disable automatic MDC file processing if needed.
 
@@ -420,6 +421,46 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 
 The `paths.tasks` setting allows you to specify the directory where the task documents are locations. This is used when automatically
 writing a plan from a GitHub issue.
+
+#### Documentation Search Paths
+
+The `paths.docs` setting allows you to specify additional directories where `rmfilter` should search for `.md` and `.mdc` documentation files to auto-include. This extends the default MDC file search behavior to include custom documentation directories.
+
+**Configuration in `rmplan.yml`:**
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+
+paths:
+  docs:
+    - ./docs # Search in docs/ directory
+    - ./project-docs # Search in project-docs/ directory
+    - ../shared-docs # Can also reference directories outside the repo
+```
+
+**Key Features:**
+
+- **Automatic MDC/MD File Discovery**: Searches specified directories and their subdirectories for `.md` and `.mdc` files
+- **Frontmatter Support**: Files must have valid YAML frontmatter to be processed
+- **Grep Term Matching in Instructions**: MDC files with `grep` terms will now also match if those terms appear in the instructions passed to `rmfilter`, not just in source files
+- **Seamless Integration**: Works alongside the existing MDC file search in `.cursor/rules/` and `~/.config/rmfilter/rules/`
+
+**How It Works:**
+
+1. When `rmfilter` runs, it loads the rmplan configuration to find any configured docs paths
+2. It searches these directories for `.md` and `.mdc` files with frontmatter
+3. Files are filtered based on their frontmatter rules (globs, grep terms, alwaysApply)
+4. Grep terms are now matched against both:
+   - The instructions text provided to `rmfilter`
+   - The content of source files (as before)
+5. Matching documentation is included in the output
+
+This feature is particularly useful for:
+
+- Maintaining project-specific documentation that should be included based on the task at hand
+- Sharing documentation across multiple projects
+- Organizing documentation outside of the `.cursor` directory structure
+- Including relevant documentation when specific terms appear in your instructions
 
 #### Workspace Auto-Creation
 

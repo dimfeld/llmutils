@@ -209,6 +209,7 @@ You can check if compilation works using `bun run check`
 
 - When you learn something about the codebase, update CLAUDE.md
 - When making a change, always look for related tests that need to be updated or written as well
+- **After adding a feature, update the README to include documentation about the feature**
 
 ## Review Notes
 
