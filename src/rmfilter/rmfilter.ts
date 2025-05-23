@@ -38,7 +38,8 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../rmplan/executors/index.ts';
+import { buildExecutorAndLog } from '../rmplan/executors/index.ts';
+import { DEFAULT_EXECUTOR } from '../rmplan/constants.ts';
 import type { RmplanConfig } from '../rmplan/configSchema.ts';
 import type { ExecutorCommonOptions } from '../rmplan/executors/types';
 import { loadEffectiveConfig } from '../rmplan/configLoader.ts';

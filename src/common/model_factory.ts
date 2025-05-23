@@ -9,6 +9,7 @@ import { openrouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
 import { search } from '@inquirer/prompts';
 import { debugLog } from '../logging.ts';
+import { OneCallExecutorName } from '../rmplan/executors/index.js';
 import {
   CopyOnlyExecutor,
   ClaudeCodeExecutor,
@@ -129,7 +130,7 @@ export async function askForModelId(options?: {
   const modelSetting = availableModels.find((m) => m.value === newModel) ?? {
     name: newModel,
     value: newModel,
-    executor: 'direct-call',
+    executor: OneCallExecutorName,
   };
 
   return modelSetting;

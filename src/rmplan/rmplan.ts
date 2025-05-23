@@ -20,6 +20,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { planPrompt } from './prompt.js';
 import { executors } from './executors/index.js';
+import { DEFAULT_EXECUTOR } from './constants.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.ts';
 
 await loadEnv();
@@ -443,9 +444,9 @@ program
     const globalOpts = program.opts();
     const config = await loadEffectiveConfig(globalOpts.config);
 
-    // Use executor from CLI options, fallback to config defaultExecutor, or fallback to 'copy-only'
+    // Use executor from CLI options, fallback to config defaultExecutor, or fallback to the default executor
     if (!options.executor) {
-      options.executor = config.defaultExecutor || 'copy-only';
+      options.executor = config.defaultExecutor || DEFAULT_EXECUTOR;
     }
 
     await handleRmprCommand(prIdentifier, options, globalOpts, config);

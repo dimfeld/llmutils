@@ -195,12 +195,14 @@ export class CopyOnlyStateMachine {
   }
 }
 
+export const CopyOnlyStateMachineExecutorName = 'copy-only-statemachine';
+
 /**
  * The 'copy-only' executor that uses a state machine internally.
  * This executor copies the prompt to the clipboard, for pasting into an agent.
  */
 export class CopyOnlyStateMachineExecutor implements Executor {
-  static name = 'copy-only-statemachine';
+  static name = CopyOnlyStateMachineExecutorName;
   static description =
     'State machine based executor that copies the prompt into the clipboard for you to send to an agent';
   static optionsSchema = copyOnlyOptionsSchema;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_EXECUTOR } from './executors/index.js';
+import { DEFAULT_EXECUTOR } from './constants.js';
 
 /**
  * Schema for a single command to be executed after applying changes.

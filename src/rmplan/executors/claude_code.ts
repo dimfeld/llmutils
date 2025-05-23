@@ -23,8 +23,10 @@ const claudeCodeOptionsSchema = z.object({
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
+export const ClaudeCodeExecutorName = 'claude-code';
+
 export class ClaudeCodeExecutor implements Executor {
-  static name = 'claude-code';
+  static name = ClaudeCodeExecutorName;
   static description = 'Executes the plan using Claude Code';
   static optionsSchema = claudeCodeOptionsSchema;
   static defaultModel = {

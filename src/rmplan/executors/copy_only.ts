@@ -8,6 +8,7 @@ import type { RmplanConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, Executor } from './types';
 
 const copyOnlyOptionsSchema = z.object({});
+export const CopyOnlyExecutorName = 'copy-only';
 
 export type CopyOnlyExecutorOptions = z.infer<typeof copyOnlyOptionsSchema>;
 
@@ -16,7 +17,7 @@ export type CopyOnlyExecutorOptions = z.infer<typeof copyOnlyOptionsSchema>;
  * This executor copies the prompt to the clipboard, for pasting into an agent.
  */
 export class CopyOnlyExecutor implements Executor {
-  static name = 'copy-only';
+  static name = CopyOnlyExecutorName;
   static description = 'Copies the prompt into the clipboard for you to send to an agent';
   static optionsSchema = copyOnlyOptionsSchema;
 

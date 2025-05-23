@@ -20,13 +20,15 @@ const copyPasteOptionsSchema = z.object({
 
 export type CopyPasteExecutorOptions = z.infer<typeof copyPasteOptionsSchema>;
 
+export const CopyPasteExecutorName = 'copy-paste';
+
 /**
  * The 'direct-call' executor.
  * This executor generates context using `rmfilter` and then directly calls an LLM
  * with that context. The LLM's response is then processed by `applyLlmEdits`.
  */
 export class CopyPasteExecutor implements Executor {
-  static name = 'copy-paste';
+  static name = CopyPasteExecutorName;
   static description =
     'Copies the prompt into the clipboard and then applies the edits you copy back';
   static optionsSchema = copyPasteOptionsSchema;

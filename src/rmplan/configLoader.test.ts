@@ -17,7 +17,7 @@ void mock.module('../logging.js', () => ({
   warn: () => {},
 }));
 import { type RmplanConfig, type WorkspaceCreationConfig } from './configSchema.js';
-import { DEFAULT_EXECUTOR } from './executors/index.js';
+import { DEFAULT_EXECUTOR } from './constants.js';
 
 // Since js-yaml isn't working in tests, we'll use yaml
 import yaml from 'yaml';
@@ -231,7 +231,7 @@ postApplyCommands:
       await fs.writeFile(
         localConfigPath,
         `
-defaultExecutor: direct-call
+defaultExecutor: copy-only
 postApplyCommands:
   - title: Missing command field
 `
