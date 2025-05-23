@@ -1,15 +1,9 @@
-import { describe, expect, test, beforeEach, afterEach, mock, jest } from 'bun:test';
-import { SharedStore, PersistenceAdapter, type AllState } from './store';
-import { BaseEvent } from './events';
-import {
-  resetSpans,
-  getSpans,
-  setupTestTelemetry,
-  MockSpan,
-  findSpan,
-} from './telemetry_test_utils';
-import * as telemetry from './telemetry';
+import { afterEach, beforeEach, describe, expect, jest, mock, test } from 'bun:test';
 import { fail } from 'node:assert';
+import type { BaseEvent } from './events';
+import { SharedStore, type AllState, type PersistenceAdapter } from './store';
+import * as telemetry from './telemetry';
+import { MockSpan, getSpans, resetSpans, setupTestTelemetry } from './telemetry_test_utils';
 
 // Define test types
 interface TestEvent extends BaseEvent<string, { data: string }> {}
@@ -84,6 +78,7 @@ describe('SharedStore', () => {
 
     test('updateContext() correctly updates the context', async () => {
       // Update the context
+      // eslint-disable-next-line @typescript-eslint/await-thenable
       await store.updateContext((ctx) => ({
         ...ctx,
         counter: ctx.counter + 1,
@@ -543,12 +538,12 @@ describe('SharedStore', () => {
       withSpanMock.mockClear();
 
       // Setup initial state
-      await store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
+      store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
       store.setScratchpad({ test: 'data' });
 
       // Run operation that updates state
       const result = await store.withRollback(async () => {
-        await store.updateContext((ctx) => ({ ...ctx, counter: 10 }));
+        store.updateContext((ctx) => ({ ...ctx, counter: 10 }));
         store.setScratchpad({ test: 'updated' });
         return 'success';
       });
@@ -571,12 +566,12 @@ describe('SharedStore', () => {
 
       // Setup initial state with current state
       store.setCurrentState('INITIAL_STATE');
-      await store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
+      store.updateContext((ctx) => ({ ...ctx, counter: 5 }));
       store.setScratchpad({ test: 'data' });
 
       // Run operation that updates state and adds events
       await store.withRollback(async () => {
-        await store.updateContext((ctx) => ({
+        store.updateContext((ctx) => ({
           ...ctx,
           counter: 10,
           items: ['item1', 'item2'],
@@ -786,6 +781,7 @@ describe('SharedStore', () => {
       );
 
       // Run operation with retry and expect failure
+      // eslint-disable-next-line @typescript-eslint/await-thenable
       await expect(storeWithFastRetry.retry(operation)).rejects.toThrow('Always fails');
 
       // Verify the correct number of attempts were made
@@ -839,6 +835,7 @@ describe('SharedStore', () => {
       const operation = mock(() => Promise.reject(new Error('Always fails')));
 
       // Run with a custom max attempts override
+      // eslint-disable-next-line @typescript-eslint/await-thenable
       await expect(store.retry(operation, 1)).rejects.toThrow('Always fails');
 
       // Verify only one attempt was made (override takes precedence)
