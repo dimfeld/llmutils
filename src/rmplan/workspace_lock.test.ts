@@ -9,14 +9,13 @@ describe('WorkspaceLock', () => {
 
   beforeEach(async () => {
     // Create a unique test directory with timestamp and random suffix to avoid conflicts
-    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-    testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `workspace-lock-test-${uniqueSuffix}-`));
+    testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `workspace-lock-test-`));
   });
 
   afterEach(async () => {
     // Reset test PID
     WorkspaceLock.setTestPid(undefined);
-    
+
     try {
       await fs.promises.rm(testDir, { recursive: true, force: true });
     } catch (error) {
@@ -47,29 +46,29 @@ describe('WorkspaceLock', () => {
   test('acquireLock fails when lock already exists', async () => {
     const lockDir = path.join(testDir, 'lock-test-2');
     await fs.promises.mkdir(lockDir, { recursive: true });
-    
-    // Create a lock from a "different host" to prevent stale detection
+
     const lockInfo: LockInfo = {
-      pid: 12345,
+      pid: process.pid,
       command: 'first command',
       startedAt: new Date().toISOString(),
-      hostname: 'different-host',  // Different hostname prevents isRmplanProcess check
+      hostname: 'different-host', // Different hostname prevents isRmplanProcess check
       version: 1,
     };
-    
+
     const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
     await fs.promises.writeFile(lockFilePath, JSON.stringify(lockInfo, null, 2));
-    
+
     // Try to acquire lock, should fail
+    // eslint-disable-next-line @typescript-eslint/await-thenable
     await expect(WorkspaceLock.acquireLock(lockDir, 'second command')).rejects.toThrow(
-      'Workspace is already locked by process 12345'
+      `Workspace is already locked by process ${process.pid}`
     );
   });
 
   test('releaseLock removes lock file when owned by current process', async () => {
     const lockDir = path.join(testDir, 'lock-test-3');
     await fs.promises.mkdir(lockDir, { recursive: true });
-    
+
     await WorkspaceLock.acquireLock(lockDir, 'test command');
     const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
 
@@ -93,7 +92,7 @@ describe('WorkspaceLock', () => {
   test('releaseLock does not remove lock owned by different process', async () => {
     const lockDir = path.join(testDir, 'lock-test-4');
     await fs.promises.mkdir(lockDir, { recursive: true });
-    
+
     const lockInfo: LockInfo = {
       pid: process.pid + 1,
       command: 'other command',
@@ -119,7 +118,7 @@ describe('WorkspaceLock', () => {
   test('getLockInfo returns null when no lock exists', async () => {
     const lockDir = path.join(testDir, 'lock-test-5');
     await fs.promises.mkdir(lockDir, { recursive: true });
-    
+
     const lockInfo = await WorkspaceLock.getLockInfo(lockDir);
     expect(lockInfo).toBeNull();
   });
@@ -127,7 +126,7 @@ describe('WorkspaceLock', () => {
   test('getLockInfo returns lock information when lock exists', async () => {
     const lockDir = path.join(testDir, 'lock-test-6');
     await fs.promises.mkdir(lockDir, { recursive: true });
-    
+
     const originalLockInfo = await WorkspaceLock.acquireLock(lockDir, 'test command');
     const retrievedLockInfo = await WorkspaceLock.getLockInfo(lockDir);
 
@@ -137,7 +136,7 @@ describe('WorkspaceLock', () => {
   test('isLocked returns correct status', async () => {
     const lockDir = path.join(testDir, 'lock-test-7');
     await fs.promises.mkdir(lockDir, { recursive: true });
-    
+
     expect(await WorkspaceLock.isLocked(lockDir)).toBe(false);
 
     await WorkspaceLock.acquireLock(lockDir, 'test command');
@@ -179,7 +178,7 @@ describe('WorkspaceLock', () => {
   test('clearStaleLock removes only stale locks', async () => {
     const lockDir = path.join(testDir, 'lock-test-8');
     await fs.promises.mkdir(lockDir, { recursive: true });
-    
+
     // Create a stale lock
     const staleLockInfo: LockInfo = {
       pid: 999999,
@@ -214,7 +213,7 @@ describe('WorkspaceLock', () => {
   test('acquireLock replaces stale lock', async () => {
     const lockDir = path.join(testDir, 'lock-test-9');
     await fs.promises.mkdir(lockDir, { recursive: true });
-    
+
     // Create a stale lock
     const staleLockInfo: LockInfo = {
       pid: 999999,

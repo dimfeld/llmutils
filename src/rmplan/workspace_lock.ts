@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { promisify } from 'node:util';
 import { exec } from 'node:child_process';
+import { debugLog } from '../logging.ts';
 
 const execAsync = promisify(exec);
 
@@ -39,6 +40,7 @@ export class WorkspaceLock {
 
     // Check if lock already exists
     const existingLock = await this.getLockInfo(workspacePath);
+    console.log({ existingLock });
     if (existingLock && !(await this.isLockStale(existingLock))) {
       throw new Error(`Workspace is already locked by process ${existingLock.pid}`);
     }
@@ -123,12 +125,6 @@ export class WorkspaceLock {
       return true;
     }
 
-    // On same host, check if process is rmplan
-    if (lockInfo.hostname === os.hostname()) {
-      return !(await this.isRmplanProcess(lockInfo.pid));
-    }
-
-    // Can't verify process on different host, assume not stale
     return false;
   }
 
@@ -139,29 +135,6 @@ export class WorkspaceLock {
     } catch {
       return false;
     }
-  }
-
-  static async isRmplanProcess(pid: number): Promise<boolean> {
-    const platform = process.platform;
-
-    try {
-      if (platform === 'linux') {
-        const cmdlinePath = `/proc/${pid}/cmdline`;
-        const cmdline = await fs.promises.readFile(cmdlinePath, 'utf-8');
-        return cmdline.includes('rmplan');
-      } else if (platform === 'darwin') {
-        const { stdout } = await execAsync(`ps -p ${pid} -o comm=`);
-        return stdout.trim().includes('node') || stdout.trim().includes('bun');
-      } else if (platform === 'win32') {
-        const { stdout } = await execAsync(`wmic process where ProcessId=${pid} get CommandLine`);
-        return stdout.includes('rmplan');
-      }
-    } catch {
-      // If we can't determine, assume it's not rmplan
-      return false;
-    }
-
-    return false;
   }
 
   static async clearStaleLock(workspacePath: string): Promise<void> {
