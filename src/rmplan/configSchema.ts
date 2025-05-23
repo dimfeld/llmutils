@@ -62,7 +62,9 @@ export const rmplanConfigSchema = z
         trackingFile: z
           .string()
           .optional()
-          .describe('Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)'),
+          .describe(
+            'Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)'
+          ),
       })
       .optional(),
     /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */

@@ -68,7 +68,7 @@ export class WorkspaceManager {
     config: RmplanConfig
   ): Promise<Workspace | null> {
     log('Creating workspace using llmutils-based method');
-    
+
     const workspaceConfig = config.workspaceCreation!;
 
     // Step 1: Infer repository URL if not provided
@@ -213,14 +213,17 @@ export class WorkspaceManager {
 
     // Record the workspace info for tracking
     const trackingFilePath = config.paths?.trackingFile || getDefaultTrackingFilePath();
-    await recordWorkspace({
-      taskId,
-      originalPlanFilePath,
-      repositoryUrl: repositoryUrl,
-      workspacePath: targetClonePath,
-      branch: branchName,
-      createdAt: new Date().toISOString(),
-    }, trackingFilePath);
+    await recordWorkspace(
+      {
+        taskId,
+        originalPlanFilePath,
+        repositoryUrl: repositoryUrl,
+        workspacePath: targetClonePath,
+        branch: branchName,
+        createdAt: new Date().toISOString(),
+      },
+      trackingFilePath
+    );
 
     // Acquire lock for the workspace
     try {

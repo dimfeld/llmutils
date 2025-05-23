@@ -196,7 +196,7 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
     // Find and load local override configuration if it exists
     const localConfigPath = await findLocalConfigPath(configPath);
     let effectiveConfig: RmplanConfig;
-    
+
     if (localConfigPath) {
       try {
         // Load the local override configuration
@@ -229,7 +229,7 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
       }
       effectiveConfig = config;
     }
-    
+
     return effectiveConfig;
   } catch (err: any) {
     // loadConfig only throws on validation errors. Read/parse errors return default config.

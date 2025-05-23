@@ -513,7 +513,7 @@ program
       const globalOpts = program.opts();
       const config = await loadEffectiveConfig(globalOpts.config);
       const trackingFilePath = config.paths?.trackingFile;
-      
+
       let repoUrl = options.repo;
       if (!repoUrl) {
         // Try to get repo URL from current directory

@@ -186,7 +186,10 @@ export class WorkspaceAutoSelector {
   /**
    * List all workspaces with their lock status
    */
-  static async listWorkspacesWithStatus(repositoryUrl: string, trackingFilePath?: string): Promise<void> {
+  static async listWorkspacesWithStatus(
+    repositoryUrl: string,
+    trackingFilePath?: string
+  ): Promise<void> {
     const workspaces = await findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath);
     const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
 

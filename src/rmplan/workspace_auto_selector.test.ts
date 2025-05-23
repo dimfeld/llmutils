@@ -28,11 +28,22 @@ describe('WorkspaceAutoSelector', () => {
     testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-auto-selector-test-'));
 
     // Setup spies for workspace tracker functions
-    findWorkspacesByRepoUrlSpy = spyOn(workspaceTracker, 'findWorkspacesByRepoUrl').mockResolvedValue([]);
-    updateWorkspaceLockStatusSpy = spyOn(workspaceTracker, 'updateWorkspaceLockStatus').mockImplementation((workspaces: any[]) => Promise.resolve(workspaces));
-    findWorkspacesByTaskIdSpy = spyOn(workspaceTracker, 'findWorkspacesByTaskId').mockResolvedValue([]);
+    findWorkspacesByRepoUrlSpy = spyOn(
+      workspaceTracker,
+      'findWorkspacesByRepoUrl'
+    ).mockResolvedValue([]);
+    updateWorkspaceLockStatusSpy = spyOn(
+      workspaceTracker,
+      'updateWorkspaceLockStatus'
+    ).mockImplementation((workspaces: any[]) => Promise.resolve(workspaces));
+    findWorkspacesByTaskIdSpy = spyOn(workspaceTracker, 'findWorkspacesByTaskId').mockResolvedValue(
+      []
+    );
     recordWorkspaceSpy = spyOn(workspaceTracker, 'recordWorkspace').mockResolvedValue(undefined);
-    getDefaultTrackingFilePathSpy = spyOn(workspaceTracker, 'getDefaultTrackingFilePath').mockReturnValue('/default/tracking/path.json');
+    getDefaultTrackingFilePathSpy = spyOn(
+      workspaceTracker,
+      'getDefaultTrackingFilePath'
+    ).mockReturnValue('/default/tracking/path.json');
 
     // Setup test config
     config = {
