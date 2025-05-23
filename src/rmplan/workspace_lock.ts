@@ -40,7 +40,6 @@ export class WorkspaceLock {
 
     // Check if lock already exists
     const existingLock = await this.getLockInfo(workspacePath);
-    console.log({ existingLock });
     if (existingLock && !(await this.isLockStale(existingLock))) {
       throw new Error(`Workspace is already locked by process ${existingLock.pid}`);
     }
