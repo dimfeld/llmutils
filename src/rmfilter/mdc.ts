@@ -121,6 +121,27 @@ export async function findMdcFiles(gitRoot: string): Promise<string[]> {
 }
 
 /**
+ * Finds all .md and .mdc files in specified directories.
+ *
+ * @param directories An array of directory paths to search in.
+ * @returns A Promise resolving to an array of absolute file paths to the found .md and .mdc files.
+ */
+export async function findMdAndMdcFilesInDirectories(directories: string[]): Promise<string[]> {
+  if (directories.length === 0) {
+    return [];
+  }
+
+  const searchPatterns = directories.flatMap((dir) => [
+    path.join(dir, '**/*.mdc').replace(/\\/g, '/'), // Normalize for glob
+    path.join(dir, '**/*.md').replace(/\\/g, '/'), // Also search for .md files
+  ]);
+
+  const files = await glob(searchPatterns, { absolute: true, onlyFiles: true, dot: true });
+  debugLog(`[MDC] Found MD/MDC files in custom directories: ${files.join(', ')}`);
+  return files;
+}
+
+/**
  * Normalizes input that can be undefined, a single string, or an array of strings
  * into an array of non-empty, trimmed strings.
  *

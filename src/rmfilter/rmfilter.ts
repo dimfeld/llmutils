@@ -41,6 +41,7 @@ import {
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../rmplan/executors/index.ts';
 import type { RmplanConfig } from '../rmplan/configSchema.ts';
 import type { ExecutorCommonOptions } from '../rmplan/executors/types';
+import { loadEffectiveConfig } from '../rmplan/configLoader.ts';
 
 async function handleInitialCliCommands(globalValues: GlobalValues) {
   // Handle creation of new YAML config
@@ -653,11 +654,21 @@ export async function generateRmfilterOutput(
   const editFormat =
     globalValues['edit-format'] || modelSettings.defaultEditFormat || 'udiff-simple';
 
+  // Load rmplan config to get docs paths
+  let rmplanConfig: RmplanConfig | null = null;
+  try {
+    rmplanConfig = await loadEffectiveConfig();
+  } catch (err) {
+    // If rmplan config loading fails, just continue without it
+    debugLog(`Failed to load rmplan config: ${err}`);
+  }
+
   // Fetch additional docs, diff tag, and examples tag
   const additionalDocsOptions: AdditionalDocsOptions = {
     ...globalValues,
     // Combine instructions from config and potentially editor
     instructions: (globalValues.instructions || []).concat(editorInstructions),
+    docsPaths: rmplanConfig?.paths?.docs,
   };
 
   // Pass paths relative to gitRoot to getAdditionalDocs, but baseDir context is still needed

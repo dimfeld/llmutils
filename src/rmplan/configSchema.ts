@@ -53,6 +53,12 @@ export const rmplanConfigSchema = z
     paths: z
       .object({
         tasks: z.string().optional().describe('Path to directory containing task definitions'),
+        docs: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Paths to directories to search for .md and .mdc documentation files to auto-include'
+          ),
       })
       .optional(),
     /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */

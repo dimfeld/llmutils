@@ -3,7 +3,13 @@ import { glob } from 'fast-glob';
 import os from 'node:os';
 import path from 'node:path';
 import { debugLog, error } from '../logging.ts';
-import { filterMdcFiles, findMdcFiles, parseMdcFile, type MdcFile } from './mdc.ts';
+import {
+  filterMdcFiles,
+  findMdcFiles,
+  findMdAndMdcFilesInDirectories,
+  parseMdcFile,
+  type MdcFile,
+} from './mdc.ts';
 import { getGitRoot, getUsingJj } from './utils.ts';
 
 // Helper function to escape XML attribute values (specifically quotes)
@@ -19,6 +25,7 @@ export interface AdditionalDocsOptions {
   'omit-cursorrules'?: boolean;
   'omit-instructions-tag'?: boolean;
   'no-autodocs'?: boolean;
+  docsPaths?: string[];
 }
 
 export async function getAdditionalDocs(
@@ -33,10 +40,47 @@ export async function getAdditionalDocs(
   if (!values['no-autodocs']) {
     try {
       debugLog('[MDC] Starting MDC processing...');
-      const mdcFilePaths = await findMdcFiles(gitRoot);
-      if (mdcFilePaths.length > 0) {
+
+      // Search in default locations (.cursor/rules and ~/.config/rmfilter/rules)
+      const defaultMdcFilePaths = await findMdcFiles(gitRoot);
+
+      // Search in configured docs paths for .md and .mdc files
+      let customMdcFilePaths: string[] = [];
+      if (values.docsPaths && values.docsPaths.length > 0) {
+        const resolvedDocsPaths: string[] = [];
+        for (const docsPath of values.docsPaths) {
+          // Resolve relative paths relative to gitRoot
+          const resolvedPath = path.isAbsolute(docsPath)
+            ? docsPath
+            : path.resolve(gitRoot, docsPath);
+          let isDirectory = false;
+          try {
+            const stat = await Bun.file(resolvedPath).stat();
+            isDirectory = stat.isDirectory();
+          } catch (e) {
+            // Path doesn't exist or can't be accessed
+            isDirectory = false;
+          }
+
+          if (isDirectory) {
+            resolvedDocsPaths.push(resolvedPath);
+          } else {
+            debugLog(
+              `[MDC] Configured docs path does not exist or is not a directory: ${resolvedPath}`
+            );
+          }
+        }
+
+        if (resolvedDocsPaths.length > 0) {
+          customMdcFilePaths = await findMdAndMdcFilesInDirectories(resolvedDocsPaths);
+        }
+      }
+
+      const allMdcFilePaths = [...defaultMdcFilePaths, ...customMdcFilePaths];
+
+      if (allMdcFilePaths.length > 0) {
         const parsedMdcFilesResults = await Promise.all(
-          mdcFilePaths.map((filePath) => parseMdcFile(filePath))
+          allMdcFilePaths.map((filePath) => parseMdcFile(filePath))
         );
         // Filter out null results from parsing errors
         const parsedMdcFiles = parsedMdcFilesResults.filter(

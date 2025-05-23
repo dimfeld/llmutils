@@ -47,6 +47,13 @@
             "tasks": {
               "type": "string",
               "description": "Path to directory containing task definitions"
+            },
+            "docs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Paths to directories to search for .md and .mdc documentation files to auto-include"
             }
           },
           "additionalProperties": false
