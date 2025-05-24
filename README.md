@@ -10,6 +10,7 @@ The scripts are:
 - `rmfind` - Find relevant files to use with rmfilter
 - `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks.
 - `rmpr` - Handle pull request comments and reviews with AI assistance
+- `rmapp` - GitHub App server that responds to mentions in issues and PRs, executing llmutils commands and posting results back
 
 All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
 
@@ -48,6 +49,11 @@ assume a repository written with Typescript and PNPM workspaces.
     - [Documentation Search Paths](#documentation-search-paths)
     - [Workspace Auto-Creation](#workspace-auto-creation)
     - [Automatic Examples](#automatic-examples)
+- [rmapp - GitHub App Server](#rmapp---github-app-server)
+  - [Setup](#setup)
+  - [Usage](#usage-2)
+  - [Features](#features)
+  - [Configuration](#configuration-1)
     - [Post-Apply Commands](#post-apply-commands)
   - [Executors](#executors)
     - [Available Executors](#available-executors)
@@ -752,6 +758,79 @@ apply-llm-edits --dry-run
 # Run and apply in one go
 rmfilter src/**/*.ts --instructions 'Make it better'
 rmrun
+```
+
+## rmapp - GitHub App Server
+
+`rmapp` is a GitHub App server that responds to mentions in issue and PR comments. When mentioned, it can execute llmutils commands and post the results back to GitHub.
+
+### Setup
+
+1. Create a GitHub App with the following permissions:
+
+   - Issues: Read & Write
+   - Pull requests: Read & Write
+   - Contents: Read (to clone repositories)
+
+2. Configure webhook URL to point to your server's `/webhook` endpoint
+
+3. Set up environment variables or configuration:
+   ```bash
+   export GITHUB_APP_ID="your-app-id"
+   export GITHUB_PRIVATE_KEY_PATH="/path/to/private-key.pem"
+   export GITHUB_WEBHOOK_SECRET="your-webhook-secret"
+   export GITHUB_BOT_NAME="your-bot-name"
+   ```
+
+### Usage
+
+Start the server:
+
+```bash
+# Start with default settings
+rmapp start
+
+# Start with custom port
+rmapp start --port 8080
+
+# Start with config file
+rmapp start --config rmapp-config.json
+```
+
+In GitHub issues or PRs, mention the bot with commands:
+
+```
+@your-bot-name rmplan generate --plan "Add user authentication"
+@your-bot-name rmfilter --with-imports src/auth/**/*.ts
+@your-bot-name rmrun --model gemini-2.5-pro -- src/api/users.ts
+```
+
+The bot will:
+
+1. Clone the repository
+2. Execute the requested command
+3. Post the results back as a comment
+
+### Features
+
+- Supports all major llmutils commands: `rmplan`, `rmfilter`, `rmrun`
+- Automatically checks out PR branches when responding to PR comments
+- Posts progress updates while executing long-running commands
+- Secure webhook signature verification
+- Configurable via environment variables or config file
+
+### Configuration
+
+Create a JSON config file:
+
+```json
+{
+  "appId": "123456",
+  "privateKey": "-----BEGIN RSA PRIVATE KEY-----\n...",
+  "webhookSecret": "your-secret",
+  "botName": "mybot",
+  "port": 3000
+}
 ```
 
 ## Acknowledgements
