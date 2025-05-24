@@ -2,6 +2,9 @@ import type { EnrichedAnalysis, Requirement, TechnicalScope, Pattern } from '../
 import type { RmplanConfig } from '../../rmplan/configSchema.js';
 import type { PlanSchema } from '../../rmplan/planSchema.js';
 
+// Re-export for convenience
+export type Plan = PlanSchema;
+
 // This matches the actual rmplan schema structure
 export interface RmplanStep {
   prompt: string;

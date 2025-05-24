@@ -91,11 +91,16 @@ export class WorkflowExecutor {
       throw new Error('Failed to create workspace');
     }
 
+    const branchName = `issue-${event.issue.number}`;
+    const baseRef = 'main'; // TODO: Get from repository default branch
+
     await this.store.createWorkspace({
       id: workspace.taskId,
       path: workspace.path,
       workflowId,
       status: 'active',
+      branchName,
+      baseRef,
     });
 
     // Create workflow context
@@ -109,6 +114,8 @@ export class WorkflowExecutor {
       issueNumber: event.issue.number,
       issueTitle: event.issue.title,
       issueBody: event.issue.body || '',
+      repoOwner: event.repository.owner.login,
+      repoName: event.repository.name,
     };
 
     // Create state machine persistence

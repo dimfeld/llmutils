@@ -409,14 +409,16 @@ export class StateStore {
   async createWorkspace(workspace: Omit<WorkspaceInfo, 'createdAt' | 'updatedAt'>): Promise<void> {
     const now = new Date();
     const stmt = this.db.prepare(`
-      INSERT INTO workspaces (id, path, workflow_id, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO workspaces (id, path, workflow_id, status, branch_name, base_ref, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       workspace.id,
       workspace.path,
       workspace.workflowId,
       workspace.status,
+      workspace.branchName || null,
+      workspace.baseRef || null,
       now.toISOString(),
       now.toISOString()
     );
@@ -444,6 +446,57 @@ export class StateStore {
       status: result.status,
       createdAt: new Date(result.created_at),
       updatedAt: new Date(result.updated_at),
+    };
+  }
+
+  async getWorkspace(id: string): Promise<WorkspaceInfo | null> {
+    const query = this.db.prepare(`
+      SELECT * FROM workspaces WHERE id = ?
+    `);
+    const result = query.get(id) as any;
+
+    if (!result) return null;
+
+    return {
+      id: result.id,
+      path: result.path,
+      workflowId: result.workflow_id,
+      status: result.status,
+      branchName: result.branch_name,
+      baseRef: result.base_ref,
+      createdAt: new Date(result.created_at),
+      updatedAt: new Date(result.updated_at),
+    };
+  }
+
+  async getIssue(issueNumber: number): Promise<{ number: number; title: string; body: string | null } | null> {
+    const query = this.db.prepare(`
+      SELECT iw.issue_number, iw.issue_title, w.metadata
+      FROM issue_workflows iw
+      JOIN workflows w ON iw.workflow_id = w.id
+      WHERE iw.issue_number = ?
+      ORDER BY w.created_at DESC
+      LIMIT 1
+    `);
+    const result = query.get(issueNumber) as any;
+
+    if (!result) return null;
+
+    // Extract body from metadata if available
+    let body: string | null = null;
+    if (result.metadata) {
+      try {
+        const metadata = JSON.parse(result.metadata);
+        body = metadata.issueBody || null;
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    return {
+      number: result.issue_number,
+      title: result.issue_title,
+      body,
     };
   }
 

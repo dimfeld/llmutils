@@ -11,30 +11,31 @@ import {
   IssueFailedNode,
 } from './issue_nodes.js';
 
-export const issueWorkflowConfig: StateMachineConfig<
-  IssueWorkflowState,
-  IssueWorkflowContext,
-  WorkflowEvent
-> = {
-  initialState: 'analyzing',
-  errorState: 'failed',
-  nodes: [
-    new AnalyzeIssueNode('analyzing'),
-    new GeneratePlanNode('planning'),
-    new ImplementIssueNode('implementing'),
-    new TestImplementationNode('testing'),
-    new CreatePRNode('creating_pr'),
-    new IssueCompleteNode('complete'),
-    new IssueFailedNode('failed'),
-  ],
-};
+export function createIssueWorkflowConfig(
+  octokit: any
+): StateMachineConfig<IssueWorkflowState, IssueWorkflowContext, WorkflowEvent> {
+  return {
+    initialState: 'analyzing',
+    errorState: 'failed',
+    nodes: [
+      new AnalyzeIssueNode('analyzing'),
+      new GeneratePlanNode('planning'),
+      new ImplementIssueNode('implementing'),
+      new TestImplementationNode('testing'),
+      new CreatePRNode('creating_pr', octokit),
+      new IssueCompleteNode('complete'),
+      new IssueFailedNode('failed'),
+    ],
+  };
+}
 
 export function createIssueWorkflow(
   context: IssueWorkflowContext,
   persistence: any
 ): StateMachine<IssueWorkflowState, IssueWorkflowContext, WorkflowEvent> {
+  const config = createIssueWorkflowConfig(context.octokit);
   return new StateMachine(
-    issueWorkflowConfig,
+    config,
     persistence,
     context,
     `issue-${context.workflowId}`,

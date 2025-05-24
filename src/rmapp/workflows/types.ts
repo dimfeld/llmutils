@@ -62,6 +62,8 @@ export interface IssueWorkflowContext extends WorkflowContext {
   issueNumber: number;
   issueTitle: string;
   issueBody: string;
+  repoOwner: string;
+  repoName: string;
   analysis?: IssueAnalysis;
   planPath?: string;
   branchName?: string;

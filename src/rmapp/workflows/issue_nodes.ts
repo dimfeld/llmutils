@@ -12,9 +12,12 @@ import type { ClaudeCodeExecutorOptions } from '../../rmplan/executors/claude_co
 import { AnalysisPipeline, AnalysisCache } from '../analysis/index.js';
 import type { GitHubIssue, RepoContext } from '../analysis/types.js';
 import { PlanGenerationPipeline } from '../planning/index.js';
+import { PRCreator } from '../pr/index.js';
 import { join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { log } from '../../logging.js';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { log, error } from '../../logging.js';
+import { load } from 'js-yaml';
+import type { PlanSchema } from '../../rmplan/planSchema.js';
 
 export type IssueWorkflowState =
   | 'analyzing'
@@ -472,11 +475,95 @@ export class CreatePRNode extends WorkflowNode<
   void,
   IssueWorkflowState
 > {
-  protected claudeCodeConfig: Partial<ClaudeCodeExecutorOptions> = {
-    allowedTools: ['Bash'],
-    includeDefaultTools: false,
-  };
+  private prCreator: PRCreator;
+  protected claudeCodeConfig: Partial<ClaudeCodeExecutorOptions> = {};
   protected model = 'claude-3-5-sonnet-20241022';
+
+  constructor(state: 'creating_pr', private octokit: any) {
+    super(state);
+    this.prCreator = new PRCreator(octokit);
+  }
+
+  // Override to not use Claude Code for this node
+  protected async executeWithArgs(
+    args: void,
+    context: IssueWorkflowContext,
+    store: SharedStore<IssueWorkflowContext, WorkflowEvent>
+  ): Promise<NodeExecutionResult> {
+    try {
+      // Get workspace information
+      const workspaceId = context.artifacts.get('workspaceId');
+      if (!workspaceId) {
+        throw new Error('No workspace ID available');
+      }
+
+      const workspace = await context.store.getWorkspace(workspaceId);
+      if (!workspace) {
+        throw new Error('Workspace not found');
+      }
+
+      // Load plan
+      const planPath = context.artifacts.get('planPath');
+      if (!planPath || !existsSync(planPath)) {
+        throw new Error('Plan file not found');
+      }
+
+      const planContent = readFileSync(planPath, 'utf-8');
+      const plan = load(planContent) as PlanSchema;
+
+      // Get issue details
+      const issue = await context.store.getIssue(context.issueNumber);
+      if (!issue) {
+        throw new Error('Issue not found');
+      }
+
+      // Get analysis
+      const analysisJson = context.artifacts.get('analysis');
+      const analysis = analysisJson ? JSON.parse(analysisJson) : null;
+
+      // Create the PR
+      const result = await this.prCreator.createPR(
+        {
+          owner: context.repoOwner,
+          repo: context.repoName,
+          issueNumber: context.issueNumber,
+          branchName: workspace.branchName || `issue-${context.issueNumber}`,
+          baseRef: workspace.baseRef || 'main',
+        },
+        issue.title,
+        issue.body || '',
+        analysis,
+        plan,
+        workspace.path
+      );
+
+      if (result.success && result.prNumber) {
+        await context.store.updateIssueWorkflowStep(context.workflowId, 'prCreated', true);
+        await context.store.updateIssueWorkflowData(context.workflowId, {
+          prNumber: result.prNumber,
+          branchName: workspace.branchName,
+        });
+
+        log(`Created PR #${result.prNumber} for issue #${context.issueNumber}`);
+
+        return {
+          success: true,
+          artifacts: { prNumber: result.prNumber, prUrl: result.prUrl },
+        };
+      }
+
+      return {
+        success: false,
+        error: result.error || 'Failed to create PR',
+      };
+    } catch (err) {
+      error('Failed to create PR:', err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
+    }
+  }
 
   protected shouldProcessEvent(event: WorkflowEvent): boolean {
     return event.type === 'workflow_step_complete' && event.step === 'testing';
@@ -487,22 +574,8 @@ export class CreatePRNode extends WorkflowNode<
   }
 
   protected getPrompt(args: void, context: IssueWorkflowContext): string {
-    const branchName = `issue-${context.issueNumber}`;
-
-    return `Create a pull request for issue #${context.issueNumber}.
-
-Steps:
-1. Create a new branch: ${branchName}
-2. Commit all changes with a descriptive message
-3. Push the branch
-4. Create a PR using gh CLI
-
-PR title should be: "Fix #${context.issueNumber}: ${context.issueTitle}"
-
-PR body should:
-- Reference the issue with "Fixes #${context.issueNumber}"
-- Summarize the changes made
-- Include any relevant testing information`;
+    // Not used since we override executeWithArgs
+    return '';
   }
 
   protected async processExecutorResult(
@@ -510,27 +583,8 @@ PR body should:
     args: void,
     context: IssueWorkflowContext
   ): Promise<NodeExecutionResult> {
-    // Extract PR number from the result
-    const prMatch = result.match(/pull request #(\d+)/i) || result.match(/PR #(\d+)/i);
-    const prNumber = prMatch ? parseInt(prMatch[1]) : undefined;
-
-    if (prNumber) {
-      await context.store.updateIssueWorkflowStep(context.workflowId, 'prCreated', true);
-      await context.store.updateIssueWorkflowData(context.workflowId, {
-        prNumber,
-        branchName: `issue-${context.issueNumber}`,
-      });
-
-      return {
-        success: true,
-        artifacts: { prNumber },
-      };
-    }
-
-    return {
-      success: false,
-      error: 'Failed to create PR',
-    };
+    // Not used since we override executeWithArgs
+    return { success: false, error: 'Should not reach here' };
   }
 
   protected getNextState(): IssueWorkflowState {

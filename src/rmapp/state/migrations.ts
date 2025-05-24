@@ -72,6 +72,11 @@ export class MigrationManager {
         name: 'initial_schema',
         up: readFileSync(join(__dirname, 'schema.sql'), 'utf-8'),
       },
+      {
+        version: 2,
+        name: 'workspace_branch_info',
+        up: readFileSync(join(__dirname, 'migrations', '002_workspace_branch_info.sql'), 'utf-8'),
+      },
     ];
 
     return migrations.sort((a, b) => a.version - b.version);

@@ -60,6 +60,8 @@ export interface WorkspaceInfo {
   path: string;
   workflowId: string;
   status: 'active' | 'completed' | 'failed';
+  branchName?: string;
+  baseRef?: string;
   createdAt: Date;
   updatedAt: Date;
 }
