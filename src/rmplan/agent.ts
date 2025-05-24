@@ -175,6 +175,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           ...executorStepOptions,
           model: executorStepOptions.model || agentExecutionModel,
           selectSteps: false,
+          filePathPrefix: executor.filePathPrefix,
         },
         currentBaseDir
       ).catch((err) => {

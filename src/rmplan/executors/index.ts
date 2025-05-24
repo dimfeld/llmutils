@@ -2,7 +2,10 @@ import { DEFAULT_RUN_MODEL } from '../../common/run_and_apply.ts';
 import { executors } from './build.ts';
 import { ClaudeCodeExecutor, ClaudeCodeExecutorName } from './claude_code.ts';
 import { CopyOnlyExecutor, CopyOnlyExecutorName } from './copy_only.ts';
-import { CopyOnlyStateMachineExecutor, CopyOnlyStateMachineExecutorName } from './copy_only_statemachine.ts';
+import {
+  CopyOnlyStateMachineExecutor,
+  CopyOnlyStateMachineExecutorName,
+} from './copy_only_statemachine.ts';
 import { CopyPasteExecutor, CopyPasteExecutorName } from './copy_paste.ts';
 import { OneCallExecutor, OneCallExecutorName } from './one-call';
 import { DEFAULT_EXECUTOR } from '../constants.js';

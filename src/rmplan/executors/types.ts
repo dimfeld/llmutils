@@ -40,6 +40,12 @@ export interface Executor {
   forceReviewCommentsMode?: 'inline-edits' | 'separate-context';
 
   /**
+   * Prefix to use when listing file paths in prompts.
+   * For example, '@' for Claude Code to enable automatic file reading.
+   */
+  filePathPrefix?: string;
+
+  /**
    * The asynchronous function that executes the generated context.
    * @param contextContent - The string content for execution (output from `rmfilter` or direct prompt).
    * @param executorOptions - Parsed and validated options specific to this executor.

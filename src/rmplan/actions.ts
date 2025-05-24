@@ -25,6 +25,7 @@ export interface PrepareNextStepOptions {
   rmfilterArgs?: string[];
   model?: string;
   autofind?: boolean;
+  filePathPrefix?: string;
 }
 
 // Interface for the result of finding a pending task
@@ -262,7 +263,8 @@ export async function prepareNextStep(
     promptParts.push(
       '## Relevant Files\n\nThese are relevant files for the next subtasks. If you think additional files are relevant, you can update them as well.'
     );
-    files.forEach((file) => promptParts.push(`- ${path.relative(gitRoot, file)}`));
+    const filePrefix = options.filePathPrefix || '';
+    files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
   }
   promptParts.push('\n## Selected Next Subtasks to Implement:\n');
   // Some models (Gemini Pro 2.5 especially) will infer what the next step is and do it as part of the current step, then get confused when we

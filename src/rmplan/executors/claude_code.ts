@@ -35,6 +35,7 @@ export class ClaudeCodeExecutor implements Executor {
   };
 
   // readonly forceReviewCommentsMode = 'separate-context';
+  readonly filePathPrefix = '@';
 
   constructor(
     public options: ClaudeCodeExecutorOptions,
