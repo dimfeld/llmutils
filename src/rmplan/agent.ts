@@ -35,6 +35,20 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     currentPlanFile = path.join(parsed.dir, parsed.base);
   }
 
+  // Verify the original plan file exists
+  try {
+    // Use stat to check if file exists
+    try {
+      await Bun.file(currentPlanFile).text();
+    } catch {
+      error(`Original plan file ${currentPlanFile} does not exist or is empty.`);
+      process.exit(1);
+    }
+  } catch (err) {
+    error(`Error checking original plan file: ${String(err)}`);
+    process.exit(1);
+  }
+
   if (!options['no-log']) {
     let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
     openLogFile(logFilePath);
@@ -45,20 +59,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Handle workspace creation or auto-selection
   if (options.workspace || options.autoWorkspace) {
-    // Verify the original plan file exists
-    try {
-      // Use stat to check if file exists
-      try {
-        await Bun.file(currentPlanFile).text();
-      } catch {
-        error(`Original plan file ${currentPlanFile} does not exist or is empty.`);
-        process.exit(1);
-      }
-    } catch (err) {
-      error(`Error checking original plan file: ${String(err)}`);
-      process.exit(1);
-    }
-
     const workspaceManager = new WorkspaceManager(currentBaseDir);
     let workspace;
     let selectedWorkspace;
