@@ -41,11 +41,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     try {
       await Bun.file(currentPlanFile).text();
     } catch {
-      error(`Original plan file ${currentPlanFile} does not exist or is empty.`);
+      error(`Plan file ${currentPlanFile} does not exist or is empty.`);
       process.exit(1);
     }
   } catch (err) {
-    error(`Error checking original plan file: ${String(err)}`);
+    error(`Error checking plan file: ${String(err)}`);
     process.exit(1);
   }
 
