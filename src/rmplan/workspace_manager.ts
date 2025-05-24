@@ -1,13 +1,11 @@
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { $ } from 'bun';
-import { log, debugLog } from '../logging.js';
-import { spawnAndLogOutput, getGitRoot, parseCliArgsFromString } from '../rmfilter/utils.js';
-import type { RmplanConfig, WorkspaceCreationConfig, PostApplyCommand } from './configSchema.js';
+import { debugLog, log } from '../logging.js';
+import { spawnAndLogOutput } from '../rmfilter/utils.js';
 import { executePostApplyCommand } from './actions.js';
-import { recordWorkspace, getDefaultTrackingFilePath } from './workspace_tracker.js';
+import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
+import { getDefaultTrackingFilePath, recordWorkspace } from './workspace_tracker.js';
 
 /**
  * Interface representing a created workspace
@@ -49,24 +47,9 @@ export class WorkspaceManager {
       return null;
     }
 
-    return this._createWithLlmUtils(taskId, originalPlanFilePath, config);
-  }
+    log('Creating workspace...');
 
-  /**
-   * Creates a workspace by cloning a repository and creating a new branch using llmutils method
-   * @param taskId Unique identifier for the task
-   * @param originalPlanFilePath Absolute path to the original plan file
-   * @param config The full rmplan configuration
-   * @returns A Workspace object if successful, null otherwise
-   */
-  private async _createWithLlmUtils(
-    taskId: string,
-    originalPlanFilePath: string,
-    config: RmplanConfig
-  ): Promise<Workspace | null> {
-    log('Creating workspace using llmutils-based method');
-
-    const workspaceConfig = config.workspaceCreation!;
+    const workspaceConfig = config.workspaceCreation;
 
     // Step 1: Infer repository URL if not provided
     let repositoryUrl = workspaceConfig.repositoryUrl;

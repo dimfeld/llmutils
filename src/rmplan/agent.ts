@@ -67,7 +67,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       // Use auto-selector to find or create a workspace
       log('Auto-selecting workspace...');
       const selector = new WorkspaceAutoSelector(workspaceManager, config);
-      const taskId = options.workspace || `auto-${Date.now()}`;
+      const taskId =
+        options.workspace ||
+        `${path.parse(currentBaseDir).dir.split(path.sep).pop()}-${Date.now()}`;
 
       selectedWorkspace = await selector.selectWorkspace(taskId, currentPlanFile, {
         interactive: !options.nonInteractive,
