@@ -116,21 +116,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             originalPlanFilePath: availableWorkspace.originalPlanFilePath,
             taskId: availableWorkspace.taskId,
           };
-        } else if (!options.newWorkspace) {
+        } else {
           error(
             `Workspace with task ID '${options.workspace}' exists but is locked, and --new-workspace was not specified. Cannot proceed.`
           );
           process.exit(1);
-        } else {
-          // All existing workspaces are locked, create a new one
-          log(
-            `Existing workspaces for task '${options.workspace}' are locked. Creating new workspace.`
-          );
-          workspace = await workspaceManager.createWorkspace(
-            options.workspace,
-            currentPlanFile,
-            config
-          );
         }
       } else if (options.newWorkspace) {
         // No existing workspace, create a new one
