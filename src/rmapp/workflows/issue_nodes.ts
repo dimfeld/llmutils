@@ -11,6 +11,7 @@ import type {
 import type { ClaudeCodeExecutorOptions } from '../../rmplan/executors/claude_code.js';
 import { AnalysisPipeline, AnalysisCache } from '../analysis/index.js';
 import type { GitHubIssue, RepoContext } from '../analysis/types.js';
+import { PlanGenerationPipeline } from '../planning/index.js';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { log } from '../../logging.js';
@@ -211,6 +212,8 @@ export class GeneratePlanNode extends WorkflowNode<
   IssueAnalysis,
   IssueWorkflowState
 > {
+  private planGenerator = new PlanGenerationPipeline();
+
   protected claudeCodeConfig: Partial<ClaudeCodeExecutorOptions> = {
     allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
     includeDefaultTools: false,
@@ -229,7 +232,56 @@ export class GeneratePlanNode extends WorkflowNode<
     return analysis;
   }
 
+  protected async executeWithArgs(
+    args: IssueAnalysis,
+    context: IssueWorkflowContext,
+    store: SharedStore<IssueWorkflowContext, WorkflowEvent>
+  ): Promise<NodeExecutionResult> {
+    try {
+      // Get the enriched analysis if available
+      const enrichedAnalysis = context.artifacts.get('enrichedAnalysis');
+      if (!enrichedAnalysis) {
+        log('No enriched analysis found, using basic analysis');
+        // Fall back to base class implementation
+        return super.executeWithClaude(args);
+      }
+
+      // Generate plan path
+      const planPath = join(
+        context.workspaceDir || '/tmp',
+        'tasks',
+        `issue-${context.issueNumber}-plan.yml`
+      );
+
+      // Generate the plan using the pipeline
+      log(`Generating plan for issue #${context.issueNumber}`);
+      const plan = await this.planGenerator.generate(
+        enrichedAnalysis,
+        context.workspaceDir || '/tmp',
+        planPath
+      );
+
+      // Update workflow data
+      await context.store.updateIssueWorkflowData(context.workflowId, {
+        planPath,
+      });
+      await context.store.updateIssueWorkflowStep(context.workflowId, 'planGenerated', true);
+
+      return {
+        success: true,
+        artifacts: { plan, planPath },
+      };
+    } catch (error) {
+      log('Error in GeneratePlanNode:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to generate plan',
+      };
+    }
+  }
+
   protected getPrompt(args: IssueAnalysis, context: IssueWorkflowContext): string {
+    // This is now only used as fallback
     return `Generate an implementation plan for this issue.
 
 Issue: ${context.issueTitle}
@@ -254,6 +306,8 @@ Make sure each step has clear instructions that an AI assistant can follow.`;
     args: IssueAnalysis,
     context: IssueWorkflowContext
   ): Promise<NodeExecutionResult> {
+    // This method is not used when executeWithArgs is overridden
+    // but kept for fallback compatibility
     const planPath = join(
       context.workspaceDir || process.cwd(),
       `tasks/issue-${context.issueNumber}-plan.yml`

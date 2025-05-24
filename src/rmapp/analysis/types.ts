@@ -91,6 +91,8 @@ export interface EnrichedAnalysis extends IssueAnalysis {
   codebaseContext: CodebaseContext;
   relatedChanges: RelatedChange[];
   conventions: Convention[];
+  patterns?: Pattern[];
+  issueNumber?: number;
 }
 
 export interface CodebaseContext {
