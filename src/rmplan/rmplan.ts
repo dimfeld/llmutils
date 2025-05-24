@@ -71,8 +71,7 @@ Respond with ONLY the filename, nothing else.`;
   } catch (err) {
     // Fallback to default if model fails
     warn('Failed to generate filename suggestion:', err);
-    const tasksDir = config.paths?.tasks;
-    return tasksDir ? path.join(tasksDir, `rmplan-${Date.now()}.md`) : `rmplan-${Date.now()}.md`;
+    return '';
   }
 }
 
