@@ -22,8 +22,59 @@ import { planPrompt } from './prompt.js';
 import { executors } from './executors/index.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.ts';
+import { generateText } from 'ai';
+import { createModel } from '../common/model_factory.ts';
 
 await loadEnv();
+
+async function generateSuggestedFilename(planText: string, config: any): Promise<string> {
+  try {
+    // Extract first 500 characters of the plan for context
+    const planSummary = planText.slice(0, 500);
+
+    const prompt = `Given this plan text, suggest a concise and descriptive filename (without extension). 
+The filename should:
+- Be lowercase with hyphens between words
+- Be descriptive of the main task or feature
+- Be 3-8 words maximum
+- Not include dates or version numbers
+
+Plan text:
+${planSummary}
+
+Respond with ONLY the filename, nothing else.`;
+
+    const model = createModel('google/gemini-2.0-flash');
+    const result = await generateText({
+      model,
+      prompt,
+      maxTokens: 50,
+      temperature: 0.3,
+    });
+
+    let filename = result.text
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    // Ensure it's not empty and has reasonable length
+    if (!filename || filename.length < 3) {
+      filename = 'rmplan-task';
+    }
+
+    // Add to tasks directory if configured
+    const tasksDir = config.paths?.tasks;
+    const fullPath = tasksDir ? path.join(tasksDir, `${filename}.md`) : `${filename}.md`;
+
+    return fullPath;
+  } catch (err) {
+    // Fallback to default if model fails
+    warn('Failed to generate filename suggestion:', err);
+    const tasksDir = config.paths?.tasks;
+    return tasksDir ? path.join(tasksDir, `rmplan-${Date.now()}.md`) : `rmplan-${Date.now()}.md`;
+  }
+}
 
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
@@ -89,6 +140,31 @@ program
         if (!planText || !planText.trim()) {
           error('No plan text was provided from the editor.');
           process.exit(1);
+        }
+
+        // Copy the plan to clipboard
+        await clipboard.write(planText);
+        log(chalk.green('✓ Plan copied to clipboard'));
+
+        // Generate suggested filename using Gemini Flash 2.0
+        let suggestedFilename = await generateSuggestedFilename(planText, config);
+
+        // Prompt for save location
+        let savePath = await input({
+          message: 'Save plan to this file (or clear the line to skip): ',
+          required: false,
+          default: suggestedFilename,
+        });
+
+        if (savePath) {
+          try {
+            await Bun.write(savePath, planText);
+            planFile = savePath;
+            log('Plan saved to:', savePath);
+          } catch (err) {
+            error('Failed to save plan to file:', err);
+            process.exit(1);
+          }
         }
       } catch (err) {
         error('Failed to get plan from editor:', err);
