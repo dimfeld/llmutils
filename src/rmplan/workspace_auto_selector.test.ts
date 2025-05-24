@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { WorkspaceAutoSelector } from './workspace_auto_selector';
-import { WorkspaceManager } from './workspace_manager';
+import { createWorkspace } from './workspace_manager';
 import { WorkspaceLock } from './workspace_lock';
 import * as workspaceTracker from './workspace_tracker';
 import type { RmplanConfig, WorkspaceInfo } from './configSchema';
@@ -15,7 +15,6 @@ mock.module('@inquirer/prompts', () => ({
 
 describe('WorkspaceAutoSelector', () => {
   let testDir: string;
-  let workspaceManager: WorkspaceManager;
   let selector: WorkspaceAutoSelector;
   let config: RmplanConfig;
   let findWorkspacesByRepoUrlSpy: any;
@@ -57,8 +56,7 @@ describe('WorkspaceAutoSelector', () => {
       },
     };
 
-    workspaceManager = new WorkspaceManager(testDir);
-    selector = new WorkspaceAutoSelector(workspaceManager, config);
+    selector = new WorkspaceAutoSelector(testDir, config);
   });
 
   afterEach(async () => {
@@ -178,14 +176,21 @@ describe('WorkspaceAutoSelector', () => {
     updateWorkspaceLockStatusSpy.mockResolvedValue(mockWorkspaces);
 
     // Mock workspace creation
-    const createWorkspaceMock = mock(() => null);
-    workspaceManager.createWorkspace = createWorkspaceMock;
+    const createWorkspaceSpy = spyOn(
+      await import('./workspace_manager'),
+      'createWorkspace'
+    ).mockResolvedValue(null);
 
     const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
       interactive: false,
     });
 
-    expect(createWorkspaceMock).toHaveBeenCalledWith('task-new', '/test/plan-new.yml', config);
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(
+      testDir,
+      'task-new',
+      '/test/plan-new.yml',
+      config
+    );
   });
 
   test('preferNewWorkspace option creates new workspace first', async () => {
@@ -209,8 +214,10 @@ describe('WorkspaceAutoSelector', () => {
       taskId: 'task-new',
     };
 
-    const createWorkspaceMock = mock(() => newWorkspace);
-    workspaceManager.createWorkspace = createWorkspaceMock;
+    const createWorkspaceSpy = spyOn(
+      await import('./workspace_manager'),
+      'createWorkspace'
+    ).mockResolvedValue(newWorkspace);
 
     findWorkspacesByTaskIdSpy.mockResolvedValue([
       {
@@ -227,7 +234,7 @@ describe('WorkspaceAutoSelector', () => {
       preferNewWorkspace: true,
     });
 
-    expect(createWorkspaceMock).toHaveBeenCalled();
+    expect(createWorkspaceSpy).toHaveBeenCalled();
     expect(result?.isNew).toBe(true);
     expect(result?.workspace.taskId).toBe('task-new');
   });

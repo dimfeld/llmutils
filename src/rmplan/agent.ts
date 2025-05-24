@@ -18,7 +18,7 @@ import {
 } from './executors/index.ts';
 import type { ExecutorCommonOptions } from './executors/types.ts';
 import { planSchema } from './planSchema.ts';
-import { WorkspaceManager } from './workspace_manager.ts';
+import { createWorkspace } from './workspace_manager.ts';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.ts';
 import { WorkspaceLock } from './workspace_lock.ts';
 import { findWorkspacesByTaskId } from './workspace_tracker.ts';
@@ -60,14 +60,13 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Handle workspace creation or auto-selection
   if (options.workspace || options.autoWorkspace) {
-    const workspaceManager = new WorkspaceManager(currentBaseDir);
     let workspace;
     let selectedWorkspace;
 
     if (options.autoWorkspace) {
       // Use auto-selector to find or create a workspace
       log('Auto-selecting workspace...');
-      const selector = new WorkspaceAutoSelector(workspaceManager, config);
+      const selector = new WorkspaceAutoSelector(currentBaseDir, config);
       const taskId =
         options.workspace ||
         `${path.parse(currentBaseDir).dir.split(path.sep).pop()}-${Date.now()}`;
@@ -125,7 +124,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       } else if (options.newWorkspace) {
         // No existing workspace, create a new one
         log(`Creating workspace for task: ${options.workspace}`);
-        workspace = await workspaceManager.createWorkspace(
+        workspace = await createWorkspace(
+          currentBaseDir,
           options.workspace,
           currentPlanFile,
           config

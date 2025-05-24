@@ -30,14 +30,13 @@ await mock.module('./actions.js', () => ({
 }));
 
 // Import the module under test after all mocks are set up
-import { WorkspaceManager } from './workspace_manager.js';
+import { createWorkspace } from './workspace_manager.js';
 import type { RmplanConfig } from './configSchema.js';
 
-describe('WorkspaceManager', () => {
+describe('createWorkspace', () => {
   // Setup variables
   let testTempDir: string;
   let mainRepoRoot: string;
-  let workspaceManager: WorkspaceManager;
 
   beforeEach(async () => {
     // Create a temporary directory for each test
@@ -46,9 +45,6 @@ describe('WorkspaceManager', () => {
     // Create a mock main repo root within the temp directory
     mainRepoRoot = path.join(testTempDir, 'main-repo');
     await fs.mkdir(mainRepoRoot, { recursive: true });
-
-    // Create workspace manager
-    workspaceManager = new WorkspaceManager(mainRepoRoot);
 
     // Reset all mocks
     mockLog.mockReset();
@@ -66,7 +62,7 @@ describe('WorkspaceManager', () => {
 
   test('createWorkspace returns null when workspaceCreation is not enabled', async () => {
     const config: RmplanConfig = {};
-    const result = await workspaceManager.createWorkspace('task-123', '/path/to/plan.yml', config);
+    const result = await createWorkspace(mainRepoRoot, 'task-123', '/path/to/plan.yml', config);
 
     expect(result).toBeNull();
     expect(mockLog).toHaveBeenCalledWith('Workspace creation not enabled in config');
@@ -106,7 +102,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -168,7 +164,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -199,7 +195,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).toBeNull();
@@ -253,7 +249,7 @@ describe('WorkspaceManager', () => {
     mockExecutePostApplyCommand.mockResolvedValue(true);
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -303,7 +299,7 @@ describe('WorkspaceManager', () => {
     };
 
     // Execute and verify it throws an error
-    await expect(workspaceManager.createWorkspace(taskId, planPath, config)).rejects.toThrow(
+    await expect(createWorkspace(mainRepoRoot, taskId, planPath, config)).rejects.toThrow(
       'cloneLocation must be set in workspace configuration to clone a new workspace'
     );
   });
@@ -342,7 +338,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).toBeNull();
@@ -380,7 +376,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).toBeNull();
@@ -431,7 +427,7 @@ describe('WorkspaceManager', () => {
     mockExecutePostApplyCommand.mockResolvedValue(false);
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).toBeNull();
@@ -492,7 +488,7 @@ describe('WorkspaceManager', () => {
     mockExecutePostApplyCommand.mockResolvedValue(false);
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -546,7 +542,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -617,7 +613,7 @@ describe('WorkspaceManager', () => {
     });
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -700,7 +696,7 @@ describe('WorkspaceManager', () => {
     });
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();

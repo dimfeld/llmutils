@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
 import { log } from '../logging.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
-import { WorkspaceManager } from './workspace_manager.js';
+import { createWorkspace } from './workspace_manager.js';
 import {
   findWorkspacesByRepoUrl,
   findWorkspacesByTaskId,
@@ -37,7 +37,7 @@ export interface SelectedWorkspace {
  */
 export class WorkspaceAutoSelector {
   constructor(
-    private workspaceManager: WorkspaceManager,
+    private mainRepoRoot: string,
     private config: RmplanConfig
   ) {}
 
@@ -167,11 +167,7 @@ export class WorkspaceAutoSelector {
     taskId: string,
     planFilePath: string
   ): Promise<WorkspaceInfo | null> {
-    const workspace = await this.workspaceManager.createWorkspace(
-      taskId,
-      planFilePath,
-      this.config
-    );
+    const workspace = await createWorkspace(this.mainRepoRoot, taskId, planFilePath, this.config);
 
     if (!workspace) {
       return null;
