@@ -661,7 +661,7 @@ export async function generateRmfilterOutput(
     rmplanConfig = await loadEffectiveConfig();
   } catch (err) {
     // If rmplan config loading fails, just continue without it
-    debugLog(`Failed to load rmplan config: ${err}`);
+    debugLog(`Failed to load rmplan config: ${err as Error}`);
   }
 
   // Fetch additional docs, diff tag, and examples tag
