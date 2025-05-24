@@ -413,12 +413,12 @@ export class SuggestionHandler {
       return null;
     }
 
-    const { suggestedCode, requiresImports } = processed.enhanced || processed.parsed;
+    const suggestedCode = (processed.enhanced || processed.parsed).suggestedCode;
     let result = suggestedCode;
 
     // Add required imports at the beginning if needed
-    if (requiresImports && requiresImports.length > 0) {
-      const importsText = requiresImports.join('\n');
+    if (processed.enhanced?.requiresImports && processed.enhanced.requiresImports.length > 0) {
+      const importsText = processed.enhanced.requiresImports.join('\n');
       result = `${importsText}\n\n${result}`;
     }
 

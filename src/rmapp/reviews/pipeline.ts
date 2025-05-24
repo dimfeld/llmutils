@@ -1,11 +1,11 @@
 import type { Octokit } from 'octokit';
-import type {
-  ParsedReview,
-  ParsedReviewSet,
-  ReviewComment,
-  PullRequestContext,
-  ReviewSummary,
+import {
   ReviewIntent,
+  type ParsedReview,
+  type ParsedReviewSet,
+  type ReviewComment,
+  type PullRequestContext,
+  type ReviewSummary,
 } from './types';
 import { ReviewNLPParser } from './nlp_parser';
 import { CodeReferenceResolver } from './reference_resolver';
@@ -88,7 +88,7 @@ export class ReviewParsingPipeline {
       body: pr.data.body || '',
       base: pr.data.base.ref,
       head: pr.data.head.ref,
-      draft: pr.data.draft,
+      draft: pr.data.draft || false,
       labels: pr.data.labels.map(l => l.name),
     };
   }

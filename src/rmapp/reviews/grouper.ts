@@ -1,9 +1,9 @@
-import type {
-  ParsedReview,
-  GroupedReviews,
-  PrioritizedGroups,
-  ChangeType,
+import {
   ReviewIntent,
+  type ParsedReview,
+  type GroupedReviews,
+  type PrioritizedGroups,
+  type ChangeType,
 } from './types';
 
 export class ReviewGrouper {
