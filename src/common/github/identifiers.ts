@@ -63,3 +63,25 @@ export async function parsePrOrIssueNumber(identifier: string): Promise<{
   }
   return value;
 }
+
+export function parseGitHubUrl(
+  url: string
+): { type: 'issue' | 'pr'; owner: string; repo: string; number: number } | null {
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.slice(1).split('/');
+
+    if (parts.length >= 4 && (parts[2] === 'issues' || parts[2] === 'pull')) {
+      return {
+        type: parts[2] === 'issues' ? 'issue' : 'pr',
+        owner: parts[0],
+        repo: parts[1],
+        number: parseInt(parts[3], 10),
+      };
+    }
+  } catch {
+    // Not a valid URL
+  }
+
+  return null;
+}

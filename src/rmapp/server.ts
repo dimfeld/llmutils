@@ -1,22 +1,24 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { GitHubAppConfig, WebhookEvent } from './types';
+import type { GitHubAppConfig, WebhookEvent, ExecutionContext } from './types';
 import { WebhookHandler } from './webhook_handler';
-import { MentionParser } from './mention_parser';
 import { GitHubAuth } from './github_auth';
-import { CommandExecutor } from './command_executor';
+import { CommandService } from './commands/service';
+import { StateStore } from './state/store';
+import { WorkflowExecutor } from './workflows/executor';
 import { error, log } from '../logging';
 
 export class GitHubAppServer {
   private webhookHandler: WebhookHandler;
-  private mentionParser: MentionParser;
   private githubAuth: GitHubAuth;
+  private stateStore: StateStore;
   private server: ReturnType<typeof createServer>;
+  private workflowExecutors: Map<number, WorkflowExecutor> = new Map();
 
   constructor(private config: GitHubAppConfig) {
     this.webhookHandler = new WebhookHandler(config);
-    this.mentionParser = new MentionParser(config.botName);
     this.githubAuth = new GitHubAuth(config);
+    this.stateStore = new StateStore(':memory:'); // TODO: Make configurable
 
     this.server = createServer(this.handleRequest.bind(this));
   }
@@ -100,15 +102,6 @@ export class GitHubAppServer {
       return;
     }
 
-    // Parse the command from the comment
-    const command = this.mentionParser.parse(event.comment.body);
-    if (!command) {
-      log('No valid command found in comment');
-      return;
-    }
-
-    log(`Parsed command: ${command.command} with args:`, command.args);
-
     // Get authenticated Octokit for this installation
     const octokit = await this.githubAuth.getInstallationOctokit(event.installation.id);
     if (!octokit) {
@@ -116,18 +109,36 @@ export class GitHubAppServer {
       return;
     }
 
+    // Get or create workflow executor for this installation
+    let workflowExecutor = this.workflowExecutors.get(event.installation.id);
+    if (!workflowExecutor) {
+      workflowExecutor = new WorkflowExecutor(octokit, {
+        dbPath: ':memory:', // TODO: Make configurable
+      });
+      await workflowExecutor.initialize();
+      this.workflowExecutors.set(event.installation.id, workflowExecutor);
+    }
+
+    // Create command service for this request
+    const commandService = new CommandService(
+      this.config.botName,
+      workflowExecutor,
+      this.stateStore
+    );
+
     // Create a unique workspace directory name
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const workspaceDir = `rmapp-${event.repository.name}-${timestamp}`;
 
-    // Execute the command
-    const executor = new CommandExecutor({
+    // Process the command using the enhanced command service
+    const result = await commandService.processCommand(event.comment.body, {
       octokit,
       event,
       workspaceDir,
-      command,
-    });
+    } as ExecutionContext);
 
-    await executor.execute();
+    if (!result.success && result.error) {
+      error('Command processing failed:', result.error);
+    }
   }
 }
