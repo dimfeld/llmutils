@@ -47,7 +47,7 @@ describe('StateStore', () => {
       };
 
       const id = await store.createWorkflow('pr_review', metadata);
-      const workflow = await store.getWorkflow(id) as PRReviewWorkflow;
+      const workflow = (await store.getWorkflow(id)) as PRReviewWorkflow;
 
       expect(workflow).toBeTruthy();
       expect(workflow.type).toBe('pr_review');
@@ -102,7 +102,7 @@ describe('StateStore', () => {
       await store.updateIssueWorkflowStep(id, 'analyzed', true);
       await store.updateIssueWorkflowStep(id, 'planGenerated', true);
 
-      const workflow = await store.getWorkflow(id) as IssueWorkflow;
+      const workflow = (await store.getWorkflow(id)) as IssueWorkflow;
       expect(workflow.steps.analyzed).toBe(true);
       expect(workflow.steps.planGenerated).toBe(true);
       expect(workflow.steps.implemented).toBe(false);
@@ -121,7 +121,7 @@ describe('StateStore', () => {
         workspaceId: 'workspace-123',
       });
 
-      const workflow = await store.getWorkflow(id) as IssueWorkflow;
+      const workflow = (await store.getWorkflow(id)) as IssueWorkflow;
       expect(workflow.planPath).toBe('/path/to/plan.yml');
       expect(workflow.branchName).toBe('feature/test-123');
       expect(workflow.workspaceId).toBe('workspace-123');
@@ -144,7 +144,7 @@ describe('StateStore', () => {
         action: 'change_requested',
       });
 
-      const workflow = await store.getWorkflow(id) as PRReviewWorkflow;
+      const workflow = (await store.getWorkflow(id)) as PRReviewWorkflow;
       expect(workflow.reviewComments.length).toBe(1);
       expect(workflow.reviewComments[0].body).toBe('Please add error handling');
 
@@ -154,7 +154,7 @@ describe('StateStore', () => {
         response: 'Added error handling',
       });
 
-      const updated = await store.getWorkflow(id) as PRReviewWorkflow;
+      const updated = (await store.getWorkflow(id)) as PRReviewWorkflow;
       expect(updated.reviewComments[0].resolved).toBe(true);
       expect(updated.reviewComments[0].response).toBe('Added error handling');
     });
@@ -211,7 +211,7 @@ describe('StateStore', () => {
 
       // Verify through events
       const events = await store.getWorkflowEvents(workflowId);
-      const commandEvent = events.find(e => e.type === 'command_executed');
+      const commandEvent = events.find((e) => e.type === 'command_executed');
       expect(commandEvent).toBeTruthy();
       expect(commandEvent?.payload.command).toBe('rmplan');
     });
@@ -227,7 +227,7 @@ describe('StateStore', () => {
 
       // Use the raw database transaction to test rollback
       const db = (store as any).db;
-      
+
       try {
         const tx = db.transaction(() => {
           db.prepare('UPDATE workflows SET status = ? WHERE id = ?').run('in_progress', workflowId);
@@ -250,7 +250,7 @@ describe('StateStore', () => {
       const future = new Date();
       future.setDate(future.getDate() + 1);
       await store.archiveCompletedWorkflows(future);
-      
+
       const id1 = await store.createWorkflow('issue', {
         repository: { owner: 'test', name: 'repo' },
         issueNumber: 1,
@@ -277,7 +277,7 @@ describe('StateStore', () => {
     it('should cleanup zombie workspaces', async () => {
       // Get the initial count of zombie workspaces
       const initialCleaned = await store.cleanupZombieWorkspaces();
-      
+
       const workflowId = await store.createWorkflow('issue', {
         repository: { owner: 'test', name: 'repo' },
         issueNumber: 123,

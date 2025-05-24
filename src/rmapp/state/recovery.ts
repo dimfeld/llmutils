@@ -38,7 +38,7 @@ export class WorkflowRecovery {
               status: 'failed',
               error: 'Workflow timed out',
             });
-            
+
             // Clean up associated workspace
             const workspace = await this.store.getWorkspaceByWorkflow(workflow.id);
             if (workspace && workspace.status === 'active') {
@@ -100,7 +100,7 @@ export class WorkflowRecovery {
         if (workspace && workspace.status === 'active') {
           // We can potentially resume this workflow
           console.log(`Workflow ${workflow.id} can potentially be resumed`);
-          
+
           // For now, we'll just log it. In a real implementation,
           // we would check the state and determine if we can continue
           // or need to restart from a checkpoint.
@@ -140,7 +140,7 @@ export class WorkflowRecovery {
     const maxAgeMs = 24 * 60 * 60 * 1000; // 24 hours
 
     const staleWorkflows = activeWorkflows.filter(
-      w => now - w.updatedAt.getTime() > maxAgeMs
+      (w) => now - w.updatedAt.getTime() > maxAgeMs
     ).length;
 
     // Count zombie workspaces (this is a simplified check)

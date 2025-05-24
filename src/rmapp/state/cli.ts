@@ -15,10 +15,7 @@ const getDbPath = (): string => {
   return process.env.RMAPP_STATE_DB || join(homedir(), '.rmapp', 'state.db');
 };
 
-program
-  .name('rmapp-state')
-  .description('CLI for managing rmapp state')
-  .version('1.0.0');
+program.name('rmapp-state').description('CLI for managing rmapp state').version('1.0.0');
 
 program
   .command('list')
@@ -42,7 +39,7 @@ program
 
         const data = [
           ['ID', 'Type', 'Status', 'Repository', 'Created', 'Updated'],
-          ...workflows.map(w => [
+          ...workflows.map((w) => [
             w.id.substring(0, 8),
             w.type,
             w.status,
@@ -116,7 +113,9 @@ program
         const events = await store.getWorkflowEvents(workflow.id, 20);
         console.log(`\nRecent Events:`);
         for (const event of events) {
-          console.log(`  ${event.createdAt.toISOString()} - ${event.type}: ${JSON.stringify(event.payload)}`);
+          console.log(
+            `  ${event.createdAt.toISOString()} - ${event.type}: ${JSON.stringify(event.payload)}`
+          );
         }
       }
     } finally {
@@ -135,7 +134,7 @@ program
 
     try {
       const recovery = new WorkflowRecovery(store);
-      
+
       // First recover any interrupted workflows
       console.log('Recovering interrupted workflows...');
       await recovery.recoverInterruptedWorkflows({
@@ -148,7 +147,7 @@ program
       olderThan.setDate(olderThan.getDate() - days);
 
       console.log(`\nArchiving completed workflows older than ${days} days...`);
-      
+
       if (!options.dryRun) {
         const archived = await store.archiveCompletedWorkflows(olderThan);
         console.log(`Archived ${archived} workflows`);
@@ -203,7 +202,7 @@ program
 
     try {
       const recovery = new WorkflowRecovery(store);
-      
+
       console.log('Checking recovery status...');
       const status = await recovery.getRecoveryStatus();
       console.log(`Active workflows: ${status.activeWorkflows}`);

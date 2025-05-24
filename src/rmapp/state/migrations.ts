@@ -27,9 +27,9 @@ export class MigrationManager {
   }
 
   async getCurrentVersion(): Promise<number> {
-    const result = this.db.query<{ version: number }, []>(
-      'SELECT MAX(version) as version FROM migrations'
-    ).get();
+    const result = this.db
+      .query<{ version: number }, []>('SELECT MAX(version) as version FROM migrations')
+      .get();
     return result?.version ?? 0;
   }
 
@@ -51,9 +51,9 @@ export class MigrationManager {
       this.db.exec(migration.up);
 
       // Record the migration
-      this.db.prepare(
-        'INSERT INTO migrations (version, name) VALUES (?, ?)'
-      ).run(migration.version, migration.name);
+      this.db
+        .prepare('INSERT INTO migrations (version, name) VALUES (?, ?)')
+        .run(migration.version, migration.name);
     });
 
     try {
@@ -85,7 +85,7 @@ export class MigrationManager {
 
     const migrations = await this.loadMigrations();
     const migrationsToRollback = migrations
-      .filter(m => m.version > targetVersion && m.version <= currentVersion)
+      .filter((m) => m.version > targetVersion && m.version <= currentVersion)
       .reverse();
 
     for (const migration of migrationsToRollback) {
@@ -102,7 +102,10 @@ export class MigrationManager {
         transaction();
         console.log(`Rolled back migration ${migration.version}: ${migration.name}`);
       } catch (error) {
-        console.error(`Failed to rollback migration ${migration.version}: ${migration.name}`, error);
+        console.error(
+          `Failed to rollback migration ${migration.version}: ${migration.name}`,
+          error
+        );
         throw error;
       }
     }

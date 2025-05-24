@@ -34,13 +34,13 @@ export class StateObserverManager {
     }
 
     this.pollInterval = setInterval(() => {
-      this.pollEvents().catch(error => {
+      this.pollEvents().catch((error) => {
         console.error('Error polling events:', error);
       });
     }, intervalMs);
 
     // Run immediately
-    this.pollEvents().catch(error => {
+    this.pollEvents().catch((error) => {
       console.error('Error in initial poll:', error);
     });
   }
@@ -169,13 +169,14 @@ export class StateObserverManager {
   }
 
   private getStatusMessage(workflow: Workflow, status: string): string {
-    const emoji = {
-      pending: '⏳',
-      in_progress: '🔄',
-      completed: '✅',
-      failed: '❌',
-      cancelled: '🚫',
-    }[status] || '❓';
+    const emoji =
+      {
+        pending: '⏳',
+        in_progress: '🔄',
+        completed: '✅',
+        failed: '❌',
+        cancelled: '🚫',
+      }[status] || '❓';
 
     const statusText = status.replace('_', ' ');
 

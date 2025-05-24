@@ -194,7 +194,7 @@ export class StateStore {
           prNumber: pr.pr_number,
           prTitle: pr.pr_title,
           workspaceId: pr.workspace_id,
-          reviewComments: comments.map(c => ({
+          reviewComments: comments.map((c) => ({
             id: c.id,
             body: c.body,
             path: c.path,
@@ -223,11 +223,9 @@ export class StateStore {
     `);
     const ids = query.all() as { id: string }[];
 
-    const workflows = await Promise.all(
-      ids.map(({ id }) => this.getWorkflow(id))
-    );
+    const workflows = await Promise.all(ids.map(({ id }) => this.getWorkflow(id)));
 
-    return workflows.filter(w => w !== null) as Workflow[];
+    return workflows.filter((w) => w !== null) as Workflow[];
   }
 
   // Issue workflow specific operations
@@ -320,17 +318,20 @@ export class StateStore {
     });
   }
 
-  async addReviewComment(workflowId: string, comment: Omit<ReviewComment, 'resolved' | 'response'>): Promise<void> {
+  async addReviewComment(
+    workflowId: string,
+    comment: Omit<ReviewComment, 'resolved' | 'response'>
+  ): Promise<void> {
     const stmt = this.db.prepare(`
       INSERT INTO review_comments (id, workflow_id, body, path, line, action)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      comment.id, 
-      workflowId, 
-      comment.body, 
-      comment.path || null, 
-      comment.line || null, 
+      comment.id,
+      workflowId,
+      comment.body,
+      comment.path || null,
+      comment.line || null,
       comment.action
     );
   }
@@ -407,7 +408,9 @@ export class StateStore {
   }
 
   // Command execution tracking
-  async recordCommand(command: Omit<CommandExecution, 'id' | 'startedAt' | 'completedAt'>): Promise<string> {
+  async recordCommand(
+    command: Omit<CommandExecution, 'id' | 'startedAt' | 'completedAt'>
+  ): Promise<string> {
     const id = randomUUID();
     const now = new Date();
 
@@ -484,13 +487,7 @@ export class StateStore {
       INSERT INTO workflow_events (id, workflow_id, type, payload, created_at)
       VALUES (?, ?, ?, ?, ?)
     `);
-    stmt.run(
-      id,
-      workflowId,
-      type,
-      JSON.stringify(payload),
-      new Date().toISOString()
-    );
+    stmt.run(id, workflowId, type, JSON.stringify(payload), new Date().toISOString());
   }
 
   async getWorkflowEvents(workflowId: string, limit: number = 100): Promise<WorkflowEvent[]> {
@@ -502,7 +499,7 @@ export class StateStore {
     `);
     const results = query.all(workflowId, limit) as any[];
 
-    return results.map(r => ({
+    return results.map((r) => ({
       id: r.id,
       workflowId: r.workflow_id,
       type: r.type,
@@ -518,7 +515,7 @@ export class StateStore {
       // If already in a transaction, just execute the function
       return await fn();
     }
-    
+
     // Otherwise, create a new transaction
     const transaction = this.db.transaction(fn);
     return transaction() as T;
