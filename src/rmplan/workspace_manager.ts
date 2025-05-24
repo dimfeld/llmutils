@@ -52,9 +52,6 @@ export class WorkspaceManager {
     return this._createWithLlmUtils(taskId, originalPlanFilePath, config);
   }
 
-  // For testing purposes only - allows tests to override homedir
-  private _homeDirForTests?: string;
-
   /**
    * Creates a workspace by cloning a repository and creating a new branch using llmutils method
    * @param taskId Unique identifier for the task
