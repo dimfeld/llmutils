@@ -37,24 +37,47 @@ Create workflow definitions in `src/rmapp/workflows/`:
 ```
 
 ### Step 3: Implement Workflow Nodes
-Create specialized nodes for each workflow step:
+Create specialized nodes for each workflow step that leverage Claude Code:
 
 ```typescript
 class AnalyzeIssueNode extends WorkflowNode {
   async execute(context: IssueContext): Promise<AnalysisResult> {
-    // Extract requirements
-    // Identify affected areas
-    // Determine complexity
-    // Return structured analysis
+    // Use Claude Code to analyze the issue
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: ['Read', 'Glob', 'Grep'],
+        includeDefaultTools: false
+      },
+      { model: 'sonnet' },
+      context.rmplanConfig
+    );
+    
+    const prompt = `Analyze this GitHub issue and extract:
+- Key requirements
+- Affected files and areas
+- Suggested implementation approach
+
+Issue: ${context.issue.title}
+${context.issue.body}`;
+    
+    const result = await executor.execute(prompt);
+    return parseAnalysisResult(result);
   }
 }
 
-class GeneratePlanNode extends WorkflowNode {
-  async execute(context: IssueContext): Promise<string> {
-    // Use analysis to create rmplan
-    // Include relevant files
-    // Set appropriate instructions
-    // Return plan path
+class ImplementStepNode extends WorkflowNode {
+  async execute(context: WorkflowContext): Promise<void> {
+    // Use Claude Code with full capabilities for implementation
+    const executor = new ClaudeCodeExecutor(
+      {
+        includeDefaultTools: true,
+        allowedTools: ['TodoWrite', 'TodoRead']
+      },
+      { model: 'sonnet' },
+      context.rmplanConfig
+    );
+    
+    await executor.execute(context.stepInstructions);
   }
 }
 ```

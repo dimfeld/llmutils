@@ -53,24 +53,43 @@ class ChangeApplier {
     request: AnalyzedChange,
     workspace: string
   ): Promise<AppliedChange> {
-    // Read current file
-    const filePath = path.join(workspace, request.location.file);
-    const content = await fs.readFile(filePath, 'utf-8');
+    // Use Claude Code to apply the requested change
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: ['Read', 'Edit', 'MultiEdit', 'Bash(git diff:*)'],
+        includeDefaultTools: false
+      },
+      { model: 'sonnet' },
+      this.rmplanConfig
+    );
     
-    // Generate the change
-    const modified = await this.generateChange(content, request);
+    const prompt = `Apply the following review feedback:
+
+File: ${request.location.file}
+Location: Lines ${request.location.startLine}-${request.location.endLine}
+Change Type: ${request.changeType}
+Request: ${request.description}
+
+Original Review Comment:
+${request.originalComment}
+
+Instructions:
+1. Read the file and understand the context
+2. Apply the requested change:
+   - For error handling: Add appropriate try-catch blocks or error checks
+   - For validation: Add input validation with clear error messages
+   - For logging: Add meaningful log statements for debugging
+   - For documentation: Add JSDoc/docstrings as appropriate
+   - For refactoring: Improve code structure while maintaining functionality
+3. Ensure the change follows project conventions
+4. Return the applied change details
+
+Be precise and only make the requested change.`;
     
-    // Validate the change
-    const validation = await this.validateChange(modified, request);
-    if (!validation.isValid) {
-      throw new ChangeApplicationError(validation.errors);
-    }
+    const result = await executor.execute(prompt);
     
-    // Apply the change
-    await fs.writeFile(filePath, modified);
-    
-    // Generate diff
-    const diff = this.generateDiff(content, modified);
+    // Get the diff
+    const diff = await this.getDiff(request.location.file, workspace);
     
     return {
       file: request.location.file,
@@ -79,45 +98,6 @@ class ChangeApplier {
       type: request.changeType,
       location: request.location
     };
-  }
-  
-  private async generateChange(
-    content: string,
-    request: AnalyzedChange
-  ): Promise<string> {
-    switch (request.changeType) {
-      case 'errorHandling':
-        return this.addErrorHandling(content, request);
-      case 'validation':
-        return this.addValidation(content, request);
-      case 'logging':
-        return this.addLogging(content, request);
-      case 'documentation':
-        return this.addDocumentation(content, request);
-      case 'refactoring':
-        return this.refactorCode(content, request);
-      default:
-        return this.applyGenericChange(content, request);
-    }
-  }
-  
-  private async addErrorHandling(
-    content: string,
-    request: AnalyzedChange
-  ): Promise<string> {
-    // Parse AST
-    const ast = this.parseCode(content);
-    
-    // Find target function
-    const target = this.findNode(ast, request.location);
-    
-    // Wrap in try-catch if needed
-    if (!this.hasErrorHandling(target)) {
-      return this.wrapInTryCatch(content, target, request);
-    }
-    
-    // Add error handling to existing structure
-    return this.enhanceErrorHandling(content, target, request);
   }
 }
 ```
@@ -452,55 +432,63 @@ class ReviewResponsePipeline {
     pr: PullRequest,
     options: ResponseOptions = {}
   ): Promise<ResponseResult> {
-    // Parse all reviews
-    const parsed = await this.parser.parseReviews(pr);
-    
-    // Filter actionable reviews
-    const actionable = this.filterActionable(parsed.reviews);
-    
-    // Check for clarifications needed
-    const needsClarification = actionable.filter(r => 
-      this.clarificationHandler.needsClarification(r)
+    // Use Claude Code to orchestrate the entire review response process
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [
+          'Read',
+          'Edit',
+          'MultiEdit',
+          'Bash(git:*)',
+          'Bash(gh pr comment:*)',
+          'TodoWrite',
+          'TodoRead'
+        ],
+        includeDefaultTools: true
+      },
+      { model: 'sonnet' },
+      this.rmplanConfig
     );
     
-    if (needsClarification.length > 0 && !options.skipClarifications) {
-      // Post clarification requests
-      await this.requestClarifications(needsClarification, pr);
-      
-      // Continue with clear reviews only
-      actionable = actionable.filter(r => !needsClarification.includes(r));
-    }
+    const prompt = `Respond to all review comments on PR #${pr.number}:
+
+1. Parse and analyze all review comments using GitHub API
+2. For each actionable comment:
+   - Determine if it needs clarification (ambiguous location, unclear request)
+   - If clear, apply the requested change
+   - Track changes with TodoWrite
+
+3. Group related changes by file to avoid conflicts
+
+4. For each successfully applied change:
+   - Post a response comment explaining what was done
+   - Include relevant code snippets if helpful
+   - Mark the comment as resolved
+
+5. For comments needing clarification:
+   - Post a polite request for more details
+   - Explain what information is needed
+
+6. Create commits with meaningful messages:
+   - Group related changes
+   - Reference the review comments
+   - Use conventional commit format
+
+7. Provide a summary of:
+   - Changes applied successfully
+   - Comments that need clarification
+   - Any failures or issues
+
+Options:
+- Auto-commit: ${options.autoCommit ?? true}
+- Batch size: ${options.batchSize ?? 10}
+- Skip clarifications: ${options.skipClarifications ?? false}
+
+Workspace: ${pr.workspace}
+Base branch: ${pr.baseBranch}`;
     
-    // Process changes in batches
-    const batches = this.createBatches(actionable, options);
-    const results: BatchResponse[] = [];
-    
-    for (const batch of batches) {
-      const result = await this.batchProcessor.processBatch(
-        batch,
-        pr.workspace
-      );
-      results.push(result);
-      
-      // Post responses
-      await this.commentPoster.postResponses(result.responses, pr);
-      
-      // Commit if requested
-      if (options.autoCommit && result.changes.length > 0) {
-        await this.commitManager.createReviewCommit(
-          result.changes,
-          batch
-        );
-      }
-    }
-    
-    return {
-      processed: actionable.length,
-      succeeded: results.flatMap(r => r.responses).filter(r => r.status === 'success').length,
-      failed: results.flatMap(r => r.responses).filter(r => r.status === 'failed').length,
-      clarificationsRequested: needsClarification.length,
-      commits: results.map(r => r.commit).filter(Boolean)
-    };
+    const result = await executor.execute(prompt);
+    return this.parseResponseResult(result);
   }
 }
 ```

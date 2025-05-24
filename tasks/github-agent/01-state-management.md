@@ -27,6 +27,7 @@ Use SQLite as the storage backend for the following reasons:
 - Easy backup and migration
 
 Implementation considerations:
+- Use Bun's Sqlite support (https://bun.sh/docs/api/sqlite)
 - Use WAL mode for better concurrent access
 - Implement proper connection pooling
 - Add indexes for common query patterns

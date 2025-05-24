@@ -64,17 +64,30 @@ Create `src/rmapp/analysis/references.ts`:
 ```typescript
 class ReferenceExtractor {
   async extract(issue: GitHubIssue, context: RepoContext): Promise<References> {
-    // Extract mentioned files
-    // Find referenced issues/PRs
-    // Locate documentation links
-    // Identify code snippets
-    // Search for similar issues
-  }
-  
-  private async findRelatedCode(description: string): Promise<string[]> {
-    // Use rmfind to locate relevant files
-    // Search for mentioned class/function names
-    // Find files with similar patterns
+    // Use Claude Code to intelligently extract references
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: ['Read', 'Glob', 'Grep', 'WebFetch'],
+        includeDefaultTools: false
+      },
+      { model: 'haiku' }, // Fast model for reference extraction
+      context.rmplanConfig
+    );
+    
+    const prompt = `Extract all relevant references from this issue:
+- File paths mentioned
+- Referenced issues/PRs (look for #123 format)
+- Documentation links
+- Code snippets
+- Similar functionality in the codebase
+
+Issue: ${issue.title}
+${issue.body}
+
+Return as structured JSON.`;
+    
+    const result = await executor.execute(prompt);
+    return JSON.parse(result);
   }
 }
 ```
@@ -131,24 +144,41 @@ Combine components in `src/rmapp/analysis/pipeline.ts`:
 ```typescript
 class AnalysisPipeline {
   async analyze(issue: GitHubIssue): Promise<IssueAnalysis> {
-    // Parse issue
-    const parsed = await this.parser.parse(issue);
+    // Use Claude Code for comprehensive analysis
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: ['Read', 'Glob', 'Grep', 'TodoWrite', 'TodoRead'],
+        includeDefaultTools: false
+      },
+      { model: 'sonnet' },
+      this.rmplanConfig
+    );
     
-    // Extract references
-    const references = await this.extractor.extract(issue);
+    const prompt = `Analyze this GitHub issue comprehensively:
+
+1. Parse the issue to extract:
+   - Type (feature/bug/refactor/docs/test)
+   - Key requirements with priorities
+   - Technical scope and affected files
+
+2. Find references:
+   - Mentioned files and code
+   - Related issues/PRs
+   - Documentation links
+
+3. Identify patterns:
+   - Similar implementations in the codebase
+   - Relevant coding patterns to follow
+
+4. Suggest implementation approach
+
+Issue #${issue.number}: ${issue.title}
+${issue.body}
+
+Provide a structured analysis following the IssueAnalysis interface.`;
     
-    // Skip complexity analysis - not needed
-    
-    // Find patterns
-    const patterns = await this.matcher.findPatterns(parsed);
-    
-    // Enrich context
-    const enriched = await this.enricher.enrich({
-      ...parsed,
-      patterns
-    });
-    
-    return enriched;
+    const result = await executor.execute(prompt);
+    return this.parseAnalysisResult(result);
   }
 }
 ```

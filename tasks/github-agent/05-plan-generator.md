@@ -125,28 +125,29 @@ class PlanContextGatherer {
   async gatherContext(
     analysis: IssueAnalysis
   ): Promise<PlanContext> {
-    // Find relevant files
-    const files = await this.findRelevantFiles(analysis);
+    // Use Claude Code to intelligently gather context
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: ['Read', 'Glob', 'Grep', 'Bash(find:*)'],
+        includeDefaultTools: false
+      },
+      { model: 'haiku' }, // Fast model for context gathering
+      this.rmplanConfig
+    );
     
-    // Gather examples
-    const examples = await this.findExamples(analysis);
+    const prompt = `Based on this issue analysis, find all relevant context:
+
+1. Identify files that need to be modified or referenced
+2. Find similar implementations or patterns in the codebase
+3. Locate relevant documentation
+4. Find existing tests that should be updated or used as examples
+
+Analysis: ${JSON.stringify(analysis, null, 2)}
+
+Return a structured list of files with their purposes.`;
     
-    // Get documentation
-    const docs = await this.findDocumentation(analysis);
-    
-    // Find tests
-    const tests = await this.findRelatedTests(files);
-    
-    return { files, examples, docs, tests };
-  }
-  
-  private async findRelevantFiles(
-    analysis: IssueAnalysis
-  ): Promise<string[]> {
-    // Use rmfind with smart queries
-    // Include definitely needed files
-    // Add commonly changed together files
-    // Include configuration files
+    const result = await executor.execute(prompt);
+    return this.parseContextResult(result);
   }
 }
 ```
@@ -277,31 +278,43 @@ class PlanGenerationPipeline {
   async generate(
     analysis: IssueAnalysis
   ): Promise<RmplanFile> {
-    // Select strategy
-    const strategy = this.selectStrategy(analysis);
+    // Use Claude Code to generate the complete plan
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: ['Write', 'Read', 'Glob', 'TodoWrite'],
+        includeDefaultTools: false
+      },
+      { model: 'sonnet' },
+      this.rmplanConfig
+    );
     
-    // Generate raw steps
-    const steps = await strategy.generateSteps(analysis);
+    const prompt = `Generate a complete rmplan for implementing this issue.
+
+Issue Analysis:
+${JSON.stringify(analysis, null, 2)}
+
+Requirements:
+1. Create a step-by-step plan using the appropriate strategy (${analysis.type})
+2. Each step should be atomic and testable
+3. Include all necessary context files for each step
+4. Add clear instructions for Claude Code to execute
+5. Follow the project's conventions and patterns
+6. Output should be a valid YAML rmplan file
+
+Strategies to follow:
+- Feature: Design → Implementation → Testing → Documentation
+- Bug: Reproduce → Fix → Test → Verify
+- Refactor: Analyze → Plan → Implement incrementally → Verify
+- Documentation: Analyze needs → Write → Examples → Update related
+- Test: Identify gaps → Unit tests → Integration tests → Coverage
+
+Write the plan to: ${this.planPath}`;
     
-    // Gather context
-    const context = await this.contextGatherer.gather(analysis);
+    await executor.execute(prompt);
     
-    // Optimize steps
-    const optimized = this.optimizer.optimize(steps, context);
-    
-    // Generate instructions
-    const withInstructions = this.addInstructions(optimized, context);
-    
-    // Format plan
-    const formatted = this.formatter.format(withInstructions, analysis);
-    
-    // Validate
-    const validation = await this.validator.validate(formatted);
-    if (!validation.valid) {
-      throw new PlanGenerationError(validation.errors);
-    }
-    
-    return formatted;
+    // Validate the generated plan
+    const plan = await this.loadAndValidate(this.planPath);
+    return plan;
   }
 }
 ```

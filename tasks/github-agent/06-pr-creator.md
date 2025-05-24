@@ -62,35 +62,42 @@ class ChangeAnalyzer {
     workspace: string,
     baseBranch: string
   ): Promise<ChangeAnalysis> {
-    // Get diff
-    const diff = await this.getDiff(workspace, baseBranch);
+    // Use Claude Code to analyze changes intelligently
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: ['Bash(git diff:*)', 'Bash(git log:*)', 'Read', 'Glob'],
+        includeDefaultTools: false
+      },
+      { model: 'sonnet' },
+      this.rmplanConfig
+    );
     
-    // Categorize changes
-    const categorized = this.categorizeChanges(diff);
+    const prompt = `Analyze the changes in workspace ${workspace} compared to ${baseBranch}:
+
+1. Get the full diff and categorize changes:
+   - New features added
+   - Bug fixes implemented
+   - Refactoring done
+   - Tests added/modified
+   - Documentation updates
+
+2. Extract key changes that should be highlighted in the PR
+
+3. Analyze the impact:
+   - Breaking changes
+   - Performance implications
+   - Security considerations
+   - API changes
+
+4. Calculate statistics:
+   - Files changed
+   - Lines added/removed
+   - Test coverage impact
+
+Return a structured analysis.`;
     
-    // Extract key changes
-    const keyChanges = this.extractKeyChanges(categorized);
-    
-    // Analyze impact
-    const impact = this.analyzeImpact(categorized);
-    
-    return {
-      diff,
-      categories: categorized,
-      keyChanges,
-      impact,
-      stats: this.calculateStats(diff)
-    };
-  }
-  
-  private categorizeChanges(diff: Diff): CategorizedChanges {
-    return {
-      features: this.findNewFeatures(diff),
-      fixes: this.findBugFixes(diff),
-      refactors: this.findRefactors(diff),
-      tests: this.findTestChanges(diff),
-      docs: this.findDocChanges(diff)
-    };
+    const result = await executor.execute(prompt);
+    return this.parseAnalysisResult(result);
   }
 }
 ```
@@ -99,47 +106,45 @@ class ChangeAnalyzer {
 Create `src/rmapp/pr/description_generator.ts`:
 ```typescript
 class DescriptionGenerator {
-  async generateSummary(context: PRContext): Promise<string> {
-    // Create executive summary
-    const summary = [];
+  async generateFullDescription(context: PRContext): Promise<string> {
+    // Use Claude Code to generate comprehensive PR description
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: ['Read', 'Bash(git log:*)', 'Bash(git diff:*)'],
+        includeDefaultTools: false
+      },
+      { model: 'sonnet' },
+      this.rmplanConfig
+    );
     
-    // What was implemented
-    summary.push(this.summarizeImplementation(context));
+    const prompt = `Generate a comprehensive PR description for these changes:
+
+Issue: #${context.issue.number} - ${context.issue.title}
+Plan: ${context.planPath}
+Change Analysis: ${JSON.stringify(context.analysis, null, 2)}
+
+Create a well-structured PR description with:
+
+1. **Summary** - Executive summary of what was implemented and why
+
+2. **Changes** - Categorized list with emojis:
+   - ✨ New Features
+   - 🐛 Bug Fixes
+   - ♻️ Refactoring
+   - ✅ Tests
+   - 📝 Documentation
+
+3. **Testing** - What tests were added/modified and manual testing steps
+
+4. **Breaking Changes** - If any (with migration guide)
+
+5. **Related Issues** - Link to the issue and plan
+
+6. **Screenshots/Examples** - If applicable
+
+Follow the project's PR conventions and make it reviewer-friendly.`;
     
-    // Why it was needed
-    summary.push(this.explainMotivation(context));
-    
-    // How it works
-    summary.push(this.explainApproach(context));
-    
-    return summary.join('\n\n');
-  }
-  
-  async generateChangeList(context: PRContext): Promise<string> {
-    // Group by category
-    const changes = context.analysis.categories;
-    
-    let description = '';
-    
-    if (changes.features.length > 0) {
-      description += '### ✨ New Features\n';
-      description += this.formatFeatures(changes.features);
-    }
-    
-    if (changes.fixes.length > 0) {
-      description += '\n### 🐛 Bug Fixes\n';
-      description += this.formatFixes(changes.fixes);
-    }
-    
-    // Continue for other categories...
-    
-    return description;
-  }
-  
-  private formatFeatures(features: Feature[]): string {
-    return features.map(f => 
-      `- ${f.description} ${this.formatLocation(f.location)}`
-    ).join('\n');
+    return await executor.execute(prompt);
   }
 }
 ```
@@ -329,37 +334,47 @@ class PRCreationPipeline {
   async createFromImplementation(
     workflow: IssueWorkflow
   ): Promise<PullRequest> {
-    // Analyze changes
-    const analysis = await this.analyzer.analyze(
-      workflow.workspace,
-      workflow.baseBranch
+    // Use Claude Code to orchestrate the entire PR creation
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [
+          'Bash(git:*)',
+          'Bash(gh pr create:*)',
+          'Read',
+          'Write',
+          'TodoWrite'
+        ],
+        includeDefaultTools: false
+      },
+      { model: 'sonnet' },
+      this.rmplanConfig
     );
     
-    // Build context
-    const context: PRContext = {
-      issue: workflow.issue,
-      analysis,
-      plan: workflow.plan,
-      workflow,
-      options: workflow.prOptions
-    };
+    const prompt = `Create a pull request for the completed implementation:
+
+Workflow Details:
+- Issue: #${workflow.issue.number} - ${workflow.issue.title}
+- Branch: ${workflow.branch}
+- Base Branch: ${workflow.baseBranch}
+- Workspace: ${workflow.workspace}
+- Plan: ${workflow.planPath}
+
+Steps:
+1. Analyze all changes made during implementation
+2. Generate a comprehensive PR description following project conventions
+3. Create the PR using 'gh pr create' with:
+   - Appropriate title (include issue number)
+   - Full description
+   - Link to the issue
+   - Draft mode if tests are still running
+4. Add labels based on the type of changes
+5. Suggest reviewers based on changed files
+6. Post a summary comment on the PR
+
+Return the PR URL when complete.`;
     
-    // Generate content
-    const description = await this.generator.generate(context);
-    const metadata = await this.metadataManager.generate(context);
-    
-    // Validate
-    const validation = await this.validator.validate({
-      ...description,
-      ...metadata
-    });
-    
-    if (!validation.valid) {
-      throw new PRCreationError(validation);
-    }
-    
-    // Submit
-    return await this.submitter.create(context);
+    const result = await executor.execute(prompt);
+    return this.extractPRFromResult(result);
   }
 }
 ```
