@@ -9,13 +9,13 @@ const mockDebugLog = mock((...args: any[]) => {});
 const mockSpawnAndLogOutput = mock(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
 
 // Set up module mocks
-await mock.module('../logging.js', () => ({
+await mock.module('../../logging.js', () => ({
   log: mockLog,
   debugLog: mockDebugLog,
 }));
 
-await mock.module('../rmfilter/utils.js', () => {
-  const utils = require('../rmfilter/utils.js');
+await mock.module('../../rmfilter/utils.js', () => {
+  const utils = require('../../rmfilter/utils.js');
   return {
     ...utils,
     spawnAndLogOutput: mockSpawnAndLogOutput,
@@ -25,13 +25,13 @@ await mock.module('../rmfilter/utils.js', () => {
 // Mock executePostApplyCommand function
 const mockExecutePostApplyCommand = mock(async () => true);
 
-await mock.module('./actions.js', () => ({
+await mock.module('../actions.js', () => ({
   executePostApplyCommand: mockExecutePostApplyCommand,
 }));
 
 // Import the module under test after all mocks are set up
 import { createWorkspace } from './workspace_manager.js';
-import type { RmplanConfig } from './configSchema.js';
+import type { RmplanConfig } from '../configSchema.js';
 
 describe('createWorkspace', () => {
   // Setup variables

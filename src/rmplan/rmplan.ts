@@ -22,8 +22,8 @@ import { planPrompt } from './prompt.js';
 import { executors } from './executors/index.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.ts';
-import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
-import { WorkspaceLock } from './workspace_lock.js';
+import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
+import { WorkspaceLock } from './workspace/workspace_lock.js';
 import { generateText } from 'ai';
 import { createModel } from '../common/model_factory.ts';
 

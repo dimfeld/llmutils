@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
-import { log } from '../logging.js';
+import { log } from '../../logging.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 import { createWorkspace } from './workspace_manager.js';
 import {
@@ -11,8 +11,8 @@ import {
   getDefaultTrackingFilePath,
   type WorkspaceInfo,
 } from './workspace_tracker.js';
-import type { RmplanConfig } from './configSchema.js';
-import { getGitRoot } from '../rmfilter/utils.js';
+import type { RmplanConfig } from '../configSchema.js';
+import { getGitRoot } from '../../rmfilter/utils.js';
 
 export interface AutoSelectOptions {
   /** Whether to run in interactive mode (prompt for stale locks) */

@@ -6,7 +6,8 @@ import { WorkspaceAutoSelector } from './workspace_auto_selector';
 import { createWorkspace } from './workspace_manager';
 import { WorkspaceLock } from './workspace_lock';
 import * as workspaceTracker from './workspace_tracker';
-import type { RmplanConfig, WorkspaceInfo } from './configSchema';
+import type { RmplanConfig } from '../configSchema';
+import type { WorkspaceInfo } from './workspace_tracker';
 
 // Mock @inquirer/prompts for non-interactive tests
 mock.module('@inquirer/prompts', () => ({

@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { promisify } from 'node:util';
 import { exec } from 'node:child_process';
-import { debugLog } from '../logging.ts';
+import { debugLog } from '../../logging.ts';
 
 const execAsync = promisify(exec);
 

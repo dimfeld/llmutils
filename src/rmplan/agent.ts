@@ -18,10 +18,10 @@ import {
 } from './executors/index.ts';
 import type { ExecutorCommonOptions } from './executors/types.ts';
 import { planSchema } from './planSchema.ts';
-import { createWorkspace } from './workspace_manager.ts';
-import { WorkspaceAutoSelector } from './workspace_auto_selector.ts';
-import { WorkspaceLock } from './workspace_lock.ts';
-import { findWorkspacesByTaskId } from './workspace_tracker.ts';
+import { createWorkspace } from './workspace/workspace_manager.ts';
+import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.ts';
+import { WorkspaceLock } from './workspace/workspace_lock.ts';
+import { findWorkspacesByTaskId } from './workspace/workspace_tracker.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
   // Initialize currentPlanFile (absolute path)
