@@ -496,8 +496,8 @@ program
   )
   .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
   .option(
-    '--prefer-new-workspace',
-    'When using --auto-workspace, prefer creating a new workspace over using existing ones'
+    '--new-workspace',
+    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)

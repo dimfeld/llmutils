@@ -21,6 +21,7 @@ import { planSchema } from './planSchema.ts';
 import { WorkspaceManager } from './workspace_manager.ts';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.ts';
 import { WorkspaceLock } from './workspace_lock.ts';
+import { findWorkspacesByTaskId } from './workspace_tracker.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
   // Initialize currentPlanFile (absolute path)
@@ -73,7 +74,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
       selectedWorkspace = await selector.selectWorkspace(taskId, currentPlanFile, {
         interactive: !options.nonInteractive,
-        preferNewWorkspace: options.preferNewWorkspace,
+        preferNewWorkspace: options.newWorkspace,
       });
 
       if (selectedWorkspace) {
@@ -93,13 +94,58 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         }
       }
     } else {
-      // Create a workspace with the specified task ID
-      log(`Creating workspace for task: ${options.workspace}`);
-      workspace = await workspaceManager.createWorkspace(
-        options.workspace,
-        currentPlanFile,
-        config
-      );
+      // Manual workspace handling - check if workspace exists first
+      const trackingFilePath = config.paths?.trackingFile;
+      const existingWorkspaces = await findWorkspacesByTaskId(options.workspace, trackingFilePath);
+
+      if (existingWorkspaces.length > 0) {
+        // Find the first available workspace (not locked)
+        let availableWorkspace = null;
+        for (const ws of existingWorkspaces) {
+          const lockInfo = await WorkspaceLock.getLockInfo(ws.workspacePath);
+          if (!lockInfo || (await WorkspaceLock.isLockStale(lockInfo))) {
+            availableWorkspace = ws;
+            break;
+          }
+        }
+
+        if (availableWorkspace) {
+          log(`Using existing workspace for task: ${options.workspace}`);
+          workspace = {
+            path: availableWorkspace.workspacePath,
+            originalPlanFilePath: availableWorkspace.originalPlanFilePath,
+            taskId: availableWorkspace.taskId,
+          };
+        } else if (!options.newWorkspace) {
+          error(
+            `Workspace with task ID '${options.workspace}' exists but is locked, and --new-workspace was not specified. Cannot proceed.`
+          );
+          process.exit(1);
+        } else {
+          // All existing workspaces are locked, create a new one
+          log(
+            `Existing workspaces for task '${options.workspace}' are locked. Creating new workspace.`
+          );
+          workspace = await workspaceManager.createWorkspace(
+            options.workspace,
+            currentPlanFile,
+            config
+          );
+        }
+      } else if (options.newWorkspace) {
+        // No existing workspace, create a new one
+        log(`Creating workspace for task: ${options.workspace}`);
+        workspace = await workspaceManager.createWorkspace(
+          options.workspace,
+          currentPlanFile,
+          config
+        );
+      } else {
+        error(
+          `No workspace found for task ID '${options.workspace}' and --new-workspace was not specified. Cannot proceed.`
+        );
+        process.exit(1);
+      }
     }
 
     if (workspace) {
