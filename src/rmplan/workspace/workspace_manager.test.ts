@@ -113,7 +113,7 @@ describe('createWorkspace', () => {
     });
 
     // Verify log calls
-    expect(mockLog).toHaveBeenCalledWith('Creating workspace using llmutils-based method');
+    expect(mockLog).toHaveBeenCalledWith('Creating workspace...');
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Cloning repository'));
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining('Creating and checking out branch')
