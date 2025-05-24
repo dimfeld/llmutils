@@ -12,14 +12,16 @@ Create a system that generates high-quality rmplan files from issue analysis, in
 
 ## Implementation Steps
 
-### Step 1: Define Plan Generation Strategy
-Create `src/rmapp/planning/strategy.ts`:
+### Step 1: Define Plan Generation Strategies
+Create `src/rmapp/planning/strategy.ts` with all strategies:
 ```typescript
 interface PlanStrategy {
   name: string;
   canHandle(analysis: IssueAnalysis): boolean;
   generateSteps(analysis: IssueAnalysis): Promise<PlanStep[]>;
 }
+
+// Implement all strategies from the start:
 
 class FeatureStrategy implements PlanStrategy {
   name = 'feature';
@@ -33,6 +35,50 @@ class FeatureStrategy implements PlanStrategy {
     // 2. Implementation phase
     // 3. Testing phase
     // 4. Documentation phase
+  }
+}
+
+class BugFixStrategy implements PlanStrategy {
+  name = 'bug';
+  
+  async generateSteps(analysis: IssueAnalysis): Promise<PlanStep[]> {
+    // 1. Reproduce/understand bug
+    // 2. Implement fix
+    // 3. Add regression tests
+    // 4. Verify fix
+  }
+}
+
+class RefactorStrategy implements PlanStrategy {
+  name = 'refactor';
+  
+  async generateSteps(analysis: IssueAnalysis): Promise<PlanStep[]> {
+    // 1. Analyze current implementation
+    // 2. Plan refactoring approach
+    // 3. Implement changes incrementally
+    // 4. Ensure tests still pass
+  }
+}
+
+class DocumentationStrategy implements PlanStrategy {
+  name = 'documentation';
+  
+  async generateSteps(analysis: IssueAnalysis): Promise<PlanStep[]> {
+    // 1. Analyze documentation needs
+    // 2. Write/update documentation
+    // 3. Add examples if needed
+    // 4. Update related docs
+  }
+}
+
+class TestStrategy implements PlanStrategy {
+  name = 'test';
+  
+  async generateSteps(analysis: IssueAnalysis): Promise<PlanStep[]> {
+    // 1. Identify test gaps
+    // 2. Write unit tests
+    // 3. Add integration tests if needed
+    // 4. Verify coverage improvement
   }
 }
 ```

@@ -7,8 +7,8 @@ Extend the command parser and executor to support new agent capabilities beyond 
 - Support complex commands with subcommands
 - Enable command chaining and conditions
 - Provide command history and repeatability
-- Support interactive command flows
 - Add command validation and help
+- Implement branch-based command queue to ensure one command per branch at a time
 
 ## Implementation Steps
 
@@ -19,11 +19,7 @@ interface EnhancedCommand extends ParsedCommand {
   type: 'tool' | 'workflow' | 'query' | 'config';
   subcommands?: EnhancedCommand[];
   conditions?: CommandCondition[];
-  metadata?: {
-    priority?: 'low' | 'normal' | 'high';
-    timeout?: number;
-    requiresApproval?: boolean;
-  };
+  branch?: string; // Branch this command will operate on
 }
 ```
 
@@ -154,27 +150,67 @@ interface CommandHistory {
 }
 ```
 
-### Step 8: Create Interactive Commands
-Support multi-step interactions:
+### Step 8: Implement Branch-Based Command Queue
+Create `src/rmapp/commands/queue.ts`:
 ```typescript
-@bot implement this issue
-> "I need more information. Which approach should I take?"
-> 1. Create new service
-> 2. Extend existing service
-@bot option 2
-> "Got it! I'll extend the existing service. Starting implementation..."
+class BranchCommandQueue {
+  private activeCommands = new Map<string, CommandExecution>();
+  
+  async canExecute(command: EnhancedCommand, branch: string): Promise<boolean> {
+    return !this.activeCommands.has(branch);
+  }
+  
+  async enqueue(command: EnhancedCommand, branch: string): Promise<void> {
+    if (this.activeCommands.has(branch)) {
+      throw new Error(`Branch ${branch} already has an active command`);
+    }
+    
+    const execution = {
+      command,
+      branch,
+      startedAt: new Date(),
+      status: 'running'
+    };
+    
+    this.activeCommands.set(branch, execution);
+  }
+  
+  async complete(branch: string): Promise<void> {
+    this.activeCommands.delete(branch);
+  }
+  
+  getActiveCommands(): CommandExecution[] {
+    return Array.from(this.activeCommands.values());
+  }
+}
 ```
+
+### Future Enhancement: Interactive Commands
+While not implemented in v1, future chatbot mode will support:
+- Multi-step conversations within GitHub comments
+- Clarifying questions and user responses
+- Context-aware dialogue that understands the current task
+- Integration with the command system for seamless transitions
+
+Implementation approach:
+1. Create a conversation state machine
+2. Store conversation context in the state database
+3. Parse user responses as follow-up commands
+4. Maintain context across multiple GitHub comments
+5. Share core logic with future standalone chatbot mode
 
 ## Testing Strategy
 1. Unit test command parsing
 2. Test command validation
 3. Test command routing
 4. Integration test command execution
-5. Test interactive command flows
+5. Test branch queue functionality
+6. Test concurrent command handling
 
 ## Success Criteria
 - [ ] New commands parse correctly
 - [ ] Commands validate inputs properly
 - [ ] Help system is comprehensive
 - [ ] Command history is tracked
-- [ ] Interactive commands work smoothly
+- [ ] Branch queue prevents concurrent commands on same branch
+- [ ] Failed commands release branch lock

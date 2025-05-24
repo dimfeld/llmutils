@@ -100,12 +100,31 @@ class WorkflowExecutor {
 }
 ```
 
-### Step 6: Implement Retry Logic
-Add intelligent retry mechanisms:
-- Exponential backoff for API calls
-- Different strategies per node type
-- Max retry limits
-- Retry state persistence
+### Step 6: Implement Failure Handling
+For v1, implement manual intervention for failures:
+- Post failure details as GitHub comment
+- Include error message and context
+- Provide instructions for manual resolution
+- Allow workflow cancellation via comment
+
+Future enhancement options:
+1. **Automatic retry with backoff**:
+   - Exponential backoff for transient failures
+   - Different retry strategies per node type
+   - Configurable retry limits
+   - State persistence between retries
+
+2. **Smart recovery**:
+   - Analyze failure type
+   - Attempt automatic fixes for known issues
+   - Rollback to last known good state
+   - Resume from specific workflow step
+
+3. **Failure categorization**:
+   - Transient (network, rate limits) → auto-retry
+   - Configuration (missing permissions) → notify and wait
+   - Logic errors → require manual intervention
+   - Infrastructure (out of disk) → escalate
 
 ### Step 7: Add Workflow Monitoring
 Create telemetry and monitoring:

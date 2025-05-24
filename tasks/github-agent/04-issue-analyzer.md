@@ -5,7 +5,7 @@ Build a system to analyze GitHub issues and extract structured requirements for 
 
 ## Requirements
 - Extract key requirements from issue descriptions
-- Identify technical scope and complexity
+- Identify technical scope
 - Detect referenced files, PRs, and documentation
 - Classify issue type (feature, bug, refactor, etc.)
 - Generate structured output for plan generation
@@ -17,12 +17,10 @@ Define types in `src/rmapp/analysis/types.ts`:
 ```typescript
 interface IssueAnalysis {
   type: 'feature' | 'bug' | 'refactor' | 'documentation' | 'test';
-  complexity: 'simple' | 'medium' | 'complex';
   requirements: Requirement[];
   technicalScope: TechnicalScope;
   references: References;
   suggestedApproach?: string;
-  estimatedSteps?: number;
 }
 
 interface Requirement {
@@ -81,28 +79,7 @@ class ReferenceExtractor {
 }
 ```
 
-### Step 4: Create Complexity Analyzer
-Implement `src/rmapp/analysis/complexity.ts`:
-```typescript
-class ComplexityAnalyzer {
-  analyze(issue: ParsedIssue, scope: TechnicalScope): ComplexityAnalysis {
-    // Count affected files
-    // Estimate lines of change
-    // Check for breaking changes
-    // Assess testing requirements
-    // Calculate complexity score
-  }
-  
-  private calculateScore(factors: ComplexityFactors): number {
-    // Weight different factors:
-    // - Number of files
-    // - Cross-module changes
-    // - API changes
-    // - Database changes
-    // - Frontend/backend split
-  }
-}
-```
+### Step 4: [Removed - Complexity scoring not needed]
 
 ### Step 5: Implement Pattern Matcher
 Create `src/rmapp/analysis/patterns.ts`:
@@ -160,8 +137,7 @@ class AnalysisPipeline {
     // Extract references
     const references = await this.extractor.extract(issue);
     
-    // Analyze complexity
-    const complexity = await this.analyzer.analyze(parsed, references);
+    // Skip complexity analysis - not needed
     
     // Find patterns
     const patterns = await this.matcher.findPatterns(parsed);
@@ -169,7 +145,6 @@ class AnalysisPipeline {
     // Enrich context
     const enriched = await this.enricher.enrich({
       ...parsed,
-      complexity,
       patterns
     });
     
@@ -198,6 +173,5 @@ class AnalysisCache {
 ## Success Criteria
 - [ ] Accurately extracts requirements from issues
 - [ ] Correctly identifies technical scope
-- [ ] Provides useful complexity estimates
 - [ ] Finds relevant code references
 - [ ] Generates actionable analysis

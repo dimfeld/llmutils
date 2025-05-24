@@ -19,16 +19,18 @@ Create TypeScript interfaces and database schema for tracking:
 - Workspace states (active, completed, failed)
 - Command history and results
 
-### Step 2: Choose Storage Backend
-Evaluate and implement storage options:
-- SQLite for simplicity (embedded, no external dependencies)
-- PostgreSQL for scalability (if needed)
-- File-based JSON for prototyping
+### Step 2: Implement SQLite Storage Backend
+Use SQLite as the storage backend for the following reasons:
+- Embedded database with no external dependencies
+- Sufficient for handling concurrent workflows
+- Simple deployment and maintenance
+- Easy backup and migration
 
-Decision criteria:
-- Concurrent access patterns
-- Query requirements
-- Deployment simplicity
+Implementation considerations:
+- Use WAL mode for better concurrent access
+- Implement proper connection pooling
+- Add indexes for common query patterns
+- Include database migration system from the start
 
 ### Step 3: Implement State Store
 Create `src/rmapp/state/store.ts`:
