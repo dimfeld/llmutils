@@ -21,13 +21,17 @@ export class ImplementIssueHandler extends CommandHandler {
     log(`Starting implementation workflow for issue #${issueNumber}`);
 
     // Create webhook event for the workflow
-    const webhookEvent = {
+    const webhookEvent: any = {
       action: 'opened',
       issue: {
         number: issueNumber,
         title: `Issue #${issueNumber}`, // Will be fetched by workflow
         body: '',
         html_url: `https://github.com/${context.event.repository.owner.login}/${context.event.repository.name}/issues/${issueNumber}`,
+        user: { login: context.event.comment?.user?.login || 'unknown' },
+        labels: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
       repository: context.event.repository,
       installation: context.event.installation,

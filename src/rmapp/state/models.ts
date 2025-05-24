@@ -23,6 +23,7 @@ export interface IssueWorkflow extends Workflow {
   workspaceId?: string;
   branchName?: string;
   prNumber?: number;
+  analysis?: string; // Cached analysis JSON
   steps: {
     analyzed: boolean;
     planGenerated: boolean;

@@ -9,8 +9,11 @@ import type {
   NodeExecutionResult,
 } from './types.js';
 import type { ClaudeCodeExecutorOptions } from '../../rmplan/executors/claude_code.js';
+import { AnalysisPipeline, AnalysisCache } from '../analysis/index.js';
+import type { GitHubIssue, RepoContext } from '../analysis/types.js';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
+import { log } from '../../logging.js';
 
 export type IssueWorkflowState =
   | 'analyzing'
@@ -28,6 +31,9 @@ export class AnalyzeIssueNode extends WorkflowNode<
   void,
   IssueWorkflowState
 > {
+  private analysisPipeline = new AnalysisPipeline();
+  private analysisCache: AnalysisCache | null = null;
+
   protected claudeCodeConfig: Partial<ClaudeCodeExecutorOptions> = {
     allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch'],
     includeDefaultTools: false,
@@ -43,6 +49,7 @@ export class AnalyzeIssueNode extends WorkflowNode<
   }
 
   protected getPrompt(args: void, context: IssueWorkflowContext): string {
+    // This prompt is now only used as a fallback
     return `Analyze this GitHub issue and extract key information.
 
 Issue #${context.issueNumber}: ${context.issueTitle}
@@ -56,24 +63,61 @@ Please analyze and provide:
 4. Complexity assessment (simple/medium/complex)
 5. Any relevant tags or labels
 
-Repository: ${context.webhookEvent.repository.owner.login}/${context.webhookEvent.repository.name}
+Repository: ${context.webhookEvent.repository?.owner?.login || 'unknown'}/${context.webhookEvent.repository?.name || 'unknown'}
 
 Focus on understanding what needs to be done and where in the codebase changes will be needed.`;
   }
 
-  protected async processExecutorResult(
-    result: any,
+  protected async executeWithArgs(
     args: void,
-    context: IssueWorkflowContext
+    context: IssueWorkflowContext,
+    store: SharedStore<IssueWorkflowContext, WorkflowEvent>
   ): Promise<NodeExecutionResult> {
     try {
-      // Parse the Claude response to extract analysis
-      const analysis: IssueAnalysis = {
-        requirements: this.extractBulletPoints(result, 'requirements'),
-        affectedFiles: this.extractFileList(result),
-        suggestedApproach: this.extractSection(result, 'approach'),
-        complexity: this.extractComplexity(result),
-        tags: this.extractTags(result),
+      // Initialize cache if not already done
+      if (!this.analysisCache && context.store) {
+        this.analysisCache = new AnalysisCache(context.store);
+      }
+
+      // Check cache first
+      let analysis = await this.analysisCache?.get(context.issueNumber);
+      
+      if (!analysis) {
+        // Fetch full issue details from GitHub
+        const issue: GitHubIssue = {
+          number: context.issueNumber,
+          title: context.issueTitle,
+          body: context.issueBody || '',
+          state: 'open',
+          html_url: `https://github.com/${context.webhookEvent.repository.owner.login}/${context.webhookEvent.repository.name}/issues/${context.issueNumber}`,
+          user: { login: context.webhookEvent.issue?.user?.login || 'unknown' },
+          labels: context.webhookEvent.issue?.labels || [],
+          created_at: context.webhookEvent.issue?.created_at || new Date().toISOString(),
+          updated_at: context.webhookEvent.issue?.updated_at || new Date().toISOString(),
+        };
+
+        const repoContext: RepoContext = {
+          owner: context.webhookEvent.repository?.owner?.login || 'unknown',
+          repo: context.webhookEvent.repository?.name || 'unknown',
+          defaultBranch: (context.webhookEvent.repository as any)?.default_branch || 'main',
+          workDir: context.workspaceDir || '/tmp/workspace',
+        };
+
+        // Run analysis pipeline
+        log(`Running analysis pipeline for issue #${context.issueNumber}`);
+        analysis = await this.analysisPipeline.analyze(issue, repoContext);
+        
+        // Cache the result
+        await this.analysisCache?.set(context.issueNumber, analysis);
+      }
+
+      // Convert to legacy format for backward compatibility
+      const legacyAnalysis: IssueAnalysis = {
+        requirements: analysis.requirements.map(r => r.description),
+        affectedFiles: analysis.technicalScope.affectedFiles,
+        suggestedApproach: analysis.suggestedApproach || '',
+        complexity: this.mapComplexity(analysis),
+        tags: [],
       };
 
       // Update the workflow
@@ -81,14 +125,37 @@ Focus on understanding what needs to be done and where in the codebase changes w
 
       return {
         success: true,
-        artifacts: { analysis },
+        artifacts: { 
+          analysis: legacyAnalysis,
+          enrichedAnalysis: analysis 
+        },
       };
     } catch (error) {
+      log('Error in AnalyzeIssueNode:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to parse analysis',
+        error: error instanceof Error ? error.message : 'Failed to analyze issue',
       };
     }
+  }
+
+  private mapComplexity(analysis: any): 'simple' | 'medium' | 'complex' {
+    const fileCount = analysis.technicalScope.affectedFiles.length;
+    const reqCount = analysis.requirements.length;
+    
+    if (fileCount <= 2 && reqCount <= 2) return 'simple';
+    if (fileCount >= 10 || reqCount >= 8) return 'complex';
+    return 'medium';
+  }
+
+  // Override base class method to skip Claude execution
+  protected async processExecutorResult(
+    result: any,
+    args: void,
+    context: IssueWorkflowContext
+  ): Promise<NodeExecutionResult> {
+    // This method is not used when executeWithArgs is overridden
+    return { success: true };
   }
 
   private extractBulletPoints(text: string, section: string): string[] {

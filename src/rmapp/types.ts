@@ -15,6 +15,14 @@ export interface WebhookEvent {
     title: string;
     body: string;
     html_url: string;
+    user: {
+      login: string;
+    };
+    labels: Array<{
+      name: string;
+    }>;
+    created_at: string;
+    updated_at: string;
   };
   pull_request?: {
     number: number;
@@ -35,6 +43,7 @@ export interface WebhookEvent {
     };
     name: string;
     clone_url: string;
+    default_branch?: string;
   };
   installation?: {
     id: number;

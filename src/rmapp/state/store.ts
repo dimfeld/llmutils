@@ -168,6 +168,7 @@ export class StateStore {
           workspaceId: issue.workspace_id,
           branchName: issue.branch_name,
           prNumber: issue.pr_number,
+          analysis: workflow.metadata?.analysis,
           steps: {
             analyzed: !!issue.analyzed,
             planGenerated: !!issue.plan_generated,
@@ -226,6 +227,45 @@ export class StateStore {
     const workflows = await Promise.all(ids.map(({ id }) => this.getWorkflow(id)));
 
     return workflows.filter((w) => w !== null) as Workflow[];
+  }
+
+  async getWorkflowByIssue(issueNumber: number): Promise<IssueWorkflow | null> {
+    const query = this.db.prepare(`
+      SELECT w.id FROM workflows w
+      JOIN issue_workflows iw ON w.id = iw.workflow_id
+      WHERE iw.issue_number = ?
+      ORDER BY w.created_at DESC
+      LIMIT 1
+    `);
+    const result = query.get(issueNumber) as { id: string } | undefined;
+
+    if (!result) return null;
+
+    const workflow = await this.getWorkflow(result.id);
+    return workflow && workflow.type === 'issue' ? workflow as IssueWorkflow : null;
+  }
+
+  async updateWorkflowMetadata(workflowId: string, metadata: Record<string, any>): Promise<void> {
+    await this.transaction(async () => {
+      // Get current metadata
+      const query = this.db.prepare('SELECT metadata FROM workflows WHERE id = ?');
+      const result = query.get(workflowId) as { metadata: string | null } | undefined;
+      
+      if (!result) {
+        throw new Error(`Workflow ${workflowId} not found`);
+      }
+
+      const currentMetadata = result.metadata ? JSON.parse(result.metadata) : {};
+      const updatedMetadata = { ...currentMetadata, ...metadata };
+
+      // Update metadata
+      const updateStmt = this.db.prepare(`
+        UPDATE workflows 
+        SET metadata = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      updateStmt.run(JSON.stringify(updatedMetadata), workflowId);
+    });
   }
 
   // Issue workflow specific operations
