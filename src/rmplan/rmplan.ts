@@ -22,6 +22,8 @@ import { planPrompt } from './prompt.js';
 import { executors } from './executors/index.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.ts';
+import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
+import { WorkspaceLock } from './workspace/workspace_lock.js';
 import { generateText } from 'ai';
 import { createModel } from '../common/model_factory.ts';
 
@@ -367,7 +369,7 @@ program
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
     const gitRoot = (await getGitRoot()) || process.cwd();
-    await markStepDone(
+    const result = await markStepDone(
       planFile,
       {
         task: options.task,
@@ -377,6 +379,16 @@ program
       undefined,
       gitRoot
     );
+
+    // If plan is complete and we're in a workspace, release the lock
+    if (result.planComplete) {
+      try {
+        await WorkspaceLock.releaseLock(gitRoot);
+        log('Released workspace lock');
+      } catch (err) {
+        // Ignore lock release errors - workspace might not be locked
+      }
+    }
   });
 
 program
@@ -482,9 +494,46 @@ program
     '--workspace <id>',
     'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
   )
+  .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
+  .option(
+    '--new-workspace',
+    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+  )
+  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
   .allowExcessArguments(true)
   .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
+
+program
+  .command('workspaces')
+  .description('List all workspaces and their lock status')
+  .option('--repo <url>', 'Filter by repository URL (defaults to current repo)')
+  .action(async (options) => {
+    try {
+      const globalOpts = program.opts();
+      const config = await loadEffectiveConfig(globalOpts.config);
+      const trackingFilePath = config.paths?.trackingFile;
+
+      let repoUrl = options.repo;
+      if (!repoUrl) {
+        // Try to get repo URL from current directory
+        try {
+          const gitRoot = await getGitRoot();
+          const { $ } = await import('bun');
+          const result = await $`git remote get-url origin`.cwd(gitRoot).text();
+          repoUrl = result.trim();
+        } catch (err) {
+          error('Could not determine repository URL. Please specify --repo');
+          process.exit(1);
+        }
+      }
+
+      await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
+    } catch (err) {
+      error('Failed to list workspaces:', err);
+      process.exit(1);
+    }
+  });
 
 program
   .command('answer-pr [prIdentifier]')

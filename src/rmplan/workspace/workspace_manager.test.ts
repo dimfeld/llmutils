@@ -9,13 +9,13 @@ const mockDebugLog = mock((...args: any[]) => {});
 const mockSpawnAndLogOutput = mock(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
 
 // Set up module mocks
-await mock.module('../logging.js', () => ({
+await mock.module('../../logging.js', () => ({
   log: mockLog,
   debugLog: mockDebugLog,
 }));
 
-await mock.module('../rmfilter/utils.js', () => {
-  const utils = require('../rmfilter/utils.js');
+await mock.module('../../rmfilter/utils.js', () => {
+  const utils = require('../../rmfilter/utils.js');
   return {
     ...utils,
     spawnAndLogOutput: mockSpawnAndLogOutput,
@@ -25,19 +25,18 @@ await mock.module('../rmfilter/utils.js', () => {
 // Mock executePostApplyCommand function
 const mockExecutePostApplyCommand = mock(async () => true);
 
-await mock.module('./actions.js', () => ({
+await mock.module('../actions.js', () => ({
   executePostApplyCommand: mockExecutePostApplyCommand,
 }));
 
 // Import the module under test after all mocks are set up
-import { WorkspaceManager } from './workspace_manager.js';
-import type { RmplanConfig } from './configSchema.js';
+import { createWorkspace } from './workspace_manager.js';
+import type { RmplanConfig } from '../configSchema.js';
 
-describe('WorkspaceManager', () => {
+describe('createWorkspace', () => {
   // Setup variables
   let testTempDir: string;
   let mainRepoRoot: string;
-  let workspaceManager: WorkspaceManager;
 
   beforeEach(async () => {
     // Create a temporary directory for each test
@@ -46,9 +45,6 @@ describe('WorkspaceManager', () => {
     // Create a mock main repo root within the temp directory
     mainRepoRoot = path.join(testTempDir, 'main-repo');
     await fs.mkdir(mainRepoRoot, { recursive: true });
-
-    // Create workspace manager
-    workspaceManager = new WorkspaceManager(mainRepoRoot);
 
     // Reset all mocks
     mockLog.mockReset();
@@ -66,7 +62,7 @@ describe('WorkspaceManager', () => {
 
   test('createWorkspace returns null when workspaceCreation is not enabled', async () => {
     const config: RmplanConfig = {};
-    const result = await workspaceManager.createWorkspace('task-123', '/path/to/plan.yml', config);
+    const result = await createWorkspace(mainRepoRoot, 'task-123', '/path/to/plan.yml', config);
 
     expect(result).toBeNull();
     expect(mockLog).toHaveBeenCalledWith('Workspace creation not enabled in config');
@@ -82,7 +78,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
       },
@@ -107,7 +102,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -118,7 +113,7 @@ describe('WorkspaceManager', () => {
     });
 
     // Verify log calls
-    expect(mockLog).toHaveBeenCalledWith('Creating workspace using llmutils-based method');
+    expect(mockLog).toHaveBeenCalledWith('Creating workspace...');
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Cloning repository'));
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining('Creating and checking out branch')
@@ -139,7 +134,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         cloneLocation,
       },
     };
@@ -170,7 +164,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -188,7 +182,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
       },
@@ -202,7 +195,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).toBeNull();
@@ -219,7 +212,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -257,7 +249,7 @@ describe('WorkspaceManager', () => {
     mockExecutePostApplyCommand.mockResolvedValue(true);
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -293,7 +285,7 @@ describe('WorkspaceManager', () => {
     );
   });
 
-  test('createWorkspace with rmplan method - throws error when cloneLocation is not specified', async () => {
+  test('createWorkspace throws error when cloneLocation is not specified', async () => {
     // Setup
     const taskId = 'task-123';
     const planPath = '/path/to/plan.yml';
@@ -301,14 +293,13 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         // No cloneLocation specified
       },
     };
 
     // Execute and verify it throws an error
-    await expect(workspaceManager.createWorkspace(taskId, planPath, config)).rejects.toThrow(
+    await expect(createWorkspace(mainRepoRoot, taskId, planPath, config)).rejects.toThrow(
       'cloneLocation must be set in workspace configuration to clone a new workspace'
     );
   });
@@ -323,7 +314,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
       },
@@ -348,7 +338,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).toBeNull();
@@ -373,7 +363,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         cloneLocation,
         // No repositoryUrl provided
       },
@@ -387,7 +376,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).toBeNull();
@@ -404,7 +393,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -439,7 +427,7 @@ describe('WorkspaceManager', () => {
     mockExecutePostApplyCommand.mockResolvedValue(false);
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).toBeNull();
@@ -466,7 +454,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -501,7 +488,7 @@ describe('WorkspaceManager', () => {
     mockExecutePostApplyCommand.mockResolvedValue(false);
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -530,7 +517,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         // No postCloneCommands provided
@@ -556,7 +542,7 @@ describe('WorkspaceManager', () => {
     }));
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -585,7 +571,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands: [
@@ -628,7 +613,7 @@ describe('WorkspaceManager', () => {
     });
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();
@@ -669,7 +654,6 @@ describe('WorkspaceManager', () => {
 
     const config: RmplanConfig = {
       workspaceCreation: {
-        method: 'rmplan',
         repositoryUrl,
         cloneLocation,
         postCloneCommands,
@@ -712,7 +696,7 @@ describe('WorkspaceManager', () => {
     });
 
     // Execute
-    const result = await workspaceManager.createWorkspace(taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
     // Verify
     expect(result).not.toBeNull();

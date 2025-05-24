@@ -178,6 +178,8 @@ You can check if compilation works using `bun run check`
 
 ## Code Quality Best Practices
 
+- Use @inquirer/prompts for asking questions to the user
+
 ### Process Management
 
 - **Avoid `process.chdir()`**: Changes global working directory for entire process, causing side effects
@@ -209,6 +211,7 @@ You can check if compilation works using `bun run check`
 
 - When you learn something about the codebase, update CLAUDE.md
 - When making a change, always look for related tests that need to be updated or written as well
+- When you finish a change, run the tests using `bun test` and then fix any failures you find
 - **After adding a feature, update the README to include documentation about the feature**
 
 ## Review Notes

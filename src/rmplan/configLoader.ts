@@ -195,13 +195,15 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
 
     // Find and load local override configuration if it exists
     const localConfigPath = await findLocalConfigPath(configPath);
+    let effectiveConfig: RmplanConfig;
+
     if (localConfigPath) {
       try {
         // Load the local override configuration
         const localConfig = await loadConfig(localConfigPath);
 
         // Merge the configurations with local overriding main
-        const mergedConfig = mergeConfigs(config, localConfig);
+        effectiveConfig = mergeConfigs(config, localConfig);
 
         if (!quiet) {
           log(
@@ -210,8 +212,6 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
             `Local override: ${localConfigPath}`
           );
         }
-
-        return mergedConfig;
       } catch (localErr: any) {
         // If there's a validation error in the local config, log it but continue with the main config
         warn(`Error loading local override configuration: ${localErr.message}`);
@@ -221,14 +221,16 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
           log('Loaded configuration file', configPath);
         }
 
-        return config;
+        effectiveConfig = config;
       }
     } else {
       if (!quiet) {
         log('Loaded configuration file', configPath);
       }
-      return config;
+      effectiveConfig = config;
     }
+
+    return effectiveConfig;
   } catch (err: any) {
     // loadConfig only throws on validation errors. Read/parse errors return default config.
     error(`Error loading or validating configuration: ${err.message}`);

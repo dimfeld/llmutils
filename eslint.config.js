@@ -20,6 +20,7 @@ export function createConfig() {
         'src/db/migrate.js',
         'src/hooks_loader.mjs',
         'src/scripts/*',
+        'src/**/*.test.ts',
         'playwright.config.ts',
         'tailwind.config.ts',
         'vite.config.ts.*',

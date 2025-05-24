@@ -59,6 +59,12 @@ export const rmplanConfigSchema = z
           .describe(
             'Paths to directories to search for .md and .mdc documentation files to auto-include'
           ),
+        trackingFile: z
+          .string()
+          .optional()
+          .describe(
+            'Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)'
+          ),
       })
       .optional(),
     /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */

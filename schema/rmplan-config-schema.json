@@ -54,6 +54,10 @@
                 "type": "string"
               },
               "description": "Paths to directories to search for .md and .mdc documentation files to auto-include"
+            },
+            "trackingFile": {
+              "type": "string",
+              "description": "Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)"
             }
           },
           "additionalProperties": false
