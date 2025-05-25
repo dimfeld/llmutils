@@ -3,6 +3,7 @@ import { StateMachine, type StateMachineConfig } from './index.ts';
 import type { AllState, SharedStore } from './store.ts';
 import { withSpan, type StateMachineAttributes, recordEvent } from './telemetry.ts';
 import type { StateResult, PrepResult } from './types.ts';
+import { globalEventBus, type SystemEvent } from './event_bus.ts';
 
 /**
  * BaseNode: Core node class that executes prep, run, and post sequentially.
@@ -290,6 +291,7 @@ export abstract class FlowNode<
   StateResult<any, TEvent>
 > {
   subMachines: Map<string, StateMachine<any, any, SubEvent>>;
+  private parentInstanceId?: string;
 
   constructor(
     id: StateName,
@@ -299,10 +301,28 @@ export abstract class FlowNode<
   ) {
     super(id);
     this.subMachines = new Map();
-
-    // Handle both single and multiple sub-machine configurations
+    
+    // Create sub-machines immediately for compatibility
     const configs = Array.isArray(subMachineConfigs) ? subMachineConfigs : [subMachineConfigs];
+    
+    for (const subConfig of configs) {
+      const subMachine = this.createSubMachine(subConfig);
+      this.subMachines.set(subConfig.id, subMachine);
+    }
+  }
 
+  /** Set the parent instance ID - called during initialization */
+  setParentInstanceId(parentInstanceId: string) {
+    if (this.parentInstanceId === parentInstanceId) {
+      return; // Already set
+    }
+    
+    this.parentInstanceId = parentInstanceId;
+    
+    // Re-create sub-machines with proper parent ID
+    const configs = Array.isArray(this.subMachineConfigs) ? this.subMachineConfigs : [this.subMachineConfigs];
+    
+    this.subMachines.clear();
     for (const subConfig of configs) {
       const subMachine = this.createSubMachine(subConfig);
       this.subMachines.set(subConfig.id, subMachine);
@@ -314,7 +334,7 @@ export abstract class FlowNode<
     subConfig: SubMachineConfig<any, any, SubEvent>
   ): StateMachine<any, any, SubEvent> {
     // Generate a unique instance ID for the sub-machine
-    const instanceId = `${subConfig.id}-${crypto.randomUUID()}`;
+    const instanceId = `${this.id}.${subConfig.id}`;
 
     return new StateMachine(
       subConfig.config,
@@ -333,7 +353,8 @@ export abstract class FlowNode<
           return Promise.resolve({ status: 'terminal' });
         },
         onTransition: (from: string, to: string, context: any) => {},
-      }
+      },
+      this.parentInstanceId // Pass parent machine ID
     );
   }
 
@@ -343,6 +364,18 @@ export abstract class FlowNode<
   /** Translate events from the sub machine type to the parent type for a specific machine */
   abstract translateActions(actions: SubEvent[], machineId: string): TEvent[];
 
+  /** Handle system events from child machines */
+  private childMachineStates = new Map<string, 'waiting' | 'terminal' | 'running'>();
+  
+  /** Override _prep to set parent instance ID */
+  async _prep(store: SharedStore<TContext, TEvent>): Promise<PrepResult<TEvent, EXECARG>> {
+    // Set the parent instance ID if not already set
+    if (!this.parentInstanceId && store.instanceId) {
+      this.setParentInstanceId(store.instanceId);
+    }
+    return this.prep(store);
+  }
+  
   async exec(
     args: EXECARG,
     events: TEvent[],
@@ -361,13 +394,22 @@ export abstract class FlowNode<
     };
 
     return await withSpan(`flow_node.exec.${this.id}`, attributes, async (span) => {
+      // Initialize all sub-machines first
+      const initPromises = Array.from(this.subMachines.values()).map((machine) =>
+        machine.initialize()
+      );
+      await Promise.all(initPromises);
+
       // Restore state for all sub-machines if we have scratchpad data
       const existingStates = scratchpad?.subMachineStates;
       if (existingStates) {
         for (const [machineId, state] of existingStates) {
           const subMachine = this.subMachines.get(machineId);
-          if (subMachine) {
-            subMachine.store.allState = state;
+          if (subMachine && subMachine.store) {
+            // Restore the state components individually to preserve store integrity
+            subMachine.store.context = state.context;
+            subMachine.store.history = state.history;
+            subMachine.store.scratchpad = state.scratchpad;
             span.addEvent('submachine_resumed', {
               machine_id: machineId,
               from_state: state.history[state.history.length - 1]?.state,
@@ -379,12 +421,6 @@ export abstract class FlowNode<
           count: this.subMachines.size,
         });
       }
-
-      // Initialize all sub-machines
-      const initPromises = Array.from(this.subMachines.values()).map((machine) =>
-        machine.initialize()
-      );
-      await Promise.all(initPromises);
 
       // Run all sub-machines concurrently
       const subMachineResults = new Map<string, StateResult<any, SubEvent>>();
