@@ -24,17 +24,17 @@ export class ReviewGrouper {
         groups.byFile.get(location.file)!.push(review);
       }
 
-      // If no specific locations, group under general
+      // If no specific locations, group under other
       if (review.locations.length === 0) {
-        if (!groups.byFile.has('_general')) {
-          groups.byFile.set('_general', []);
+        if (!groups.byFile.has('_other')) {
+          groups.byFile.set('_other', []);
         }
-        groups.byFile.get('_general')!.push(review);
+        groups.byFile.get('_other')!.push(review);
       }
 
       // Group by change type
       for (const changeRequest of review.changeRequests) {
-        const changeType = changeRequest.changeType || 'general';
+        const changeType = changeRequest.changeType || 'other';
         if (!groups.byType.has(changeType)) {
           groups.byType.set(changeType, []);
         }

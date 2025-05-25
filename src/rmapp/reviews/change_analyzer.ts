@@ -42,7 +42,7 @@ export class ChangeRequestAnalyzer {
       errorHandling: ['error', 'exception', 'try', 'catch', 'handle', 'throw', 'err'],
       validation: ['validate', 'check', 'verify', 'ensure', 'assert', 'valid'],
       logging: ['log', 'debug', 'trace', 'console', 'logger', 'print'],
-      testing: ['test', 'spec', 'assert', 'expect', 'mock', 'fixture', 'it(', 'describe('],
+      test: ['test', 'spec', 'assert', 'expect', 'mock', 'fixture', 'it(', 'describe('],
       documentation: ['comment', 'doc', 'jsdoc', 'readme', 'document', '/**', '//'],
       refactoring: ['refactor', 'extract', 'rename', 'move', 'split', 'combine', 'simplify'],
       performance: ['performance', 'optimize', 'speed', 'fast', 'slow', 'cache', 'memo'],
@@ -64,7 +64,7 @@ export class ChangeRequestAnalyzer {
 
     // Find the type with highest score
     let maxScore = 0;
-    let bestType: ChangeType = 'general';
+    let bestType: ChangeType = 'other';
 
     for (const [type, score] of Object.entries(scores)) {
       if (score > maxScore) {
@@ -153,7 +153,7 @@ export class ChangeRequestAnalyzer {
         });
         break;
 
-      case 'testing':
+      case 'test':
         patterns.push({
           name: 'Test Structure',
           description: 'Follow existing test patterns',
@@ -286,7 +286,7 @@ export class ChangeRequestAnalyzer {
         risks.push('Avoid breaking existing valid inputs');
         break;
       
-      case 'testing':
+      case 'test':
         steps.push('Write test cases covering the new/modified functionality');
         considerations.push('Include edge cases and error scenarios');
         alternatives.push('Consider using test-driven development (TDD)');
@@ -355,12 +355,13 @@ export class ChangeRequestAnalyzer {
       errorHandling: 1.5,
       validation: 1.3,
       logging: 0.8,
-      testing: 2.0,
+      test: 2.0,
       documentation: 0.5,
       refactoring: 2.5,
+      typefix: 1.2,
       performance: 2.0,
       security: 1.8,
-      general: 1.0,
+      other: 1.0,
     };
 
     baseEstimate *= typeMultipliers[changeType];

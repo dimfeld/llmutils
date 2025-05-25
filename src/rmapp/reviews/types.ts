@@ -6,6 +6,7 @@ export interface CodeLocation {
   endLine?: number;
   startColumn?: number;
   endColumn?: number;
+  symbol?: string;
 }
 
 export interface ReviewThread {
@@ -37,6 +38,7 @@ export interface ParsedReview {
   questions: Question[];
   context: ReviewContext;
   locations: CodeLocation[];
+  confidence?: number;
 }
 
 export interface ChangeRequest {
@@ -69,12 +71,13 @@ export type ChangeType =
   | 'errorHandling'
   | 'validation'
   | 'logging'
-  | 'testing'
+  | 'test'
   | 'documentation'
   | 'refactoring'
+  | 'typefix'
   | 'performance'
   | 'security'
-  | 'general';
+  | 'other';
 
 export interface ReviewContext {
   comment: ReviewComment;
