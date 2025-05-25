@@ -1196,15 +1196,19 @@ describe('FlowNode', () => {
       id: ParentState,
       subMachineConfig: StateMachineConfig<SubState, SubContext, SubEvent>
     ) {
-      super(id, subMachineConfig);
+      super(id, {
+        id: 'test-sub-machine',
+        config: subMachineConfig,
+        initialContext: { sValue: 0 },
+      });
     }
 
-    translateEvents(events: ParentEvent[]): SubEvent[] {
-      return this.translateEventsMock(events);
+    translateEvents(events: ParentEvent[], machineId: string): SubEvent[] {
+      return this.translateEventsMock(events, machineId);
     }
 
-    translateActions(actions: SubEvent[]): ParentEvent[] {
-      return this.translateActionsMock(actions);
+    translateActions(actions: SubEvent[], machineId: string): ParentEvent[] {
+      return this.translateActionsMock(actions, machineId);
     }
 
     async prep(
@@ -1348,7 +1352,10 @@ describe('FlowNode', () => {
     testFlowNode = new TestFlowNode('flowStep', subMachineConfig);
 
     // Set up for spying on submachine's resume method
-    jest.spyOn(testFlowNode.subMachine, 'resume');
+    const subMachine = testFlowNode.subMachines.get('test-sub-machine');
+    if (subMachine) {
+      jest.spyOn(subMachine, 'resume');
+    }
 
     // Reset telemetry for this test
     resetSpans();
@@ -1356,7 +1363,9 @@ describe('FlowNode', () => {
 
   test('should create FlowNode with submachine', () => {
     expect(testFlowNode).toBeDefined();
-    expect(testFlowNode.subMachine).toBeDefined();
+    expect(testFlowNode.subMachines).toBeDefined();
+    expect(testFlowNode.subMachines.size).toBe(1);
+    expect(testFlowNode.subMachines.has('test-sub-machine')).toBe(true);
     expect(testFlowNode.id).toBe('flowStep');
   });
 
@@ -1407,12 +1416,13 @@ describe('FlowNode', () => {
     };
 
     // @ts-ignore
-    testFlowNode.subMachine.resume.mockResolvedValue(subMachineResult);
+    const subMachine = testFlowNode.subMachines.get('test-sub-machine');
+    subMachine!.resume.mockResolvedValue(subMachineResult);
 
     // Mock the post method to return a parent state result
     testFlowNode.postMock.mockImplementation(async (result, store) => {
       // Verify the result is properly passed from exec to post
-      expect(result.status).toBe('transition');
+      expect(result.status).toBe('waiting');
       expect(result.actions).toHaveLength(1);
 
       return {
@@ -1426,36 +1436,41 @@ describe('FlowNode', () => {
     const execResult = await testFlowNode.exec({ parentArg: 'test arg' }, [parentEvent], undefined);
 
     // Verify the translation methods were called
-    expect(testFlowNode.translateEventsMock).toHaveBeenCalledWith([parentEvent]);
-    expect(testFlowNode.translateActionsMock).toHaveBeenCalledWith([subAction]);
+    expect(testFlowNode.translateEventsMock).toHaveBeenCalledWith(
+      [parentEvent],
+      'test-sub-machine'
+    );
+    expect(testFlowNode.translateActionsMock).toHaveBeenCalledWith([subAction], 'test-sub-machine');
 
     // Verify the submachine was called with the translated events
-    expect(testFlowNode.subMachine.resume).toHaveBeenCalledWith([subEvent]);
+    const subMachine2 = testFlowNode.subMachines.get('test-sub-machine');
+    expect(subMachine2!.resume).toHaveBeenCalledWith([subEvent]);
 
     // Verify the result
     expect(execResult.result).toEqual({
-      status: 'transition',
+      status: 'waiting',
       actions: [parentAction],
     });
 
     // Verify scratchpad contains the submachine state
     expect(execResult.scratchpad).toBeDefined();
-    expect(execResult.scratchpad?.subMachineState).toBeDefined();
+    expect(execResult.scratchpad?.subMachineStates).toBeDefined();
+    expect(execResult.scratchpad?.subMachineStates.size).toBe(1);
 
     // Verify telemetry spans were created with correct attributes
     const execSpan = mockSpans['flow_node.exec.flowStep'];
     expect(execSpan).toBeDefined();
 
     // Check span attributes
-    expect(execSpan.attributes['state_machine.instance_id']).toBe('submachine');
+    expect(execSpan.attributes['state_machine.instance_id']).toBe('flow-node');
     expect(execSpan.attributes['state_machine.state']).toBe('flowStep');
-    expect(execSpan.attributes['state_machine.metadata.is_sub_machine']).toBe(true);
+    expect(execSpan.attributes['state_machine.metadata.is_flow_node']).toBe(true);
+    expect(execSpan.attributes['state_machine.metadata.sub_machine_count']).toBe(1);
 
     // Check span events
-    expect(execSpan.events.some((e) => e.name === 'submachine_initialized')).toBe(true);
+    expect(execSpan.events.some((e) => e.name === 'submachines_initialized')).toBe(true);
     expect(execSpan.events.some((e) => e.name === 'events_translated')).toBe(true);
-    expect(execSpan.events.some((e) => e.name === 'actions_translated')).toBe(true);
-    expect(execSpan.events.some((e) => e.name === 'submachine_completed')).toBe(true);
+    expect(execSpan.events.some((e) => e.name === 'submachine_result')).toBe(true);
   });
 
   test('should resume submachine from existing state in scratchpad', async () => {
@@ -1499,25 +1514,29 @@ describe('FlowNode', () => {
     };
 
     // @ts-ignore
-    testFlowNode.subMachine.resume.mockResolvedValue(subMachineResult);
+    const subMachine = testFlowNode.subMachines.get('test-sub-machine');
+    subMachine!.resume.mockResolvedValue(subMachineResult);
 
     // Execute the flow node with existing scratchpad
+    const existingStatesMap = new Map([['test-sub-machine', existingSubMachineState]]);
     const execResult = await testFlowNode.exec({ parentArg: 'test arg' }, [parentEvent], {
-      subMachineState: existingSubMachineState,
+      subMachineStates: existingStatesMap,
     });
 
     // Verify the existing state was loaded into submachine
-    expect(testFlowNode.subMachine.store.allState).toEqual(existingSubMachineState);
+    const subMachine3 = testFlowNode.subMachines.get('test-sub-machine');
+    expect(subMachine3!.store.allState).toEqual(existingSubMachineState);
 
     // Verify the result
     expect(execResult.result).toEqual({
       status: 'waiting',
-      actions: [],
+      actions: undefined,
     });
 
     // Verify scratchpad contains the updated submachine state
     expect(execResult.scratchpad).toBeDefined();
-    expect(execResult.scratchpad?.subMachineState).toBeDefined();
+    expect(execResult.scratchpad?.subMachineStates).toBeDefined();
+    expect(execResult.scratchpad?.subMachineStates.size).toBe(1);
 
     // Verify telemetry spans were created with correct attributes
     const execSpan = mockSpans['flow_node.exec.flowStep'];
@@ -1557,7 +1576,8 @@ describe('FlowNode', () => {
     };
 
     // @ts-ignore
-    testFlowNode.subMachine.resume.mockResolvedValue(subMachineResult);
+    const subMachine = testFlowNode.subMachines.get('test-sub-machine');
+    subMachine!.resume.mockResolvedValue(subMachineResult);
 
     // Set up post to return the final state result
     testFlowNode.postMock.mockResolvedValue({
@@ -1572,7 +1592,8 @@ describe('FlowNode', () => {
     // Verify the full lifecycle was executed
     expect(testFlowNode.prepMock).toHaveBeenCalledWith(sharedStore);
     expect(testFlowNode.translateEventsMock).toHaveBeenCalled();
-    expect(testFlowNode.subMachine.resume).toHaveBeenCalled();
+    const subMachine4 = testFlowNode.subMachines.get('test-sub-machine');
+    expect(subMachine4!.resume).toHaveBeenCalled();
     expect(testFlowNode.postMock).toHaveBeenCalled();
 
     // Verify the final result
@@ -1623,12 +1644,9 @@ describe('FlowNode', () => {
     testFlowNode.translateActionsMock.mockReturnValue([parentAction]);
 
     // Mock the sub-machine nodes first
-    const subNodeA = testFlowNode.subMachine.config.nodes.find(
-      (node) => node.id === 'subA'
-    ) as SubNodeA;
-    const subNodeB = testFlowNode.subMachine.config.nodes.find(
-      (node) => node.id === 'subB'
-    ) as SubNodeB;
+    const subMachine5 = testFlowNode.subMachines.get('test-sub-machine');
+    const subNodeA = subMachine5!.config.nodes.find((node) => node.id === 'subA') as SubNodeA;
+    const subNodeB = subMachine5!.config.nodes.find((node) => node.id === 'subB') as SubNodeB;
 
     // Configure SubNodeA to transition to SubNodeB
     subNodeA.prepMock.mockResolvedValue({
@@ -1665,13 +1683,13 @@ describe('FlowNode', () => {
 
     // Mock the sub-machine to run the actual nodes
     // @ts-ignore - we're overriding private methods for testing
-    testFlowNode.subMachine.runNode = async (node) => {
-      return await node.run(testFlowNode.subMachine.store);
+    subMachine5!.runNode = async (node) => {
+      return await node.run(subMachine5!.store);
     };
 
     // Create a mock resume function that simulates the sub-machine execution
     // @ts-ignore - accessing private property for testing
-    testFlowNode.subMachine.resume = jest.fn().mockImplementation(async () => {
+    subMachine5!.resume = jest.fn().mockImplementation(async () => {
       // Return a mock result instead of actually running the submachine
       return {
         status: 'terminal',
@@ -1683,14 +1701,17 @@ describe('FlowNode', () => {
     const execResult = await testFlowNode.exec({ parentArg: 'test' }, [parentEvent], undefined);
 
     // Verify event translation occurred
-    expect(testFlowNode.translateEventsMock).toHaveBeenCalledWith([parentEvent]);
+    expect(testFlowNode.translateEventsMock).toHaveBeenCalledWith(
+      [parentEvent],
+      'test-sub-machine'
+    );
 
     // Since we've mocked the resume method, the sub-machine nodes aren't actually called
     // Instead verify that the resume method was called with the translated events
-    expect(testFlowNode.subMachine.resume).toHaveBeenCalledWith([subEvent]);
+    expect(subMachine5!.resume).toHaveBeenCalledWith([subEvent]);
 
     // Verify action translation occurred
-    expect(testFlowNode.translateActionsMock).toHaveBeenCalledWith([subAction]);
+    expect(testFlowNode.translateActionsMock).toHaveBeenCalledWith([subAction], 'test-sub-machine');
 
     // Verify the result structure
     expect(execResult.result).toEqual({
@@ -1700,19 +1721,20 @@ describe('FlowNode', () => {
 
     // Verify scratchpad contains the sub-machine state
     expect(execResult.scratchpad).toBeDefined();
-    expect(execResult.scratchpad?.subMachineState).toBeDefined();
+    expect(execResult.scratchpad?.subMachineStates).toBeDefined();
+    expect(execResult.scratchpad?.subMachineStates.size).toBe(1);
 
     // Verify telemetry spans
     const execSpan = mockSpans['flow_node.exec.flowStep'];
     expect(execSpan).toBeDefined();
-    expect(execSpan.attributes['state_machine.instance_id']).toBe('submachine');
-    expect(execSpan.attributes['state_machine.metadata.is_sub_machine']).toBe(true);
+    expect(execSpan.attributes['state_machine.instance_id']).toBe('flow-node');
+    expect(execSpan.attributes['state_machine.metadata.is_flow_node']).toBe(true);
+    expect(execSpan.attributes['state_machine.metadata.sub_machine_count']).toBe(1);
 
     // Verify telemetry events
-    expect(execSpan.events.some((e) => e.name === 'submachine_initialized')).toBe(true);
+    expect(execSpan.events.some((e) => e.name === 'submachines_initialized')).toBe(true);
     expect(execSpan.events.some((e) => e.name === 'events_translated')).toBe(true);
-    expect(execSpan.events.some((e) => e.name === 'actions_translated')).toBe(true);
-    expect(execSpan.events.some((e) => e.name === 'submachine_completed')).toBe(true);
+    expect(execSpan.events.some((e) => e.name === 'submachine_result')).toBe(true);
   });
 
   test('should resume sub-machine from existing state in scratchpad', async () => {
@@ -1758,12 +1780,9 @@ describe('FlowNode', () => {
     testFlowNode.translateActionsMock.mockReturnValue([]);
 
     // Get references to sub nodes
-    const subNodeA = testFlowNode.subMachine.config.nodes.find(
-      (node) => node.id === 'subA'
-    ) as SubNodeA;
-    const subNodeB = testFlowNode.subMachine.config.nodes.find(
-      (node) => node.id === 'subB'
-    ) as SubNodeB;
+    const subMachine6 = testFlowNode.subMachines.get('test-sub-machine');
+    const subNodeA = subMachine6!.config.nodes.find((node) => node.id === 'subA') as SubNodeA;
+    const subNodeB = subMachine6!.config.nodes.find((node) => node.id === 'subB') as SubNodeB;
 
     // Set up SubNodeB to process the new event and reach terminal state
     subNodeB.prepMock.mockResolvedValue({
@@ -1783,7 +1802,7 @@ describe('FlowNode', () => {
 
     // Mock customized resume method for submachine
     // @ts-ignore - accessing private property for testing
-    testFlowNode.subMachine.resume = jest.fn().mockImplementation(async () => {
+    subMachine6!.resume = jest.fn().mockImplementation(async () => {
       // Return a terminal state result
       return {
         status: 'terminal',
@@ -1792,8 +1811,9 @@ describe('FlowNode', () => {
     });
 
     // Run exec with existing scratchpad
+    const existingStatesMap2 = new Map([['test-sub-machine', existingSubMachineState]]);
     const execResult = await testFlowNode.exec({ parentArg: 'resume test' }, [parentEvent], {
-      subMachineState: existingSubMachineState,
+      subMachineStates: existingStatesMap2,
     });
 
     // Verify the submachine existing state was used to initialize
@@ -1802,17 +1822,18 @@ describe('FlowNode', () => {
 
     // Since we're mocking the resume method, we can't verify which nodes were called
     // Instead, verify that the resume method was called with the expected events
-    expect(testFlowNode.subMachine.resume).toHaveBeenCalledWith([subEvent]);
+    expect(subMachine6!.resume).toHaveBeenCalledWith([subEvent]);
 
     // Verify exec result
     expect(execResult.result).toEqual({
       status: 'terminal',
-      actions: [],
+      actions: undefined,
     });
 
     // Verify scratchpad was updated
     expect(execResult.scratchpad).toBeDefined();
-    expect(execResult.scratchpad?.subMachineState).toBeDefined();
+    expect(execResult.scratchpad?.subMachineStates).toBeDefined();
+    expect(execResult.scratchpad?.subMachineStates.size).toBe(1);
 
     // Verify telemetry spans
     const execSpan = mockSpans['flow_node.exec.flowStep'];

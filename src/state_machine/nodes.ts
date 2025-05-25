@@ -259,7 +259,21 @@ export class ErrorNode<StateName extends string, TContext, TEvent extends BaseEv
 }
 
 /**
- * FlowNode: Runs a nested state machine to completion.
+ * Configuration for a sub-machine within a FlowNode
+ */
+export interface SubMachineConfig<
+  SubStateName extends string,
+  SubContext,
+  SubEvent extends BaseEvent,
+> {
+  id: string;
+  config: StateMachineConfig<SubStateName, SubContext, SubEvent>;
+  initialContext: SubContext;
+}
+
+/**
+ * FlowNode: Runs one or more nested state machines to completion.
+ * All sub-machines run concurrently and the node waits for all to complete.
  */
 export abstract class FlowNode<
   StateName extends string,
@@ -271,26 +285,39 @@ export abstract class FlowNode<
   StateName,
   TContext,
   TEvent,
-  { subMachineState: AllState<any, SubEvent> },
+  { subMachineStates: Map<string, AllState<any, SubEvent>> },
   EXECARG,
   StateResult<any, TEvent>
 > {
-  subMachine: StateMachine<any, any, SubEvent>;
+  subMachines: Map<string, StateMachine<any, any, SubEvent>>;
 
   constructor(
     id: StateName,
-    private subMachineConfig: StateMachineConfig<any, any, SubEvent>
+    private subMachineConfigs:
+      | SubMachineConfig<any, any, SubEvent>
+      | SubMachineConfig<any, any, SubEvent>[]
   ) {
     super(id);
-    this.subMachine = this.createSubMachine(subMachineConfig);
+    this.subMachines = new Map();
+
+    // Handle both single and multiple sub-machine configurations
+    const configs = Array.isArray(subMachineConfigs) ? subMachineConfigs : [subMachineConfigs];
+
+    for (const subConfig of configs) {
+      const subMachine = this.createSubMachine(subConfig);
+      this.subMachines.set(subConfig.id, subMachine);
+    }
   }
 
-  // Factory method to create the sub-machine
+  // Factory method to create a sub-machine
   private createSubMachine(
-    config: StateMachineConfig<any, any, SubEvent>
+    subConfig: SubMachineConfig<any, any, SubEvent>
   ): StateMachine<any, any, SubEvent> {
+    // Generate a unique instance ID for the sub-machine
+    const instanceId = `${subConfig.id}-${crypto.randomUUID()}`;
+
     return new StateMachine(
-      config,
+      subConfig.config,
       {
         write: () => Promise.resolve(),
         writeEvents: () => Promise.resolve(),
@@ -298,8 +325,8 @@ export abstract class FlowNode<
           throw new Error('Not implemented');
         },
       },
-      { messages: [] }, // Initialize with empty context
-      'submachine',
+      subConfig.initialContext,
+      instanceId,
       // todo hooks that wrap our hooks
       {
         onError: (error: Error, store: any) => {
@@ -310,88 +337,140 @@ export abstract class FlowNode<
     );
   }
 
-  /** Translate events from the parent type to the sub machine type */
-  abstract translateEvents(events: TEvent[]): SubEvent[];
+  /** Translate events from the parent type to the sub machine type for a specific machine */
+  abstract translateEvents(events: TEvent[], machineId: string): SubEvent[];
 
-  /** Translate events from the sub machine type to the parent type */
-  abstract translateActions(actions: SubEvent[]): TEvent[];
+  /** Translate events from the sub machine type to the parent type for a specific machine */
+  abstract translateActions(actions: SubEvent[], machineId: string): TEvent[];
 
   async exec(
     args: EXECARG,
     events: TEvent[],
-    scratchpad: { subMachineState: AllState<any, SubEvent> } | undefined
+    scratchpad: { subMachineStates: Map<string, AllState<any, SubEvent>> } | undefined
   ): Promise<{
     result: StateResult<any, TEvent>;
-    scratchpad: { subMachineState: AllState<any, SubEvent> } | undefined;
+    scratchpad: { subMachineStates: Map<string, AllState<any, SubEvent>> } | undefined;
   }> {
     const attributes: StateMachineAttributes = {
-      instanceId: this.subMachine.instanceId,
+      instanceId: 'flow-node', // Will be overridden by parent context
       stateName: this.id as string,
       metadata: {
-        is_sub_machine: true,
-        parent_instance_id: this.subMachine.instanceId,
+        is_flow_node: true,
+        sub_machine_count: this.subMachines.size,
       },
     };
 
     return await withSpan(`flow_node.exec.${this.id}`, attributes, async (span) => {
-      const existingState = scratchpad?.subMachineState;
-      if (existingState) {
-        this.subMachine.store.allState = existingState;
-        span.addEvent('submachine_resumed', {
-          from_state: existingState.history[existingState.history.length - 1]?.state,
-        });
-      } else {
-        span.addEvent('submachine_initialized');
-      }
-
-      // Record events being processed by sub-machine
-      if (events.length > 0 && span) {
-        span.addEvent('events_translated', { count: events.length });
-        const translatedEvents = this.translateEvents(events);
-        for (const event of translatedEvents) {
-          recordEvent(span, event.type, event.id, 'submachine');
+      // Restore state for all sub-machines if we have scratchpad data
+      const existingStates = scratchpad?.subMachineStates;
+      if (existingStates) {
+        for (const [machineId, state] of existingStates) {
+          const subMachine = this.subMachines.get(machineId);
+          if (subMachine) {
+            subMachine.store.allState = state;
+            span.addEvent('submachine_resumed', {
+              machine_id: machineId,
+              from_state: state.history[state.history.length - 1]?.state,
+            });
+          }
         }
+      } else {
+        span.addEvent('submachines_initialized', {
+          count: this.subMachines.size,
+        });
       }
 
-      // Initialize the sub-machine
-      await this.subMachine.initialize();
+      // Initialize all sub-machines
+      const initPromises = Array.from(this.subMachines.values()).map((machine) =>
+        machine.initialize()
+      );
+      await Promise.all(initPromises);
 
-      // Run sub-machine with the translated events
-      const translatedEvents = this.translateEvents(events);
-      const result = await this.subMachine.resume(translatedEvents);
+      // Run all sub-machines concurrently
+      const subMachineResults = new Map<string, StateResult<any, SubEvent>>();
+      const allActions: TEvent[] = [];
+      let anyWaiting = false;
+      let anyInProgress = false;
 
-      // Check the current state of the subMachine before updating our result
-      const currentSubState = this.subMachine.store.getCurrentState();
+      const runPromises = Array.from(this.subMachines.entries()).map(
+        async ([machineId, subMachine]) => {
+          // Translate events for this specific machine
+          const translatedEvents = this.translateEvents(events, machineId);
 
-      let endState = result.status;
-      if (currentSubState === 'inner_waiting') {
-        endState = 'waiting';
+          // Record events being processed by this sub-machine
+          if (translatedEvents.length > 0 && span) {
+            span.addEvent('events_translated', {
+              machine_id: machineId,
+              count: translatedEvents.length,
+            });
+            for (const event of translatedEvents) {
+              recordEvent(span, event.type, event.id, `submachine:${machineId}`);
+            }
+          }
+
+          // Run the sub-machine
+          const result = await subMachine.resume(translatedEvents);
+          subMachineResults.set(machineId, result);
+
+          // Check the current state
+          const currentSubState = subMachine.store.getCurrentState();
+
+          span.addEvent('submachine_result', {
+            machine_id: machineId,
+            status: result.status,
+            current_state: currentSubState,
+            has_actions: result.actions !== undefined && result.actions.length > 0,
+          });
+
+          // Track overall status
+          if (result.status === 'waiting' || currentSubState?.includes('waiting')) {
+            anyWaiting = true;
+          } else if (result.status !== 'terminal') {
+            anyInProgress = true;
+          }
+
+          // Translate and collect actions
+          if (result.actions && result.actions.length > 0) {
+            const translatedActions = this.translateActions(result.actions, machineId);
+            allActions.push(...translatedActions);
+          }
+        }
+      );
+
+      await Promise.all(runPromises);
+
+      // Determine overall status
+      let overallStatus: StateResult<any, TEvent>['status'];
+      if (anyWaiting) {
+        overallStatus = 'waiting';
+      } else if (anyInProgress) {
+        // Some machines still running, continue waiting
+        overallStatus = 'waiting';
+      } else {
+        // All machines are terminal
+        overallStatus = 'terminal';
       }
 
       span.setAttributes({
-        sub_machine_status: result.status,
-        sub_machine_current_state: currentSubState,
-        translated_event_count: events.length,
-        translated_action_count: result.actions?.length ?? 0,
+        overall_status: overallStatus,
+        total_actions: allActions.length,
+        machines_waiting: anyWaiting ? 'true' : 'false',
+        machines_in_progress: anyInProgress ? 'true' : 'false',
       });
 
-      if (result.actions && result.actions.length > 0) {
-        span.addEvent('actions_translated', { count: result.actions.length });
+      // Collect all sub-machine states for scratchpad
+      const newSubMachineStates = new Map<string, AllState<any, SubEvent>>();
+      for (const [machineId, subMachine] of this.subMachines) {
+        newSubMachineStates.set(machineId, subMachine.store.allState);
       }
 
-      span.addEvent('submachine_completed', {
-        status: result.status,
-        has_actions: result.actions !== undefined && result.actions.length > 0,
-      });
-
-      // Update the result status based on the current state of the subMachine
       return {
         result: {
-          status: endState as any,
-          actions: result.actions ? this.translateActions(result.actions) : undefined,
+          status: overallStatus,
+          actions: allActions.length > 0 ? allActions : undefined,
         },
         scratchpad: {
-          subMachineState: this.subMachine.store.allState,
+          subMachineStates: newSubMachineStates,
         },
       };
     });
