@@ -355,7 +355,7 @@ tasks:
              `export const db = drizzle(sqlite, { schema });`
           7. Export the `db` instance and all schemas (`export * from
           './schema'`).
-        done: false
+        done: true
       - prompt: >
           Add a script to `package.json` for generating and applying Drizzle
           migrations:
