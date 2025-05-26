@@ -848,7 +848,7 @@ tasks:
 
           - Ensure `rmplanAgent` options passed from `task_manager` include
           `noLog: true` (or equivalent based on actual option name).
-        done: false
+        done: true
   - title: Implement Log Retrieval Command
     description: >
       Add the `/rm-logs <task-id>` Discord command to allow users to retrieve

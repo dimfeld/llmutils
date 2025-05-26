@@ -11,7 +11,8 @@ import {
 } from '../db/index.js';
 import { eq } from 'drizzle-orm';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
-import { log, error, debugLog, runWithLogger } from '../../logging.js';
+import { log, error, debugLog } from '../../logging.js';
+import { runWithLogger } from '../../logging/adapter.js';
 import { generatePlanForIssue } from './plan_generator.js';
 import { notifyTaskCreation } from './thread_manager.js';
 import { parseGitHubIssueUrl } from '../utils/github_utils.js';
@@ -19,7 +20,7 @@ import { WorkspaceAutoSelector } from '../../rmplan/workspace/workspace_auto_sel
 import { config as botConfig } from '../config.js';
 import { loadEffectiveConfig as loadRmplanConfig } from '../../rmplan/configLoader.js';
 import { rmplanAgent } from '../../rmplan/agent.js';
-import { DatabaseLoggerAdapter } from '../logging/database_adapter.js';
+import { DatabaseLoggerAdapter } from '../../logging/adapters/database_logger_adapter.js';
 import { createPullRequest } from '../utils/pr_creator.js';
 import { Octokit } from 'octokit';
 
@@ -485,7 +486,7 @@ export class TaskManager {
       log(`[${taskId}]   Plan file: ${workspacePlanPath}`);
 
       // Create database logger adapter to capture agent output
-      const dbLogger = new DatabaseLoggerAdapter();
+      const dbLogger = new DatabaseLoggerAdapter(taskId, db);
 
       try {
         // Load rmplan config to get executor and model settings
@@ -514,9 +515,6 @@ export class TaskManager {
             {}
           );
         });
-
-        // Save logs to database after successful completion
-        await dbLogger.save(taskId, 'agent_complete');
         log(`[${taskId}] Agent execution completed successfully`);
 
         // Update task status to indicate successful implementation
@@ -620,9 +618,6 @@ export class TaskManager {
           );
         }
       } catch (agentError) {
-        // Save logs even on failure
-        await dbLogger.save(taskId, 'agent_failed');
-
         const errorMessage = agentError instanceof Error ? agentError.message : String(agentError);
         error(`[${taskId}] Agent execution failed: ${errorMessage}`);
 
