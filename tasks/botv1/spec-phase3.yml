@@ -68,7 +68,7 @@ tasks:
           4.  Write unit tests for the `isAdmin` function covering cases where
           the user is an admin, not an admin, and the configuration is
           missing/invalid.
-        done: false
+        done: true
       - prompt: >
           We need to manage user mappings in the `user_mappings` table. The
           schema is:
