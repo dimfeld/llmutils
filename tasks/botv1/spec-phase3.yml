@@ -1,0 +1,661 @@
+goal: Implement Phase 3 of the LLMUtils Bot System, enhancing it with PR
+  response capabilities, user self-registration, admin commands, automatic
+  cleanup, and crash recovery mechanisms.
+details: >
+  This project plan outlines the steps to implement the features specified for
+  Phase 3. The plan focuses on iterative development, building upon the existing
+  (assumed) Phase 1 and 2 implementations. Each task is designed to be a
+  manageable chunk of work, with prompts intended for a code-generation LLM. The
+  implementation should follow best practices, including writing tests for new
+  functionality.
+
+
+  The existing architecture includes:
+
+  - A unified service for GitHub and Discord.
+
+  - SQLite for state management.
+
+  - Docker deployment.
+
+  - Existing tables: `tasks`, `threads`, `user_mappings`, `workspaces`,
+  `task_logs`, `command_history`, `task_artifacts`.
+
+  - Core workflows for plan generation and implementation are already in place.
+
+
+  Phase 3 features to be implemented:
+
+  1.  **Admin Commands**: `/rm-link-user`, `/rm-cleanup`, `/rm-status-all`.
+
+  2.  **Self-Registration System**: `/rm-link <github-username>` with
+  Gist/comment verification.
+
+  3.  **Automatic Cleanup**: Workspaces and task logs.
+
+  4.  **PR Response Handling**: `@bot respond` command on GitHub.
+
+  5.  **Crash Recovery**: Task resumption using `task_checkpoints`.
+tasks:
+  - title: Admin Capabilities Setup
+    description: >
+      Establish foundational elements for admin commands, including an admin
+      check mechanism and database interaction for user mappings.
+    files:
+      - src/bot/discord_admin_utils.ts
+      - src/bot/config.ts
+      - src/db/user_mappings_manager.ts
+      - src/db/schema.sql
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          The bot needs to identify Discord users with administrative
+          privileges.
+
+          1.  Modify the bot's configuration system (e.g., in
+          `src/bot/config.ts` or by defining new environment variables) to
+          accept a list of admin Discord User IDs. For example,
+          `ADMIN_DISCORD_USER_IDS` as a comma-separated string.
+
+          2.  Create a new file `src/bot/discord_admin_utils.ts`.
+
+          3.  In `src/bot/discord_admin_utils.ts`, implement a function
+          `isAdmin(discordUserId: string): boolean`. This function should:
+              - Load the configured admin Discord User IDs.
+              - Return `true` if the provided `discordUserId` is in the list of admin IDs, `false` otherwise.
+              - Log an error if the admin configuration is missing or invalid, but default to `false` for safety.
+          4.  Write unit tests for the `isAdmin` function covering cases where
+          the user is an admin, not an admin, and the configuration is
+          missing/invalid.
+        done: false
+      - prompt: >
+          We need to manage user mappings in the `user_mappings` table. The
+          schema is:
+
+          ```sql
+
+          -- User identity mapping
+
+          user_mappings (
+            github_username PRIMARY KEY,
+            discord_user_id,
+            verified,
+            mapped_at,
+            mapped_by -- self/admin
+          )
+
+          ```
+
+          1.  Create or update a file, let's call it
+          `src/db/user_mappings_manager.ts`, to handle database operations for
+          the `user_mappings` table.
+
+          2.  Implement a function `mapUser(githubUsername: string,
+          discordUserId: string, mappedBy: 'admin' | 'self', verified: boolean):
+          Promise<void>` in `src/db/user_mappings_manager.ts`.
+              - This function should perform an `INSERT OR REPLACE` (or equivalent UPSERT) operation into the `user_mappings` table.
+              - It should set `github_username`, `discord_user_id`, `verified`, `mapped_by`, and `mapped_at` (to the current timestamp).
+              - Ensure proper error handling for database operations.
+          3.  Implement a function
+          `getUserMappingByGithubUsername(githubUsername: string):
+          Promise<UserMapping | null>` that retrieves a user mapping.
+
+          4.  Implement a function `getUserMappingByDiscordId(discordUserId:
+          string): Promise<UserMapping | null>` that retrieves a user mapping.
+
+          5.  Define the `UserMapping` type based on the table schema.
+
+          6.  Write unit tests for these functions, mocking the database
+          interaction.
+        done: false
+  - title: Implement Admin Discord Commands
+    description: >
+      Implement the admin-specific Discord slash commands: `/rm-link-user`,
+      `/rm-status-all`, and `/rm-cleanup`.
+    files:
+      - src/bot/discord_command_handler.ts
+      - src/bot/discord_admin_utils.ts
+      - src/db/user_mappings_manager.ts
+      - src/db/tasks_manager.ts
+      - src/rmplan/workspace/workspace_manager.ts
+      - src/rmplan/cleanup.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Implement the `/rm-link-user <github-username> <discord-id>` admin
+          Discord command.
+
+          1.  In `src/bot/discord_command_handler.ts` (or equivalent), register
+          a new slash command `/rm-link-user` with options for `github-username`
+          (string, required) and `discord-id` (string, required).
+
+          2.  The command handler should:
+              a.  Use the `isAdmin` function from `src/bot/discord_admin_utils.ts` to check if the invoking user is an admin. If not, reply with an error message and stop.
+              b.  Parse the `github-username` and `discord-id` arguments.
+              c.  Call the `mapUser` function from `src/db/user_mappings_manager.ts` with `githubUsername`, `discordUserId`, `mappedBy: 'admin'`, and `verified: true`.
+              d.  Send a confirmation message to the Discord channel upon successful mapping, e.g., "Successfully mapped GitHub user `<github-username>` to Discord user `<discord-id>`."
+              e.  Handle any errors from `mapUser` and report them to the admin.
+          3.  Write integration tests for this command if possible, or unit
+          tests for the handler logic.
+        done: false
+      - prompt: >
+          Implement the `/rm-status-all` admin Discord command.
+
+          1.  Create or update `src/db/tasks_manager.ts` to include a function
+          `getAllActiveTasks(): Promise<Task[]>`. This function should query the
+          `tasks` table for tasks that are not in a final state (e.g., not
+          'completed' or 'failed'). Include essential fields like `id`,
+          `repository`, `issue_number`, `status`, `created_by_user`,
+          `created_at`. Define the `Task` type.
+
+          2.  In `src/bot/discord_command_handler.ts`, register a new slash
+          command `/rm-status-all`.
+
+          3.  The command handler should:
+              a.  Verify the user is an admin using `isAdmin`.
+              b.  Call `getAllActiveTasks()`.
+              c.  Format the list of active tasks into a readable message (e.g., using Discord embeds or formatted text) and send it to the channel. If no active tasks, state that.
+              d.  Handle errors and report them.
+          4.  Write tests for `getAllActiveTasks` and the command handler.
+        done: false
+      - prompt: >
+          Implement the `/rm-cleanup` admin Discord command for manual workspace
+          cleanup.
+
+          1.  Review `src/rmplan/workspace/workspace_manager.ts` and potentially
+          `src/rmplan/cleanup.ts`. Ensure there's a function, e.g.,
+          `cleanupInactiveWorkspaces(forceAll: boolean): Promise<{cleanedCount:
+          number, errors: any[]}>` in `workspace_manager.ts` or a dedicated
+          cleanup service. This function should identify and remove workspaces.
+          For manual admin cleanup, `forceAll` could be true, or it could target
+          workspaces that are old and not locked. For now, let's assume it
+          cleans *all* unlocked, unused workspaces.
+
+          2.  In `src/bot/discord_command_handler.ts`, register `/rm-cleanup`.
+
+          3.  The command handler should:
+              a.  Verify the user is an admin using `isAdmin`.
+              b.  Call the workspace cleanup function. This might involve iterating through workspaces, checking their lock status (`workspaces.locked_by_task_id` and associated task status) and `last_accessed_at` to determine if they can be removed. The spec says "Manual workspace cleanup", implying it might be more aggressive or a trigger for the standard automatic cleanup logic. For this step, let's make it clean up all workspaces associated with tasks that are 'completed' or 'failed'.
+              c.  Send a confirmation message with the number of cleaned workspaces and any errors.
+          4.  Write tests for the command handler and the underlying cleanup
+          logic called.
+        done: false
+  - title: User Self-Registration System
+    description: >
+      Implement the `/rm-link <github-username>` Discord command allowing users
+      to self-register their GitHub account. This involves generating a
+      verification code, guiding the user to post it in a public Gist, and then
+      verifying it.
+    files:
+      - src/bot/discord_command_handler.ts
+      - src/db/user_mappings_manager.ts
+      - src/bot/self_registration_service.ts
+      - src/common/github/api.ts
+      - src/db/schema.sql
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Prepare the `user_mappings` table and data access layer for the
+          self-registration process.
+
+          1.  Modify the `user_mappings` table schema. Add the following
+          nullable columns:
+              - `verification_code TEXT`
+              - `verification_code_expires_at DATETIME`
+              If using SQL migrations, create a new migration file. Otherwise, document the `ALTER TABLE` statements for `src/db/schema.sql`.
+              ```sql
+              ALTER TABLE user_mappings ADD COLUMN verification_code TEXT;
+              ALTER TABLE user_mappings ADD COLUMN verification_code_expires_at DATETIME;
+              ```
+          2.  Update the `UserMapping` type in `src/db/user_mappings_manager.ts`
+          to include these new fields.
+
+          3.  In `src/db/user_mappings_manager.ts`, add the following functions:
+              - `storeVerificationCode(discordUserId: string, githubUsername: string, code: string, expiresAt: Date): Promise<void>`: This should INSERT or UPDATE a record in `user_mappings` for the `discordUserId` setting the `github_username`, `verification_code`, `verification_code_expires_at`, `verified = false`, and `mapped_by = 'self'`. It should also clear `discord_user_id` from any other rows that might have this `github_username` to prevent conflicts during verification or update the existing record if `github_username` is already PK. A robust way is to initially store this pending verification perhaps linked to discord_user_id and only set github_username as PK upon verification completion. For simplicity now, assume `github_username` can be temporarily set. Revisit if this causes PK issues before verification.
+              *Alternative*: If `github_username` must be unique and verified first, create a temporary table for pending verifications or use `discord_user_id` as PK for unverified entries if `github_username` can be NULL. For this step, let's try to update/insert with `github_username` but be mindful. A simpler approach is to use `discord_user_id` as the primary key for this initial step of storing the code, and then finalize the mapping after verification. Let's adjust the schema: make `github_username` nullable initially or have a separate staging.
+              The spec has `github_username PRIMARY KEY`. This means we must have a `github_username` to insert.
+              Let's refine `storeVerificationCode`:
+              `storePendingVerification(discordUserId: string, tentativeGithubUsername: string, code: string, expiresAt: Date): Promise<void>`: This function will insert a new record with `discord_user_id` (as potential primary key temporarily, or ensure `github_username` is unique for pending record), `github_username = tentativeGithubUsername`, `verification_code`, `verification_code_expires_at`, `verified = false`, `mapped_by = 'self'`. If a record for `discord_user_id` already exists, update it. If a verified record for `tentativeGithubUsername` exists for another discord user, this should probably fail or notify.
+              - `findPendingVerificationByCode(code: string): Promise<UserMapping | null>`: Retrieves a user mapping entry by `verification_code` where `verified = false` and `verification_code_expires_at` is in the future.
+              - `finalizeVerification(githubUsername: string, discordUserId: string): Promise<void>`: Sets `verified = true`, `mapped_at = CURRENT_TIMESTAMP`, clears `verification_code` and `verification_code_expires_at` for the given mapping (identified by `githubUsername` or `discordUserId`). Ensure this makes `github_username` the effective unique key for verified users, potentially cleaning up older pending verifications for the same `github_username`.
+          4.  Write unit tests for these new database functions.
+
+
+          *Self-correction during thought process:* The `user_mappings` table
+          uses `github_username` as `PRIMARY KEY`. This complicates storing a
+          "pending" verification if we don't know the `github_username` for sure
+          or if it's already mapped.
+
+          Let's simplify the `user_mappings` table interaction for now: when
+          `/rm-link <github-username>` is called, we'll use the provided
+          `github-username`. If it's already mapped and verified to *another*
+          Discord user, the command should inform the user. If it's mapped to
+          *this* Discord user and verified, inform them. If mapped to this user
+          but unverified, re-start verification. If unmapped, or mapped to
+          another user but unverified, overwrite with new verification for
+          current Discord user.
+
+
+          Revised `src/db/user_mappings_manager.ts` functions:
+
+          - `upsertPendingVerification(discordUserId: string, githubUsername:
+          string, code: string, expiresAt: Date): Promise<void>`:
+              Inserts or updates `user_mappings`. Sets `discord_user_id`, `verification_code`, `verification_code_expires_at`. `verified` becomes `false`, `mapped_by` becomes `'self'`. `mapped_at` is updated. This assumes `github_username` is the PK. If this `githubUsername` is already verified for a *different* `discordUserId`, the operation should fail and indicate a conflict.
+          - `getPendingVerification(githubUsername: string, discordUserId:
+          string): Promise<UserMapping | null>`: Fetches a record by
+          `githubUsername` and `discordUserId` that is not yet verified and code
+          not expired.
+
+          - `getPendingVerificationByCode(code: string): Promise<UserMapping |
+          null>`: (as before)
+
+          - `markAsVerified(githubUsername: string, discordUserId: string):
+          Promise<void>`: Sets `verified = true`, `mapped_at =
+          CURRENT_TIMESTAMP`, and clears `verification_code`,
+          `verification_code_expires_at`. This confirms the link.
+        done: false
+      - prompt: >
+          Create the `/rm-link <github-username>` Discord command.
+
+          1.  Create a new file `src/bot/self_registration_service.ts`.
+
+          2.  In `self_registration_service.ts`, implement
+          `initiateRegistration(discordUserId: string, githubUsername: string):
+          Promise<{success: boolean, message: string, code?: string}>`.
+              - This function should:
+                  a. Check if `githubUsername` is already mapped and verified to a *different* `discordUserId` using `getUserMappingByGithubUsername`. If so, return `{success: false, message: "This GitHub account is already linked to another Discord user."}`.
+                  b. Generate a unique, secure random code (e.g., 6-8 alphanumeric characters).
+                  c. Calculate an expiration time for the code (e.g., 15 minutes from now).
+                  d. Call `upsertPendingVerification` from `src/db/user_mappings_manager.ts` to store the `discordUserId`, `githubUsername`, code, and expiration time. `verified` set to `false`, `mapped_by` to `'self'`.
+                  e. If successful, return `{success: true, message: "Verification code generated.", code: verificationCode}`.
+                  f. Handle potential errors during DB update.
+          3.  In `src/bot/discord_command_handler.ts`, register the `/rm-link
+          <github-username>` slash command.
+
+          4.  The command handler should:
+              a. Call `initiateRegistration` with the invoker's Discord ID and the provided `github-username`.
+              b. If `initiateRegistration` is successful and returns a code:
+                  - Send a DM (or ephemeral message) to the user with the verification code and instructions: "To verify your GitHub account `<github-username>`, please create a new public Gist (https://gist.github.com/) with the exact content (only the code): `<code>`. This code expires in 15 minutes. After creating the Gist, use the command `/rm-verify-gist <gist-url>` to complete the verification."
+              c. If `initiateRegistration` fails, send the returned error message to the user.
+          5.  Write tests for `initiateRegistration` and the command handler.
+        done: false
+      - prompt: >
+          Implement the Gist verification logic and the `/rm-verify-gist
+          <gist-url>` command.
+
+          1.  In `src/common/github/api.ts` (or a new
+          `src/common/github/gist_service.ts`), implement `verifyGist(gistUrl:
+          string, expectedUsername: string, expectedCode: string):
+          Promise<{verified: boolean, message: string}>`.
+              - This function should:
+                  a. Parse the Gist ID from `gistUrl`.
+                  b. Use the GitHub API to fetch the Gist content and its owner. (Ensure `GITHUB_TOKEN` has `gist` read scope if necessary, though public gists might not need it).
+                  c. Check if the Gist owner's login matches `expectedUsername`.
+                  d. Check if the Gist content (typically the first file's content) exactly matches `expectedCode`.
+                  e. Return `{verified: true, message: "Gist verified."}` or `{verified: false, message: "Verification failed: [reason]"}`. Reasons could be: Gist not found, owner mismatch, content mismatch.
+          2.  In `src/bot/self_registration_service.ts`, implement
+          `completeRegistration(discordUserId: string, gistUrl: string):
+          Promise<{success: boolean, message: string}>`.
+              - This function should:
+                  a. Retrieve the pending verification details for the `discordUserId` (e.g., using a new function like `getPendingVerificationForDiscordUser(discordUserId: string)` in `user_mappings_manager.ts` which fetches the record with `verified=false` for that `discordUserId`). This record contains the `github_username` and `verification_code`.
+                  b. If no pending verification or code is expired, return an error.
+                  c. Call `verifyGist` with the `gistUrl`, the stored `github_username`, and `verification_code`.
+                  d. If `verifyGist` returns `verified: true`:
+                      - Call `markAsVerified(githubUsername, discordUserId)` from `src/db/user_mappings_manager.ts`.
+                      - Return `{success: true, message: "GitHub account successfully linked and verified!"}`.
+                  e. Else, return `{success: false, message: verifyGist.message}`.
+          3.  In `src/bot/discord_command_handler.ts`, register a new slash
+          command `/rm-verify-gist <gist-url>`.
+
+          4.  The command handler should:
+              a. Call `completeRegistration` with the invoker's Discord ID and `gist-url`.
+              b. Send the result message (success or failure) to the user.
+          5.  Write tests for `verifyGist`, `completeRegistration`, and the
+          `/rm-verify-gist` command handler.
+        done: false
+  - title: Automatic Cleanup System
+    description: |
+      Implement automatic cleanup for inactive workspaces and old task logs.
+    files:
+      - src/rmplan/workspace/workspace_manager.ts
+      - src/db/tasks_manager.ts
+      - src/db/workspaces_db_manager.ts
+      - src/db/task_logs_manager.ts
+      - src/bot/scheduler.ts
+      - src/bot/config.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Implement automatic cleanup of inactive workspaces. A workspace is
+          inactive if it hasn't been accessed for 1 week and is not locked by an
+          active task.
+
+          1.  In `src/db/workspaces_db_manager.ts` (create if it doesn't exist,
+          or add to an existing DB manager file):
+              - Implement `getUnlockableInactiveWorkspaces(inactiveSince: Date): Promise<Workspace[]>`. This function should query the `workspaces` table. A workspace is a candidate if `last_accessed_at < inactiveSince`. For each such workspace, it must also check if `locked_by_task_id` is NULL. If `locked_by_task_id` is NOT NULL, it must check the status of the corresponding task in the `tasks` table. If the task is in a final state (e.g., 'completed', 'failed'), the workspace can be considered unlocked. Return these workspaces. Define `Workspace` type according to the schema.
+          2.  In `src/rmplan/workspace/workspace_manager.ts`:
+              - Implement `deleteWorkspace(workspace: Workspace): Promise<void>`. This function should delete the workspace directory from the filesystem (using `workspace.workspace_path`) and then delete its record from the `workspaces` table (via `workspaces_db_manager.ts`).
+              - Implement `autoCleanupWorkspaces(): Promise<{cleanedCount: number, failedCount: number}>`.
+                  - Calculate the date for 1 week ago.
+                  - Call `getUnlockableInactiveWorkspaces` with this date.
+                  - For each returned workspace, call `deleteWorkspace`.
+                  - Log successes and failures. Return counts.
+          3.  Write tests for these functions, especially for the logic
+          determining eligibility for cleanup.
+        done: false
+      - prompt: >
+          Implement automatic cleanup of old task logs from the `task_logs`
+          table.
+
+          1.  Ensure `LOG_RETENTION_DAYS` is configurable, e.g., via
+          `src/bot/config.ts` or an environment variable. Default to a sensible
+          value (e.g., 30 days) if not set.
+
+          2.  In `src/db/task_logs_manager.ts` (create if it doesn't exist):
+              - Implement `deleteOldTaskLogs(olderThan: Date): Promise<number>` (returns count of deleted logs). This function should delete records from `task_logs` where `timestamp < olderThan`.
+          3.  In a new file `src/bot/cleanup_service.ts` (or add to an existing
+          service):
+              - Implement `autoCleanupTaskLogs(): Promise<{deletedCount: number}>`.
+                  - Read `LOG_RETENTION_DAYS` from config.
+                  - Calculate the cutoff date.
+                  - Call `deleteOldTaskLogs` with this date.
+                  - Log the result and return the count.
+          4.  Write tests for these functions.
+        done: false
+      - prompt: >
+          Set up a scheduler to run the automatic cleanup tasks periodically.
+
+          1.  Create a new file `src/bot/scheduler.ts`.
+
+          2.  In `scheduler.ts`, implement a function `startScheduledTasks()`.
+
+          3.  Inside `startScheduledTasks()`, use `setInterval` (or a more
+          robust scheduling library if preferred) to:
+              - Call `autoCleanupWorkspaces` from `workspace_manager.ts` (e.g., once per day).
+              - Call `autoCleanupTaskLogs` from `cleanup_service.ts` (e.g., once per day).
+              - Ensure proper error handling and logging within the scheduled calls so that one failing task doesn't stop the scheduler or crash the bot.
+          4.  Call `startScheduledTasks()` from the main application startup
+          routine.
+
+          5.  Add tests for the scheduling setup (e.g., checking if tasks are
+          scheduled, though this can be tricky with `setInterval`; focus on
+          testing the callable functions).
+        done: false
+  - title: PR Response Handling (`@bot respond`)
+    description: >
+      Implement the `@bot respond` command for GitHub PR comments. This allows
+      the bot to address PR review comments, potentially by leveraging existing
+      `rmpr` capabilities.
+    files:
+      - src/bot/github_command_handler.ts
+      - src/bot/pr_response_service.ts
+      - src/db/tasks_manager.ts
+      - src/common/github/pull_requests.ts
+      - src/common/github/issues.ts
+      - src/rmpr/main.ts
+      - src/rmpr/prompts.ts
+      - src/rmplan/workspace/workspace_manager.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Set up the GitHub command parsing for `@bot respond` and create a new
+          task type.
+
+          1.  In `src/bot/github_command_handler.ts` (or your main GitHub
+          webhook processing logic):
+              - Listen for issue comments and pull request review comments.
+              - If a comment body contains `@bot respond` (ensure proper parsing, e.g., at the beginning of a line):
+                  - Verify the comment is on a Pull Request. If not, (e.g. on an issue) post a reply saying this command is PR-only.
+                  - Check user permissions (user must have write access to the repository). If not, ignore.
+                  - Extract necessary information: PR number, repository owner/name, comment ID, user who invoked.
+                  - Call a new function, e.g., `initiatePrResponseTask` (to be created in `src/bot/pr_response_service.ts`), with this information.
+          2.  In `src/db/tasks_manager.ts` or your task type definitions:
+              - Add 'responding' to the possible statuses for a task.
+              - Ensure the `tasks` table schema supports this.
+              - If `tasks.branch` is not already generic enough, ensure it can store the PR's branch name.
+          3.  Update any relevant parts of the thread synchronization logic to
+          handle this new task type initiation (e.g., creating a Discord
+          thread).
+        done: false
+      - prompt: >
+          Implement the initial phase of the PR response task: fetching PR data.
+
+          1.  Create `src/bot/pr_response_service.ts`.
+
+          2.  Implement `initiatePrResponseTask(repoOwner: string, repoName:
+          string, prNumber: number, commentId: number, invokingUser: string)` in
+          `pr_response_service.ts`.
+              - This function should:
+                  a. Create a new task in the `tasks` table with status 'responding_setup' (or similar initial status), `repository` (`${repoOwner}/${repoName}`), `issue_number` (for PR number), `created_by_platform: 'github'`, `created_by_user: invokingUser`.
+                  b. Store `commentId` (maybe in a new field in `tasks` or in `task_artifacts` if it's the "triggering" artifact). For now, let's assume it's for context or could be the specific comment to respond to if the command isn't generic for all comments. The spec says "Address PR review comments", plural. So `@bot respond` might mean "review all unresolved comments". Let's assume it means process all unresolved review comments on the PR. The specific `commentId` that triggered it might be less relevant for the overall action.
+                  c. Start the asynchronous processing: `processPrComments(taskId, repoOwner, repoName, prNumber)`.
+          3.  Implement `processPrComments(taskId: string, repoOwner: string,
+          repoName: string, prNumber: number)` in `pr_response_service.ts`.
+              - This function will:
+                  a. Update task status to 'responding_fetching_data'.
+                  b. Use `src/common/github/pull_requests.ts` to fetch all review comments for the PR. Filter for unresolved comments or comments needing attention.
+                  c. Use `src/common/github/pull_requests.ts` to fetch the PR diff.
+                  d. For each relevant comment (or comment thread):
+                      - Extract the comment text, file path, and line numbers it pertains to from the diff.
+                      - Store this information, perhaps as part of `task_artifacts` or in memory if processed sequentially.
+                  e. Once data is fetched, update task status to 'responding_generating_replies'.
+                  f. Trigger the next step: generating responses.
+          4.  Write tests.
+        done: false
+      - prompt: >
+          Integrate with an LLM utility (potentially `src/rmpr/main.ts` or a new
+          one) to generate responses or code suggestions.
+
+          1.  Examine `src/rmpr/main.ts` and `src/rmpr/prompts.ts`. Determine if
+          existing `rmpr` capabilities can be adapted or if new
+          functions/prompts are needed. The goal is: given a review comment,
+          relevant code context (from diff), and the PR's overall goal, generate
+          a helpful reply or a code modification.
+
+          2.  In `src/bot/pr_response_service.ts`, create a function like
+          `generateResponseForComment(taskId: string, commentData: any, prDiff:
+          string, prContext: any): Promise<{replyText?: string, codeSuggestion?:
+          string}>`.
+              - This function will format the input for the LLM and call it.
+              - It might involve creating a specific prompt in `src/rmpr/prompts.ts` (or a new prompts file for this service) designed for responding to reviews.
+              - The LLM's output should be parsed into either a text reply or a code suggestion (e.g., in diff format or as a code block).
+          3.  Modify `processPrComments` or add a new function that iterates
+          through fetched comments, calls `generateResponseForComment` for each,
+          and collects the generated responses/suggestions.
+
+          4.  Write tests, mocking the LLM interaction.
+        done: false
+      - prompt: >
+          Implement applying responses: posting comments or code suggestions to
+          GitHub.
+
+          1.  In `src/bot/pr_response_service.ts`, create
+          `applyResponses(taskId: string, prNumber: number, repoOwner: string,
+          repoName: string, responses: Array<{originalCommentId: number,
+          replyText?: string, codeSuggestion?: string}>)`.
+              - This function will iterate through the `responses`.
+              - If `replyText` is present:
+                  - Use `src/common/github/issues.ts` (or `pull_requests.ts` for PR-specific comment replies) to post the `replyText` as a reply to the `originalCommentId` on the PR.
+              - If `codeSuggestion` is present:
+                  - Post this as a comment, possibly formatted as a GitHub "suggestion" block if the API supports it or if it's a markdown formatted diff.
+                  - (Future enhancement, not for this step: attempt to apply code changes to a workspace, commit, and push).
+              - Update task status to 'responding_completed' or 'completed' after all responses are applied.
+              - Handle errors during posting and update task status to 'failed' if necessary.
+          2.  Integrate `applyResponses` into the `processPrComments` flow after
+          responses are generated.
+
+          3.  Ensure progress updates are sent to linked Discord/GitHub threads.
+
+          4.  Write tests.
+        done: false
+  - title: Crash Recovery System
+    description: >
+      Implement task resumption on startup using checkpoints stored in the
+      `task_checkpoints` table. This involves modifying existing task execution
+      flows to save checkpoints and adding logic to restore and resume tasks on
+      startup.
+    files:
+      - src/main.ts
+      - src/db/tasks_manager.ts
+      - src/db/task_checkpoints_manager.ts
+      - src/rmplan/agent.ts
+      - src/bot/pr_response_service.ts
+      - src/state_machine/*
+      - src/db/schema.sql
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Set up the `task_checkpoints` table and its database manager.
+
+          The schema for `task_checkpoints` is:
+
+          ```sql
+
+          -- Task checkpoints for resumption
+
+          task_checkpoints (
+            task_id PRIMARY KEY,
+            checkpoint_data TEXT, -- JSON blob
+            step_index INTEGER,
+            updated_at DATETIME,
+            FOREIGN KEY(task_id) REFERENCES tasks(id)
+          )
+
+          ```
+
+          1.  Ensure this table is defined in your database schema/migrations.
+
+          2.  Create `src/db/task_checkpoints_manager.ts`.
+
+          3.  Implement the following functions in
+          `task_checkpoints_manager.ts`:
+              - `saveCheckpoint(taskId: string, stepIndex: number, checkpointData: any): Promise<void>`: Inserts or updates a checkpoint for the task. `checkpointData` should be serialized to a JSON string. `updated_at` should be set to current time.
+              - `getCheckpoint(taskId: string): Promise<{stepIndex: number, checkpointData: any} | null>`: Retrieves the checkpoint for a task. `checkpointData` should be deserialized from JSON.
+              - `deleteCheckpoint(taskId: string): Promise<void>`: Deletes a checkpoint, e.g., when a task completes successfully.
+          4.  Write unit tests for these functions.
+        done: false
+      - prompt: >
+          Integrate checkpoint saving into existing task workflows (Planning and
+          Implementation, initially focusing on `src/rmplan/agent.ts`).
+
+          1.  Identify key resumable steps within the planning workflow handled
+          by `src/rmplan/agent.ts` (or equivalent). For example, after each
+          major LLM call or file operation.
+
+          2.  At each identified step, define what constitutes the
+          `checkpointData`. This might include the current plan content, last
+          processed item, LLM conversation history, etc.
+
+          3.  Modify the workflow logic to call `saveCheckpoint` from
+          `src/db/task_checkpoints_manager.ts` at these steps. Use a
+          `step_index` that clearly identifies the stage of the workflow.
+
+          4.  Repeat this process for the implementation workflow in
+          `src/rmplan/agent.ts` (or equivalent). Checkpoints might include which
+          plan step is being implemented, files modified so far, etc.
+
+          5.  When a task completes successfully or fails definitively, call
+          `deleteCheckpoint`.
+
+          6.  Refactor the workflow functions (e.g., in `src/rmplan/agent.ts`)
+          to accept an optional `resumeFromCheckpoint` parameter. If this is
+          provided, the function should attempt to restore its state from
+          `checkpointData` and continue from `stepIndex`.
+
+          7.  Write tests to verify checkpoints are saved and that workflows can
+          be started with `resumeFromCheckpoint`. (Full resumption logic will be
+          in the next step).
+
+          *Note:* If `src/state_machine/*` is used for task execution,
+          checkpointing might involve serializing the state machine's current
+          state and context.
+        done: false
+      - prompt: >
+          Implement task resumption logic on application startup.
+
+          1.  In `src/main.ts` (or your application's entry point), add a
+          function `resumeInterruptedTasks()` that is called during startup.
+
+          2.  `resumeInterruptedTasks()` should:
+              a.  Use `src/db/tasks_manager.ts` to query the `tasks` table for all tasks that are in an "active" (non-terminal) state (e.g., 'planning', 'implementing', 'responding_fetching_data', etc.).
+              b.  For each active task:
+                  i.  Log that resumption is being attempted for this task.
+                  ii. Call `getCheckpoint(taskId)` from `src/db/task_checkpoints_manager.ts`.
+                  iii. If a checkpoint exists:
+                      - Determine the correct service/agent to handle this task based on its type or status (e.g., if status is 'planning', use the planning part of `src/rmplan/agent.ts`).
+                      - Call the relevant task execution function, passing the `taskId` and the `checkpointData` and `stepIndex` so it can resume.
+                  iv. If no checkpoint exists (or if resumption from checkpoint fails):
+                      - Decide on a strategy: either mark the task as 'failed' with a specific error, or attempt to restart it from the beginning (if safe and idempotent). For now, log an error and consider marking as failed.
+          3.  Ensure that resumed tasks correctly update their status and notify
+          via existing mechanisms (Discord/GitHub threads).
+
+          4.  Write tests for `resumeInterruptedTasks`, mocking DB interactions
+          and task execution services. Test scenarios like: task with
+          checkpoint, task without checkpoint, various task statuses.
+        done: false
+      - prompt: >
+          Integrate checkpoint saving into the PR Response workflow
+          (`src/bot/pr_response_service.ts`).
+
+          1.  Identify key resumable steps within the PR response workflow
+          (e.g., after fetching data, after generating responses for a batch of
+          comments).
+
+          2.  Define `checkpointData` for these steps (e.g., list of comments
+          fetched, responses generated so far).
+
+          3.  Modify `src/bot/pr_response_service.ts` to save checkpoints using
+          `saveCheckpoint` at these steps.
+
+          4.  Refactor PR response functions to accept `resumeFromCheckpoint`
+          data and continue execution.
+
+          5.  Ensure `deleteCheckpoint` is called on successful completion or
+          definitive failure.
+
+          6.  Update `resumeInterruptedTasks` in `src/main.ts` to correctly
+          identify and resume tasks that were in a 'responding_...' state.
+
+          7.  Write tests.
+        done: false
+  - title: Update Documentation
+    description: >
+      Update `README.md` and any other relevant documentation to reflect the new
+      features of Phase 3.
+    files:
+      - README.md
+      - Any other user-facing or developer documentation files.
+    include_imports: false
+    include_importers: false
+    steps:
+      - prompt: >
+          Update the project's `README.md` file.
+
+          1.  Add a new section or update existing sections to describe the
+          Phase 3 features:
+              - GitHub command `@bot respond`.
+              - Discord commands: `/rm-link <github-username>`, `/rm-verify-gist <gist-url>`, `/rm-status [task-id]`, `/rm-cancel <task-id>`, `/rm-logs <task-id>`.
+              - Admin Discord commands: `/rm-link-user <github-username> <discord-id>`, `/rm-cleanup`, `/rm-status-all`.
+              - Briefly mention automatic workspace/log cleanup and crash recovery capabilities.
+          2.  Ensure command syntax, options, and behavior are clearly
+          explained.
+
+          3.  Update the "Database Schema" section if any changes were made or
+          new tables like `task_checkpoints` are now relevant to describe.
+
+          4.  Review the "Core Features" and "Architecture" sections for any
+          necessary updates based on Phase 3 implementations.
+        done: false
+      - prompt: >
+          Review any other documentation (e.g., specific guides for
+          configuration, deployment, or contribution) and update them as
+          necessary to reflect the changes in and new features introduced in
+          Phase 3. For instance, if new environment variables were added for
+          admin configuration or log retention, document them.
+        done: false
