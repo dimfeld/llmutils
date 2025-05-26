@@ -1,16 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { db, tasks, taskArtifacts, commandHistory as commandHistoryTable } from '../db/index.js';
+import {
+  db,
+  tasks,
+  taskArtifacts,
+  commandHistory as commandHistoryTable,
+  taskLogs,
+} from '../db/index.js';
 import { eq } from 'drizzle-orm';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
-import { log, error, debugLog } from '../../logging.js';
+import { log, error, debugLog, runWithLogger } from '../../logging.js';
 import { generatePlanForIssue } from './plan_generator.js';
 import { notifyTaskCreation } from './thread_manager.js';
 import { parseGitHubIssueUrl } from '../utils/github_utils.js';
 import { WorkspaceAutoSelector } from '../../rmplan/workspace/workspace_auto_selector.js';
 import { config as botConfig } from '../config.js';
 import { loadEffectiveConfig as loadRmplanConfig } from '../../rmplan/configLoader.js';
+import { rmplanAgent } from '../../rmplan/agent.js';
+import { DatabaseLoggerAdapter } from '../logging/database_adapter.js';
 
 type Task = InferSelectModel<typeof tasks>;
 type NewTask = InferInsertModel<typeof tasks>;
@@ -468,21 +476,49 @@ export class TaskManager {
         throw new Error(`Failed to copy plan file: ${err}`);
       }
 
-      // 3. Agent invocation placeholder
-      log(`[${taskId}] Ready to invoke rmplan agent:`);
+      // 3. Invoke rmplan agent
+      log(`[${taskId}] Invoking rmplan agent:`);
       log(`[${taskId}]   Workspace: ${workspace.workspacePath}`);
       log(`[${taskId}]   Plan file: ${workspacePlanPath}`);
-      log(`[${taskId}] TODO: Invoke rmplanAgent here`);
 
-      // For now, update status to indicate agent would run
-      await this.updateTask(taskId, {
-        status: 'awaiting_agent_completion',
-      });
+      // Create database logger adapter to capture agent output
+      const dbLogger = new DatabaseLoggerAdapter();
 
-      // Notify progress
+      try {
+        // Run rmplanAgent with database logging
+        await runWithLogger(dbLogger, async () => {
+          await rmplanAgent(
+            workspacePlanPath,
+            {
+              workspace: workspace.workspacePath,
+              autoWorkspace: false, // We already have a workspace
+              nonInteractive: true, // Bot runs non-interactively
+              requireWorkspace: true,
+              botTaskId: taskId,
+              executor: 'CopyOnlyExecutor', // Default executor for bot
+            },
+            {} // Global CLI options
+          );
+        });
+
+        // Save logs to database after successful completion
+        await dbLogger.save(taskId, 'agent_complete');
+        log(`[${taskId}] Agent execution completed successfully`);
+
+        // Update task status to indicate successful implementation
+        await this.updateTask(taskId, {
+          status: IMPLEMENTATION_STATUS.IMPLEMENTATION_COMPLETE,
+        });
+      } catch (agentError) {
+        // Save logs even on failure
+        await dbLogger.save(taskId, 'agent_failed');
+        throw agentError;
+      }
+
+      // Notify progress - implementation complete
       await notifyTaskCreation(
         taskId,
-        `Workspace ready at ${workspace.workspacePath}, branch: ${branchName}. Ready to start implementation.`,
+        `Implementation completed successfully! Workspace: ${workspace.workspacePath}, branch: ${branchName}`,
         {
           platform: task.createdByPlatform as 'github' | 'discord',
           userId: task.createdByUserId!,
