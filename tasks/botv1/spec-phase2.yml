@@ -400,7 +400,7 @@ tasks:
               - `originalCommandId?`: number (ID from `command_history` table)
               - `githubCommentId?`: number
               - `discordInteraction?`: any
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts`, create the `async
           startImplementationTask(options: StartImplementationOptions):
