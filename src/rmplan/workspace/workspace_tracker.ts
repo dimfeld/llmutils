@@ -27,6 +27,12 @@ export interface WorkspaceInfo {
   lockedByTaskId?: string | null;
   /** ISO date string when the workspace was last accessed */
   lastAccessedAt?: string | Date | null;
+  /** Filesystem lock information from .rmplan.lock file */
+  fileSystemLock?: {
+    pid: number;
+    startedAt: string;
+    hostname: string;
+  } | null;
 }
 
 /**
@@ -183,18 +189,31 @@ export async function findWorkspacesByRepoUrl(repositoryUrl: string): Promise<Wo
 export async function updateWorkspaceLockStatus(
   workspaces: WorkspaceInfo[]
 ): Promise<WorkspaceInfo[]> {
+  // Update last accessed times for all workspaces
+  const workspaceIds = workspaces.map((w) => w.id);
+  await touchWorkspaces(workspaceIds);
+
   return Promise.all(
     workspaces.map(async (workspace) => {
       const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
 
       if (lockInfo && !(await WorkspaceLock.isLockStale(lockInfo))) {
-        // Note: This provides filesystem lock info, which is different from DB lockedByTaskId
-        // The lockedByTaskId in DB tracks which task has logical ownership
-        // This method checks for actual filesystem locks (process-based)
-        return workspace;
+        // Populate filesystem lock info
+        return {
+          ...workspace,
+          fileSystemLock: {
+            pid: lockInfo.pid,
+            startedAt: lockInfo.startedAt,
+            hostname: lockInfo.hostname,
+          },
+        };
       }
 
-      return workspace;
+      // No active filesystem lock
+      return {
+        ...workspace,
+        fileSystemLock: null,
+      };
     })
   );
 }
@@ -244,5 +263,22 @@ export async function unlockWorkspace(workspacePath: string): Promise<void> {
   } catch (error) {
     log(`Error unlocking workspace: ${String(error)}`);
     throw error;
+  }
+}
+
+/**
+ * Updates the last accessed timestamp for multiple workspaces
+ * @param workspaceIds Array of workspace IDs to update
+ */
+export async function touchWorkspaces(workspaceIds: string[]): Promise<void> {
+  if (workspaceIds.length === 0) return;
+
+  try {
+    await db
+      .update(workspacesTable)
+      .set({ lastAccessedAt: new Date() })
+      .where(sql`${workspacesTable.id} IN ${workspaceIds}`);
+  } catch (error) {
+    log(`Error updating workspace last accessed times: ${String(error)}`);
   }
 }

@@ -261,7 +261,7 @@ tasks:
           whenever workspaces are accessed/listed. For now, let's make
           `updateWorkspaceLockStatus` update `lastAccessedAt` for all workspaces
           it processes.
-        done: false
+        done: true
   - title: Update Workspace Manager and Auto-Selector for DB Integration
     description: >
       This task adapts `workspace_manager.ts` and `workspace_auto_selector.ts`
