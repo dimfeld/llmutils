@@ -256,7 +256,7 @@ tasks:
           Promise<void>`: Sets `verified = true`, `mapped_at =
           CURRENT_TIMESTAMP`, and clears `verification_code`,
           `verification_code_expires_at`. This confirms the link.
-        done: false
+        done: true
       - prompt: >
           Create the `/rm-link <github-username>` Discord command.
 
