@@ -1,5 +1,5 @@
 import type { Config } from 'drizzle-kit';
-import * as dotenv from 'dotenv/config'; // ensure .env is loaded
+import * as dotenv from 'dotenv/config';
 
 if (!process.env.DATABASE_PATH) {
   throw new Error('DATABASE_PATH environment variable is not set');
@@ -8,7 +8,7 @@ if (!process.env.DATABASE_PATH) {
 export default {
   schema: './src/bot/db/schema.ts',
   out: './src/bot/db/migrations',
-  driver: 'better-sqlite',
+  dialect: 'sqlite',
   dbCredentials: {
     url: process.env.DATABASE_PATH,
   },

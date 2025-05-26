@@ -400,7 +400,7 @@ tasks:
 
           (The user will provide the actual generated SQL, or I will proceed
           with an example.)
-        done: false
+        done: true
       - prompt: >
           Create a migration script `src/bot/db/migrate.ts`. This script will
           apply pending migrations.

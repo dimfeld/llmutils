@@ -21,7 +21,9 @@
     "rmfilter": "src/rmfilter/rmfilter.ts",
     "rmfind": "src/rmfind/rmfind.ts",
     "rmplan": "src/rmplan/rmplan.ts",
-    "rmrun": "src/rmrun.ts"
+    "rmrun": "src/rmrun.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun src/bot/db/migrate.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.51.0",
