@@ -13,6 +13,9 @@ import {
 } from './workspace_tracker.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { getGitRoot } from '../../rmfilter/utils.js';
+import { db } from '../../bot/db/index.js';
+import { tasks as tasksTable, workspaces as workspacesTable } from '../../bot/db/index.js';
+import { eq, sql, and, isNull } from 'drizzle-orm';
 
 export interface AutoSelectOptions {
   /** Whether to run in interactive mode (prompt for stale locks) */
@@ -81,16 +84,62 @@ export class WorkspaceAutoSelector {
     const workspaces = await findWorkspacesByRepoUrl(repositoryUrl);
     const workspacesWithLockStatus = await updateWorkspaceLockStatus(workspaces);
 
-    // Sort workspaces by creation date (newest first)
+    // Sort workspaces:
+    // 1. Prioritize workspaces where lockedByTaskId is NULL
+    // 2. For available workspaces (lockedByTaskId is NULL), sort by newest createdAt first
+    // 3. For locked workspaces, sort by oldest lastAccessedAt first (for reuse)
     workspacesWithLockStatus.sort((a, b) => {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      // First, prioritize unlocked workspaces
+      if (a.lockedByTaskId === null && b.lockedByTaskId !== null) return -1;
+      if (a.lockedByTaskId !== null && b.lockedByTaskId === null) return 1;
+
+      // If both are unlocked, sort by newest createdAt first
+      if (a.lockedByTaskId === null && b.lockedByTaskId === null) {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+
+      // If both are locked, sort by oldest lastAccessedAt first
+      const aAccessTime = a.lastAccessedAt ? new Date(a.lastAccessedAt).getTime() : 0;
+      const bAccessTime = b.lastAccessedAt ? new Date(b.lastAccessedAt).getTime() : 0;
+      return aAccessTime - bAccessTime;
     });
 
     // Try to find an unlocked workspace
     for (const workspace of workspacesWithLockStatus) {
-      // Skip if workspace is locked by another task (application-level lock)
+      // Check if workspace is locked by another task (application-level lock)
       if (workspace.lockedByTaskId && workspace.lockedByTaskId !== taskId) {
-        continue;
+        // Check if the locking task is completed or failed - if so, we can reuse the workspace
+        const lockingTask = await db
+          .select()
+          .from(tasksTable)
+          .where(eq(tasksTable.id, workspace.lockedByTaskId))
+          .limit(1);
+
+        if (lockingTask.length > 0) {
+          const taskStatus = lockingTask[0].status;
+          if (taskStatus === 'completed' || taskStatus === 'failed') {
+            // The locking task is done, we can clear the lock
+            log(
+              `Workspace locked by ${taskStatus} task ${workspace.lockedByTaskId}, clearing lock`
+            );
+
+            // Clear the application-level lock
+            await db
+              .update(workspacesTable)
+              .set({ lockedByTaskId: null })
+              .where(eq(workspacesTable.workspacePath, workspace.workspacePath));
+
+            // Update our local copy
+            workspace.lockedByTaskId = null;
+          } else {
+            // Task is still active, skip this workspace
+            continue;
+          }
+        } else {
+          // Task not found in DB, but workspace is locked - this is an inconsistency
+          log(`Warning: Workspace locked by unknown task ${workspace.lockedByTaskId}`);
+          continue;
+        }
       }
 
       // Check filesystem lock
@@ -101,12 +150,26 @@ export class WorkspaceAutoSelector {
           await WorkspaceLock.clearStaleLock(workspace.workspacePath);
         }
 
-        // Lock this workspace to our task
+        // Lock this workspace to our task and update lastAccessedAt
         try {
-          await lockWorkspaceToTask(workspace.workspacePath, taskId);
+          await db
+            .update(workspacesTable)
+            .set({
+              lockedByTaskId: taskId,
+              lastAccessedAt: new Date(),
+            })
+            .where(eq(workspacesTable.workspacePath, workspace.workspacePath));
         } catch (error) {
           log(`Warning: Failed to lock workspace to task: ${String(error)}`);
           // Continue anyway
+        }
+
+        // Acquire filesystem lock
+        try {
+          await WorkspaceLock.acquireLock(workspace.workspacePath, `rmplan-task:${taskId}`);
+        } catch (error) {
+          log(`Warning: Failed to acquire filesystem lock: ${String(error)}`);
+          // Continue anyway - DB lock is more important
         }
 
         log(`Selected unlocked workspace: ${workspace.workspacePath}`);
@@ -117,12 +180,26 @@ export class WorkspaceAutoSelector {
       if (lockInfo && interactive && (await WorkspaceLock.isLockStale(lockInfo))) {
         const cleared = await this.handleStaleLock(workspace, lockInfo, interactive);
         if (cleared) {
-          // Lock this workspace to our task
+          // Lock this workspace to our task and update lastAccessedAt
           try {
-            await lockWorkspaceToTask(workspace.workspacePath, taskId);
+            await db
+              .update(workspacesTable)
+              .set({
+                lockedByTaskId: taskId,
+                lastAccessedAt: new Date(),
+              })
+              .where(eq(workspacesTable.workspacePath, workspace.workspacePath));
           } catch (error) {
             log(`Warning: Failed to lock workspace to task: ${String(error)}`);
             // Continue anyway
+          }
+
+          // Acquire filesystem lock
+          try {
+            await WorkspaceLock.acquireLock(workspace.workspacePath, `rmplan-task:${taskId}`);
+          } catch (error) {
+            log(`Warning: Failed to acquire filesystem lock: ${String(error)}`);
+            // Continue anyway - DB lock is more important
           }
 
           log(`Selected workspace after clearing stale lock: ${workspace.workspacePath}`);
@@ -158,8 +235,11 @@ export class WorkspaceAutoSelector {
       console.log(chalk.yellow('\nFound a stale lock:'));
       console.log(`  Workspace: ${workspace.workspacePath}`);
       console.log(`  Task ID: ${workspace.taskId}`);
-      console.log(`  Locked by PID: ${lockInfo.pid} on ${lockInfo.hostname}`);
+      console.log(`  Filesystem lock: PID ${lockInfo.pid} on ${lockInfo.hostname}`);
       console.log(`  Lock age: ${lockAgeHours} hours`);
+      if (workspace.lockedByTaskId) {
+        console.log(`  Application lock: Task ${workspace.lockedByTaskId}`);
+      }
 
       const shouldClear = await confirm({
         message: 'Clear this stale lock and use the workspace?',
