@@ -1,17 +1,18 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } from 'discord.js';
 import { config } from './config.js';
 import { log, error, debugLog } from '../logging.js';
-import { db, commandHistory, taskLogs } from './db/index.js';
+import { db, commandHistory, taskLogs, tasks } from './db/index.js';
 import { startPlanGenerationTask, startImplementationTask } from './core/task_manager.js';
 import { parseGitHubIssueUrl } from './utils/github_utils.js';
 import { initializeThreadManager } from './core/thread_manager.js';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, desc } from 'drizzle-orm';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 const RMPLAN_COMMAND = 'rm-plan';
 const RMIMPLEMENT_COMMAND = 'rm-implement';
 const RMLOGS_COMMAND = 'rm-logs';
+const RMSTATUS_COMMAND = 'rm-status';
 
 const commands = [
   new SlashCommandBuilder()
@@ -36,6 +37,16 @@ const commands = [
         .setName('task-id')
         .setDescription('The ID of the task to retrieve logs for.')
         .setRequired(true)
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMSTATUS_COMMAND)
+    .setDescription('Checks the status of a task.')
+    .addStringOption((option) =>
+      option
+        .setName('task-id')
+        .setDescription('The ID of the task to check. Omitting it shows your most recent task.')
+        .setRequired(false)
     )
     .toJSON(),
 ];
@@ -273,6 +284,101 @@ export async function startDiscordBot() {
           .catch((e) => {
             error('Unhandled error from startImplementationTask (Discord):', e);
           });
+      } else if (commandName === RMSTATUS_COMMAND) {
+        const taskId = options.getString('task-id', false);
+        log(
+          `'/rm-status' command received from user ${user.id}${taskId ? ` for task ID: ${taskId}` : ' (no task ID provided)'}`
+        );
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.deferReply({ ephemeral: false });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          let task;
+
+          if (taskId) {
+            // Query for specific task ID
+            const [foundTask] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+            task = foundTask;
+          } else {
+            // Query for user's most recent task
+            const [foundTask] = await db
+              .select()
+              .from(tasks)
+              .where(eq(tasks.createdByUserId, user.id))
+              .orderBy(desc(tasks.createdAt))
+              .limit(1);
+            task = foundTask;
+          }
+
+          if (!task) {
+            const message = taskId
+              ? `No task found with ID: ${taskId}`
+              : `No tasks found for your user ID: ${user.id}`;
+            await interaction.editReply({
+              content: message,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'success' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Format task status message
+          let statusMessage = `## Task Status\n\n`;
+          statusMessage += `**Task ID:** ${task.id}\n`;
+          statusMessage += `**Type:** ${task.taskType || 'Unknown'}\n`;
+          statusMessage += `**Status:** ${task.status || 'Unknown'}\n`;
+          if (task.issueUrl) {
+            statusMessage += `**Issue URL:** ${task.issueUrl}\n`;
+          }
+          if (task.prNumber) {
+            statusMessage += `**PR Number:** #${task.prNumber}\n`;
+          }
+          statusMessage += `**Created At:** ${task.createdAt ? new Date(task.createdAt).toLocaleString() : 'Unknown'}\n`;
+          statusMessage += `**Updated At:** ${task.updatedAt ? new Date(task.updatedAt).toLocaleString() : 'Unknown'}\n`;
+
+          if (task.errorMessage) {
+            statusMessage += `\n**Error:** ${task.errorMessage}\n`;
+          }
+
+          await interaction.editReply({
+            content: statusMessage,
+          });
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to retrieve status for task:`, err);
+          await interaction.editReply({
+            content: `Error retrieving task status: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
       } else if (commandName === RMLOGS_COMMAND) {
         const taskId = options.getString('task-id', true);
         log(`'/rm-logs' command received for task ID: ${taskId}`);
