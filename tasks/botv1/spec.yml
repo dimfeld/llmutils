@@ -443,7 +443,7 @@ tasks:
 
           Try running it. It should create the SQLite database file if it
           doesn't exist and apply the schema.
-        done: false
+        done: true
   - title: GitHub Webhook Handler - Parsing and Command Identification
     description: Implement the GitHub webhook handler in the server to receive,
       validate, and parse issue comment events. Identify the `@bot plan`
