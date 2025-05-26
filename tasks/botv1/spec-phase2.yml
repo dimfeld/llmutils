@@ -327,7 +327,7 @@ tasks:
           5.  The `createNewWorkspace` method will call the updated
           `createWorkspace` from `workspace_manager.ts`. The new workspace will
           already be locked to the `taskId` by `createWorkspace`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_auto_selector.ts`:
 
