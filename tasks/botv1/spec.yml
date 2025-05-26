@@ -690,7 +690,7 @@ tasks:
 
           Ensure that `src/bot/main.ts` calls `startServer()` without arguments,
           as it now gets the port from `config`.
-        done: false
+        done: true
   - title: Discord Bot Client and Basic Slash Command Registration
     description: Set up the Discord bot client using `discord.js`, register the
       `/rm-plan <issue-url>` slash command, and implement a basic handler that

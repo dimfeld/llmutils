@@ -20,7 +20,7 @@ async function main() {
       log(`Log level: ${config.LOG_LEVEL}`);
 
       // Start HTTP server for webhooks
-      startServer(config.BOT_SERVER_PORT);
+      startServer();
 
       // Start Discord bot
       await startDiscordBot();
