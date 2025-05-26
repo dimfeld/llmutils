@@ -1381,7 +1381,7 @@ tasks:
           Update `src/bot/config.ts` BotConfig to include `WORKSPACE_BASE_DIR`
           which is already there, and ensure it's used for `repoPath`
           construction for Discord.
-        done: false
+        done: true
       - prompt: >
           Create `src/bot/utils/github_utils.ts` and implement
           `parseGitHubIssueUrl`.
