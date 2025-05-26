@@ -926,7 +926,7 @@ tasks:
                   -   If not found, or if editing is too complex for MVP, post a *new* comment with the `progressMessage`. (Let's start with posting a new comment, and note that in-place updates are a future enhancement, unless simple to add).
                   -   The project plan specifically asks for "GitHub comments updated in-place with status". So, attempt to edit the original bot comment. The `threads` table stores `external_id` which is the GitHub comment ID for GitHub threads.
               -   Requires `octokit.rest.issues.updateComment()` and `discordClient` channel/thread message sending.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts` (`processImplementationTask`
           method):

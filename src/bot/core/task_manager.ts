@@ -15,7 +15,7 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { log, error, debugLog } from '../../logging.js';
 import { runWithLogger } from '../../logging/adapter.js';
 import { generatePlanForIssue } from './plan_generator.js';
-import { notifyTaskCreation, updateGitHubComment } from './thread_manager.js';
+import { notifyTaskCreation, updateGitHubComment, notifyTaskProgress } from './thread_manager.js';
 import { parseGitHubIssueUrl } from '../utils/github_utils.js';
 import { WorkspaceAutoSelector } from '../../rmplan/workspace/workspace_auto_selector.js';
 import { config as botConfig } from '../config.js';
@@ -615,18 +615,11 @@ export class TaskManager {
                   }
                 }
 
-                // Send real-time step completion update to Discord/notifications
-                await notifyTaskCreation(
+                // Send real-time step completion update
+                await notifyTaskProgress(
                   taskId,
                   `✅ Completed step ${details.stepIndex + 1}: ${details.stepPrompt.split('\n')[0].substring(0, 100)}...`,
-                  {
-                    platform: task.createdByPlatform as 'github' | 'discord',
-                    userId: task.createdByUserId!,
-                    repoFullName: task.repositoryFullName || undefined,
-                    issueNumber: task.issueNumber || undefined,
-                  },
-                  task.repositoryFullName || undefined,
-                  task.issueNumber || undefined
+                  'Implementing'
                 );
               },
             },

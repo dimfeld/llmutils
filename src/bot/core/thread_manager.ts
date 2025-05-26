@@ -20,14 +20,14 @@ export function initializeThreadManager(client?: DiscordClient) {
 
 interface PlatformContext {
   platform: 'github' | 'discord';
-  userId: string; // Initiator's ID
+  userId: string;
   // GitHub specific
   repoFullName?: string;
   issueNumber?: number;
   githubCommentId?: number;
   // Discord specific
   discordInteraction?: { id: string; channelId: string; token: string };
-  channelId?: string; // Direct access to channel ID
+  channelId?: string;
 }
 
 export async function updateGitHubComment(taskId: string, newBody: string): Promise<void> {
@@ -62,6 +62,132 @@ export async function updateGitHubComment(taskId: string, newBody: string): Prom
     log(`[${taskId}] Updated GitHub comment ${commentId}`);
   } catch (e) {
     error(`[${taskId}] Failed to update GitHub comment:`, e);
+  }
+}
+
+export async function notifyTaskProgress(
+  taskId: string,
+  progressMessage: string,
+  taskStatus?: string
+): Promise<void> {
+  log(`[${taskId}] Notifying task progress: ${progressMessage}`);
+
+  // Fetch all associated threads for the given taskId
+  const threads = await db.select().from(threadsTable).where(eq(threadsTable.taskId, taskId));
+
+  if (!threads || threads.length === 0) {
+    debugLog(`[${taskId}] No threads found for task`);
+    return;
+  }
+
+  // Process Discord threads
+  const discordThreads = threads.filter((t) => t.platform === 'discord');
+  for (const thread of discordThreads) {
+    if (discordClient && thread.externalId) {
+      try {
+        const channel = (await discordClient.channels.fetch(thread.externalId)) as TextChannel;
+        if (channel && channel.isTextBased()) {
+          await channel.send(`**Progress Update** - ${progressMessage}`);
+          debugLog(`[${taskId}] Posted progress to Discord thread ${thread.externalId}`);
+        }
+      } catch (e) {
+        error(`[${taskId}] Failed to post progress to Discord thread ${thread.externalId}:`, e);
+      }
+    }
+  }
+
+  // Process GitHub threads
+  const githubThreads = threads.filter((t) => t.platform === 'github');
+  for (const thread of githubThreads) {
+    if (!thread.externalId) continue;
+
+    try {
+      // Get task details for repo info
+      const tasks = await db.select().from(tasksTable).where(eq(tasksTable.id, taskId));
+      const task = tasks[0];
+      if (!task || !task.repositoryFullName) {
+        error(`[${taskId}] Task not found or missing repository info`);
+        continue;
+      }
+
+      const [owner, repo] = task.repositoryFullName.split('/');
+      const commentId = parseInt(thread.externalId, 10);
+
+      if (taskStatus) {
+        // Try to update the initial bot comment with progress
+        try {
+          // Get the current comment to append progress
+          const { data: currentComment } = await octokit.rest.issues.getComment({
+            owner,
+            repo,
+            comment_id: commentId,
+          });
+
+          // Check if this is the initial bot comment (usually contains "Task <id>:")
+          if (currentComment.body && currentComment.body.includes(`Task ${taskId}:`)) {
+            // Append progress update to existing comment
+            let updatedBody = currentComment.body;
+
+            // Add a progress section if it doesn't exist
+            if (!updatedBody.includes('### Progress')) {
+              updatedBody += '\n\n### Progress\n';
+            }
+
+            // Add the new progress message
+            updatedBody += `\n- ${new Date().toISOString()}: ${progressMessage}`;
+
+            // Update overall status if provided
+            if (taskStatus) {
+              // Update the status line if it exists, or add it
+              const statusRegex = /Current Status: .*/;
+              if (statusRegex.test(updatedBody)) {
+                updatedBody = updatedBody.replace(statusRegex, `Current Status: ${taskStatus}`);
+              } else {
+                updatedBody += `\n\n**Current Status:** ${taskStatus}`;
+              }
+            }
+
+            await octokit.rest.issues.updateComment({
+              owner,
+              repo,
+              comment_id: commentId,
+              body: updatedBody,
+            });
+
+            debugLog(`[${taskId}] Updated GitHub comment ${commentId} with progress`);
+          } else {
+            // Not the initial comment, post a new comment
+            await octokit.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: task.issueNumber!,
+              body: `**Progress Update** - ${progressMessage}${taskStatus ? `\n**Status:** ${taskStatus}` : ''}`,
+            });
+            debugLog(`[${taskId}] Posted new progress comment to GitHub issue`);
+          }
+        } catch (updateError) {
+          // If update fails, fall back to creating a new comment
+          error(`[${taskId}] Failed to update comment, creating new one:`, updateError);
+          await octokit.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: task.issueNumber!,
+            body: `**Progress Update** - ${progressMessage}${taskStatus ? `\n**Status:** ${taskStatus}` : ''}`,
+          });
+        }
+      } else {
+        // No status provided, just post a new comment
+        await octokit.rest.issues.createComment({
+          owner,
+          repo,
+          issue_number: task.issueNumber!,
+          body: `**Progress Update** - ${progressMessage}`,
+        });
+        debugLog(`[${taskId}] Posted progress comment to GitHub issue`);
+      }
+    } catch (e) {
+      error(`[${taskId}] Failed to handle GitHub progress notification:`, e);
+    }
   }
 }
 
