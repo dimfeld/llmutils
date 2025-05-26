@@ -7,6 +7,7 @@ import { startServer } from './server.js';
 import { startDiscordBot } from './discord_bot.js';
 import { initializeThreadManager } from './core/thread_manager.js';
 import { scheduleCleanupService } from './cleanup_service.js';
+import { recoverCrashedTasks } from './crash_recovery_service.js';
 
 async function main() {
   // Load configuration first to get LOG_LEVEL
@@ -24,6 +25,10 @@ async function main() {
       // Initialize thread manager (initializes Octokit)
       initializeThreadManager();
       log('Thread manager initialized');
+
+      // Check for and recover crashed tasks
+      await recoverCrashedTasks();
+      log('Crash recovery check completed');
 
       // Start HTTP server for webhooks
       startServer();

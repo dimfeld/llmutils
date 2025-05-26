@@ -28,3 +28,4 @@ export const db = new Proxy({} as ReturnType<typeof drizzle>, {
 });
 
 export * from './schema.js';
+export * from './task_checkpoints_manager.js';

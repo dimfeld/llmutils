@@ -10,6 +10,7 @@ import { config as botConfig } from './config.js';
 import { loadEffectiveConfig as loadRmplanConfig } from '../rmplan/configLoader.js';
 import { DatabaseLoggerAdapter } from './logging/database_adapter.js';
 import { Octokit } from 'octokit';
+import { saveCheckpoint, deleteCheckpoint } from './db/task_checkpoints_manager.js';
 
 export interface InitiatePrResponseOptions {
   platform: 'github' | 'discord';
@@ -126,6 +127,14 @@ export async function initiatePrResponseTask(
       })
       .where(eq(tasks.id, taskId));
 
+    // Save checkpoint after workspace setup
+    await saveCheckpoint(taskId, 0, {
+      taskType: 'responding',
+      workspacePath: workspace.workspacePath,
+      prNumber: options.prNumber,
+      repositoryFullName: options.repoFullName,
+    });
+
     // 4. Execute PR response
     log(`[${taskId}] Starting PR response execution in workspace: ${workspace.workspacePath}`);
 
@@ -141,6 +150,9 @@ export async function initiatePrResponseTask(
     await processPrComments(taskId, options.prNumber, owner, repo);
 
     log(`[${taskId}] PR response task completed successfully.`);
+
+    // Clean up checkpoint on success
+    await deleteCheckpoint(taskId);
 
     await notifyTaskCreation(
       taskId,
@@ -201,6 +213,9 @@ export async function initiatePrResponseTask(
 
     // Notify overall status change
     await notifyTaskProgress(taskId, 'Overall status: Failed', PR_RESPONSE_STATUS.FAILED);
+
+    // Clean up checkpoint on failure
+    await deleteCheckpoint(taskId);
 
     // Update command_history to failed
     if (options.originalCommandId) {
@@ -424,7 +439,7 @@ export async function processPrComments(
           dryRun: false,
           run: true,
           commit: true,
-          comment: true, // This enables rmpr to post comments directly
+          comment: true,
         },
         { debug: botConfig.LOG_LEVEL === 'debug' },
         rmplanConfig

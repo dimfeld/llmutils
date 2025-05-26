@@ -98,3 +98,16 @@ export const workspaces = sqliteTable('workspaces', {
   lastAccessedAt: integer('last_accessed_at', { mode: 'timestamp' }),
   lockedByTaskId: text('locked_by_task_id').references(() => tasks.id),
 });
+
+// Task checkpoints table for crash recovery
+export const taskCheckpoints = sqliteTable('task_checkpoints', {
+  taskId: text('task_id')
+    .primaryKey()
+    .references(() => tasks.id),
+  checkpointData: text('checkpoint_data').notNull(),
+  stepIndex: integer('step_index').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(current_timestamp)`)
+    .$onUpdate(() => sql`(current_timestamp)`),
+});

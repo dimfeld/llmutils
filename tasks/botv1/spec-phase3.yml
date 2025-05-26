@@ -539,7 +539,7 @@ tasks:
               - `getCheckpoint(taskId: string): Promise<{stepIndex: number, checkpointData: any} | null>`: Retrieves the checkpoint for a task. `checkpointData` should be deserialized from JSON.
               - `deleteCheckpoint(taskId: string): Promise<void>`: Deletes a checkpoint, e.g., when a task completes successfully.
           4.  Write unit tests for these functions.
-        done: false
+        done: true
       - prompt: >
           Integrate checkpoint saving into existing task workflows (Planning and
           Implementation, initially focusing on `src/rmplan/agent.ts`).
