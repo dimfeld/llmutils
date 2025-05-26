@@ -127,7 +127,7 @@ tasks:
           (e.g. by recreating the table for older SQLite), ensure it preserves
           data. However, for adding a nullable column, `ALTER TABLE ADD COLUMN`
           is standard.
-        done: false
+        done: true
       - prompt: >
           Update the `src/bot/db/test-migrate.ts` and `src/bot/db/migrate.ts`
           scripts to ensure they correctly apply the new migration. No actual
