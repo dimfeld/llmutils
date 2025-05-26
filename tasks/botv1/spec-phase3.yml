@@ -365,7 +365,7 @@ tasks:
                   - Call `deleteOldTaskLogs` with this date.
                   - Log the result and return the count.
           4.  Write tests for these functions.
-        done: false
+        done: true
       - prompt: >
           Set up a scheduler to run the automatic cleanup tasks periodically.
 
