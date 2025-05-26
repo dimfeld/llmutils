@@ -756,7 +756,7 @@ tasks:
                       -   Store the error in `tasks.errorMessage`.
                       -   Log the failure.
                       -   Notify failure via `thread_manager`.
-        done: false
+        done: true
   - title: Implement Database Logger for `rmplanAgent`
     description: >
       Create a `DatabaseLoggerAdapter` that writes log entries to the

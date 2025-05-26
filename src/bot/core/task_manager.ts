@@ -7,6 +7,7 @@ import {
   taskArtifacts,
   commandHistory as commandHistoryTable,
   taskLogs,
+  threads as threadsTable,
 } from '../db/index.js';
 import { eq } from 'drizzle-orm';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
@@ -19,6 +20,8 @@ import { config as botConfig } from '../config.js';
 import { loadEffectiveConfig as loadRmplanConfig } from '../../rmplan/configLoader.js';
 import { rmplanAgent } from '../../rmplan/agent.js';
 import { DatabaseLoggerAdapter } from '../logging/database_adapter.js';
+import { createPullRequest } from '../utils/pr_creator.js';
+import { Octokit } from 'octokit';
 
 type Task = InferSelectModel<typeof tasks>;
 type NewTask = InferInsertModel<typeof tasks>;
@@ -520,6 +523,102 @@ export class TaskManager {
         await this.updateTask(taskId, {
           status: IMPLEMENTATION_STATUS.IMPLEMENTATION_COMPLETE,
         });
+
+        // PR Creation Phase
+        log(`[${taskId}] Starting PR creation...`);
+        await this.updateTask(taskId, {
+          status: IMPLEMENTATION_STATUS.PR_PENDING,
+        });
+
+        try {
+          // Fetch issue details
+          const octokit = new Octokit({ auth: botConfig.GITHUB_TOKEN });
+          const [owner, repo] = task.repositoryFullName!.split('/');
+          const issueResponse = await octokit.rest.issues.get({
+            owner,
+            repo,
+            issue_number: task.issueNumber!,
+          });
+
+          const issueTitle = issueResponse.data.title;
+
+          // Fetch Discord thread URL if available
+          let discordThreadUrl: string | undefined;
+          const threadRecords = await db
+            .select()
+            .from(threadsTable)
+            .where(eq(threadsTable.taskId, taskId));
+          const discordThread = threadRecords.find((t) => t.platform === 'discord');
+          if (discordThread) {
+            discordThreadUrl = discordThread.threadUrl || undefined;
+          }
+
+          // Read the original plan content
+          const planMarkdownContent = await fs
+            .readFile(task.planFilePath!.replace('.yml', '.md'), 'utf-8')
+            .catch(() => undefined);
+
+          // Create the pull request
+          const prResult = await createPullRequest({
+            taskId,
+            workspacePath: workspace.workspacePath,
+            issueNumber: task.issueNumber!,
+            repositoryFullName: task.repositoryFullName!,
+            issueTitle,
+            planMarkdownContent,
+            discordThreadUrl,
+          });
+
+          if (prResult.prNumber && prResult.prUrl) {
+            // PR created successfully
+            await this.updateTask(taskId, {
+              prNumber: prResult.prNumber,
+              status: IMPLEMENTATION_STATUS.PR_CREATED,
+            });
+
+            log(`[${taskId}] Successfully created PR #${prResult.prNumber}: ${prResult.prUrl}`);
+
+            // Notify PR creation
+            await notifyTaskCreation(
+              taskId,
+              `🎉 Pull Request created! PR #${prResult.prNumber}: ${prResult.prUrl}`,
+              {
+                platform: task.createdByPlatform as 'github' | 'discord',
+                userId: task.createdByUserId!,
+                repoFullName: task.repositoryFullName || undefined,
+                issueNumber: task.issueNumber || undefined,
+              },
+              task.repositoryFullName || undefined,
+              task.issueNumber || undefined
+            );
+          } else {
+            // PR creation failed
+            throw new Error(prResult.error || 'Unknown error creating PR');
+          }
+        } catch (prError) {
+          const errorMessage = prError instanceof Error ? prError.message : String(prError);
+          error(`[${taskId}] PR creation failed: ${errorMessage}`);
+
+          // Update task status to PR failed
+          await this.updateTask(taskId, {
+            status: IMPLEMENTATION_STATUS.PR_FAILED,
+            errorMessage: `PR creation failed: ${errorMessage}`,
+          });
+
+          // Notify PR creation failure
+          await notifyTaskCreation(
+            taskId,
+            `❌ PR creation failed: ${errorMessage.substring(0, 200)}...`,
+            {
+              platform: task.createdByPlatform as 'github' | 'discord',
+              userId: task.createdByUserId!,
+              repoFullName: task.repositoryFullName || undefined,
+              issueNumber: task.issueNumber || undefined,
+            },
+            task.repositoryFullName || undefined,
+            task.issueNumber || undefined
+          );
+        }
       } catch (agentError) {
         // Save logs even on failure
         await dbLogger.save(taskId, 'agent_failed');
@@ -535,20 +634,6 @@ export class TaskManager {
 
         throw agentError;
       }
-
-      // Notify progress - implementation complete
-      await notifyTaskCreation(
-        taskId,
-        `Implementation completed successfully! Workspace: ${workspace.workspacePath}, branch: ${branchName}`,
-        {
-          platform: task.createdByPlatform as 'github' | 'discord',
-          userId: task.createdByUserId!,
-          repoFullName: task.repositoryFullName || undefined,
-          issueNumber: task.issueNumber || undefined,
-        },
-        task.repositoryFullName || undefined,
-        task.issueNumber || undefined
-      );
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       error(`[${taskId}] Implementation task processing failed: ${errorMessage}`);
