@@ -598,7 +598,7 @@ tasks:
           4.  Write tests for `resumeInterruptedTasks`, mocking DB interactions
           and task execution services. Test scenarios like: task with
           checkpoint, task without checkpoint, various task statuses.
-        done: false
+        done: true
       - prompt: >
           Integrate checkpoint saving into the PR Response workflow
           (`src/bot/pr_response_service.ts`).

@@ -2,7 +2,15 @@ import * as path from 'path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import yaml from 'yaml';
-import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn, debugLog } from '../logging.ts';
+import {
+  boldMarkdownHeaders,
+  closeLogFile,
+  error,
+  log,
+  openLogFile,
+  warn,
+  debugLog,
+} from '../logging.ts';
 import { getGitRoot, logSpawn } from '../rmfilter/utils.ts';
 import {
   executePostApplyCommand,
