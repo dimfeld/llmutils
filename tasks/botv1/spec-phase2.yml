@@ -294,7 +294,7 @@ tasks:
               -   The `Workspace` interface returned by `createWorkspace` might need to be aligned with `WorkspaceInfo` from `workspace_tracker.ts` or simply return the path and new workspace ID. For now, ensure it returns at least `{ path: string, id: string, taskId: string }`.
               -   Remove any references to `config.paths.trackingFile` or `getDefaultTrackingFilePath` for recording, as this is now handled by `recordWorkspace` internally.
               -   The file-system lock (`WorkspaceLock.acquireLock`) should still be acquired using the PID of the current bot process if `rmplan agent` is to be run directly by the bot. The `command` for `acquireLock` can be `bot-task:${taskId}`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_auto_selector.ts`:
 
