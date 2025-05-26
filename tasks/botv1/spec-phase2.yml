@@ -910,7 +910,7 @@ tasks:
           marked done and before writing the updated plan file:
               -   If `progressCallback` is provided, invoke it for each step being marked as done.
               -   Pass an object containing `taskIndex` (relative to plan tasks array), `stepIndex` (relative to task steps array), `stepPrompt` (the prompt of the completed step), `taskTitle` (title of the current task), and `planFile` (path to the plan file being modified).
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/thread_manager.ts`:
 
