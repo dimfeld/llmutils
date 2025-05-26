@@ -1418,7 +1418,7 @@ tasks:
           ```
 
           Ensure this utility is imported and used in `src/bot/discord_bot.ts`.
-        done: false
+        done: true
   - title: Basic Thread Synchronization
     description: Implement basic thread synchronization. When a task is initiated,
       create a corresponding thread/comment in the other platform and store the
