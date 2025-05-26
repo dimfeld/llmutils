@@ -1848,7 +1848,7 @@ tasks:
           }
 
           ```
-        done: false
+        done: true
       - prompt: >
           Update `src/bot/github_handler.ts` to use the permission check.
 
