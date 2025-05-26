@@ -10,12 +10,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { isAdmin } from './discord_admin_utils.js';
 import { mapUser } from './db/user_mappings_manager.js';
+import { getAllActiveTasks } from './db/tasks_manager.js';
 
 const RMPLAN_COMMAND = 'rm-plan';
 const RMIMPLEMENT_COMMAND = 'rm-implement';
 const RMLOGS_COMMAND = 'rm-logs';
 const RMSTATUS_COMMAND = 'rm-status';
 const RMLINKUSER_COMMAND = 'rm-link-user';
+const RMSTATUSALL_COMMAND = 'rm-status-all';
 
 const commands = [
   new SlashCommandBuilder()
@@ -67,6 +69,10 @@ const commands = [
         .setDescription('The Discord user ID to link to')
         .setRequired(true)
     )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMSTATUSALL_COMMAND)
+    .setDescription('(Admin) Shows status of all active tasks.')
     .toJSON(),
 ];
 
@@ -549,6 +555,119 @@ export async function startDiscordBot() {
           error(`Failed to map user:`, err);
           await interaction.editReply({
             content: `Error mapping user: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
+      } else if (commandName === RMSTATUSALL_COMMAND) {
+        log(`'/rm-status-all' command received from user ${user.id}`);
+
+        // Check if the user is an admin
+        if (!isAdmin(user.id)) {
+          try {
+            await interaction.reply({
+              content: 'Error: You do not have permission to use this command.',
+              ephemeral: true,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'failed', errorMessage: 'Insufficient permissions' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+          } catch (replyError) {
+            error('Failed to reply to Discord interaction:', replyError);
+          }
+          return;
+        }
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.deferReply({ ephemeral: false });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          // Get all active tasks
+          const activeTasks = await getAllActiveTasks();
+
+          if (activeTasks.length === 0) {
+            await interaction.editReply({
+              content: 'No active tasks found.',
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'success' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Format the list of active tasks
+          let statusMessage = `## Active Tasks (${activeTasks.length})\n\n`;
+
+          for (const task of activeTasks) {
+            statusMessage += `### Task ${task.id}\n`;
+            statusMessage += `- **Repository:** ${task.repositoryFullName || 'Unknown'}\n`;
+            if (task.issueNumber) {
+              statusMessage += `- **Issue #:** ${task.issueNumber}\n`;
+            }
+            statusMessage += `- **Status:** ${task.status || 'Unknown'}\n`;
+            statusMessage += `- **Type:** ${task.taskType || 'Unknown'}\n`;
+            statusMessage += `- **Created by:** ${task.createdByUserId} (${task.createdByPlatform})\n`;
+            statusMessage += `- **Created at:** ${task.createdAt ? new Date(task.createdAt).toLocaleString() : 'Unknown'}\n`;
+            if (task.prNumber) {
+              statusMessage += `- **PR #:** ${task.prNumber}\n`;
+            }
+            statusMessage += '\n';
+          }
+
+          // Check if message exceeds Discord's limit (2000 chars)
+          if (statusMessage.length <= 1990) {
+            await interaction.editReply({
+              content: statusMessage,
+            });
+          } else {
+            // Send as a text file attachment
+            const buffer = Buffer.from(statusMessage, 'utf-8');
+            await interaction.editReply({
+              content: `Found ${activeTasks.length} active tasks. Details attached as a file due to length.`,
+              files: [
+                {
+                  attachment: buffer,
+                  name: `active_tasks_status.txt`,
+                  description: `Status of all active tasks`,
+                },
+              ],
+            });
+          }
+
+          log(`Admin ${user.id} retrieved status of ${activeTasks.length} active tasks`);
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to retrieve active tasks:`, err);
+          await interaction.editReply({
+            content: `Error retrieving active tasks: ${(err as Error).message}`,
           });
           if (originalCommandId) {
             await db

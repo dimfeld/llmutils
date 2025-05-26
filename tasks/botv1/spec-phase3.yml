@@ -159,7 +159,7 @@ tasks:
               c.  Format the list of active tasks into a readable message (e.g., using Discord embeds or formatted text) and send it to the channel. If no active tasks, state that.
               d.  Handle errors and report them.
           4.  Write tests for `getAllActiveTasks` and the command handler.
-        done: false
+        done: true
       - prompt: >
           Implement the `/rm-cleanup` admin Discord command for manual workspace
           cleanup.
