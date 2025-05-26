@@ -883,7 +883,7 @@ tasks:
               - Send the formatted logs as a reply (e.g., `editReply` or `followUp`).
               - Handle cases where the `task-id` is not found or has no logs.
               - Update `commandHistoryTable` for this command's execution (success/failure).
-        done: false
+        done: true
   - title: Real-time Step Progress Reporting
     description: >
       Modify `rmplan agent`'s `markStepDone` to support a callback for reporting
