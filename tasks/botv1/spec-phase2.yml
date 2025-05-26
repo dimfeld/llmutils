@@ -211,7 +211,7 @@ tasks:
           3.  Return the `WorkspaceInfo` object if found, mapping DB fields to
           `WorkspaceInfo` fields (including the new `id` and `lockedByTaskId`,
           `lastAccessedAt`), otherwise return `null`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, refactor
           `findWorkspacesByTaskId` function:
