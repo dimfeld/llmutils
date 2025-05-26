@@ -139,7 +139,7 @@ tasks:
               e.  Handle any errors from `mapUser` and report them to the admin.
           3.  Write integration tests for this command if possible, or unit
           tests for the handler logic.
-        done: false
+        done: true
       - prompt: >
           Implement the `/rm-status-all` admin Discord command.
 
