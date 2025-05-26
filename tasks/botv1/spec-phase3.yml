@@ -658,4 +658,4 @@ tasks:
           necessary to reflect the changes in and new features introduced in
           Phase 3. For instance, if new environment variables were added for
           admin configuration or log retention, document them.
-        done: false
+        done: true
