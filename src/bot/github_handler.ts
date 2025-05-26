@@ -7,6 +7,7 @@ import { getGitRoot } from '../rmfilter/utils.js';
 import { eq } from 'drizzle-orm';
 import { canUserPerformAction } from './core/auth_manager.js';
 import { getPendingVerificationByCode } from './db/user_mappings_manager.js';
+import { initiatePrResponseTask } from './pr_response_service.js';
 
 interface GitHubIssueCommentPayload {
   action: string;
@@ -17,6 +18,10 @@ interface GitHubIssueCommentPayload {
     title: string;
     user: { login: string };
     body: string | null;
+    pull_request?: {
+      url: string;
+      html_url: string;
+    };
   };
   comment: {
     id: number;
@@ -209,7 +214,7 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
         .where(eq(commandHistoryTable.id, originalCommandId));
     }
 
-    return; // Exit early for verify command
+    return;
   }
 
   // Perform permission check for all other commands
@@ -356,6 +361,48 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
       });
 
     // The webhook returns quickly while implementation happens in background
+  } else if (command === 'respond') {
+    // Check if this is a PR comment
+    if (!issue.pull_request) {
+      log(`'@bot respond' command used on non-PR issue #${issue.number}. This command is PR-only.`);
+      await db
+        .update(commandHistoryTable)
+        .set({
+          status: 'failed',
+          errorMessage: 'The @bot respond command is only available on pull requests',
+        })
+        .where(eq(commandHistoryTable.id, originalCommandId));
+      // TODO: Post a reply comment explaining this is PR-only
+      return;
+    }
+
+    log(
+      `'@bot respond' command received from ${commenter} for PR ${issue.html_url}. Args: '${args}'`
+    );
+
+    // Asynchronously start the PR response task
+    initiatePrResponseTask({
+      platform: 'github',
+      userId: commenter,
+      prNumber: issue.number,
+      repoFullName: repository.full_name,
+      githubCommentId: payload.comment.id,
+      originalCommandId: originalCommandId,
+    })
+      .then((taskId) => {
+        if (taskId) {
+          log(`Successfully started PR response task ${taskId} from GitHub command.`);
+          // Further notifications will be handled by thread_manager
+        } else {
+          log(`PR response task failed to start from GitHub command.`);
+          // Error already logged by initiatePrResponseTask
+        }
+      })
+      .catch((e) => {
+        error('Unhandled error from initiatePrResponseTask (GitHub):', e);
+      });
+
+    // The webhook returns quickly while PR response happens in background
   } else {
     log(`Unknown command: @bot ${command}`);
     // Update command_history to 'failed' for unknown commands
