@@ -806,7 +806,7 @@ tasks:
           into the `message` field of regular `log` calls if that's simpler. For
           now, let them log with level 'info', prefixing the message with
           "STDOUT:" or "STDERR:".
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts` (`processImplementationTask`
           method):
