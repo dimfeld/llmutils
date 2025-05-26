@@ -522,7 +522,7 @@ tasks:
           `inquirer/prompts` if `options.nonInteractive` is not set. The bot
           should always invoke it non-interactively. The options passed to
           `rmplanAgent` from `taskManager` should enforce this.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts`, modify the
           `processImplementationTask` method:
