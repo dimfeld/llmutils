@@ -629,7 +629,7 @@ tasks:
           }
 
           ```
-        done: false
+        done: true
       - prompt: >
           Update `src/bot/server.ts` to use the new `handleGitHubWebhook`
           function.
