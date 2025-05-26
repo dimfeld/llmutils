@@ -5,7 +5,7 @@ import { spawnAndLogOutput } from '../../rmfilter/utils.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, RmplanConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
-import { getDefaultTrackingFilePath, recordWorkspace } from './workspace_tracker.js';
+import { recordWorkspace } from './workspace_tracker.js';
 
 /**
  * Interface representing a created workspace
@@ -184,18 +184,14 @@ export async function createWorkspace(
   };
 
   // Record the workspace info for tracking
-  const trackingFilePath = config.paths?.trackingFile || getDefaultTrackingFilePath();
-  await recordWorkspace(
-    {
-      taskId,
-      originalPlanFilePath,
-      repositoryUrl: repositoryUrl,
-      workspacePath: targetClonePath,
-      branch: branchName,
-      createdAt: new Date().toISOString(),
-    },
-    trackingFilePath
-  );
+  await recordWorkspace({
+    taskId,
+    originalPlanFilePath,
+    repositoryUrl: repositoryUrl,
+    workspacePath: targetClonePath,
+    branch: branchName,
+    createdAt: new Date().toISOString(),
+  });
 
   // Acquire lock for the workspace
   try {

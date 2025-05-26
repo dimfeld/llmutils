@@ -528,7 +528,7 @@ program
         }
       }
 
-      await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
+      await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl);
     } catch (err) {
       error('Failed to list workspaces:', err);
       process.exit(1);

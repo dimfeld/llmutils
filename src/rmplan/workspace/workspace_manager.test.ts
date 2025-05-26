@@ -29,6 +29,13 @@ await mock.module('../actions.js', () => ({
   executePostApplyCommand: mockExecutePostApplyCommand,
 }));
 
+// Mock workspace tracker to avoid database initialization
+const mockRecordWorkspace = mock(async () => {});
+
+await mock.module('./workspace_tracker.js', () => ({
+  recordWorkspace: mockRecordWorkspace,
+}));
+
 // Import the module under test after all mocks are set up
 import { createWorkspace } from './workspace_manager.js';
 import type { RmplanConfig } from '../configSchema.js';

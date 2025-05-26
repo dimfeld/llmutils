@@ -94,8 +94,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
     } else {
       // Manual workspace handling - check if workspace exists first
-      const trackingFilePath = config.paths?.trackingFile;
-      const existingWorkspaces = await findWorkspacesByTaskId(options.workspace, trackingFilePath);
+      const existingWorkspaces = await findWorkspacesByTaskId(options.workspace);
 
       if (existingWorkspaces.length > 0) {
         // Find the first available workspace (not locked)

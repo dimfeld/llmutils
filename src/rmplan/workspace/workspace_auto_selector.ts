@@ -8,7 +8,6 @@ import {
   findWorkspacesByRepoUrl,
   findWorkspacesByTaskId,
   updateWorkspaceLockStatus,
-  getDefaultTrackingFilePath,
   type WorkspaceInfo,
 } from './workspace_tracker.js';
 import type { RmplanConfig } from '../configSchema.js';
@@ -78,27 +77,29 @@ export class WorkspaceAutoSelector {
     }
 
     // Find existing workspaces for this repository
-    const trackingFilePath = this.config.paths?.trackingFile || getDefaultTrackingFilePath();
-    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath);
+    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl);
     const workspacesWithLockStatus = await updateWorkspaceLockStatus(workspaces);
 
-    // Sort workspaces: unlocked first, then by creation date (newest first)
+    // Sort workspaces by creation date (newest first)
     workspacesWithLockStatus.sort((a, b) => {
-      if (!a.lockedBy && b.lockedBy) return -1;
-      if (a.lockedBy && !b.lockedBy) return 1;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
     // Try to find an unlocked workspace
     for (const workspace of workspacesWithLockStatus) {
-      if (!workspace.lockedBy) {
+      // Check filesystem lock
+      const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
+      if (!lockInfo || (await WorkspaceLock.isLockStale(lockInfo))) {
+        // Clear stale lock if present
+        if (lockInfo) {
+          await WorkspaceLock.clearStaleLock(workspace.workspacePath);
+        }
         log(`Selected unlocked workspace: ${workspace.workspacePath}`);
-        return { workspace, isNew: false, clearedStaleLock: false };
+        return { workspace, isNew: false, clearedStaleLock: !!lockInfo };
       }
 
-      // Check if lock is stale
-      const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
-      if (lockInfo && (await WorkspaceLock.isLockStale(lockInfo))) {
+      // Handle stale lock in interactive mode
+      if (lockInfo && interactive && (await WorkspaceLock.isLockStale(lockInfo))) {
         const cleared = await this.handleStaleLock(workspace, lockInfo, interactive);
         if (cleared) {
           log(`Selected workspace after clearing stale lock: ${workspace.workspacePath}`);
@@ -174,19 +175,15 @@ export class WorkspaceAutoSelector {
     }
 
     // Get the workspace info from tracker
-    const trackingFilePath = this.config.paths?.trackingFile || getDefaultTrackingFilePath();
-    const workspaces = await findWorkspacesByTaskId(taskId, trackingFilePath);
+    const workspaces = await findWorkspacesByTaskId(taskId);
     return workspaces.find((w) => w.workspacePath === workspace.path) || null;
   }
 
   /**
    * List all workspaces with their lock status
    */
-  static async listWorkspacesWithStatus(
-    repositoryUrl: string,
-    trackingFilePath?: string
-  ): Promise<void> {
-    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath);
+  static async listWorkspacesWithStatus(repositoryUrl: string): Promise<void> {
+    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl);
     const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
 
     if (workspacesWithStatus.length === 0) {
@@ -196,9 +193,15 @@ export class WorkspaceAutoSelector {
 
     console.log('\nWorkspaces:');
     for (const workspace of workspacesWithStatus) {
-      const status = workspace.lockedBy
-        ? chalk.red(`🔒 Locked by PID ${workspace.lockedBy.pid} on ${workspace.lockedBy.hostname}`)
-        : chalk.green('🔓 Available');
+      // Check filesystem lock status
+      const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
+      const isLocked = lockInfo && !(await WorkspaceLock.isLockStale(lockInfo));
+
+      const status = isLocked
+        ? chalk.red(`🔒 Locked by PID ${lockInfo.pid} on ${lockInfo.hostname}`)
+        : workspace.lockedByTaskId
+          ? chalk.yellow(`📌 Reserved by task ${workspace.lockedByTaskId}`)
+          : chalk.green('🔓 Available');
 
       console.log(`\n${status}`);
       console.log(`  Path: ${workspace.workspacePath}`);
@@ -206,8 +209,8 @@ export class WorkspaceAutoSelector {
       console.log(`  Branch: ${workspace.branch}`);
       console.log(`  Created: ${new Date(workspace.createdAt).toLocaleString()}`);
 
-      if (workspace.lockedBy) {
-        const lockAge = Date.now() - new Date(workspace.lockedBy.startedAt).getTime();
+      if (lockInfo && isLocked) {
+        const lockAge = Date.now() - new Date(lockInfo.startedAt).getTime();
         const lockAgeHours = Math.round(lockAge / (1000 * 60 * 60));
         console.log(`  Lock age: ${lockAgeHours} hours`);
       }
