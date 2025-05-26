@@ -1006,7 +1006,7 @@ tasks:
                   - Reply with the formatted status.
               - If no task is found (for the given ID or for the user), reply accordingly.
               - Update `commandHistoryTable` for this command's execution.
-        done: false
+        done: true
   - title: (Stretch) Capture `TodoWrite` from Claude Code Executor
     description: >
       Enhance the `ClaudeCodeExecutor` to parse its JSON stream output,
