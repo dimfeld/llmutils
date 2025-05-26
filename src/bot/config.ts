@@ -12,6 +12,7 @@ export interface BotConfig {
   GITHUB_WEBHOOK_SECRET?: string;
   PLANNING_MODEL?: string;
   DISCORD_DEFAULT_CHANNEL_ID?: string;
+  ADMIN_DISCORD_USER_IDS?: string;
 }
 
 let _config: BotConfig | null = null;
@@ -40,6 +41,7 @@ export function loadConfig(): BotConfig {
     GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET,
     PLANNING_MODEL: process.env.PLANNING_MODEL,
     DISCORD_DEFAULT_CHANNEL_ID: process.env.DISCORD_DEFAULT_CHANNEL_ID,
+    ADMIN_DISCORD_USER_IDS: process.env.ADMIN_DISCORD_USER_IDS,
   };
 
   return _config;
