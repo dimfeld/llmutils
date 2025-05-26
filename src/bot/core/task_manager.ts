@@ -5,6 +5,7 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { log, error, debugLog } from '../../logging.js';
 import { generatePlanForIssue } from './plan_generator.js';
 import { notifyTaskCreation } from './thread_manager.js';
+import { parseGitHubIssueUrl } from '../utils/github_utils.js';
 
 type Task = InferSelectModel<typeof tasks>;
 type NewTask = InferInsertModel<typeof tasks>;
@@ -255,11 +256,13 @@ export class TaskManager {
           platform: options.platform,
           userId: options.userId,
           repoFullName: options.repoFullName,
+          issueNumber: parseGitHubIssueUrl(options.issueUrl)?.issueNumber,
+          githubCommentId: options.githubCommentId,
+          discordInteraction: options.discordInteraction,
           channelId: options.discordInteraction?.channelId,
-          commentId: options.githubCommentId,
         },
         options.repoFullName,
-        issueNumber || undefined
+        parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
 
       // 3. Call plan generator
@@ -293,16 +296,18 @@ export class TaskManager {
       log(`[${taskId}] Planning task completed successfully.`);
       await notifyTaskCreation(
         taskId,
-        `Plan generated for ${options.issueUrl}: ${planYamlPath}`,
+        `Plan successfully generated for ${options.issueUrl}. Plan available at: ${planYamlPath}`,
         {
           platform: options.platform,
           userId: options.userId,
           repoFullName: options.repoFullName,
+          issueNumber: parseGitHubIssueUrl(options.issueUrl)?.issueNumber,
+          githubCommentId: options.githubCommentId,
+          discordInteraction: options.discordInteraction,
           channelId: options.discordInteraction?.channelId,
-          commentId: options.githubCommentId,
         },
         options.repoFullName,
-        issueNumber || undefined
+        parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
 
       // Update command_history to success
@@ -321,18 +326,21 @@ export class TaskManager {
           .set({ status: 'failed', errorMessage: String(err), updatedAt: new Date() })
           .where(eq(tasks.id, taskRecordId));
       }
+      const errorMessage = err instanceof Error ? err.message : String(err);
       await notifyTaskCreation(
         taskId,
-        `Failed to generate plan for ${options.issueUrl}: ${(err as Error).message}`,
+        `Plan generation FAILED for ${options.issueUrl}. Error: ${errorMessage.substring(0, 200)}...`,
         {
           platform: options.platform,
           userId: options.userId,
           repoFullName: options.repoFullName,
+          issueNumber: parseGitHubIssueUrl(options.issueUrl)?.issueNumber,
+          githubCommentId: options.githubCommentId,
+          discordInteraction: options.discordInteraction,
           channelId: options.discordInteraction?.channelId,
-          commentId: options.githubCommentId,
         },
         options.repoFullName,
-        issueNumber || undefined
+        parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
 
       // Update command_history to failed

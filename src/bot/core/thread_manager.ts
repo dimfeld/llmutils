@@ -20,14 +20,14 @@ export function initializeThreadManager(client?: DiscordClient) {
 
 interface PlatformContext {
   platform: 'github' | 'discord';
+  userId: string; // Initiator's ID
   // GitHub specific
   repoFullName?: string;
   issueNumber?: number;
-  commentId?: number;
+  githubCommentId?: number;
   // Discord specific
-  interaction?: any;
-  channelId?: string;
-  userId?: string;
+  discordInteraction?: { id: string; channelId: string; token: string };
+  channelId?: string; // Direct access to channel ID
 }
 
 export async function notifyTaskCreation(
