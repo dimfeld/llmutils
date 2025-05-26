@@ -370,6 +370,9 @@ export class TaskManager {
         parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
 
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Planning', 'planning');
+
       // 3. Call plan generator
       const { planYamlPath, planMarkdownContent } = await generatePlanForIssue(
         options.issueUrl,
@@ -415,6 +418,9 @@ export class TaskManager {
         parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
 
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Plan generated', 'plan_generated');
+
       // Update command_history to success
       if (options.originalCommandId) {
         await db
@@ -447,6 +453,9 @@ export class TaskManager {
         options.repoFullName,
         parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
+
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Failed', 'failed');
 
       // Update command_history to failed
       if (options.originalCommandId) {
@@ -492,6 +501,9 @@ export class TaskManager {
         status: IMPLEMENTATION_STATUS.WORKSPACE_SETUP,
       });
 
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Setting up workspace', 'workspace_setup');
+
       // Get repository path - for bot operations, this would be passed or configured
       const repoPath = process.env.BOT_REPO_PATH || process.cwd();
 
@@ -520,6 +532,9 @@ export class TaskManager {
         branch: branchName,
         status: IMPLEMENTATION_STATUS.IMPLEMENTING,
       });
+
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Implementing', 'implementing');
 
       // Copy plan file to workspace
       const planFileName = path.basename(task.planFilePath!);
@@ -633,11 +648,21 @@ export class TaskManager {
           status: IMPLEMENTATION_STATUS.IMPLEMENTATION_COMPLETE,
         });
 
+        // Notify overall status change
+        await notifyTaskProgress(
+          taskId,
+          'Overall status: Implementation complete',
+          'implementation_complete'
+        );
+
         // PR Creation Phase
         log(`[${taskId}] Starting PR creation...`);
         await this.updateTask(taskId, {
           status: IMPLEMENTATION_STATUS.PR_PENDING,
         });
+
+        // Notify overall status change
+        await notifyTaskProgress(taskId, 'Overall status: Creating pull request', 'pr_pending');
 
         try {
           // Fetch issue details
@@ -685,6 +710,9 @@ export class TaskManager {
               status: IMPLEMENTATION_STATUS.PR_CREATED,
             });
 
+            // Notify overall status change
+            await notifyTaskProgress(taskId, 'Overall status: Pull request created', 'pr_created');
+
             log(`[${taskId}] Successfully created PR #${prResult.prNumber}: ${prResult.prUrl}`);
 
             // Update GitHub comment with final status
@@ -728,6 +756,9 @@ export class TaskManager {
             errorMessage: `PR creation failed: ${errorMessage}`,
           });
 
+          // Notify overall status change
+          await notifyTaskProgress(taskId, 'Overall status: PR creation failed', 'pr_failed');
+
           // Update GitHub comment with failure status
           if (task.issueUrl) {
             const progress = activeTaskProgress.get(taskId);
@@ -766,6 +797,13 @@ export class TaskManager {
           errorMessage: errorMessage,
         });
 
+        // Notify overall status change
+        await notifyTaskProgress(
+          taskId,
+          'Overall status: Implementation failed',
+          'implementation_failed'
+        );
+
         // Update GitHub comment with failure status
         if (task.issueUrl) {
           const progress = activeTaskProgress.get(taskId);
@@ -794,6 +832,9 @@ export class TaskManager {
         status: IMPLEMENTATION_STATUS.IMPLEMENTATION_FAILED,
         errorMessage: errorMessage,
       });
+
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Failed', 'failed');
 
       // Notify failure
       await notifyTaskCreation(
@@ -888,6 +929,9 @@ export class TaskManager {
         parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
 
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Setting up workspace', 'workspace_setup');
+
       // TODO: In the next phase, this will set up workspace and invoke rmplanAgent
       // For now, just update status to show the implementation would start
       await db
@@ -917,6 +961,9 @@ export class TaskManager {
         options.repoFullName,
         parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
+
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Ready to implement', 'implementing');
 
       // Update command_history to success
       if (options.originalCommandId) {
@@ -954,6 +1001,9 @@ export class TaskManager {
         options.repoFullName,
         parseGitHubIssueUrl(options.issueUrl)?.issueNumber
       );
+
+      // Notify overall status change
+      await notifyTaskProgress(taskId, 'Overall status: Failed', 'failed');
 
       // Update command_history to failed
       if (options.originalCommandId) {
