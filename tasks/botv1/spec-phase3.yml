@@ -651,7 +651,7 @@ tasks:
 
           4.  Review the "Core Features" and "Architecture" sections for any
           necessary updates based on Phase 3 implementations.
-        done: false
+        done: true
       - prompt: >
           Review any other documentation (e.g., specific guides for
           configuration, deployment, or contribution) and update them as
