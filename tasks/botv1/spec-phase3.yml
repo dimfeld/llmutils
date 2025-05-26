@@ -346,7 +346,7 @@ tasks:
                   - Log successes and failures. Return counts.
           3.  Write tests for these functions, especially for the logic
           determining eligibility for cleanup.
-        done: false
+        done: true
       - prompt: >
           Implement automatic cleanup of old task logs from the `task_logs`
           table.

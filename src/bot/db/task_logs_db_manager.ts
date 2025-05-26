@@ -18,7 +18,7 @@ export async function getOldTaskLogsCount(olderThan: Date): Promise<number> {
     .select({ count: sql<number>`count(*)` })
     .from(taskLogs)
     .where(lt(taskLogs.timestamp, olderThan));
-  
+
   return result[0]?.count || 0;
 }
 
@@ -31,25 +31,23 @@ export async function deleteOldTaskLogs(retentionDays: number): Promise<TaskLogC
   try {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-    
+
     // Get count before deletion for reporting
     const countBeforeDelete = await getOldTaskLogsCount(cutoffDate);
-    
+
     if (countBeforeDelete === 0) {
       return { deletedCount: 0 };
     }
-    
+
     // Delete old logs
-    await db
-      .delete(taskLogs)
-      .where(lt(taskLogs.timestamp, cutoffDate));
-    
+    await db.delete(taskLogs).where(lt(taskLogs.timestamp, cutoffDate));
+
     return { deletedCount: countBeforeDelete };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    return { 
-      deletedCount: 0, 
-      error: errorMessage 
+    return {
+      deletedCount: 0,
+      error: errorMessage,
     };
   }
 }
@@ -60,11 +58,13 @@ export async function deleteOldTaskLogs(retentionDays: number): Promise<TaskLogC
  */
 export async function autoCleanupTaskLogs(): Promise<TaskLogCleanupResult> {
   const retentionDays = config.LOG_RETENTION_DAYS || 30; // Default to 30 days if not configured
-  
-  console.log(`[Task Logs Cleanup] Starting automatic cleanup of logs older than ${retentionDays} days`);
-  
+
+  console.log(
+    `[Task Logs Cleanup] Starting automatic cleanup of logs older than ${retentionDays} days`
+  );
+
   const result = await deleteOldTaskLogs(retentionDays);
-  
+
   if (result.error) {
     console.error(`[Task Logs Cleanup] Error: ${result.error}`);
   } else if (result.deletedCount > 0) {
@@ -72,6 +72,6 @@ export async function autoCleanupTaskLogs(): Promise<TaskLogCleanupResult> {
   } else {
     console.log(`[Task Logs Cleanup] No old logs found for cleanup`);
   }
-  
+
   return result;
 }

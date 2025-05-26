@@ -21,7 +21,7 @@ export interface Workspace {
  * - AND either:
  *   - It's not locked by any task (lockedByTaskId is NULL)
  *   - OR it's locked by a task that is in a final state (completed/failed)
- * 
+ *
  * @param inactiveSince Date threshold - workspaces not accessed since this date
  * @returns Array of workspaces that can be cleaned up
  */
@@ -41,10 +41,7 @@ export async function getUnlockableInactiveWorkspaces(inactiveSince: Date): Prom
     })
     .from(workspacesTable)
     .where(
-      or(
-        lt(workspacesTable.lastAccessedAt, inactiveSince),
-        isNull(workspacesTable.lastAccessedAt)
-      )
+      or(lt(workspacesTable.lastAccessedAt, inactiveSince), isNull(workspacesTable.lastAccessedAt))
     );
 
   // If no inactive workspaces, return empty array
@@ -53,12 +50,12 @@ export async function getUnlockableInactiveWorkspaces(inactiveSince: Date): Prom
   }
 
   // For workspaces that are locked, check if the locking task is in a final state
-  const lockedWorkspaces = inactiveWorkspaces.filter(w => w.lockedByTaskId !== null);
-  const unlockedWorkspaces = inactiveWorkspaces.filter(w => w.lockedByTaskId === null);
+  const lockedWorkspaces = inactiveWorkspaces.filter((w) => w.lockedByTaskId !== null);
+  const unlockedWorkspaces = inactiveWorkspaces.filter((w) => w.lockedByTaskId === null);
 
   // Get the task IDs for locked workspaces
-  const taskIds = lockedWorkspaces.map(w => w.lockedByTaskId!).filter(Boolean);
-  
+  const taskIds = lockedWorkspaces.map((w) => w.lockedByTaskId!).filter(Boolean);
+
   let finalStateTasks: string[] = [];
   if (taskIds.length > 0) {
     // Query tasks to find which ones are in final states
@@ -68,19 +65,16 @@ export async function getUnlockableInactiveWorkspaces(inactiveSince: Date): Prom
       .where(
         and(
           inArray(tasks.id, taskIds),
-          or(
-            eq(tasks.status, 'completed'),
-            eq(tasks.status, 'failed')
-          )
+          or(eq(tasks.status, 'completed'), eq(tasks.status, 'failed'))
         )
       );
-    
-    finalStateTasks = tasksInFinalState.map(t => t.id);
+
+    finalStateTasks = tasksInFinalState.map((t) => t.id);
   }
 
   // Filter locked workspaces to only include those locked by tasks in final states
   const unlockableLockedWorkspaces = lockedWorkspaces.filter(
-    w => w.lockedByTaskId && finalStateTasks.includes(w.lockedByTaskId)
+    (w) => w.lockedByTaskId && finalStateTasks.includes(w.lockedByTaskId)
   );
 
   // Combine unlocked workspaces and workspaces locked by completed/failed tasks
