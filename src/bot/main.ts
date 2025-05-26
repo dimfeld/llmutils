@@ -1,27 +1,36 @@
 #!/usr/bin/env bun
-import { log, error } from '../logging.js';
+import { log, error, runWithLogger } from '../logging.js';
+import { getLoggerAdapter } from '../logging/adapter.js';
+import { ConsoleAdapter } from '../logging/console.js';
 import { config, loadConfig } from './config.js';
 import { startServer } from './server.js';
 import { startDiscordBot } from './discord_bot.js';
 
 async function main() {
-  try {
-    log('Starting LLMUtils Bot Service...');
+  // Load configuration first to get LOG_LEVEL
+  loadConfig();
 
-    // Load configuration
-    loadConfig();
+  // Create a console adapter for the bot service
+  const consoleAdapter = new ConsoleAdapter();
 
-    // Start HTTP server for webhooks
-    startServer(config.BOT_SERVER_PORT);
+  // Run the entire bot service within the logger context
+  await runWithLogger(consoleAdapter, async () => {
+    try {
+      log('Starting LLMUtils Bot Service...');
+      log(`Log level: ${config.LOG_LEVEL}`);
 
-    // Start Discord bot
-    await startDiscordBot();
+      // Start HTTP server for webhooks
+      startServer(config.BOT_SERVER_PORT);
 
-    log('Bot service started successfully');
-  } catch (err) {
-    error('Failed to start bot service:', err);
-    process.exit(1);
-  }
+      // Start Discord bot
+      await startDiscordBot();
+
+      log('Bot service started successfully');
+    } catch (err) {
+      error('Failed to start bot service:', err);
+      process.exit(1);
+    }
+  });
 }
 
 // Run the main function
