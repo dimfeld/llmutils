@@ -146,7 +146,7 @@ tasks:
 
           Make sure to import the `workspaces` table schema into
           `src/bot/db/test-db.ts`.
-        done: false
+        done: true
   - title: Adapt Workspace Tracker to Use Database
     description: >
       This task involves refactoring `src/rmplan/workspace/workspace_tracker.ts`
