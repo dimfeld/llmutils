@@ -112,13 +112,19 @@ export class DatabaseLoggerAdapter implements LoggerAdapter {
         });
       }
 
-      // Combine all log entries into full content
-      const fullContent = this.logEntries
-        .map(
-          (entry) =>
-            `[${entry.timestamp.toISOString()}] [${entry.level.toUpperCase()}] ${entry.message}`
-        )
-        .join('\n');
+      // Use the raw output buffer if available, otherwise use structured logs
+      let fullContent: string;
+      if (this.fullContentBuffer.length > 0) {
+        fullContent = this.fullContentBuffer.join('');
+      } else {
+        // Fallback to structured logs
+        fullContent = this.logEntries
+          .map(
+            (entry) =>
+              `[${entry.timestamp.toISOString()}] [${entry.level.toUpperCase()}] ${entry.message}`
+          )
+          .join('\n');
+      }
 
       // Also save complete output as a single entry
       await db.insert(taskLogs).values({

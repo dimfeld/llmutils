@@ -559,7 +559,7 @@ tasks:
                   - `message`: A summary like "rmplanAgent execution log".
                   - `fullContent`: The captured stdout/stderr string from `rmplanAgent`.
           5.  Notify completion/failure via `thread_manager`.
-        done: false
+        done: true
   - title: Add Bot Commands for Implementation
     description: >
       Implement the `@bot implement` command for GitHub and `/rm-implement

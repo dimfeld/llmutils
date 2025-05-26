@@ -485,19 +485,30 @@ export class TaskManager {
       const dbLogger = new DatabaseLoggerAdapter();
 
       try {
+        // Load rmplan config to get executor and model settings
+        const rmplanConfig = await loadRmplanConfig();
+
+        // Determine executor from config or use default
+        const executor = rmplanConfig.defaultExecutor || 'claude-code';
+
+        // Determine model from config
+        const model = rmplanConfig.models?.execution;
+
         // Run rmplanAgent with database logging
         await runWithLogger(dbLogger, async () => {
           await rmplanAgent(
             workspacePlanPath,
             {
               workspace: workspace.workspacePath,
-              autoWorkspace: false, // We already have a workspace
-              nonInteractive: true, // Bot runs non-interactively
+              autoWorkspace: false,
+              nonInteractive: true,
               requireWorkspace: true,
               botTaskId: taskId,
-              executor: 'CopyOnlyExecutor', // Default executor for bot
+              executor: executor,
+              model: model,
+              'no-log': true,
             },
-            {} // Global CLI options
+            {}
           );
         });
 
@@ -512,6 +523,16 @@ export class TaskManager {
       } catch (agentError) {
         // Save logs even on failure
         await dbLogger.save(taskId, 'agent_failed');
+
+        const errorMessage = agentError instanceof Error ? agentError.message : String(agentError);
+        error(`[${taskId}] Agent execution failed: ${errorMessage}`);
+
+        // Update task status to failed
+        await this.updateTask(taskId, {
+          status: IMPLEMENTATION_STATUS.IMPLEMENTATION_FAILED,
+          errorMessage: errorMessage,
+        });
+
         throw agentError;
       }
 
