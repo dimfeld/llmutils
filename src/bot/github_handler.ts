@@ -1,7 +1,10 @@
-import { db, commandHistory } from './db/index.js';
+import { db, commandHistory as commandHistoryTable } from './db/index.js';
 import { config } from './config.js';
 import { log, warn, error, debugLog } from '../logging.js';
 import crypto from 'node:crypto';
+import { startPlanGenerationTask } from './core/task_manager.js';
+import { getGitRoot } from '../rmfilter/utils.js';
+import { eq } from 'drizzle-orm';
 
 interface GitHubIssueCommentPayload {
   action: string;
@@ -114,14 +117,19 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
   const args = match[2]?.trim() || '';
   const fullCommand = `@bot ${command} ${args}`.trim();
 
+  let originalCommandId: number | undefined;
   try {
-    await db.insert(commandHistory).values({
-      commandName: command,
-      platform: 'github',
-      userId: commenter,
-      rawCommand: fullCommand,
-      status: 'pending',
-    });
+    const insertedCmd = await db
+      .insert(commandHistoryTable)
+      .values({
+        commandName: command,
+        platform: 'github',
+        userId: commenter,
+        rawCommand: fullCommand,
+        status: 'pending',
+      })
+      .returning({ id: commandHistoryTable.id });
+    originalCommandId = insertedCmd[0]?.id;
   } catch (e) {
     error('Failed to log command to command_history:', e);
   }
@@ -130,7 +138,77 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
     log(
       `'@bot plan' command received from ${commenter} for issue ${issue.html_url}. Args: '${args}'`
     );
+
+    // Determine the target issue URL
+    const targetIssueUrl = args && args.startsWith('http') ? args : issue.html_url;
+    const repoFullName = repository.full_name;
+
+    // Get originalCommandId (we already have it from the insert above)
+    if (!originalCommandId) {
+      error('Failed to get command ID from command_history insert');
+      return;
+    }
+
+    // Determine repoPath
+    let repoPath: string;
+    try {
+      // This assumes the bot is running in a checkout of the *target* repository.
+      // For MVP, we'll proceed with this assumption.
+      repoPath = await getGitRoot();
+      if (!repoPath) throw new Error('Could not determine git root.');
+
+      // Optional: Check if this repo matches the webhook's repository
+      // For now, we'll just log a warning if there might be a mismatch
+      debugLog(`Using repo path: ${repoPath} for repository: ${repoFullName}`);
+    } catch (e) {
+      error('Failed to determine repository path for plan generation:', e);
+      // Update command_history to 'failed'
+      await db
+        .update(commandHistoryTable)
+        .set({
+          status: 'failed',
+          errorMessage: 'Failed to determine repo path',
+        })
+        .where(eq(commandHistoryTable.id, originalCommandId));
+      // TODO: Post a comment back to GitHub about the failure
+      return;
+    }
+
+    // Asynchronously start the plan generation
+    startPlanGenerationTask({
+      platform: 'github',
+      userId: commenter,
+      issueUrl: targetIssueUrl,
+      repoFullName: repoFullName,
+      repoPath: repoPath,
+      githubCommentId: payload.comment.id,
+      originalCommandId: originalCommandId,
+    })
+      .then((taskId) => {
+        if (taskId) {
+          log(`Successfully started plan generation task ${taskId} from GitHub command.`);
+          // Further notifications will be handled by thread_manager
+        } else {
+          log(`Plan generation task failed to start from GitHub command.`);
+          // Error already logged by startPlanGenerationTask
+        }
+      })
+      .catch((e) => {
+        error('Unhandled error from startPlanGenerationTask (GitHub):', e);
+      });
+
+    // The webhook returns quickly while plan generation happens in background
   } else {
     log(`Unknown command: @bot ${command}`);
+    // Update command_history to 'failed' for unknown commands
+    if (originalCommandId) {
+      await db
+        .update(commandHistoryTable)
+        .set({
+          status: 'failed',
+          errorMessage: 'Unknown command',
+        })
+        .where(eq(commandHistoryTable.id, originalCommandId));
+    }
   }
 }
