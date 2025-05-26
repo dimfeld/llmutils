@@ -264,6 +264,47 @@ export async function getPendingVerificationByCode(code: string): Promise<UserMa
 }
 
 /**
+ * Retrieves a pending (unverified) verification for a Discord user.
+ *
+ * @param discordUserId The Discord user ID
+ * @returns The user mapping if found and not expired, null otherwise
+ */
+export async function getPendingVerificationForDiscordUser(
+  discordUserId: string
+): Promise<UserMapping | null> {
+  try {
+    const result = await db
+      .select({
+        githubUsername: userMappings.githubUsername,
+        discordUserId: userMappings.discordUserId,
+        verified: userMappings.verified,
+        verificationCode: userMappings.verificationCode,
+        verificationCodeExpiresAt: userMappings.verificationCodeExpiresAt,
+        mappedAt: userMappings.mappedAt,
+        mappedBy: userMappings.mappedBy,
+      })
+      .from(userMappings)
+      .where(and(eq(userMappings.discordUserId, discordUserId), eq(userMappings.verified, 0)))
+      .limit(1);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const mapping = result[0];
+    // Check if expired
+    if (mapping.verificationCodeExpiresAt && mapping.verificationCodeExpiresAt < new Date()) {
+      return null;
+    }
+
+    return mapping;
+  } catch (err) {
+    error('Failed to get pending verification for Discord user:', err);
+    throw new Error(`Failed to retrieve pending verification for Discord user ${discordUserId}`);
+  }
+}
+
+/**
  * Marks a user mapping as verified, clearing the verification code.
  *
  * @param githubUsername The GitHub username

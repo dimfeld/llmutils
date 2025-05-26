@@ -3,6 +3,7 @@ import {
   upsertPendingVerification,
   getPendingVerification,
   getPendingVerificationByCode,
+  getPendingVerificationForDiscordUser,
   markAsVerified,
   getUserMappingByGithubUsername,
   UserMapping,
@@ -274,6 +275,71 @@ describe('User Mappings Verification Functions', () => {
       mockSelectResult = [];
 
       const mapping = await getPendingVerificationByCode('NONEXISTENT');
+      expect(mapping).toBeNull();
+    });
+  });
+
+  describe('getPendingVerificationForDiscordUser', () => {
+    it('should retrieve a valid pending verification by Discord user ID', async () => {
+      const discordUserId = 'discord123';
+      const githubUsername = 'testuser';
+      const code = 'ABC123';
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      const mockMapping = {
+        githubUsername,
+        discordUserId,
+        verified: 0,
+        verificationCode: code,
+        verificationCodeExpiresAt: expiresAt,
+        mappedAt: new Date(),
+        mappedBy: 'self',
+      };
+
+      mockSelectResult = [mockMapping];
+
+      const mapping = await getPendingVerificationForDiscordUser(discordUserId);
+      expect(mapping).not.toBeNull();
+      expect(mapping?.githubUsername).toBe(githubUsername);
+      expect(mapping?.discordUserId).toBe(discordUserId);
+      expect(mapping?.verificationCode).toBe(code);
+    });
+
+    it('should return null for expired verification', async () => {
+      const discordUserId = 'discord123';
+      const code = 'ABC123';
+      const expiresAt = new Date(Date.now() - 1000); // Already expired
+
+      const mockMapping = {
+        githubUsername: 'testuser',
+        discordUserId,
+        verified: 0,
+        verificationCode: code,
+        verificationCodeExpiresAt: expiresAt,
+        mappedAt: new Date(),
+        mappedBy: 'self',
+      };
+
+      mockSelectResult = [mockMapping];
+
+      const mapping = await getPendingVerificationForDiscordUser(discordUserId);
+      expect(mapping).toBeNull();
+    });
+
+    it('should return null for verified mapping', async () => {
+      const discordUserId = 'discord123';
+
+      // Mock returns no results since we filter for verified = 0
+      mockSelectResult = [];
+
+      const mapping = await getPendingVerificationForDiscordUser(discordUserId);
+      expect(mapping).toBeNull();
+    });
+
+    it('should return null for non-existent Discord user', async () => {
+      mockSelectResult = [];
+
+      const mapping = await getPendingVerificationForDiscordUser('nonexistent');
       expect(mapping).toBeNull();
     });
   });

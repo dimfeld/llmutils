@@ -23,6 +23,7 @@ import {
   generateVerificationCode,
   getVerificationCodeExpiration,
 } from './utils/verification_code.js';
+import { completeRegistration } from './self_registration_service.js';
 
 const RMPLAN_COMMAND = 'rm-plan';
 const RMIMPLEMENT_COMMAND = 'rm-implement';
@@ -33,6 +34,7 @@ const RMSTATUSALL_COMMAND = 'rm-status-all';
 const RMCLEANUP_COMMAND = 'rm-cleanup';
 const RMREGISTER_COMMAND = 'rm-register';
 const RMVERIFY_COMMAND = 'rm-verify';
+const RMVERIFYGIST_COMMAND = 'rm-verify-gist';
 
 const commands = [
   new SlashCommandBuilder()
@@ -107,6 +109,16 @@ const commands = [
       option
         .setName('code')
         .setDescription('The verification code from your GitHub issue comment')
+        .setRequired(true)
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMVERIFYGIST_COMMAND)
+    .setDescription('Verify your GitHub account ownership with a Gist URL.')
+    .addStringOption((option) =>
+      option
+        .setName('gist-url')
+        .setDescription('The URL of the Gist containing your verification code')
         .setRequired(true)
     )
     .toJSON(),
@@ -861,14 +873,23 @@ export async function startDiscordBot() {
           await interaction.editReply({
             content: `## GitHub Account Verification
 
-To verify you own the GitHub account \`${githubUsername}\`, please:
+To verify you own the GitHub account \`${githubUsername}\`, please choose one of these options:
 
+**Option 1: Using a GitHub Gist (Recommended)**
+1. Create a new public Gist at https://gist.github.com
+2. Add a file with exactly this content:
+   \`\`\`
+   ${verificationCode}
+   \`\`\`
+3. Use \`/rm-verify-gist <gist-url>\` with the URL of your Gist
+
+**Option 2: Using an Issue Comment**
 1. Go to any issue in the repository: ${repoUrl}
 2. Add a comment with exactly this text:
    \`\`\`
    @bot verify ${verificationCode}
    \`\`\`
-3. After posting the comment, use \`/rm-verify ${verificationCode}\` here to complete registration
+3. Use \`/rm-verify ${verificationCode}\` here to complete registration
 
 **Note:** The verification code expires in 10 minutes.`,
           });
@@ -967,6 +988,58 @@ To verify you own the GitHub account \`${githubUsername}\`, please:
           error(`Failed to verify registration:`, err);
           await interaction.editReply({
             content: `Error verifying registration: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
+      } else if (commandName === RMVERIFYGIST_COMMAND) {
+        const gistUrl = options.getString('gist-url', true);
+        log(`'/rm-verify-gist' command received from user ${user.id} with URL: ${gistUrl}`);
+
+        // Reply immediately with ephemeral message
+        try {
+          await interaction.deferReply({ ephemeral: true });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          // Complete the registration using the Gist URL
+          const result = await completeRegistration(user.id, gistUrl);
+
+          await interaction.editReply({
+            content: result.message,
+          });
+
+          log(
+            `User ${user.id} Gist verification ${result.success ? 'succeeded' : 'failed'}: ${result.message}`
+          );
+
+          // Update command_history
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({
+                status: result.success ? 'success' : 'failed',
+                errorMessage: result.success ? null : result.message,
+              })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to verify Gist:`, err);
+          await interaction.editReply({
+            content: `Error verifying Gist: ${(err as Error).message}`,
           });
           if (originalCommandId) {
             await db
