@@ -1944,4 +1944,4 @@ tasks:
           `command_history` record's status to 'success' or 'failed' upon its
           completion/failure, instead of the GitHub/Discord handlers doing a
           preliminary 'success' update.
-        done: false
+        done: true
