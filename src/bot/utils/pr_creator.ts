@@ -34,9 +34,7 @@ export interface PRCreationResult {
  * @param options The PR creation options
  * @returns The PR creation result
  */
-export async function createPullRequest(
-  options: PRCreationOptions
-): Promise<PRCreationResult> {
+export async function createPullRequest(options: PRCreationOptions): Promise<PRCreationResult> {
   try {
     // 1. Initialize Octokit
     const octokit = new Octokit({ auth: config.GITHUB_TOKEN });

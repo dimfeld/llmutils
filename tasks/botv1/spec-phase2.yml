@@ -706,7 +706,7 @@ tasks:
           6.  If PR creation is successful, return `prNumber` and `prUrl`.
 
           7.  If any step fails, return an `error` message.
-        done: false
+        done: true
   - title: Integrate PR Creation into Task Manager
     description: >
       Modify `TaskManager.processImplementationTask` to call the new `PRCreator`
