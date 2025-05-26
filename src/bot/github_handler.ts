@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { startPlanGenerationTask } from './core/task_manager.js';
 import { getGitRoot } from '../rmfilter/utils.js';
 import { eq } from 'drizzle-orm';
+import { canUserPerformAction } from './core/auth_manager.js';
 
 interface GitHubIssueCommentPayload {
   action: string;
@@ -138,6 +139,25 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
     log(
       `'@bot plan' command received from ${commenter} for issue ${issue.html_url}. Args: '${args}'`
     );
+
+    // Check permissions before processing
+    const hasPermission = await canUserPerformAction(commenter, repository.full_name);
+    if (!hasPermission) {
+      log(
+        `User ${commenter} does not have permission to execute '@bot plan' in ${repository.full_name}`
+      );
+      if (originalCommandId) {
+        await db
+          .update(commandHistoryTable)
+          .set({
+            status: 'failed',
+            errorMessage: 'Insufficient permissions',
+          })
+          .where(eq(commandHistoryTable.id, originalCommandId));
+      }
+      // TODO: Post a comment back to GitHub about the permission denial
+      return;
+    }
 
     // Determine the target issue URL
     const targetIssueUrl = args && args.startsWith('http') ? args : issue.html_url;
