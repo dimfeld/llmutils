@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
 import { db, tasks, taskArtifacts, commandHistory as commandHistoryTable } from '../db/index.js';
 import { eq } from 'drizzle-orm';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
@@ -6,6 +8,9 @@ import { log, error, debugLog } from '../../logging.js';
 import { generatePlanForIssue } from './plan_generator.js';
 import { notifyTaskCreation } from './thread_manager.js';
 import { parseGitHubIssueUrl } from '../utils/github_utils.js';
+import { WorkspaceAutoSelector } from '../../rmplan/workspace/workspace_auto_selector.js';
+import { config as botConfig } from '../config.js';
+import { loadEffectiveConfig as loadRmplanConfig } from '../../rmplan/configLoader.js';
 
 type Task = InferSelectModel<typeof tasks>;
 type NewTask = InferInsertModel<typeof tasks>;
@@ -28,6 +33,7 @@ export interface UpdateTaskOptions {
   planFilePath?: string;
   prNumber?: number;
   errorMessage?: string;
+  branch?: string;
 }
 
 export interface CreateArtifactOptions {
@@ -389,6 +395,130 @@ export class TaskManager {
   }
 
   /**
+   * Processes an implementation task by setting up workspace and preparing for agent execution
+   */
+  async processImplementationTask(taskId: string): Promise<void> {
+    log(`[${taskId}] Starting implementation task processing`);
+
+    // 1. Fetch the task
+    const task = await this.getTask(taskId);
+    if (!task) {
+      log(`[${taskId}] Task not found`);
+      return;
+    }
+
+    // Check if it's an implementation task in a runnable state
+    if (task.taskType !== 'implement') {
+      log(`[${taskId}] Task is not an implementation task (type: ${task.taskType})`);
+      return;
+    }
+
+    if (
+      task.status !== IMPLEMENTATION_STATUS.PENDING_IMPLEMENTATION &&
+      task.status !== IMPLEMENTATION_STATUS.WORKSPACE_SETUP
+    ) {
+      log(`[${taskId}] Task not in runnable state (status: ${task.status})`);
+      return;
+    }
+
+    try {
+      // 2. Update status to workspace_setup
+      await this.updateTask(taskId, {
+        status: IMPLEMENTATION_STATUS.WORKSPACE_SETUP,
+      });
+
+      // Get repository path - for bot operations, this would be passed or configured
+      const repoPath = process.env.BOT_REPO_PATH || process.cwd();
+
+      // Use WorkspaceAutoSelector to select or create workspace
+      const rmplanConfig = await loadRmplanConfig();
+      const selector = new WorkspaceAutoSelector(repoPath, rmplanConfig);
+
+      const selectedWorkspace = await selector.selectWorkspace(taskId, task.planFilePath!, {
+        interactive: false,
+        preferNewWorkspace: false,
+      });
+
+      if (!selectedWorkspace) {
+        throw new Error('Failed to select or create workspace');
+      }
+
+      const { workspace } = selectedWorkspace;
+      log(`[${taskId}] Selected workspace: ${workspace.workspacePath}`);
+
+      // Get branch name from workspace info
+      const branchName = workspace.branch;
+
+      // Update task with workspace info
+      await this.updateTask(taskId, {
+        workspacePath: workspace.workspacePath,
+        branch: branchName,
+        status: IMPLEMENTATION_STATUS.IMPLEMENTING,
+      });
+
+      // Copy plan file to workspace
+      const planFileName = path.basename(task.planFilePath!);
+      const workspacePlanPath = path.join(workspace.workspacePath, planFileName);
+
+      try {
+        await fs.copyFile(task.planFilePath!, workspacePlanPath);
+        log(`[${taskId}] Copied plan file to workspace: ${workspacePlanPath}`);
+      } catch (err) {
+        error(`[${taskId}] Failed to copy plan file: ${err}`);
+        throw new Error(`Failed to copy plan file: ${err}`);
+      }
+
+      // 3. Agent invocation placeholder
+      log(`[${taskId}] Ready to invoke rmplan agent:`);
+      log(`[${taskId}]   Workspace: ${workspace.workspacePath}`);
+      log(`[${taskId}]   Plan file: ${workspacePlanPath}`);
+      log(`[${taskId}] TODO: Invoke rmplanAgent here`);
+
+      // For now, update status to indicate agent would run
+      await this.updateTask(taskId, {
+        status: 'awaiting_agent_completion',
+      });
+
+      // Notify progress
+      await notifyTaskCreation(
+        taskId,
+        `Workspace ready at ${workspace.workspacePath}, branch: ${branchName}. Ready to start implementation.`,
+        {
+          platform: task.createdByPlatform as 'github' | 'discord',
+          userId: task.createdByUserId!,
+          repoFullName: task.repositoryFullName || undefined,
+          issueNumber: task.issueNumber || undefined,
+        },
+        task.repositoryFullName || undefined,
+        task.issueNumber || undefined
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      error(`[${taskId}] Implementation task processing failed: ${errorMessage}`);
+
+      // Update task status to failed
+      await this.updateTask(taskId, {
+        status: IMPLEMENTATION_STATUS.IMPLEMENTATION_FAILED,
+        errorMessage: errorMessage,
+      });
+
+      // Notify failure
+      await notifyTaskCreation(
+        taskId,
+        `Implementation setup FAILED: ${errorMessage}`,
+        {
+          platform: task.createdByPlatform as 'github' | 'discord',
+          userId: task.createdByUserId!,
+          repoFullName: task.repositoryFullName || undefined,
+          issueNumber: task.issueNumber || undefined,
+        },
+        task.repositoryFullName || undefined,
+        task.issueNumber || undefined
+      );
+    }
+  }
+
+  /**
    * Starts an implementation task for a GitHub issue.
    */
   async startImplementationTask(options: StartImplementationOptions): Promise<string | null> {
@@ -550,3 +680,4 @@ export const taskManager = new TaskManager();
 // Export convenience functions
 export const startPlanGenerationTask = taskManager.startPlanGenerationTask.bind(taskManager);
 export const startImplementationTask = taskManager.startImplementationTask.bind(taskManager);
+export const processImplementationTask = taskManager.processImplementationTask.bind(taskManager);

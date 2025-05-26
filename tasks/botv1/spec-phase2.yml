@@ -482,7 +482,7 @@ tasks:
 
           4.  Notify progress (e.g. "Workspace ready", "Starting
           implementation") via `thread_manager`.
-        done: false
+        done: true
   - title: Integrate `rmplanAgent` Invocation and Basic Logging
     description: >
       This task modifies `taskManager.processImplementationTask` to actually
