@@ -972,7 +972,7 @@ tasks:
           <new_status>", new_status)` in addition to specific messages. This
           will ensure the in-place GitHub comment gets updated with the latest
           overall status.
-        done: false
+        done: true
   - title: Implement Task Status Command
     description: >
       Add the `/rm-status [task-id]` Discord command to allow users to query the
