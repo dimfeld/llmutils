@@ -623,7 +623,7 @@ tasks:
           identify and resume tasks that were in a 'responding_...' state.
 
           7.  Write tests.
-        done: false
+        done: true
   - title: Update Documentation
     description: >
       Update `README.md` and any other relevant documentation to reflect the new

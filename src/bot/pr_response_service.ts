@@ -10,7 +10,7 @@ import { config as botConfig } from './config.js';
 import { loadEffectiveConfig as loadRmplanConfig } from '../rmplan/configLoader.js';
 import { DatabaseLoggerAdapter } from './logging/database_adapter.js';
 import { Octokit } from 'octokit';
-import { saveCheckpoint, deleteCheckpoint } from './db/task_checkpoints_manager.js';
+import { saveCheckpoint, deleteCheckpoint, getCheckpoint } from './db/task_checkpoints_manager.js';
 
 export interface InitiatePrResponseOptions {
   platform: 'github' | 'discord';
@@ -256,6 +256,18 @@ export async function resumePrResponseTask(taskId: string): Promise<void> {
     return;
   }
 
+  // Get checkpoint data
+  const checkpoint = await getCheckpoint(taskId);
+  if (checkpoint) {
+    const checkpointData = checkpoint.checkpointData;
+    log(`[${taskId}] Found checkpoint data at step ${checkpoint.stepIndex}`);
+
+    // If we have checkpoint data, use it to restore state
+    if (checkpointData.workspacePath) {
+      log(`[${taskId}] Restoring workspace from checkpoint: ${checkpointData.workspacePath}`);
+    }
+  }
+
   // Re-run the PR response with the existing workspace
   if (!taskRecord.workspacePath || !taskRecord.prNumber || !taskRecord.repositoryFullName) {
     error(`[${taskId}] Missing required task data for resumption`);
@@ -271,35 +283,47 @@ export async function resumePrResponseTask(taskId: string): Promise<void> {
   }
 
   try {
-    // Create database logger adapter
-    const dbLogger = new DatabaseLoggerAdapter(botConfig.LOG_LEVEL === 'debug');
-    const rmplanConfig = await loadRmplanConfig();
-    const prIdentifier = `${taskRecord.repositoryFullName}#${taskRecord.prNumber}`;
+    // If the task was in RESPONDING state, directly process comments
+    if (taskRecord.status === PR_RESPONSE_STATUS.RESPONDING) {
+      const [owner, repo] = taskRecord.repositoryFullName.split('/');
+      await processPrComments(taskId, taskRecord.prNumber, owner, repo);
+    } else {
+      // Otherwise, use the full rmpr command approach
+      const dbLogger = new DatabaseLoggerAdapter(botConfig.LOG_LEVEL === 'debug');
+      const rmplanConfig = await loadRmplanConfig();
+      const prIdentifier = `${taskRecord.repositoryFullName}#${taskRecord.prNumber}`;
 
-    // Run rmpr command with database logging
-    await runWithLogger(dbLogger, async () => {
-      await handleRmprCommand(
-        prIdentifier,
-        {
-          executor: rmplanConfig.defaultExecutor || 'claude-code',
-          mode: 'inline-comments',
-          yes: true,
-          model: rmplanConfig.models?.execution,
-          dryRun: false,
-          run: true,
-          commit: true,
-          comment: true,
-        },
-        { debug: botConfig.LOG_LEVEL === 'debug' },
-        rmplanConfig
-      );
-    });
+      // Run rmpr command with database logging
+      await runWithLogger(dbLogger, async () => {
+        await handleRmprCommand(
+          prIdentifier,
+          {
+            executor: rmplanConfig.defaultExecutor || 'claude-code',
+            mode: 'inline-comments',
+            yes: true,
+            model: rmplanConfig.models?.execution,
+            dryRun: false,
+            run: true,
+            commit: true,
+            comment: true,
+          },
+          { debug: botConfig.LOG_LEVEL === 'debug' },
+          rmplanConfig
+        );
+      });
+
+      // Save logs
+      await dbLogger.save(taskId, 'success');
+    }
 
     // Update task status to completed
     await db
       .update(tasks)
       .set({ status: PR_RESPONSE_STATUS.COMPLETED, updatedAt: new Date() })
       .where(eq(tasks.id, taskId));
+
+    // Clean up checkpoint on success
+    await deleteCheckpoint(taskId);
 
     log(`[${taskId}] PR response task resumed and completed successfully.`);
     await notifyTaskProgress(taskId, 'Overall status: Completed (resumed)', 'completed');
@@ -400,13 +424,15 @@ async function applyResponses(
  * @param prNumber The pull request number
  * @param repoOwner The repository owner
  * @param repoName The repository name
+ * @param resumeFromStep Optional step to resume from (for crash recovery)
  * @returns Promise that resolves when processing is complete
  */
 export async function processPrComments(
   taskId: string,
   prNumber: number,
   repoOwner: string,
-  repoName: string
+  repoName: string,
+  resumeFromStep?: number
 ): Promise<void> {
   log(`[${taskId}] Processing PR comments for PR #${prNumber}`);
 
@@ -416,6 +442,14 @@ export async function processPrComments(
       .update(tasks)
       .set({ status: PR_RESPONSE_STATUS.RESPONDING })
       .where(eq(tasks.id, taskId));
+
+    // Save checkpoint before starting processing
+    await saveCheckpoint(taskId, 1, {
+      taskType: 'responding',
+      prNumber,
+      repositoryFullName: `${repoOwner}/${repoName}`,
+      step: 'processing_comments',
+    });
 
     // For now, we'll use the existing handleRmprCommand approach
     // In a future enhancement, we could modify rmpr to return responses
