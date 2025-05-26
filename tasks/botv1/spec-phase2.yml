@@ -87,7 +87,7 @@ tasks:
 
           Ensure all necessary imports from `drizzle-orm/sqlite-core` and
           `drizzle-orm` are used.
-        done: false
+        done: true
       - prompt: >
           After modifying `src/bot/db/schema.ts` in the previous step, generate
           a new database migration file using Drizzle Kit.
@@ -127,7 +127,7 @@ tasks:
           (e.g. by recreating the table for older SQLite), ensure it preserves
           data. However, for adding a nullable column, `ALTER TABLE ADD COLUMN`
           is standard.
-        done: false
+        done: true
       - prompt: >
           Update the `src/bot/db/test-migrate.ts` and `src/bot/db/migrate.ts`
           scripts to ensure they correctly apply the new migration. No actual
@@ -146,7 +146,7 @@ tasks:
 
           Make sure to import the `workspaces` table schema into
           `src/bot/db/test-db.ts`.
-        done: false
+        done: true
   - title: Adapt Workspace Tracker to Use Database
     description: >
       This task involves refactoring `src/rmplan/workspace/workspace_tracker.ts`
@@ -177,7 +177,7 @@ tasks:
               -   Add `id: string` (for the workspace record's UUID).
               -   Change `lockedBy?: { pid: number; startedAt: string; hostname: string; }` to `lockedByTaskId?: string | null`. This aligns with the new DB schema.
               -   Add `lastAccessedAt?: string | Date | null`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, refactor the
           `recordWorkspace` function:
@@ -198,7 +198,7 @@ tasks:
           record.
 
           5.  Update logging messages to reflect database operations.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, refactor the
           `getWorkspaceMetadata` function:
@@ -211,7 +211,7 @@ tasks:
           3.  Return the `WorkspaceInfo` object if found, mapping DB fields to
           `WorkspaceInfo` fields (including the new `id` and `lockedByTaskId`,
           `lastAccessedAt`), otherwise return `null`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, refactor
           `findWorkspacesByTaskId` function:
@@ -222,7 +222,7 @@ tasks:
           the input.
 
           3.  Return an array of `WorkspaceInfo` objects, mapping DB fields.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, refactor
           `findWorkspacesByRepoUrl` function:
@@ -234,7 +234,7 @@ tasks:
           exact match is fine for now).
 
           3.  Return an array of `WorkspaceInfo` objects, mapping DB fields.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, review and update the
           `updateWorkspaceLockStatus` function:
@@ -261,7 +261,7 @@ tasks:
           whenever workspaces are accessed/listed. For now, let's make
           `updateWorkspaceLockStatus` update `lastAccessedAt` for all workspaces
           it processes.
-        done: false
+        done: true
   - title: Update Workspace Manager and Auto-Selector for DB Integration
     description: >
       This task adapts `workspace_manager.ts` and `workspace_auto_selector.ts`
@@ -294,7 +294,7 @@ tasks:
               -   The `Workspace` interface returned by `createWorkspace` might need to be aligned with `WorkspaceInfo` from `workspace_tracker.ts` or simply return the path and new workspace ID. For now, ensure it returns at least `{ path: string, id: string, taskId: string }`.
               -   Remove any references to `config.paths.trackingFile` or `getDefaultTrackingFilePath` for recording, as this is now handled by `recordWorkspace` internally.
               -   The file-system lock (`WorkspaceLock.acquireLock`) should still be acquired using the PID of the current bot process if `rmplan agent` is to be run directly by the bot. The `command` for `acquireLock` can be `bot-task:${taskId}`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_auto_selector.ts`:
 
@@ -327,7 +327,7 @@ tasks:
           5.  The `createNewWorkspace` method will call the updated
           `createWorkspace` from `workspace_manager.ts`. The new workspace will
           already be locked to the `taskId` by `createWorkspace`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_auto_selector.ts`:
 
@@ -336,7 +336,7 @@ tasks:
               -   The status display should primarily reflect `lockedByTaskId`. If `lockedByTaskId` is set, indicate which task has it locked.
               -   It can also show the file-system lock status (PID based) as secondary information if available.
               -   Information like `branch`, `createdAt`, `lastAccessedAt` should be fetched from the DB.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/agent.ts` (`rmplanAgent` function):
 
@@ -355,7 +355,7 @@ tasks:
               -   This means setting `lockedByTaskId` to NULL in the `workspaces` table for the workspace it used.
               -   And calling `WorkspaceLock.releaseLock()` for the file-system lock.
               -   This should happen in a `finally` block to ensure release.
-        done: false
+        done: true
   - title: Enhance Task Manager for Implementation Lifecycle
     description: >
       This task involves updating the `TaskManager` to handle the lifecycle of
@@ -400,7 +400,7 @@ tasks:
               - `originalCommandId?`: number (ID from `command_history` table)
               - `githubCommentId?`: number
               - `discordInteraction?`: any
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts`, create the `async
           startImplementationTask(options: StartImplementationOptions):
@@ -444,7 +444,7 @@ tasks:
 
           For now, this function sets up the task record. The execution part
           will be separate.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts`, create a new method `async
           processImplementationTask(taskId: string): Promise<void>`. This method
@@ -482,7 +482,7 @@ tasks:
 
           4.  Notify progress (e.g. "Workspace ready", "Starting
           implementation") via `thread_manager`.
-        done: false
+        done: true
   - title: Integrate `rmplanAgent` Invocation and Basic Logging
     description: >
       This task modifies `taskManager.processImplementationTask` to actually
@@ -522,7 +522,7 @@ tasks:
           `inquirer/prompts` if `options.nonInteractive` is not set. The bot
           should always invoke it non-interactively. The options passed to
           `rmplanAgent` from `taskManager` should enforce this.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts`, modify the
           `processImplementationTask` method:
@@ -559,7 +559,7 @@ tasks:
                   - `message`: A summary like "rmplanAgent execution log".
                   - `fullContent`: The captured stdout/stderr string from `rmplanAgent`.
           5.  Notify completion/failure via `thread_manager`.
-        done: false
+        done: true
   - title: Add Bot Commands for Implementation
     description: >
       Implement the `@bot implement` command for GitHub and `/rm-implement
@@ -594,7 +594,7 @@ tasks:
                   - `githubCommentId: payload.comment.id`
                   - `originalCommandId: originalCommandId`
               -   The call to `startImplementationTask` is asynchronous. The webhook should return quickly.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/discord_bot.ts`:
 
@@ -620,7 +620,7 @@ tasks:
                   - `discordInteraction`: simplified interaction details (id, channelId, token)
                   - `originalCommandId: originalCommandId`
               - This call is asynchronous. The interaction reply should be handled appropriately (e.g., `deferReply` then `editReply` or `followUp` if `startImplementationTask` takes too long for an initial reply, though `startImplementationTask` itself is quick, the processing is separate).
-        done: false
+        done: true
   - title: Develop PR Creation Utility
     description: >
       Create a utility (class or set of functions) that handles the Git
@@ -653,7 +653,7 @@ tasks:
           can use or adapt logic from `commitAll` but be specific to a workspace
           path and ensure it only commits if there are changes. `git commit -am
           "${message}"`.
-        done: false
+        done: true
       - prompt: >
           Create a new file `src/bot/utils/pr_creator.ts`.
 
@@ -706,7 +706,7 @@ tasks:
           6.  If PR creation is successful, return `prNumber` and `prUrl`.
 
           7.  If any step fails, return an `error` message.
-        done: false
+        done: true
   - title: Integrate PR Creation into Task Manager
     description: >
       Modify `TaskManager.processImplementationTask` to call the new `PRCreator`
@@ -756,7 +756,7 @@ tasks:
                       -   Store the error in `tasks.errorMessage`.
                       -   Log the failure.
                       -   Notify failure via `thread_manager`.
-        done: false
+        done: true
   - title: Implement Database Logger for `rmplanAgent`
     description: >
       Create a `DatabaseLoggerAdapter` that writes log entries to the
@@ -806,7 +806,7 @@ tasks:
           into the `message` field of regular `log` calls if that's simpler. For
           now, let them log with level 'info', prefixing the message with
           "STDOUT:" or "STDERR:".
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts` (`processImplementationTask`
           method):
@@ -848,7 +848,7 @@ tasks:
 
           - Ensure `rmplanAgent` options passed from `task_manager` include
           `noLog: true` (or equivalent based on actual option name).
-        done: false
+        done: true
   - title: Implement Log Retrieval Command
     description: >
       Add the `/rm-logs <task-id>` Discord command to allow users to retrieve
@@ -883,7 +883,7 @@ tasks:
               - Send the formatted logs as a reply (e.g., `editReply` or `followUp`).
               - Handle cases where the `task-id` is not found or has no logs.
               - Update `commandHistoryTable` for this command's execution (success/failure).
-        done: false
+        done: true
   - title: Real-time Step Progress Reporting
     description: >
       Modify `rmplan agent`'s `markStepDone` to support a callback for reporting
@@ -910,7 +910,7 @@ tasks:
           marked done and before writing the updated plan file:
               -   If `progressCallback` is provided, invoke it for each step being marked as done.
               -   Pass an object containing `taskIndex` (relative to plan tasks array), `stepIndex` (relative to task steps array), `stepPrompt` (the prompt of the completed step), `taskTitle` (title of the current task), and `planFile` (path to the plan file being modified).
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/thread_manager.ts`:
 
@@ -926,7 +926,7 @@ tasks:
                   -   If not found, or if editing is too complex for MVP, post a *new* comment with the `progressMessage`. (Let's start with posting a new comment, and note that in-place updates are a future enhancement, unless simple to add).
                   -   The project plan specifically asks for "GitHub comments updated in-place with status". So, attempt to edit the original bot comment. The `threads` table stores `external_id` which is the GitHub comment ID for GitHub threads.
               -   Requires `octokit.rest.issues.updateComment()` and `discordClient` channel/thread message sending.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts` (`processImplementationTask`
           method):
@@ -958,7 +958,7 @@ tasks:
 
           - When calling `markStepDone` within `rmplanAgent`, pass this
           `progressCallback` through.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts`:
 
@@ -972,7 +972,7 @@ tasks:
           <new_status>", new_status)` in addition to specific messages. This
           will ensure the in-place GitHub comment gets updated with the latest
           overall status.
-        done: false
+        done: true
   - title: Implement Task Status Command
     description: >
       Add the `/rm-status [task-id]` Discord command to allow users to query the
@@ -1006,7 +1006,7 @@ tasks:
                   - Reply with the formatted status.
               - If no task is found (for the given ID or for the user), reply accordingly.
               - Update `commandHistoryTable` for this command's execution.
-        done: false
+        done: true
   - title: (Stretch) Capture `TodoWrite` from Claude Code Executor
     description: >
       Enhance the `ClaudeCodeExecutor` to parse its JSON stream output,
@@ -1041,4 +1041,4 @@ tasks:
               - In `DatabaseLoggerAdapter`, if `args[0]` is a string like `'[ClaudeToolCall:TodoWrite]'` and `args[1]` is an object, format `message` as `args[0]` and `fullContent` as `JSON.stringify(args[1])`. Otherwise, current behavior.
           This relies on `ClaudeCodeExecutor` being run within a `runWithLogger`
           context using `DatabaseLoggerAdapter`.
-        done: false
+        done: true

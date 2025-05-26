@@ -289,3 +289,137 @@ export async function getCurrentCommitSha(cwd?: string): Promise<string | null> 
     return null;
   }
 }
+
+/**
+ * Pushes a branch to a remote repository.
+ * @param branchName The name of the branch to push.
+ * @param workspacePath The working directory to run the git command in.
+ * @param remoteName The name of the remote repository. Defaults to 'origin'.
+ * @returns A promise that resolves to an object indicating success and any error message.
+ */
+export async function pushBranch(
+  branchName: string,
+  workspacePath: string,
+  remoteName: string = 'origin'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const proc = logSpawn(['git', 'push', remoteName, branchName], {
+      cwd: workspacePath,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout as ReadableStream).text(),
+      new Response(proc.stderr as ReadableStream).text(),
+    ]);
+
+    if (exitCode === 0) {
+      debugLog(`Successfully pushed branch ${branchName} to ${remoteName}`);
+      return { success: true };
+    } else {
+      const errorMsg = stderr.trim() || stdout.trim() || 'Unknown error';
+      debugLog(`Failed to push branch ${branchName}. Exit code: ${exitCode}, stderr: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    debugLog(`Error pushing branch ${branchName}: ${errorMsg}`);
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * Gets the current branch name using git rev-parse.
+ * @param workspacePath The working directory to run the git command in.
+ * @returns A promise that resolves to the current branch name, or null if not on a branch.
+ */
+export async function getCurrentBranch(workspacePath: string): Promise<string | null> {
+  try {
+    const proc = logSpawn(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: workspacePath,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout as ReadableStream).text(),
+      new Response(proc.stderr as ReadableStream).text(),
+    ]);
+
+    if (exitCode === 0) {
+      const branch = stdout.trim();
+      // If HEAD is returned, we're in detached HEAD state
+      return branch === 'HEAD' ? null : branch;
+    } else {
+      debugLog(`Failed to get current branch. Exit code: ${exitCode}, stderr: ${stderr.trim()}`);
+      return null;
+    }
+  } catch (error) {
+    debugLog(`Error getting current branch: ${error}`);
+    return null;
+  }
+}
+
+/**
+ * Commits all changes in the working directory with the given message.
+ * @param workspacePath The working directory to run the git command in.
+ * @param message The commit message.
+ * @returns A promise that resolves to an object indicating success and any error message.
+ */
+export async function commitChanges(
+  workspacePath: string,
+  message: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // First check if there are any changes to commit
+    const statusProc = logSpawn(['git', 'status', '--porcelain'], {
+      cwd: workspacePath,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const [statusExitCode, statusStdout] = await Promise.all([
+      statusProc.exited,
+      new Response(statusProc.stdout as ReadableStream).text(),
+    ]);
+
+    if (statusExitCode !== 0) {
+      return { success: false, error: 'Failed to check git status' };
+    }
+
+    // If no changes, return success without committing
+    if (statusStdout.trim() === '') {
+      debugLog('No changes to commit');
+      return { success: true };
+    }
+
+    // Commit all changes
+    const proc = logSpawn(['git', 'commit', '-am', message], {
+      cwd: workspacePath,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout as ReadableStream).text(),
+      new Response(proc.stderr as ReadableStream).text(),
+    ]);
+
+    if (exitCode === 0) {
+      debugLog(`Successfully committed changes with message: ${message}`);
+      return { success: true };
+    } else {
+      const errorMsg = stderr.trim() || stdout.trim() || 'Unknown error';
+      debugLog(`Failed to commit changes. Exit code: ${exitCode}, stderr: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    debugLog(`Error committing changes: ${errorMsg}`);
+    return { success: false, error: errorMsg };
+  }
+}

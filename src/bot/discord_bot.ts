@@ -1,17 +1,18 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } from 'discord.js';
 import { config } from './config.js';
 import { log, error, debugLog } from '../logging.js';
-import { db, commandHistory } from './db/index.js';
-import { startPlanGenerationTask } from './core/task_manager.js';
+import { db, commandHistory, taskLogs, tasks } from './db/index.js';
+import { startPlanGenerationTask, startImplementationTask } from './core/task_manager.js';
 import { parseGitHubIssueUrl } from './utils/github_utils.js';
 import { initializeThreadManager } from './core/thread_manager.js';
-import { eq } from 'drizzle-orm';
+import { eq, asc, desc } from 'drizzle-orm';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 const RMPLAN_COMMAND = 'rm-plan';
-// Add other command names here as they are defined
-// const RMIMPLEMENT_COMMAND = 'rm-implement';
+const RMIMPLEMENT_COMMAND = 'rm-implement';
+const RMLOGS_COMMAND = 'rm-logs';
+const RMSTATUS_COMMAND = 'rm-status';
 
 const commands = [
   new SlashCommandBuilder()
@@ -21,7 +22,33 @@ const commands = [
       option.setName('issue-url').setDescription('The URL of the GitHub issue').setRequired(true)
     )
     .toJSON(),
-  // Define other commands here later
+  new SlashCommandBuilder()
+    .setName(RMIMPLEMENT_COMMAND)
+    .setDescription('Implements an existing plan for a GitHub issue.')
+    .addStringOption((option) =>
+      option.setName('issue-url').setDescription('The URL of the GitHub issue').setRequired(true)
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMLOGS_COMMAND)
+    .setDescription('Retrieves execution logs for a specific task.')
+    .addStringOption((option) =>
+      option
+        .setName('task-id')
+        .setDescription('The ID of the task to retrieve logs for.')
+        .setRequired(true)
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMSTATUS_COMMAND)
+    .setDescription('Checks the status of a task.')
+    .addStringOption((option) =>
+      option
+        .setName('task-id')
+        .setDescription('The ID of the task to check. Omitting it shows your most recent task.')
+        .setRequired(false)
+    )
+    .toJSON(),
 ];
 
 const rest = new REST({ version: '10' }).setToken(config.DISCORD_TOKEN);
@@ -71,9 +98,9 @@ export async function startDiscordBot() {
           .values({
             commandName: commandName,
             platform: 'discord',
-            userId: user.id, // Discord user ID
+            userId: user.id,
             rawCommand: `/${commandName} ${options.data.map((opt) => `${opt.name}:${opt.value}`).join(' ')}`,
-            status: 'pending', // Will be updated after processing
+            status: 'pending',
           })
           .returning({ id: commandHistory.id });
         originalCommandId = insertedCmd[0]?.id;
@@ -153,7 +180,7 @@ export async function startDiscordBot() {
             id: interaction.id,
             channelId: interaction.channelId,
             token: interaction.token,
-          }, // Pass necessary details
+          },
           originalCommandId: originalCommandId,
         })
           .then((taskId) => {
@@ -169,6 +196,277 @@ export async function startDiscordBot() {
           .catch((e) => {
             error('Unhandled error from startPlanGenerationTask (Discord):', e);
           });
+      } else if (commandName === RMIMPLEMENT_COMMAND) {
+        const issueUrl = options.getString('issue-url', true);
+        log(`'/rm-implement' command received for issue URL: ${issueUrl}`);
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.reply({
+            content: `Processing /rm-implement for ${issueUrl}... Implementation will begin shortly.`,
+            ephemeral: false,
+          });
+        } catch (replyError) {
+          error('Failed to reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        // Parse repoFullName from issueUrl
+        const ghIdentifiers = parseGitHubIssueUrl(issueUrl);
+        if (!ghIdentifiers) {
+          await interaction.editReply({ content: `Invalid GitHub issue URL: ${issueUrl}` });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Invalid issue URL' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+        const repoFullName = `${ghIdentifiers.owner}/${ghIdentifiers.repo}`;
+
+        // Determine repoPath (simplified for MVP)
+        const repoPath = path.join(config.WORKSPACE_BASE_DIR, 'clones', repoFullName);
+        // Check if repoPath exists and is a directory (basic check)
+        try {
+          const stats = await fs.stat(repoPath);
+          if (!stats.isDirectory()) {
+            throw new Error('Path is not a directory.');
+          }
+          // Further check: is it a git repo? (e.g., check for .git folder)
+          await fs.stat(path.join(repoPath, '.git'));
+        } catch (e) {
+          error(
+            `[Task ${originalCommandId}] Repository path ${repoPath} not found or not a valid git clone. Please configure repository clones. Error: ${(e as Error).message}`
+          );
+          await interaction.editReply({
+            content: `Error: Repository for ${repoFullName} is not available to the bot. Please contact an admin.`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: `Repo clone not found at ${repoPath}` })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        // Asynchronously start the implementation
+        startImplementationTask({
+          platform: 'discord',
+          userId: user.id,
+          issueUrl: issueUrl,
+          repoFullName: repoFullName,
+          repoPath: repoPath,
+          discordInteraction: {
+            id: interaction.id,
+            channelId: interaction.channelId,
+            token: interaction.token,
+          },
+          originalCommandId: originalCommandId,
+        })
+          .then((taskId) => {
+            if (taskId) {
+              log(`Successfully started implementation task ${taskId} from Discord command.`);
+              // interaction.editReply might fail if too much time passed, or use followup.
+              // Thread manager will handle notifications.
+            } else {
+              log(`Implementation task failed to start from Discord command.`);
+              // interaction.editReply({ content: `Failed to start implementation for ${issueUrl}. Admins notified.` });
+            }
+          })
+          .catch((e) => {
+            error('Unhandled error from startImplementationTask (Discord):', e);
+          });
+      } else if (commandName === RMSTATUS_COMMAND) {
+        const taskId = options.getString('task-id', false);
+        log(
+          `'/rm-status' command received from user ${user.id}${taskId ? ` for task ID: ${taskId}` : ' (no task ID provided)'}`
+        );
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.deferReply({ ephemeral: false });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          let task;
+
+          if (taskId) {
+            // Query for specific task ID
+            const [foundTask] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+            task = foundTask;
+          } else {
+            // Query for user's most recent task
+            const [foundTask] = await db
+              .select()
+              .from(tasks)
+              .where(eq(tasks.createdByUserId, user.id))
+              .orderBy(desc(tasks.createdAt))
+              .limit(1);
+            task = foundTask;
+          }
+
+          if (!task) {
+            const message = taskId
+              ? `No task found with ID: ${taskId}`
+              : `No tasks found for your user ID: ${user.id}`;
+            await interaction.editReply({
+              content: message,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'success' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Format task status message
+          let statusMessage = `## Task Status\n\n`;
+          statusMessage += `**Task ID:** ${task.id}\n`;
+          statusMessage += `**Type:** ${task.taskType || 'Unknown'}\n`;
+          statusMessage += `**Status:** ${task.status || 'Unknown'}\n`;
+          if (task.issueUrl) {
+            statusMessage += `**Issue URL:** ${task.issueUrl}\n`;
+          }
+          if (task.prNumber) {
+            statusMessage += `**PR Number:** #${task.prNumber}\n`;
+          }
+          statusMessage += `**Created At:** ${task.createdAt ? new Date(task.createdAt).toLocaleString() : 'Unknown'}\n`;
+          statusMessage += `**Updated At:** ${task.updatedAt ? new Date(task.updatedAt).toLocaleString() : 'Unknown'}\n`;
+
+          if (task.errorMessage) {
+            statusMessage += `\n**Error:** ${task.errorMessage}\n`;
+          }
+
+          await interaction.editReply({
+            content: statusMessage,
+          });
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to retrieve status for task:`, err);
+          await interaction.editReply({
+            content: `Error retrieving task status: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
+      } else if (commandName === RMLOGS_COMMAND) {
+        const taskId = options.getString('task-id', true);
+        log(`'/rm-logs' command received for task ID: ${taskId}`);
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.deferReply({ ephemeral: false });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          // Query the task_logs table for all entries where taskId matches
+          const logs = await db
+            .select()
+            .from(taskLogs)
+            .where(eq(taskLogs.taskId, taskId))
+            .orderBy(asc(taskLogs.timestamp));
+
+          if (logs.length === 0) {
+            await interaction.editReply({
+              content: `No logs found for task ID: ${taskId}`,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'success' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Format the logs
+          let formattedLogs = `Logs for Task ID: ${taskId}\n\n`;
+          for (const logEntry of logs) {
+            const timestamp = logEntry.timestamp
+              ? new Date(logEntry.timestamp).toISOString()
+              : 'Unknown';
+            formattedLogs += `[${timestamp}] [${logEntry.logLevel}] ${logEntry.message}\n`;
+          }
+
+          // Check if logs exceed Discord's message limit (2000 chars)
+          if (formattedLogs.length <= 1990) {
+            // Send in a code block
+            await interaction.editReply({
+              content: `\`\`\`\n${formattedLogs}\n\`\`\``,
+            });
+          } else {
+            // Send as a text file attachment
+            const buffer = Buffer.from(formattedLogs, 'utf-8');
+            await interaction.editReply({
+              content: `Logs for task ${taskId} are too long to display. Attached as a file.`,
+              files: [
+                {
+                  attachment: buffer,
+                  name: `task_${taskId}_logs.txt`,
+                  description: `Execution logs for task ${taskId}`,
+                },
+              ],
+            });
+          }
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to retrieve logs for task ${taskId}:`, err);
+          await interaction.editReply({
+            content: `Error retrieving logs for task ${taskId}: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
       } else {
         try {
           await interaction.reply({ content: `Unknown command: ${commandName}`, ephemeral: true });

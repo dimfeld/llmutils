@@ -11,7 +11,7 @@ import {
   logSpawn,
   spawnAndLogOutput,
 } from '../../rmfilter/utils.ts';
-import { debugLog } from '../../logging.ts';
+import { debugLog, log } from '../../logging.ts';
 import chalk from 'chalk';
 
 const claudeCodeOptionsSchema = z.object({
@@ -61,6 +61,7 @@ export class ClaudeCodeExecutor implements Executor {
           'MultiEdit',
           `Write`,
           'WebFetch',
+          'TodoWrite',
           `Bash(cd:*)`,
           'Bash(ls:*)',
           'Bash(mkdir:*)',
@@ -267,6 +268,63 @@ function formatJsonMessage(input: string) {
             chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
             `File path: ${filePath}\nNumber of lines: ${lineCount}`
           );
+        } else if (
+          content.name === 'TodoWrite' &&
+          content.input &&
+          typeof content.input === 'object' &&
+          'todos' in content.input
+        ) {
+          // Special handling for TodoWrite tool
+          const todos = content.input.todos as Array<{
+            id: string;
+            content: string;
+            status: string;
+            priority: string;
+          }>;
+          outputLines.push(
+            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+            `Todo count: ${todos.length}`
+          );
+
+          // Log structured data for database capture
+          log('[ClaudeToolCall:TodoWrite]', {
+            toolName: 'TodoWrite',
+            todoCount: todos.length,
+            todos: todos.map((t) => ({
+              id: t.id,
+              content: t.content.substring(0, 100) + (t.content.length > 100 ? '...' : ''),
+              status: t.status,
+              priority: t.priority,
+            })),
+          });
+        } else if (
+          (content.name === 'Edit' || content.name === 'MultiEdit') &&
+          content.input &&
+          typeof content.input === 'object'
+        ) {
+          // Special handling for Edit/MultiEdit tools
+          const filePath = (content.input as any).file_path || (content.input as any).filePath;
+          if (filePath) {
+            outputLines.push(
+              chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+              `File: ${filePath}`
+            );
+
+            // Log structured data for database capture
+            log(`[ClaudeToolCall:${content.name}]`, {
+              toolName: content.name,
+              filePath: filePath,
+              details:
+                content.name === 'MultiEdit' && (content.input as any).edits
+                  ? `${(content.input as any).edits.length} edits`
+                  : 'single edit',
+            });
+          } else {
+            outputLines.push(
+              chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+              yaml.stringify(content.input ?? {})
+            );
+          }
         } else {
           outputLines.push(
             chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),

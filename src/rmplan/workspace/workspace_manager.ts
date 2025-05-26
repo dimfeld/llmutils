@@ -5,7 +5,10 @@ import { spawnAndLogOutput } from '../../rmfilter/utils.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, RmplanConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
-import { getDefaultTrackingFilePath, recordWorkspace } from './workspace_tracker.js';
+import { recordWorkspace, lockWorkspaceToTask } from './workspace_tracker.js';
+import { db } from '../../bot/db/index.js';
+import { workspaces as workspacesTable } from '../../bot/db/index.js';
+import { eq } from 'drizzle-orm';
 
 /**
  * Interface representing a created workspace
@@ -17,6 +20,8 @@ export interface Workspace {
   originalPlanFilePath: string;
   /** Unique identifier for the task */
   taskId: string;
+  /** Unique identifier for the workspace record */
+  id: string;
 }
 
 /**
@@ -176,33 +181,38 @@ export async function createWorkspace(
 
   debugLog(`Successfully created workspace at ${targetClonePath}`);
 
+  // Record the workspace info for tracking
+  const workspaceId = await recordWorkspace({
+    taskId,
+    originalPlanFile: originalPlanFilePath,
+    repositoryUrl: repositoryUrl,
+    workspacePath: targetClonePath,
+    branch: branchName,
+  });
+
+  // Lock the workspace to this task (application-level lock)
+  try {
+    await lockWorkspaceToTask(targetClonePath, taskId);
+    debugLog(`Locked workspace ${targetClonePath} to task ${taskId}`);
+  } catch (error) {
+    log(`Warning: Failed to lock workspace to task: ${String(error)}`);
+    // This is not fatal, continue
+  }
+
   // Create workspace object
   const workspace = {
     path: targetClonePath,
     originalPlanFilePath,
     taskId,
+    id: workspaceId,
   };
 
-  // Record the workspace info for tracking
-  const trackingFilePath = config.paths?.trackingFile || getDefaultTrackingFilePath();
-  await recordWorkspace(
-    {
-      taskId,
-      originalPlanFilePath,
-      repositoryUrl: repositoryUrl,
-      workspacePath: targetClonePath,
-      branch: branchName,
-      createdAt: new Date().toISOString(),
-    },
-    trackingFilePath
-  );
-
-  // Acquire lock for the workspace
+  // Acquire filesystem lock for the workspace using bot process PID
   try {
-    await WorkspaceLock.acquireLock(targetClonePath, `rmplan agent --workspace ${taskId}`);
+    await WorkspaceLock.acquireLock(targetClonePath, `bot-task:${taskId}`);
     WorkspaceLock.setupCleanupHandlers(targetClonePath);
   } catch (error) {
-    log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
+    log(`Warning: Failed to acquire workspace filesystem lock: ${String(error)}`);
     // Continue without lock - this isn't fatal
   }
 

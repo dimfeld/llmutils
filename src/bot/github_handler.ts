@@ -2,7 +2,7 @@ import { db, commandHistory as commandHistoryTable } from './db/index.js';
 import { config } from './config.js';
 import { log, warn, error, debugLog } from '../logging.js';
 import crypto from 'node:crypto';
-import { startPlanGenerationTask } from './core/task_manager.js';
+import { startPlanGenerationTask, startImplementationTask } from './core/task_manager.js';
 import { getGitRoot } from '../rmfilter/utils.js';
 import { eq } from 'drizzle-orm';
 import { canUserPerformAction } from './core/auth_manager.js';
@@ -128,7 +128,7 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
         platform: 'github',
         userId: commenter,
         rawCommand: fullCommand,
-        status: 'pending_auth', // New status
+        status: 'pending_auth',
       })
       .returning({ id: commandHistoryTable.id });
     originalCommandId = insertedCmd[0]?.id;
@@ -227,6 +227,64 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
       });
 
     // The webhook returns quickly while plan generation happens in background
+  } else if (command === 'implement') {
+    log(
+      `'@bot implement' command received from ${commenter} for issue ${issue.html_url}. Args: '${args}'`
+    );
+
+    // Determine the target issue URL
+    const targetIssueUrl = args && args.startsWith('http') ? args : issue.html_url;
+    const repoFullName = repository.full_name;
+
+    // Determine repoPath
+    let repoPath: string;
+    try {
+      // This assumes the bot is running in a checkout of the *target* repository.
+      // For MVP, we'll proceed with this assumption.
+      repoPath = await getGitRoot();
+      if (!repoPath) throw new Error('Could not determine git root.');
+
+      // Optional: Check if this repo matches the webhook's repository
+      // For now, we'll just log a warning if there might be a mismatch
+      debugLog(`Using repo path: ${repoPath} for repository: ${repoFullName}`);
+    } catch (e) {
+      error('Failed to determine repository path for implementation:', e);
+      // Update command_history to 'failed'
+      await db
+        .update(commandHistoryTable)
+        .set({
+          status: 'failed',
+          errorMessage: 'Failed to determine repo path',
+        })
+        .where(eq(commandHistoryTable.id, originalCommandId));
+      // TODO: Post a comment back to GitHub about the failure
+      return;
+    }
+
+    // Asynchronously start the implementation
+    startImplementationTask({
+      platform: 'github',
+      userId: commenter,
+      issueUrl: targetIssueUrl,
+      repoFullName: repoFullName,
+      repoPath: repoPath,
+      githubCommentId: payload.comment.id,
+      originalCommandId: originalCommandId,
+    })
+      .then((taskId) => {
+        if (taskId) {
+          log(`Successfully started implementation task ${taskId} from GitHub command.`);
+          // Further notifications will be handled by thread_manager
+        } else {
+          log(`Implementation task failed to start from GitHub command.`);
+          // Error already logged by startImplementationTask
+        }
+      })
+      .catch((e) => {
+        error('Unhandled error from startImplementationTask (GitHub):', e);
+      });
+
+    // The webhook returns quickly while implementation happens in background
   } else {
     log(`Unknown command: @bot ${command}`);
     // Update command_history to 'failed' for unknown commands

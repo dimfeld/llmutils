@@ -29,6 +29,15 @@ await mock.module('../actions.js', () => ({
   executePostApplyCommand: mockExecutePostApplyCommand,
 }));
 
+// Mock workspace tracker to avoid database initialization
+const mockRecordWorkspace = mock(async () => 'workspace-id-123');
+const mockLockWorkspaceToTask = mock(async () => {});
+
+await mock.module('./workspace_tracker.js', () => ({
+  recordWorkspace: mockRecordWorkspace,
+  lockWorkspaceToTask: mockLockWorkspaceToTask,
+}));
+
 // Import the module under test after all mocks are set up
 import { createWorkspace } from './workspace_manager.js';
 import type { RmplanConfig } from '../configSchema.js';
@@ -51,6 +60,10 @@ describe('createWorkspace', () => {
     mockDebugLog.mockReset();
     mockSpawnAndLogOutput.mockReset();
     mockExecutePostApplyCommand.mockReset();
+    mockRecordWorkspace.mockReset();
+    mockLockWorkspaceToTask.mockReset();
+    // Reset mockRecordWorkspace to return a default ID
+    mockRecordWorkspace.mockImplementation(async () => 'workspace-id-123');
   });
 
   afterEach(async () => {
@@ -110,6 +123,7 @@ describe('createWorkspace', () => {
       path: expect.stringContaining('repo-task-123'),
       originalPlanFilePath: planPath,
       taskId,
+      id: 'workspace-id-123',
     });
 
     // Verify log calls
@@ -118,6 +132,10 @@ describe('createWorkspace', () => {
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining('Creating and checking out branch')
     );
+
+    // Verify workspace was recorded and locked
+    expect(mockRecordWorkspace).toHaveBeenCalled();
+    expect(mockLockWorkspaceToTask).toHaveBeenCalledWith(targetClonePath, taskId);
 
     // Verify the workspace directory was actually created
     const stats = await fs.stat(result!.path);
@@ -496,6 +514,7 @@ describe('createWorkspace', () => {
       path: expect.stringContaining('repo-task-123'),
       originalPlanFilePath: planPath,
       taskId,
+      id: 'workspace-id-123',
     });
 
     // Verify that we logged the command failure but continued
@@ -550,6 +569,7 @@ describe('createWorkspace', () => {
       path: expect.stringContaining('repo-task-123'),
       originalPlanFilePath: planPath,
       taskId,
+      id: 'workspace-id-123',
     });
 
     // Verify executePostApplyCommand was not called

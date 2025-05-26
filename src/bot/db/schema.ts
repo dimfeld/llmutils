@@ -12,6 +12,7 @@ export const tasks = sqliteTable('tasks', {
   workspacePath: text('workspace_path'),
   planFilePath: text('plan_file_path'),
   prNumber: integer('pr_number'),
+  branch: text('branch'),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(current_timestamp)`),
   updatedAt: integer('updated_at', { mode: 'timestamp' })
     .default(sql`(current_timestamp)`)
@@ -79,4 +80,21 @@ export const taskArtifacts = sqliteTable('task_artifacts', {
   filePath: text('file_path').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(current_timestamp)`),
   metadata: text('metadata'),
+});
+
+// Workspaces table
+export const workspaces = sqliteTable('workspaces', {
+  id: text('id').primaryKey(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => tasks.id),
+  repositoryUrl: text('repository_url').notNull(),
+  workspacePath: text('workspace_path').notNull().unique(),
+  branch: text('branch').notNull(),
+  originalPlanFile: text('original_plan_file'),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(current_timestamp)`),
+  lastAccessedAt: integer('last_accessed_at', { mode: 'timestamp' }),
+  lockedByTaskId: text('locked_by_task_id').references(() => tasks.id),
 });
