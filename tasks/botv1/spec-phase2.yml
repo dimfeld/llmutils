@@ -958,7 +958,7 @@ tasks:
 
           - When calling `markStepDone` within `rmplanAgent`, pass this
           `progressCallback` through.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts`:
 
