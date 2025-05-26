@@ -4,6 +4,7 @@ import { log, error, debugLog } from '../logging.js';
 import { db, commandHistory } from './db/index.js';
 import { startPlanGenerationTask } from './core/task_manager.js';
 import { parseGitHubIssueUrl } from './utils/github_utils.js';
+import { initializeThreadManager } from './core/thread_manager.js';
 import { eq } from 'drizzle-orm';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -50,6 +51,8 @@ export async function startDiscordBot() {
     } else {
       log('Discord bot is ready, but user information is not available.');
     }
+    // Initialize the thread manager with the Discord client
+    initializeThreadManager(client);
   });
 
   client.on(Events.InteractionCreate, (interaction) => {

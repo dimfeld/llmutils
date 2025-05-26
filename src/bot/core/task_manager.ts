@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { log, error, debugLog } from '../../logging.js';
 import { generatePlanForIssue } from './plan_generator.js';
-// import { notifyTaskStatus } from './thread_manager.js';
+import { notifyTaskCreation } from './thread_manager.js';
 
 type Task = InferSelectModel<typeof tasks>;
 type NewTask = InferInsertModel<typeof tasks>;
@@ -213,6 +213,8 @@ export class TaskManager {
     log(`[${taskId}] Received request to generate plan for issue: ${options.issueUrl}`);
 
     let taskRecordId: string | undefined;
+    // Parse issue number from URL
+    const issueNumber = parseInt(options.issueUrl.split('/').pop() || '0', 10);
 
     try {
       // 1. Create initial task record
@@ -221,6 +223,7 @@ export class TaskManager {
         .values({
           id: taskId,
           issueUrl: options.issueUrl,
+          issueNumber: issueNumber || undefined,
           repositoryFullName: options.repoFullName,
           taskType: 'plan',
           status: 'pending_planning',
@@ -245,7 +248,19 @@ export class TaskManager {
 
       // 2. Set status to 'planning'
       await db.update(tasks).set({ status: 'planning' }).where(eq(tasks.id, taskId));
-      // await notifyTaskStatus(taskId, `Planning started for ${options.issueUrl}...`, options); // TODO: Uncomment when thread_manager is ready
+      await notifyTaskCreation(
+        taskId,
+        `Planning started for ${options.issueUrl}...`,
+        {
+          platform: options.platform,
+          userId: options.userId,
+          repoFullName: options.repoFullName,
+          channelId: options.discordInteraction?.channelId,
+          commentId: options.githubCommentId,
+        },
+        options.repoFullName,
+        issueNumber || undefined
+      );
 
       // 3. Call plan generator
       const { planYamlPath, planMarkdownContent } = await generatePlanForIssue(
@@ -276,7 +291,19 @@ export class TaskManager {
       // });
 
       log(`[${taskId}] Planning task completed successfully.`);
-      // await notifyTaskStatus(taskId, `Plan generated for ${options.issueUrl}: ${planYamlPath}`, options); // TODO
+      await notifyTaskCreation(
+        taskId,
+        `Plan generated for ${options.issueUrl}: ${planYamlPath}`,
+        {
+          platform: options.platform,
+          userId: options.userId,
+          repoFullName: options.repoFullName,
+          channelId: options.discordInteraction?.channelId,
+          commentId: options.githubCommentId,
+        },
+        options.repoFullName,
+        issueNumber || undefined
+      );
 
       // Update command_history to success
       if (options.originalCommandId) {
@@ -294,7 +321,19 @@ export class TaskManager {
           .set({ status: 'failed', errorMessage: String(err), updatedAt: new Date() })
           .where(eq(tasks.id, taskRecordId));
       }
-      // await notifyTaskStatus(taskId, `Failed to generate plan for ${options.issueUrl}: ${err.message}`, options); // TODO
+      await notifyTaskCreation(
+        taskId,
+        `Failed to generate plan for ${options.issueUrl}: ${(err as Error).message}`,
+        {
+          platform: options.platform,
+          userId: options.userId,
+          repoFullName: options.repoFullName,
+          channelId: options.discordInteraction?.channelId,
+          commentId: options.githubCommentId,
+        },
+        options.repoFullName,
+        issueNumber || undefined
+      );
 
       // Update command_history to failed
       if (options.originalCommandId) {

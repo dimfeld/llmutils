@@ -11,6 +11,7 @@ export interface BotConfig {
   LOG_LEVEL: string;
   GITHUB_WEBHOOK_SECRET?: string;
   PLANNING_MODEL?: string;
+  DISCORD_DEFAULT_CHANNEL_ID?: string;
 }
 
 let _config: BotConfig | null = null;
@@ -38,6 +39,7 @@ export function loadConfig(): BotConfig {
     LOG_LEVEL: process.env.LOG_LEVEL || 'info',
     GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET,
     PLANNING_MODEL: process.env.PLANNING_MODEL,
+    DISCORD_DEFAULT_CHANNEL_ID: process.env.DISCORD_DEFAULT_CHANNEL_ID,
   };
 
   return _config;
