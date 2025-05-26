@@ -87,7 +87,7 @@ tasks:
 
           Ensure all necessary imports from `drizzle-orm/sqlite-core` and
           `drizzle-orm` are used.
-        done: false
+        done: true
       - prompt: >
           After modifying `src/bot/db/schema.ts` in the previous step, generate
           a new database migration file using Drizzle Kit.

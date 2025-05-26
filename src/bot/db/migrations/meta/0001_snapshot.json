@@ -131,12 +131,8 @@
           "name": "task_artifacts_task_id_tasks_id_fk",
           "tableFrom": "task_artifacts",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -198,12 +194,8 @@
           "name": "task_logs_task_id_tasks_id_fk",
           "tableFrom": "task_logs",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -382,12 +374,8 @@
           "name": "threads_task_id_tasks_id_fk",
           "tableFrom": "threads",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -454,9 +442,7 @@
       "indexes": {
         "user_mappings_discord_user_id_unique": {
           "name": "user_mappings_discord_user_id_unique",
-          "columns": [
-            "discord_user_id"
-          ],
+          "columns": ["discord_user_id"],
           "isUnique": true
         }
       },
@@ -536,9 +522,7 @@
       "indexes": {
         "workspaces_workspace_path_unique": {
           "name": "workspaces_workspace_path_unique",
-          "columns": [
-            "workspace_path"
-          ],
+          "columns": ["workspace_path"],
           "isUnique": true
         }
       },
@@ -547,12 +531,8 @@
           "name": "workspaces_task_id_tasks_id_fk",
           "tableFrom": "workspaces",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -560,12 +540,8 @@
           "name": "workspaces_locked_by_task_id_tasks_id_fk",
           "tableFrom": "workspaces",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "locked_by_task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["locked_by_task_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
