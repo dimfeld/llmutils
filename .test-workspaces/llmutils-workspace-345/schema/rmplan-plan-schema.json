@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/RmplanPlan",
+  "definitions": {
+    "RmplanPlan": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "string"
+        },
+        "details": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "include_imports": {
+                "type": "boolean",
+                "default": false
+              },
+              "include_importers": {
+                "type": "boolean",
+                "default": false
+              },
+              "examples": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "prompt": {
+                      "type": "string"
+                    },
+                    "examples": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "done": {
+                      "type": "boolean",
+                      "default": false
+                    }
+                  },
+                  "required": [
+                    "prompt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "title",
+              "description",
+              "files",
+              "steps"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "goal",
+        "details",
+        "tasks"
+      ],
+      "additionalProperties": false,
+      "description": "rmplan plan file schema"
+    }
+  }
+}

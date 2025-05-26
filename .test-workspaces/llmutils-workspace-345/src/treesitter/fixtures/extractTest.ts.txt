@@ -1,0 +1,48 @@
+// Utility module
+import { util, util2 as another, type Some } from './utils';
+import type { Abc } from './types';
+import fs from 'fs';
+
+// Function doc comment
+export function myFunction(a: string, b: number): string {
+    return a + b;
+}
+
+export function complexReturnType() : Promise<Abc> {
+
+}
+
+export function unionReturnType() : number|null {}
+export function intersectReturnType() : number&null {}
+
+/**
+ * Multi-line JSDoc for class
+ */
+export class MyClass implements SomeInterface {
+    constructor(public x: number) {}
+    method() {}
+}
+
+export const exportedConst: string = 'hello';
+export let exportedVar: number = 123;
+export let exportedClass: MyClass;
+
+// Interface comment
+export interface MyInterface {
+    x: number;
+    y: string;
+}
+
+/**
+ * Type alias comment
+ */
+export type MyType = 'foo' | 'bar';
+
+// Random comment
+const internalVar = 42;
+
+import * as other from './other-module';
+
+export type { a as b, c } from './reexport';
+export * from './another-reexport';
+export type * from './third-reexport';

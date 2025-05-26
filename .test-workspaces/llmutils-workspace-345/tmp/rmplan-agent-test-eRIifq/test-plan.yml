@@ -1,0 +1,9 @@
+goal: Test plan
+details: Test details
+tasks:
+  - title: Test task
+    description: Test description
+    files: []
+    steps:
+      - prompt: Test step
+        done: false

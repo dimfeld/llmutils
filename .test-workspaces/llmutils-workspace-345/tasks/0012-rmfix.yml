@@ -1,0 +1,1563 @@
+goal: Implement the `rmfix` utility, a command-line tool that runs a specified
+  command, captures its output, and if the command fails, uses `rmfilter` to
+  assemble context and assist in fixing the issue. The utility will support
+  various features like npm script detection, structured test output parsing,
+  automated fixing, and interactive failure selection.
+details: >-
+  The `rmfix` utility aims to streamline the debugging process by automating
+  context gathering for failed commands, especially test runs. It integrates
+  with `rmfilter` to leverage its context-building capabilities.
+
+
+  Key features include:
+
+  - Running arbitrary commands or npm scripts.
+
+  - Capturing and analyzing command output for failures.
+
+  - Parsing structured test output (TAP, Jest/Vitest JSON).
+
+  - Falling back to regex or LLM-based parsing for unstructured output.
+
+  - Detecting test runners (Jest, Vitest) and injecting appropriate reporters
+  for better parsing.
+
+  - Integrating with `rmfilter` by:
+      - Generating instructions based on command output.
+      - Extracting filenames from output to include in `rmfilter` context with `--with-imports`.
+      - Passing through additional arguments to `rmfilter`.
+  - Interactive selection of failures to fix.
+
+  - Command-line flags for controlling fix behavior (first failure, specific
+  file, all).
+
+  - An `--auto-fix` mode to submit context to an LLM and attempt to apply
+  suggested edits.
+
+  - Referencing YAML plan files for additional context.
+
+  - Exiting with the underlying command's exit code.
+
+
+  The implementation will be primarily in Node.js using Bun as the runtime. It
+  will involve creating a new set of files under `src/rmfix/` and leveraging
+  existing utilities from `src/common/` and `src/rmfilter/`.
+tasks:
+  - title: 1. Basic CLI Structure and Command Execution
+    description: Set up the basic command-line interface for `rmfix` using
+      `commander`. Implement the initial core logic to execute a given command,
+      capture its output (stdout, stderr, exit code), stream the output to the
+      console in real-time, and ensure `rmfix` exits with the exit code of the
+      executed command. This task also involves setting up the initial file
+      structure for the `rmfix` utility.
+    files:
+      - src/rmfix/cli.ts
+      - src/rmfix/rmfix.ts
+      - src/rmfix/types.ts
+      - src/rmfilter/utils.ts
+      - package.json
+    include_imports: false
+    include_importers: false
+    steps:
+      - prompt: >
+          Create the initial file structure for the `rmfix` utility.
+
+          In `src/rmfix/types.ts`, define an interface `RmfixCoreOptions` that
+          will hold the command to run and its arguments.
+
+          ```typescript
+
+          export interface RmfixCoreOptions {
+            command: string;
+            commandArgs: string[];
+            rmfilterArgs: string[]; // For future use
+            // Add other core options as they become clear
+          }
+
+
+          export interface RmfixRunResult {
+            stdout: string;
+            stderr: string;
+            exitCode: number;
+            fullOutput: string; // Combined stdout and stderr, interleaved
+          }
+
+          ```
+        done: true
+      - prompt: >
+          In `src/rmfix/rmfix.ts`, create an asynchronous function
+          `executeCoreCommand` that takes `command: string` and `commandArgs:
+          string[]`.
+
+          This function should:
+
+          1. Use `logSpawn` from `src/rmfilter/utils.ts` to execute the command.
+
+          2. Capture `stdout`, `stderr`, and the `exitCode`.
+
+          3. Stream `stdout` and `stderr` to the console in real-time (e.g. by
+          passing `['inherit', 'pipe', 'pipe']` or similar to `stdio` in
+          `logSpawn` and then manually piping, or by letting `logSpawn` handle
+          it if `quiet` is false). For now, let's ensure output is captured for
+          analysis AND streamed. A good way is to pipe stdout/stderr from the
+          child process and write to both a buffer and
+          `process.stdout`/`process.stderr`.
+
+          4. Collect all stdout and stderr into separate strings. Also, create a
+          combined string `fullOutput` that attempts to interleave stdout and
+          stderr chronologically (this can be approximated by collecting chunks
+          as they arrive).
+
+          5. Return an object of type `RmfixRunResult` (defined in
+          `src/rmfix/types.ts`) containing the captured `stdout`, `stderr`,
+          `exitCode`, and `fullOutput`.
+
+
+          Ensure you handle potential errors during command execution.
+
+          Import `logSpawn` from `../rmfilter/utils.ts` and `RmfixRunResult`
+          from `./types.ts`.
+        done: true
+      - prompt: >
+          In `src/rmfix/rmfix.ts`, create a main asynchronous function
+          `runRmfix` that will orchestrate the utility's logic.
+
+          For now, `runRmfix` will:
+
+          1. Accept an `options: RmfixCoreOptions` object.
+
+          2. Call `executeCoreCommand` with `options.command` and
+          `options.commandArgs`.
+
+          3. Log the captured stdout, stderr, and exit code (for debugging
+          purposes, using `console.log` for now).
+
+          4. Return the `exitCode` from `executeCoreCommand`.
+        done: true
+      - prompt: >
+          Create `src/rmfix/cli.ts`. This file will use `commander` to set up
+          the CLI for `rmfix`.
+
+          The CLI should:
+
+          1. Define a main command `rmfix <command_to_run...>`. The
+          `<command_to_run...>` part will capture the command and its arguments.
+
+          2. Parse the arguments. The arguments after `rmfix` up to a potential
+          `--` or `///` separator are for the command to be run. Arguments after
+          `--` or `///` are for `rmfilter`.
+
+          3. Implement logic to separate the command and its arguments from
+          potential `rmfilter` arguments.
+              - Find the first occurrence of `--` or `///`.
+              - Everything before is `commandToRunAndItsArgs`.
+              - Everything after is `rmfilterArgs`.
+              - The first element of `commandToRunAndItsArgs` is the `command`, the rest are `commandArgs`.
+          4. Create an `RmfixCoreOptions` object.
+
+          5. Call `runRmfix` from `src/rmfix/rmfix.ts` with these options.
+
+          6. Exit the process with the `exitCode` returned by `runRmfix`.
+
+          7. Add basic error handling for the `runRmfix` call.
+
+
+          Example usage:
+
+          `rmfix npm test -- --some-rmfilter-arg`
+
+          `rmfix my_script arg1 arg2 /// --another-rmfilter-arg`
+
+          `rmfix ls -la`
+
+
+          Make sure to import `program` from `commander` and `runRmfix` from
+          `./rmfix.ts`.
+        done: true
+      - prompt: >
+          Update `package.json` to include a `bin` entry for `rmfix` pointing to
+          `dist/rmfix/cli.js` (assuming TypeScript output goes to `dist`).
+
+          Also add `rmfix` to the `scripts` section for easy development, e.g.,
+          `"rmfix": "bun run src/rmfix/cli.ts"`.
+
+
+          Example `package.json` changes:
+
+          ```json
+
+          {
+            "name": "llmutils",
+            // ...
+            "bin": {
+              "rmfilter": "dist/rmfilter/rmfilter.js",
+              "rmfix": "dist/rmfix/cli.js" // Add this line
+            },
+            "scripts": {
+              // ...
+              "rmfix": "bun run src/rmfix/cli.ts" // Add this line
+            }
+            // ...
+          }
+
+          ```
+
+          Ensure the path in `bin` matches your build process. For Bun, it might
+          be directly `src/rmfix/cli.ts` if you don't have a separate build step
+          for CLI tools, or if Bun handles the shebang and execution. For now,
+          let's assume `bun build ./src/rmfix/cli.ts --outdir ./dist/rmfix
+          --target bun` might be a build step. If using `bun run
+          src/rmfix/cli.ts` directly, the shebang `#!/usr/bin/env bun` should be
+          at the top of `cli.ts`. Add this shebang.
+        done: true
+      - prompt: >
+          Refine `executeCoreCommand` in `src/rmfix/rmfix.ts` for output
+          handling.
+
+          Instead of just `inherit` for stdio, we need to capture it.
+
+          Modify `logSpawn` call in `executeCoreCommand`:
+
+          - Use `stdio: ['inherit', 'pipe', 'pipe']` to allow stdin passthrough,
+          and capture stdout/stderr.
+
+          - Create `stdoutChunks` and `stderrChunks` arrays.
+
+          - As data comes in from `proc.stdout` and `proc.stderr` streams:
+              - Write it to `process.stdout` and `process.stderr` respectively to stream it live.
+              - Append the decoded chunk to `stdoutChunks` or `stderrChunks`.
+              - Append to a `fullOutputChunks` array, perhaps prefixing with "STDOUT: " or "STDERR: " or just collecting them in order of arrival if possible (this is hard to do perfectly, so appending to separate buffers and then joining is fine). For `fullOutput`, a simple concatenation of final stdout and stderr is acceptable for now.
+          - After the process exits, join the chunks to form the final `stdout`,
+          `stderr` strings.
+
+          - For `fullOutput`, let's make it a simple concatenation: `const
+          fullOutput =
+          \`Stdout:\\n\${stdoutOutput}\\nStderr:\\n\${stderrOutput}\`;`
+
+
+          This ensures output is both streamed and captured.
+
+          The `logSpawn` function from `src/rmfilter/utils.ts` already has some
+          logic for `quiet` and `debug`. We should ensure our usage doesn't
+          conflict. If `quiet` is true, `logSpawn` might set stdout/stderr to
+          `ignore`. We need to ensure we can always capture it.
+
+          Let's adjust: `logSpawn` should be called with options that ensure
+          `stdout` and `stderr` are 'pipe' if we need to capture them,
+          regardless of the global `quiet` flag for `rmfix`'s own logging. The
+          `quiet` flag in `logSpawn` primarily affects whether *it* logs the
+          command or silences the *spawned process's* output to the console if
+          not piped.
+
+
+          Revised `executeCoreCommand` structure:
+
+          ```typescript
+
+          import { logSpawn } from '../rmfilter/utils.ts'; // Assuming logSpawn
+          is suitable
+
+          import type { RmfixRunResult } from './types.ts';
+
+          import {Writable} from 'node:stream';
+
+
+          export async function executeCoreCommand(command: string, commandArgs:
+          string[]): Promise<RmfixRunResult> {
+            const stdoutChunks: Buffer[] = [];
+            const stderrChunks: Buffer[] = [];
+            // For interleaved output, we'd need a more complex setup.
+            // For now, fullOutput will be a concatenation.
+
+            const proc = logSpawn([command, ...commandArgs], {
+              stdio: ['inherit', 'pipe', 'pipe'], // stdin from parent, capture stdout/stderr
+              // We are not using the `quiet` option of logSpawn here,
+              // as rmfix needs to capture output regardless.
+              // rmfix will have its own quiet option for its own logging.
+            });
+
+            // Stream and capture stdout
+            if (proc.stdout) {
+              for await (const chunk of proc.stdout) {
+                process.stdout.write(chunk); // Stream to console
+                stdoutChunks.push(Buffer.from(chunk));
+              }
+            }
+
+            // Stream and capture stderr
+            if (proc.stderr) {
+              for await (const chunk of proc.stderr) {
+                process.stderr.write(chunk); // Stream to console
+                stderrChunks.push(Buffer.from(chunk));
+              }
+            }
+
+            const exitCode = await proc.exited;
+            const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+            const stderr = Buffer.concat(stderrChunks).toString('utf-8');
+            const fullOutput = `STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
+
+            return { stdout, stderr, exitCode, fullOutput };
+          }
+
+
+          // The runRmfix function remains the same for now:
+
+          // import type { RmfixCoreOptions } from './types.ts';
+
+          // export async function runRmfix(options: RmfixCoreOptions):
+          Promise<number> {
+
+          //   const { stdout, stderr, exitCode, fullOutput } = await
+          executeCoreCommand(options.command, options.commandArgs);
+
+          //   console.log(`Exit Code: ${exitCode}`);
+
+          //   console.log(`Stdout: ${stdout}`);
+
+          //   console.log(`Stderr: ${stderr}`);
+
+          //   // console.log(`Full Output: ${fullOutput}`); // Potentially very
+          long
+
+          //   return exitCode;
+
+          // }
+
+          ```
+
+          This approach ensures that `logSpawn`'s own console logging (like the
+          command being executed if debug is on) still works, while we capture
+          the output for `rmfix`.
+
+          The `logSpawn` function in `src/rmfilter/utils.ts` might need to be
+          checked if it forcibly changes `stdout: 'pipe'` to `stdout: 'ignore'`
+          when `quiet` is true. If so, we might need a modified version or
+          ensure `quiet` isn't passed in a way that prevents capture. For now,
+          assume `logSpawn` allows piping.
+
+          The `logSpawn` in the provided context already handles `quiet` by
+          setting `opts.stdout = 'ignore'` if not 'pipe'. This is problematic.
+
+          Let's simplify: `Bun.spawn` directly in `executeCoreCommand` for now,
+          to have full control over stdio, and add our own debug logging for the
+          command.
+        done: true
+      - prompt: >
+          Modify `src/rmfix/rmfix.ts`'s `executeCoreCommand` to use `Bun.spawn`
+          directly for more control over stdio, instead of `logSpawn`. This is
+          to ensure output is always captured correctly for `rmfix`'s purposes,
+          while still being streamed.
+
+
+          **src/rmfix/rmfix.ts:**
+
+          ```typescript
+
+          import type { RmfixRunResult } from './types.ts';
+
+          import { debugLog } from '../logging.ts'; // Assuming src/logging.ts
+          exists and is similar to rmfilter's
+
+
+          export async function executeCoreCommand(command: string, commandArgs:
+          string[]): Promise<RmfixRunResult> {
+            debugLog(`Executing command: ${command} ${commandArgs.join(' ')}`);
+
+            const proc = Bun.spawn([command, ...commandArgs], {
+              stdio: ['inherit', 'pipe', 'pipe'], // stdin from parent, capture stdout/stderr
+              env: process.env, // Inherit environment
+              cwd: process.cwd(), // Run in current working directory
+            });
+
+            const stdoutChunks: Buffer[] = [];
+            const stderrChunks: Buffer[] = [];
+
+            const drainStream = async (stream: ReadableStream<Uint8Array>, outputBuffer: Buffer[], consolePipe: NodeJS.WritableStream) => {
+              const reader = stream.getReader();
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  consolePipe.write(value);
+                  outputBuffer.push(Buffer.from(value));
+                }
+              } finally {
+                reader.releaseLock();
+              }
+            };
+
+            const stdoutPromise = proc.stdout ? drainStream(proc.stdout, stdoutChunks, process.stdout) : Promise.resolve();
+            const stderrPromise = proc.stderr ? drainStream(proc.stderr, stderrChunks, process.stderr) : Promise.resolve();
+
+            await Promise.all([stdoutPromise, stderrPromise]);
+
+            const exitCode = await proc.exited;
+            const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+            const stderr = Buffer.concat(stderrChunks).toString('utf-8');
+            // For fullOutput, a simple concatenation is fine for now.
+            // A more sophisticated interleaving would require timestamping or merging chunks as they arrive.
+            const fullOutput = `STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
+
+            debugLog(`Command finished with exit code: ${exitCode}`);
+            return { stdout, stderr, exitCode, fullOutput };
+          }
+
+
+          // The runRmfix function remains the same for now:
+
+          // import type { RmfixCoreOptions } from './types.ts';
+
+          // export async function runRmfix(options: RmfixCoreOptions):
+          Promise<number> {
+
+          //   const { stdout, stderr, exitCode, fullOutput } = await
+          executeCoreCommand(options.command, options.commandArgs);
+
+          //   console.log(`Exit Code: ${exitCode}`);
+
+          //   console.log(`Stdout: ${stdout}`);
+
+          //   console.log(`Stderr: ${stderr}`);
+
+          //   // console.log(`Full Output: ${fullOutput}`); // Potentially very
+          long
+
+          //   return exitCode;
+
+          // }
+
+          ```
+
+          You will need to create `src/logging.ts` if it doesn't exist, or
+          adjust the import. For now, let's assume `debugLog` is available. If
+          `src/logging.ts` is not in the provided files, use `console.log` for
+          `debugLog` and add a TODO to replace it.
+
+          The provided files do not include `src/logging.ts`. Let's use
+          `console.log` for now.
+
+          Replace `debugLog` with `console.log` prefixed with `[DEBUG_RMFix]`
+          for now.
+        done: true
+  - title: 2. NPM Script Detection
+    description: Enhance the command execution logic to detect if the provided
+      command is an npm script defined in `package.json`. If it is, the command
+      should be run using the appropriate package manager (`npm run`, `bun run`,
+      or `yarn run`, chosen based on lockfile presence or defaulting to `npm
+      run`).
+    files:
+      - src/rmfix/command.ts
+      - src/rmfix/rmfix.ts
+      - src/rmfix/types.ts
+    include_imports: false
+    include_importers: false
+    steps:
+      - prompt: >
+          Create a new file `src/rmfix/command.ts`. This file will contain logic
+          related to preparing and running commands.
+
+
+          In `src/rmfix/command.ts`, implement a function
+          `detectPackageManager(): Promise<'npm' | 'bun' | 'yarn'>`.
+
+          This function should:
+
+          1. Check for `bun.lockb` in the current directory. If found, return
+          `'bun'`.
+
+          2. Check for `yarn.lock`. If found, return `'yarn'`.
+
+          3. Check for `package-lock.json`. If found, return `'npm'`.
+
+          4. If none are found, default to `'npm'`.
+
+          Use `Bun.file().exists()` for checking file existence.
+        done: true
+      - prompt: >
+          In `src/rmfix/command.ts`, implement an asynchronous function
+          `prepareCommand(command: string, commandArgs: string[]): Promise<{
+          finalCommand: string, finalArgs: string[] }>`.
+
+          This function should:
+
+          1. Check if a `package.json` file exists in the current working
+          directory.
+
+          2. If `package.json` exists:
+              a. Read and parse `package.json`.
+              b. Check if the `command` (the first argument to `rmfix`) exists as a key in the `scripts` section of `package.json`.
+              c. If it's a script:
+                  i. Call `detectPackageManager()` to determine the package manager.
+                  ii. Prepend the appropriate run command (e.g., `npm run`, `bun run`, `yarn run`) to the command. The original `command` becomes an argument to the package manager's run command.
+                  iii. The `finalCommand` will be the package manager (e.g., `npm`, `bun`, `yarn`), and `finalArgs` will be `['run', originalCommand, ...commandArgs]`.
+          3. If it's not an npm script (or no `package.json`), the
+          `finalCommand` is the original `command` and `finalArgs` are the
+          original `commandArgs`.
+
+          4. Return an object `{ finalCommand, finalArgs }`.
+
+          Handle potential errors like `package.json` not found or being
+          unparseable gracefully (treat as not an npm script).
+        done: true
+      - prompt: >
+          Modify `src/rmfix/rmfix.ts`:
+
+          1. Import `prepareCommand` from `./command.ts`.
+
+          2. In `runRmfix` function, before calling `executeCoreCommand`, call
+          `prepareCommand` with `options.command` and `options.commandArgs`.
+
+          3. Use the `finalCommand` and `finalArgs` returned by `prepareCommand`
+          when calling `executeCoreCommand`.
+
+
+          Update `RmfixCoreOptions` in `src/rmfix/types.ts` if necessary (though
+          it seems fine as `command` and `commandArgs` are the initial ones).
+
+          The `executeCoreCommand` function itself doesn't need to change, as it
+          just runs whatever command and args it's given.
+        done: true
+      - prompt: >
+          Add tests for `prepareCommand` in a new file
+          `src/rmfix/command.test.ts`.
+
+          Use Bun's test runner.
+
+          1.  **Test Case 1: Simple command (not an npm script)**
+              -   Mock `package.json` to not exist or not contain the script.
+              -   Assert that `prepareCommand("ls", ["-la"])` returns `{ finalCommand: "ls", finalArgs: ["-la"] }`.
+          2.  **Test Case 2: NPM script detection (defaulting to npm)**
+              -   Mock `package.json` with `scripts: { "test": "some-test-runner" }`.
+              -   Mock `detectPackageManager` to resolve to `'npm'`.
+              -   Assert that `prepareCommand("test", ["--watch"])` returns `{ finalCommand: "npm", finalArgs: ["run", "test", "--watch"] }`.
+          3.  **Test Case 3: Bun script detection**
+              -   Mock `package.json` with `scripts: { "dev": "vite" }`.
+              -   Mock `detectPackageManager` to resolve to `'bun'`.
+              -   Assert that `prepareCommand("dev", [])` returns `{ finalCommand: "bun", finalArgs: ["run", "dev"] }`.
+          4.  **Test Case 4: Yarn script detection**
+              -   Mock `package.json` with `scripts: { "build": "tsc" }`.
+              -   Mock `detectPackageManager` to resolve to `'yarn'`.
+              -   Assert that `prepareCommand("build", ["--project", "tsconfig.json"])` returns `{ finalCommand: "yarn", finalArgs: ["run", "build", "--project", "tsconfig.json"] }`.
+          5.  **Test Case 5: Command with no args that is an npm script**
+              -   Mock `package.json` with `scripts: { "lint": "eslint ." }`.
+              -   Mock `detectPackageManager` to resolve to `'npm'`.
+              -   Assert that `prepareCommand("lint", [])` returns `{ finalCommand: "npm", finalArgs: ["run", "lint"] }`.
+
+          Remember to use `vi.spyOn` or `jest.spyOn` (if using Jest/Vitest
+          compatibility with Bun test) for mocking `Bun.file().exists()`,
+          `Bun.file().json()`, and `detectPackageManager` within `command.ts`.
+
+          Since we are using `bun:test`, use `mock.module` or `spyOn` from
+          `bun:test`.
+
+          For mocking file system operations, you might need to create temporary
+          files or use `mock.module` to mock `fs` or `Bun.file` interactions.
+
+          A simpler approach for `detectPackageManager` tests: spy on
+          `Bun.file().exists()` directly.
+        done: true
+  - title: 3. Basic `rmfilter` Integration on Failure
+    description: If the executed command fails (non-zero exit code), `rmfix` should
+      use `rmfilter`'s `generateRmfilterOutput` function to assemble a context
+      string. This context will include basic instructions about the failure and
+      the command's output. The `rmfilter` arguments passed after `--` or `///`
+      on the command line should be forwarded to `generateRmfilterOutput`.
+    files:
+      - src/rmfix/rmfix.ts
+      - src/rmfix/cli.ts
+      - src/rmfilter/rmfilter.ts
+      - src/rmfilter/config.ts
+      - src/rmfilter/utils.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Modify `src/rmfix/rmfix.ts`:
+
+          1. Import `generateRmfilterOutput` from `../rmfilter/rmfilter.ts`.
+
+          2. Import `GlobalValues` and `CommandParsed` types from
+          `../rmfilter/config.ts`.
+
+          3. Import `getGitRoot` from `../rmfilter/utils.ts`.
+
+          4. Update the `runRmfix` function:
+              a. After `executeCoreCommand` returns, check if `exitCode` is non-zero.
+              b. If it failed:
+                  i. Construct a basic instruction string: `The command "${options.command} ${options.commandArgs.join(' ')}" failed with exit code ${result.exitCode}.\n\nOutput:\n${result.fullOutput}\n\nPlease help fix the issue.`.
+                  ii. Prepare `GlobalValues` for `rmfilter`. Many rmfilter global options won't be set by rmfix directly yet, so use sensible defaults. Key ones to consider:
+                      - `instructions`: Set this to the instruction string created above.
+                      - `debug`, `quiet`: Can be passed from `rmfix`'s own options if we add them later. For now, set to `false`.
+                      - `model`: Can be passed from `rmfix`'s own options. For now, `undefined`.
+                  iii. Prepare `CommandParsed[]` for `rmfilter`. The `options.rmfilterArgs` (from `RmfixCoreOptions`, which `cli.ts` should populate) need to be parsed into `rmfilter`'s command structure.
+                      - The `rmfilterArgs` are like a mini-CLI string for `rmfilter`. We can use `parseArgs` from `node:util` (as `rmfilter/config.ts` does) or simplify: assume `rmfilterArgs` are primarily positional file/glob patterns for now.
+                      - For a robust solution, `rmfilter/config.ts`'s `getCurrentConfig` logic for parsing command segments could be adapted or reused if we treat `options.rmfilterArgs` as a single `rmfilter` command segment.
+                      - **Simpler approach for now**: Treat `options.rmfilterArgs` as a list of positionals for a single `rmfilter` command. Create one `CommandParsed` object where `positionals` is `options.rmfilterArgs` and `values` is empty.
+                  iv. Determine `baseDir` and `gitRoot` for `generateRmfilterOutput`. `gitRoot` can be found using `getGitRoot()`. `baseDir` is `process.cwd()`.
+                  v. Call `generateRmfilterOutput({ globalValues, commandsParsed }, baseDir, gitRoot, constructedInstructionString)`.
+                      Note: `generateRmfilterOutput` takes `editorInstructions` as its last arg, which is concatenated. We can pass our constructed string there. The `globalValues.instructions` can be an array.
+                  vi. Log the `finalOutput` from `generateRmfilterOutput` to the console.
+        done: true
+      - prompt: >
+          Update `src/rmfix/types.ts`:
+
+          Modify `RmfixCoreOptions` to include `rmfixGlobalOptions` which can
+          store flags like `--debug`, `--quiet` for `rmfix` itself, and also the
+          `rmfilterArgs`.
+
+          ```typescript
+
+          export interface RmfixCliOptions { // Options specific to rmfix's own
+          behavior
+            debug?: boolean;
+            quiet?: boolean;
+            // ... other rmfix specific flags will go here
+          }
+
+
+          export interface RmfixCoreOptions {
+            command: string;
+            commandArgs: string[];
+            rmfilterArgs: string[];
+            cliOptions: RmfixCliOptions; // rmfix's own CLI flags
+          }
+
+          ```
+
+          The `runRmfix` function in `src/rmfix/rmfix.ts` will now take
+          `RmfixCoreOptions`.
+
+          The `cli.ts` will need to parse `rmfix`'s own options too.
+        done: true
+      - prompt: >
+          Update `src/rmfix/cli.ts` to:
+
+          1. Define and parse `rmfix`-specific options (e.g., `--debug`,
+          `--quiet`) before the `<command_to_run...>` argument.
+
+          2. Populate the `cliOptions` field in `RmfixCoreOptions`.
+
+          3. Correctly pass `rmfilterArgs` (parsed from after `--` or `///`) to
+          `RmfixCoreOptions`.
+
+
+          Example `commander` setup:
+
+          ```typescript
+
+          program
+            .option('-d, --debug', 'Enable debug logging for rmfix')
+            .option('-q, --quiet', 'Suppress rmfix informational output')
+            // ... other rmfix options
+            .argument('<command_with_args...>', 'Command to run and its arguments')
+            .action(async (commandWithArgs: string[], options: RmfixCliOptions) => {
+              // ... logic to split commandWithArgs into command, commandArgs, and rmfilterArgs ...
+              // Ensure commandWithArgs is an array of strings. Commander provides this.
+              // The first element of commandWithArgs is the command itself if no separator.
+              // If separator, then need to parse carefully.
+
+              let cmdArgsAndCommand: string[] = [];
+              let rmfilterArgs: string[] = [];
+              let separatorFound = false;
+
+              const doubleDashIndex = commandWithArgs.indexOf('--');
+              const tripleSlashIndex = commandWithArgs.indexOf('///');
+
+              let separatorIndex = -1;
+              if (doubleDashIndex !== -1 && tripleSlashIndex !== -1) {
+                separatorIndex = Math.min(doubleDashIndex, tripleSlashIndex);
+              } else if (doubleDashIndex !== -1) {
+                separatorIndex = doubleDashIndex;
+              } else if (tripleSlashIndex !== -1) {
+                separatorIndex = tripleSlashIndex;
+              }
+
+              if (separatorIndex !== -1) {
+                cmdArgsAndCommand = commandWithArgs.slice(0, separatorIndex);
+                rmfilterArgs = commandWithArgs.slice(separatorIndex + 1);
+              } else {
+                cmdArgsAndCommand = [...commandWithArgs];
+              }
+
+              if (cmdArgsAndCommand.length === 0) {
+                console.error("Error: No command specified.");
+                program.help(); // Or process.exit(1)
+                return;
+              }
+
+              const commandToRun = cmdArgsAndCommand[0];
+              const argsForCommand = cmdArgsAndCommand.slice(1);
+
+              const coreOptions: RmfixCoreOptions = {
+                command: commandToRun,
+                commandArgs: argsForCommand,
+                rmfilterArgs: rmfilterArgs,
+                cliOptions: options,
+              };
+
+              // ... call runRmfix and process.exit ...
+            });
+          program.parse(process.argv);
+
+          ```
+
+          This logic for splitting arguments needs to be robust.
+          `command_with_args...` in commander will give all remaining arguments
+          as an array.
+
+          The `debug` and `quiet` options should also be used to control
+          `rmfix`'s own logging (e.g. by setting global vars or passing them
+          around). For now, `debugLog` in `rmfix.ts` uses `console.log`. We can
+          refine this later.
+        done: true
+      - prompt: >
+          Refine the `rmfilter` integration in `src/rmfix/rmfix.ts`'s `runRmfix`
+          function.
+
+          When preparing `GlobalValues` and `CommandParsed[]` for
+          `generateRmfilterOutput`:
+
+
+          For `GlobalValues`:
+
+          - `instructions`: This should be an array. The main instruction about
+          the command failure should be one element.
+
+          - `debug`: Pass `options.cliOptions.debug`.
+
+          - `quiet`: Pass `options.cliOptions.quiet`.
+
+          - `model`: `undefined` for now.
+
+          - `editFormat`: `undefined` for now (let `rmfilter` use its default or
+          model-based default).
+
+          - Other fields can be `undefined` or default values (e.g., `false` for
+          booleans).
+
+
+          For `CommandParsed[]`:
+
+          - If `options.rmfilterArgs` exist, create one `CommandParsed` object:
+            ```typescript
+            const rmfilterCommandsParsed: CommandParsed[] = [];
+            if (options.rmfilterArgs.length > 0) {
+              // We need to parse these args. For now, treat them as positionals.
+              // A more robust way would be to use parseArgs from node:util
+              // similar to how rmfilter itself parses its command segments.
+              // Let's assume options.rmfilterArgs are mostly file paths or simple flags.
+              // We can't fully parse complex rmfilter args without its option definitions.
+              // Simplification: treat all as positionals.
+              const parsedRmfilterCmd: CommandParsed = {
+                positionals: options.rmfilterArgs,
+                values: {} // No sophisticated parsing of --flags within rmfilterArgs yet
+              };
+              rmfilterCommandsParsed.push(parsedRmfilterCmd);
+            }
+            ```
+          - Pass this `rmfilterCommandsParsed` to `generateRmfilterOutput`.
+
+
+          The call to `generateRmfilterOutput` should be:
+
+          `const { finalOutput: rmfilterOutput } = await
+          generateRmfilterOutput({ globalValues: rmfilterGlobalValues,
+          commandsParsed: rmfilterCommandsParsed }, baseDir, gitRoot,
+          mainInstructionString);`
+
+          Then log `rmfilterOutput`.
+        done: true
+  - title: 4. Filename Extraction and Enhanced `rmfilter` Context
+    description: Parse the failed command's output (stdout/stderr) to find
+      references to source code filenames. These filenames will be added to the
+      `rmfilter` arguments, along with the `--with-imports` flag, to provide
+      more relevant context for fixing the issue.
+    files:
+      - src/rmfix/rmfix.ts
+      - src/rmfilter/instructions.ts
+      - src/rmfilter/utils.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Modify `src/rmfix/rmfix.ts`'s `runRmfix` function.
+
+          If the command fails:
+
+          1. Import `extractFileReferencesFromInstructions` from
+          `../rmfilter/instructions.ts`.
+
+          2. After getting the `result` from `executeCoreCommand`, and before
+          preparing `rmfilter` arguments, call
+          `extractFileReferencesFromInstructions(process.cwd(),
+          result.fullOutput)`. This will give `{ files: string[], directories:
+          string[] }`.
+
+          3. These extracted file and directory paths are absolute. They need to
+          be made relative to `gitRoot` if `rmfilter` expects paths relative to
+          `gitRoot`, or relative to `baseDir` if `rmfilter`'s
+          `CommandParsed.positionals` are relative to `baseDir`.
+          `generateRmfilterOutput`'s `allPaths` are relative to `gitRoot`. Let's
+          convert them to be relative to `gitRoot`.
+
+          4. Get `gitRoot` using `await getGitRoot()`.
+
+          5. Convert extracted absolute paths to paths relative to `gitRoot`.
+
+          6. When preparing `rmfilterCommandsParsed`:
+              a. If there were no `options.rmfilterArgs` initially, create a new `CommandParsed` object.
+              b. Add the extracted relative file and directory paths to its `positionals` array.
+              c. In its `values` object, set `'with-imports': true`.
+              d. If there were existing `options.rmfilterArgs` (which became the first `CommandParsed` object), add the extracted files to its `positionals` and set/overwrite `'with-imports': true` in its `values`. If multiple `CommandParsed` objects are possible from `options.rmfilterArgs` (not currently, but for future), apply this to the relevant one or create a new one. For now, assume one `CommandParsed` from `options.rmfilterArgs` or create one if none.
+
+          Revised logic for `rmfilterCommandsParsed` preparation:
+
+          ```typescript
+
+          // In runRmfix, after command failure and calling
+          extractFileReferencesFromInstructions
+
+          const gitRootPath = await getGitRoot();
+
+          const baseDir = process.cwd(); // Or determined by rmfix options later
+
+
+          const { files: extractedFiles, directories: extractedDirs } = await
+          extractFileReferencesFromInstructions(baseDir, result.fullOutput);
+
+          const relativeExtractedPaths = [...extractedFiles,
+          ...extractedDirs].map(p => path.relative(gitRootPath, p));
+
+
+          let rmfilterCmdParsed: CommandParsed;
+
+          // Start with rmfilterArgs from CLI, if any
+
+          const initialPositionals = options.rmfilterArgs;
+
+          const initialValues: CommandParsed['values'] = {};
+
+
+          // If we extracted paths, add them and ensure --with-imports
+
+          if (relativeExtractedPaths.length > 0) {
+            initialPositionals.push(...relativeExtractedPaths);
+            initialValues['with-imports'] = true;
+          }
+
+
+          // If there are any positionals (either from CLI or extracted) or
+          specific values to set
+
+          if (initialPositionals.length > 0 || Object.keys(initialValues).length
+          > 0) {
+             rmfilterCmdParsed = {
+              positionals: initialPositionals,
+              // For now, rmfilterArgs from CLI don't support their own flags,
+              // so values will just be what we add programmatically.
+              values: initialValues
+            };
+            rmfilterCommandsParsed.push(rmfilterCmdParsed);
+          } else {
+            // No files from output, no args from CLI for rmfilter.
+            // We might still want to run rmfilter with just instructions.
+            // generateRmfilterOutput handles empty commandsParsed if needed.
+            // For now, if no files and no rmfilter args, commandsParsed will be empty.
+          }
+
+          ```
+
+          This ensures that `--with-imports` is set if we add files. If
+          `options.rmfilterArgs` already contained `--with-imports`, this would
+          be fine. If `options.rmfilterArgs` contained `--no-with-imports`
+          (hypothetically), this would override it. This seems acceptable.
+
+          The `extractFileReferencesFromInstructions` function might return
+          paths that are not within the `gitRoot`. We should filter those out or
+          handle them. For now, assume paths are valid.
+
+          The `baseDir` for `extractFileReferencesFromInstructions` should be
+          `process.cwd()`.
+
+          The `baseDir` for `generateRmfilterOutput` is also `process.cwd()`
+          unless specified otherwise.
+
+          The paths in `rmfilter`'s `CommandParsed.positionals` are typically
+          relative to the `baseDir` that `rmfilter` itself uses for globbing.
+          `generateRmfilterOutput` internally resolves paths relative to
+          `gitRoot` for `repomix`.
+
+          Let's ensure paths added to `rmfilterCmdParsed.positionals` are
+          relative to `baseDir` (which is `process.cwd()` for `rmfix` at this
+          stage).
+
+          So, `extractFileReferencesFromInstructions` returns absolute paths.
+          Convert them to be relative to `baseDir` for `rmfilter`'s
+          `positionals`.
+        done: true
+      - prompt: >
+          Refine path handling for `extractFileReferencesFromInstructions` and
+          `rmfilter` integration in `src/rmfix/rmfix.ts`.
+
+
+          1.  The `baseDir` for `rmfix` operations (like running the command,
+          interpreting output paths) will be `process.cwd()`. Let's call this
+          `rmfixCwd`.
+
+          2.  `extractFileReferencesFromInstructions` is called with `rmfixCwd`
+          and returns absolute paths.
+
+          3.  `rmfilter`'s `generateRmfilterOutput` also takes a `baseDir`
+          argument. This `baseDir` is used by `rmfilter` to resolve relative
+          paths in its `commandsParsed.positionals`.
+
+          4.  Let's pass `rmfixCwd` as the `baseDir` to
+          `generateRmfilterOutput`.
+
+          5.  Therefore, the absolute paths from
+          `extractFileReferencesFromInstructions` should be converted to paths
+          relative to `rmfixCwd` before being added to
+          `rmfilterCmdParsed.positionals`.
+
+
+          Updated logic snippet for `rmfilterCommandsParsed` preparation in
+          `runRmfix`:
+
+          ```typescript
+
+          // In runRmfix, after command failure
+
+          const rmfixCwd = process.cwd(); // Current working directory for rmfix
+          operations
+
+          const gitRoot = await getGitRoot(); // Git root for rmfilter's
+          internal repomix calls etc.
+
+
+          const { files: extractedAbsFiles, directories: extractedAbsDirs } =
+          await extractFileReferencesFromInstructions(rmfixCwd,
+          result.fullOutput);
+
+
+          const extractedPathsRelativeToRmfixCwd = [...extractedAbsFiles,
+          ...extractedAbsDirs].map(p => path.relative(rmfixCwd, p));
+
+
+          const rmfilterCommandsParsed: CommandParsed[] = [];
+
+          const effectiveRmfilterPositionals = [...options.rmfilterArgs]; //
+          Start with args from CLI
+
+          const rmfilterValues: CommandParsed['values'] = {};
+
+
+          if (extractedPathsRelativeToRmfixCwd.length > 0) {
+            effectiveRmfilterPositionals.push(...extractedPathsRelativeToRmfixCwd);
+            rmfilterValues['with-imports'] = true;
+          }
+
+
+          // Add existing rmfilter args flags if any (currently not parsed from
+          options.rmfilterArgs, but for future)
+
+          // For now, options.rmfilterArgs are only positionals.
+
+          // If options.rmfilterArgs included "--with-imports",
+          rmfilterValues['with-imports'] would be correctly true.
+
+
+          if (effectiveRmfilterPositionals.length > 0 ||
+          Object.keys(rmfilterValues).length > 0) {
+            const rmfilterCmdParsed: CommandParsed = {
+              positionals: effectiveRmfilterPositionals,
+              values: rmfilterValues
+            };
+            rmfilterCommandsParsed.push(rmfilterCmdParsed);
+          }
+
+
+          // ...
+
+          // Call generateRmfilterOutput:
+
+          // const { finalOutput: rmfilterOutput } = await
+          generateRmfilterOutput(
+
+          //   { globalValues: rmfilterGlobalValues, commandsParsed:
+          rmfilterCommandsParsed },
+
+          //   rmfixCwd, // This is the baseDir for rmfilter's command
+          processing
+
+          //   gitRoot,
+
+          //   mainInstructionString
+
+          // );
+
+          ```
+
+          This seems more consistent. `rmfilter` will receive paths relative to
+          `rmfixCwd` (which it uses as its `baseDir`), and it internally handles
+          conversions to `gitRoot` where necessary.
+        done: true
+  - title: 5. Structured Output Parsing - JSON (Jest/Vitest)
+    description: Implement parsing for JSON output from test runners like Jest and
+      Vitest. Define a standardized structure for test failures. Add a `--format
+      <type>` CLI option to `rmfix` and implement auto-detection (JSON first).
+      If JSON is successfully parsed and failures are found, use this structured
+      data to create more specific instructions for `rmfilter`.
+    files:
+      - src/rmfix/parsers.ts
+      - src/rmfix/types.ts
+      - src/rmfix/cli.ts
+      - src/rmfix/rmfix.ts
+    include_imports: false
+    include_importers: false
+    steps:
+      - prompt: >
+          In `src/rmfix/types.ts`, define the structure for a parsed test
+          failure:
+
+          ```typescript
+
+          export interface ParsedTestFailure {
+            testFilePath?: string; // Absolute path if available
+            testName?: string; // Name of the test or suite
+            errorMessage: string;
+            rawFailureDetails?: string; // Could be stack trace or other context
+          }
+
+
+          export type OutputFormat = 'json' | 'tap' | 'text'; // Add more as
+          needed
+
+          ```
+
+          Update `RmfixCliOptions` to include `format?: OutputFormat;`.
+
+          ```typescript
+
+          // In src/rmfix/types.ts
+
+          export interface RmfixCliOptions {
+            debug?: boolean;
+            quiet?: boolean;
+            format?: OutputFormat; // Add this
+            // ... other rmfix specific flags will go here
+          }
+
+          ```
+        done: true
+      - prompt: >
+          Create `src/rmfix/parsers.ts`.
+
+          Implement `parseJestJsonOutput(jsonString: string, baseDir: string):
+          ParsedTestFailure[]`.
+
+          This function should:
+
+          1. Parse the `jsonString`.
+
+          2. Traverse the Jest/Vitest JSON structure to find failed tests.
+              - Jest JSON format: `testResults` array, each element has `assertionResults` array. Look for `status === 'failed'`.
+              - Vitest JSON format: Similar, often has a `testResults` array or equivalent. Check Vitest documentation for its JSON reporter structure. Assume a common structure for now: `testResults: [{ assertionResults: [{ fullName, status, failureMessages, ... }], name (filePath) }]`.
+          3. For each failed test, extract:
+              - `testFilePath`: Absolute path to the test file. Jest's `name` field in `testResults` items is often the absolute path. Convert to be relative to `baseDir` if needed, or keep absolute and resolve later. Let's aim for absolute paths.
+              - `testName`: Full name of the test (e.g., `suite name test name`).
+              - `errorMessage`: Concatenation of `failureMessages`.
+              - `rawFailureDetails`: Could be the stack trace if available.
+          4. Return an array of `ParsedTestFailure` objects.
+
+          5. If parsing fails or the structure is unexpected, return an empty
+          array or throw an error that can be caught. For now, return empty
+          array on error.
+
+
+          Add a helper `isJestJson(data: any): boolean` to quickly check if
+          parsed JSON looks like Jest/Vitest output.
+        done: true
+      - prompt: >
+          In `src/rmfix/parsers.ts`, create a general parsing function:
+
+          `parseOutput(output: RmfixRunResult, format: OutputFormat | 'auto',
+          baseDir: string): ParsedTestFailure[]`.
+
+          This function will:
+
+          1. If `format` is `'json'` or (`format` is `'auto'`):
+              a. Try to parse `output.stdout` (or `output.fullOutput` if stdout is empty) as JSON.
+              b. If successful and `isJestJson` returns true, call `parseJestJsonOutput` and return its result.
+          2. If `format` is `'tap'` or (`format` is `'auto'` and JSON parsing
+          failed):
+              // Placeholder for TAP parsing - return [] for now
+          3. If `format` is `'text'` or (`format` is `'auto'` and other parsers
+          failed):
+              // Placeholder for text/regex parsing - return [] for now
+          4. If no failures found or no parser matched, return an empty array.
+        done: true
+      - prompt: >
+          Update `src/rmfix/cli.ts` to include the `--format <type>` option:
+
+          ```typescript
+
+          program
+            // ... existing options
+            .option('--format <type>', 'Specify output format (json, tap, text, auto)', 'auto')
+            // ...
+            .action(async (commandWithArgs: string[], options: RmfixCliOptions) => {
+              // ...
+              // Ensure options.format is passed to RmfixCoreOptions.cliOptions
+              // ...
+            });
+          ```
+
+          The `RmfixCliOptions` type in `types.ts` already has `format`.
+
+          Ensure the default value is `'auto'`.
+        done: true
+      - prompt: >
+          Modify `src/rmfix/rmfix.ts`'s `runRmfix` function:
+
+          1. Import `parseOutput` and `ParsedTestFailure` from `./parsers.ts`.
+
+          2. If the command fails (non-zero `exitCode`):
+              a. Call `parseOutput(result, options.cliOptions.format || 'auto', rmfixCwd)` to get `parsedFailures`.
+              b. **If `parsedFailures` is not empty:**
+                  i. Construct a new `mainInstructionString`. For each failure in `parsedFailures`:
+                      - "The test '${failure.testName}' in file '${failure.testFilePath || 'Unknown file'}' failed with message: ${failure.errorMessage}."
+                      - Append `failure.rawFailureDetails` if available.
+                  ii. Concatenate these individual failure instructions.
+                  iii. Prepend a general statement: `The command "${options.command} ${options.commandArgs.join(' ')}" failed. Please help fix the following ${parsedFailures.length} test failure(s):`
+                  iv. This new string becomes the `mainInstructionString` for `generateRmfilterOutput`.
+                  v. When preparing `rmfilterCommandsParsed`, if `parsedFailures` contains `testFilePath`s, add these file paths (relative to `rmfixCwd`) to the `positionals` array of the `rmfilter` command, and ensure `--with-imports` is set. This should merge with filenames extracted by `extractFileReferencesFromInstructions`. Use a Set to avoid duplicates before adding to positionals.
+              c. **Else (if `parsedFailures` is empty):**
+                  - Use the old generic `mainInstructionString` based on `result.fullOutput`.
+                  - File extraction logic using `extractFileReferencesFromInstructions` remains the same.
+
+          The logic for adding file paths to `rmfilter` needs to be
+          consolidated:
+
+          - Collect paths from `extractFileReferencesFromInstructions`.
+
+          - Collect paths from `parsedFailures.map(f => f.testFilePath)`.
+
+          - Combine them (unique, relative to `rmfixCwd`), and if any exist, add
+          to `rmfilter` positionals and set `--with-imports`.
+        done: true
+      - prompt: >
+          Add tests for `parseJestJsonOutput` in `src/rmfix/parsers.test.ts`.
+
+          1.  **Test Case 1: Valid Jest JSON with failures.**
+              -   Provide a sample Jest JSON string with a few failed tests.
+              -   Assert that the function returns the correct `ParsedTestFailure[]` array, including correct file paths, test names, and error messages. Ensure file paths are absolute.
+          2.  **Test Case 2: Valid Jest JSON with no failures.**
+              -   Provide a sample Jest JSON string where all tests pass.
+              -   Assert that the function returns an empty array.
+          3.  **Test Case 3: Invalid JSON string.**
+              -   Assert that the function returns an empty array (or handles the error gracefully as decided).
+          4.  **Test Case 4: JSON that is not Jest/Vitest format.**
+              -   Provide a valid JSON string that doesn't match the expected Jest/Vitest structure.
+              -   Assert that `isJestJson` returns false and `parseJestJsonOutput` (if called after `isJestJson`) returns an empty array.
+
+          Mock `baseDir` as needed. For file paths, Jest output usually contains
+          absolute paths. `parseJestJsonOutput` should preserve them as
+          absolute. The conversion to relative paths for `rmfilter` happens in
+          `runRmfix`.
+        done: true
+  - title: 6. Test Runner Detection and Reporter Injection
+    description: Detect if the command to be run is Jest or Vitest. If so, and if
+      the user hasn't already specified a JSON reporter, automatically inject
+      the appropriate arguments (e.g., `--reporter json` or `--json`) into the
+      command *before* it's executed. This increases the likelihood of getting
+      parseable JSON output.
+    files:
+      - src/rmfix/command.ts
+      - src/rmfix/rmfix.ts
+    include_imports: false
+    include_importers: false
+    steps:
+      - prompt: >
+          Modify `prepareCommand` in `src/rmfix/command.ts`:
+
+          1.  The function signature can remain `prepareCommand(command: string,
+          commandArgs: string[])`.
+
+          2.  After npm script detection (or if it's not an npm script), analyze
+          the `finalCommand` and `finalArgs`.
+
+          3.  **Detect Test Runner:**
+              -   Check if `finalCommand` (or the script being run if it was an npm script) is `jest`, `vitest`, or contains them (e.g., `npx jest`).
+          4.  **Check for Existing Reporter:**
+              -   Scan `finalArgs` for existing reporter flags that would produce JSON (e.g., `--json`, `--reporter=json`, `--reporter json`, `--outputFile`, etc. for Jest/Vitest). This check needs to be somewhat robust. For Vitest, `--reporter=json` or `--reporter json` is common. For Jest, `--json` and `--outputFile` are key. If `--json` is present, it implies JSON output to stdout. If `--outputFile test-results.json` is present, we might not get JSON on stdout.
+              -   For simplicity, first check if `finalArgs` already contains `--json`. If using Vitest, check for `--reporter json` or `--reporter=json`.
+          5.  **Inject Reporter:**
+              -   If a known test runner is detected AND no conflicting/sufficient JSON reporter is found:
+                  -   If Jest: Add `--json` to `finalArgs`. Be careful if `--outputFile` is already specified without `--json`, as `--json` directs output to stdout. If `--outputFile` is present, we might not need to inject `--json`, but then `rmfix` would need to read that file. For now, prioritize stdout: if no `--json` flag, add it.
+                  -   If Vitest: Add `--reporter=json` to `finalArgs`. (Or `--reporter json` if that's preferred, but `--reporter=json` is safer with arg parsing).
+              -   This injection should happen *before* returning `finalCommand` and `finalArgs`.
+          6.  Ensure this logic correctly handles commands that are run via
+          package managers (e.g., `npm run test` where `test` script is `jest`).
+          The `finalCommand` and `finalArgs` after npm script resolution should
+          be what's inspected.
+
+
+          Example:
+
+          If `rmfix test` and `scripts.test` is `vitest --coverage`:
+
+          - `prepareCommand` initially gets `command="test"`, `args=[]`.
+
+          - Resolves to `finalCommand="npm"`, `finalArgs=["run", "test", "--",
+          "--coverage"]` (or however npm passes args).
+
+          - The actual command run by npm is `vitest --coverage`. We need to
+          inspect this.
+
+          This is tricky. `prepareCommand` currently returns the package manager
+          command.
+
+          Alternative: `prepareCommand` could return the actual command to be
+          run *by the package manager* as well, or `rmfix` needs to be aware of
+          this.
+
+
+          Let's refine `prepareCommand`'s return type:
+
+          `Promise<{ packageManagerCommand?: string, packageManagerArgs?:
+          string[], actualCommand: string, actualArgs: string[] }>`
+
+          If it's an npm script: `packageManagerCommand` is 'npm',
+          `packageManagerArgs` is ['run', 'scriptName', '--',
+          ...scriptArgsWithInjectedReporter]. `actualCommand` is the script
+          content (e.g. 'vitest'), `actualArgs` are its args.
+
+          If not an npm script: `actualCommand` is original command,
+          `actualArgs` are original args.
+
+
+          Then `executeCoreCommand` would run `packageManagerCommand
+          packageManagerArgs` or `actualCommand actualArgs`.
+
+
+          **Revised approach for `prepareCommand`:**
+
+          It should modify the `commandArgs` that are passed *to the script*.
+
+          If `npm run test -- --watch` and `scripts.test` is `vitest`:
+
+          - `npm` will run `vitest --watch`.
+
+          - We want it to run `vitest --reporter=json --watch`.
+
+          - So, `prepareCommand` should modify the arguments that are ultimately
+          passed to `vitest`.
+
+          - If `scripts.test` is `vitest --config my.config.js`, and user runs
+          `rmfix test -- --runTestFile foo.spec.js`.
+
+          - `npm` runs `vitest --config my.config.js --runTestFile foo.spec.js`.
+
+          - We want `vitest --reporter=json --config my.config.js --runTestFile
+          foo.spec.js`.
+
+          - So, the `--reporter=json` needs to be added to the arguments for
+          `vitest`.
+
+
+          `prepareCommand(command: string, commandArgs: string[], cliOptions:
+          RmfixCliOptions)`:
+
+          - It resolves the command to `executable` and `argsForExecutable`.
+
+          - If `cliOptions.format` is already 'json', maybe don't inject.
+
+          - If `executable` is 'jest' or 'vitest':
+              - Check `argsForExecutable` for existing JSON reporters.
+              - If none, add the appropriate reporter flag to `argsForExecutable`.
+          - Return `{ finalCommand: executable, finalArgs: argsForExecutable }`.
+          This means `prepareCommand` handles both npm script resolution AND
+          reporter injection.
+        done: true
+      - prompt: >
+          Update `src/rmfix/command.ts`'s `prepareCommand` function.
+
+          The function signature should be `prepareCommand(command: string,
+          commandArgs: string[], currentFormat: OutputFormat | 'auto')`. We pass
+          `currentFormat` to avoid injecting a JSON reporter if the user
+          explicitly requests a different format or if auto-detection might pick
+          JSON later anyway. However, the goal of injection is to *enable* JSON
+          parsing. So, we should inject if `currentFormat` is `'auto'` or
+          `'json'`. If user explicitly chose `'tap'` or `'text'`, we should not
+          inject a JSON reporter.
+
+
+          Revised `prepareCommand` logic:
+
+          1.  Resolve npm script:
+              -   If `command` is an npm script (e.g., `scripts.test = "vitest run"`), then `baseExecutable = "vitest"`, `baseArgs = ["run"]`. The `commandArgs` passed to `prepareCommand` (e.g. `rmfix test -- --foo`) become additional args to `vitest run`.
+              -   So, `executable = "vitest"`, `argsForExecutable = ["run", ...commandArgs]`.
+              -   The `packageManagerCmd` would be `npm`, `packageManagerArgs` would be `['run', 'test', '--']` (or empty if no extra args).
+          2.  If not an npm script, `executable = command`, `argsForExecutable =
+          commandArgs`.
+
+          3.  **Reporter Injection Logic (applied to `executable` and
+          `argsForExecutable`):**
+              -   If `currentFormat` is `'tap'` or `'text'`, DO NOT inject a JSON reporter.
+              -   Identify if `executable` (or the first part of it, if it's like `npx vitest`) is `jest` or `vitest`.
+              -   Scan `argsForExecutable` for existing JSON reporter flags:
+                  -   Jest: `--json`, or `--reporters` containing a JSON reporter, or `--outputFile` (if `--json` is also present or implied).
+                  -   Vitest: `--reporter(?:=| )json` or a custom reporter that outputs JSON.
+              -   If runner detected AND no sufficient JSON reporter found:
+                  -   Jest: Add `--json` to `argsForExecutable`.
+                  -   Vitest: Add `--reporter=json` to `argsForExecutable`.
+              -   This injection should happen *before* returning `finalCommand` and `finalArgs`.
+          4.  Return structure:
+              `{ finalCommand: string, finalArgs: string[], wasNpmScript: boolean, npmCommand?: string, npmArgs?: string[] }`
+              -   If it was an npm script: `finalCommand` is the package manager (e.g. `npm`), `finalArgs` are `['run', scriptName, '--', ...modifiedArgsForExecutable]`.
+              -   If not an npm script: `finalCommand` is the (potentially path-resolved) `executable`, `finalArgs` are `modifiedArgsForExecutable`.
+              (This return structure is getting complex. Simpler: `prepareCommand` returns the command and args that `executeCoreCommand` should run directly. If it was an npm script, this would be `npm run test -- --injected-reporter argFromUser`.)
+
+          Let's stick to the simpler return: `{ finalCommand: string, finalArgs:
+          string[] }`. `prepareCommand` will figure out if it's an npm script,
+          and if so, the `finalCommand` will be `npm` (or `bun`/`yarn`) and
+          `finalArgs` will include `run script-name -- ...injected-args...`. The
+          injection must happen on the arguments *to the script itself*.
+
+
+          Revised `prepareCommand` in `src/rmfix/command.ts`:
+
+          ```typescript
+
+          // ... imports ...
+
+          // Assume OutputFormat is imported from ../types.ts
+
+
+          export async function prepareCommand(
+            initialCommand: string,
+            initialCommandArgs: string[],
+            currentFormat: OutputFormat | 'auto'
+          ): Promise<{ finalCommand: string; finalArgs: string[] }> {
+            let commandToExecute = initialCommand;
+            let argsToExecute = [...initialCommandArgs];
+            let scriptContent: string | undefined = undefined;
+
+            const packageJsonPath = path.join(process.cwd(), 'package.json');
+            if (await Bun.file(packageJsonPath).exists()) {
+              try {
+                const pkg = await Bun.file(packageJsonPath).json();
+                if (pkg.scripts && pkg.scripts[initialCommand]) {
+                  scriptContent = pkg.scripts[initialCommand];
+                  const packageManager = await detectPackageManager();
+
+                  // The initial command is the script name.
+                  // Args for 'npm run script -- scriptArgs'
+                  // initialCommandArgs are the scriptArgs here.
+                  commandToExecute = packageManager;
+                  // argsToExecute will be [run, scriptName, '--', ...argsForScript]
+                  // We need to inject reporter into argsForScript
+                  // For now, let's assume npm script args are simply appended after '--'
+                  // This part needs to be careful about how package managers pass args.
+                  // 'npm run SCRIPT -- ARGS_FOR_SCRIPT'
+                  // 'yarn SCRIPT ARGS_FOR_SCRIPT'
+                  // 'bun run SCRIPT -- ARGS_FOR_SCRIPT'
+
+                  // Let's simplify: if it's an npm script, we determine the *actual* command and args
+                  // the script would run, then modify *those* args, then reconstruct the npm run command.
+                  // This is too complex for prepareCommand alone.
+
+                  // Simpler: If it's an npm script, we just form the `npm run scriptname -- ...args...`
+                  // And the reporter injection logic will operate on the *script's content* + *args*.
+                  // This means `prepareCommand` needs to know the script content.
+
+                  // Let's assume the script content itself is simple like "jest" or "vitest --config file.js"
+                  // and does not contain complex shell logic.
+
+                  let [scriptExecutable, ...scriptBaseArgs] = parseCliArgsFromString(scriptContent); // Use existing parser
+
+                  // Args to be passed to the script executable: scriptBaseArgs + initialCommandArgs
+                  let effectiveScriptArgs = [...scriptBaseArgs, ...initialCommandArgs];
+
+                  // Reporter Injection Logic
+                  if (currentFormat === 'auto' || currentFormat === 'json') {
+                    const runnerName = path.basename(scriptExecutable).toLowerCase();
+                    let reporterInjected = false;
+                    if (runnerName.includes('jest') || scriptExecutable.toLowerCase().includes('jest')) {
+                      if (!effectiveScriptArgs.includes('--json') && !effectiveScriptArgs.some(arg => arg.startsWith('--outputFile='))) {
+                        // Check if any arg is --reporters and its value is json or contains json
+                        let hasJsonReporter = false;
+                        for(let i=0; i<effectiveScriptArgs.length; i++) {
+                          if(effectiveScriptArgs[i] === '--reporters' && i+1 < effectiveScriptArgs.length) {
+                             if(effectiveScriptArgs[i+1].includes('json')) hasJsonReporter = true;
+                             break;
+                          }
+                           if(effectiveScriptArgs[i].startsWith('--reporters=')) {
+                             if(effectiveScriptArgs[i].includes('json')) hasJsonReporter = true;
+                             break;
+                          }
+                        }
+                        if(!hasJsonReporter) {
+                          effectiveScriptArgs.push('--json');
+                          reporterInjected = true;
+                        }
+                      }
+                    } else if (runnerName.includes('vitest') || scriptExecutable.toLowerCase().includes('vitest')) {
+                      if (!effectiveScriptArgs.some(arg => arg.includes('reporter') && arg.includes('json'))) {
+                        effectiveScriptArgs.push('--reporter=json');
+                        reporterInjected = true;
+                      }
+                    }
+                    // if (reporterInjected) console.log('[rmfix] Injected JSON reporter into script args.');
+                  }
+
+                  // Reconstruct the command for the package manager
+                  argsToExecute = ['run', initialCommand];
+                  if (packageManager === 'yarn' && pkg.scripts[initialCommand]) { // Yarn doesn't use `run` for user-defined scripts if not ambiguous
+                       // And yarn doesn't typically use '--' unless there's a name collision or for `yarn run`
+                      argsToExecute = [initialCommand, ...argsForNpmScript];
+                  } else { // npm, bun
+                      argsToExecute = ['run', initialCommand];
+                      if (argsForNpmScript.length > 0) {
+                          argsToExecute.push('--', ...argsForNpmScript);
+                      }
+                  }
+
+                } else { // Not an npm script
+                  let effectiveCommandArgs = [...initialCommandArgs];
+                  if (currentFormat === 'auto' || currentFormat === 'json') {
+                      const runnerName = path.basename(initialCommand).toLowerCase();
+                      // Same injection logic as "Not an npm script" block above
+                      let alreadyHasJsonReporter = false;
+                      if (runnerName.includes('jest')) {
+                          alreadyHasJsonReporter = effectiveCommandArgs.includes('--json') ||
+                                                   effectiveCommandArgs.some(a => a.startsWith('--outputFile')) ||
+                                                   hasReporterArg(effectiveCommandArgs, 'jest');
+                          if (!alreadyHasJsonReporter) effectiveCommandArgs.unshift('--json');
+                      } else if (runnerName.includes('vitest')) {
+                          alreadyHasJsonReporter = hasReporterArg(effectiveCommandArgs, 'vitest');
+                          if (!alreadyHasJsonReporter) effectiveCommandArgs.unshift('--reporter=json');
+                      }
+                  }
+                  commandToExecute = initialCommand; // Could be a path, e.g. ./node_modules/.bin/jest
+                  argsToExecute = effectiveCommandArgs;
+                }
+              } catch (e) {
+                // console.error(`Error processing package.json for command ${initialCommand}: ${e}`);
+                // Fallback to treating as a direct command
+                commandToExecute = initialCommand;
+                argsToExecute = initialCommandArgs;
+              }
+            } else { // No package.json
+                let effectiveCommandArgs = [...initialCommandArgs];
+                if (currentFormat === 'auto' || currentFormat === 'json') {
+                    const runnerName = path.basename(initialCommand).toLowerCase();
+                    // Same injection logic as "Not an npm script" block above
+                    let alreadyHasJsonReporter = false;
+                    if (runnerName.includes('jest')) {
+                        alreadyHasJsonReporter = effectiveCommandArgs.includes('--json') ||
+                                                 effectiveCommandArgs.some(a => a.startsWith('--outputFile')) ||
+                                                 hasReporterArg(effectiveCommandArgs, 'jest');
+                        if (!alreadyHasJsonReporter) effectiveCommandArgs.unshift('--json');
+                    } else if (runnerName.includes('vitest')) {
+                        alreadyHasJsonReporter = hasReporterArg(effectiveCommandArgs, 'vitest');
+                        if (!alreadyHasJsonReporter) effectiveCommandArgs.unshift('--reporter=json');
+                    }
+                }
+                commandToExecute = initialCommand;
+                argsToExecute = effectiveCommandArgs;
+            }
+
+            return { finalCommand: commandToExecute, finalArgs: argsToExecute };
+          }
+
+
+          // Helper function to be added in command.ts
+
+          function hasReporterArg(args: string[], runner: 'jest' | 'vitest'):
+          boolean {
+            if (runner === 'jest') {
+              for (let i = 0; i < args.length; i++) {
+                if (args[i] === '--reporters' && i + 1 < args.length && args[i+1].includes('json')) return true;
+                if (args[i].startsWith('--reporters=') && args[i].includes('json')) return true;
+              }
+            } else if (runner === 'vitest') {
+              return args.some(arg => (arg.startsWith('--reporter=') || arg.startsWith('--reporter ')) && arg.includes('json'));
+            }
+            return false;
+          }
+
+          ```
+
+          This `prepareCommand` logic is complex. It needs
+          `parseCliArgsFromString` from `../rmfilter/utils.ts`.
+
+          The `hasReporterArg` helper should be defined within `command.ts`.
+
+          The `detectPackageManager` and `parseCliArgsFromString` imports are
+          needed.
+
+          Path import for `path.join` and `path.basename`.
+        done: true
+      - prompt: >
+          Update `src/rmfix/rmfix.ts`'s `runRmfix` function.
+
+          It should now pass `options.cliOptions.format` (which defaults to
+          'auto') to `prepareCommand`.
+
+          ```typescript
+
+          // In runRmfix
+
+          // const { command, commandArgs, cliOptions } = options;
+
+          // const { finalCommand, finalArgs } = await prepareCommand(command,
+          commandArgs, cliOptions.format || 'auto');
+
+          // const result = await executeCoreCommand(finalCommand, finalArgs);
+
+          ```
+
+          This ensures `prepareCommand` has the format information.
+        done: true
+      - prompt: >
+          Add tests for the reporter injection logic in
+          `src/rmfix/command.test.ts`.
+
+          - Test that `--json` is added for `jest` if not present and format is
+          `auto` or `json`.
+
+          - Test that `--reporter=json` is added for `vitest` if not present and
+          format is `auto` or `json`.
+
+          - Test that reporters are NOT added if `format` is `tap` or `text`.
+
+          - Test that reporters are NOT added if a JSON-compatible reporter
+          already exists in args.
+
+          - Test these scenarios for both direct commands (e.g. `rmfix jest`)
+          and npm scripts (e.g. `rmfix test` where `scripts.test="jest"`).
+
+
+          Example test structure for an npm script:
+
+          - Mock `package.json` with `scripts: { "test": "vitest --coverage" }`.
+
+          - Mock `detectPackageManager` (e.g., to 'npm').
+
+          - Call `prepareCommand("test", ["--runInBand"], "auto")`.
+
+          - Expected: `finalCommand: "npm"`, `finalArgs: ["run", "test", "--",
+          "--reporter=json", "--runInBand"]` (assuming `vitest --coverage`
+          doesn't imply JSON output and `--runInBand` is passed to vitest). The
+          order of injected vs user args might vary but `--reporter=json` should
+          be there.
+            Actually, if `scripts.test` is `vitest --coverage`, and user runs `rmfix test --user-arg`, then `npm` runs `vitest --coverage --user-arg`. We want `vitest --reporter=json --coverage --user-arg`.
+            So, the injected arg should be part of the args passed to the script.
+            The `prepareCommand` logic needs to correctly assemble this.
+            The current `prepareCommand` draft tries to prepend to `argsForNpmScript`. If `argsForNpmScript` are `["--user-arg"]`, and script is `vitest --coverage`, then `vitest --coverage --reporter=json --user-arg` is the goal.
+            The `argsToExecute` for `npm run` should be `['run', 'test', '--', '--reporter=json', '--user-arg']` if `vitest --coverage` itself doesn't have a json reporter.
+            This means the `effectiveScriptArgs` in `prepareCommand` (which combines `scriptBaseArgs` and `initialCommandArgs` from user) should be what `npm run` passes after `--`.
+            The current logic for `argsToExecute = ['run', initialCommand]; if (argsForNpmScript.length > 0) { argsToExecute.push('--', ...argsForNpmScript); }` where `argsForNpmScript` has been modified by injection seems correct.
+        done: true

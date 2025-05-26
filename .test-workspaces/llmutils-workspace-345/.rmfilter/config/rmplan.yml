@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../schema/rmplan-config-schema.json
+
+paths:
+  tasks: tasks
+defaultExecutor: claude-code
+postApplyCommands:
+  - title: Cleanup Extranous Comments
+    command: rmplan cleanup
+  - title: Format
+    command: bun run format
+    allowFailure: true
+    hideOutputOnSuccess: true

@@ -1,0 +1,310 @@
+goal: Refactor rmfind for programmatic use and add --autofind option to rmplan.
+details: >
+  This plan involves two main parts:
+
+  1. Refactor the `rmfind` tool by separating its core file-finding logic from
+  the command-line interface (CLI) wrapper. This will allow the core logic to be
+  imported and used by other tools like `rmplan`.
+
+  2. Enhance the `rmplan next` command by adding an `--autofind` option. When
+  used, this option will invoke the refactored `rmfind` core logic using the
+  current plan task's details as a query. The files found by `rmfind` will then
+  be automatically included in the list of relevant files, particularly when
+  generating context for `rmfilter`.
+tasks:
+  - title: Define rmfind Core Interface and Initial File Structure
+    description: Create the new core file for rmfind and define the basic function
+      signature and option types.
+    files:
+      - src/rmfind/rmfind.ts
+      - src/rmfind/core.ts
+    steps:
+      - prompt: >
+          Create a new file `src/rmfind/core.ts`.
+
+
+          Define an interface `RmfindOptions` in `src/rmfind/core.ts`. This
+          interface should initially include fields that will be needed by the
+          core logic, mirroring the existing command-line options in
+          `rmfind.ts`:
+
+          - `baseDir`: string
+
+          - `globs`: string[] (positionals)
+
+          - `ignoreGlobs`: string[] | undefined
+
+          - `grepPatterns`: string[] | undefined
+
+          - `query`: string | undefined
+
+          - `wholeWord`: boolean | undefined
+
+          - `expand`: boolean | undefined
+
+          - `model`: string
+
+          - `classifierModel`: string
+
+          - `grepGeneratorModel`: string
+
+          - `debug`: boolean
+
+          - `quiet`: boolean
+
+
+          Define an interface `RmfindResult` in `src/rmfind/core.ts` to
+          represent the output. Initially, it can just have:
+
+          - `files`: string[] (absolute paths)
+
+          # We might add relevance info later if needed
+
+
+          Define an empty async function `findFilesCore(options: RmfindOptions):
+          Promise<RmfindResult>` in `src/rmfind/core.ts`. Export the function
+          and the interfaces.
+
+
+          In `src/rmfind/rmfind.ts`, import `findFilesCore` and the
+          option/result types from `./core.ts`. (Leave the main logic in
+          `rmfind.ts` for now).
+        done: true
+  - title: Move Core Finding Logic to rmfind Core
+    description: Transfer the file finding logic (glob, grep, AI query) from
+      rmfind.ts to core.ts.
+    files:
+      - src/rmfind/rmfind.ts
+      - src/rmfind/core.ts
+      - src/common/file_finder.ts
+      - src/rmfind/generate_grep_terms.ts
+      - src/rmfind/llm_file_filter.ts
+      - src/rmfilter/utils.ts
+      - src/logging.ts
+    steps:
+      - prompt: >
+          In `src/rmfind/core.ts`:
+
+          1. Import necessary functions: `globFiles`, `grepFor` from
+          `src/common/file_finder.ts`, `generateGrepTermsFromQuery` from
+          `./generate_grep_terms.ts`, `filterFilesWithQuery` from
+          `./llm_file_filter.ts`, `debugLog` from `src/logging.ts`, `setDebug`,
+          `setQuiet` from `src/rmfilter/utils.ts`.
+
+          2. Implement the `findFilesCore` function:
+             - Move the logic from `src/rmfind/rmfind.ts`'s `main` function related to determining `baseDir`, performing globbing (`globFiles`), generating grep terms if needed (`generateGrepTermsFromQuery`), performing grep (`grepFor`), and filtering with AI query (`filterFilesWithQuery`) into `findFilesCore`.
+             - Adapt the moved logic to use the `options: RmfindOptions` argument instead of reading `values` from `parseArgs`.
+             - Use `options.debug` and `options.quiet` to control logging via `debugLog` and potentially pass to helpers (though `setDebug`/`setQuiet` might be called by the wrapper instead - let's keep using `debugLog` based on `options.debug` for now).
+             - Ensure all file paths returned in `RmfindResult.files` are absolute paths.
+             - **Exclude** the `fzf` interaction logic and the final output formatting (stdout, clipboard, YAML) - this belongs in the CLI wrapper.
+             - **Exclude** the `$` command execution checks (like `which fzf`).
+             - **Exclude** the `parseArgs` call and related setup.
+             - Return the final list of absolute file paths in the `RmfindResult` object.
+          3. Make sure all necessary dependencies are imported correctly in
+          `core.ts`.
+        done: true
+  - title: Adapt rmfind CLI Wrapper
+    description: Update rmfind.ts to use the new core function and handle CLI
+      specific tasks like argument parsing and fzf integration.
+    files:
+      - src/rmfind/rmfind.ts
+      - src/rmfind/core.ts
+      - src/rmfilter/utils.ts
+      - src/logging.ts
+    steps:
+      - prompt: >
+          In `src/rmfind/rmfind.ts`:
+
+          1. Ensure `findFilesCore`, `RmfindOptions` are imported from
+          `./core.ts`.
+
+          2. Keep the `parseArgs` logic to parse command-line arguments.
+
+          3. Keep the `setDebug` and `setQuiet` calls based on parsed arguments.
+
+          4. In the `main` function:
+             - After parsing arguments, construct the `RmfindOptions` object using the parsed `values` and `positionals`. Determine the correct `baseDir` as before. Pass the debug/quiet flags.
+             - Call `const result = await findFilesCore(options);`.
+             - Check if `result.files` is empty and handle the "No files found" exit case.
+             - Take the `result.files` (which are absolute paths) and implement the `fzf` interaction logic (if `--fzf` is specified). This involves converting paths to relative for fzf display and back to relative for output.
+             - Implement the final output formatting logic (YAML or space-separated string to stdout and clipboard) using the list of selected relative file paths (either all files if no fzf, or the selection from fzf).
+             - Ensure the `$` command execution checks (`which fzf`) remain in `rmfind.ts`.
+             - Remove the core finding logic that was moved to `core.ts`.
+        done: true
+  - title: Add --autofind Option to rmplan next
+    description: Add the new command-line option to rmplan and pass it down to the
+      action handler.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.ts`:
+
+          1. Locate the definition of the `next` command.
+
+          2. Add a new option: `.option('--autofind', 'Automatically run rmfind
+          to find relevant files based on the plan task')`.
+
+          3. In the `.action` handler for the `next` command, retrieve the value
+          of the new `autofind` option.
+
+          4. Pass the `autofind` boolean value into the `prepareNextStep`
+          function call within its options object.
+
+
+          In `src/rmplan/actions.ts`:
+
+          1. Update the `PrepareNextStepOptions` interface to include
+          `autofind?: boolean;`.
+
+          2. Modify the `prepareNextStep` function signature to accept the
+          updated options type.
+
+          3. Destructure the `autofind` flag from the `options` argument
+          (defaulting to `false`).
+        done: true
+  - title: Implement Autofind Logic in rmplan prepareNextStep
+    description: Call the refactored rmfind core logic when --autofind is enabled.
+    files:
+      - src/rmplan/actions.ts
+      - src/rmfind/core.ts
+      - src/rmplan/planSchema.ts
+      - src/rmfilter/utils.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts` within the `prepareNextStep` function:
+
+          1. Import `findFilesCore`, `RmfindOptions`, `RmfindResult` from
+          `../../rmfind/core.ts`.
+
+          2. Import `path` module.
+
+          3. Before the section that builds the LLM prompt (`// 5. Build the LLM
+          prompt`), add a conditional block: `if (autofind) { ... }`.
+
+          4. Inside this block:
+             - Construct a natural language query string. Combine `planData.goal`, `planData.details`, `activeTask.title`, and `activeTask.description` into a single string. Ensure null/undefined values are handled gracefully.
+             - Define the `RmfindOptions` for the `findFilesCore` call:
+               - `baseDir`: Use the `gitRoot` already determined in the function.
+               - `query`: Use the query string constructed above.
+               - `model`: Use a sensible default model, e.g., 'google/gemini-2.0-flash'. Consider making this configurable later if needed. For now, hardcode it or use an environment variable.
+               - `classifierModel`, `grepGeneratorModel`: Use the same default model.
+               - `globs`: `[]` (we are using query-based finding)
+               - `ignoreGlobs`: `undefined` (or potentially read from a standard ignore file if desired, but start simple)
+               - `grepPatterns`: `undefined` (let `rmfind` generate them from the query)
+               - `wholeWord`: `false`
+               - `expand`: `true` (usually good for query generation)
+               - `debug`: Pass the `debug` status (can get from `import { debug } from '../rmfilter/utils.ts'`).
+               - `quiet`: Pass the `quiet` status (can get from `import { quiet } from '../rmfilter/utils.ts'`).
+             - Call `const rmfindResult = await findFilesCore(rmfindOptions);`. Use a try-catch block to handle potential errors from `findFilesCore` and log a warning if it fails.
+             - If `rmfindResult` is successful and contains files:
+               - Get the list of absolute file paths: `rmfindResult.files`.
+               - Log the found files if not `quiet`.
+        done: true
+  - title: Integrate Autofind Results into rmplan
+    description: Merge files found by --autofind into the relevant file list and
+      rmfilter arguments.
+    files:
+      - src/rmplan/actions.ts
+      - src/rmfilter/utils.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts` within the `prepareNextStep` function,
+          continue modifying the `if (autofind) { ... }` block added in the
+          previous step:
+
+
+          1. After successfully calling `findFilesCore` and getting `foundFiles`
+          (absolute paths):
+             - Merge `foundFiles` with the existing `files` array (which contains absolute paths derived from `activeTask.files`).
+             - Ensure the merged list contains only unique file paths. Update the `files` variable with this new merged list. `files = Array.from(new Set([...files, ...foundFiles])).sort();`
+          2. Still inside the `if (autofind)` block, check if `rmfilter` mode is
+          active (`if (rmfilter)`):
+             - If yes, convert the `foundFiles` (the ones specifically returned by `findFilesCore`, not the whole merged list) into paths relative to `gitRoot`.
+             - Add these relative paths to the `finalRmfilterArgs` array. Ensure they are added correctly, likely just before or after the files derived from `activeTask.files` or the `rmfilterArgs` passed into the function. A simple approach is to append them before the final `--` if present, or just append them to the main list of files passed to `rmfilter`. For example, add them *before* `...rmfilterArgs` in the `finalRmfilterArgs` construction. Be mindful of the structure expected by `rmfilter`. If `rmfilterArgs` already contains explicit file paths, maybe add the autofound ones just after the `--instructions` argument. Let's try adding them right after the task files:
+               ```typescript
+               // Inside the rmfilter block
+               const taskRelativeFiles = files.map((f) => path.relative(gitRoot, f)); // files from task + initial extraction
+               const autoFoundRelativeFiles = foundFiles.map(f => path.relative(gitRoot, f)); // files from autofind run
+
+               // ... existing rmfilter args setup ...
+
+               // Example modification for finalRmfilterArgs when autofind is enabled
+               if (autofind) {
+                  finalRmfilterArgs = [
+                      ...baseRmfilterArgs, // includes --instructions @prompt
+                      ...taskRelativeFiles, // from task/prompt extraction
+                      ...autoFoundRelativeFiles, // from autofind
+                      // ... importCommandBlockArgs if applicable ...
+                      '--', // Separator for user provided args
+                      ...rmfilterArgs // User provided args from command line
+                  ];
+               } else {
+                  // Original logic
+                  finalRmfilterArgs = [
+                      ...baseRmfilterArgs,
+                      ...taskRelativeFiles,
+                      // ... importCommandBlockArgs if applicable ...
+                      '--',
+                      ...rmfilterArgs
+                  ];
+               }
+               // Adjust the above logic based on the exact structure needed by rmfilter and how import args are handled.
+               // A simpler approach might be to just add the autoFoundRelativeFiles to the main file list before the '--' separator for rmfilterArgs.
+               // Let's refine the logic for rmfilter args construction:
+               const allFilesForRmfilter = Array.from(new Set([
+                  ...files.map(f => path.relative(gitRoot, f)), // Merged list: task files + autofound files
+                  ...(performImportAnalysis ? candidateFilesForImports.map(f => path.relative(gitRoot, f)) : []) // Files for import analysis if needed
+               ])).sort();
+
+               finalRmfilterArgs = [
+                  ...baseRmfilterArgs, // --gitroot, --instructions @prompt
+                  ...allFilesForRmfilter, // Pass the combined unique list
+                  // Handle importCommandBlockArgs logic based on performImportAnalysis etc. as before
+                  // ...(performImportAnalysis ? importCommandBlockArgs : []), // This needs careful placement
+                  '--', // Separator for user args
+                  ...rmfilterArgs, // CLI args passed via '--'
+               ];
+               // Review the placement of importCommandBlockArgs relative to files and '--'.
+               // It should probably come AFTER the files but BEFORE the '--' separator for user args.
+               // Let's adjust:
+                const importArgs = performImportAnalysis ? ['--', ...candidateFilesForImports.map(f => path.relative(gitRoot, f))] : [];
+                if (performImportAnalysis) {
+                  if (withImports) importArgs.push('--with-imports');
+                  else if (withAllImports) importArgs.push('--with-all-imports');
+                }
+
+
+                finalRmfilterArgs = [
+                  ...baseRmfilterArgs, // --gitroot, --instructions @prompt
+                  ...allFilesForRmfilter, // Combined files
+                  ...importArgs, // Import command block if necessary
+                  // '--', // This separator might now be redundant if handled by importArgs, or needed for rmfilterArgs
+                  ...rmfilterArgs // User CLI args
+               ];
+               // Double-check rmfilter's argument parsing logic. Assuming rmfilter treats everything before '--' that isn't an option as a file/dir unless specific flags like --with-imports are used with their own structure.
+               // Let's revert to a structure closer to the original, adding autofound files explicitly.
+
+               const taskRelativeFiles = activeTask.files.map(f => path.relative(gitRoot, f)); // Original task files
+               const autoFoundRelativeFiles = foundFiles.map(f => path.relative(gitRoot, f)); // Files from autofind run
+               const filesToRmfilter = Array.from(new Set([...taskRelativeFiles, ...autoFoundRelativeFiles])).sort();
+
+               // ... baseRmfilterArgs setup ...
+               // ... importCommandBlockArgs setup ... based on candidateFilesForImports ...
+
+               finalRmfilterArgs = [
+                 ...baseRmfilterArgs,
+                 ...filesToRmfilter, // Pass unique combined list here
+                 ...(performImportAnalysis ? importCommandBlockArgs : []), // Import block after files
+                 '--', // Separator for user args
+                 ...rmfilterArgs // User provided args
+               ];
+
+
+               ```
+          3. Ensure the updated `files` list (containing merged task + autofound
+          files) is used when generating the "Relevant Files" section of the LLM
+          prompt later in the `prepareNextStep` function (the part that runs if
+          `rmfilter` is false).
+        done: true
