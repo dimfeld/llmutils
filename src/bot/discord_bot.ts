@@ -11,6 +11,7 @@ import path from 'node:path';
 import { isAdmin } from './discord_admin_utils.js';
 import { mapUser } from './db/user_mappings_manager.js';
 import { getAllActiveTasks } from './db/tasks_manager.js';
+import { cleanupInactiveWorkspaces } from '../rmplan/workspace/workspace_manager.js';
 
 const RMPLAN_COMMAND = 'rm-plan';
 const RMIMPLEMENT_COMMAND = 'rm-implement';
@@ -18,6 +19,7 @@ const RMLOGS_COMMAND = 'rm-logs';
 const RMSTATUS_COMMAND = 'rm-status';
 const RMLINKUSER_COMMAND = 'rm-link-user';
 const RMSTATUSALL_COMMAND = 'rm-status-all';
+const RMCLEANUP_COMMAND = 'rm-cleanup';
 
 const commands = [
   new SlashCommandBuilder()
@@ -73,6 +75,10 @@ const commands = [
   new SlashCommandBuilder()
     .setName(RMSTATUSALL_COMMAND)
     .setDescription('(Admin) Shows status of all active tasks.')
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMCLEANUP_COMMAND)
+    .setDescription('(Admin) Cleans up inactive workspaces.')
     .toJSON(),
 ];
 
@@ -668,6 +674,88 @@ export async function startDiscordBot() {
           error(`Failed to retrieve active tasks:`, err);
           await interaction.editReply({
             content: `Error retrieving active tasks: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
+      } else if (commandName === RMCLEANUP_COMMAND) {
+        log(`'/rm-cleanup' command received from user ${user.id}`);
+
+        // Check if the user is an admin
+        if (!isAdmin(user.id)) {
+          try {
+            await interaction.reply({
+              content: 'Error: You do not have permission to use this command.',
+              ephemeral: true,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'failed', errorMessage: 'Insufficient permissions' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+          } catch (replyError) {
+            error('Failed to reply to Discord interaction:', replyError);
+          }
+          return;
+        }
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.deferReply({ ephemeral: false });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          // Perform workspace cleanup
+          await interaction.editReply({
+            content: 'Starting workspace cleanup...',
+          });
+
+          const result = await cleanupInactiveWorkspaces(false);
+
+          // Format the result message
+          let resultMessage = `## Workspace Cleanup Complete\n\n`;
+          resultMessage += `**Workspaces cleaned:** ${result.cleanedCount}\n`;
+
+          if (result.errors.length > 0) {
+            resultMessage += `\n**Errors encountered:** ${result.errors.length}\n`;
+            for (const error of result.errors) {
+              resultMessage += `- ${error.workspacePath}: ${error.error}\n`;
+            }
+          }
+
+          await interaction.editReply({
+            content: resultMessage,
+          });
+
+          log(
+            `Admin ${user.id} performed workspace cleanup: ${result.cleanedCount} cleaned, ${result.errors.length} errors`
+          );
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to perform workspace cleanup:`, err);
+          await interaction.editReply({
+            content: `Error performing workspace cleanup: ${(err as Error).message}`,
           });
           if (originalCommandId) {
             await db

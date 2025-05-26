@@ -38,8 +38,44 @@ await mock.module('./workspace_tracker.js', () => ({
   lockWorkspaceToTask: mockLockWorkspaceToTask,
 }));
 
+// Mock database and workspace table operations
+const mockDbSelect = mock(() => ({
+  from: mock(() => ({
+    where: mock(() => Promise.resolve([])),
+    leftJoin: mock(() => ({
+      where: mock(() => Promise.resolve([])),
+    })),
+  })),
+}));
+
+const mockDbDelete = mock(() => ({
+  where: mock(() => Promise.resolve()),
+}));
+
+await mock.module('../../bot/db/index.js', () => ({
+  db: {
+    select: mockDbSelect,
+    delete: mockDbDelete,
+  },
+  workspaces: {},
+  tasks: {},
+}));
+
+// Mock WorkspaceLock
+const mockGetLockInfo = mock(async () => null);
+const mockIsLockStale = mock(async () => true);
+const mockClearStaleLock = mock(async () => {});
+
+await mock.module('./workspace_lock.js', () => ({
+  WorkspaceLock: {
+    getLockInfo: mockGetLockInfo,
+    isLockStale: mockIsLockStale,
+    clearStaleLock: mockClearStaleLock,
+  },
+}));
+
 // Import the module under test after all mocks are set up
-import { createWorkspace } from './workspace_manager.js';
+import { createWorkspace, cleanupInactiveWorkspaces } from './workspace_manager.js';
 import type { RmplanConfig } from '../configSchema.js';
 
 describe('createWorkspace', () => {
@@ -735,5 +771,360 @@ describe('createWorkspace', () => {
     expect(calledCommands[2].title).toBe('Run tests');
     expect(calledCommands[2].workingDirectory).toBe('tests');
     expect(calledCommands[2].overrideGitRoot).toBe(expectedClonePath);
+  });
+});
+
+describe('cleanupInactiveWorkspaces', () => {
+  // Setup variables
+  let testTempDir: string;
+  let mockWorkspaces: Array<{
+    id: string;
+    workspacePath: string;
+    taskId: string;
+    lockedByTaskId: string | null;
+  }>;
+
+  beforeEach(async () => {
+    // Create a temporary directory for each test
+    testTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-cleanup-test-'));
+
+    // Reset all mocks
+    mockLog.mockReset();
+    mockDebugLog.mockReset();
+    mockDbSelect.mockReset();
+    mockDbDelete.mockReset();
+    mockGetLockInfo.mockReset();
+    mockIsLockStale.mockReset();
+    mockClearStaleLock.mockReset();
+
+    // Set up default mock workspaces
+    mockWorkspaces = [
+      {
+        id: 'workspace-1',
+        workspacePath: path.join(testTempDir, 'workspace-1'),
+        taskId: 'task-1',
+        lockedByTaskId: null,
+      },
+      {
+        id: 'workspace-2',
+        workspacePath: path.join(testTempDir, 'workspace-2'),
+        taskId: 'task-2',
+        lockedByTaskId: null,
+      },
+    ];
+
+    // Create workspace directories
+    for (const workspace of mockWorkspaces) {
+      await fs.mkdir(workspace.workspacePath, { recursive: true });
+    }
+
+    // Default mock implementations
+    mockGetLockInfo.mockResolvedValue(null);
+  });
+
+  afterEach(async () => {
+    // Clean up the temporary directory
+    if (testTempDir) {
+      await fs.rm(testTempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('cleanupInactiveWorkspaces with forceAll=false cleans workspaces for completed tasks', async () => {
+    // Setup - mock the database query to return workspaces for completed tasks
+    const mockFrom = mock(() => ({
+      leftJoin: mock(() => ({
+        where: mock(() => Promise.resolve(mockWorkspaces)),
+      })),
+    }));
+
+    const mockSelectResult = {
+      from: mockFrom,
+    };
+
+    mockDbSelect.mockReturnValue(mockSelectResult);
+    mockDbDelete.mockReturnValue({
+      where: mock(() => Promise.resolve()),
+    });
+
+    // Execute
+    const result = await cleanupInactiveWorkspaces(false);
+
+    // Verify
+    expect(result.cleanedCount).toBe(2);
+    expect(result.errors).toHaveLength(0);
+
+    // Verify log messages
+    expect(mockLog).toHaveBeenCalledWith('Found 2 workspaces to clean');
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Cleaned workspace:'));
+
+    // Verify database operations
+    expect(mockDbSelect).toHaveBeenCalled();
+    expect(mockDbDelete).toHaveBeenCalledTimes(2);
+
+    // Verify workspace directories were removed
+    for (const workspace of mockWorkspaces) {
+      try {
+        await fs.stat(workspace.workspacePath);
+        expect(false).toBe(true); // Should not reach this line
+      } catch (error: any) {
+        expect(error.code).toBe('ENOENT'); // Directory should not exist
+      }
+    }
+  });
+
+  test('cleanupInactiveWorkspaces with forceAll=true cleans all unlocked workspaces', async () => {
+    // Setup - mock the database query to return all unlocked workspaces
+    const mockFrom = mock(() => ({
+      where: mock(() => Promise.resolve(mockWorkspaces)),
+    }));
+
+    const mockSelectResult = {
+      from: mockFrom,
+    };
+
+    mockDbSelect.mockReturnValue(mockSelectResult);
+    mockDbDelete.mockReturnValue({
+      where: mock(() => Promise.resolve()),
+    });
+
+    // Execute
+    const result = await cleanupInactiveWorkspaces(true);
+
+    // Verify
+    expect(result.cleanedCount).toBe(2);
+    expect(result.errors).toHaveLength(0);
+
+    // Verify the correct query was made (no join with tasks table)
+    expect(mockFrom).toHaveBeenCalled();
+    const fromCall = mockFrom.mock.calls[0];
+    expect(fromCall).toBeDefined();
+  });
+
+  test('cleanupInactiveWorkspaces skips workspaces with active filesystem locks', async () => {
+    // Setup - create a workspace with an active lock
+    const activeLockedWorkspace = {
+      id: 'workspace-active',
+      workspacePath: path.join(testTempDir, 'workspace-active'),
+      taskId: 'task-active',
+      lockedByTaskId: null,
+    };
+    await fs.mkdir(activeLockedWorkspace.workspacePath, { recursive: true });
+
+    const allWorkspaces = [...mockWorkspaces, activeLockedWorkspace];
+
+    // Mock database to return all workspaces
+    const mockFrom = mock(() => ({
+      where: mock(() => Promise.resolve(allWorkspaces)),
+    }));
+
+    mockDbSelect.mockReturnValue({
+      from: mockFrom,
+    });
+
+    mockDbDelete.mockReturnValue({
+      where: mock(() => Promise.resolve()),
+    });
+
+    // Mock filesystem lock for the active workspace
+    mockGetLockInfo.mockImplementation(async (path) => {
+      if (path === activeLockedWorkspace.workspacePath) {
+        return {
+          pid: 12345,
+          command: 'test-command',
+          startedAt: new Date().toISOString(),
+          hostname: 'test-host',
+          version: 1,
+        };
+      }
+      return null;
+    });
+
+    mockIsLockStale.mockImplementation(async (lockInfo) => {
+      // Active lock is not stale
+      return lockInfo === null;
+    });
+
+    // Execute
+    const result = await cleanupInactiveWorkspaces(true);
+
+    // Verify
+    expect(result.cleanedCount).toBe(2); // Only the two unlocked workspaces
+    expect(result.errors).toHaveLength(0);
+
+    // Verify the active locked workspace still exists
+    const stats = await fs.stat(activeLockedWorkspace.workspacePath);
+    expect(stats.isDirectory()).toBe(true);
+
+    // Verify debug log about skipping
+    expect(mockDebugLog).toHaveBeenCalledWith(expect.stringContaining('Skipping workspace'));
+    expect(mockDebugLog).toHaveBeenCalledWith(
+      expect.stringContaining('has active filesystem lock')
+    );
+  });
+
+  test('cleanupInactiveWorkspaces clears stale filesystem locks', async () => {
+    // Setup - create a workspace with a stale lock
+    const staleLockInfo = {
+      pid: 99999,
+      command: 'old-command',
+      startedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(), // 48 hours ago
+      hostname: 'old-host',
+      version: 1,
+    };
+
+    // Mock database to return workspaces
+    const mockFrom = mock(() => ({
+      where: mock(() => Promise.resolve(mockWorkspaces)),
+    }));
+
+    mockDbSelect.mockReturnValue({
+      from: mockFrom,
+    });
+
+    mockDbDelete.mockReturnValue({
+      where: mock(() => Promise.resolve()),
+    });
+
+    // Mock filesystem lock as stale
+    mockGetLockInfo.mockResolvedValue(staleLockInfo);
+    mockIsLockStale.mockResolvedValue(true);
+
+    // Execute
+    const result = await cleanupInactiveWorkspaces(true);
+
+    // Verify
+    expect(result.cleanedCount).toBe(2);
+    expect(result.errors).toHaveLength(0);
+
+    // Verify stale locks were cleared
+    expect(mockClearStaleLock).toHaveBeenCalledTimes(2);
+    expect(mockDebugLog).toHaveBeenCalledWith(expect.stringContaining('Clearing stale lock'));
+  });
+
+  test('cleanupInactiveWorkspaces handles errors gracefully', async () => {
+    // Setup - create one workspace where database delete will fail
+    const failingWorkspace = {
+      id: 'workspace-fail',
+      workspacePath: path.join(testTempDir, 'workspace-fail'),
+      taskId: 'task-fail',
+      lockedByTaskId: null,
+    };
+    await fs.mkdir(failingWorkspace.workspacePath, { recursive: true });
+
+    const allWorkspaces = [...mockWorkspaces, failingWorkspace];
+
+    // Mock database to return all workspaces
+    const mockFrom = mock(() => ({
+      where: mock(() => Promise.resolve(allWorkspaces)),
+    }));
+
+    mockDbSelect.mockReturnValue({
+      from: mockFrom,
+    });
+
+    // Mock delete to fail for the failing workspace
+    let deleteCallCount = 0;
+    mockDbDelete.mockReturnValue({
+      where: mock(() => {
+        deleteCallCount++;
+        if (deleteCallCount === 3) {
+          // Fail on the third workspace
+          throw new Error('Database delete failed');
+        }
+        return Promise.resolve();
+      }),
+    });
+
+    // Execute
+    const result = await cleanupInactiveWorkspaces(true);
+
+    // Verify
+    expect(result.cleanedCount).toBe(2); // Only the successful cleanups
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toEqual({
+      workspacePath: failingWorkspace.workspacePath,
+      error: 'Database delete failed',
+    });
+
+    // Verify error was logged
+    expect(mockDebugLog).toHaveBeenCalledWith(expect.stringContaining('Error cleaning workspace'));
+
+    // Verify the failing workspace directory was removed but not from database
+    try {
+      await fs.stat(failingWorkspace.workspacePath);
+      expect(false).toBe(true); // Should not reach this line
+    } catch (error: any) {
+      expect(error.code).toBe('ENOENT'); // Directory should not exist
+    }
+  });
+
+  test('cleanupInactiveWorkspaces handles database query errors', async () => {
+    // Setup - mock database to throw an error
+    mockDbSelect.mockImplementation(() => {
+      throw new Error('Database connection failed');
+    });
+
+    // Execute and expect error
+    await expect(cleanupInactiveWorkspaces(false)).rejects.toThrow('Database connection failed');
+
+    // Verify error was logged
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('Error during workspace cleanup: Database connection failed')
+    );
+  });
+
+  test('cleanupInactiveWorkspaces returns empty result when no workspaces to clean', async () => {
+    // Setup - mock database to return empty array
+    const mockFrom = mock(() => ({
+      where: mock(() => Promise.resolve([])),
+    }));
+
+    mockDbSelect.mockReturnValue({
+      from: mockFrom,
+    });
+
+    // Execute
+    const result = await cleanupInactiveWorkspaces(true);
+
+    // Verify
+    expect(result.cleanedCount).toBe(0);
+    expect(result.errors).toHaveLength(0);
+    expect(mockLog).toHaveBeenCalledWith('Found 0 workspaces to clean');
+
+    // Verify no delete operations were attempted
+    expect(mockDbDelete).not.toHaveBeenCalled();
+  });
+
+  test('cleanupInactiveWorkspaces handles locked workspaces correctly', async () => {
+    // Setup - create workspaces with different lock states
+    const lockedWorkspace = {
+      id: 'workspace-locked',
+      workspacePath: path.join(testTempDir, 'workspace-locked'),
+      taskId: 'task-locked',
+      lockedByTaskId: 'task-123', // This workspace is locked by a task
+    };
+
+    // This should not be in the results as it's filtered by the WHERE clause
+    const allWorkspaces = [...mockWorkspaces];
+
+    // Mock database to return only unlocked workspaces
+    const mockFrom = mock(() => ({
+      where: mock(() => Promise.resolve(allWorkspaces)),
+    }));
+
+    mockDbSelect.mockReturnValue({
+      from: mockFrom,
+    });
+
+    mockDbDelete.mockReturnValue({
+      where: mock(() => Promise.resolve()),
+    });
+
+    // Execute
+    const result = await cleanupInactiveWorkspaces(true);
+
+    // Verify - only unlocked workspaces should be cleaned
+    expect(result.cleanedCount).toBe(2);
+    expect(result.errors).toHaveLength(0);
   });
 });
