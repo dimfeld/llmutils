@@ -3,7 +3,7 @@ import { StateMachine, type StateMachineConfig } from './index.ts';
 import type { AllState, SharedStore } from './store.ts';
 import { withSpan, type StateMachineAttributes, recordEvent } from './telemetry.ts';
 import type { StateResult, PrepResult } from './types.ts';
-import { globalEventBus, type SystemEvent } from './event_bus.ts';
+import { EventBus, type SystemEvent } from './event_bus.ts';
 
 /**
  * BaseNode: Core node class that executes prep, run, and post sequentially.
@@ -292,6 +292,7 @@ export abstract class FlowNode<
 > {
   subMachines: Map<string, StateMachine<any, any, SubEvent>>;
   private parentInstanceId?: string;
+  private eventBus?: EventBus;
 
   constructor(
     id: StateName,
@@ -309,6 +310,11 @@ export abstract class FlowNode<
       const subMachine = this.createSubMachine(subConfig);
       this.subMachines.set(subConfig.id, subMachine);
     }
+  }
+
+  /** Set the EventBus instance */
+  setEventBus(eventBus: EventBus) {
+    this.eventBus = eventBus;
   }
 
   /** Set the parent instance ID - called during initialization */
@@ -354,7 +360,8 @@ export abstract class FlowNode<
         },
         onTransition: (from: string, to: string, context: any) => {},
       },
-      this.parentInstanceId // Pass parent machine ID
+      this.parentInstanceId, // Pass parent machine ID
+      this.eventBus // Pass EventBus instance
     );
   }
 

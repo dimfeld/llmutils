@@ -248,6 +248,3 @@ export class EventBus {
     this.parentChildMap.clear();
   }
 }
-
-// Global event bus instance
-export const globalEventBus = new EventBus();

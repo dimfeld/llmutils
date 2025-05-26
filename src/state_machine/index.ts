@@ -11,7 +11,7 @@ import {
   type StateMachineAttributes,
 } from './telemetry.ts';
 import { type StateResult, type PrepResult } from './types.ts';
-import { globalEventBus, type SystemEvent } from './event_bus.ts';
+import { EventBus, type SystemEvent } from './event_bus.ts';
 
 // Re-export types and classes from nodes.ts
 export { Node, FinalNode, ErrorNode, FlowNode };
@@ -28,7 +28,7 @@ export type { PersistenceAdapter };
 export type { StateResult, PrepResult };
 
 // Re-export from event_bus.ts
-export { EventBus, globalEventBus };
+export { EventBus };
 export type { RoutedEvent, SystemEvent } from './event_bus.ts';
 
 export interface StateMachineConfig<StateName extends string, TContext, TEvent extends BaseEvent> {
@@ -56,6 +56,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
   private nodesMap: Map<StateName, Node<StateName, TContext, TEvent, any, any, any>>;
   private eventBusUnsubscribe?: () => void;
   private parentMachineId?: string;
+  private eventBus?: EventBus;
 
   constructor(
     public config: StateMachineConfig<StateName, TContext, TEvent>,
@@ -63,7 +64,8 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     initialContext: TContext,
     public instanceId: string,
     public hooks?: StateMachineHooks<StateName, TEvent>,
-    parentMachineId?: string
+    parentMachineId?: string,
+    eventBus?: EventBus
   ) {
     // Convert nodes array to Map
     this.nodesMap = new Map(
@@ -79,6 +81,7 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     });
 
     this.parentMachineId = parentMachineId;
+    this.eventBus = eventBus;
   }
 
   async loadPersistedState(): Promise<void> {
@@ -89,15 +92,24 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     if (!this.initialized) {
       initTelemetry(enableDebugLogging);
       
-      // Register with event bus
-      globalEventBus.registerMachine(
-        this.instanceId,
-        async (event) => {
-          // Handle incoming events
-          await this.handleEvent(event as TEvent);
-        },
-        this.parentMachineId
-      );
+      // Pass EventBus to FlowNodes
+      if (this.eventBus) {
+        for (const node of this.nodesMap.values()) {
+          if (node instanceof FlowNode) {
+            node.setEventBus(this.eventBus);
+          }
+        }
+        
+        // Register with event bus
+        this.eventBus.registerMachine(
+          this.instanceId,
+          async (event) => {
+            // Handle incoming events
+            await this.handleEvent(event as TEvent);
+          },
+          this.parentMachineId
+        );
+      }
       
       this.initialized = true;
     }
@@ -135,7 +147,9 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     if (this.eventBusUnsubscribe) {
       this.eventBusUnsubscribe();
     }
-    globalEventBus.unregisterMachine(this.instanceId);
+    if (this.eventBus) {
+      this.eventBus.unregisterMachine(this.instanceId);
+    }
   }
 
   async resume(events: TEvent[]): Promise<
@@ -213,24 +227,26 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
     if (result.actions) await this.store.enqueueEvents(result.actions);
     
     // Emit system event based on result status
-    if (result.status === 'waiting') {
-      await globalEventBus.emitSystemEvent({
-        id: crypto.randomUUID(),
-        type: 'MACHINE_WAITING',
-        payload: {
-          machineId: this.instanceId,
-          state: this.store.getCurrentState(),
-        },
-      } as SystemEvent);
-    } else if (result.status === 'terminal') {
-      await globalEventBus.emitSystemEvent({
-        id: crypto.randomUUID(),
-        type: 'MACHINE_TERMINAL',
-        payload: {
-          machineId: this.instanceId,
-          state: this.store.getCurrentState(),
-        },
-      } as SystemEvent);
+    if (this.eventBus) {
+      if (result.status === 'waiting') {
+        await this.eventBus.emitSystemEvent({
+          id: crypto.randomUUID(),
+          type: 'MACHINE_WAITING',
+          payload: {
+            machineId: this.instanceId,
+            state: this.store.getCurrentState(),
+          },
+        } as SystemEvent);
+      } else if (result.status === 'terminal') {
+        await this.eventBus.emitSystemEvent({
+          id: crypto.randomUUID(),
+          type: 'MACHINE_TERMINAL',
+          payload: {
+            machineId: this.instanceId,
+            state: this.store.getCurrentState(),
+          },
+        } as SystemEvent);
+      }
     }
     
     if (result.status === 'transition' && result.to) {
@@ -247,14 +263,16 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       this.store.setCurrentState(result.to as string);
 
       // Emit state change event
-      await globalEventBus.emitSystemEvent({
-        id: crypto.randomUUID(),
-        type: 'MACHINE_STATE_CHANGED',
-        payload: {
-          machineId: this.instanceId,
-          state: toState,
-        },
-      } as SystemEvent);
+      if (this.eventBus) {
+        await this.eventBus.emitSystemEvent({
+          id: crypto.randomUUID(),
+          type: 'MACHINE_STATE_CHANGED',
+          payload: {
+            machineId: this.instanceId,
+            state: toState,
+          },
+        } as SystemEvent);
+      }
 
       const nextNode = this.nodesMap.get(result.to);
       if (nextNode) {

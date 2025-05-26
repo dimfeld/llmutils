@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, jest } from 'bun:test';
-import { StateMachine, globalEventBus } from './index.ts';
+import { StateMachine, EventBus } from './index.ts';
 import { Node, FlowNode, FinalNode, type SubMachineConfig } from './nodes.ts';
 import type { BaseEvent, PrepResult, StateResult, SharedStore } from './index.ts';
 
@@ -11,8 +11,10 @@ interface TestEvent extends BaseEvent {
 type TestStates = 'initial' | 'processing' | 'done';
 
 describe('EventBus Integration with StateMachine', () => {
+  let eventBus: EventBus;
+  
   beforeEach(() => {
-    globalEventBus.clear();
+    eventBus = new EventBus();
   });
 
   test('should register machine with event bus on initialize', async () => {
@@ -32,7 +34,10 @@ describe('EventBus Integration with StateMachine', () => {
         read: async () => ({ context: {}, scratchpad: undefined, pendingEvents: [], history: [] }),
       },
       {},
-      'test-machine-1'
+      'test-machine-1',
+      undefined, // hooks
+      undefined, // parentMachineId
+      eventBus
     );
 
     await machine.initialize();
@@ -45,7 +50,7 @@ describe('EventBus Integration with StateMachine', () => {
       return originalHandleEvent(event);
     });
 
-    await globalEventBus.emit({
+    await eventBus.emit({
       id: '1',
       type: 'START',
       targetMachineId: 'test-machine-1',
@@ -104,7 +109,7 @@ describe('EventBus Integration with StateMachine', () => {
       }
     });
     
-    globalEventBus.registerMachine('parent', parentHandler);
+    eventBus.registerMachine('parent', parentHandler);
 
     const machine = new StateMachine(
       {
@@ -124,7 +129,8 @@ describe('EventBus Integration with StateMachine', () => {
       {},
       'child',
       undefined, // hooks
-      'parent' // Set parent machine ID
+      'parent', // Set parent machine ID
+      eventBus
     );
 
     await machine.initialize();
@@ -166,18 +172,21 @@ describe('EventBus Integration with StateMachine', () => {
         read: async () => ({ context: {}, scratchpad: undefined, pendingEvents: [], history: [] }),
       },
       {},
-      'cleanup-test'
+      'cleanup-test',
+      undefined, // hooks
+      undefined, // parentMachineId
+      eventBus
     );
 
     await machine.initialize();
     
     const handler = jest.fn();
-    globalEventBus.registerMachine('test-handler', handler);
+    eventBus.registerMachine('test-handler', handler);
 
     await machine.destroy();
 
     // Machine should not receive events after destroy
-    await globalEventBus.emit({
+    await eventBus.emit({
       id: '1',
       type: 'START',
       targetMachineId: 'cleanup-test',
@@ -316,7 +325,10 @@ describe('EventBus Integration with StateMachine', () => {
         read: async () => ({ context: {}, scratchpad: undefined, pendingEvents: [], history: [] }),
       },
       {},
-      'parent-machine'
+      'parent-machine',
+      undefined, // hooks
+      undefined, // parentMachineId
+      eventBus
     );
 
     // Register a handler to receive events from child machines
@@ -324,7 +336,7 @@ describe('EventBus Integration with StateMachine', () => {
       parentEvents.push(event);
     });
     
-    globalEventBus.registerMachine('parent-machine', parentEventsHandler);
+    eventBus.registerMachine('parent-machine', parentEventsHandler);
 
     await parentMachine.initialize();
     const result = await parentMachine.resume([]);
