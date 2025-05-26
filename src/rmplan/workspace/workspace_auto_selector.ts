@@ -3,11 +3,12 @@ import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
 import { log } from '../../logging.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
-import { createWorkspace } from './workspace_manager.js';
+import { createWorkspace, type Workspace } from './workspace_manager.js';
 import {
   findWorkspacesByRepoUrl,
   findWorkspacesByTaskId,
   updateWorkspaceLockStatus,
+  lockWorkspaceToTask,
   type WorkspaceInfo,
 } from './workspace_tracker.js';
 import type { RmplanConfig } from '../configSchema.js';
@@ -87,6 +88,11 @@ export class WorkspaceAutoSelector {
 
     // Try to find an unlocked workspace
     for (const workspace of workspacesWithLockStatus) {
+      // Skip if workspace is locked by another task (application-level lock)
+      if (workspace.lockedByTaskId && workspace.lockedByTaskId !== taskId) {
+        continue;
+      }
+
       // Check filesystem lock
       const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
       if (!lockInfo || (await WorkspaceLock.isLockStale(lockInfo))) {
@@ -94,6 +100,15 @@ export class WorkspaceAutoSelector {
         if (lockInfo) {
           await WorkspaceLock.clearStaleLock(workspace.workspacePath);
         }
+
+        // Lock this workspace to our task
+        try {
+          await lockWorkspaceToTask(workspace.workspacePath, taskId);
+        } catch (error) {
+          log(`Warning: Failed to lock workspace to task: ${String(error)}`);
+          // Continue anyway
+        }
+
         log(`Selected unlocked workspace: ${workspace.workspacePath}`);
         return { workspace, isNew: false, clearedStaleLock: !!lockInfo };
       }
@@ -102,6 +117,14 @@ export class WorkspaceAutoSelector {
       if (lockInfo && interactive && (await WorkspaceLock.isLockStale(lockInfo))) {
         const cleared = await this.handleStaleLock(workspace, lockInfo, interactive);
         if (cleared) {
+          // Lock this workspace to our task
+          try {
+            await lockWorkspaceToTask(workspace.workspacePath, taskId);
+          } catch (error) {
+            log(`Warning: Failed to lock workspace to task: ${String(error)}`);
+            // Continue anyway
+          }
+
           log(`Selected workspace after clearing stale lock: ${workspace.workspacePath}`);
           return { workspace, isNew: false, clearedStaleLock: true };
         }
@@ -176,7 +199,17 @@ export class WorkspaceAutoSelector {
 
     // Get the workspace info from tracker
     const workspaces = await findWorkspacesByTaskId(taskId);
-    return workspaces.find((w) => w.workspacePath === workspace.path) || null;
+    const workspaceInfo = workspaces.find((w) => w.workspacePath === workspace.path);
+
+    if (!workspaceInfo) {
+      // This shouldn't happen, but handle it gracefully
+      log(
+        `Warning: Could not find workspace info for newly created workspace at ${workspace.path}`
+      );
+      return null;
+    }
+
+    return workspaceInfo;
   }
 
   /**
