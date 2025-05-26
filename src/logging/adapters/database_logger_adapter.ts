@@ -62,22 +62,37 @@ export class DatabaseLoggerAdapter implements LoggerAdapter {
    * Helper method to write a log entry to the database
    */
   private writeLog(logLevel: string, args: any[]): void {
-    // Format the message by concatenating all arguments
-    const message = args
-      .map((arg) => {
-        if (typeof arg === 'object') {
-          return util.inspect(arg, { depth: null, colors: false });
-        }
-        return String(arg);
-      })
-      .join(' ');
+    let message: string;
+    let fullContent: string | null = null;
+
+    // Special handling for structured tool call logs
+    if (
+      args.length === 2 &&
+      typeof args[0] === 'string' &&
+      args[0].startsWith('[ClaudeToolCall:') &&
+      typeof args[1] === 'object'
+    ) {
+      // This is a structured tool call log
+      message = args[0];
+      fullContent = JSON.stringify(args[1], null, 2);
+    } else {
+      // Format the message by concatenating all arguments
+      message = args
+        .map((arg) => {
+          if (typeof arg === 'object') {
+            return util.inspect(arg, { depth: null, colors: false });
+          }
+          return String(arg);
+        })
+        .join(' ');
+    }
 
     // Prepare the log entry
     const logEntry: TaskLogInsert = {
       taskId: this.taskId,
       logLevel,
       message,
-      fullContent: null,
+      fullContent,
       // timestamp will be set by DB default
     };
 
