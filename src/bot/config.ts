@@ -10,6 +10,7 @@ export interface BotConfig {
   BOT_SERVER_PORT: number;
   LOG_LEVEL: string;
   GITHUB_WEBHOOK_SECRET?: string;
+  PLANNING_MODEL?: string;
 }
 
 let _config: BotConfig | null = null;
@@ -36,6 +37,7 @@ export function loadConfig(): BotConfig {
     BOT_SERVER_PORT: parseInt(process.env.BOT_SERVER_PORT || '3000', 10),
     LOG_LEVEL: process.env.LOG_LEVEL || 'info',
     GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET,
+    PLANNING_MODEL: process.env.PLANNING_MODEL,
   };
 
   return _config;

@@ -1022,7 +1022,7 @@ tasks:
           `repoPath` points to it.
 
           A `PLANNING_MODEL` should be added to `BotConfig`.
-        done: false
+        done: true
       - prompt: >
           Create `src/bot/core/task_manager.ts`. This module will handle the
           creation and state updates of tasks.
