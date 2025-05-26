@@ -234,7 +234,7 @@ tasks:
           exact match is fine for now).
 
           3.  Return an array of `WorkspaceInfo` objects, mapping DB fields.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, review and update the
           `updateWorkspaceLockStatus` function:
