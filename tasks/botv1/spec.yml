@@ -1775,7 +1775,7 @@ tasks:
           And update calls in `task_manager.ts` to pass
           `options.githubCommentId` and `options.discordInteraction` into the
           context.
-        done: false
+        done: true
   - title: GitHub User Permission Check
     description: Implement a check to verify if a GitHub user has 'write' or 'admin'
       permissions on the repository before processing a command from an issue
