@@ -9,7 +9,8 @@
     "rmfind": "./src/rmfind/rmfind.ts",
     "rmfix": "./src/rmfix/cli.ts",
     "rmplan": "./src/rmplan/rmplan.ts",
-    "rmrun": "./src/rmrun.ts"
+    "rmrun": "./src/rmrun.ts",
+    "llmutils-bot": "./src/bot/main.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.build.json",

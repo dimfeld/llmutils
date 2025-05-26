@@ -113,7 +113,7 @@ tasks:
 
           Create a placeholder for `src/bot/discord_bot.ts` with an exported
           async function `startDiscordBot()` that does nothing for now.
-        done: false
+        done: true
       - prompt: >
           Update `src/bot/main.ts` to integrate the logging setup.
 
