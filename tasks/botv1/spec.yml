@@ -207,7 +207,7 @@ tasks:
           ```
 
           Add `.env` to the `.gitignore` file if it's not already there.
-        done: false
+        done: true
   - title: SQLite Database Core Schema and Setup
     description: Define the initial SQLite database schema for `tasks`, `threads`,
       `user_mappings`, `task_logs`, `command_history`, and `task_artifacts`
