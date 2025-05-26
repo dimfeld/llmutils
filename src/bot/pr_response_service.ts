@@ -9,6 +9,7 @@ import { WorkspaceAutoSelector } from '../rmplan/workspace/workspace_auto_select
 import { config as botConfig } from './config.js';
 import { loadEffectiveConfig as loadRmplanConfig } from '../rmplan/configLoader.js';
 import { DatabaseLoggerAdapter } from './logging/database_adapter.js';
+import { Octokit } from 'octokit';
 
 export interface InitiatePrResponseOptions {
   platform: 'github' | 'discord';
@@ -103,7 +104,7 @@ export async function initiatePrResponseTask(
     const repoPath = process.env.BOT_REPO_PATH || process.cwd();
     const selector = new WorkspaceAutoSelector(repoPath, rmplanConfig);
 
-    const selectedWorkspace = await selector.selectWorkspace(taskId, undefined, {
+    const selectedWorkspace = await selector.selectWorkspace(taskId, '', {
       interactive: false,
       preferNewWorkspace: true,
     });
@@ -135,43 +136,9 @@ export async function initiatePrResponseTask(
       'selecting_comments'
     );
 
-    // Create database logger adapter
-    const dbLogger = new DatabaseLoggerAdapter(taskId, db);
-
-    // Construct PR identifier
-    const prIdentifier = `${options.repoFullName}#${options.prNumber}`;
-
-    // Run rmpr command with database logging
-    await runWithLogger(dbLogger, async () => {
-      // Update status to responding
-      await db
-        .update(tasks)
-        .set({ status: PR_RESPONSE_STATUS.RESPONDING })
-        .where(eq(tasks.id, taskId));
-      await notifyTaskProgress(taskId, 'Overall status: Addressing review comments', 'responding');
-
-      await handleRmprCommand(
-        prIdentifier,
-        {
-          executor: rmplanConfig.defaultExecutor || 'claude-code',
-          mode: 'inline-comments',
-          yes: true,
-          model: rmplanConfig.models?.execution,
-          dryRun: false,
-          run: true,
-          commit: true,
-          comment: true,
-        },
-        { debug: botConfig.DEBUG },
-        rmplanConfig
-      );
-    });
-
-    // 5. Update task status to completed
-    await db
-      .update(tasks)
-      .set({ status: PR_RESPONSE_STATUS.COMPLETED, updatedAt: new Date() })
-      .where(eq(tasks.id, taskId));
+    // Process PR comments using the new flow
+    const [owner, repo] = options.repoFullName.split('/');
+    await processPrComments(taskId, options.prNumber, owner, repo);
 
     log(`[${taskId}] PR response task completed successfully.`);
 
@@ -190,9 +157,6 @@ export async function initiatePrResponseTask(
       options.repoFullName,
       options.prNumber
     );
-
-    // Notify overall status change
-    await notifyTaskProgress(taskId, 'Overall status: Completed', 'completed');
 
     // Update command_history to success
     if (options.originalCommandId) {
@@ -236,7 +200,7 @@ export async function initiatePrResponseTask(
     );
 
     // Notify overall status change
-    await notifyTaskProgress(taskId, 'Overall status: Failed', 'failed');
+    await notifyTaskProgress(taskId, 'Overall status: Failed', PR_RESPONSE_STATUS.FAILED);
 
     // Update command_history to failed
     if (options.originalCommandId) {
@@ -266,13 +230,13 @@ export async function resumePrResponseTask(taskId: string): Promise<void> {
   const taskRecord = task[0];
 
   // Only resume if task is in a resumable state
-  if (
-    ![
-      PR_RESPONSE_STATUS.WORKSPACE_SETUP,
-      PR_RESPONSE_STATUS.SELECTING_COMMENTS,
-      PR_RESPONSE_STATUS.RESPONDING,
-    ].includes(taskRecord.status || '')
-  ) {
+  const resumableStatuses = [
+    PR_RESPONSE_STATUS.WORKSPACE_SETUP,
+    PR_RESPONSE_STATUS.SELECTING_COMMENTS,
+    PR_RESPONSE_STATUS.RESPONDING,
+  ];
+
+  if (!taskRecord.status || !resumableStatuses.includes(taskRecord.status as any)) {
     log(`[${taskId}] Task not in resumable state (status: ${taskRecord.status})`);
     return;
   }
@@ -293,7 +257,7 @@ export async function resumePrResponseTask(taskId: string): Promise<void> {
 
   try {
     // Create database logger adapter
-    const dbLogger = new DatabaseLoggerAdapter(taskId, db);
+    const dbLogger = new DatabaseLoggerAdapter(botConfig.LOG_LEVEL === 'debug');
     const rmplanConfig = await loadRmplanConfig();
     const prIdentifier = `${taskRecord.repositoryFullName}#${taskRecord.prNumber}`;
 
@@ -311,7 +275,7 @@ export async function resumePrResponseTask(taskId: string): Promise<void> {
           commit: true,
           comment: true,
         },
-        { debug: botConfig.DEBUG },
+        { debug: botConfig.LOG_LEVEL === 'debug' },
         rmplanConfig
       );
     });
@@ -337,5 +301,171 @@ export async function resumePrResponseTask(taskId: string): Promise<void> {
       `Overall status: Failed - ${String(err).substring(0, 100)}`,
       'failed'
     );
+  }
+}
+
+/**
+ * Applies responses by posting comments or code suggestions to GitHub
+ * @param taskId The task ID for logging
+ * @param prNumber The pull request number
+ * @param repoOwner The repository owner
+ * @param repoName The repository name
+ * @param responses Array of responses to apply
+ */
+async function applyResponses(
+  taskId: string,
+  prNumber: number,
+  repoOwner: string,
+  repoName: string,
+  responses: Array<{
+    originalCommentId: number;
+    replyText?: string;
+    codeSuggestion?: string;
+  }>
+): Promise<void> {
+  log(`[${taskId}] Applying ${responses.length} responses to PR #${prNumber}`);
+
+  const octokit = new Octokit({ auth: botConfig.GITHUB_TOKEN });
+
+  for (const response of responses) {
+    try {
+      let commentBody = '';
+
+      // Build the comment body
+      if (response.replyText) {
+        commentBody += response.replyText;
+      }
+
+      if (response.codeSuggestion) {
+        // Format code suggestion as a GitHub suggestion block
+        if (commentBody) {
+          commentBody += '\n\n';
+        }
+        commentBody += '```suggestion\n' + response.codeSuggestion + '\n```';
+      }
+
+      if (!commentBody) {
+        debugLog(`[${taskId}] Skipping empty response for comment ${response.originalCommentId}`);
+        continue;
+      }
+
+      // Post the comment as a reply to the original comment
+      await octokit.rest.issues.createComment({
+        owner: repoOwner,
+        repo: repoName,
+        issue_number: prNumber,
+        body: commentBody,
+      });
+
+      log(
+        `[${taskId}] Posted response for comment ${response.originalCommentId} on PR #${prNumber}`
+      );
+
+      // Update progress
+      await notifyTaskProgress(
+        taskId,
+        `Posted response for comment ${response.originalCommentId}`,
+        PR_RESPONSE_STATUS.RESPONDING
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      error(
+        `[${taskId}] Failed to post response for comment ${response.originalCommentId}: ${errorMessage}`
+      );
+      // Continue with other responses even if one fails
+    }
+  }
+
+  log(`[${taskId}] Finished applying responses`);
+}
+
+/**
+ * Processes PR comments to generate and apply responses
+ * @param taskId The task ID
+ * @param prNumber The pull request number
+ * @param repoOwner The repository owner
+ * @param repoName The repository name
+ * @returns Promise that resolves when processing is complete
+ */
+export async function processPrComments(
+  taskId: string,
+  prNumber: number,
+  repoOwner: string,
+  repoName: string
+): Promise<void> {
+  log(`[${taskId}] Processing PR comments for PR #${prNumber}`);
+
+  try {
+    // Update task status
+    await db
+      .update(tasks)
+      .set({ status: PR_RESPONSE_STATUS.RESPONDING })
+      .where(eq(tasks.id, taskId));
+
+    // For now, we'll use the existing handleRmprCommand approach
+    // In a future enhancement, we could modify rmpr to return responses
+    // instead of posting them directly, then use applyResponses
+
+    const rmplanConfig = await loadRmplanConfig();
+    const prIdentifier = `${repoOwner}/${repoName}#${prNumber}`;
+
+    // Create database logger adapter
+    const dbLogger = new DatabaseLoggerAdapter(botConfig.LOG_LEVEL === 'debug');
+
+    // Run rmpr command with database logging
+    await runWithLogger(dbLogger, async () => {
+      await handleRmprCommand(
+        prIdentifier,
+        {
+          executor: rmplanConfig.defaultExecutor || 'claude-code',
+          mode: 'inline-comments',
+          yes: true,
+          model: rmplanConfig.models?.execution,
+          dryRun: false,
+          run: true,
+          commit: true,
+          comment: true, // This enables rmpr to post comments directly
+        },
+        { debug: botConfig.LOG_LEVEL === 'debug' },
+        rmplanConfig
+      );
+    });
+
+    // Save logs to database
+    await dbLogger.save(taskId, 'success');
+
+    // Update task status to completed
+    await db
+      .update(tasks)
+      .set({ status: PR_RESPONSE_STATUS.COMPLETED, updatedAt: new Date() })
+      .where(eq(tasks.id, taskId));
+
+    await notifyTaskProgress(taskId, 'Overall status: Completed', 'completed');
+
+    log(`[${taskId}] Successfully processed PR comments`);
+  } catch (err) {
+    error(`[${taskId}] Error processing PR comments:`, err);
+
+    // Save error logs
+    const dbLogger = new DatabaseLoggerAdapter(botConfig.LOG_LEVEL === 'debug');
+    await dbLogger.save(taskId, 'failed');
+
+    // Update task status to failed
+    await db
+      .update(tasks)
+      .set({
+        status: PR_RESPONSE_STATUS.FAILED,
+        errorMessage: String(err),
+        updatedAt: new Date(),
+      })
+      .where(eq(tasks.id, taskId));
+
+    await notifyTaskProgress(
+      taskId,
+      `Overall status: Failed - ${String(err).substring(0, 100)}`,
+      'failed'
+    );
+
+    throw err;
   }
 }
