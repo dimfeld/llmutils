@@ -306,15 +306,30 @@ export class WorkspaceAutoSelector {
 
     console.log('\nWorkspaces:');
     for (const workspace of workspacesWithStatus) {
-      // Check filesystem lock status
-      const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
-      const isLocked = lockInfo && !(await WorkspaceLock.isLockStale(lockInfo));
+      // Build status display based on lock information
+      let status: string;
+      const statusParts: string[] = [];
 
-      const status = isLocked
-        ? chalk.red(`🔒 Locked by PID ${lockInfo.pid} on ${lockInfo.hostname}`)
-        : workspace.lockedByTaskId
-          ? chalk.yellow(`📌 Reserved by task ${workspace.lockedByTaskId}`)
-          : chalk.green('🔓 Available');
+      // Primary status: Application-level lock (lockedByTaskId)
+      if (workspace.lockedByTaskId) {
+        statusParts.push(chalk.yellow(`📌 Reserved by task ${workspace.lockedByTaskId}`));
+      }
+
+      // Secondary status: Filesystem lock
+      if (workspace.fileSystemLock) {
+        statusParts.push(
+          chalk.red(
+            `🔒 Locked by PID ${workspace.fileSystemLock.pid} on ${workspace.fileSystemLock.hostname}`
+          )
+        );
+      }
+
+      // If no locks, it's available
+      if (statusParts.length === 0) {
+        status = chalk.green('🔓 Available');
+      } else {
+        status = statusParts.join(' | ');
+      }
 
       console.log(`\n${status}`);
       console.log(`  Path: ${workspace.workspacePath}`);
@@ -322,10 +337,15 @@ export class WorkspaceAutoSelector {
       console.log(`  Branch: ${workspace.branch}`);
       console.log(`  Created: ${new Date(workspace.createdAt).toLocaleString()}`);
 
-      if (lockInfo && isLocked) {
-        const lockAge = Date.now() - new Date(lockInfo.startedAt).getTime();
+      if (workspace.lastAccessedAt) {
+        console.log(`  Last accessed: ${new Date(workspace.lastAccessedAt).toLocaleString()}`);
+      }
+
+      // Show filesystem lock age if present
+      if (workspace.fileSystemLock) {
+        const lockAge = Date.now() - new Date(workspace.fileSystemLock.startedAt).getTime();
         const lockAgeHours = Math.round(lockAge / (1000 * 60 * 60));
-        console.log(`  Lock age: ${lockAgeHours} hours`);
+        console.log(`  Filesystem lock age: ${lockAgeHours} hours`);
       }
     }
   }

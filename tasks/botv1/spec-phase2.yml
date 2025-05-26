@@ -336,7 +336,7 @@ tasks:
               -   The status display should primarily reflect `lockedByTaskId`. If `lockedByTaskId` is set, indicate which task has it locked.
               -   It can also show the file-system lock status (PID based) as secondary information if available.
               -   Information like `branch`, `createdAt`, `lastAccessedAt` should be fetched from the DB.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/agent.ts` (`rmplanAgent` function):
 
