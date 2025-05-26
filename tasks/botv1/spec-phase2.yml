@@ -1041,4 +1041,4 @@ tasks:
               - In `DatabaseLoggerAdapter`, if `args[0]` is a string like `'[ClaudeToolCall:TodoWrite]'` and `args[1]` is an object, format `message` as `args[0]` and `fullContent` as `JSON.stringify(args[1])`. Otherwise, current behavior.
           This relies on `ClaudeCodeExecutor` being run within a `runWithLogger`
           context using `DatabaseLoggerAdapter`.
-        done: false
+        done: true
