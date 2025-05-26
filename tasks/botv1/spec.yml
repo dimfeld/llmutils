@@ -1277,7 +1277,7 @@ tasks:
           // ... then pass originalCommandId to startPlanGenerationTask
 
           ```
-        done: false
+        done: true
       - prompt: >
           Update `src/bot/discord_bot.ts` to call `startPlanGenerationTask`.
 
