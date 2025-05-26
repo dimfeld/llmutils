@@ -1,16 +1,17 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } from 'discord.js';
 import { config } from './config.js';
 import { log, error, debugLog } from '../logging.js';
-import { db, commandHistory } from './db/index.js';
+import { db, commandHistory, taskLogs } from './db/index.js';
 import { startPlanGenerationTask, startImplementationTask } from './core/task_manager.js';
 import { parseGitHubIssueUrl } from './utils/github_utils.js';
 import { initializeThreadManager } from './core/thread_manager.js';
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 const RMPLAN_COMMAND = 'rm-plan';
 const RMIMPLEMENT_COMMAND = 'rm-implement';
+const RMLOGS_COMMAND = 'rm-logs';
 
 const commands = [
   new SlashCommandBuilder()
@@ -25,6 +26,16 @@ const commands = [
     .setDescription('Implements an existing plan for a GitHub issue.')
     .addStringOption((option) =>
       option.setName('issue-url').setDescription('The URL of the GitHub issue').setRequired(true)
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMLOGS_COMMAND)
+    .setDescription('Retrieves execution logs for a specific task.')
+    .addStringOption((option) =>
+      option
+        .setName('task-id')
+        .setDescription('The ID of the task to retrieve logs for.')
+        .setRequired(true)
     )
     .toJSON(),
 ];
@@ -262,6 +273,94 @@ export async function startDiscordBot() {
           .catch((e) => {
             error('Unhandled error from startImplementationTask (Discord):', e);
           });
+      } else if (commandName === RMLOGS_COMMAND) {
+        const taskId = options.getString('task-id', true);
+        log(`'/rm-logs' command received for task ID: ${taskId}`);
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.deferReply({ ephemeral: false });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          // Query the task_logs table for all entries where taskId matches
+          const logs = await db
+            .select()
+            .from(taskLogs)
+            .where(eq(taskLogs.taskId, taskId))
+            .orderBy(asc(taskLogs.timestamp));
+
+          if (logs.length === 0) {
+            await interaction.editReply({
+              content: `No logs found for task ID: ${taskId}`,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'success' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Format the logs
+          let formattedLogs = `Logs for Task ID: ${taskId}\n\n`;
+          for (const logEntry of logs) {
+            const timestamp = logEntry.timestamp
+              ? new Date(logEntry.timestamp).toISOString()
+              : 'Unknown';
+            formattedLogs += `[${timestamp}] [${logEntry.logLevel}] ${logEntry.message}\n`;
+          }
+
+          // Check if logs exceed Discord's message limit (2000 chars)
+          if (formattedLogs.length <= 1990) {
+            // Send in a code block
+            await interaction.editReply({
+              content: `\`\`\`\n${formattedLogs}\n\`\`\``,
+            });
+          } else {
+            // Send as a text file attachment
+            const buffer = Buffer.from(formattedLogs, 'utf-8');
+            await interaction.editReply({
+              content: `Logs for task ${taskId} are too long to display. Attached as a file.`,
+              files: [
+                {
+                  attachment: buffer,
+                  name: `task_${taskId}_logs.txt`,
+                  description: `Execution logs for task ${taskId}`,
+                },
+              ],
+            });
+          }
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to retrieve logs for task ${taskId}:`, err);
+          await interaction.editReply({
+            content: `Error retrieving logs for task ${taskId}: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
       } else {
         try {
           await interaction.reply({ content: `Unknown command: ${commandName}`, ephemeral: true });
