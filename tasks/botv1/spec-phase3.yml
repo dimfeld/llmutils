@@ -281,7 +281,7 @@ tasks:
                   - Send a DM (or ephemeral message) to the user with the verification code and instructions: "To verify your GitHub account `<github-username>`, please create a new public Gist (https://gist.github.com/) with the exact content (only the code): `<code>`. This code expires in 15 minutes. After creating the Gist, use the command `/rm-verify-gist <gist-url>` to complete the verification."
               c. If `initiateRegistration` fails, send the returned error message to the user.
           5.  Write tests for `initiateRegistration` and the command handler.
-        done: false
+        done: true
       - prompt: >
           Implement the Gist verification logic and the `/rm-verify-gist
           <gist-url>` command.
