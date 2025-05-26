@@ -444,7 +444,7 @@ tasks:
 
           For now, this function sets up the task record. The execution part
           will be separate.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/core/task_manager.ts`, create a new method `async
           processImplementationTask(taskId: string): Promise<void>`. This method
