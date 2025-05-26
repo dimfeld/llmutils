@@ -25,7 +25,7 @@ describe('PR Response Service', () => {
         githubCommentId: 456,
         discordInteraction: { id: 'test', channelId: 'channel123', token: 'token' },
       };
-      
+
       // Type assertion to ensure the object matches the expected shape
       expect(options.platform).toBe('github');
       expect(options.userId).toBe('test-user');
@@ -39,7 +39,7 @@ describe('PR Response Service', () => {
       const repoFullName = 'owner/repo';
       const prNumber = 123;
       const expectedIdentifier = `${repoFullName}#${prNumber}`;
-      
+
       expect(expectedIdentifier).toBe('owner/repo#123');
     });
 
@@ -51,7 +51,7 @@ describe('PR Response Service', () => {
         PR_RESPONSE_STATUS.RESPONDING,
         PR_RESPONSE_STATUS.COMPLETED,
       ];
-      
+
       // Verify status progression
       expect(statuses[0]).toBe('pending');
       expect(statuses[statuses.length - 1]).toBe('completed');
@@ -63,18 +63,18 @@ describe('PR Response Service', () => {
         PR_RESPONSE_STATUS.SELECTING_COMMENTS,
         PR_RESPONSE_STATUS.RESPONDING,
       ];
-      
+
       const nonResumableStatuses = [
         PR_RESPONSE_STATUS.PENDING,
         PR_RESPONSE_STATUS.COMPLETED,
         PR_RESPONSE_STATUS.FAILED,
       ];
-      
+
       // Verify categorization
       expect(resumableStatuses).toContain('workspace_setup');
       expect(resumableStatuses).toContain('selecting_comments');
       expect(resumableStatuses).toContain('responding');
-      
+
       expect(nonResumableStatuses).toContain('pending');
       expect(nonResumableStatuses).toContain('completed');
       expect(nonResumableStatuses).toContain('failed');
@@ -85,7 +85,7 @@ describe('PR Response Service', () => {
     it('should truncate long error messages', () => {
       const longError = 'A'.repeat(300);
       const truncated = longError.substring(0, 200) + '...';
-      
+
       expect(truncated.length).toBe(203);
       expect(truncated).toEndWith('...');
     });
