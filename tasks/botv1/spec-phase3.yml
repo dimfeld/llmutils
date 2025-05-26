@@ -492,7 +492,7 @@ tasks:
           3.  Ensure progress updates are sent to linked Discord/GitHub threads.
 
           4.  Write tests.
-        done: false
+        done: true
   - title: Crash Recovery System
     description: >
       Implement task resumption on startup using checkpoints stored in the
