@@ -107,7 +107,7 @@ describe('Task Logs Cleanup', () => {
     expect(count).toBe(1);
   });
 
-  test('deleteOldTaskLogs should delete logs older than retention period', async () => {
+  test('deleteOldTaskLogs should delete logs older than specified date', async () => {
     const now = new Date();
     const twentyDaysAgo = new Date();
     twentyDaysAgo.setDate(twentyDaysAgo.getDate() - 20);
@@ -142,11 +142,12 @@ describe('Task Logs Cleanup', () => {
 
     testLogIds = results.map((r) => r.id);
 
-    // Delete logs older than 30 days
-    const result = await deleteOldTaskLogs(30);
+    // Delete logs older than 30 days ago
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const deletedCount = await deleteOldTaskLogs(thirtyDaysAgo);
 
-    expect(result.deletedCount).toBe(1);
-    expect(result.error).toBeUndefined();
+    expect(deletedCount).toBe(1);
 
     // Verify correct logs remain
     const remainingLogs = await db.select().from(taskLogs).where(eq(taskLogs.taskId, testTaskId));
@@ -181,11 +182,12 @@ describe('Task Logs Cleanup', () => {
 
     testLogIds = results.map((r) => r.id);
 
-    // Try to delete logs older than 30 days
-    const result = await deleteOldTaskLogs(30);
+    // Try to delete logs older than 30 days ago
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const deletedCount = await deleteOldTaskLogs(thirtyDaysAgo);
 
-    expect(result.deletedCount).toBe(0);
-    expect(result.error).toBeUndefined();
+    expect(deletedCount).toBe(0);
 
     // Verify all logs remain
     const remainingLogs = await db.select().from(taskLogs).where(eq(taskLogs.taskId, testTaskId));
@@ -232,6 +234,5 @@ describe('Task Logs Cleanup', () => {
 
     // Should delete the 40-day-old log
     expect(result.deletedCount).toBe(1);
-    expect(result.error).toBeUndefined();
   });
 });

@@ -50,7 +50,7 @@ export async function runCleanupService(): Promise<CleanupServiceResult> {
   try {
     log('[Cleanup Service] Running task log cleanup...');
     const logResult = await autoCleanupTaskLogs();
-    result.taskLogs = logResult;
+    result.taskLogs.deletedCount = logResult.deletedCount;
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     error(`[Cleanup Service] Task log cleanup failed: ${errorMessage}`);
