@@ -108,7 +108,7 @@ tasks:
 
           6.  Write unit tests for these functions, mocking the database
           interaction.
-        done: false
+        done: true
   - title: Implement Admin Discord Commands
     description: >
       Implement the admin-specific Discord slash commands: `/rm-link-user`,
