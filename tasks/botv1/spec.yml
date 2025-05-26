@@ -260,7 +260,7 @@ tasks:
 
           Ensure your `src/bot/config.ts` correctly loads `DATABASE_PATH` from
           the environment.
-        done: false
+        done: true
       - prompt: >
           Create `src/bot/db/schema.ts` and define the database schema using
           Drizzle ORM for SQLite.
