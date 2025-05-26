@@ -8,6 +8,7 @@ import {
   type PrepResult,
   SharedStore,
   type BaseEvent,
+  type SubMachineConfig,
 } from './index';
 
 type Context = object;
@@ -379,11 +380,12 @@ describe('Nested Flow State Machine', () => {
       ProcessEvent,
       ProcessEvent[]
     > {
-      subMachine: StateMachine<InnerStates, Context, ProcessEvent>;
-
       constructor(innerMachine: StateMachine<InnerStates, Context, ProcessEvent>) {
-        super('outer_process', innerMachine.config);
-        this.subMachine = innerMachine;
+        super('outer_process', {
+          id: 'inner-process',
+          config: innerMachine.config,
+          initialContext: {},
+        });
       }
 
       // Required by Node abstract class
@@ -433,13 +435,13 @@ describe('Nested Flow State Machine', () => {
       }
 
       // Translate events from parent to submachine
-      translateEvents(events: ProcessEvent[]): ProcessEvent[] {
+      translateEvents(events: ProcessEvent[], machineId: string): ProcessEvent[] {
         // Pass through all events
         return events;
       }
 
       // Translate actions from submachine to parent
-      translateActions(actions: ProcessEvent[]): ProcessEvent[] {
+      translateActions(actions: ProcessEvent[], machineId: string): ProcessEvent[] {
         if (!actions || actions.length === 0) {
           // Create a synthetic waiting message if there are no actions
           return [
@@ -564,5 +566,262 @@ describe('Nested Flow State Machine', () => {
       (a) => a.type === 'OUTPUT' && a.payload === 'Outer process complete'
     );
     expect(outerFinalAction).toBeDefined();
+  });
+
+  test('demonstrates multiple concurrent sub-machines', async () => {
+    // Define shared event type
+    interface WorkerEvent extends BaseEvent {
+      id: string;
+      type: 'START' | 'PROCESS' | 'COMPLETE' | 'OUTPUT' | 'INPUT';
+      payload: any;
+      targetMachine?: string; // Optional field to target specific sub-machine
+    }
+
+    // Define worker state machine states
+    type WorkerStates = 'worker_idle' | 'worker_processing' | 'worker_done';
+
+    // Worker nodes
+    class WorkerIdleNode extends Node<WorkerStates, Context, WorkerEvent> {
+      constructor() {
+        super('worker_idle');
+      }
+
+      async prep(store: SharedStore<Context, WorkerEvent>): Promise<PrepResult<WorkerEvent, null>> {
+        const events = store.pendingEvents;
+        return { events, args: null };
+      }
+
+      async exec(
+        args: null,
+        events: WorkerEvent[],
+        scratchpad: any
+      ): Promise<{ result: null; scratchpad: any }> {
+        return { result: null, scratchpad };
+      }
+
+      async post(
+        result: null,
+        store: SharedStore<Context, WorkerEvent>
+      ): Promise<StateResult<WorkerStates, WorkerEvent>> {
+        const hasWork = store.pendingEvents.some((e) => e.type === 'START');
+        if (hasWork) {
+          return {
+            status: 'transition',
+            to: 'worker_processing',
+            actions: [],
+          };
+        }
+        return { status: 'waiting' };
+      }
+    }
+
+    class WorkerProcessingNode extends Node<WorkerStates, Context, WorkerEvent> {
+      constructor() {
+        super('worker_processing');
+      }
+
+      async prep(store: SharedStore<Context, WorkerEvent>): Promise<PrepResult<WorkerEvent, null>> {
+        return { events: [], args: null };
+      }
+
+      async exec(
+        args: null,
+        events: WorkerEvent[],
+        scratchpad: any
+      ): Promise<{ result: null; scratchpad: any }> {
+        // Simulate processing
+        return { result: null, scratchpad };
+      }
+
+      async post(
+        result: null,
+        store: SharedStore<Context, WorkerEvent>
+      ): Promise<StateResult<WorkerStates, WorkerEvent>> {
+        return {
+          status: 'transition',
+          to: 'worker_done',
+          actions: [
+            {
+              id: crypto.randomUUID(),
+              type: 'COMPLETE',
+              payload: 'Work completed',
+            },
+          ],
+        };
+      }
+    }
+
+    class WorkerDoneNode extends FinalNode<WorkerStates, Context, WorkerEvent> {
+      constructor() {
+        super('worker_done');
+      }
+    }
+
+    // Create worker configurations
+    const worker1Config: SubMachineConfig<WorkerStates, Context, WorkerEvent> = {
+      id: 'worker-1',
+      config: {
+        initialState: 'worker_idle',
+        errorState: 'worker_idle',
+        nodes: [new WorkerIdleNode(), new WorkerProcessingNode(), new WorkerDoneNode()],
+      },
+      initialContext: {},
+    };
+
+    const worker2Config: SubMachineConfig<WorkerStates, Context, WorkerEvent> = {
+      id: 'worker-2',
+      config: {
+        initialState: 'worker_idle',
+        errorState: 'worker_idle',
+        nodes: [new WorkerIdleNode(), new WorkerProcessingNode(), new WorkerDoneNode()],
+      },
+      initialContext: {},
+    };
+
+    // Define coordinator states
+    type CoordinatorStates = 'coord_start' | 'coord_workers' | 'coord_end';
+
+    // Coordinator flow node that manages multiple workers
+    class MultiWorkerFlowNode extends FlowNode<
+      CoordinatorStates,
+      Context,
+      WorkerEvent,
+      WorkerEvent,
+      null
+    > {
+      constructor() {
+        super('coord_workers', [worker1Config, worker2Config]);
+      }
+
+      async prep(store: SharedStore<Context, WorkerEvent>): Promise<PrepResult<WorkerEvent, null>> {
+        return { events: store.pendingEvents, args: null };
+      }
+
+      async post(
+        result: StateResult<any, WorkerEvent>,
+        store: SharedStore<Context, WorkerEvent>
+      ): Promise<StateResult<CoordinatorStates, WorkerEvent>> {
+        if (result.status === 'terminal') {
+          return {
+            status: 'transition',
+            to: 'coord_end',
+            actions: [
+              {
+                id: crypto.randomUUID(),
+                type: 'OUTPUT',
+                payload: 'All workers completed',
+              },
+              ...(result.actions || []),
+            ],
+          };
+        }
+        return result as StateResult<CoordinatorStates, WorkerEvent>;
+      }
+
+      translateEvents(events: WorkerEvent[], machineId: string): WorkerEvent[] {
+        // Route events to specific workers based on targetMachine field
+        return events.filter((e) => !e.targetMachine || e.targetMachine === machineId);
+      }
+
+      translateActions(actions: WorkerEvent[], machineId: string): WorkerEvent[] {
+        // Tag actions with the machine that produced them
+        return actions.map((action) => ({
+          ...action,
+          payload: `[${machineId}] ${action.payload}`,
+        }));
+      }
+    }
+
+    // Coordinator nodes
+    class CoordStartNode extends Node<CoordinatorStates, Context, WorkerEvent> {
+      constructor() {
+        super('coord_start');
+      }
+
+      async prep(store: SharedStore<Context, WorkerEvent>): Promise<PrepResult<WorkerEvent, null>> {
+        return { events: [], args: null };
+      }
+
+      async exec(
+        args: null,
+        events: WorkerEvent[],
+        scratchpad: any
+      ): Promise<{ result: null; scratchpad: any }> {
+        return { result: null, scratchpad };
+      }
+
+      async post(
+        result: null,
+        store: SharedStore<Context, WorkerEvent>
+      ): Promise<StateResult<CoordinatorStates, WorkerEvent>> {
+        return {
+          status: 'transition',
+          to: 'coord_workers',
+          actions: [
+            {
+              id: crypto.randomUUID(),
+              type: 'START',
+              payload: 'Start worker 1',
+              targetMachine: 'worker-1',
+            },
+            {
+              id: crypto.randomUUID(),
+              type: 'START',
+              payload: 'Start worker 2',
+              targetMachine: 'worker-2',
+            },
+          ],
+        };
+      }
+    }
+
+    class CoordEndNode extends FinalNode<CoordinatorStates, Context, WorkerEvent> {
+      constructor() {
+        super('coord_end');
+      }
+    }
+
+    // Create coordinator state machine
+    const coordinatorMachine = new StateMachine<CoordinatorStates, Context, WorkerEvent>(
+      {
+        initialState: 'coord_start',
+        errorState: 'coord_start',
+        nodes: [new CoordStartNode(), new MultiWorkerFlowNode(), new CoordEndNode()],
+      },
+      {
+        write: async () => {},
+        writeEvents: async () => {},
+        read: async () => {
+          throw new Error('Not implemented');
+        },
+      },
+      {},
+      'coordinator-machine'
+    );
+
+    // Initialize and run
+    await coordinatorMachine.initialize();
+    const result = await coordinatorMachine.resume([]);
+
+    // Verify result
+    expect(result.status).toBe('terminal');
+    expect(result.actions).toBeDefined();
+
+    // Should have completion messages from both workers
+    const worker1Complete = result.actions?.find(
+      (a) => a.type === 'COMPLETE' && a.payload.includes('[worker-1]')
+    );
+    const worker2Complete = result.actions?.find(
+      (a) => a.type === 'COMPLETE' && a.payload.includes('[worker-2]')
+    );
+
+    expect(worker1Complete).toBeDefined();
+    expect(worker2Complete).toBeDefined();
+
+    // Should have the "all workers completed" message
+    const allComplete = result.actions?.find(
+      (a) => a.type === 'OUTPUT' && a.payload === 'All workers completed'
+    );
+    expect(allComplete).toBeDefined();
   });
 });

@@ -2,6 +2,9 @@ export interface BaseEvent<T extends string = string, P = unknown> {
   id: string;
   type: T;
   payload?: P;
+  /** Optional routing information for event bus */
+  targetMachineId?: string;
+  sourceMachineId?: string;
 }
 
 export interface BaseAction<T extends string = string, P = unknown> {

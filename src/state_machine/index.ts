@@ -1,5 +1,5 @@
 import type { BaseEvent } from './events.ts';
-import { Node, FinalNode, ErrorNode, FlowNode } from './nodes.ts';
+import { Node, FinalNode, ErrorNode, FlowNode, type SubMachineConfig } from './nodes.ts';
 import { SharedStore, type PersistenceAdapter } from './store.ts';
 import {
   initTelemetry,
@@ -11,9 +11,11 @@ import {
   type StateMachineAttributes,
 } from './telemetry.ts';
 import { type StateResult, type PrepResult } from './types.ts';
+import { EventBus, type SystemEvent } from './event_bus.ts';
 
 // Re-export types and classes from nodes.ts
 export { Node, FinalNode, ErrorNode, FlowNode };
+export type { SubMachineConfig };
 
 // Re-export from events.ts
 export type { BaseEvent };
@@ -24,6 +26,10 @@ export type { PersistenceAdapter };
 
 // Re-export from types.ts
 export type { StateResult, PrepResult };
+
+// Re-export from event_bus.ts
+export { EventBus };
+export type { RoutedEvent, SystemEvent } from './event_bus.ts';
 
 export interface StateMachineConfig<StateName extends string, TContext, TEvent extends BaseEvent> {
   initialState: StateName;
@@ -48,13 +54,18 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
   store: SharedStore<TContext, TEvent>;
   private initialized = false;
   private nodesMap: Map<StateName, Node<StateName, TContext, TEvent, any, any, any>>;
+  private eventBusUnsubscribe?: () => void;
+  private parentMachineId?: string;
+  private eventBus?: EventBus;
 
   constructor(
     public config: StateMachineConfig<StateName, TContext, TEvent>,
     public adapter: PersistenceAdapter<TContext, TEvent>,
     initialContext: TContext,
     public instanceId: string,
-    public hooks?: StateMachineHooks<StateName, TEvent>
+    public hooks?: StateMachineHooks<StateName, TEvent>,
+    parentMachineId?: string,
+    eventBus?: EventBus
   ) {
     // Convert nodes array to Map
     this.nodesMap = new Map(
@@ -68,6 +79,9 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
       maxRetries: config.maxRetries,
       retryDelay: config.retryDelay,
     });
+
+    this.parentMachineId = parentMachineId;
+    this.eventBus = eventBus;
   }
 
   async loadPersistedState(): Promise<void> {
@@ -77,7 +91,64 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
   async initialize(enableDebugLogging = false): Promise<void> {
     if (!this.initialized) {
       initTelemetry(enableDebugLogging);
+      
+      // Pass EventBus to FlowNodes
+      if (this.eventBus) {
+        for (const node of this.nodesMap.values()) {
+          if (node instanceof FlowNode) {
+            node.setEventBus(this.eventBus);
+          }
+        }
+        
+        // Register with event bus
+        this.eventBus.registerMachine(
+          this.instanceId,
+          async (event) => {
+            // Handle incoming events
+            await this.handleEvent(event as TEvent);
+          },
+          this.parentMachineId
+        );
+      }
+      
       this.initialized = true;
+    }
+  }
+
+  /**
+   * Handle an event from the event bus
+   */
+  private async handleEvent(event: TEvent): Promise<void> {
+    const span = getActiveSpan();
+    span?.addEvent('event_received_from_bus', {
+      event_type: event.type,
+      event_id: event.id,
+      machine_id: this.instanceId,
+    });
+
+    // Queue the event for processing
+    await this.store.enqueueEvents([event]);
+    
+    // If machine is waiting, resume processing
+    const currentState = this.store.getCurrentState();
+    if (currentState) {
+      const node = this.nodesMap.get(currentState as StateName);
+      if (node) {
+        // Run the node with the new event
+        await this.runNode(node);
+      }
+    }
+  }
+
+  /**
+   * Clean up event bus registration
+   */
+  async destroy(): Promise<void> {
+    if (this.eventBusUnsubscribe) {
+      this.eventBusUnsubscribe();
+    }
+    if (this.eventBus) {
+      this.eventBus.unregisterMachine(this.instanceId);
     }
   }
 
@@ -154,6 +225,30 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
   ): Promise<StateResult<StateName, TEvent>> {
     // TODO This should send the events instead
     if (result.actions) await this.store.enqueueEvents(result.actions);
+    
+    // Emit system event based on result status
+    if (this.eventBus) {
+      if (result.status === 'waiting') {
+        await this.eventBus.emitSystemEvent({
+          id: crypto.randomUUID(),
+          type: 'MACHINE_WAITING',
+          payload: {
+            machineId: this.instanceId,
+            state: this.store.getCurrentState(),
+          },
+        } as SystemEvent);
+      } else if (result.status === 'terminal') {
+        await this.eventBus.emitSystemEvent({
+          id: crypto.randomUUID(),
+          type: 'MACHINE_TERMINAL',
+          payload: {
+            machineId: this.instanceId,
+            state: this.store.getCurrentState(),
+          },
+        } as SystemEvent);
+      }
+    }
+    
     if (result.status === 'transition' && result.to) {
       const fromState = this.store.getCurrentState() as string;
       const toState = result.to as string;
@@ -166,6 +261,18 @@ export class StateMachine<StateName extends string, TContext, TEvent extends Bas
 
       this.store.clearScratchpad();
       this.store.setCurrentState(result.to as string);
+
+      // Emit state change event
+      if (this.eventBus) {
+        await this.eventBus.emitSystemEvent({
+          id: crypto.randomUUID(),
+          type: 'MACHINE_STATE_CHANGED',
+          payload: {
+            machineId: this.instanceId,
+            state: toState,
+          },
+        } as SystemEvent);
+      }
 
       const nextNode = this.nodesMap.get(result.to);
       if (nextNode) {
