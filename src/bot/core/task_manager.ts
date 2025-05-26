@@ -50,6 +50,40 @@ export interface StartPlanGenerationOptions {
   discordInteraction?: any;
 }
 
+export interface StartImplementationOptions {
+  platform: 'github' | 'discord';
+  userId: string;
+  issueUrl: string;
+  repoFullName: string;
+  repoPath: string;
+  originalCommandId?: number;
+  githubCommentId?: number;
+  discordInteraction?: any;
+}
+
+// Implementation lifecycle status constants
+export const IMPLEMENTATION_STATUS = {
+  PENDING_IMPLEMENTATION: 'pending_implementation',
+  WORKSPACE_SETUP: 'workspace_setup',
+  IMPLEMENTING: 'implementing',
+  IMPLEMENTATION_COMPLETE: 'implementation_complete',
+  IMPLEMENTATION_FAILED: 'implementation_failed',
+  PR_PENDING: 'pr_pending',
+  PR_CREATED: 'pr_created',
+  PR_FAILED: 'pr_failed',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
+
+// Planning lifecycle status constants (already in use)
+export const PLANNING_STATUS = {
+  PENDING_PLANNING: 'pending_planning',
+  PLANNING: 'planning',
+  PLAN_GENERATED: 'plan_generated',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
+
 /**
  * Manages task records in the database.
  */
@@ -353,10 +387,166 @@ export class TaskManager {
       return null;
     }
   }
+
+  /**
+   * Starts an implementation task for a GitHub issue.
+   */
+  async startImplementationTask(options: StartImplementationOptions): Promise<string | null> {
+    const taskId = randomUUID();
+    log(`[${taskId}] Received request to implement plan for issue: ${options.issueUrl}`);
+
+    let taskRecordId: string | undefined;
+    // Parse issue number from URL
+    const issueNumber = parseInt(options.issueUrl.split('/').pop() || '0', 10);
+
+    try {
+      // 1. Find the planning task for this issue to get the plan file
+      const planningTasks = await this.getTasksByIssue(options.issueUrl);
+      const planTask = planningTasks.find(
+        (t) =>
+          t.taskType === 'plan' && t.status === PLANNING_STATUS.PLAN_GENERATED && t.planFilePath
+      );
+
+      if (!planTask || !planTask.planFilePath) {
+        throw new Error(`No completed plan found for issue: ${options.issueUrl}`);
+      }
+
+      log(`[${taskId}] Found plan at: ${planTask.planFilePath}`);
+
+      // 2. Create initial task record with implementation type
+      const insertedTasks = await db
+        .insert(tasks)
+        .values({
+          id: taskId,
+          issueUrl: options.issueUrl,
+          issueNumber: issueNumber || undefined,
+          repositoryFullName: options.repoFullName,
+          taskType: 'implement',
+          status: IMPLEMENTATION_STATUS.PENDING_IMPLEMENTATION,
+          planFilePath: planTask.planFilePath,
+          createdByPlatform: options.platform,
+          createdByUserId: options.userId,
+        })
+        .returning({ id: tasks.id });
+
+      if (!insertedTasks || insertedTasks.length === 0) {
+        throw new Error('Failed to insert task into database.');
+      }
+      taskRecordId = insertedTasks[0].id;
+      log(`[${taskId}] Created implementation task record.`);
+
+      // Update command_history with task_id and set status to 'processing'
+      if (options.originalCommandId) {
+        await db
+          .update(commandHistoryTable)
+          .set({ taskId: taskId, status: 'processing' })
+          .where(eq(commandHistoryTable.id, options.originalCommandId));
+      }
+
+      // 3. Set status to 'workspace_setup'
+      await db
+        .update(tasks)
+        .set({ status: IMPLEMENTATION_STATUS.WORKSPACE_SETUP })
+        .where(eq(tasks.id, taskId));
+
+      await notifyTaskCreation(
+        taskId,
+        `Setting up workspace for implementation of ${options.issueUrl}...`,
+        {
+          platform: options.platform,
+          userId: options.userId,
+          repoFullName: options.repoFullName,
+          issueNumber: parseGitHubIssueUrl(options.issueUrl)?.issueNumber,
+          githubCommentId: options.githubCommentId,
+          discordInteraction: options.discordInteraction,
+          channelId: options.discordInteraction?.channelId,
+        },
+        options.repoFullName,
+        parseGitHubIssueUrl(options.issueUrl)?.issueNumber
+      );
+
+      // TODO: In the next phase, this will set up workspace and invoke rmplanAgent
+      // For now, just update status to show the implementation would start
+      await db
+        .update(tasks)
+        .set({
+          status: IMPLEMENTATION_STATUS.IMPLEMENTING,
+          updatedAt: new Date(),
+        })
+        .where(eq(tasks.id, taskId));
+
+      log(
+        `[${taskId}] Implementation task created successfully. Ready for rmplan agent execution.`
+      );
+
+      await notifyTaskCreation(
+        taskId,
+        `Implementation task created for ${options.issueUrl}. Plan: ${planTask.planFilePath}`,
+        {
+          platform: options.platform,
+          userId: options.userId,
+          repoFullName: options.repoFullName,
+          issueNumber: parseGitHubIssueUrl(options.issueUrl)?.issueNumber,
+          githubCommentId: options.githubCommentId,
+          discordInteraction: options.discordInteraction,
+          channelId: options.discordInteraction?.channelId,
+        },
+        options.repoFullName,
+        parseGitHubIssueUrl(options.issueUrl)?.issueNumber
+      );
+
+      // Update command_history to success
+      if (options.originalCommandId) {
+        await db
+          .update(commandHistoryTable)
+          .set({ status: 'success' })
+          .where(eq(commandHistoryTable.id, options.originalCommandId));
+      }
+      return taskId;
+    } catch (err) {
+      error(`[${taskId}] Error during implementation task creation for ${options.issueUrl}:`, err);
+      if (taskRecordId) {
+        await db
+          .update(tasks)
+          .set({
+            status: IMPLEMENTATION_STATUS.FAILED,
+            errorMessage: String(err),
+            updatedAt: new Date(),
+          })
+          .where(eq(tasks.id, taskRecordId));
+      }
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      await notifyTaskCreation(
+        taskId,
+        `Implementation task FAILED for ${options.issueUrl}. Error: ${errorMessage.substring(0, 200)}...`,
+        {
+          platform: options.platform,
+          userId: options.userId,
+          repoFullName: options.repoFullName,
+          issueNumber: parseGitHubIssueUrl(options.issueUrl)?.issueNumber,
+          githubCommentId: options.githubCommentId,
+          discordInteraction: options.discordInteraction,
+          channelId: options.discordInteraction?.channelId,
+        },
+        options.repoFullName,
+        parseGitHubIssueUrl(options.issueUrl)?.issueNumber
+      );
+
+      // Update command_history to failed
+      if (options.originalCommandId) {
+        await db
+          .update(commandHistoryTable)
+          .set({ status: 'failed', errorMessage: String(err) })
+          .where(eq(commandHistoryTable.id, options.originalCommandId));
+      }
+      return null;
+    }
+  }
 }
 
 // Export a singleton instance
 export const taskManager = new TaskManager();
 
-// Export convenience function
+// Export convenience functions
 export const startPlanGenerationTask = taskManager.startPlanGenerationTask.bind(taskManager);
+export const startImplementationTask = taskManager.startImplementationTask.bind(taskManager);
