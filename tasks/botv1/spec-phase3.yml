@@ -315,7 +315,7 @@ tasks:
               b. Send the result message (success or failure) to the user.
           5.  Write tests for `verifyGist`, `completeRegistration`, and the
           `/rm-verify-gist` command handler.
-        done: false
+        done: true
   - title: Automatic Cleanup System
     description: |
       Implement automatic cleanup for inactive workspaces and old task logs.
