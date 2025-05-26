@@ -38,6 +38,13 @@ export interface RmplanAgentOptions {
   executor?: string;
   model?: string;
   'no-log'?: boolean;
+  progressCallback?: (details: {
+    taskIndex: number;
+    stepIndex: number;
+    stepPrompt: string;
+    taskTitle: string;
+    planFile: string;
+  }) => Promise<void>;
 }
 
 export async function rmplanAgent(
@@ -389,7 +396,8 @@ export async function rmplanAgent(
           currentPlanFile,
           { steps: 1, commit: true },
           { taskIndex, stepIndex },
-          currentBaseDir
+          currentBaseDir,
+          options.progressCallback
         );
         log(`Marked step as done: ${markResult.message.split('\n')[0]}`);
         if (markResult.planComplete) {

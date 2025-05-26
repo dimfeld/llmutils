@@ -30,6 +30,41 @@ interface PlatformContext {
   channelId?: string; // Direct access to channel ID
 }
 
+export async function updateGitHubComment(taskId: string, newBody: string): Promise<void> {
+  try {
+    // Find the GitHub thread for this task
+    const threads = await db.select().from(threadsTable).where(eq(threadsTable.taskId, taskId));
+
+    const githubThread = threads.find((t) => t.platform === 'github');
+    if (!githubThread || !githubThread.externalId) {
+      debugLog(`[${taskId}] No GitHub thread found for task`);
+      return;
+    }
+
+    // Get task details for repo info
+    const tasks = await db.select().from(tasksTable).where(eq(tasksTable.id, taskId));
+    const task = tasks[0];
+    if (!task || !task.repositoryFullName) {
+      error(`[${taskId}] Task not found or missing repository info`);
+      return;
+    }
+
+    const [owner, repo] = task.repositoryFullName.split('/');
+    const commentId = parseInt(githubThread.externalId, 10);
+
+    await octokit.rest.issues.updateComment({
+      owner,
+      repo,
+      comment_id: commentId,
+      body: newBody,
+    });
+
+    log(`[${taskId}] Updated GitHub comment ${commentId}`);
+  } catch (e) {
+    error(`[${taskId}] Failed to update GitHub comment:`, e);
+  }
+}
+
 export async function notifyTaskCreation(
   taskId: string,
   message: string,

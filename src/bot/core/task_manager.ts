@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
+import yaml from 'yaml';
 import {
   db,
   tasks,
@@ -14,7 +15,7 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { log, error, debugLog } from '../../logging.js';
 import { runWithLogger } from '../../logging/adapter.js';
 import { generatePlanForIssue } from './plan_generator.js';
-import { notifyTaskCreation } from './thread_manager.js';
+import { notifyTaskCreation, updateGitHubComment } from './thread_manager.js';
 import { parseGitHubIssueUrl } from '../utils/github_utils.js';
 import { WorkspaceAutoSelector } from '../../rmplan/workspace/workspace_auto_selector.js';
 import { config as botConfig } from '../config.js';
@@ -101,6 +102,58 @@ export const PLANNING_STATUS = {
   COMPLETED: 'completed',
   FAILED: 'failed',
 } as const;
+
+interface TaskProgress {
+  totalSteps: number;
+  completedSteps: number;
+  currentStep?: string;
+  startTime: Date;
+}
+
+// Track progress for active tasks
+const activeTaskProgress = new Map<string, TaskProgress>();
+
+/**
+ * Builds a GitHub comment body with task progress status
+ */
+function buildGitHubProgressComment(
+  taskId: string,
+  taskType: string,
+  issueUrl: string,
+  progress?: TaskProgress
+): string {
+  let body = `## 🤖 LLMUtils Bot - ${taskType === 'plan' ? 'Planning' : 'Implementation'} Task\n\n`;
+  body += `**Task ID:** ${taskId}\n`;
+  body += `**Issue:** ${issueUrl}\n\n`;
+
+  if (progress) {
+    body += `### Progress\n`;
+    const progressPercent =
+      progress.totalSteps > 0
+        ? Math.round((progress.completedSteps / progress.totalSteps) * 100)
+        : 0;
+
+    // Progress bar
+    const filledBars = Math.floor(progressPercent / 10);
+    const emptyBars = 10 - filledBars;
+    body += `${'█'.repeat(filledBars)}${'░'.repeat(emptyBars)} ${progressPercent}%\n\n`;
+
+    body += `**Steps:** ${progress.completedSteps} / ${progress.totalSteps} completed\n`;
+
+    if (progress.currentStep) {
+      body += `**Current Step:** ${progress.currentStep}\n`;
+    }
+
+    const elapsedTime = Date.now() - progress.startTime.getTime();
+    const elapsedMinutes = Math.floor(elapsedTime / 60000);
+    body += `**Elapsed Time:** ${elapsedMinutes} minutes\n`;
+  }
+
+  body += `\n---\n`;
+  body += `*Last updated: ${new Date().toISOString()}*`;
+
+  return body;
+}
 
 /**
  * Manages task records in the database.
@@ -485,6 +538,38 @@ export class TaskManager {
       log(`[${taskId}]   Workspace: ${workspace.workspacePath}`);
       log(`[${taskId}]   Plan file: ${workspacePlanPath}`);
 
+      // Load plan to count total steps
+      let totalSteps = 0;
+      try {
+        const planContent = await Bun.file(workspacePlanPath).text();
+        const planData = yaml.parse(planContent);
+        for (const task of planData.tasks || []) {
+          totalSteps += (task.steps || []).length;
+        }
+        log(`[${taskId}] Plan contains ${totalSteps} total steps`);
+      } catch (err) {
+        error(`[${taskId}] Failed to parse plan file for step counting: ${err}`);
+      }
+
+      // Initialize progress tracking
+      const progress: TaskProgress = {
+        totalSteps,
+        completedSteps: 0,
+        startTime: new Date(),
+      };
+      activeTaskProgress.set(taskId, progress);
+
+      // Create initial GitHub comment with progress tracking
+      if (task.issueUrl) {
+        const initialComment = buildGitHubProgressComment(
+          taskId,
+          task.taskType || 'implement',
+          task.issueUrl,
+          progress
+        );
+        await updateGitHubComment(taskId, initialComment);
+      }
+
       // Create database logger adapter to capture agent output
       const dbLogger = new DatabaseLoggerAdapter(taskId, db);
 
@@ -511,6 +596,39 @@ export class TaskManager {
               executor: executor,
               model: model,
               'no-log': true,
+              progressCallback: async (details) => {
+                // Update progress tracking
+                const progress = activeTaskProgress.get(taskId);
+                if (progress) {
+                  progress.completedSteps++;
+                  progress.currentStep = details.stepPrompt.split('\n')[0].substring(0, 100);
+
+                  // Update GitHub comment with progress
+                  if (task.issueUrl) {
+                    const updatedComment = buildGitHubProgressComment(
+                      taskId,
+                      task.taskType || 'implement',
+                      task.issueUrl,
+                      progress
+                    );
+                    await updateGitHubComment(taskId, updatedComment);
+                  }
+                }
+
+                // Send real-time step completion update to Discord/notifications
+                await notifyTaskCreation(
+                  taskId,
+                  `✅ Completed step ${details.stepIndex + 1}: ${details.stepPrompt.split('\n')[0].substring(0, 100)}...`,
+                  {
+                    platform: task.createdByPlatform as 'github' | 'discord',
+                    userId: task.createdByUserId!,
+                    repoFullName: task.repositoryFullName || undefined,
+                    issueNumber: task.issueNumber || undefined,
+                  },
+                  task.repositoryFullName || undefined,
+                  task.issueNumber || undefined
+                );
+              },
             },
             {}
           );
@@ -576,6 +694,20 @@ export class TaskManager {
 
             log(`[${taskId}] Successfully created PR #${prResult.prNumber}: ${prResult.prUrl}`);
 
+            // Update GitHub comment with final status
+            if (task.issueUrl) {
+              const progress = activeTaskProgress.get(taskId);
+              let finalComment = buildGitHubProgressComment(
+                taskId,
+                task.taskType || 'implement',
+                task.issueUrl,
+                progress
+              );
+              finalComment += `\n\n### ✅ Task Completed Successfully!\n`;
+              finalComment += `**Pull Request:** #${prResult.prNumber} - ${prResult.prUrl}\n`;
+              await updateGitHubComment(taskId, finalComment);
+            }
+
             // Notify PR creation
             await notifyTaskCreation(
               taskId,
@@ -603,6 +735,20 @@ export class TaskManager {
             errorMessage: `PR creation failed: ${errorMessage}`,
           });
 
+          // Update GitHub comment with failure status
+          if (task.issueUrl) {
+            const progress = activeTaskProgress.get(taskId);
+            let failureComment = buildGitHubProgressComment(
+              taskId,
+              task.taskType || 'implement',
+              task.issueUrl,
+              progress
+            );
+            failureComment += `\n\n### ❌ Task Failed\n`;
+            failureComment += `**Error:** PR creation failed - ${errorMessage.substring(0, 200)}\n`;
+            await updateGitHubComment(taskId, failureComment);
+          }
+
           // Notify PR creation failure
           await notifyTaskCreation(
             taskId,
@@ -627,7 +773,24 @@ export class TaskManager {
           errorMessage: errorMessage,
         });
 
+        // Update GitHub comment with failure status
+        if (task.issueUrl) {
+          const progress = activeTaskProgress.get(taskId);
+          let failureComment = buildGitHubProgressComment(
+            taskId,
+            task.taskType || 'implement',
+            task.issueUrl,
+            progress
+          );
+          failureComment += `\n\n### ❌ Task Failed\n`;
+          failureComment += `**Error:** Implementation failed - ${errorMessage.substring(0, 200)}\n`;
+          await updateGitHubComment(taskId, failureComment);
+        }
+
         throw agentError;
+      } finally {
+        // Clean up progress tracking
+        activeTaskProgress.delete(taskId);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
