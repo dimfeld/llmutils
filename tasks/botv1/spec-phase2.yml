@@ -177,7 +177,7 @@ tasks:
               -   Add `id: string` (for the workspace record's UUID).
               -   Change `lockedBy?: { pid: number; startedAt: string; hostname: string; }` to `lockedByTaskId?: string | null`. This aligns with the new DB schema.
               -   Add `lastAccessedAt?: string | Date | null`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, refactor the
           `recordWorkspace` function:
