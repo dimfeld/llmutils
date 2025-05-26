@@ -21,9 +21,30 @@ import { planSchema } from './planSchema.ts';
 import { createWorkspace } from './workspace/workspace_manager.ts';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.ts';
 import { WorkspaceLock } from './workspace/workspace_lock.ts';
-import { findWorkspacesByTaskId } from './workspace/workspace_tracker.ts';
+import {
+  findWorkspacesByTaskId,
+  lockWorkspaceToTask,
+  unlockWorkspace,
+} from './workspace/workspace_tracker.ts';
 
-export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
+export interface RmplanAgentOptions {
+  workspace?: string;
+  autoWorkspace?: boolean;
+  newWorkspace?: boolean;
+  nonInteractive?: boolean;
+  requireWorkspace?: boolean;
+  botTaskId?: string;
+  steps?: string;
+  executor?: string;
+  model?: string;
+  'no-log'?: boolean;
+}
+
+export async function rmplanAgent(
+  planFile: string,
+  options: RmplanAgentOptions,
+  globalCliOptions: any
+) {
   // Initialize currentPlanFile (absolute path)
   let currentPlanFile = path.resolve(planFile);
 
@@ -58,6 +79,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   // Determine the base directory for operations
   let currentBaseDir = await getGitRoot();
 
+  // For tracking workspace lock - use botTaskId if provided, otherwise fall back to workspace ID
+  let workspaceLockedPath: string | null = null;
+
   // Handle workspace creation or auto-selection
   if (options.workspace || options.autoWorkspace) {
     let workspace;
@@ -67,7 +91,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       // Use auto-selector to find or create a workspace
       log('Auto-selecting workspace...');
       const selector = new WorkspaceAutoSelector(currentBaseDir, config);
+
+      // Use botTaskId if provided, otherwise use workspace ID or generate one
       const taskId =
+        options.botTaskId ||
         options.workspace ||
         `${path.parse(currentBaseDir).dir.split(path.sep).pop()}-${Date.now()}`;
 
@@ -83,6 +110,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           taskId: selectedWorkspace.workspace.taskId,
         };
 
+        // The auto-selector already handles locking the workspace to the task ID
+        workspaceLockedPath = workspace.path;
+
         if (selectedWorkspace.isNew) {
           log(`Created new workspace for task: ${workspace.taskId}`);
         } else {
@@ -94,7 +124,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
     } else {
       // Manual workspace handling - check if workspace exists first
-      const existingWorkspaces = await findWorkspacesByTaskId(options.workspace);
+      const workspaceId = options.workspace!; // Guaranteed to exist if we're in this branch
+      const taskId = options.botTaskId || workspaceId;
+      const existingWorkspaces = await findWorkspacesByTaskId(workspaceId);
 
       if (existingWorkspaces.length > 0) {
         // Find the first available workspace (not locked)
@@ -108,30 +140,47 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         }
 
         if (availableWorkspace) {
-          log(`Using existing workspace for task: ${options.workspace}`);
+          log(`Using existing workspace for task: ${workspaceId}`);
           workspace = {
             path: availableWorkspace.workspacePath,
             originalPlanFilePath: availableWorkspace.originalPlanFilePath,
             taskId: availableWorkspace.taskId,
           };
+
+          // Lock the workspace to the task ID
+          if (options.botTaskId) {
+            try {
+              await lockWorkspaceToTask(workspace.path, options.botTaskId);
+              workspaceLockedPath = workspace.path;
+              log(`Locked workspace to bot task: ${options.botTaskId}`);
+            } catch (error) {
+              log(`Warning: Failed to lock workspace to bot task: ${String(error)}`);
+            }
+          }
         } else {
           error(
-            `Workspace with task ID '${options.workspace}' exists but is locked, and --new-workspace was not specified. Cannot proceed.`
+            `Workspace with task ID '${workspaceId}' exists but is locked, and --new-workspace was not specified. Cannot proceed.`
           );
           process.exit(1);
         }
       } else if (options.newWorkspace) {
         // No existing workspace, create a new one
-        log(`Creating workspace for task: ${options.workspace}`);
-        workspace = await createWorkspace(
-          currentBaseDir,
-          options.workspace,
-          currentPlanFile,
-          config
-        );
+        log(`Creating workspace for task: ${workspaceId}`);
+        workspace = await createWorkspace(currentBaseDir, workspaceId, currentPlanFile, config);
+
+        // If botTaskId is provided, lock the workspace to it
+        if (workspace && options.botTaskId) {
+          try {
+            await lockWorkspaceToTask(workspace.path, options.botTaskId);
+            workspaceLockedPath = workspace.path;
+            log(`Locked new workspace to bot task: ${options.botTaskId}`);
+          } catch (error) {
+            log(`Warning: Failed to lock workspace to bot task: ${String(error)}`);
+          }
+        }
       } else {
         error(
-          `No workspace found for task ID '${options.workspace}' and --new-workspace was not specified. Cannot proceed.`
+          `No workspace found for task ID '${workspaceId}' and --new-workspace was not specified. Cannot proceed.`
         );
         process.exit(1);
       }
@@ -139,7 +188,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
     if (workspace) {
       log(boldMarkdownHeaders('\n## Workspace Information'));
-      log(`Task ID: ${options.workspace}`);
+      log(`Task ID: ${workspace.taskId}`);
+      if (options.botTaskId) {
+        log(`Bot Task ID: ${options.botTaskId}`);
+      }
       log(`Workspace Path: ${workspace.path}`);
       log(`Original Plan: ${currentPlanFile}`);
 
@@ -369,6 +421,25 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     error('Agent stopped due to error.');
     process.exit(1);
   } finally {
+    // Release workspace lock if we acquired one
+    if (workspaceLockedPath && options.botTaskId) {
+      try {
+        await unlockWorkspace(workspaceLockedPath);
+        log(`Released workspace lock for bot task: ${options.botTaskId}`);
+      } catch (error) {
+        log(`Warning: Failed to release workspace lock: ${String(error)}`);
+      }
+    }
+
+    // Release filesystem lock if we hold one
+    if (workspaceLockedPath) {
+      try {
+        await WorkspaceLock.releaseLock(workspaceLockedPath);
+      } catch (error) {
+        // Silent failure - cleanup handlers may have already handled it
+      }
+    }
+
     await closeLogFile();
   }
 }
