@@ -10,6 +10,7 @@ The scripts are:
 - `rmfind` - Find relevant files to use with rmfilter
 - `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks.
 - `rmpr` - Handle pull request comments and reviews with AI assistance
+- `llmutils-bot` - Discord and GitHub bot for managing AI-assisted development tasks
 
 All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
 
@@ -55,6 +56,9 @@ assume a repository written with Typescript and PNPM workspaces.
   - [Key Features](#key-features-4)
   - [Usage](#usage-2)
   - [Options Editor](#options-editor)
+- [LLMUtils Bot](#llmutils-bot)
+  - [Discord Commands](#discord-commands)
+  - [Admin Commands](#admin-commands)
 - [Usage Examples](#usage-examples)
   - [Using rmfilter](#using-rmfilter)
   - [Using rmplan](#using-rmplan)
@@ -641,6 +645,52 @@ Add validation here for user input
 rmpr: with-imports
 rmpr: include src/forms
 ```
+
+## LLMUtils Bot
+
+The LLMUtils Bot is a Discord and GitHub bot that helps manage AI-assisted development tasks. It provides a unified interface for generating plans, implementing features, and tracking task progress.
+
+### Discord Commands
+
+The bot provides several Discord slash commands for interacting with the system:
+
+- `/rm-plan <issue-url>` - Generates a plan for a GitHub issue
+- `/rm-implement <issue-url>` - Implements an existing plan for a GitHub issue
+- `/rm-status [task-id]` - Checks the status of a task (omitting task-id shows your most recent task)
+- `/rm-logs <task-id>` - Retrieves execution logs for a specific task
+
+### Admin Commands
+
+Admin-only commands are restricted to users whose Discord IDs are listed in the `ADMIN_DISCORD_USER_IDS` environment variable:
+
+#### `/rm-link-user`
+
+Links a GitHub username to a Discord user ID, allowing the bot to associate GitHub activities with Discord users.
+
+**Usage:**
+
+```
+/rm-link-user github-username:<username> discord-id:<discord-id>
+```
+
+**Parameters:**
+
+- `github-username` - The GitHub username to link
+- `discord-id` - The Discord user ID to link to
+
+**Example:**
+
+```
+/rm-link-user github-username:octocat discord-id:123456789012345678
+```
+
+This command creates a verified mapping between the GitHub user and Discord user, enabling features like:
+
+- Automatic task assignment based on GitHub issue authors
+- Discord notifications for GitHub events
+- User-specific task filtering and management
+
+**Note:** Only users listed in `ADMIN_DISCORD_USER_IDS` can use this command. The mapping is stored in the bot's database and marked as admin-verified.
 
 ## Usage Examples
 

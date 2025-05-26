@@ -8,11 +8,14 @@ import { initializeThreadManager } from './core/thread_manager.js';
 import { eq, asc, desc } from 'drizzle-orm';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { isAdmin } from './discord_admin_utils.js';
+import { mapUser } from './db/user_mappings_manager.js';
 
 const RMPLAN_COMMAND = 'rm-plan';
 const RMIMPLEMENT_COMMAND = 'rm-implement';
 const RMLOGS_COMMAND = 'rm-logs';
 const RMSTATUS_COMMAND = 'rm-status';
+const RMLINKUSER_COMMAND = 'rm-link-user';
 
 const commands = [
   new SlashCommandBuilder()
@@ -47,6 +50,22 @@ const commands = [
         .setName('task-id')
         .setDescription('The ID of the task to check. Omitting it shows your most recent task.')
         .setRequired(false)
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMLINKUSER_COMMAND)
+    .setDescription('(Admin) Links a GitHub username to a Discord user ID.')
+    .addStringOption((option) =>
+      option
+        .setName('github-username')
+        .setDescription('The GitHub username to link')
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName('discord-id')
+        .setDescription('The Discord user ID to link to')
+        .setRequired(true)
     )
     .toJSON(),
 ];
@@ -459,6 +478,77 @@ export async function startDiscordBot() {
           error(`Failed to retrieve logs for task ${taskId}:`, err);
           await interaction.editReply({
             content: `Error retrieving logs for task ${taskId}: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
+      } else if (commandName === RMLINKUSER_COMMAND) {
+        const githubUsername = options.getString('github-username', true);
+        const discordId = options.getString('discord-id', true);
+        log(
+          `'/rm-link-user' command received for GitHub user: ${githubUsername}, Discord ID: ${discordId}`
+        );
+
+        // Check if the user is an admin
+        if (!isAdmin(user.id)) {
+          try {
+            await interaction.reply({
+              content: 'Error: You do not have permission to use this command.',
+              ephemeral: true,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'failed', errorMessage: 'Insufficient permissions' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+          } catch (replyError) {
+            error('Failed to reply to Discord interaction:', replyError);
+          }
+          return;
+        }
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.deferReply({ ephemeral: false });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          // Call the mapUser function to create the mapping
+          await mapUser(githubUsername, discordId, 'admin', true);
+
+          await interaction.editReply({
+            content: `Successfully mapped GitHub user \`${githubUsername}\` to Discord user <@${discordId}>.`,
+          });
+
+          log(
+            `Admin ${user.id} successfully mapped GitHub user ${githubUsername} to Discord user ${discordId}`
+          );
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to map user:`, err);
+          await interaction.editReply({
+            content: `Error mapping user: ${(err as Error).message}`,
           });
           if (originalCommandId) {
             await db
