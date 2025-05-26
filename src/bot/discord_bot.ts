@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } 
 import { config } from './config.js';
 import { log, error, debugLog } from '../logging.js';
 import { db, commandHistory } from './db/index.js';
-import { startPlanGenerationTask } from './core/task_manager.js';
+import { startPlanGenerationTask, startImplementationTask } from './core/task_manager.js';
 import { parseGitHubIssueUrl } from './utils/github_utils.js';
 import { initializeThreadManager } from './core/thread_manager.js';
 import { eq } from 'drizzle-orm';
@@ -10,8 +10,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 const RMPLAN_COMMAND = 'rm-plan';
-// Add other command names here as they are defined
-// const RMIMPLEMENT_COMMAND = 'rm-implement';
+const RMIMPLEMENT_COMMAND = 'rm-implement';
 
 const commands = [
   new SlashCommandBuilder()
@@ -21,7 +20,13 @@ const commands = [
       option.setName('issue-url').setDescription('The URL of the GitHub issue').setRequired(true)
     )
     .toJSON(),
-  // Define other commands here later
+  new SlashCommandBuilder()
+    .setName(RMIMPLEMENT_COMMAND)
+    .setDescription('Implements an existing plan for a GitHub issue.')
+    .addStringOption((option) =>
+      option.setName('issue-url').setDescription('The URL of the GitHub issue').setRequired(true)
+    )
+    .toJSON(),
 ];
 
 const rest = new REST({ version: '10' }).setToken(config.DISCORD_TOKEN);
@@ -71,9 +76,9 @@ export async function startDiscordBot() {
           .values({
             commandName: commandName,
             platform: 'discord',
-            userId: user.id, // Discord user ID
+            userId: user.id,
             rawCommand: `/${commandName} ${options.data.map((opt) => `${opt.name}:${opt.value}`).join(' ')}`,
-            status: 'pending', // Will be updated after processing
+            status: 'pending',
           })
           .returning({ id: commandHistory.id });
         originalCommandId = insertedCmd[0]?.id;
@@ -153,7 +158,7 @@ export async function startDiscordBot() {
             id: interaction.id,
             channelId: interaction.channelId,
             token: interaction.token,
-          }, // Pass necessary details
+          },
           originalCommandId: originalCommandId,
         })
           .then((taskId) => {
@@ -168,6 +173,94 @@ export async function startDiscordBot() {
           })
           .catch((e) => {
             error('Unhandled error from startPlanGenerationTask (Discord):', e);
+          });
+      } else if (commandName === RMIMPLEMENT_COMMAND) {
+        const issueUrl = options.getString('issue-url', true);
+        log(`'/rm-implement' command received for issue URL: ${issueUrl}`);
+
+        // Reply immediately to acknowledge the interaction
+        try {
+          await interaction.reply({
+            content: `Processing /rm-implement for ${issueUrl}... Implementation will begin shortly.`,
+            ephemeral: false,
+          });
+        } catch (replyError) {
+          error('Failed to reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        // Parse repoFullName from issueUrl
+        const ghIdentifiers = parseGitHubIssueUrl(issueUrl);
+        if (!ghIdentifiers) {
+          await interaction.editReply({ content: `Invalid GitHub issue URL: ${issueUrl}` });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Invalid issue URL' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+        const repoFullName = `${ghIdentifiers.owner}/${ghIdentifiers.repo}`;
+
+        // Determine repoPath (simplified for MVP)
+        const repoPath = path.join(config.WORKSPACE_BASE_DIR, 'clones', repoFullName);
+        // Check if repoPath exists and is a directory (basic check)
+        try {
+          const stats = await fs.stat(repoPath);
+          if (!stats.isDirectory()) {
+            throw new Error('Path is not a directory.');
+          }
+          // Further check: is it a git repo? (e.g., check for .git folder)
+          await fs.stat(path.join(repoPath, '.git'));
+        } catch (e) {
+          error(
+            `[Task ${originalCommandId}] Repository path ${repoPath} not found or not a valid git clone. Please configure repository clones. Error: ${(e as Error).message}`
+          );
+          await interaction.editReply({
+            content: `Error: Repository for ${repoFullName} is not available to the bot. Please contact an admin.`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: `Repo clone not found at ${repoPath}` })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        // Asynchronously start the implementation
+        startImplementationTask({
+          platform: 'discord',
+          userId: user.id,
+          issueUrl: issueUrl,
+          repoFullName: repoFullName,
+          repoPath: repoPath,
+          discordInteraction: {
+            id: interaction.id,
+            channelId: interaction.channelId,
+            token: interaction.token,
+          },
+          originalCommandId: originalCommandId,
+        })
+          .then((taskId) => {
+            if (taskId) {
+              log(`Successfully started implementation task ${taskId} from Discord command.`);
+              // interaction.editReply might fail if too much time passed, or use followup.
+              // Thread manager will handle notifications.
+            } else {
+              log(`Implementation task failed to start from Discord command.`);
+              // interaction.editReply({ content: `Failed to start implementation for ${issueUrl}. Admins notified.` });
+            }
+          })
+          .catch((e) => {
+            error('Unhandled error from startImplementationTask (Discord):', e);
           });
       } else {
         try {

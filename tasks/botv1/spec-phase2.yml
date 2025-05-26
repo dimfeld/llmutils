@@ -594,7 +594,7 @@ tasks:
                   - `githubCommentId: payload.comment.id`
                   - `originalCommandId: originalCommandId`
               -   The call to `startImplementationTask` is asynchronous. The webhook should return quickly.
-        done: false
+        done: true
       - prompt: >
           In `src/bot/discord_bot.ts`:
 
