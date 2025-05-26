@@ -469,7 +469,7 @@ tasks:
           and collects the generated responses/suggestions.
 
           4.  Write tests, mocking the LLM interaction.
-        done: false
+        done: true
       - prompt: >
           Implement applying responses: posting comments or code suggestions to
           GitHub.
