@@ -30,29 +30,47 @@ export interface WorkspaceInfo {
 }
 
 /**
- * Records a workspace in the database
- * @param workspaceInfo The workspace information to record (without id field)
+ * Interface for recording a new workspace
  */
-export async function recordWorkspace(workspaceInfo: Omit<WorkspaceInfo, 'id'>): Promise<void> {
+export interface WorkspaceRecordData {
+  /** Unique identifier for the task */
+  taskId: string;
+  /** URL of the repository that was cloned */
+  repositoryUrl: string;
+  /** Absolute path to the cloned workspace */
+  workspacePath: string;
+  /** Name of the branch that was created */
+  branch: string;
+  /** Absolute path to the plan file in the main repo */
+  originalPlanFile: string;
+}
+
+/**
+ * Records a workspace in the database
+ * @param workspaceData The workspace information to record
+ * @returns The ID of the newly created workspace record
+ */
+export async function recordWorkspace(workspaceData: WorkspaceRecordData): Promise<string> {
   try {
     const id = randomUUID();
     await db.insert(workspacesTable).values({
       id,
-      taskId: workspaceInfo.taskId,
-      repositoryUrl: workspaceInfo.repositoryUrl,
-      workspacePath: workspaceInfo.workspacePath,
-      branch: workspaceInfo.branch,
-      originalPlanFile: workspaceInfo.originalPlanFilePath,
-      createdAt: new Date(workspaceInfo.createdAt),
-      lastAccessedAt: workspaceInfo.lastAccessedAt
-        ? new Date(workspaceInfo.lastAccessedAt as string)
-        : null,
-      lockedByTaskId: workspaceInfo.lockedByTaskId || null,
+      taskId: workspaceData.taskId,
+      repositoryUrl: workspaceData.repositoryUrl,
+      workspacePath: workspaceData.workspacePath,
+      branch: workspaceData.branch,
+      originalPlanFile: workspaceData.originalPlanFile,
+      createdAt: new Date(),
+      lastAccessedAt: new Date(),
+      lockedByTaskId: null,
     });
 
-    log(`Recorded workspace for task ${workspaceInfo.taskId} at ${workspaceInfo.workspacePath}`);
+    log(
+      `Recorded workspace in database for task ${workspaceData.taskId} at ${workspaceData.workspacePath}`
+    );
+    return id;
   } catch (error) {
-    log(`Failed to record workspace: ${String(error)}`);
+    log(`Failed to record workspace in database: ${String(error)}`);
     throw error;
   }
 }

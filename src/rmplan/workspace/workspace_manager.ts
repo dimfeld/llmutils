@@ -186,11 +186,10 @@ export async function createWorkspace(
   // Record the workspace info for tracking
   await recordWorkspace({
     taskId,
-    originalPlanFilePath,
+    originalPlanFile: originalPlanFilePath,
     repositoryUrl: repositoryUrl,
     workspacePath: targetClonePath,
     branch: branchName,
-    createdAt: new Date().toISOString(),
   });
 
   // Acquire lock for the workspace

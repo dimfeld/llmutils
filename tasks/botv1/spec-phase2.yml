@@ -198,7 +198,7 @@ tasks:
           record.
 
           5.  Update logging messages to reflect database operations.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, refactor the
           `getWorkspaceMetadata` function:
