@@ -1611,7 +1611,7 @@ tasks:
           // Add DISCORD_DEFAULT_CHANNEL_ID to src/bot/config.ts
 
           ```
-        done: false
+        done: true
       - prompt: >
           Modify `src/bot/discord_bot.ts` to initialize the `thread_manager`.
 
