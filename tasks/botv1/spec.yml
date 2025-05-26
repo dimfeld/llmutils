@@ -841,7 +841,7 @@ tasks:
 
           Make sure `src/bot/main.ts` correctly calls `await
           startDiscordBot();`.
-        done: false
+        done: true
   - title: Core Task Creation & Plan Orchestration Logic
     description: Create the core logic for task management and plan generation. This
       involves creating `task_manager.ts` to handle task records in the DB and
