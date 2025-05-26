@@ -355,7 +355,7 @@ tasks:
               -   This means setting `lockedByTaskId` to NULL in the `workspaces` table for the workspace it used.
               -   And calling `WorkspaceLock.releaseLock()` for the file-system lock.
               -   This should happen in a `finally` block to ensure release.
-        done: false
+        done: true
   - title: Enhance Task Manager for Implementation Lifecycle
     description: >
       This task involves updating the `TaskManager` to handle the lifecycle of

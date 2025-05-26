@@ -46,7 +46,7 @@ describe('rmplanAgent with botTaskId', () => {
   beforeEach(async () => {
     // Create temp directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-agent-test-'));
-    
+
     // Create a test plan file
     planFile = path.join(tempDir, 'test-plan.yml');
     await fs.writeFile(
