@@ -575,7 +575,7 @@ tasks:
           *Note:* If `src/state_machine/*` is used for task execution,
           checkpointing might involve serializing the state machine's current
           state and context.
-        done: false
+        done: true
       - prompt: >
           Implement task resumption logic on application startup.
 

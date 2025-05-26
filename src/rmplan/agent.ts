@@ -26,6 +26,7 @@ import {
   lockWorkspaceToTask,
   unlockWorkspace,
 } from './workspace/workspace_tracker.ts';
+import { saveCheckpoint, deleteCheckpoint } from '../bot/db/task_checkpoints_manager.ts';
 
 export interface RmplanAgentOptions {
   workspace?: string;
@@ -45,6 +46,10 @@ export interface RmplanAgentOptions {
     taskTitle: string;
     planFile: string;
   }) => Promise<void>;
+  resumeFromCheckpoint?: {
+    stepIndex: number;
+    checkpointData: any;
+  };
 }
 
 export async function rmplanAgent(
@@ -131,7 +136,7 @@ export async function rmplanAgent(
       }
     } else {
       // Manual workspace handling - check if workspace exists first
-      const workspaceId = options.workspace!; // Guaranteed to exist if we're in this branch
+      const workspaceId = options.workspace!;
       const taskId = options.botTaskId || workspaceId;
       const existingWorkspaces = await findWorkspacesByTaskId(workspaceId);
 
@@ -260,6 +265,22 @@ export async function rmplanAgent(
     }
   }
 
+  // Save checkpoint after workspace setup if we have a botTaskId
+  if (options.botTaskId) {
+    try {
+      await saveCheckpoint(options.botTaskId, 0, {
+        taskType: 'planning',
+        planFile: currentPlanFile,
+        workspacePath: currentBaseDir,
+        originalPlanFile: planFile,
+        workspaceLocked: workspaceLockedPath,
+      });
+      debugLog(`Saved checkpoint for task ${options.botTaskId} after workspace setup`);
+    } catch (error) {
+      log(`Warning: Failed to save checkpoint: ${String(error)}`);
+    }
+  }
+
   // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
   const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
   const agentExecutionModel =
@@ -272,7 +293,39 @@ export async function rmplanAgent(
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
+  // Handle resumeFromCheckpoint - restore workspace and other state if provided
+  if (options.resumeFromCheckpoint?.checkpointData) {
+    const checkpointData = options.resumeFromCheckpoint.checkpointData;
+    if (checkpointData.workspacePath && checkpointData.workspacePath !== currentBaseDir) {
+      log(`Restoring workspace from checkpoint: ${checkpointData.workspacePath}`);
+      currentBaseDir = checkpointData.workspacePath;
+    }
+    if (checkpointData.planFile && checkpointData.planFile !== currentPlanFile) {
+      log(`Restoring plan file from checkpoint: ${checkpointData.planFile}`);
+      currentPlanFile = checkpointData.planFile;
+    }
+    if (checkpointData.executorName) {
+      log(`Restoring executor from checkpoint: ${checkpointData.executorName}`);
+      // Re-build executor with checkpoint settings if different
+      if (checkpointData.executorName !== executorName) {
+        const checkpointExecutor = buildExecutorAndLog(
+          checkpointData.executorName,
+          {
+            baseDir: currentBaseDir,
+            model: checkpointData.model || agentExecutionModel,
+          },
+          config
+        );
+        // Update to use checkpoint executor
+        Object.assign(executor, checkpointExecutor);
+      }
+    }
+  }
+
   log('Starting agent to execute plan:', currentPlanFile);
+  if (options.resumeFromCheckpoint) {
+    log(`Resuming from step index: ${options.resumeFromCheckpoint.stepIndex}`);
+  }
   try {
     let hasError = false;
 
@@ -297,6 +350,33 @@ export async function rmplanAgent(
       }
 
       const planData = planResult.data;
+
+      // If resuming from checkpoint and this is the first iteration,
+      // skip to the checkpoint step
+      if (options.resumeFromCheckpoint && stepCount === 1) {
+        const { stepIndex: resumeStepIndex, checkpointData } = options.resumeFromCheckpoint;
+
+        if (
+          checkpointData.taskIndex !== undefined &&
+          checkpointData.completedStepIndex !== undefined
+        ) {
+          // Mark all steps up to completedStepIndex as done
+          const taskIndex = checkpointData.taskIndex;
+          if (taskIndex < planData.tasks.length) {
+            const task = planData.tasks[taskIndex];
+            for (let i = 0; i <= checkpointData.completedStepIndex && i < task.steps.length; i++) {
+              task.steps[i].done = true;
+            }
+            log(
+              `Marked ${checkpointData.completedStepIndex + 1} steps as done in task ${taskIndex + 1} based on checkpoint`
+            );
+          }
+        }
+
+        // Clear the resumeFromCheckpoint flag after first use
+        delete options.resumeFromCheckpoint;
+      }
+
       const pendingTaskInfo = findPendingTask(planData);
       if (!pendingTaskInfo) {
         log('Plan complete!');
@@ -400,6 +480,27 @@ export async function rmplanAgent(
           options.progressCallback
         );
         log(`Marked step as done: ${markResult.message.split('\n')[0]}`);
+
+        // Save checkpoint after successful step completion if we have a botTaskId
+        if (options.botTaskId && !markResult.planComplete) {
+          try {
+            await saveCheckpoint(options.botTaskId, stepIndex + 1, {
+              taskType: 'planning',
+              planFile: currentPlanFile,
+              workspacePath: currentBaseDir,
+              originalPlanFile: planFile,
+              workspaceLocked: workspaceLockedPath,
+              taskIndex: taskIndex,
+              completedStepIndex: stepIndex,
+              executorName: executorName,
+              model: agentExecutionModel,
+            });
+            debugLog(`Saved checkpoint for task ${options.botTaskId} after step ${stepIndex + 1}`);
+          } catch (error) {
+            log(`Warning: Failed to save checkpoint: ${String(error)}`);
+          }
+        }
+
         if (markResult.planComplete) {
           log('Plan fully completed!');
           break;
@@ -423,6 +524,16 @@ export async function rmplanAgent(
     if (hasError) {
       error('Agent stopped due to error.');
       process.exit(1);
+    } else {
+      // Clean up checkpoint on successful completion
+      if (options.botTaskId) {
+        try {
+          await deleteCheckpoint(options.botTaskId);
+          debugLog(`Deleted checkpoint for completed task ${options.botTaskId}`);
+        } catch (error) {
+          log(`Warning: Failed to delete checkpoint: ${String(error)}`);
+        }
+      }
     }
   } catch (err) {
     error('Unexpected error during agent execution:', err);
