@@ -118,6 +118,7 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
   const args = match[2]?.trim() || '';
   const fullCommand = `@bot ${command} ${args}`.trim();
 
+  // Insert into command_history and get ID
   let originalCommandId: number | undefined;
   try {
     const insertedCmd = await db
@@ -127,7 +128,7 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
         platform: 'github',
         userId: commenter,
         rawCommand: fullCommand,
-        status: 'pending',
+        status: 'pending_auth', // New status
       })
       .returning({ id: commandHistoryTable.id });
     originalCommandId = insertedCmd[0]?.id;
@@ -135,29 +136,37 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
     error('Failed to log command to command_history:', e);
   }
 
+  if (!originalCommandId) {
+    error('Failed to record command in history, aborting processing.');
+    return;
+  }
+
+  // Perform permission check
+  const hasPermission = await canUserPerformAction(commenter, repository.full_name);
+  if (!hasPermission) {
+    warn(
+      `User ${commenter} does not have sufficient permissions for ${repository.full_name} to run command '@bot ${command}'.`
+    );
+    await db
+      .update(commandHistoryTable)
+      .set({ status: 'failed', errorMessage: 'Permission denied' })
+      .where(eq(commandHistoryTable.id, originalCommandId));
+
+    // For now, we just log and return.
+    // TODO: Post a reply comment (future enhancement)
+    return;
+  }
+
+  // If permission check passes, update status to 'processing'
+  await db
+    .update(commandHistoryTable)
+    .set({ status: 'processing' })
+    .where(eq(commandHistoryTable.id, originalCommandId));
+
   if (command === 'plan') {
     log(
       `'@bot plan' command received from ${commenter} for issue ${issue.html_url}. Args: '${args}'`
     );
-
-    // Check permissions before processing
-    const hasPermission = await canUserPerformAction(commenter, repository.full_name);
-    if (!hasPermission) {
-      log(
-        `User ${commenter} does not have permission to execute '@bot plan' in ${repository.full_name}`
-      );
-      if (originalCommandId) {
-        await db
-          .update(commandHistoryTable)
-          .set({
-            status: 'failed',
-            errorMessage: 'Insufficient permissions',
-          })
-          .where(eq(commandHistoryTable.id, originalCommandId));
-      }
-      // TODO: Post a comment back to GitHub about the permission denial
-      return;
-    }
 
     // Determine the target issue URL
     const targetIssueUrl = args && args.startsWith('http') ? args : issue.html_url;
