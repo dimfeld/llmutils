@@ -182,7 +182,7 @@ tasks:
           string union (`'debug' | 'info' | 'warn' | 'error'`). `setLogLevel`
           should set a global variable that `ConsoleAdapter` (and other
           adapters) can use to filter messages.
-        done: false
+        done: true
       - prompt: >
           Create a `.env.example` file in the root of the project with
           placeholder values for the environment variables defined in
