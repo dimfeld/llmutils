@@ -3,7 +3,7 @@ import { config } from './config.js';
 import { log, error, debugLog } from '../logging.js';
 import { db, commandHistory } from './db/index.js';
 import { startPlanGenerationTask } from './core/task_manager.js';
-import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
+import { parseGitHubIssueUrl } from './utils/github_utils.js';
 import { eq } from 'drizzle-orm';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -100,7 +100,7 @@ export async function startDiscordBot() {
         }
 
         // Parse repoFullName from issueUrl
-        const ghIdentifiers = await parsePrOrIssueNumber(issueUrl);
+        const ghIdentifiers = parseGitHubIssueUrl(issueUrl);
         if (!ghIdentifiers) {
           await interaction.editReply({ content: `Invalid GitHub issue URL: ${issueUrl}` });
           if (originalCommandId) {

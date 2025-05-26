@@ -17,7 +17,7 @@ async function runMigrations() {
     const db = drizzle(sqlite, { schema });
 
     // Run migrations
-    await migrate(db, { migrationsFolder: './src/bot/db/migrations' });
+    migrate(db, { migrationsFolder: './src/bot/db/migrations' });
 
     log('Database migrations completed successfully.');
 
