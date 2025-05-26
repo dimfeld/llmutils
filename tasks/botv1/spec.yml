@@ -335,7 +335,7 @@ tasks:
           For timestamps, use `integer('column_name', { mode: 'timestamp' })`.
 
           Use `sqliteTable` for defining tables.
-        done: false
+        done: true
       - prompt: >
           Create `src/bot/db/index.ts`. This file should:
 
