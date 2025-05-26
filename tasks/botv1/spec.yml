@@ -1,0 +1,1947 @@
+goal: Implement Phase 1 (MVP) of the LLMUtils Bot System, focusing on setting up
+  the core service, database, GitHub and Discord command interfaces for plan
+  generation, the plan generation workflow itself, basic thread synchronization,
+  and GitHub user permission checking.
+details: >
+  This project involves creating a new unified bot service that can interact
+  with GitHub via webhooks and Discord via slash commands. The initial phase
+  will enable users to request an AI-generated project plan based on a GitHub
+  issue.
+
+
+  **Key components for Phase 1:**
+
+  1.  A central service handling both GitHub and Discord interactions.
+
+  2.  SQLite database for state management (tasks, threads, user mappings, logs,
+  artifacts, command history).
+
+  3.  GitHub webhook handler for `@bot plan` command.
+
+  4.  Discord bot with a `/rm-plan` slash command.
+
+  5.  Integration of existing `llmutils` capabilities to generate a plan from a
+  GitHub issue. This involves:
+      *   Fetching issue details.
+      *   Using `rmfilter` to gather context.
+      *   Calling an LLM to generate the plan structure in Markdown.
+      *   Converting the Markdown plan to YAML.
+  6.  Storing the generated plan and tracking task status.
+
+  7.  Basic cross-platform notification (e.g., posting a link to the Discord
+  thread in a GitHub comment and vice-versa).
+
+  8.  Verifying GitHub user permissions before processing commands.
+
+
+  **Out of Scope for Phase 1 (covered in later phases):**
+
+  *   Plan implementation (`@bot implement`, `/rm-implement`).
+
+  *   PR response (`@bot respond`).
+
+  *   Full workspace management for implementation (cloning repos, etc.). Plan
+  generation will save artifacts but not require full workspace cloning.
+
+  *   Advanced progress tracking and log retrieval.
+
+  *   User self-registration via Discord and detailed user mapping verification.
+
+  *   Admin commands (except potentially manual user mapping if needed for
+  testing).
+
+  *   Automatic cleanup and crash recovery.
+
+
+  The implementation will be broken down into granular tasks, each with specific
+  prompts for a code-generation LLM. We will prioritize a modular structure
+  within a new `src/bot` directory.
+tasks:
+  - title: Project Setup, Basic Service, Configuration, and Logging
+    description: Initialize the bot project structure, set up a basic HTTP server
+      for webhooks, configure environment variable loading, and establish a
+      basic logging mechanism for the bot service.
+    files:
+      - src/bot/main.ts
+      - src/bot/server.ts
+      - src/bot/config.ts
+      - src/logging.ts
+      - package.json
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Create the initial file structure for the new bot service.
+
+          Inside the `src/` directory, create a new directory named `bot`.
+
+
+          1.  **`src/bot/main.ts`**: This will be the main entry point for the
+          bot service.
+              *   It should import and call a function to load environment variables from `src/bot/config.ts`.
+              *   It should import and call a function to start the HTTP server from `src/bot/server.ts`.
+              *   It should import and call a function to initialize and start the Discord bot from `src/bot/discord_bot.ts` (stub this function for now, we'll implement it later).
+              *   Include a basic `log` statement (from `src/logging.ts`) indicating the service is starting.
+
+          2.  **`src/bot/config.ts`**: This file will handle loading and
+          exposing configuration settings.
+              *   Define an interface `BotConfig` with the following properties:
+                  *   `GITHUB_TOKEN: string`
+                  *   `DISCORD_TOKEN: string`
+                  *   `DATABASE_PATH: string`
+                  *   `WORKSPACE_BASE_DIR: string`
+                  *   `LOG_RETENTION_DAYS: number`
+                  *   `BOT_SERVER_PORT: number` (default to 3000)
+                  *   `LOG_LEVEL: string` (default to 'info')
+              *   Create a function `loadConfig(): BotConfig` that:
+                  *   Loads environment variables from a `.env` file using `dotenv` (ensure `dotenv` is a dependency).
+                  *   Validates that `GITHUB_TOKEN`, `DISCORD_TOKEN`, `DATABASE_PATH`, and `WORKSPACE_BASE_DIR` are set, throwing an error if not.
+                  *   Parses `LOG_RETENTION_DAYS` and `BOT_SERVER_PORT` as numbers.
+                  *   Returns an object conforming to `BotConfig`.
+              *   Export a global `config` variable initialized by `loadConfig()`.
+
+          3.  **`src/bot/server.ts`**: This file will set up the HTTP server.
+              *   Create a function `startServer(port: number): void`.
+              *   Inside `startServer`, use `Bun.serve` to create an HTTP server listening on the given `port` and `0.0.0.0`.
+              *   The fetch handler should initially:
+                  *   Log the request method and URL.
+                  *   Return a simple "OK" response (e.g., `new Response("OK")`).
+              *   Log a message indicating the server is listening on the specified port.
+
+          Ensure all new files use functions from `src/logging.ts` for logging
+          (e.g., `log`, `error`).
+
+          Create a placeholder for `src/bot/discord_bot.ts` with an exported
+          async function `startDiscordBot()` that does nothing for now.
+        done: false
+      - prompt: >
+          Update `src/bot/main.ts` to integrate the logging setup.
+
+          Import `getLoggerAdapter` and `runWithLogger` from
+          `../logging/adapter.js` (adjust path if needed, should be
+          `../logging/adapter.js` if `logging.ts` is `src/logging.ts` and
+          `main.ts` is `src/bot/main.ts`).
+
+          In `main.ts`, before any other significant operations (like starting
+          the server or discord bot), set up a default logger adapter if one
+          isn't already set:
+
+          ```typescript
+
+          import { getLoggerAdapter, runWithLogger } from
+          '../logging/adapter.js'; // or '../logging.ts' if you export them
+          there
+
+          import { ConsoleAdapter } from '../logging/console.js'; // or
+          '../logging/index.ts' if re-exported
+
+          import { LogLevel, setLogLevel } from '../logging/common.js'; //
+          Assuming setLogLevel and LogLevel exist or you need to add them
+
+          // ... other imports
+
+
+          async function main() {
+            // Load config first
+            const botConfig = config; // from src/bot/config.ts
+
+            // Initialize logging
+            if (!getLoggerAdapter()) {
+              const consoleAdapter = new ConsoleAdapter();
+              // This assumes runWithLogger correctly sets the adapter globally or for the main execution context.
+              // If runWithLogger is context-specific (e.g., AsyncLocalStorage), then ensure top-level calls use it.
+              // For a simple global setup, you might need a setLoggerAdapter function.
+              // Let's assume for now ConsoleAdapter can be instantiated and its methods will be used by log, error, etc.
+              // if there's a global fallback.
+              // A more robust way if runWithLogger is for specific contexts:
+              // await runWithLogger(consoleAdapter, async () => { /* rest of main */ });
+              // For simplicity, let's assume ConsoleAdapter instantiation and `setLogLevel` are enough for now.
+            }
+            // Assuming setLogLevel is available from your logging system.
+            // If not, you might need to add it or handle log levels within ConsoleAdapter.
+            // setLogLevel(botConfig.LOG_LEVEL as LogLevel); // You'll need to define LogLevel enum or type
+
+            log('Bot service starting...');
+            // ... rest of the main function
+            startServer(botConfig.BOT_SERVER_PORT);
+            await startDiscordBot();
+            log('Bot service started successfully.');
+          }
+
+
+          main().catch(e => {
+            error('Failed to start bot service:', e);
+            process.exit(1);
+          });
+
+          ```
+
+
+          If `setLogLevel` and `LogLevel` are not available in
+          `src/logging/common.ts`, add them. `LogLevel` could be an enum or
+          string union (`'debug' | 'info' | 'warn' | 'error'`). `setLogLevel`
+          should set a global variable that `ConsoleAdapter` (and other
+          adapters) can use to filter messages.
+        done: false
+      - prompt: >
+          Create a `.env.example` file in the root of the project with
+          placeholder values for the environment variables defined in
+          `src/bot/config.ts`:
+
+          ```
+
+          GITHUB_TOKEN=your_github_token
+
+          DISCORD_TOKEN=your_discord_token
+
+          DATABASE_PATH=./bot_database.sqlite
+
+          WORKSPACE_BASE_DIR=./bot_workspaces
+
+          LOG_RETENTION_DAYS=7
+
+          BOT_SERVER_PORT=3000
+
+          LOG_LEVEL=info
+
+          ```
+
+          Add `.env` to the `.gitignore` file if it's not already there.
+        done: false
+  - title: SQLite Database Core Schema and Setup
+    description: Define the initial SQLite database schema for `tasks`, `threads`,
+      `user_mappings`, `task_logs`, `command_history`, and `task_artifacts`
+      tables using `drizzle-orm`. Set up the Drizzle client and create the first
+      migration script.
+    files:
+      - src/bot/db/schema.ts
+      - src/bot/db/index.ts
+      - src/bot/db/migrations/0000_initial_schema.sql
+      - package.json
+      - drizzle.config.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Install necessary Drizzle ORM packages:
+
+          `bun add drizzle-orm drizzle-kit @lucia-auth/adapter-drizzle
+          better-sqlite3`
+
+          `bun add -D @types/better-sqlite3`
+
+
+          Create `drizzle.config.ts` in the project root:
+
+          ```typescript
+
+          import type { Config } from 'drizzle-kit';
+
+          import * from 'dotenv/config'; // ensure .env is loaded
+
+
+          if (!process.env.DATABASE_PATH) {
+            throw new Error('DATABASE_PATH environment variable is not set');
+          }
+
+
+          export default {
+            schema: './src/bot/db/schema.ts',
+            out: './src/bot/db/migrations',
+            driver: 'better-sqlite',
+            dbCredentials: {
+              url: process.env.DATABASE_PATH,
+            },
+            verbose: true,
+            strict: true,
+          } satisfies Config;
+
+          ```
+
+          Ensure your `src/bot/config.ts` correctly loads `DATABASE_PATH` from
+          the environment.
+        done: false
+      - prompt: >
+          Create `src/bot/db/schema.ts` and define the database schema using
+          Drizzle ORM for SQLite.
+
+          The schema should include the following tables as per the project
+          plan:
+
+
+          1.  `tasks`:
+              *   `id`: TEXT, primary key (e.g., UUID generated by application)
+              *   `issue_url`: TEXT (URL of the GitHub issue)
+              *   `issue_number`: INTEGER (optional)
+              *   `repository_full_name`: TEXT (e.g., "owner/repo") (optional)
+              *   `task_type`: TEXT, (e.g., "plan", "implement", "respond")
+              *   `status`: TEXT (e.g., "pending", "planning", "implementing", "pr_created", "responding", "completed", "failed", "cancelled")
+              *   `workspace_path`: TEXT (optional)
+              *   `plan_file_path`: TEXT (optional, path to the generated plan YAML)
+              *   `pr_number`: INTEGER (optional)
+              *   `created_at`: INTEGER (timestamp, use `default(sql`(current_timestamp)`)`)
+              *   `updated_at`: INTEGER (timestamp, use `default(sql`(current_timestamp)`)`. `$onUpdate(() => sql`(current_timestamp)`)`)
+              *   `created_by_platform`: TEXT ("github" or "discord")
+              *   `created_by_user_id`: TEXT (GitHub username or Discord user ID)
+              *   `error_message`: TEXT (optional, for storing failure reasons)
+
+          2.  `threads`:
+              *   `id`: TEXT, primary key (e.g., UUID)
+              *   `task_id`: TEXT, foreign key referencing `tasks.id`
+              *   `platform`: TEXT ("github" or "discord")
+              *   `external_id`: TEXT (GitHub comment thread ID / PR ID or Discord thread ID / channel ID)
+              *   `thread_url`: TEXT (optional, direct URL to the thread/comment)
+              *   `created_at`: INTEGER (timestamp, `default(sql`(current_timestamp)`)`)
+
+          3.  `user_mappings`:
+              *   `github_username`: TEXT, primary key
+              *   `discord_user_id`: TEXT, unique (optional)
+              *   `verified`: INTEGER (boolean, 0 or 1), default 0
+              *   `verification_code`: TEXT (optional, for self-registration process)
+              *   `verification_code_expires_at`: INTEGER (timestamp, optional)
+              *   `mapped_at`: INTEGER (timestamp, `default(sql`(current_timestamp)`)`)
+              *   `mapped_by`: TEXT ("self" or "admin")
+
+          4.  `task_logs`:
+              *   `id`: INTEGER, primary key, autoincrement
+              *   `task_id`: TEXT, foreign key referencing `tasks.id`
+              *   `timestamp`: INTEGER (timestamp, `default(sql`(current_timestamp)`)`)
+              *   `log_level`: TEXT ("info", "warn", "error", "debug")
+              *   `message`: TEXT
+              *   `full_content`: TEXT (optional, for large outputs like full error stacks or LLM responses)
+
+          5.  `command_history`:
+              *   `id`: INTEGER, primary key, autoincrement
+              *   `task_id`: TEXT (optional, if command is associated with a task)
+              *   `command_name`: TEXT (e.g., "@bot plan", "/rm-plan")
+              *   `platform`: TEXT ("github" or "discord")
+              *   `user_id`: TEXT (GitHub username or Discord user ID)
+              *   `timestamp`: INTEGER (timestamp, `default(sql`(current_timestamp)`)`)
+              *   `status`: TEXT ("success" or "failed")
+              *   `raw_command`: TEXT (the full command string received)
+              *   `error_message`: TEXT (optional, if command failed)
+
+          6.  `task_artifacts`:
+              *   `id`: INTEGER, primary key, autoincrement
+              *   `task_id`: TEXT, foreign key referencing `tasks.id`
+              *   `artifact_type`: TEXT (e.g., "plan_yaml", "plan_markdown", "generated_code_diff", "log_file")
+              *   `file_path`: TEXT (path to the artifact on disk, relative to WORKSPACE_BASE_DIR or a dedicated artifacts dir)
+              *   `created_at`: INTEGER (timestamp, `default(sql`(current_timestamp)`)`)
+              *   `metadata`: TEXT (JSON blob for additional metadata, optional)
+
+          Use appropriate Drizzle functions like `text()`, `integer()`,
+          `primaryKey()`, `references()`, `unique()`, etc.
+
+          For timestamps, use `integer('column_name', { mode: 'timestamp' })`.
+
+          Use `sqliteTable` for defining tables.
+        done: false
+      - prompt: >
+          Create `src/bot/db/index.ts`. This file should:
+
+          1. Import `drizzle` from `drizzle-orm/better-sqlite3`.
+
+          2. Import `Database` from `better-sqlite3`.
+
+          3. Import the `config` from `../config.ts`.
+
+          4. Import all schemas from `./schema.ts`.
+
+          5. Create a `better-sqlite3` database instance using
+          `config.DATABASE_PATH`.
+             `const sqlite = new Database(config.DATABASE_PATH);`
+          6. Create a Drizzle ORM instance by calling `drizzle(sqlite, { schema
+          })`.
+             `export const db = drizzle(sqlite, { schema });`
+          7. Export the `db` instance and all schemas (`export * from
+          './schema'`).
+        done: false
+      - prompt: >
+          Add a script to `package.json` for generating and applying Drizzle
+          migrations:
+
+          ```json
+
+          "scripts": {
+            // ... other scripts
+            "db:generate": "drizzle-kit generate",
+            "db:migrate": "bun src/bot/db/migrate.ts" // We will create this script next
+          }
+
+          ```
+
+
+          Now, run `bun run db:generate` from your terminal. This should create
+          a new migration file in `src/bot/db/migrations/` (e.g.,
+          `0000_something.sql`) based on the schema defined in
+          `src/bot/db/schema.ts`.
+
+          Verify the generated SQL in the migration file. It should match the
+          table definitions.
+
+          Example of what the generated SQL might look like (actual output will
+          depend on Drizzle version and schema):
+
+          ```sql
+
+          -- SQL for tasks table (example)
+
+          CREATE TABLE `tasks` (
+              `id` text PRIMARY KEY NOT NULL,
+              `issue_url` text,
+              -- ... other columns
+              `created_at` integer DEFAULT (strftime('%s', 'now')) NOT NULL,
+              `updated_at` integer DEFAULT (strftime('%s', 'now')) NOT NULL
+          );
+
+          -- ... SQL for other tables
+
+          ```
+
+          (The user will provide the actual generated SQL, or I will proceed
+          with an example.)
+        done: false
+      - prompt: >
+          Create a migration script `src/bot/db/migrate.ts`. This script will
+          apply pending migrations.
+
+          ```typescript
+
+          import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+
+          import { db } from './index'; // Imports the Drizzle instance
+
+          import { log, error } from '../../logging'; // Path to your logging
+          utility
+
+
+          async function runMigrations() {
+            log('Running database migrations...');
+            try {
+              // This will run all pending migrations
+              await migrate(db, { migrationsFolder: './src/bot/db/migrations' });
+              log('Database migrations completed successfully.');
+            } catch (e) {
+              error('Error running database migrations:', e);
+              process.exit(1);
+            }
+          }
+
+
+          // Check if the script is being run directly
+
+          if (import.meta.main) {
+            runMigrations()
+              .then(() => process.exit(0))
+              .catch(() => process.exit(1));
+          }
+
+          ```
+
+          After creating this script, you should be able to run `bun run
+          db:migrate` to apply the initial migration.
+
+          Try running it. It should create the SQLite database file if it
+          doesn't exist and apply the schema.
+        done: false
+  - title: GitHub Webhook Handler - Parsing and Command Identification
+    description: Implement the GitHub webhook handler in the server to receive,
+      validate, and parse issue comment events. Identify the `@bot plan`
+      command.
+    files:
+      - src/bot/server.ts
+      - src/bot/github_handler.ts
+      - src/bot/config.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          First, update `src/bot/config.ts`:
+
+          *   Add `GITHUB_WEBHOOK_SECRET: string (optional)` to the `BotConfig`
+          interface.
+
+          *   Load `GITHUB_WEBHOOK_SECRET` from environment variables. It's
+          optional; if not set, signature validation can be skipped (log a
+          warning).
+
+
+          Next, create `src/bot/github_handler.ts`. This file will contain the
+          logic for processing GitHub webhooks.
+
+          ```typescript
+
+          import { db, command_history } from './db';
+
+          import { config } from './config';
+
+          import { log, warn, error, debugLog } from '../logging';
+
+          import crypto from 'node:crypto'; // For webhook signature validation
+
+
+          // Define types for the relevant parts of the GitHub webhook payload
+
+          // (specifically for issue_comment.created event)
+
+          interface GitHubIssueCommentPayload {
+            action: string;
+            issue: {
+              url: string; // API URL of the issue
+              html_url: string; // HTML URL of the issue
+              number: number;
+              title: string;
+              user: { login: string }; // Issue creator
+              body: string | null;
+            };
+            comment: {
+              id: number;
+              html_url: string; // HTML URL of the comment
+              user: { login: string }; // Commenter
+              body: string;
+            };
+            repository: {
+              full_name: string; // "owner/repo"
+              html_url: string;
+            };
+            sender: {
+              login: string; // User who triggered the event (commenter)
+            };
+          }
+
+
+          async function verifyGitHubSignature(request: Request, rawBody:
+          string): Promise<boolean> {
+            if (!config.GITHUB_WEBHOOK_SECRET) {
+              warn('GITHUB_WEBHOOK_SECRET is not set. Skipping webhook signature validation. THIS IS INSECURE FOR PRODUCTION.');
+              return true; // Or false if you want to enforce it
+            }
+
+            const signature = request.headers.get('X-Hub-Signature-256');
+            if (!signature) {
+              warn('No X-Hub-Signature-256 header found on webhook request.');
+              return false;
+            }
+
+            const expectedSignature = `sha256=${crypto
+              .createHmac('sha256', config.GITHUB_WEBHOOK_SECRET)
+              .update(rawBody)
+              .digest('hex')}`;
+
+            if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+              warn('Webhook signature mismatch.');
+              return false;
+            }
+            return true;
+          }
+
+
+          export async function handleGitHubWebhook(request: Request):
+          Promise<Response> {
+            const eventType = request.headers.get('X-GitHub-Event');
+            debugLog(`Received GitHub webhook event: ${eventType}`);
+
+            if (request.method !== 'POST') {
+              return new Response('Method Not Allowed', { status: 405 });
+            }
+
+            let rawBody: string;
+            try {
+              rawBody = await request.text();
+            } catch (err) {
+              error('Failed to read webhook request body:', err);
+              return new Response('Invalid request body', { status: 400 });
+            }
+
+            if (!await verifyGitHubSignature(request, rawBody)) {
+              return new Response('Signature verification failed', { status: 401 });
+            }
+
+            let payload: any;
+            try {
+              payload = JSON.parse(rawBody);
+            } catch (err) {
+              error('Failed to parse webhook JSON payload:', err);
+              return new Response('Invalid JSON payload', { status: 400 });
+            }
+
+            // For now, we only care about issue comment events
+            if (eventType === 'issue_comment' && payload.action === 'created') {
+              await processIssueComment(payload as GitHubIssueCommentPayload);
+              return new Response('Webhook processed', { status: 200 });
+            }
+
+            debugLog(`Ignoring event type: ${eventType}, action: ${payload.action}`);
+            return new Response('Event type not handled', { status: 200 });
+          }
+
+
+          async function processIssueComment(payload:
+          GitHubIssueCommentPayload): Promise<void> {
+            const commenter = payload.sender.login;
+            const commentBody = payload.comment.body;
+            const issue = payload.issue;
+            const repository = payload.repository;
+
+            log(`New comment by ${commenter} on issue #${issue.number} (${issue.title}) in ${repository.full_name}`);
+            debugLog(`Comment body: ${commentBody.substring(0, 100)}...`);
+
+            const commandRegex = /@bot\\s+(\\w+)(?:\\s+(.*))?/;
+            const match = commentBody.match(commandRegex);
+
+            if (!match) {
+              debugLog('No bot command found in comment.');
+              return;
+            }
+
+            const command = match[1].toLowerCase();
+            const args = match[2]?.trim() || '';
+            const fullCommand = `@bot ${command} ${args}`.trim();
+
+            // Log command to command_history
+            // Note: Task ID is not known yet for most commands here.
+            // We'll associate it later if the command leads to a task.
+            try {
+              await db.insert(command_history).values({
+                command_name: command,
+                platform: 'github',
+                user_id: commenter,
+                raw_command: fullCommand,
+                status: 'pending', // Will be updated after processing
+              });
+            } catch (e) {
+              error('Failed to log command to command_history:', e);
+            }
+
+            if (command === 'plan') {
+              // Placeholder for plan generation logic
+              log(`'@bot plan' command received from ${commenter} for issue ${issue.html_url}. Args: '${args}'`);
+              // TODO: Implement actual plan generation trigger in a later step.
+              // For now, update command_history to success
+              // This is a simplification; actual success/failure depends on the async operation.
+              // We'll need a robust way to update command_history status later.
+              // await db.update(command_history).set({ status: 'success' }).where(...);
+            } else {
+              log(`Unknown command: @bot ${command}`);
+              // Update command_history to failed for unknown command
+              // await db.update(command_history).set({ status: 'failed', error_message: 'Unknown command' }).where(...);
+            }
+          }
+
+          ```
+        done: false
+      - prompt: >
+          Update `src/bot/server.ts` to use the new `handleGitHubWebhook`
+          function.
+
+          Import `handleGitHubWebhook` from `./github_handler.ts`.
+
+          Modify the `fetch` handler in `Bun.serve`:
+
+          *   Check if `request.url` path is `/webhooks/github`.
+
+          *   If it is, call `await handleGitHubWebhook(request)` and return its
+          response.
+
+          *   Otherwise, return the default "Not Found" or "OK" response.
+
+          Example snippet for `src/bot/server.ts`:
+
+          ```typescript
+
+          // ... imports ...
+
+          import { handleGitHubWebhook } from './github_handler';
+
+          import { config } from './config'; // To get the port
+
+
+          export function startServer() { // Removed port argument, use config
+            const port = config.BOT_SERVER_PORT;
+            log(`Starting HTTP server on port ${port}...`);
+
+            Bun.serve({
+              port: port,
+              hostname: '0.0.0.0',
+              async fetch(request) {
+                const url = new URL(request.url);
+                log(`Received request: ${request.method} ${url.pathname}`);
+
+                if (url.pathname === '/webhooks/github' && request.method === 'POST') {
+                  return handleGitHubWebhook(request);
+                }
+
+                if (url.pathname === '/health') {
+                  return new Response("OK", { status: 200 });
+                }
+
+                return new Response('Not Found', { status: 404 });
+              },
+              error(error) {
+                // Bun's error handler for the server
+                error('HTTP server error:', error);
+                return new Response('Internal Server Error', { status: 500 });
+              },
+            });
+            log(`HTTP server listening on http://0.0.0.0:${port}`);
+          }
+
+          ```
+
+          Ensure that `src/bot/main.ts` calls `startServer()` without arguments,
+          as it now gets the port from `config`.
+        done: false
+  - title: Discord Bot Client and Basic Slash Command Registration
+    description: Set up the Discord bot client using `discord.js`, register the
+      `/rm-plan <issue-url>` slash command, and implement a basic handler that
+      logs the interaction.
+    files:
+      - src/bot/discord_bot.ts
+      - src/bot/config.ts
+      - package.json
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Install `discord.js`:
+
+          `bun add discord.js`
+
+
+          Update `src/bot/discord_bot.ts` to implement the Discord bot
+          functionality.
+
+          ```typescript
+
+          import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder,
+          InteractionType, Events } from 'discord.js';
+
+          import { config } from './config';
+
+          import { log, error, debugLog } from '../logging';
+
+          import { db, command_history } from './db';
+
+
+          const RMPLAN_COMMAND = 'rm-plan';
+
+          // Add other command names here as they are defined
+
+          // const RMIMPLEMENT_COMMAND = 'rm-implement';
+
+
+          const commands = [
+            new SlashCommandBuilder()
+              .setName(RMPLAN_COMMAND)
+              .setDescription('Generates a plan for a GitHub issue.')
+              .addStringOption(option =>
+                option.setName('issue-url')
+                  .setDescription('The URL of the GitHub issue')
+                  .setRequired(true))
+              .toJSON(),
+            // Define other commands here later
+          ];
+
+
+          const rest = new REST({ version: '10'
+          }).setToken(config.DISCORD_TOKEN);
+
+          const client = new Client({ intents: [GatewayIntentBits.Guilds,
+          GatewayIntentBits.GuildMessages] });
+
+
+          export async function startDiscordBot() {
+            if (!config.DISCORD_TOKEN) {
+              error('DISCORD_TOKEN is not set. Discord bot will not start.');
+              return;
+            }
+
+            try {
+              log('Registering Discord slash commands...');
+              // Get the application ID (client ID) from the token
+              const clientId = Buffer.from(config.DISCORD_TOKEN.split('.')[0], 'base64').toString();
+              await rest.put(
+                Routes.applicationCommands(clientId),
+                { body: commands },
+              );
+              log('Successfully registered Discord slash commands.');
+            } catch (err) {
+              error('Failed to register Discord slash commands:', err);
+              // Continue starting the bot even if command registration fails,
+              // as they might have been registered previously.
+            }
+
+            client.on(Events.ClientReady, () => {
+              if (client.user) {
+                log(`Discord bot logged in as ${client.user.tag}!`);
+              } else {
+                log('Discord bot is ready, but user information is not available.');
+              }
+            });
+
+            client.on(Events.InteractionCreate, async interaction => {
+              if (interaction.type !== InteractionType.ApplicationCommand) return;
+
+              const { commandName, options, user } = interaction;
+              log(`Received Discord command: /${commandName} from ${user.tag} (${user.id})`);
+              debugLog('Interaction options:', JSON.stringify(options.data));
+
+              // Log command to command_history
+              try {
+                await db.insert(command_history).values({
+                  command_name: commandName,
+                  platform: 'discord',
+                  user_id: user.id, // Discord user ID
+                  raw_command: `/${commandName} ${options.data.map(opt => `${opt.name}:${opt.value}`).join(' ')}`,
+                  status: 'pending', // Will be updated after processing
+                });
+              } catch (e) {
+                error('Failed to log Discord command to command_history:', e);
+              }
+
+
+              if (commandName === RMPLAN_COMMAND) {
+                const issueUrl = options.getString('issue-url', true);
+                log(`'/rm-plan' command received for issue URL: ${issueUrl}`);
+
+                // Placeholder: Acknowledge interaction
+                try {
+                  await interaction.reply({ content: `Processing /rm-plan for ${issueUrl}... Task ID will be provided shortly.`, ephemeral: false });
+                  // TODO: Implement actual plan generation trigger in a later step.
+                  // Update command_history for now
+                  // await db.update(command_history).set({ status: 'success' }).where(...);
+                } catch (replyError) {
+                  error('Failed to reply to Discord interaction:', replyError);
+                }
+              } else {
+                try {
+                  await interaction.reply({ content: `Unknown command: ${commandName}`, ephemeral: true });
+                  // await db.update(command_history).set({ status: 'failed', error_message: 'Unknown command' }).where(...);
+                } catch (replyError) {
+                  error('Failed to reply to Discord interaction (unknown command):', replyError);
+                }
+              }
+            });
+
+            try {
+              await client.login(config.DISCORD_TOKEN);
+            } catch (err) {
+              error('Discord bot failed to login:', err);
+            }
+          }
+
+          ```
+
+          Note: This basic registration registers commands globally. For
+          development, you might want to register them to a specific guild for
+          faster updates.
+
+          The `clientId` is derived from the bot token. This is a common pattern
+          but ensure it's correct for your `discord.js` version and bot setup.
+
+          Make sure `src/bot/main.ts` correctly calls `await
+          startDiscordBot();`.
+        done: false
+  - title: Core Task Creation & Plan Orchestration Logic
+    description: Create the core logic for task management and plan generation. This
+      involves creating `task_manager.ts` to handle task records in the DB and
+      `plan_generator.ts` to orchestrate fetching issue details, running
+      `rmfilter` programmatically, calling an LLM for plan generation, and
+      converting the result to YAML.
+    files:
+      - src/bot/core/task_manager.ts
+      - src/bot/core/plan_generator.ts
+      - src/common/github/issues.ts
+      - src/rmplan/prompt.ts
+      - src/rmfilter/rmfilter.ts
+      - src/rmplan/actions.ts
+      - src/common/model_factory.ts
+      - package.json
+      - src/bot/db/index.ts
+      - src/bot/config.ts
+      - src/rmplan/configLoader.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Install the AI SDK if not already present:
+
+          `bun add ai`
+
+
+          Create `src/bot/core/plan_generator.ts`. This module will be
+          responsible for the plan generation lifecycle.
+
+          ```typescript
+
+          import path from 'node:path';
+
+          import os from 'node:os';
+
+          import {promises as fs} from 'node:fs';
+
+          import { generateText } from 'ai';
+
+          import { createModel } from '../../common/model_factory';
+
+          import { getInstructionsFromGithubIssue } from
+          '../../common/github/issues';
+
+          import { planPrompt } from '../../rmplan/prompt';
+
+          import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter';
+
+          import { extractMarkdownToYaml } from '../../rmplan/actions';
+
+          import { argsFromRmprOptions, type RmprOptions } from
+          '../../rmpr/comment_options';
+
+          import { config as botConfig } from '../config';
+
+          import { loadEffectiveConfig as loadRmplanRepoConfig } from
+          '../../rmplan/configLoader';
+
+          import { getGitRoot } from '../../rmfilter/utils';
+
+          import { log, error, debugLog, warn } from '../../logging';
+
+
+          interface PlanGenerationResult {
+            planYamlPath: string;
+            planYamlContent: string;
+            planMarkdownContent: string;
+          }
+
+
+          export async function generatePlanForIssue(
+            issueUrl: string,
+            taskId: string,
+            // repoFullName: "owner/repo", needed for rmfilter if issue doesn't provide full context
+            // For now, assume rmfilter can run in a context where git commands work to find repo
+            repoPath: string // Absolute path to the local clone of the target repo
+          ): Promise<PlanGenerationResult> {
+            log(`[${taskId}] Starting plan generation for issue: ${issueUrl}`);
+
+            // 1. Fetch issue content and parse rmpr options
+            const issueDetails = await getInstructionsFromGithubIssue(issueUrl);
+            let planRequestText = issueDetails.plan; // This is the issue body and selected comments
+            const rmprOptions = issueDetails.rmprOptions;
+
+            debugLog(`[${taskId}] Fetched issue content. Title: ${issueDetails.issue.title}`);
+
+            // 2. Construct the prompt for the planning LLM (the one that creates the structured plan)
+            const llmPlanningPrompt = planPrompt(planRequestText);
+            const tempPlanPromptFile = path.join(os.tmpdir(), `rmplan-gh-bot-prompt-${taskId}.md`);
+            await fs.writeFile(tempPlanPromptFile, llmPlanningPrompt);
+            debugLog(`[${taskId}] Wrote LLM planning prompt to ${tempPlanPromptFile}`);
+
+            // 3. Prepare rmfilter arguments
+            // For plan generation, rmfilter's main purpose is context gathering for the planning LLM.
+            // It needs the `llmPlanningPrompt` as its instructions.
+            let rmfilterArgs: string[] = [
+              '--instructions', `@${tempPlanPromptFile}`,
+              // '--bare', // Keep rmfilter output clean for the planning LLM
+              // Potentially add --with-diff if useful for planning context
+            ];
+            if (rmprOptions) {
+              // Convert RmprOptions to rmfilter args for file selection/context
+              // Note: argsFromRmprOptions might need the PR object if `pr:` prefixes are used.
+              // For initial plan generation from an issue, PR object is not available.
+              // We'll assume rmprOptions from issues mostly use direct file paths or general globs.
+              const issueContextArgs = argsFromRmprOptions(rmprOptions /*, optional PR object */);
+              if (issueContextArgs.length > 0) {
+                rmfilterArgs.push('--'); // Separator for file/glob arguments for rmfilter
+                rmfilterArgs.push(...issueContextArgs);
+              }
+            }
+            // TODO: Add --autofind logic here if specified by bot config / rmplan.yml for planning phase.
+            // For now, relies on rmprOptions or manual rmfilter args if any.
+
+            // 4. Run rmfilter to get context for the planning LLM
+            log(`[${taskId}] Running rmfilter to gather context...`);
+            // runRmfilterProgrammatically needs gitRoot and baseDir.
+            // For a bot processing a plan for a specific repo, `repoPath` should be the git root of that repo.
+            const rmfilterOutput = await runRmfilterProgrammatically(rmfilterArgs, repoPath, repoPath);
+            debugLog(`[${taskId}] rmfilter output length: ${rmfilterOutput.length}`);
+            await fs.unlink(tempPlanPromptFile).catch(e => warn(`[${taskId}] Failed to delete temp prompt file: ${e.message}`));
+
+            // 5. Call the LLM to generate the plan structure (in Markdown)
+            log(`[${taskId}] Calling LLM to generate plan structure...`);
+            const rmplanRepoConfig = await loadRmplanRepoConfig(); // Load .rmfilter/config/rmplan.yml from target repo
+            const planningModel = rmplanRepoConfig.models?.execution || // TODO: dedicated planning model?
+                                  botConfig.PLANNING_MODEL || // TODO: Add PLANNING_MODEL to BotConfig
+                                  'google/gemini-2.5-pro-preview-05-06';
+
+            const llm = createModel(planningModel);
+            const llmResponse = await generateText({
+              model: llm,
+              prompt: rmfilterOutput, // rmfilter output is the prompt for the planning LLM
+            });
+            const planMarkdownContent = llmResponse.text;
+            debugLog(`[${taskId}] LLM generated plan Markdown length: ${planMarkdownContent.length}`);
+
+            // 6. Convert the LLM's Markdown plan to YAML
+            log(`[${taskId}] Converting generated Markdown plan to YAML...`);
+            // extractMarkdownToYaml uses a model specified in rmplan.yml (convert_yaml) or a default
+            const planYamlContent = await extractMarkdownToYaml(planMarkdownContent, rmplanRepoConfig, true /* quiet */);
+            debugLog(`[${taskId}] Converted YAML plan length: ${planYamlContent.length}`);
+
+            // 7. Save the YAML plan
+            // The plan should be saved in a structured way, e.g., WORKSPACE_BASE_DIR/tasks/<task_id>/plan.yml
+            const planDir = path.join(botConfig.WORKSPACE_BASE_DIR, 'tasks', taskId, 'plans');
+            await fs.mkdir(planDir, { recursive: true });
+            const planYamlPath = path.join(planDir, 'plan.yml');
+            await fs.writeFile(planYamlPath, planYamlContent);
+            log(`[${taskId}] Saved generated YAML plan to: ${planYamlPath}`);
+
+            // Also save the markdown plan for auditing/debugging
+            const planMarkdownPath = path.join(planDir, 'plan.md');
+            await fs.writeFile(planMarkdownPath, planMarkdownContent);
+
+            return { planYamlPath, planYamlContent, planMarkdownContent };
+          }
+
+          ```
+
+          **Note**: This `generatePlanForIssue` assumes `repoPath` is the path
+          to a local clone where `rmfilter` can run. The bot needs a strategy
+          for this:
+
+          a) Clone the repo per task (heavy for just planning).
+
+          b) Have a central clone and pull updates.
+
+          c) Run `rmfilter` against the live GitHub repo (not directly supported
+          by current `rmfilter`).
+
+          For Phase 1, we might need to simplify `runRmfilterProgrammatically`
+          or assume the bot runs in a context that *is* the target repo, or use
+          a pre-cloned shared location. The project plan implies workspaces are
+          per-task, primarily for implementation. Let's assume for now that
+          `WORKSPACE_BASE_DIR` might contain a checkout of the target repo, and
+          `repoPath` points to it.
+
+          A `PLANNING_MODEL` should be added to `BotConfig`.
+        done: false
+      - prompt: >
+          Create `src/bot/core/task_manager.ts`. This module will handle the
+          creation and state updates of tasks.
+
+          ```typescript
+
+          import { randomUUID } from 'node:crypto';
+
+          import { db, tasks, task_artifacts, command_history as
+          commandHistoryTable } from '../db'; // Ensure command_history is
+          aliased if needed
+
+          import { eq, and } from 'drizzle-orm';
+
+          import { generatePlanForIssue } from './plan_generator';
+
+          import { log, error, debugLog } from '../../logging';
+
+          // import { notifyTaskStatus } from './thread_manager'; // Will be
+          added later
+
+
+          export interface StartPlanGenerationOptions {
+            platform: 'github' | 'discord';
+            userId: string; // GitHub username or Discord user ID
+            issueUrl: string;
+            repoFullName?: string; // "owner/repo", mainly for GitHub
+            repoPath: string; // Absolute path to local clone of the repo
+            originalCommandId?: number; // ID from command_history table
+            // For GitHub:
+            githubCommentId?: number;
+            // For Discord:
+            discordInteraction?: any; // Simplified Discord interaction object
+          }
+
+
+          export async function startPlanGenerationTask(options:
+          StartPlanGenerationOptions): Promise<string | null> {
+            const taskId = randomUUID();
+            log(`[${taskId}] Received request to generate plan for issue: ${options.issueUrl}`);
+
+            let taskRecordId: string | undefined;
+
+            try {
+              // 1. Create initial task record
+              const insertedTasks = await db.insert(tasks).values({
+                id: taskId,
+                issue_url: options.issueUrl,
+                repository_full_name: options.repoFullName,
+                task_type: 'plan',
+                status: 'pending_planning', // New status: indicates planning is requested
+                created_by_platform: options.platform,
+                created_by_user_id: options.userId,
+              }).returning({ id: tasks.id });
+
+              if (!insertedTasks || insertedTasks.length === 0) {
+                throw new Error("Failed to insert task into database.");
+              }
+              taskRecordId = insertedTasks[0].id;
+              log(`[${taskId}] Created task record.`);
+
+              // Update command_history with task_id and set status to 'processing'
+              if (options.originalCommandId) {
+                await db.update(commandHistoryTable)
+                  .set({ task_id: taskId, status: 'processing' })
+                  .where(eq(commandHistoryTable.id, options.originalCommandId));
+              }
+
+              // 2. Set status to 'planning'
+              await db.update(tasks).set({ status: 'planning' }).where(eq(tasks.id, taskId));
+              // await notifyTaskStatus(taskId, `Planning started for ${options.issueUrl}...`, options); // TODO: Uncomment when thread_manager is ready
+
+              // 3. Call plan generator
+              const { planYamlPath, planMarkdownContent } = await generatePlanForIssue(options.issueUrl, taskId, options.repoPath);
+              log(`[${taskId}] Plan generation successful. Plan YAML at: ${planYamlPath}`);
+
+              // 4. Update task record with plan_file_path and status 'completed' (for planning task type)
+              await db.update(tasks)
+                .set({ status: 'plan_generated', plan_file_path: planYamlPath, updated_at: new Date() })
+                .where(eq(tasks.id, taskId));
+
+              // 5. Store plan as an artifact
+              await db.insert(task_artifacts).values({
+                task_id: taskId,
+                artifact_type: 'plan_yaml',
+                file_path: planYamlPath, // Assuming planYamlPath is relative to a known root or an accessible location
+              });
+              // Optionally save markdown plan as well
+              // const markdownArtifactPath = planYamlPath.replace('.yml', '.md'); // Path where plan_generator saved it
+              // await db.insert(task_artifacts).values({
+              //   task_id: taskId,
+              //   artifact_type: 'plan_markdown',
+              //   file_path: markdownArtifactPath,
+              // });
+
+              log(`[${taskId}] Planning task completed successfully.`);
+              // await notifyTaskStatus(taskId, `Plan generated for ${options.issueUrl}: ${planYamlPath}`, options); // TODO
+
+              // Update command_history to success
+              if (options.originalCommandId) {
+                  await db.update(commandHistoryTable)
+                    .set({ status: 'success' })
+                    .where(eq(commandHistoryTable.id, options.originalCommandId));
+              }
+              return taskId;
+
+            } catch (err) {
+              error(`[${taskId}] Error during plan generation task for ${options.issueUrl}:`, err);
+              if (taskRecordId) {
+                await db.update(tasks)
+                  .set({ status: 'failed', error_message: String(err), updated_at: new Date() })
+                  .where(eq(tasks.id, taskRecordId));
+              }
+              // await notifyTaskStatus(taskId, `Failed to generate plan for ${options.issueUrl}: ${err.message}`, options); // TODO
+
+              // Update command_history to failed
+              if (options.originalCommandId) {
+                  await db.update(commandHistoryTable)
+                    .set({ status: 'failed', error_message: String(err) })
+                    .where(eq(commandHistoryTable.id, options.originalCommandId));
+              }
+              return null;
+            }
+          }
+
+          ```
+
+          Note: The `repoPath` parameter in `StartPlanGenerationOptions` is
+          crucial. The bot will need a local copy of the repository against
+          which `rmfilter` will run. For Phase 1, we'll assume this path is
+          provided correctly (e.g., configured path to a shared clone, or the
+          bot itself runs from within a clone).
+
+          The status `'plan_generated'` can be used to indicate the planning
+          sub-task is done. The overall task lifecycle might involve further
+          steps.
+
+          Add `PLANNING_MODEL: string (optional)` to `BotConfig` in
+          `src/bot/config.ts` and load it.
+        done: false
+  - title: Wire Plan Generation to GitHub & Discord Triggers
+    description: Connect the `@bot plan` GitHub command and `/rm-plan` Discord
+      command to the `startPlanGenerationTask` logic.
+    files:
+      - src/bot/github_handler.ts
+      - src/bot/discord_bot.ts
+      - src/bot/core/task_manager.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Update `src/bot/github_handler.ts` to call `startPlanGenerationTask`.
+
+
+          In `processIssueComment` function:
+
+          1.  Import `startPlanGenerationTask` from `../core/task_manager`.
+
+          2.  When the `@bot plan` command is identified:
+              *   Determine the target issue URL. If `args` (the text after `@bot plan`) is a valid URL, use it. Otherwise, use `payload.issue.html_url`.
+              *   Get the `repoFullName` from `payload.repository.full_name`.
+              *   **Crucially, determine `repoPath`**. For now, let's assume the bot is running in a context where `getGitRoot()` from `../../rmfilter/utils` can determine the path to the target repository's clone. This might need refinement later based on deployment strategy. If `payload.repository.full_name` differs from the repo `getGitRoot()` is in, this will be problematic. For MVP, assume `getGitRoot()` is the correct path for the target repo.
+              *   Retrieve the ID of the command from `command_history` (the one we just inserted). You'll need to query `command_history` for the most recent 'pending' command by this user for this platform, or modify the insert to return the ID. For Drizzle: `const insertedCmd = await db.insert(commandHistoryTable).values(...).returning({ id: commandHistoryTable.id }); const originalCommandId = insertedCmd[0]?.id;`
+              *   Call `startPlanGenerationTask` with the appropriate options:
+                  ```typescript
+                  // Inside processIssueComment, after identifying '@bot plan'
+                  const targetIssueUrl = args && args.startsWith('http') ? args : payload.issue.html_url;
+                  const repoFullName = payload.repository.full_name;
+                  // const commenterLogin = payload.sender.login; // Already have commenter
+
+                  // Get originalCommandId (assuming you get it from the insert)
+                  // const originalCommandId = ... ;
+
+                  // Placeholder for repoPath logic
+                  let repoPath: string;
+                  try {
+                    // This assumes the bot is running in a checkout of the *target* repository.
+                    // This will need to be more sophisticated if the bot manages multiple repos
+                    // or runs outside the repo context.
+                    // For now, if the command is for a *different* repo than where the bot is running,
+                    // this will be incorrect.
+                    repoPath = await getGitRoot();
+                    if (!repoPath) throw new Error("Could not determine git root.");
+
+                    // A simple check (can be improved): if the webhook's repo full_name
+                    // is not part of the determined git root's origin URL, it's likely a mismatch.
+                    // const currentRepoOrigin = await You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
+
+          **Input Markdown:**
+
+
+          Here is the text that needs to be converted to valid YAML:
+
+
+          <input_text>
+
+          git config --get remote.origin.url`.cwd(repoPath).text();
+                    // if (!currentRepoOrigin.includes(repoFullName)) {
+                    //   // Log a warning or error, handle as appropriate
+                    //   // For now, we proceed, but this is a known simplification.
+                    // }
+
+                  } catch (e) {
+                    error("Failed to determine repository path for plan generation:", e);
+                    // Update command_history to 'failed'
+                    // await db.update(commandHistoryTable).set({ status: 'failed', error_message: 'Failed to determine repo path' }).where(eq(commandHistoryTable.id, originalCommandId));
+                    // Post a comment back to GitHub?
+                    return;
+                  }
+
+                  // Asynchronously start the plan generation
+                  startPlanGenerationTask({
+                    platform: 'github',
+                    userId: commenter,
+                    issueUrl: targetIssueUrl,
+                    repoFullName: repoFullName,
+                    repoPath: repoPath, // This is the critical path
+                    githubCommentId: payload.comment.id,
+                    originalCommandId: originalCommandId, // Pass the ID of the command_history record
+                  }).then(taskId => {
+                    if (taskId) {
+                      log(`Successfully started plan generation task ${taskId} from GitHub command.`);
+                      // Further notifications will be handled by thread_manager
+                    } else {
+                      log(`Plan generation task failed to start from GitHub command.`);
+                      // Error already logged by startPlanGenerationTask
+                    }
+                  }).catch(e => {
+                      error('Unhandled error from startPlanGenerationTask (GitHub):', e)
+                  });
+
+                  // Respond quickly to GitHub, actual status updates will be async via comments
+                  // (This part of responding is handled by thread_manager later)
+                  // For now, the function returns void, and startPlanGenerationTask runs in background.
+                  ```
+              *   The `startPlanGenerationTask` is async. The webhook should respond quickly (200 OK). The actual plan generation happens in the background. Status updates will be posted asynchronously.
+          Modify the `command_history` insert in `github_handler.ts` to get the
+          ID:
+
+          ```typescript
+
+          const insertedCmd = await db.insert(commandHistoryTable).values({
+            command_name: command,
+            platform: 'github',
+            user_id: commenter,
+            raw_command: fullCommand,
+            status: 'pending',
+          }).returning({ id: commandHistoryTable.id });
+
+          const originalCommandId = insertedCmd[0]?.id;
+
+          // ... then pass originalCommandId to startPlanGenerationTask
+
+          ```
+        done: false
+      - prompt: >
+          Update `src/bot/discord_bot.ts` to call `startPlanGenerationTask`.
+
+
+          In the `InteractionCreate` event handler, for the `RMPLAN_COMMAND`:
+
+          1.  Import `startPlanGenerationTask` from `../core/task_manager`.
+
+          2.  Get the `issueUrl` from the command options.
+
+          3.  Get the `userId` from `interaction.user.id`.
+
+          4.  **Determine `repoPath` and `repoFullName`**: This is trickier for
+          Discord as the command only has an issue URL.
+              *   Parse `owner` and `repo` from the `issueUrl` (you can adapt `parsePrOrIssueNumber` from `src/common/github/identifiers.ts` or create a new utility).
+              *   Construct `repoFullName = `${owner}/${repo}``.
+              *   For `repoPath`: This requires the bot to know where local clones of repositories are stored. A simple strategy for MVP:
+                  *   Use a configured base directory (e.g., `config.WORKSPACE_BASE_DIR`).
+                  *   The path could be `path.join(config.WORKSPACE_BASE_DIR, repoFullName)`.
+                  *   The bot must ensure this path exists and is a valid git clone. This setup (cloning/managing these repos) is complex and part of later Workspace Management.
+                  *   **For now, let's assume `repoPath` can be derived like this and a clone exists. Log a clear warning if the path doesn't exist.**
+                  *   A robust solution would involve checking a `repositories` table or similar that maps `repoFullName` to a local, managed clone path. This is out of scope for Phase 1.
+          5.  Retrieve the `originalCommandId` similar to the GitHub handler.
+              ```typescript
+              // In discord_bot.ts, InteractionCreate handler for RMPLAN_COMMAND
+              const insertedCmd = await db.insert(commandHistoryTable).values({
+                  command_name: commandName,
+                  platform: 'discord',
+                  user_id: user.id,
+                  raw_command: `/${commandName} ${options.data.map(opt => `${opt.name}:${opt.value}`).join(' ')}`,
+                  status: 'pending',
+              }).returning({id: commandHistoryTable.id});
+              const originalCommandId = insertedCmd[0]?.id;
+              ```
+          6.  Call `startPlanGenerationTask`:
+              ```typescript
+              // Inside /rm-plan handler in discord_bot.ts
+              const issueUrl = options.getString('issue-url', true);
+              // const discordUserId = interaction.user.id; // Already have user.id
+
+              // Parse repoFullName from issueUrl
+              // Example utility (you'll need to implement or adapt parsePrOrIssueNumber)
+              const ghIdentifiers = parseGitHubIssueUrl(issueUrl); // Assume this returns { owner, repo, number } or null
+              if (!ghIdentifiers) {
+                await interaction.editReply({ content: `Invalid GitHub issue URL: ${issueUrl}` });
+                if (originalCommandId) await db.update(commandHistoryTable).set({status: 'failed', error_message: 'Invalid issue URL'}).where(eq(commandHistoryTable.id, originalCommandId));
+                return;
+              }
+              const repoFullName = `${ghIdentifiers.owner}/${ghIdentifiers.repo}`;
+
+              // Determine repoPath (simplified for MVP)
+              const repoPath = path.join(botConfig.WORKSPACE_BASE_DIR, 'clones', repoFullName);
+              // Check if repoPath exists and is a directory (basic check)
+              try {
+                const stats = await fs.stat(repoPath);
+                if (!stats.isDirectory()) {
+                  throw new Error('Path is not a directory.');
+                }
+                // Further check: is it a git repo? (e.g., check for .git folder)
+                await fs.stat(path.join(repoPath, '.git'));
+              } catch (e) {
+                error(`[Task ${originalCommandId}] Repository path ${repoPath} not found or not a valid git clone. Please configure repository clones. Error: ${e.message}`);
+                await interaction.editReply({ content: `Error: Repository for ${repoFullName} is not available to the bot. Please contact an admin.` });
+                if (originalCommandId) await db.update(commandHistoryTable).set({ status: 'failed', error_message: `Repo clone not found at ${repoPath}` }).where(eq(commandHistoryTable.id, originalCommandId));
+                return;
+              }
+
+              // Asynchronously start the plan generation
+              startPlanGenerationTask({
+                platform: 'discord',
+                userId: user.id,
+                issueUrl: issueUrl,
+                repoFullName: repoFullName,
+                repoPath: repoPath,
+                discordInteraction: { id: interaction.id, channelId: interaction.channelId, token: interaction.token }, // Pass necessary details
+                originalCommandId: originalCommandId,
+              }).then(taskId => {
+                if (taskId) {
+                  log(`Successfully started plan generation task ${taskId} from Discord command.`);
+                  // interaction.editReply might fail if too much time passed, or use followup.
+                  // Thread manager will handle notifications.
+                } else {
+                  log(`Plan generation task failed to start from Discord command.`);
+                  // interaction.editReply({ content: `Failed to start plan generation for ${issueUrl}. Admins notified.` });
+                }
+              }).catch(e => {
+                  error('Unhandled error from startPlanGenerationTask (Discord):', e)
+              });
+
+              // The initial reply "Processing..." was already sent.
+              // Further updates via thread_manager.
+              ```
+          7.  Create a utility function `parseGitHubIssueUrl(url: string): {
+          owner: string; repo: string; number: number } | null` (perhaps in
+          `src/bot/utils/github_utils.ts`). You can adapt `parsePrOrIssueNumber`
+          from `src/common/github/identifiers.ts` for this. It should parse URLs
+          like `https://github.com/owner/repo/issues/123`.
+
+          Make sure `fs.stat` is imported from `node:fs/promises`.
+
+          Update `src/bot/config.ts` BotConfig to include `WORKSPACE_BASE_DIR`
+          which is already there, and ensure it's used for `repoPath`
+          construction for Discord.
+        done: false
+      - prompt: >
+          Create `src/bot/utils/github_utils.ts` and implement
+          `parseGitHubIssueUrl`.
+
+          ```typescript
+
+          // src/bot/utils/github_utils.ts
+
+          export function parseGitHubIssueUrl(issueUrl: string): { owner:
+          string; repo: string; issueNumber: number } | null {
+            try {
+              const url = new URL(issueUrl);
+              if (url.hostname !== 'github.com') {
+                return null;
+              }
+              const pathParts = url.pathname.split('/').filter(Boolean); // Filter out empty strings from leading/trailing slashes
+
+              // Expected format: /<owner>/<repo>/issues/<number>
+              if (pathParts.length === 4 && pathParts[2] === 'issues') {
+                const owner = pathParts[0];
+                const repo = pathParts[1];
+                const issueNumber = parseInt(pathParts[3], 10);
+                if (owner && repo && !isNaN(issueNumber)) {
+                  return { owner, repo, issueNumber };
+                }
+              }
+              return null;
+            } catch (e) {
+              // Invalid URL
+              return null;
+            }
+          }
+
+          ```
+
+          Ensure this utility is imported and used in `src/bot/discord_bot.ts`.
+        done: false
+  - title: Basic Thread Synchronization
+    description: Implement basic thread synchronization. When a task is initiated,
+      create a corresponding thread/comment in the other platform and store the
+      mapping. Post initial status messages.
+    files:
+      - src/bot/core/thread_manager.ts
+      - src/bot/core/task_manager.ts
+      - src/bot/github_handler.ts
+      - src/bot/discord_bot.ts
+      - src/bot/db/index.ts
+      - package.json
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          If `octokit` is not a direct dependency, add it: `bun add octokit`.
+
+
+          Create `src/bot/core/thread_manager.ts`.
+
+          ```typescript
+
+          import { db, threads as threadsTable, tasks as tasksTable,
+          user_mappings } from '../db'; // Renamed threads to threadsTable to
+          avoid conflict
+
+          import { eq } from 'drizzle-orm';
+
+          import { config as botConfig } from '../config';
+
+          import { Client as DiscordClient, TextChannel,
+          ThreadAutoArchiveDuration } from 'discord.js'; // For Discord
+          interactions
+
+          import { Octokit } from 'octokit'; // For GitHub interactions
+
+          import { log, error, warn, debugLog } from '../../logging';
+
+
+          let octokit: Octokit;
+
+          let discordClient: DiscordClient | null = null; // Will be set by
+          discord_bot.ts
+
+
+          export function initializeThreadManager(client: DiscordClient) {
+            discordClient = client;
+            octokit = new Octokit({ auth: botConfig.GITHUB_TOKEN });
+          }
+
+
+          interface PlatformContext {
+            platform: 'github' | 'discord';
+            // GitHub specific
+            repoFullName?: string; // "owner/repo"
+            issueNumber?: number;
+            commentId?: number; // ID of the GitHub comment that triggered the bot or where to reply
+            // Discord specific
+            interaction?: any; // Raw discord.js interaction object (for replying/follow-ups)
+            channelId?: string; // Discord channel ID where the command was invoked
+            userId?: string; // Discord user ID
+          }
+
+
+          // Simplified initial notification function
+
+          export async function notifyTaskCreation(
+            taskId: string,
+            message: string,
+            initiatingContext: PlatformContext,
+            targetRepoFullName?: string, // owner/repo for GitHub posts
+            targetIssueNumber?: number // issue number for GitHub posts
+          ) {
+            log(`[${taskId}] Notifying task creation: ${message}`);
+
+            const task = await db.query.tasks.findFirst({ where: eq(tasksTable.id, taskId) });
+            if (!task) {
+              error(`[${taskId}] Task not found for notification.`);
+              return;
+            }
+
+            // Get mapped GitHub username if initiated from Discord
+            let githubUsernameInitiator: string | null = null;
+            if (initiatingContext.platform === 'discord' && initiatingContext.userId) {
+                const mapping = await db.query.user_mappings.findFirst({
+                    where: eq(user_mappings.discord_user_id, initiatingContext.userId)
+                });
+                if (mapping && mapping.verified) {
+                    githubUsernameInitiator = mapping.github_username;
+                }
+            }
+
+            // Get mapped Discord user ID if initiated from GitHub
+            let discordUserIdInitiator: string | null = null;
+            if (initiatingContext.platform === 'github' && initiatingContext.userId) {
+                const mapping = await db.query.user_mappings.findFirst({
+                    where: eq(user_mappings.github_username, initiatingContext.userId)
+                });
+                if (mapping && mapping.verified) {
+                    discordUserIdInitiator = mapping.discord_user_id;
+                }
+            }
+
+
+            // Notify GitHub if initiated from Discord OR if it's a GitHub task needing an update
+            if (initiatingContext.platform === 'discord' || (targetRepoFullName && targetIssueNumber)) {
+              const repoToUse = targetRepoFullName || task.repository_full_name;
+              const issueToUse = targetIssueNumber || task.issue_number;
+
+              if (repoToUse && issueToUse && octokit) {
+                try {
+                  const [owner, repo] = repoToUse.split('/');
+                  let body = `Task ${taskId}: ${message}`;
+                  if (initiatingContext.platform === 'discord') {
+                      body += `\\nInitiated by Discord user ${initiatingContext.userId}`;
+                      if (githubUsernameInitiator) {
+                          body += ` (GitHub: @${githubUsernameInitiator})`;
+                      }
+                  }
+                  // TODO: Add link to Discord thread once created
+                  const comment = await octokit.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: issueToUse,
+                    body: body,
+                  });
+                  log(`[${taskId}] Posted to GitHub issue ${repoToUse}#${issueToUse}`);
+                  await db.insert(threadsTable).values({
+                    id: randomUUID(), // Or use comment.data.id if it's the thread identifier
+                    task_id: taskId,
+                    platform: 'github',
+                    external_id: comment.data.id.toString(), // Store comment ID
+                    thread_url: comment.data.html_url,
+                  });
+                } catch (e) {
+                  error(`[${taskId}] Failed to post to GitHub:`, e);
+                }
+              }
+            }
+
+            // Notify Discord if initiated from GitHub OR if it's a Discord task needing an update
+            if (initiatingContext.platform === 'github' || initiatingContext.channelId) {
+              if (discordClient) {
+                const channelIdToUse = initiatingContext.channelId || botConfig.DISCORD_DEFAULT_CHANNEL_ID; // TODO: Add DISCORD_DEFAULT_CHANNEL_ID to config
+                if (!channelIdToUse) {
+                  warn(`[${taskId}] No Discord channel ID available for notification.`);
+                  return;
+                }
+                try {
+                  const channel = await discordClient.channels.fetch(channelIdToUse) as TextChannel;
+                  if (channel && channel.isTextBased()) {
+                    let discordMessageContent = `Task ${taskId}: ${message}`;
+                    if (initiatingContext.platform === 'github') {
+                        discordMessageContent += `\\nInitiated by GitHub user @${initiatingContext.userId}`;
+                        if (discordUserIdInitiator) {
+                            discordMessageContent += ` (<@${discordUserIdInitiator}>)`;
+                        }
+                    }
+                    // TODO: Add link to GitHub comment/issue
+
+                    const sentMessage = await channel.send(discordMessageContent);
+                    // Optionally create a thread from this message
+                    const thread = await sentMessage.startThread({
+                      name: `Task ${taskId} - Issue ${task.issue_url?.split('/').pop() || 'N/A'}`,
+                      autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
+                    });
+                    log(`[${taskId}] Posted to Discord channel ${channelIdToUse} and created thread ${thread.id}`);
+
+                    await db.insert(threadsTable).values({
+                      id: randomUUID(), // Or use thread.id if it's the primary external_id
+                      task_id: taskId,
+                      platform: 'discord',
+                      external_id: thread.id, // Store Discord thread ID
+                      thread_url: thread.url,
+                    });
+                  } else {
+                    warn(`[${taskId}] Discord channel ${channelIdToUse} not found or not text-based.`);
+                  }
+                } catch (e) {
+                  error(`[${taskId}] Failed to post to Discord:`, e);
+                }
+              }
+            }
+          }
+
+          // Add randomUUID import:
+
+          // import { randomUUID } from 'node:crypto';
+
+          // Add DISCORD_DEFAULT_CHANNEL_ID to src/bot/config.ts
+
+          ```
+        done: false
+      - prompt: >
+          Modify `src/bot/discord_bot.ts` to initialize the `thread_manager`.
+
+          Import `initializeThreadManager` from `../core/thread_manager`.
+
+          In `startDiscordBot`, after `client.login()`, call
+          `initializeThreadManager(client)`.
+
+          ```typescript
+
+          // In src/bot/discord_bot.ts
+
+          // ... other imports
+
+          import { initializeThreadManager as initThreadManagerForDiscord } from
+          '../core/thread_manager'; // aliased to avoid conflict if there's
+          another init
+
+
+          export async function startDiscordBot() {
+            // ... (rest of the function, registration, client.on events) ...
+            try {
+              await client.login(config.DISCORD_TOKEN);
+              initThreadManagerForDiscord(client); // Initialize with the logged-in client
+              log('Thread manager initialized for Discord.');
+            } catch (err) {
+              error('Discord bot failed to login or initialize thread manager:', err);
+            }
+          }
+
+          ```
+
+          In `src/bot/github_handler.ts`, also call `initializeThreadManager`
+          but without a Discord client (it will only use Octokit). This is
+          slightly awkward; `initializeThreadManager` should ideally be more
+          flexible or split. For now, let's make `client` optional in
+          `initializeThreadManager`.
+
+
+          Update `initializeThreadManager` in `src/bot/core/thread_manager.ts`:
+
+          ```typescript
+
+          // In src/bot/core/thread_manager.ts
+
+          export function initializeThreadManager(client?: DiscordClient) { //
+          client is now optional
+            if (client) {
+              discordClient = client;
+            }
+            if (!octokit) { // Initialize Octokit if not already done
+              octokit = new Octokit({ auth: botConfig.GITHUB_TOKEN });
+            }
+          }
+
+          ```
+
+          Then, in `src/bot/github_handler.ts`, at the top level or in an init
+          function if you create one:
+
+          ```typescript
+
+          // In src/bot/github_handler.ts, e.g., at the top
+
+          import { initializeThreadManager as initThreadManagerForGitHub } from
+          './core/thread_manager';
+
+          initThreadManagerForGitHub(); // Call without Discord client
+
+          ```
+
+          And also ensure `src/bot/main.ts` calls `initThreadManagerForGitHub()`
+          after config load but before server start, so Octokit is ready.
+
+          A better approach might be to pass Octokit and DiscordClient instances
+          directly to `notifyTaskCreation` or have `thread_manager` export
+          functions that take them. But for MVP, this shared state is simpler.
+
+          Modify `notifyTaskCreation` not to require
+          `initiatingContext.channelId` if the platform is GitHub, it should
+          post to a default channel or a channel associated with the repo/org if
+          such a mapping exists (future).
+
+          Add `DISCORD_DEFAULT_CHANNEL_ID: string (optional)` to `BotConfig` in
+          `src/bot/config.ts`.
+        done: false
+      - prompt: >
+          Update `src/bot/core/task_manager.ts` to call `notifyTaskCreation`.
+
+          Import `notifyTaskCreation` from `./thread_manager`.
+
+          In `startPlanGenerationTask`:
+
+          *   After successfully creating the initial task record and setting
+          status to 'planning', call:
+              ```typescript
+              await notifyTaskCreation(
+                taskId,
+                `Plan generation initiated for ${options.issueUrl}.`,
+                {
+                  platform: options.platform,
+                  userId: options.userId, // Initiator's ID
+                  // GitHub specific context for where to post the initial message if Discord initiated
+                  repoFullName: options.repoFullName,
+                  issueNumber: parseGitHubIssueUrl(options.issueUrl)?.issueNumber,
+                  // Discord specific context for where to post the initial message if GitHub initiated
+                  channelId: options.discordInteraction?.channelId
+                },
+                options.repoFullName, // Target repo for notifications if different
+                parseGitHubIssueUrl(options.issueUrl)?.issueNumber // Target issue for notifications
+              );
+              ```
+          *   After plan generation is fully successful (status
+          `plan_generated`), call:
+              ```typescript
+              await notifyTaskCreation(
+                taskId,
+                `Plan successfully generated for ${options.issueUrl}. Plan available at: ${planYamlPath}`, // Or a link to view plan
+                { platform: options.platform, userId: options.userId, /* other context */ },
+                options.repoFullName,
+                parseGitHubIssueUrl(options.issueUrl)?.issueNumber
+              );
+              ```
+          *   If an error occurs during plan generation, call:
+              ```typescript
+              const errorMessage = err instanceof Error ? err.message : String(err);
+              await notifyTaskCreation(
+                taskId,
+                `Plan generation FAILED for ${options.issueUrl}. Error: ${errorMessage.substring(0, 200)}...`,
+                { platform: options.platform, userId: options.userId, /* other context */ },
+                options.repoFullName,
+                parseGitHubIssueUrl(options.issueUrl)?.issueNumber
+              );
+              ```
+          Make sure to import `parseGitHubIssueUrl` from
+          `../utils/github_utils`.
+
+          The `PlatformContext` in `thread_manager.ts` should be updated to
+          better reflect what's available from `StartPlanGenerationOptions`
+          (e.g., `githubCommentId`, `discordInteraction`).
+
+          Refine `PlatformContext` in `thread_manager.ts`:
+
+          ```typescript
+
+          interface PlatformContext {
+              platform: 'github' | 'discord';
+              userId: string; // Initiator's ID
+              // GitHub specific
+              repoFullName?: string;
+              issueNumber?: number;
+              githubCommentId?: number;
+              // Discord specific
+              discordInteraction?: { id: string; channelId: string; token: string };
+              // channelId is duplicated but useful for direct access
+              channelId?: string; // This would be options.discordInteraction.channelId if platform is discord
+          }
+
+          ```
+
+          And update calls in `task_manager.ts` to pass
+          `options.githubCommentId` and `options.discordInteraction` into the
+          context.
+        done: false
+  - title: GitHub User Permission Check
+    description: Implement a check to verify if a GitHub user has 'write' or 'admin'
+      permissions on the repository before processing a command from an issue
+      comment.
+    files:
+      - src/bot/github_handler.ts
+      - src/bot/core/auth_manager.ts
+    include_imports: true
+    include_importers: false
+    steps:
+      - prompt: >
+          Create `src/bot/core/auth_manager.ts`.
+
+          ```typescript
+
+          import { Octokit } from 'octokit';
+
+          import { config as botConfig } from '../config';
+
+          import { log, warn } from '../../logging';
+
+
+          let octokit: Octokit;
+
+
+          function getOctokit() {
+            if (!octokit) {
+              octokit = new Octokit({ auth: botConfig.GITHUB_TOKEN });
+            }
+            return octokit;
+          }
+
+
+          export async function canUserPerformAction(
+            githubUsername: string,
+            repoFullName: string, // "owner/repo"
+          ): Promise<boolean> {
+            if (!botConfig.GITHUB_TOKEN) {
+              warn('GITHUB_TOKEN is not set. Permission checks will be skipped, and all actions will be allowed. THIS IS INSECURE.');
+              return true; // Or false, to be safe if token is missing. Let's be permissive for now if no token.
+            }
+
+            const [owner, repo] = repoFullName.split('/');
+            if (!owner || !repo) {
+              log(`Invalid repository name for permission check: ${repoFullName}`);
+              return false; // Cannot check permissions without owner/repo
+            }
+
+            try {
+              const { data: permissions } = await getOctokit().rest.repos.getCollaboratorPermissionLevel({
+                owner,
+                repo,
+                username: githubUsername,
+              });
+
+              log(`User ${githubUsername} permission level for ${repoFullName}: ${permissions.permission}`);
+              // Allowed permissions: 'admin', 'write'
+              return ['admin', 'write'].includes(permissions.permission);
+            } catch (error: any) {
+              // If user is not a collaborator, API returns 404.
+              // If user has no explicit permissions but repo is public & allows issue creation by anyone, this check might be too strict.
+              // However, for @bot commands that trigger actions, restricting to collaborators with write/admin is safer.
+              if (error.status === 404) {
+                  log(`User ${githubUsername} is not a collaborator or has no explicit permissions on ${repoFullName}.`);
+              } else {
+                  warn(`Failed to get permission level for ${githubUsername} on ${repoFullName}: ${error.message}`);
+              }
+              return false;
+            }
+          }
+
+          ```
+        done: false
+      - prompt: >
+          Update `src/bot/github_handler.ts` to use the permission check.
+
+          Import `canUserPerformAction` from `../core/auth_manager`.
+
+          In `processIssueComment`, before processing any command:
+
+          1. Call `canUserPerformAction(commenter, repository.full_name)`.
+
+          2. If it returns `false`:
+              * Log a warning.
+              * Update the `command_history` record for this command to 'failed' with an error message like "Permission denied". (You'll need the command ID here).
+              * Optionally, post a reply to the GitHub comment stating permission denied (this would use `octokit.rest.issues.createComment` and should probably be a helper in `thread_manager` or similar, e.g., `postGitHubReply(repoFullName, issueNumber, replyToCommentId, messageBody)`). For now, just log it.
+              * Return early from `processIssueComment`.
+          ```typescript
+
+          // ... (imports and other code)
+
+          import { canUserPerformAction } from '../core/auth_manager';
+
+          // ...
+
+
+          async function processIssueComment(payload:
+          GitHubIssueCommentPayload): Promise<void> {
+            // ... (existing code to get commenter, commentBody, etc.)
+
+            const commandRegex = /@bot\\s+(\\w+)(?:\\s+(.*))?/;
+            const match = commentBody.match(commandRegex);
+
+            if (!match) { /* ... */ return; }
+
+            const commandName = match[1].toLowerCase();
+            const args = match[2]?.trim() || '';
+            const fullCommand = `@bot ${commandName} ${args}`.trim();
+
+            // Insert into command_history and get ID
+            const insertedCmd = await db.insert(commandHistoryTable).values({
+              command_name: commandName, // Use the parsed commandName
+              platform: 'github',
+              user_id: commenter,
+              raw_command: fullCommand,
+              status: 'pending_auth', // New status
+            }).returning({ id: commandHistoryTable.id });
+            const commandId = insertedCmd[0]?.id;
+
+            if (!commandId) {
+              error('Failed to record command in history, aborting processing.');
+              return;
+            }
+
+            // Perform permission check
+            const маєДозвіл = await canUserPerformAction(commenter, repository.full_name); // Renamed variable to avoid keyword conflict
+            if (!маєДозвіл) {
+              warn(`User ${commenter} does not have sufficient permissions for ${repository.full_name} to run command '@bot ${commandName}'.`);
+              await db.update(commandHistoryTable)
+                .set({ status: 'failed', error_message: 'Permission denied' })
+                .where(eq(commandHistoryTable.id, commandId));
+
+              // Optionally, post a reply comment (future enhancement or use thread_manager)
+              // For now, we just log and return.
+              // await octokit.rest.issues.createComment({ owner: ..., repo: ..., issue_number: ..., body: "Permission denied..." });
+              return;
+            }
+
+            // If permission check passes, update status to 'processing'
+            await db.update(commandHistoryTable)
+                .set({ status: 'processing' }) // This was 'pending' for task_manager, now 'processing'
+                .where(eq(commandHistoryTable.id, commandId));
+
+            // Proceed with command processing (e.g., 'plan')
+            if (commandName === 'plan') {
+              log(`'@bot plan' command received from ${commenter} for issue ${issue.html_url}. Args: '${args}'`);
+              // ... (call startPlanGenerationTask as implemented in Task 6, passing commandId as originalCommandId)
+              // Ensure startPlanGenerationTask is responsible for updating commandHistoryTable status to 'success' or 'failed' based on its outcome.
+            } else {
+              log(`Unknown command: @bot ${commandName}`);
+              await db.update(commandHistoryTable)
+                .set({ status: 'failed', error_message: 'Unknown command' })
+                .where(eq(commandHistoryTable.id, commandId));
+            }
+          }
+
+          ```
+
+          Update `command_history.status` possible values if needed (e.g., add
+          'pending_auth').
+
+          When calling `startPlanGenerationTask` (from Task 6 work), ensure the
+          `originalCommandId` is the `commandId` obtained here.
+
+          The `startPlanGenerationTask` should then update this
+          `command_history` record's status to 'success' or 'failed' upon its
+          completion/failure, instead of the GitHub/Discord handlers doing a
+          preliminary 'success' update.
+        done: false
