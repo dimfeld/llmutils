@@ -9,9 +9,13 @@ import { log, error, warn, debugLog } from '../../logging.js';
 let octokit: Octokit;
 let discordClient: DiscordClient | null = null;
 
-export function initializeThreadManager(client: DiscordClient) {
-  discordClient = client;
-  octokit = new Octokit({ auth: botConfig.GITHUB_TOKEN });
+export function initializeThreadManager(client?: DiscordClient) {
+  if (client) {
+    discordClient = client;
+  }
+  if (!octokit) {
+    octokit = new Octokit({ auth: botConfig.GITHUB_TOKEN });
+  }
 }
 
 interface PlatformContext {

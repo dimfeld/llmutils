@@ -1697,7 +1697,7 @@ tasks:
 
           Add `DISCORD_DEFAULT_CHANNEL_ID: string (optional)` to `BotConfig` in
           `src/bot/config.ts`.
-        done: false
+        done: true
       - prompt: >
           Update `src/bot/core/task_manager.ts` to call `notifyTaskCreation`.
 

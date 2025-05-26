@@ -5,6 +5,7 @@ import { ConsoleAdapter } from '../logging/console.js';
 import { config, loadConfig } from './config.js';
 import { startServer } from './server.js';
 import { startDiscordBot } from './discord_bot.js';
+import { initializeThreadManager } from './core/thread_manager.js';
 
 async function main() {
   // Load configuration first to get LOG_LEVEL
@@ -18,6 +19,10 @@ async function main() {
     try {
       log('Starting LLMUtils Bot Service...');
       log(`Log level: ${config.LOG_LEVEL}`);
+
+      // Initialize thread manager (initializes Octokit)
+      initializeThreadManager();
+      log('Thread manager initialized');
 
       // Start HTTP server for webhooks
       startServer();
