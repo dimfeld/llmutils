@@ -384,7 +384,7 @@ tasks:
           5.  Add tests for the scheduling setup (e.g., checking if tasks are
           scheduled, though this can be tricky with `setInterval`; focus on
           testing the callable functions).
-        done: false
+        done: true
   - title: PR Response Handling (`@bot respond`)
     description: >
       Implement the `@bot respond` command for GitHub PR comments. This allows
