@@ -57,8 +57,14 @@ assume a repository written with Typescript and PNPM workspaces.
   - [Usage](#usage-2)
   - [Options Editor](#options-editor)
 - [LLMUtils Bot](#llmutils-bot)
+  - [GitHub Integration](#github-integration)
   - [Discord Commands](#discord-commands)
+    - [Task Management](#task-management)
+    - [User Self-Registration](#user-self-registration)
   - [Admin Commands](#admin-commands)
+  - [System Features](#system-features)
+    - [Automatic Cleanup](#automatic-cleanup)
+    - [Crash Recovery](#crash-recovery)
 - [Usage Examples](#usage-examples)
   - [Using rmfilter](#using-rmfilter)
   - [Using rmplan](#using-rmplan)
@@ -325,6 +331,7 @@ rmplan generate --plan plan.txt -- src/**/*.ts --grep auth
 rmplan generate --plan-editor -- apps/web
 
 # Generate a plan from a GitHub issue. This assumes you have a GitHub token set in the GITHUB_TOKEN environment variable
+# The command will also parse any "rmpr:" options from the issue description and comments
 rmplan generate --issue https://github.com/dimfeld/llmutils/issues/28
 
 # Generate a plan from the GitHub issue for this repository with this number
@@ -602,7 +609,7 @@ The `rmplan answer-pr` command helps handle GitHub pull request review comments 
 - **Comment Modes**: Choose between inline comment markers or separate context for addressing feedback.
 - **Integration with Executors**: Use the same executor system as rmplan for applying changes.
 - **Automatic Replies**: Optionally post replies to the handled threads after committing changes.
-- **Special Comment Options**: Parse special options from PR comments to customize how they're handled.
+- **Special Comment Options**: Parse special options from PR comments and GitHub issues to customize how they're handled.
 
 ### Usage
 
@@ -637,7 +644,7 @@ When handling PR comments, an interactive options editor allows you to adjust se
 - **Toggle autocommit**: Enable or disable automatically committing changes.
 - **Toggle review thread replies**: Enable or disable posting replies to review threads.
 
-You can also include special options in PR comments to customize how they're handled:
+You can also include special options in PR comments or GitHub issues to customize how they're handled:
 
 ```
 Add validation here for user input
@@ -646,18 +653,36 @@ rmpr: with-imports
 rmpr: include src/forms
 ```
 
+These options are automatically parsed and added to the rmfilter arguments when generating context.
+
 ## LLMUtils Bot
 
 The LLMUtils Bot is a Discord and GitHub bot that helps manage AI-assisted development tasks. It provides a unified interface for generating plans, implementing features, and tracking task progress.
+
+### GitHub Integration
+
+The bot supports GitHub webhook events and PR comment handling:
+
+- **PR Response Command**: Use `@bot respond` in PR review comments to have the bot automatically address the feedback
+- **Automatic PR Detection**: The bot can detect and process PRs from the current branch
+- **Review Thread Replies**: After addressing comments, the bot can automatically post replies to the review threads
 
 ### Discord Commands
 
 The bot provides several Discord slash commands for interacting with the system:
 
+#### Task Management
+
 - `/rm-plan <issue-url>` - Generates a plan for a GitHub issue
 - `/rm-implement <issue-url>` - Implements an existing plan for a GitHub issue
 - `/rm-status [task-id]` - Checks the status of a task (omitting task-id shows your most recent task)
+- `/rm-cancel <task-id>` - Cancels a running task
 - `/rm-logs <task-id>` - Retrieves execution logs for a specific task
+
+#### User Self-Registration
+
+- `/rm-link <github-username>` - Links your GitHub account to Discord (requires verification)
+- `/rm-verify-gist <gist-url>` - Completes the verification process by providing a Gist URL containing your verification code
 
 ### Admin Commands
 
@@ -691,6 +716,58 @@ This command creates a verified mapping between the GitHub user and Discord user
 - User-specific task filtering and management
 
 **Note:** Only users listed in `ADMIN_DISCORD_USER_IDS` can use this command. The mapping is stored in the bot's database and marked as admin-verified.
+
+#### `/rm-cleanup`
+
+Triggers manual cleanup of old workspaces and task logs.
+
+**Usage:**
+
+```
+/rm-cleanup
+```
+
+This command initiates the cleanup process that:
+
+- Removes workspaces older than the configured retention period
+- Deletes task logs that exceed the maximum age
+- Frees up disk space from completed or abandoned tasks
+
+#### `/rm-status-all`
+
+Shows the status of all tasks across all users.
+
+**Usage:**
+
+```
+/rm-status-all
+```
+
+This command provides a comprehensive view of:
+
+- Currently running tasks
+- Recently completed tasks
+- Failed tasks that may need attention
+- Resource utilization across the system
+
+### System Features
+
+#### Automatic Cleanup
+
+The bot includes automatic cleanup mechanisms that run periodically:
+
+- **Workspace Cleanup**: Automatically removes old task workspaces based on configurable retention periods
+- **Log Rotation**: Manages task logs to prevent unlimited disk usage
+- **Configurable Schedules**: Cleanup intervals can be customized via environment variables
+
+#### Crash Recovery
+
+The bot implements crash recovery to ensure task continuity:
+
+- **Task Checkpoints**: Saves progress at key points during task execution
+- **Automatic Resumption**: On startup, the bot checks for interrupted tasks and attempts to resume them
+- **State Persistence**: Uses SQLite database with a `task_checkpoints` table to maintain task state
+- **Graceful Degradation**: If a task cannot be resumed, it's marked as failed with appropriate logging
 
 ## Usage Examples
 
