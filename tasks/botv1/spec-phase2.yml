@@ -222,7 +222,7 @@ tasks:
           the input.
 
           3.  Return an array of `WorkspaceInfo` objects, mapping DB fields.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_tracker.ts`, refactor
           `findWorkspacesByRepoUrl` function:
