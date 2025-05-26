@@ -181,7 +181,7 @@ tasks:
               c.  Send a confirmation message with the number of cleaned workspaces and any errors.
           4.  Write tests for the command handler and the underlying cleanup
           logic called.
-        done: false
+        done: true
   - title: User Self-Registration System
     description: >
       Implement the `/rm-link <github-username>` Discord command allowing users
