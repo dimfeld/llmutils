@@ -653,7 +653,7 @@ tasks:
           can use or adapt logic from `commitAll` but be specific to a workspace
           path and ensure it only commits if there are changes. `git commit -am
           "${message}"`.
-        done: false
+        done: true
       - prompt: >
           Create a new file `src/bot/utils/pr_creator.ts`.
 
