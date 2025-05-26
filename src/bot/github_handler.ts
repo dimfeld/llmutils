@@ -6,6 +6,7 @@ import { startPlanGenerationTask, startImplementationTask } from './core/task_ma
 import { getGitRoot } from '../rmfilter/utils.js';
 import { eq } from 'drizzle-orm';
 import { canUserPerformAction } from './core/auth_manager.js';
+import { getPendingVerificationByCode } from './db/user_mappings_manager.js';
 
 interface GitHubIssueCommentPayload {
   action: string;
@@ -141,7 +142,77 @@ async function processIssueComment(payload: GitHubIssueCommentPayload): Promise<
     return;
   }
 
-  // Perform permission check
+  // Special handling for 'verify' command - no permission check needed
+  if (command === 'verify') {
+    log(`'@bot verify' command received from ${commenter}. Args: '${args}'`);
+
+    // Update status to 'processing'
+    await db
+      .update(commandHistoryTable)
+      .set({ status: 'processing' })
+      .where(eq(commandHistoryTable.id, originalCommandId));
+
+    const verificationCode = args.trim().toUpperCase();
+
+    if (!verificationCode) {
+      log(`No verification code provided in @bot verify command from ${commenter}`);
+      await db
+        .update(commandHistoryTable)
+        .set({ status: 'failed', errorMessage: 'No verification code provided' })
+        .where(eq(commandHistoryTable.id, originalCommandId));
+      return;
+    }
+
+    try {
+      // Look up the pending verification
+      const pendingVerification = await getPendingVerificationByCode(verificationCode);
+
+      if (!pendingVerification) {
+        log(`Invalid or expired verification code ${verificationCode} from ${commenter}`);
+        await db
+          .update(commandHistoryTable)
+          .set({ status: 'failed', errorMessage: 'Invalid or expired verification code' })
+          .where(eq(commandHistoryTable.id, originalCommandId));
+        return;
+      }
+
+      // Check if the GitHub username matches
+      if (pendingVerification.githubUsername.toLowerCase() !== commenter.toLowerCase()) {
+        log(
+          `Verification code ${verificationCode} does not match GitHub user ${commenter} (expected ${pendingVerification.githubUsername})`
+        );
+        await db
+          .update(commandHistoryTable)
+          .set({
+            status: 'failed',
+            errorMessage: 'Verification code does not match GitHub username',
+          })
+          .where(eq(commandHistoryTable.id, originalCommandId));
+        return;
+      }
+
+      // Verification successful! The user should now complete the process in Discord
+      log(
+        `GitHub user ${commenter} successfully verified with code ${verificationCode}. Awaiting Discord completion.`
+      );
+      await db
+        .update(commandHistoryTable)
+        .set({ status: 'success' })
+        .where(eq(commandHistoryTable.id, originalCommandId));
+
+      // TODO: Post a reply comment confirming verification (future enhancement)
+    } catch (err) {
+      error(`Failed to process verification for ${commenter}:`, err);
+      await db
+        .update(commandHistoryTable)
+        .set({ status: 'failed', errorMessage: (err as Error).message })
+        .where(eq(commandHistoryTable.id, originalCommandId));
+    }
+
+    return; // Exit early for verify command
+  }
+
+  // Perform permission check for all other commands
   const hasPermission = await canUserPerformAction(commenter, repository.full_name);
   if (!hasPermission) {
     warn(

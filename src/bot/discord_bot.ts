@@ -9,9 +9,20 @@ import { eq, asc, desc } from 'drizzle-orm';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { isAdmin } from './discord_admin_utils.js';
-import { mapUser } from './db/user_mappings_manager.js';
+import {
+  mapUser,
+  upsertPendingVerification,
+  getPendingVerificationByCode,
+  markAsVerified,
+  getUserMappingByDiscordId,
+  getUserMappingByGithubUsername,
+} from './db/user_mappings_manager.js';
 import { getAllActiveTasks } from './db/tasks_manager.js';
 import { cleanupInactiveWorkspaces } from '../rmplan/workspace/workspace_manager.js';
+import {
+  generateVerificationCode,
+  getVerificationCodeExpiration,
+} from './utils/verification_code.js';
 
 const RMPLAN_COMMAND = 'rm-plan';
 const RMIMPLEMENT_COMMAND = 'rm-implement';
@@ -20,6 +31,8 @@ const RMSTATUS_COMMAND = 'rm-status';
 const RMLINKUSER_COMMAND = 'rm-link-user';
 const RMSTATUSALL_COMMAND = 'rm-status-all';
 const RMCLEANUP_COMMAND = 'rm-cleanup';
+const RMREGISTER_COMMAND = 'rm-register';
+const RMVERIFY_COMMAND = 'rm-verify';
 
 const commands = [
   new SlashCommandBuilder()
@@ -79,6 +92,23 @@ const commands = [
   new SlashCommandBuilder()
     .setName(RMCLEANUP_COMMAND)
     .setDescription('(Admin) Cleans up inactive workspaces.')
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMREGISTER_COMMAND)
+    .setDescription('Register your GitHub username with your Discord account.')
+    .addStringOption((option) =>
+      option.setName('github-username').setDescription('Your GitHub username').setRequired(true)
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName(RMVERIFY_COMMAND)
+    .setDescription('Verify your GitHub account ownership with a verification code.')
+    .addStringOption((option) =>
+      option
+        .setName('code')
+        .setDescription('The verification code from your GitHub issue comment')
+        .setRequired(true)
+    )
     .toJSON(),
 ];
 
@@ -756,6 +786,187 @@ export async function startDiscordBot() {
           error(`Failed to perform workspace cleanup:`, err);
           await interaction.editReply({
             content: `Error performing workspace cleanup: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
+      } else if (commandName === RMREGISTER_COMMAND) {
+        const githubUsername = options.getString('github-username', true);
+        log(
+          `'/rm-register' command received from user ${user.id} for GitHub username: ${githubUsername}`
+        );
+
+        // Reply immediately with ephemeral message
+        try {
+          await interaction.deferReply({ ephemeral: true });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          // Check if this Discord user already has a verified mapping
+          const existingDiscordMapping = await getUserMappingByDiscordId(user.id);
+          if (existingDiscordMapping && existingDiscordMapping.verified) {
+            await interaction.editReply({
+              content: `You are already registered as GitHub user \`${existingDiscordMapping.githubUsername}\`. If you need to change this, please contact an admin.`,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'success' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Check if this GitHub username is already verified for someone else
+          const existingGithubMapping = await getUserMappingByGithubUsername(githubUsername);
+          if (
+            existingGithubMapping &&
+            existingGithubMapping.verified &&
+            existingGithubMapping.discordUserId !== user.id
+          ) {
+            await interaction.editReply({
+              content: `The GitHub username \`${githubUsername}\` is already registered to another Discord user. If this is your account, please contact an admin.`,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'failed', errorMessage: 'GitHub username already registered' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Generate verification code
+          const verificationCode = generateVerificationCode();
+          const expiresAt = getVerificationCodeExpiration();
+
+          // Store pending verification
+          await upsertPendingVerification(user.id, githubUsername, verificationCode, expiresAt);
+
+          // Provide instructions
+          const repoUrl = 'https://github.com/dimfeld/llmutils'; // TODO: Make this configurable
+          await interaction.editReply({
+            content: `## GitHub Account Verification
+
+To verify you own the GitHub account \`${githubUsername}\`, please:
+
+1. Go to any issue in the repository: ${repoUrl}
+2. Add a comment with exactly this text:
+   \`\`\`
+   @bot verify ${verificationCode}
+   \`\`\`
+3. After posting the comment, use \`/rm-verify ${verificationCode}\` here to complete registration
+
+**Note:** The verification code expires in 10 minutes.`,
+          });
+
+          log(
+            `User ${user.id} initiated registration for GitHub username ${githubUsername} with code ${verificationCode}`
+          );
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to process registration:`, err);
+          await interaction.editReply({
+            content: `Error processing registration: ${(err as Error).message}`,
+          });
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: (err as Error).message })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        }
+      } else if (commandName === RMVERIFY_COMMAND) {
+        const code = options.getString('code', true).toUpperCase();
+        log(`'/rm-verify' command received from user ${user.id} with code: ${code}`);
+
+        // Reply immediately with ephemeral message
+        try {
+          await interaction.deferReply({ ephemeral: true });
+        } catch (replyError) {
+          error('Failed to defer reply to Discord interaction:', replyError);
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'failed', errorMessage: 'Failed to defer reply to interaction' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+          return;
+        }
+
+        try {
+          // Look up the pending verification by code
+          const pendingVerification = await getPendingVerificationByCode(code);
+
+          if (!pendingVerification) {
+            await interaction.editReply({
+              content: `Invalid or expired verification code. Please start the registration process again with \`/rm-register\`.`,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'failed', errorMessage: 'Invalid verification code' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Check if the code belongs to this Discord user
+          if (pendingVerification.discordUserId !== user.id) {
+            await interaction.editReply({
+              content: `This verification code was not generated for your Discord account. Please use your own verification code.`,
+            });
+            if (originalCommandId) {
+              await db
+                .update(commandHistory)
+                .set({ status: 'failed', errorMessage: 'Verification code mismatch' })
+                .where(eq(commandHistory.id, originalCommandId));
+            }
+            return;
+          }
+
+          // Mark as verified
+          await markAsVerified(pendingVerification.githubUsername, user.id);
+
+          await interaction.editReply({
+            content: `✅ Successfully verified! Your Discord account is now linked to GitHub user \`${pendingVerification.githubUsername}\`.`,
+          });
+
+          log(
+            `User ${user.id} successfully verified as GitHub user ${pendingVerification.githubUsername}`
+          );
+
+          // Update command_history to success
+          if (originalCommandId) {
+            await db
+              .update(commandHistory)
+              .set({ status: 'success' })
+              .where(eq(commandHistory.id, originalCommandId));
+          }
+        } catch (err) {
+          error(`Failed to verify registration:`, err);
+          await interaction.editReply({
+            content: `Error verifying registration: ${(err as Error).message}`,
           });
           if (originalCommandId) {
             await db
