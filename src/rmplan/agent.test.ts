@@ -65,8 +65,15 @@ tasks:
   });
 
   afterEach(async () => {
-    // Cleanup
+    // Cleanup temp directory
     await fs.rm(tempDir, { recursive: true, force: true });
+
+    // Cleanup any test workspaces created during tests
+    try {
+      await fs.rm('./.test-workspaces', { recursive: true, force: true });
+    } catch (e) {
+      // Ignore if directory doesn't exist
+    }
   });
 
   test('botTaskId is used to lock workspace when provided', async () => {
