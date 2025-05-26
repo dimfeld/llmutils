@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
 import { log } from '../../logging.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
-import { createWorkspace, type Workspace } from './workspace_manager.js';
+import { createWorkspace, type CreatedWorkspace } from './workspace_manager.js';
 import {
   findWorkspacesByRepoUrl,
   findWorkspacesByTaskId,

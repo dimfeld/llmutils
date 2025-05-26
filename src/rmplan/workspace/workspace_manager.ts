@@ -9,11 +9,16 @@ import { recordWorkspace, lockWorkspaceToTask } from './workspace_tracker.js';
 import { db } from '../../bot/db/index.js';
 import { workspaces as workspacesTable, tasks } from '../../bot/db/index.js';
 import { eq, and, inArray, or, isNull } from 'drizzle-orm';
+import { 
+  getUnlockableInactiveWorkspaces, 
+  deleteWorkspaceRecord,
+  type Workspace 
+} from '../../bot/db/workspaces_db_manager.js';
 
 /**
  * Interface representing a created workspace
  */
-export interface Workspace {
+export interface CreatedWorkspace {
   /** Absolute path to the workspace */
   path: string;
   /** Absolute path to the original plan file */
@@ -37,7 +42,7 @@ export async function createWorkspace(
   taskId: string,
   originalPlanFilePath: string,
   config: RmplanConfig
-): Promise<Workspace | null> {
+): Promise<CreatedWorkspace | null> {
   // Check if workspace creation is enabled in the config
   if (!config.workspaceCreation) {
     log('Workspace creation not enabled in config');
@@ -228,6 +233,83 @@ export interface CleanupResult {
   cleanedCount: number;
   /** Array of errors encountered during cleanup */
   errors: Array<{ workspacePath: string; error: string }>;
+}
+
+/**
+ * Deletes a workspace from the filesystem and database
+ * @param workspace The workspace to delete
+ */
+export async function deleteWorkspace(workspace: Workspace): Promise<void> {
+  // Remove the workspace directory from the filesystem
+  debugLog(`Deleting workspace directory: ${workspace.workspacePath}`);
+  await fs.rm(workspace.workspacePath, { recursive: true, force: true });
+  
+  // Remove the workspace record from the database
+  await deleteWorkspaceRecord(workspace.id);
+  
+  log(`Deleted workspace: ${workspace.workspacePath}`);
+}
+
+/**
+ * Automatically cleans up inactive workspaces
+ * @returns Object with cleaned and failed counts
+ */
+export async function autoCleanupWorkspaces(): Promise<{ cleanedCount: number; failedCount: number }> {
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  
+  log(`[Workspace Cleanup] Starting automatic cleanup of workspaces inactive since ${oneWeekAgo.toISOString()}`);
+  
+  try {
+    // Get workspaces that are eligible for cleanup
+    const workspacesToClean = await getUnlockableInactiveWorkspaces(oneWeekAgo);
+    
+    if (workspacesToClean.length === 0) {
+      log('[Workspace Cleanup] No inactive workspaces found for cleanup');
+      return { cleanedCount: 0, failedCount: 0 };
+    }
+    
+    log(`[Workspace Cleanup] Found ${workspacesToClean.length} workspaces eligible for cleanup`);
+    
+    let cleanedCount = 0;
+    let failedCount = 0;
+    
+    // Process each workspace
+    for (const workspace of workspacesToClean) {
+      try {
+        // Check filesystem lock
+        const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
+        if (lockInfo && !(await WorkspaceLock.isLockStale(lockInfo))) {
+          debugLog(`[Workspace Cleanup] Skipping workspace ${workspace.workspacePath} - has active filesystem lock`);
+          failedCount++;
+          continue;
+        }
+        
+        // Clear any stale filesystem lock
+        if (lockInfo && (await WorkspaceLock.isLockStale(lockInfo))) {
+          debugLog(`[Workspace Cleanup] Clearing stale lock for workspace ${workspace.workspacePath}`);
+          await WorkspaceLock.clearStaleLock(workspace.workspacePath);
+        }
+        
+        // Delete the workspace
+        await deleteWorkspace(workspace);
+        cleanedCount++;
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(`[Workspace Cleanup] Error cleaning workspace ${workspace.workspacePath}: ${errorMessage}`);
+        failedCount++;
+      }
+    }
+    
+    log(`[Workspace Cleanup] Completed - Cleaned: ${cleanedCount}, Failed: ${failedCount}`);
+    return { cleanedCount, failedCount };
+    
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`[Workspace Cleanup] Fatal error during cleanup: ${errorMessage}`);
+    throw error;
+  }
 }
 
 /**

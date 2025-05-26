@@ -6,6 +6,7 @@ import { config, loadConfig } from './config.js';
 import { startServer } from './server.js';
 import { startDiscordBot } from './discord_bot.js';
 import { initializeThreadManager } from './core/thread_manager.js';
+import { scheduleCleanupService } from './cleanup_service.js';
 
 async function main() {
   // Load configuration first to get LOG_LEVEL
@@ -29,6 +30,23 @@ async function main() {
 
       // Start Discord bot
       await startDiscordBot();
+
+      // Schedule automatic cleanup service (runs every 24 hours by default)
+      const stopCleanup = scheduleCleanupService();
+      log('Cleanup service scheduled');
+
+      // Handle graceful shutdown
+      process.on('SIGINT', () => {
+        log('Received SIGINT, shutting down gracefully...');
+        stopCleanup();
+        process.exit(0);
+      });
+
+      process.on('SIGTERM', () => {
+        log('Received SIGTERM, shutting down gracefully...');
+        stopCleanup();
+        process.exit(0);
+      });
 
       log('Bot service started successfully');
     } catch (err) {
