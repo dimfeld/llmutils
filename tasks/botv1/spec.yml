@@ -1162,7 +1162,7 @@ tasks:
 
           Add `PLANNING_MODEL: string (optional)` to `BotConfig` in
           `src/bot/config.ts` and load it.
-        done: false
+        done: true
   - title: Wire Plan Generation to GitHub & Discord Triggers
     description: Connect the `@bot plan` GitHub command and `/rm-plan` Discord
       command to the `startPlanGenerationTask` logic.

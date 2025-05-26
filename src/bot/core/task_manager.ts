@@ -1,7 +1,10 @@
-import { db, tasks, taskArtifacts } from '../db/index.js';
+import { randomUUID } from 'node:crypto';
+import { db, tasks, taskArtifacts, commandHistory as commandHistoryTable } from '../db/index.js';
 import { eq } from 'drizzle-orm';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { log, error, debugLog } from '../../logging.js';
+import { generatePlanForIssue } from './plan_generator.js';
+// import { notifyTaskStatus } from './thread_manager.js';
 
 type Task = InferSelectModel<typeof tasks>;
 type NewTask = InferInsertModel<typeof tasks>;
@@ -31,6 +34,19 @@ export interface CreateArtifactOptions {
   artifactType: string;
   filePath: string;
   metadata?: string;
+}
+
+export interface StartPlanGenerationOptions {
+  platform: 'github' | 'discord';
+  userId: string;
+  issueUrl: string;
+  repoFullName?: string;
+  repoPath: string;
+  originalCommandId?: number;
+  // For GitHub:
+  githubCommentId?: number;
+  // For Discord:
+  discordInteraction?: any;
 }
 
 /**
@@ -188,7 +204,112 @@ export class TaskManager {
       throw err;
     }
   }
+
+  /**
+   * Starts a plan generation task for a GitHub issue.
+   */
+  async startPlanGenerationTask(options: StartPlanGenerationOptions): Promise<string | null> {
+    const taskId = randomUUID();
+    log(`[${taskId}] Received request to generate plan for issue: ${options.issueUrl}`);
+
+    let taskRecordId: string | undefined;
+
+    try {
+      // 1. Create initial task record
+      const insertedTasks = await db
+        .insert(tasks)
+        .values({
+          id: taskId,
+          issueUrl: options.issueUrl,
+          repositoryFullName: options.repoFullName,
+          taskType: 'plan',
+          status: 'pending_planning',
+          createdByPlatform: options.platform,
+          createdByUserId: options.userId,
+        })
+        .returning({ id: tasks.id });
+
+      if (!insertedTasks || insertedTasks.length === 0) {
+        throw new Error('Failed to insert task into database.');
+      }
+      taskRecordId = insertedTasks[0].id;
+      log(`[${taskId}] Created task record.`);
+
+      // Update command_history with task_id and set status to 'processing'
+      if (options.originalCommandId) {
+        await db
+          .update(commandHistoryTable)
+          .set({ taskId: taskId, status: 'processing' })
+          .where(eq(commandHistoryTable.id, options.originalCommandId));
+      }
+
+      // 2. Set status to 'planning'
+      await db.update(tasks).set({ status: 'planning' }).where(eq(tasks.id, taskId));
+      // await notifyTaskStatus(taskId, `Planning started for ${options.issueUrl}...`, options); // TODO: Uncomment when thread_manager is ready
+
+      // 3. Call plan generator
+      const { planYamlPath, planMarkdownContent } = await generatePlanForIssue(
+        options.issueUrl,
+        taskId,
+        options.repoPath
+      );
+      log(`[${taskId}] Plan generation successful. Plan YAML at: ${planYamlPath}`);
+
+      // 4. Update task record with plan_file_path and status 'completed' (for planning task type)
+      await db
+        .update(tasks)
+        .set({ status: 'plan_generated', planFilePath: planYamlPath, updatedAt: new Date() })
+        .where(eq(tasks.id, taskId));
+
+      // 5. Store plan as an artifact
+      await db.insert(taskArtifacts).values({
+        taskId: taskId,
+        artifactType: 'plan_yaml',
+        filePath: planYamlPath,
+      });
+      // Optionally save markdown plan as well
+      // const markdownArtifactPath = planYamlPath.replace('.yml', '.md'); // Path where plan_generator saved it
+      // await db.insert(taskArtifacts).values({
+      //   taskId: taskId,
+      //   artifactType: 'plan_markdown',
+      //   filePath: markdownArtifactPath,
+      // });
+
+      log(`[${taskId}] Planning task completed successfully.`);
+      // await notifyTaskStatus(taskId, `Plan generated for ${options.issueUrl}: ${planYamlPath}`, options); // TODO
+
+      // Update command_history to success
+      if (options.originalCommandId) {
+        await db
+          .update(commandHistoryTable)
+          .set({ status: 'success' })
+          .where(eq(commandHistoryTable.id, options.originalCommandId));
+      }
+      return taskId;
+    } catch (err) {
+      error(`[${taskId}] Error during plan generation task for ${options.issueUrl}:`, err);
+      if (taskRecordId) {
+        await db
+          .update(tasks)
+          .set({ status: 'failed', errorMessage: String(err), updatedAt: new Date() })
+          .where(eq(tasks.id, taskRecordId));
+      }
+      // await notifyTaskStatus(taskId, `Failed to generate plan for ${options.issueUrl}: ${err.message}`, options); // TODO
+
+      // Update command_history to failed
+      if (options.originalCommandId) {
+        await db
+          .update(commandHistoryTable)
+          .set({ status: 'failed', errorMessage: String(err) })
+          .where(eq(commandHistoryTable.id, options.originalCommandId));
+      }
+      return null;
+    }
+  }
 }
 
 // Export a singleton instance
 export const taskManager = new TaskManager();
+
+// Export convenience function
+export const startPlanGenerationTask = taskManager.startPlanGenerationTask.bind(taskManager);
