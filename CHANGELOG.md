@@ -1,3 +1,49 @@
+# May 26, 2025
+
+## LLMUtils Bot - Phase 3 Features
+
+### PR Response Handling
+
+- Added `@bot respond` command for GitHub PR review comments
+- Automatic PR detection from current branch
+- Integration with existing rmpr functionality
+- Optional replies to review threads after addressing comments
+
+### User Self-Registration System
+
+- Added `/rm-link <github-username>` Discord command for self-registration
+- Verification via GitHub Gist with unique code
+- `/rm-verify-gist <gist-url>` command to complete verification
+- Enhanced user mapping security with verification status tracking
+
+### Admin Commands
+
+- `/rm-link-user <github-username> <discord-id>` - Manual user mapping (admin only)
+- `/rm-cleanup` - Trigger manual cleanup of workspaces and logs
+- `/rm-status-all` - View all tasks across all users
+- Admin access controlled via `ADMIN_DISCORD_USER_IDS` environment variable
+
+### Automatic Cleanup Service
+
+- Periodic cleanup of old workspaces based on retention settings
+- Task log rotation with configurable retention period
+- Background service runs every 6 hours
+- Manual trigger available via admin command
+
+### Crash Recovery System
+
+- Task checkpoints saved at key execution points
+- Automatic task resumption on bot startup
+- Graceful handling of interrupted tasks
+- State persistence using SQLite `task_checkpoints` table
+
+### System Improvements
+
+- Enhanced error handling and logging
+- Better thread synchronization between GitHub and Discord
+- Improved task status tracking and reporting
+- Resource cleanup on task completion or failure
+
 # May 17, 2025
 
 - Support executing tasks with Claude Code

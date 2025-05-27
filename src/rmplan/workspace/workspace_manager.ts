@@ -5,18 +5,28 @@ import { spawnAndLogOutput } from '../../rmfilter/utils.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, RmplanConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
-import { getDefaultTrackingFilePath, recordWorkspace } from './workspace_tracker.js';
+import { recordWorkspace, lockWorkspaceToTask } from './workspace_tracker.js';
+import { db } from '../../bot/db/index.js';
+import { workspaces as workspacesTable, tasks } from '../../bot/db/index.js';
+import { eq, and, inArray, or, isNull } from 'drizzle-orm';
+import {
+  getUnlockableInactiveWorkspaces,
+  deleteWorkspaceRecord,
+  type Workspace,
+} from '../../bot/db/workspaces_db_manager.js';
 
 /**
  * Interface representing a created workspace
  */
-export interface Workspace {
+export interface CreatedWorkspace {
   /** Absolute path to the workspace */
   path: string;
   /** Absolute path to the original plan file */
   originalPlanFilePath: string;
   /** Unique identifier for the task */
   taskId: string;
+  /** Unique identifier for the workspace record */
+  id: string;
 }
 
 /**
@@ -32,7 +42,7 @@ export async function createWorkspace(
   taskId: string,
   originalPlanFilePath: string,
   config: RmplanConfig
-): Promise<Workspace | null> {
+): Promise<CreatedWorkspace | null> {
   // Check if workspace creation is enabled in the config
   if (!config.workspaceCreation) {
     log('Workspace creation not enabled in config');
@@ -176,36 +186,228 @@ export async function createWorkspace(
 
   debugLog(`Successfully created workspace at ${targetClonePath}`);
 
+  // Record the workspace info for tracking
+  const workspaceId = await recordWorkspace({
+    taskId,
+    originalPlanFile: originalPlanFilePath,
+    repositoryUrl: repositoryUrl,
+    workspacePath: targetClonePath,
+    branch: branchName,
+  });
+
+  // Lock the workspace to this task (application-level lock)
+  try {
+    await lockWorkspaceToTask(targetClonePath, taskId);
+    debugLog(`Locked workspace ${targetClonePath} to task ${taskId}`);
+  } catch (error) {
+    log(`Warning: Failed to lock workspace to task: ${String(error)}`);
+    // This is not fatal, continue
+  }
+
   // Create workspace object
   const workspace = {
     path: targetClonePath,
     originalPlanFilePath,
     taskId,
+    id: workspaceId,
   };
 
-  // Record the workspace info for tracking
-  const trackingFilePath = config.paths?.trackingFile || getDefaultTrackingFilePath();
-  await recordWorkspace(
-    {
-      taskId,
-      originalPlanFilePath,
-      repositoryUrl: repositoryUrl,
-      workspacePath: targetClonePath,
-      branch: branchName,
-      createdAt: new Date().toISOString(),
-    },
-    trackingFilePath
-  );
-
-  // Acquire lock for the workspace
+  // Acquire filesystem lock for the workspace using bot process PID
   try {
-    await WorkspaceLock.acquireLock(targetClonePath, `rmplan agent --workspace ${taskId}`);
+    await WorkspaceLock.acquireLock(targetClonePath, `bot-task:${taskId}`);
     WorkspaceLock.setupCleanupHandlers(targetClonePath);
   } catch (error) {
-    log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
+    log(`Warning: Failed to acquire workspace filesystem lock: ${String(error)}`);
     // Continue without lock - this isn't fatal
   }
 
   // Return the workspace information
   return workspace;
+}
+
+/**
+ * Result of a workspace cleanup operation
+ */
+export interface CleanupResult {
+  /** Number of workspaces successfully cleaned */
+  cleanedCount: number;
+  /** Array of errors encountered during cleanup */
+  errors: Array<{ workspacePath: string; error: string }>;
+}
+
+/**
+ * Deletes a workspace from the filesystem and database
+ * @param workspace The workspace to delete
+ */
+export async function deleteWorkspace(workspace: Workspace): Promise<void> {
+  // Remove the workspace directory from the filesystem
+  debugLog(`Deleting workspace directory: ${workspace.workspacePath}`);
+  await fs.rm(workspace.workspacePath, { recursive: true, force: true });
+
+  // Remove the workspace record from the database
+  await deleteWorkspaceRecord(workspace.id);
+
+  log(`Deleted workspace: ${workspace.workspacePath}`);
+}
+
+/**
+ * Automatically cleans up inactive workspaces
+ * @returns Object with cleaned and failed counts
+ */
+export async function autoCleanupWorkspaces(): Promise<{
+  cleanedCount: number;
+  failedCount: number;
+}> {
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+  log(
+    `[Workspace Cleanup] Starting automatic cleanup of workspaces inactive since ${oneWeekAgo.toISOString()}`
+  );
+
+  try {
+    // Get workspaces that are eligible for cleanup
+    const workspacesToClean = await getUnlockableInactiveWorkspaces(oneWeekAgo);
+
+    if (workspacesToClean.length === 0) {
+      log('[Workspace Cleanup] No inactive workspaces found for cleanup');
+      return { cleanedCount: 0, failedCount: 0 };
+    }
+
+    log(`[Workspace Cleanup] Found ${workspacesToClean.length} workspaces eligible for cleanup`);
+
+    let cleanedCount = 0;
+    let failedCount = 0;
+
+    // Process each workspace
+    for (const workspace of workspacesToClean) {
+      try {
+        // Check filesystem lock
+        const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
+        if (lockInfo && !(await WorkspaceLock.isLockStale(lockInfo))) {
+          debugLog(
+            `[Workspace Cleanup] Skipping workspace ${workspace.workspacePath} - has active filesystem lock`
+          );
+          failedCount++;
+          continue;
+        }
+
+        // Clear any stale filesystem lock
+        if (lockInfo && (await WorkspaceLock.isLockStale(lockInfo))) {
+          debugLog(
+            `[Workspace Cleanup] Clearing stale lock for workspace ${workspace.workspacePath}`
+          );
+          await WorkspaceLock.clearStaleLock(workspace.workspacePath);
+        }
+
+        // Delete the workspace
+        await deleteWorkspace(workspace);
+        cleanedCount++;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(
+          `[Workspace Cleanup] Error cleaning workspace ${workspace.workspacePath}: ${errorMessage}`
+        );
+        failedCount++;
+      }
+    }
+
+    log(`[Workspace Cleanup] Completed - Cleaned: ${cleanedCount}, Failed: ${failedCount}`);
+    return { cleanedCount, failedCount };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`[Workspace Cleanup] Fatal error during cleanup: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * Cleans up inactive workspaces by removing them from disk and database
+ * @param forceAll If true, cleans all unlocked workspaces. Otherwise, only cleans workspaces for completed/failed tasks
+ * @returns A CleanupResult object with the number of cleaned workspaces and any errors
+ */
+export async function cleanupInactiveWorkspaces(forceAll: boolean = false): Promise<CleanupResult> {
+  const result: CleanupResult = {
+    cleanedCount: 0,
+    errors: [],
+  };
+
+  try {
+    // Fetch workspaces that can be cleaned
+    let workspacesToClean;
+
+    if (forceAll) {
+      // Get all workspaces that are not locked
+      workspacesToClean = await db
+        .select({
+          id: workspacesTable.id,
+          workspacePath: workspacesTable.workspacePath,
+          taskId: workspacesTable.taskId,
+          lockedByTaskId: workspacesTable.lockedByTaskId,
+        })
+        .from(workspacesTable)
+        .where(isNull(workspacesTable.lockedByTaskId));
+    } else {
+      // Get workspaces for completed or failed tasks
+      workspacesToClean = await db
+        .select({
+          id: workspacesTable.id,
+          workspacePath: workspacesTable.workspacePath,
+          taskId: workspacesTable.taskId,
+          lockedByTaskId: workspacesTable.lockedByTaskId,
+        })
+        .from(workspacesTable)
+        .leftJoin(tasks, eq(workspacesTable.taskId, tasks.id))
+        .where(
+          and(
+            isNull(workspacesTable.lockedByTaskId),
+            or(eq(tasks.status, 'completed'), eq(tasks.status, 'failed'))
+          )
+        );
+    }
+
+    log(`Found ${workspacesToClean.length} workspaces to clean`);
+
+    // Clean each workspace
+    for (const workspace of workspacesToClean) {
+      try {
+        // Check filesystem lock
+        const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
+        if (lockInfo && !(await WorkspaceLock.isLockStale(lockInfo))) {
+          debugLog(`Skipping workspace ${workspace.workspacePath} - has active filesystem lock`);
+          continue;
+        }
+
+        // Clear any stale filesystem lock
+        if (lockInfo && (await WorkspaceLock.isLockStale(lockInfo))) {
+          debugLog(`Clearing stale lock for workspace ${workspace.workspacePath}`);
+          await WorkspaceLock.clearStaleLock(workspace.workspacePath);
+        }
+
+        // Remove the workspace directory
+        debugLog(`Removing workspace directory: ${workspace.workspacePath}`);
+        await fs.rm(workspace.workspacePath, { recursive: true, force: true });
+
+        // Remove from database
+        await db.delete(workspacesTable).where(eq(workspacesTable.id, workspace.id));
+
+        result.cleanedCount++;
+        log(`Cleaned workspace: ${workspace.workspacePath}`);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        result.errors.push({
+          workspacePath: workspace.workspacePath,
+          error: errorMessage,
+        });
+        debugLog(`Error cleaning workspace ${workspace.workspacePath}: ${errorMessage}`);
+      }
+    }
+
+    return result;
+  } catch (error) {
+    log(
+      `Error during workspace cleanup: ${error instanceof Error ? error.message : String(error)}`
+    );
+    throw error;
+  }
 }

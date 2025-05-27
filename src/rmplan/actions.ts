@@ -379,7 +379,14 @@ export async function markStepDone(
   planFile: string,
   options: { task?: boolean; steps?: number; commit?: boolean },
   currentTask?: { taskIndex: number; stepIndex: number },
-  baseDir?: string
+  baseDir?: string,
+  progressCallback?: (details: {
+    taskIndex: number;
+    stepIndex: number;
+    stepPrompt: string;
+    taskTitle: string;
+    planFile: string;
+  }) => Promise<void>
 ): Promise<{ planComplete: boolean; message: string }> {
   // 1. Load and parse the plan file
   const planText = await Bun.file(planFile).text();
@@ -430,8 +437,21 @@ export async function markStepDone(
   const { task } = pending;
   if (options.task) {
     const pendingSteps = task.steps.filter((step) => !step.done);
-    for (const step of pendingSteps) {
+    for (let i = 0; i < pendingSteps.length; i++) {
+      const step = pendingSteps[i];
       step.done = true;
+
+      // Invoke progress callback for each step being marked done
+      if (progressCallback) {
+        const stepIndex = task.steps.indexOf(step);
+        await progressCallback({
+          taskIndex: pending.taskIndex,
+          stepIndex: stepIndex,
+          stepPrompt: step.prompt,
+          taskTitle: task.title,
+          planFile: planFile,
+        });
+      }
     }
     log('Marked all steps in task done\n');
     output.push(task.title);
@@ -443,8 +463,20 @@ export async function markStepDone(
   } else {
     const numSteps = options.steps || 1;
     let nowDoneSteps = task.steps.slice(pending.stepIndex, pending.stepIndex + numSteps);
-    for (const step of nowDoneSteps) {
+    for (let i = 0; i < nowDoneSteps.length; i++) {
+      const step = nowDoneSteps[i];
       step.done = true;
+
+      // Invoke progress callback for each step being marked done
+      if (progressCallback) {
+        await progressCallback({
+          taskIndex: pending.taskIndex,
+          stepIndex: pending.stepIndex + i,
+          stepPrompt: step.prompt,
+          taskTitle: task.title,
+          planFile: planFile,
+        });
+      }
     }
 
     log(

@@ -36,3 +36,6 @@ repomix-*
 task.yml
 **/*-agent-output.md
 **/.claude/settings.local.json
+
+# Test workspaces
+.test-workspaces/
