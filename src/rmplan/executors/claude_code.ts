@@ -1,18 +1,12 @@
-import { z } from 'zod';
+import type Anthropic from '@anthropic-ai/sdk';
+import chalk from 'chalk';
 import yaml from 'yaml';
+import { z } from 'zod';
+import { debugLog, log } from '../../logging.ts';
+import { createLineSplitter, debug, getGitRoot, spawnAndLogOutput } from '../../rmfilter/utils.ts';
+import type { PrepareNextStepOptions } from '../actions.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions } from './types.ts';
-import type { PrepareNextStepOptions } from '../actions.ts';
-import type Anthropic from '@anthropic-ai/sdk';
-import {
-  createLineSplitter,
-  debug,
-  getGitRoot,
-  logSpawn,
-  spawnAndLogOutput,
-} from '../../rmfilter/utils.ts';
-import { debugLog } from '../../logging.ts';
-import chalk from 'chalk';
 
 const claudeCodeOptionsSchema = z.object({
   allowedTools: z.array(z.string()).optional(),
@@ -31,7 +25,7 @@ export class ClaudeCodeExecutor implements Executor {
   static optionsSchema = claudeCodeOptionsSchema;
   static defaultModel = {
     execution: 'auto',
-    answerPr: 'sonnet',
+    answerPr: 'auto',
   };
 
   // readonly forceReviewCommentsMode = 'separate-context';
@@ -118,6 +112,7 @@ export class ClaudeCodeExecutor implements Executor {
       this.sharedOptions.model?.includes('sonnet') ||
       this.sharedOptions.model?.includes('opus')
     ) {
+      log(`Using model: ${this.sharedOptions.model}\n`);
       args.push('--model', this.sharedOptions.model);
     }
 

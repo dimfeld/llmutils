@@ -291,7 +291,7 @@ export async function prepareNextStep(
 
     // Add all files
     const filePrefix = options.filePathPrefix || '';
-    files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
+    files.forEach((file) => promptParts.push(`- ${path.relative(gitRoot, file)}`));
 
     // Add MDC files with their descriptions if available
     if (filteredMdcFiles.length > 0) {
