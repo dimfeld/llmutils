@@ -114,7 +114,7 @@ tasks:
 
           The `tasks.steps` objects already have a `done` field, which is
           correct.
-        done: false
+        done: true
       - prompt: >
           Create a new file `src/common/id_generator.ts`.
 
