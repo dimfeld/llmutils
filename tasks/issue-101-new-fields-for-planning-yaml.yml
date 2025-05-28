@@ -264,7 +264,7 @@ tasks:
               };
               ```
               Ensure that optional array fields like `dependencies`, `rmfilter`, `issue`, `pullRequest`, `changedFiles` are only included in `orderedPlan` if they have items. Optional string fields like `baseBranch` are only included if they have a value. `status` and `priority` should always be present due to defaults.
-        done: false
+        done: true
       - prompt: >
           Modify the `parseRmprOptions` function in
           `src/rmpr/comment_options.ts`.

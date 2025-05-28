@@ -8,6 +8,7 @@ import { ImportWalker } from '../dependency_graph/walk_imports.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
 import { Extractor } from '../treesitter/extract.js';
+import { generatePlanId } from '../common/id_generator.js';
 import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { planSchema } from './planSchema.js';
@@ -602,12 +603,18 @@ export async function executePostApplyCommand(
   return true;
 }
 
+export interface ExtractMarkdownToYamlOptions {
+  issueUrls?: string[];
+  planRmfilterArgs?: string[];
+}
+
 export async function extractMarkdownToYaml(
   inputText: string,
   config: RmplanConfig,
-  quiet: boolean
+  quiet: boolean,
+  options: ExtractMarkdownToYamlOptions = {}
 ): Promise<string> {
-  let validatedPlan: unknown;
+  let validatedPlan: PlanSchema;
   let convertedYaml: string;
 
   try {
@@ -642,6 +649,30 @@ export async function extractMarkdownToYaml(
       throw new Error('Validation failed');
     }
     validatedPlan = result.data;
+
+    // Set metadata fields
+    validatedPlan.id = generatePlanId();
+    const now = new Date().toISOString();
+    validatedPlan.createdAt = now;
+    validatedPlan.updatedAt = now;
+    validatedPlan.planGeneratedAt = now;
+    validatedPlan.promptsGeneratedAt = now;
+
+    // Set defaults for status and priority if not already set
+    if (!validatedPlan.status) {
+      validatedPlan.status = 'pending';
+    }
+    if (!validatedPlan.priority) {
+      validatedPlan.priority = 'unknown';
+    }
+
+    // Populate issue and rmfilter arrays from options
+    if (options.issueUrls && options.issueUrls.length > 0) {
+      validatedPlan.issue = options.issueUrls;
+    }
+    if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
+      validatedPlan.rmfilter = options.planRmfilterArgs;
+    }
   } catch (e) {
     // Save the failed YAML for debugging
     await Bun.write('rmplan-conversion-failure.yml', convertedYaml);
@@ -652,5 +683,48 @@ export async function extractMarkdownToYaml(
     throw e;
   }
 
-  return yaml.stringify(validatedPlan);
+  // Create ordered plan with all fields
+  const orderedPlan: any = {
+    id: validatedPlan.id,
+  };
+
+  // Always include status and priority
+  if (validatedPlan.status) {
+    orderedPlan.status = validatedPlan.status;
+  }
+  if (validatedPlan.priority) {
+    orderedPlan.priority = validatedPlan.priority;
+  }
+
+  // Add optional fields only if they have values
+  if (validatedPlan.dependencies?.length) {
+    orderedPlan.dependencies = validatedPlan.dependencies;
+  }
+  if (validatedPlan.baseBranch) {
+    orderedPlan.baseBranch = validatedPlan.baseBranch;
+  }
+  if (validatedPlan.rmfilter?.length) {
+    orderedPlan.rmfilter = validatedPlan.rmfilter;
+  }
+  if (validatedPlan.issue?.length) {
+    orderedPlan.issue = validatedPlan.issue;
+  }
+  if (validatedPlan.pullRequest?.length) {
+    orderedPlan.pullRequest = validatedPlan.pullRequest;
+  }
+
+  // Add required fields
+  orderedPlan.goal = validatedPlan.goal;
+  orderedPlan.details = validatedPlan.details;
+  orderedPlan.planGeneratedAt = validatedPlan.planGeneratedAt;
+  orderedPlan.promptsGeneratedAt = validatedPlan.promptsGeneratedAt;
+  orderedPlan.createdAt = validatedPlan.createdAt;
+  orderedPlan.updatedAt = validatedPlan.updatedAt;
+  orderedPlan.tasks = validatedPlan.tasks;
+
+  if (validatedPlan.changedFiles?.length) {
+    orderedPlan.changedFiles = validatedPlan.changedFiles;
+  }
+
+  return yaml.stringify(orderedPlan);
 }
