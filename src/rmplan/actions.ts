@@ -172,11 +172,6 @@ export async function prepareNextStep(
     } else {
       // Fallback to task files if prompt has no files.
       candidateFilesForImports = files.map((f) => path.resolve(gitRoot, f));
-      if (!quiet) {
-        log(
-          `No files found in prompt, using ${candidateFilesForImports.length} task files for import analysis.`
-        );
-      }
     }
     // Filter out any non-existent files just in case
     candidateFilesForImports = (
