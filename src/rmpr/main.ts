@@ -29,7 +29,7 @@ import {
 import {
   argsFromRmprOptions,
   combineRmprOptions,
-  parseRmprOptions,
+  parseCommandOptionsFromComment,
   type RmprOptions,
 } from './comment_options.js';
 import { getCurrentBranchName, getCurrentCommitSha } from './git_utils.js';
@@ -200,7 +200,7 @@ export async function handleRmprCommand(
       options: {},
     };
 
-    const { options: rmprOptions, cleanedComment } = parseRmprOptions(comment.comment.body);
+    const { options: rmprOptions, cleanedComment } = parseCommandOptionsFromComment(comment.comment.body, 'rmpr');
     if (rmprOptions) {
       commentsForThisFile.options = combineRmprOptions(commentsForThisFile.options, rmprOptions);
       debugLog(`Parsed --rmpr options for comment ${comment.comment.id}:`, rmprOptions);

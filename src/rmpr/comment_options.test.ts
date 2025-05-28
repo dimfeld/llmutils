@@ -1,6 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test';
 import {
   parseRmprOptions,
+  parseCommandOptionsFromComment,
   genericArgsFromRmprOptions,
   argsFromRmprOptions,
 } from './comment_options.ts';
@@ -156,5 +157,30 @@ describe('argsFromRmprOptions', () => {
 
     const args = argsFromRmprOptions(options, pr).sort();
     expect(args).toEqual(['--with-imports', 'src/file1.ts', 'src/file2.ts', 'lib/*.js'].sort());
+  });
+});
+
+describe('parseCommandOptionsFromComment', () => {
+  test('parses rmfilter comments', () => {
+    const commentBody = 'Please use these options\n--rmfilter --with-imports --bare\nrmfilter: --include src/**/*.ts';
+    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
+    expect(result).toEqual({
+      options: {
+        rmfilter: ['--with-imports', '--bare', '--include', 'src/**/*.ts'],
+      },
+      cleanedComment: 'Please use these options',
+    });
+  });
+
+  test('backward compatibility - parses rmpr comments', () => {
+    const commentBody = 'Fix this\n--rmpr include-all with-imports';
+    const result = parseCommandOptionsFromComment(commentBody, 'rmpr');
+    expect(result).toEqual({
+      options: {
+        includeAll: true,
+        withImports: true,
+      },
+      cleanedComment: 'Fix this',
+    });
   });
 });

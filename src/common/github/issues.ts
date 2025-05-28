@@ -3,7 +3,7 @@ import { checkbox } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import { parsePrOrIssueNumber } from './identifiers.ts';
 import {
-  parseRmprOptions,
+  parseCommandOptionsFromComment,
   combineRmprOptions,
   type RmprOptions,
 } from '../../rmpr/comment_options.ts';
@@ -121,12 +121,12 @@ export async function getInstructionsFromGithubIssue(issueSpec: string) {
   // Parse RmprOptions from issue body and comments
   let rmprOptions: RmprOptions | null = null;
   if (data.issue.body) {
-    const issueOptions = parseRmprOptions(data.issue.body);
+    const issueOptions = parseCommandOptionsFromComment(data.issue.body, 'rmpr');
     rmprOptions = issueOptions.options;
   }
   for (const comment of data.comments) {
     if (comment.body) {
-      const commentOptions = parseRmprOptions(comment.body);
+      const commentOptions = parseCommandOptionsFromComment(comment.body, 'rmpr');
       if (commentOptions.options) {
         rmprOptions = rmprOptions
           ? combineRmprOptions(rmprOptions, commentOptions.options)

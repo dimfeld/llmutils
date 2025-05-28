@@ -99,75 +99,89 @@ export function argsFromRmprOptions(options: RmprOptions, pr?: PullRequest): str
   return args;
 }
 
-function isSpecialCommentLine(line: string): boolean {
-  return (
-    line.startsWith('--rmpr') ||
-    line.startsWith('rmpr: ') ||
-    line.startsWith('--rmfilter') ||
-    line.startsWith('rmfilter: ')
-  );
-}
-
 /**
- * Parses --rmpr options from a comment body and returns cleaned comment.
+ * Parses command options from a comment body and returns cleaned comment.
  * @param commentBody The comment body text
- * @returns Parsed options (or null if none) and comment with rmpr lines removed
+ * @param prefix The prefix to look for (e.g., 'rmpr' or 'rmfilter')
+ * @returns Parsed options (or null if none) and comment with prefix lines removed
  */
-export function parseRmprOptions(commentBody: string): ParseRmprResult {
+export function parseCommandOptionsFromComment(commentBody: string, prefix: string): ParseRmprResult {
+  const isSpecialCommentLine = (line: string): boolean => {
+    return (
+      line.startsWith(`--${prefix}`) ||
+      line.startsWith(`${prefix}: `) ||
+      (prefix === 'rmpr' && (line.startsWith('--rmfilter') || line.startsWith('rmfilter: ')))
+    );
+  };
+
   const lines = commentBody.split('\n');
-  const rmprLines = lines.filter((line) => isSpecialCommentLine(line.trim()));
-  // Keep non-rmpr lines for the cleaned comment
+  const prefixLines = lines.filter((line) => isSpecialCommentLine(line.trim()));
+  // Keep non-prefix lines for the cleaned comment
   const cleanedLines = lines.filter((line) => !isSpecialCommentLine(line.trim()));
   const cleanedComment = cleanedLines.join('\n').trim();
 
-  if (rmprLines.length === 0) {
+  if (prefixLines.length === 0) {
     return { options: null, cleanedComment };
   }
 
   const options: RmprOptions = {};
-  for (const line of rmprLines) {
-    const isRmfilterComment = line.startsWith('--rmfilter') || line.startsWith('rmfilter: ');
-    const args = parseCliArgsFromString(
-      line.replace(/^(?:--rmpr|rmpr:|--rmfilter|rmfilter:)\s+/, '').trim()
-    );
-
-    if (isRmfilterComment) {
+  
+  if (prefix === 'rmfilter') {
+    // For rmfilter prefix, just collect all arguments after the prefix
+    for (const line of prefixLines) {
+      const trimmedLine = line.trim();
+      const args = parseCliArgsFromString(
+        trimmedLine.replace(new RegExp(`^(?:--${prefix}|${prefix}:)\\s+`), '').trim()
+      );
       options.rmfilter = options.rmfilter || [];
-      options.rmfilter.push('--', ...args);
-      continue;
+      options.rmfilter.push(...args);
     }
+  } else {
+    // Original parsing logic for rmpr
+    for (const line of prefixLines) {
+      const isRmfilterComment = line.startsWith('--rmfilter') || line.startsWith('rmfilter: ');
+      const args = parseCliArgsFromString(
+        line.replace(/^(?:--rmpr|rmpr:|--rmfilter|rmfilter:)\s+/, '').trim()
+      );
 
-    let i = 0;
-    while (i < args.length) {
-      const arg = args[i];
-      if (arg === 'include-all') {
-        options.includeAll = true;
-        i++;
-      } else if (arg === 'with-imports') {
-        options.withImports = true;
-        i++;
-      } else if (arg === 'with-importers') {
-        options.withImporters = true;
-        i++;
-      } else if (arg === 'include') {
-        if (i + 1 < args.length) {
-          options.include = options.include || [];
-          options.include.push(...args.slice(i + 1).flatMap((x) => x.split(/[ ,]+/)));
-          // include consumes all remaining args
-          break;
+      if (isRmfilterComment) {
+        options.rmfilter = options.rmfilter || [];
+        options.rmfilter.push('--', ...args);
+        continue;
+      }
+
+      let i = 0;
+      while (i < args.length) {
+        const arg = args[i];
+        if (arg === 'include-all') {
+          options.includeAll = true;
+          i++;
+        } else if (arg === 'with-imports') {
+          options.withImports = true;
+          i++;
+        } else if (arg === 'with-importers') {
+          options.withImporters = true;
+          i++;
+        } else if (arg === 'include') {
+          if (i + 1 < args.length) {
+            options.include = options.include || [];
+            options.include.push(...args.slice(i + 1).flatMap((x) => x.split(/[ ,]+/)));
+            // include consumes all remaining args
+            break;
+          } else {
+            i++;
+          }
+        } else if (arg === 'rmfilter') {
+          if (i + 1 < args.length) {
+            options.rmfilter = options.rmfilter || [];
+            options.rmfilter.push('--', ...args.slice(i + 1).flatMap((x) => x.split(' ')));
+            break; // rmfilter consumes all remaining args
+          } else {
+            i++;
+          }
         } else {
           i++;
         }
-      } else if (arg === 'rmfilter') {
-        if (i + 1 < args.length) {
-          options.rmfilter = options.rmfilter || [];
-          options.rmfilter.push('--', ...args.slice(i + 1).flatMap((x) => x.split(' ')));
-          break; // rmfilter consumes all remaining args
-        } else {
-          i++;
-        }
-      } else {
-        i++;
       }
     }
   }
@@ -176,4 +190,13 @@ export function parseRmprOptions(commentBody: string): ParseRmprResult {
     options: Object.keys(options).length > 0 ? options : null,
     cleanedComment,
   };
+}
+
+/**
+ * Parses --rmpr options from a comment body and returns cleaned comment.
+ * @param commentBody The comment body text
+ * @returns Parsed options (or null if none) and comment with rmpr lines removed
+ */
+export function parseRmprOptions(commentBody: string): ParseRmprResult {
+  return parseCommandOptionsFromComment(commentBody, 'rmpr');
 }
