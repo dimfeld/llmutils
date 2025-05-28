@@ -22,7 +22,7 @@ export const planSchema = z
       })
     ),
     id: z.string().optional(),
-    status: z.enum(['pending', 'in progress', 'done']).default('pending').optional(),
+    status: z.enum(['pending', 'in_progress', 'done']).default('pending').optional(),
     priority: z.enum(['unknown', 'low', 'medium', 'high', 'urgent']).default('unknown').optional(),
     dependencies: z.array(z.string()).default([]).optional(),
     baseBranch: z.string().optional(),

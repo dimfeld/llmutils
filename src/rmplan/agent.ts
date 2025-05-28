@@ -242,7 +242,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
       // Check if status needs to be updated from 'pending' to 'in progress'
       if (planData.status === 'pending') {
-        planData.status = 'in progress';
+        planData.status = 'in_progress';
         planData.updatedAt = new Date().toISOString();
         await Bun.write(currentPlanFile, yaml.stringify(planData));
       }
