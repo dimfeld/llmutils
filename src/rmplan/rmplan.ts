@@ -6,14 +6,19 @@ import os from 'os';
 import path from 'path';
 import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
-import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
+import { getInstructionsFromGithubIssue, fetchIssueAndComments } from '../common/github/issues.js';
+import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import { waitForEnter } from '../common/terminal.js';
 import { error, log, warn } from '../logging.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { handleRmprCommand } from '../rmpr/main.js';
-import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
+import {
+  argsFromRmprOptions,
+  parseCommandOptionsFromComment,
+  type RmprOptions,
+} from '../rmpr/comment_options.js';
 import {
   extractMarkdownToYaml,
   markStepDone,
@@ -130,6 +135,8 @@ program
     let planText: string | undefined;
     let combinedRmprOptions: RmprOptions | null = null;
     let issueResult: Awaited<ReturnType<typeof getInstructionsFromGithubIssue>> | undefined;
+    let issueUrlsForExtract: string[] = [];
+    let planRmfilterArgsForExtract: string[] = [];
 
     let planFile = options.plan;
 
@@ -182,6 +189,36 @@ program
       planText = issueResult.plan;
       // Extract combinedRmprOptions from the result if it exists
       combinedRmprOptions = issueResult.rmprOptions ?? null;
+
+      // Parse the issue spec to get owner/repo/number
+      const ghIssue = await parsePrOrIssueNumber(options.issue);
+      if (ghIssue) {
+        // Construct the issue URL
+        issueUrlsForExtract.push(
+          `https://github.com/${ghIssue.owner}/${ghIssue.repo}/issues/${ghIssue.number}`
+        );
+
+        // Fetch raw issue data to parse rmfilter comments
+        const fullIssueData = await fetchIssueAndComments(ghIssue);
+
+        // Parse rmfilter: from issue body
+        if (fullIssueData.issue.body) {
+          const parsedArgs = parseCommandOptionsFromComment(fullIssueData.issue.body, 'rmfilter');
+          if (parsedArgs.options?.rmfilter) {
+            planRmfilterArgsForExtract.push(...parsedArgs.options.rmfilter);
+          }
+        }
+
+        // Parse rmfilter: from comments
+        for (const comment of fullIssueData.comments) {
+          if (comment.body) {
+            const parsedArgs = parseCommandOptionsFromComment(comment.body, 'rmfilter');
+            if (parsedArgs.options?.rmfilter) {
+              planRmfilterArgsForExtract.push(...parsedArgs.options.rmfilter);
+            }
+          }
+        }
+      }
 
       let tasksDir = config.paths?.tasks;
       let suggestedFilename = tasksDir
@@ -256,6 +293,9 @@ program
         }
       }
 
+      // Combine with userCliRmfilterArgs
+      planRmfilterArgsForExtract.push(...userCliRmfilterArgs);
+
       // Combine user CLI args and issue rmpr options
       const allRmfilterOptions = [...userCliRmfilterArgs, ...issueRmfilterOptions];
 
@@ -293,11 +333,11 @@ program
           );
         }
         const extractOptions: ExtractMarkdownToYamlOptions = {};
-        if (options.issue && issueResult && issueResult.issue.html_url) {
-          extractOptions.issueUrls = [issueResult.issue.html_url];
+        if (issueUrlsForExtract.length > 0) {
+          extractOptions.issueUrls = issueUrlsForExtract;
         }
-        if (allRmfilterOptions.length > 0) {
-          extractOptions.planRmfilterArgs = allRmfilterOptions;
+        if (planRmfilterArgsForExtract.length > 0) {
+          extractOptions.planRmfilterArgs = planRmfilterArgsForExtract;
         }
 
         const outputYaml = await extractMarkdownToYaml(

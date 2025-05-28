@@ -429,7 +429,7 @@ tasks:
                     planRmfilterArgs: planRmfilterArgsForExtract,
                   });
                   ```
-        done: false
+        done: true
       - prompt: >
           Add/update tests in `src/rmplan/actions.test.ts` for
           `extractMarkdownToYaml`.
