@@ -159,7 +159,7 @@ tasks:
           }
 
           ```
-        done: false
+        done: true
       - prompt: >
           Create a new test file `src/common/id_generator.test.ts`.
 
