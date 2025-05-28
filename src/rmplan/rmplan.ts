@@ -203,7 +203,7 @@ program
 
         // Parse rmfilter: from issue body
         if (fullIssueData.issue.body) {
-          const parsedArgs = parseCommandOptionsFromComment(fullIssueData.issue.body, 'rmfilter');
+          const parsedArgs = parseCommandOptionsFromComment(fullIssueData.issue.body);
           if (parsedArgs.options?.rmfilter) {
             planRmfilterArgsForExtract.push(...parsedArgs.options.rmfilter);
           }
@@ -212,7 +212,7 @@ program
         // Parse rmfilter: from comments
         for (const comment of fullIssueData.comments) {
           if (comment.body) {
-            const parsedArgs = parseCommandOptionsFromComment(comment.body, 'rmfilter');
+            const parsedArgs = parseCommandOptionsFromComment(comment.body);
             if (parsedArgs.options?.rmfilter) {
               planRmfilterArgsForExtract.push(...parsedArgs.options.rmfilter);
             }

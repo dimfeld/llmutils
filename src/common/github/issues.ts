@@ -121,12 +121,12 @@ export async function getInstructionsFromGithubIssue(issueSpec: string) {
   // Parse RmprOptions from issue body and comments
   let rmprOptions: RmprOptions | null = null;
   if (data.issue.body) {
-    const issueOptions = parseCommandOptionsFromComment(data.issue.body, 'rmpr');
+    const issueOptions = parseCommandOptionsFromComment(data.issue.body);
     rmprOptions = issueOptions.options;
   }
   for (const comment of data.comments) {
     if (comment.body) {
-      const commentOptions = parseCommandOptionsFromComment(comment.body, 'rmpr');
+      const commentOptions = parseCommandOptionsFromComment(comment.body);
       if (commentOptions.options) {
         rmprOptions = rmprOptions
           ? combineRmprOptions(rmprOptions, commentOptions.options)
