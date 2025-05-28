@@ -1,3 +1,23 @@
+# May 28, 2025
+
+- prepareNextStep includes docs references in non-rmfilter mode
+
+# May 23, 2025
+
+- Support additional docs paths in rmplan config
+
+# May 21, 2025
+
+- Allow configurating the default executor for agent mode
+
+# May 20, 2025
+
+- Support copying to clipboard with OSC52
+
+# May 18, 2025
+
+- Add ability to comment on PR reviews after addressing them
+
 # May 17, 2025
 
 - Support executing tasks with Claude Code

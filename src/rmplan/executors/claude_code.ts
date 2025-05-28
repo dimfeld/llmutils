@@ -274,6 +274,33 @@ function formatJsonMessage(input: string) {
             chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
             `File path: ${filePath}\nNumber of lines: ${lineCount}`
           );
+        } else if (
+          content.name === 'TodoWrite' &&
+          content.input &&
+          typeof content.input === 'object' &&
+          'todos' in content.input
+        ) {
+          // Special formatting for TodoWrite tool
+          const todos = (content.input as any).todos as Array<{
+            id: string;
+            content: string;
+            status: string;
+            priority: string;
+          }>;
+          outputLines.push(chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`));
+
+          todos.forEach((todo, index) => {
+            const statusIcon =
+              todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '→' : '•';
+            const priorityColor =
+              todo.priority === 'high'
+                ? chalk.red
+                : todo.priority === 'medium'
+                  ? chalk.yellow
+                  : chalk.gray;
+
+            outputLines.push(`  ${statusIcon} [${priorityColor(todo.priority)}] ${todo.content}`);
+          });
         } else {
           outputLines.push(
             chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),

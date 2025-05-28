@@ -28,12 +28,12 @@ export interface AdditionalDocsOptions {
   docsPaths?: string[];
 }
 
-export async function getAdditionalDocs(
+export async function findAdditionalDocs(
   baseDir: string,
   allFilesSet: Set<string>,
   values: AdditionalDocsOptions
-) {
-  const gitRoot = await getGitRoot();
+): Promise<{ filteredMdcFiles: MdcFile[]; rawInstructions: string }> {
+  const gitRoot = await getGitRoot(baseDir);
 
   // First, build the instructions content that will be used for MDC filtering
   let instructionValues = [...(values.instructions || []), ...(values.instruction || [])];
@@ -147,6 +147,19 @@ export async function getAdditionalDocs(
     debugLog('[MDC] MDC processing disabled via --no-autodocs flag.');
   }
 
+  return { filteredMdcFiles, rawInstructions };
+}
+
+export async function getAdditionalDocs(
+  baseDir: string,
+  allFilesSet: Set<string>,
+  values: AdditionalDocsOptions
+) {
+  const { filteredMdcFiles, rawInstructions } = await findAdditionalDocs(
+    baseDir,
+    allFilesSet,
+    values
+  );
   return gatherDocsInternal(baseDir, values, filteredMdcFiles, rawInstructions);
 }
 

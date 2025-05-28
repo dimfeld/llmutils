@@ -5,7 +5,9 @@ import yaml from 'yaml';
 import chalk from 'chalk';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
+import type { MdcFile } from '../rmfilter/mdc.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
+import { findAdditionalDocs } from '../rmfilter/additional_docs.js';
 import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
 import { Extractor } from '../treesitter/extract.js';
 import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
@@ -269,22 +271,46 @@ export async function prepareNextStep(
   );
 
   if (selectedPendingSteps.length > 1) {
+    promptParts.push('The current subtasks to implement are:');
     selectedPendingSteps.forEach((step, index) =>
       promptParts.push(`- [${index + 1}] ${step.prompt}`)
     );
   } else {
+    promptParts.push('The current subtask to implement is:');
     promptParts.push(selectedPendingSteps[0].prompt);
   }
 
   if (!rmfilter) {
+    // Get additional docs using findAdditionalDocs when rmfilter is false
+    const { filteredMdcFiles } = await findAdditionalDocs(gitRoot, new Set(files), {
+      'no-autodocs': false,
+      docsPaths: config.paths?.docs || [],
+    });
+
+    // Add relevant files section
     promptParts.push(
       '## Relevant Files\n\nThese are relevant files for the next subtasks. If you think additional files are relevant, you can update them as well.'
     );
+
+    // Add all files
     const filePrefix = options.filePathPrefix || '';
     files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
+
+    // Add MDC files with their descriptions if available
+    if (filteredMdcFiles.length > 0) {
+      promptParts.push('\n## Additional Documentation\n');
+      for (const mdcFile of filteredMdcFiles) {
+        const relativePath = path.relative(gitRoot, mdcFile.filePath);
+        if (mdcFile.data?.description) {
+          promptParts.push(`- ${filePrefix}${relativePath}: ${mdcFile.data.description}`);
+        } else {
+          promptParts.push(`- ${filePrefix}${relativePath}`);
+        }
+      }
+    }
   }
 
-  const llmPrompt = promptParts.join('\n');
+  let llmPrompt = promptParts.join('\n');
 
   // 6. Handle rmfilter
   let promptFilePath: string | null = null;
