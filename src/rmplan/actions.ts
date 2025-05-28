@@ -253,12 +253,29 @@ export async function prepareNextStep(
   // 5. Build the LLM prompt
   const promptParts: string[] = [
     `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`,
-    `## Current Task: ${activeTask.title}\n\nDescription: ${activeTask.description}\n`,
+    `## Overall Task: ${activeTask.title}\n`,
+    `Description: ${activeTask.description}`,
+    'This tasks is composed of subtasks, listed below. Only implement the specific subtasks mentioned.',
   ];
   if (previous && completedSteps.length > 0) {
     promptParts.push('## Completed Subtasks in this Task:');
     completedSteps.forEach((step) => promptParts.push(`- [DONE] ${step.prompt.split('\n')[0]}...`));
   }
+  promptParts.push('\n## Current Subtasks to Implement:\n');
+  // Some models (Gemini Pro 2.5 especially) will infer what the next step is and do it as part of the current step, then get confused when we
+  // start the next step and generate a bad diff when they try to make the changes again. This helps to prevent that.
+  promptParts.push(
+    `**Important**: When thinking about these subtasks, consider that some part of them may have already been completed by an overeager engineer implementing the previous step. If you look at a file and it seems like a change has already been done, that is ok; just move on and don't try to make the edit again.\n`
+  );
+
+  if (selectedPendingSteps.length > 1) {
+    selectedPendingSteps.forEach((step, index) =>
+      promptParts.push(`- [${index + 1}] ${step.prompt}`)
+    );
+  } else {
+    promptParts.push(selectedPendingSteps[0].prompt);
+  }
+
   if (!rmfilter) {
     promptParts.push(
       '## Relevant Files\n\nThese are relevant files for the next subtasks. If you think additional files are relevant, you can update them as well.'
@@ -266,15 +283,7 @@ export async function prepareNextStep(
     const filePrefix = options.filePathPrefix || '';
     files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
   }
-  promptParts.push('\n## Selected Next Subtasks to Implement:\n');
-  // Some models (Gemini Pro 2.5 especially) will infer what the next step is and do it as part of the current step, then get confused when we
-  // start the next step and generate a bad diff when they try to make the changes again. This helps to prevent that.
-  promptParts.push(
-    `**Important**: When thinking about these tasks, consider that some part of them may have already been completed by an overeager engineer implementing the previous step. If you look at a file and it seems like a change has already been done, that is ok; just move on and don't try to make the edit again.\n`
-  );
-  selectedPendingSteps.forEach((step, index) =>
-    promptParts.push(`- [${index + 1}] ${step.prompt}`)
-  );
+
   const llmPrompt = promptParts.join('\n');
 
   // 6. Handle rmfilter
