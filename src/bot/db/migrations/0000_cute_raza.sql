@@ -20,6 +20,14 @@ CREATE TABLE `task_artifacts` (
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE TABLE `task_checkpoints` (
+	`task_id` text PRIMARY KEY NOT NULL,
+	`checkpoint_data` text NOT NULL,
+	`step_index` integer NOT NULL,
+	`updated_at` integer DEFAULT (current_timestamp) NOT NULL,
+	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
 CREATE TABLE `task_logs` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`task_id` text NOT NULL,
@@ -40,6 +48,7 @@ CREATE TABLE `tasks` (
 	`workspace_path` text,
 	`plan_file_path` text,
 	`pr_number` integer,
+	`branch` text,
 	`created_at` integer DEFAULT (current_timestamp),
 	`updated_at` integer DEFAULT (current_timestamp),
 	`created_by_platform` text,
@@ -67,4 +76,19 @@ CREATE TABLE `user_mappings` (
 	`mapped_by` text
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `user_mappings_discord_user_id_unique` ON `user_mappings` (`discord_user_id`);
+CREATE UNIQUE INDEX `user_mappings_discord_user_id_unique` ON `user_mappings` (`discord_user_id`);--> statement-breakpoint
+CREATE TABLE `workspaces` (
+	`id` text PRIMARY KEY NOT NULL,
+	`task_id` text NOT NULL,
+	`repository_url` text NOT NULL,
+	`workspace_path` text NOT NULL,
+	`branch` text NOT NULL,
+	`original_plan_file` text,
+	`created_at` integer DEFAULT (current_timestamp) NOT NULL,
+	`last_accessed_at` integer,
+	`locked_by_task_id` text,
+	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`locked_by_task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `workspaces_workspace_path_unique` ON `workspaces` (`workspace_path`);
