@@ -1,17 +1,12 @@
 import { describe, test, expect, spyOn } from 'bun:test';
-import {
-  parseRmprOptions,
-  parseCommandOptionsFromComment,
-  genericArgsFromRmprOptions,
-  argsFromRmprOptions,
-} from './comment_options.ts';
+import { parseCommandOptionsFromComment, argsFromRmprOptions } from './comment_options.ts';
 import * as logging from '../logging.ts';
 import type { PullRequest } from '../common/github/pull_requests.ts';
 
-describe('parseRmprOptions', () => {
+describe('parseCommandOptionsFromComment', () => {
   test('parses single --rmpr line with multiple options and returns cleaned comment', () => {
     const commentBody = 'Please fix this\n--rmpr include-all with-imports with-importers';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         includeAll: true,
@@ -24,7 +19,7 @@ describe('parseRmprOptions', () => {
 
   test('parses multiple --rmpr lines and returns cleaned comment', () => {
     const commentBody = 'Please fix this\n--rmpr include-all\n--rmpr with-imports';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         includeAll: true,
@@ -36,7 +31,7 @@ describe('parseRmprOptions', () => {
 
   test('parses --rmpr include with multiple paths and returns cleaned comment', () => {
     const commentBody = 'Fix paths\n--rmpr include src/utils.ts,pr:*.ts';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         include: ['src/utils.ts', 'pr:*.ts'],
@@ -47,7 +42,7 @@ describe('parseRmprOptions', () => {
 
   test('parses --rmpr rmfilter with additional options and returns cleaned comment', () => {
     const commentBody = 'Filter files\n--rmpr rmfilter --grep example --exclude node_modules';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         rmfilter: ['--', '--grep', 'example', '--exclude', 'node_modules'],
@@ -58,7 +53,7 @@ describe('parseRmprOptions', () => {
 
   test('returns null options for comment with no --rmpr lines and full comment', () => {
     const commentBody = 'Just a regular comment';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: null,
       cleanedComment: 'Just a regular comment',
@@ -67,7 +62,7 @@ describe('parseRmprOptions', () => {
 
   test('handles empty --rmpr line and returns cleaned comment', () => {
     const commentBody = '--rmpr \nSome other content';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: null,
       cleanedComment: 'Some other content',
@@ -77,7 +72,7 @@ describe('parseRmprOptions', () => {
   test('parses mixed options with quoted paths and returns cleaned comment', () => {
     const commentBody =
       'Update imports\n--rmpr include "src/utils.ts"\nrmpr: with-imports\n--rmpr rmfilter "--grep example"';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         include: ['src/utils.ts'],
@@ -157,108 +152,5 @@ describe('argsFromRmprOptions', () => {
 
     const args = argsFromRmprOptions(options, pr).sort();
     expect(args).toEqual(['--with-imports', 'src/file1.ts', 'src/file2.ts', 'lib/*.js'].sort());
-  });
-});
-
-describe('parseCommandOptionsFromComment', () => {
-  test('parses rmfilter comments', () => {
-    const commentBody =
-      'Please use these options\n--rmfilter --with-imports --bare\nrmfilter: --include src/**/*.ts';
-    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
-    expect(result).toEqual({
-      options: {
-        rmfilter: ['--with-imports', '--bare', '--include', 'src/**/*.ts'],
-      },
-      cleanedComment: 'Please use these options',
-    });
-  });
-
-  test('parses rmfilter comments with quoted arguments', () => {
-    const commentBody = 'Fix files\n--rmfilter --grep "user auth" --exclude "*.test.ts"';
-    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
-    expect(result).toEqual({
-      options: {
-        rmfilter: ['--grep', 'user auth', '--exclude', '*.test.ts'],
-      },
-      cleanedComment: 'Fix files',
-    });
-  });
-
-  test('handles empty rmfilter lines gracefully', () => {
-    const commentBody = 'Some content\n--rmfilter \nMore content';
-    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
-    expect(result).toEqual({
-      options: null,
-      cleanedComment: 'Some content\nMore content',
-    });
-  });
-
-  test('combines multiple rmfilter lines', () => {
-    const commentBody =
-      '--rmfilter --with-imports\n--rmfilter --grep test\nrmfilter: --exclude node_modules';
-    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
-    expect(result).toEqual({
-      options: {
-        rmfilter: ['--with-imports', '--grep', 'test', '--exclude', 'node_modules'],
-      },
-      cleanedComment: '',
-    });
-  });
-
-  test('backward compatibility - parses rmpr comments', () => {
-    const commentBody = 'Fix this\n--rmpr include-all with-imports';
-    const result = parseCommandOptionsFromComment(commentBody, 'rmpr');
-    expect(result).toEqual({
-      options: {
-        includeAll: true,
-        withImports: true,
-      },
-      cleanedComment: 'Fix this',
-    });
-  });
-
-  test('parses rmfilter with specific test case format', () => {
-    const commentBody = 'rmfilter: --grep foo --include bar.ts';
-    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
-    expect(result).toEqual({
-      options: {
-        rmfilter: ['--grep', 'foo', '--include', 'bar.ts'],
-      },
-      cleanedComment: '',
-    });
-  });
-
-  test('parses rmfilter with no colon format and quoted values', () => {
-    const commentBody = "--rmfilter --flag1 value1 'quoted value2'";
-    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
-    expect(result).toEqual({
-      options: {
-        rmfilter: ['--flag1', 'value1', 'quoted value2'],
-      },
-      cleanedComment: '',
-    });
-  });
-
-  test('accumulates arguments from multiple rmfilter lines', () => {
-    const commentBody = 'Some text\nrmfilter: arg1 arg2\nMore text\n--rmfilter arg3 "arg 4"';
-    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
-    expect(result).toEqual({
-      options: {
-        rmfilter: ['arg1', 'arg2', 'arg3', 'arg 4'],
-      },
-      cleanedComment: 'Some text\nMore text',
-    });
-  });
-
-  test('rmpr prefix still handles rmfilter within rmpr lines correctly', () => {
-    const commentBody = '--rmpr include-all rmfilter --grep foo';
-    const result = parseCommandOptionsFromComment(commentBody, 'rmpr');
-    expect(result).toEqual({
-      options: {
-        includeAll: true,
-        rmfilter: ['--', '--grep', 'foo'],
-      },
-      cleanedComment: '',
-    });
   });
 });
