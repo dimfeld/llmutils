@@ -173,6 +173,38 @@ describe('parseCommandOptionsFromComment', () => {
     });
   });
 
+  test('parses rmfilter comments with quoted arguments', () => {
+    const commentBody = 'Fix files\n--rmfilter --grep "user auth" --exclude "*.test.ts"';
+    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
+    expect(result).toEqual({
+      options: {
+        rmfilter: ['--grep', 'user auth', '--exclude', '*.test.ts'],
+      },
+      cleanedComment: 'Fix files',
+    });
+  });
+
+  test('handles empty rmfilter lines gracefully', () => {
+    const commentBody = 'Some content\n--rmfilter \nMore content';
+    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
+    expect(result).toEqual({
+      options: null,
+      cleanedComment: 'Some content\nMore content',
+    });
+  });
+
+  test('combines multiple rmfilter lines', () => {
+    const commentBody =
+      '--rmfilter --with-imports\n--rmfilter --grep test\nrmfilter: --exclude node_modules';
+    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
+    expect(result).toEqual({
+      options: {
+        rmfilter: ['--with-imports', '--grep', 'test', '--exclude', 'node_modules'],
+      },
+      cleanedComment: '',
+    });
+  });
+
   test('backward compatibility - parses rmpr comments', () => {
     const commentBody = 'Fix this\n--rmpr include-all with-imports';
     const result = parseCommandOptionsFromComment(commentBody, 'rmpr');

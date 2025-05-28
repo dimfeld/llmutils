@@ -747,7 +747,7 @@ tasks:
           `src/rmpr/comment_options.ts` already has logic for `else if (arg ===
           'rmfilter')`. This part should remain for when `prefix === 'rmpr'`.
           The new logic is for when `prefix === 'rmfilter'`.
-        done: false
+        done: true
       - prompt: >
           Update the tests in `src/rmpr/comment_options.test.ts` for the renamed
           and modified `parseCommandOptionsFromComment` function.

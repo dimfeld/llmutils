@@ -29,6 +29,16 @@ export function combineRmprOptions(a: RmprOptions, b: RmprOptions): RmprOptions 
 }
 
 /**
+ * Converts RmprOptions to command-line arguments for rmfilter without PR-specific processing.
+ * This is an alias for argsFromRmprOptions without a PR parameter.
+ * @param options The RmprOptions to convert
+ * @returns Array of string arguments suitable for passing to rmfilter
+ */
+export function genericArgsFromRmprOptions(options: RmprOptions): string[] {
+  return argsFromRmprOptions(options);
+}
+
+/**
  * Converts RmprOptions to command-line arguments for rmfilter.
  * If a PullRequest is provided, includes PR-specific options; otherwise, warns and skips them.
  * @param options The RmprOptions to convert
@@ -69,22 +79,8 @@ export function argsFromRmprOptions(options: RmprOptions, pr?: PullRequest): str
   }
 
   if (options.rmfilter) {
-    for (const pathSpec of options.rmfilter) {
-      if (pathSpec.startsWith('pr:')) {
-        if (pr) {
-          const includePath = pathSpec.slice(3);
-          const prFiles = pr.files.nodes.map((f) => f.path);
-          // Filter globs to PR files only
-          const matchedFiles = micromatch(prFiles, [includePath, includePath + '/**/*']);
-          args.push(...matchedFiles);
-          debugLog(`Added PR-matched files for --rmpr include pr:${includePath}:`, matchedFiles);
-        } else {
-          warn(`Skipping PR-specific include directive in generic context: ${pathSpec}`);
-        }
-      } else {
-        args.push(pathSpec);
-      }
-    }
+    // rmfilter args are already processed and should be passed through as-is
+    args.push(...options.rmfilter);
   }
 
   if (options.includeAll) {
@@ -133,11 +129,18 @@ export function parseCommandOptionsFromComment(
     // For rmfilter prefix, just collect all arguments after the prefix
     for (const line of prefixLines) {
       const trimmedLine = line.trim();
-      const args = parseCliArgsFromString(
-        trimmedLine.replace(new RegExp(`^(?:--${prefix}|${prefix}:)\\s+`), '').trim()
-      );
-      options.rmfilter = options.rmfilter || [];
-      options.rmfilter.push(...args);
+      // Extract the argument string part by removing the prefix
+      const argumentStringPart = trimmedLine
+        .replace(new RegExp(`^(?:--${prefix}|${prefix}:)\\s*`), '')
+        .trim();
+
+      if (argumentStringPart) {
+        const parsedArgs = parseCliArgsFromString(argumentStringPart);
+        if (parsedArgs.length > 0) {
+          options.rmfilter = options.rmfilter || [];
+          options.rmfilter.push(...parsedArgs);
+        }
+      }
     }
   } else {
     // Original parsing logic for rmpr
@@ -178,7 +181,7 @@ export function parseCommandOptionsFromComment(
           if (i + 1 < args.length) {
             options.rmfilter = options.rmfilter || [];
             options.rmfilter.push('--', ...args.slice(i + 1).flatMap((x) => x.split(' ')));
-            break; // rmfilter consumes all remaining args
+            break;
           } else {
             i++;
           }
