@@ -186,7 +186,7 @@ tasks:
 
 
           Use `bun:test` for the test suite.
-        done: false
+        done: true
   - title: 2. Metadata Initialization
     description: Modify `extractMarkdownToYaml` in `src/rmplan/actions.ts` to
       populate the new metadata fields. This also involves updating the `rmplan
