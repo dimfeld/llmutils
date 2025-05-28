@@ -15,6 +15,7 @@ import { planSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
+import { getChangedFiles } from '../rmfilter/additional_docs.js';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -474,21 +475,43 @@ export async function markStepDone(
     }
   }
 
-  // 5. Write updated plan back
+  // 5. Update metadata fields
+  const gitRoot = await getGitRoot(baseDir);
+
+  // Always update the updatedAt timestamp
+  planData.updatedAt = new Date().toISOString();
+
+  // Update changedFiles by comparing against baseBranch (or main/master if not set)
+  try {
+    const changedFiles = await getChangedFiles(gitRoot, planData.baseBranch);
+    if (changedFiles.length > 0) {
+      planData.changedFiles = changedFiles;
+    }
+  } catch (err) {
+    // Log but don't fail if we can't get changed files
+    warn(`Failed to get changed files: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Check if plan is now complete
+  const stillPending = findPendingTask(planData);
+  const planComplete = !stillPending;
+
+  // If plan is complete, update status to 'done'
+  if (planComplete) {
+    planData.status = 'done';
+  }
+
+  // 6. Write updated plan back
   const newPlanText = yaml.stringify(planData);
   await Bun.write(planFile, newPlanText);
 
-  // 6. Optionally commit
+  // 7. Optionally commit
   const message = output.join('\n');
   log(boldMarkdownHeaders(message));
   if (options.commit) {
     log('');
     await commitAll(message, baseDir);
   }
-
-  // 7. Check if plan is now complete
-  const stillPending = findPendingTask(planData);
-  const planComplete = !stillPending;
 
   // 8. Return result
   return { planComplete, message };

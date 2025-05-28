@@ -239,6 +239,14 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
 
       const planData = planResult.data;
+
+      // Check if status needs to be updated from 'pending' to 'in progress'
+      if (planData.status === 'pending') {
+        planData.status = 'in progress';
+        planData.updatedAt = new Date().toISOString();
+        await Bun.write(currentPlanFile, yaml.stringify(planData));
+      }
+
       const pendingTaskInfo = findPendingTask(planData);
       if (!pendingTaskInfo) {
         log('Plan complete!');

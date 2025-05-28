@@ -495,7 +495,7 @@ tasks:
                   }
                   ```
                   (Ensure `yaml` is imported from the `yaml` package).
-        done: false
+        done: true
       - prompt: >
           Modify the `markStepDone` function in `src/rmplan/actions.ts`.
 
