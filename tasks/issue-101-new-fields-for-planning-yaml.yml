@@ -769,4 +769,4 @@ tasks:
           3.  Ensure existing tests for `prefix === 'rmpr'` still pass,
           including those that use the `rmfilter` flag *within* an `rmpr` line
           (e.g., `--rmpr include-all rmfilter --grep foo`).
-        done: false
+        done: true

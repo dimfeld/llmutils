@@ -216,4 +216,49 @@ describe('parseCommandOptionsFromComment', () => {
       cleanedComment: 'Fix this',
     });
   });
+
+  test('parses rmfilter with specific test case format', () => {
+    const commentBody = 'rmfilter: --grep foo --include bar.ts';
+    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
+    expect(result).toEqual({
+      options: {
+        rmfilter: ['--grep', 'foo', '--include', 'bar.ts'],
+      },
+      cleanedComment: '',
+    });
+  });
+
+  test('parses rmfilter with no colon format and quoted values', () => {
+    const commentBody = "--rmfilter --flag1 value1 'quoted value2'";
+    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
+    expect(result).toEqual({
+      options: {
+        rmfilter: ['--flag1', 'value1', 'quoted value2'],
+      },
+      cleanedComment: '',
+    });
+  });
+
+  test('accumulates arguments from multiple rmfilter lines', () => {
+    const commentBody = 'Some text\nrmfilter: arg1 arg2\nMore text\n--rmfilter arg3 "arg 4"';
+    const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
+    expect(result).toEqual({
+      options: {
+        rmfilter: ['arg1', 'arg2', 'arg3', 'arg 4'],
+      },
+      cleanedComment: 'Some text\nMore text',
+    });
+  });
+
+  test('rmpr prefix still handles rmfilter within rmpr lines correctly', () => {
+    const commentBody = '--rmpr include-all rmfilter --grep foo';
+    const result = parseCommandOptionsFromComment(commentBody, 'rmpr');
+    expect(result).toEqual({
+      options: {
+        includeAll: true,
+        rmfilter: ['--', '--grep', 'foo'],
+      },
+      cleanedComment: '',
+    });
+  });
 });
