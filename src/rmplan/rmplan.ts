@@ -136,7 +136,6 @@ program
     let combinedRmprOptions: RmprOptions | null = null;
     let issueResult: Awaited<ReturnType<typeof getInstructionsFromGithubIssue>> | undefined;
     let issueUrlsForExtract: string[] = [];
-    let planRmfilterArgsForExtract: string[] = [];
 
     let planFile = options.plan;
 
@@ -190,35 +189,8 @@ program
       // Extract combinedRmprOptions from the result if it exists
       combinedRmprOptions = issueResult.rmprOptions ?? null;
 
-      // Parse the issue spec to get owner/repo/number
-      const ghIssue = await parsePrOrIssueNumber(options.issue);
-      if (ghIssue) {
-        // Construct the issue URL
-        issueUrlsForExtract.push(
-          `https://github.com/${ghIssue.owner}/${ghIssue.repo}/issues/${ghIssue.number}`
-        );
-
-        // Fetch raw issue data to parse rmfilter comments
-        const fullIssueData = await fetchIssueAndComments(ghIssue);
-
-        // Parse rmfilter: from issue body
-        if (fullIssueData.issue.body) {
-          const parsedArgs = parseCommandOptionsFromComment(fullIssueData.issue.body);
-          if (parsedArgs.options?.rmfilter) {
-            planRmfilterArgsForExtract.push(...parsedArgs.options.rmfilter);
-          }
-        }
-
-        // Parse rmfilter: from comments
-        for (const comment of fullIssueData.comments) {
-          if (comment.body) {
-            const parsedArgs = parseCommandOptionsFromComment(comment.body);
-            if (parsedArgs.options?.rmfilter) {
-              planRmfilterArgsForExtract.push(...parsedArgs.options.rmfilter);
-            }
-          }
-        }
-      }
+      // Construct the issue URL
+      issueUrlsForExtract.push(issueResult.issue.url);
 
       let tasksDir = config.paths?.tasks;
       let suggestedFilename = tasksDir
@@ -293,9 +265,6 @@ program
         }
       }
 
-      // Combine with userCliRmfilterArgs
-      planRmfilterArgsForExtract.push(...userCliRmfilterArgs);
-
       // Combine user CLI args and issue rmpr options
       const allRmfilterOptions = [...userCliRmfilterArgs, ...issueRmfilterOptions];
 
@@ -332,13 +301,10 @@ program
             path.basename(planFile, '.md') + '.yml'
           );
         }
-        const extractOptions: ExtractMarkdownToYamlOptions = {};
-        if (issueUrlsForExtract.length > 0) {
-          extractOptions.issueUrls = issueUrlsForExtract;
-        }
-        if (planRmfilterArgsForExtract.length > 0) {
-          extractOptions.planRmfilterArgs = planRmfilterArgsForExtract;
-        }
+        const extractOptions: ExtractMarkdownToYamlOptions = {
+          planRmfilterArgs: allRmfilterOptions,
+          issueUrls: issueUrlsForExtract,
+        };
 
         const outputYaml = await extractMarkdownToYaml(
           input,
