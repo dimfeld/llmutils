@@ -10,12 +10,14 @@ import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.
 import { findAdditionalDocs } from '../rmfilter/additional_docs.js';
 import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
 import { Extractor } from '../treesitter/extract.js';
+import { generatePlanId } from '../common/id_generator.js';
 import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { planSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
+import { getChangedFiles } from '../rmfilter/additional_docs.js';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -508,21 +510,43 @@ export async function markStepDone(
     }
   }
 
-  // 5. Write updated plan back
+  // 5. Update metadata fields
+  const gitRoot = await getGitRoot(baseDir);
+
+  // Always update the updatedAt timestamp
+  planData.updatedAt = new Date().toISOString();
+
+  // Update changedFiles by comparing against baseBranch (or main/master if not set)
+  try {
+    const changedFiles = await getChangedFiles(gitRoot, planData.baseBranch);
+    if (changedFiles.length > 0) {
+      planData.changedFiles = changedFiles;
+    }
+  } catch (err) {
+    // Log but don't fail if we can't get changed files
+    warn(`Failed to get changed files: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Check if plan is now complete
+  const stillPending = findPendingTask(planData);
+  const planComplete = !stillPending;
+
+  // If plan is complete, update status to 'done'
+  if (planComplete) {
+    planData.status = 'done';
+  }
+
+  // 6. Write updated plan back
   const newPlanText = yaml.stringify(planData);
   await Bun.write(planFile, newPlanText);
 
-  // 6. Optionally commit
+  // 7. Optionally commit
   const message = output.join('\n');
   log(boldMarkdownHeaders(message));
   if (options.commit) {
     log('');
     await commitAll(message, baseDir);
   }
-
-  // 7. Check if plan is now complete
-  const stillPending = findPendingTask(planData);
-  const planComplete = !stillPending;
 
   // 8. Return result
   return { planComplete, message };
@@ -637,12 +661,18 @@ export async function executePostApplyCommand(
   return true;
 }
 
+export interface ExtractMarkdownToYamlOptions {
+  issueUrls?: string[];
+  planRmfilterArgs?: string[];
+}
+
 export async function extractMarkdownToYaml(
   inputText: string,
   config: RmplanConfig,
-  quiet: boolean
+  quiet: boolean,
+  options: ExtractMarkdownToYamlOptions = {}
 ): Promise<string> {
-  let validatedPlan: unknown;
+  let validatedPlan: PlanSchema;
   let convertedYaml: string;
 
   try {
@@ -677,6 +707,30 @@ export async function extractMarkdownToYaml(
       throw new Error('Validation failed');
     }
     validatedPlan = result.data;
+
+    // Set metadata fields
+    validatedPlan.id = generatePlanId();
+    const now = new Date().toISOString();
+    validatedPlan.createdAt = now;
+    validatedPlan.updatedAt = now;
+    validatedPlan.planGeneratedAt = now;
+    validatedPlan.promptsGeneratedAt = now;
+
+    // Set defaults for status and priority if not already set
+    if (!validatedPlan.status) {
+      validatedPlan.status = 'pending';
+    }
+    if (!validatedPlan.priority) {
+      validatedPlan.priority = 'unknown';
+    }
+
+    // Populate issue and rmfilter arrays from options
+    if (options.issueUrls && options.issueUrls.length > 0) {
+      validatedPlan.issue = options.issueUrls;
+    }
+    if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
+      validatedPlan.rmfilter = options.planRmfilterArgs;
+    }
   } catch (e) {
     // Save the failed YAML for debugging
     await Bun.write('rmplan-conversion-failure.yml', convertedYaml);
@@ -687,5 +741,48 @@ export async function extractMarkdownToYaml(
     throw e;
   }
 
-  return yaml.stringify(validatedPlan);
+  // Create ordered plan with all fields
+  const orderedPlan: any = {
+    id: validatedPlan.id,
+  };
+
+  // Always include status and priority
+  if (validatedPlan.status) {
+    orderedPlan.status = validatedPlan.status;
+  }
+  if (validatedPlan.priority) {
+    orderedPlan.priority = validatedPlan.priority;
+  }
+
+  // Add optional fields only if they have values
+  if (validatedPlan.dependencies?.length) {
+    orderedPlan.dependencies = validatedPlan.dependencies;
+  }
+  if (validatedPlan.baseBranch) {
+    orderedPlan.baseBranch = validatedPlan.baseBranch;
+  }
+  if (validatedPlan.rmfilter?.length) {
+    orderedPlan.rmfilter = validatedPlan.rmfilter;
+  }
+  if (validatedPlan.issue?.length) {
+    orderedPlan.issue = validatedPlan.issue;
+  }
+  if (validatedPlan.pullRequest?.length) {
+    orderedPlan.pullRequest = validatedPlan.pullRequest;
+  }
+
+  // Add required fields
+  orderedPlan.goal = validatedPlan.goal;
+  orderedPlan.details = validatedPlan.details;
+  orderedPlan.planGeneratedAt = validatedPlan.planGeneratedAt;
+  orderedPlan.promptsGeneratedAt = validatedPlan.promptsGeneratedAt;
+  orderedPlan.createdAt = validatedPlan.createdAt;
+  orderedPlan.updatedAt = validatedPlan.updatedAt;
+  orderedPlan.tasks = validatedPlan.tasks;
+
+  if (validatedPlan.changedFiles?.length) {
+    orderedPlan.changedFiles = validatedPlan.changedFiles;
+  }
+
+  return yaml.stringify(orderedPlan);
 }

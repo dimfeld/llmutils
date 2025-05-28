@@ -1,7 +1,6 @@
 import { describe, test, expect, mock, spyOn } from 'bun:test';
 import { getInstructionsFromGithubIssue } from './issues.ts';
 import * as logging from '../../logging.ts';
-import { parseRmprOptions } from '../../rmpr/comment_options.ts';
 
 describe('getInstructionsFromGithubIssue', () => {
   test('parses and combines RmprOptions from issue body and comments', async () => {

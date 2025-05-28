@@ -415,14 +415,7 @@ async function getTrunkBranch(gitRoot: string): Promise<string> {
  */
 export async function getChangedFiles(gitRoot: string, baseBranch?: string): Promise<string[]> {
   if (!baseBranch) {
-    // Try to get default branch from git config
-    baseBranch = (
-      await $`git config --get init.defaultBranch`.cwd(gitRoot).nothrow().text()
-    ).trim();
-
-    if (!baseBranch) {
-      baseBranch = await getTrunkBranch(gitRoot);
-    }
+    baseBranch = await getTrunkBranch(gitRoot);
   }
 
   if (!baseBranch) {

@@ -1,16 +1,12 @@
 import { describe, test, expect, spyOn } from 'bun:test';
-import {
-  parseRmprOptions,
-  genericArgsFromRmprOptions,
-  argsFromRmprOptions,
-} from './comment_options.ts';
+import { parseCommandOptionsFromComment, argsFromRmprOptions } from './comment_options.ts';
 import * as logging from '../logging.ts';
 import type { PullRequest } from '../common/github/pull_requests.ts';
 
-describe('parseRmprOptions', () => {
+describe('parseCommandOptionsFromComment', () => {
   test('parses single --rmpr line with multiple options and returns cleaned comment', () => {
     const commentBody = 'Please fix this\n--rmpr include-all with-imports with-importers';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         includeAll: true,
@@ -23,7 +19,7 @@ describe('parseRmprOptions', () => {
 
   test('parses multiple --rmpr lines and returns cleaned comment', () => {
     const commentBody = 'Please fix this\n--rmpr include-all\n--rmpr with-imports';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         includeAll: true,
@@ -35,7 +31,7 @@ describe('parseRmprOptions', () => {
 
   test('parses --rmpr include with multiple paths and returns cleaned comment', () => {
     const commentBody = 'Fix paths\n--rmpr include src/utils.ts,pr:*.ts';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         include: ['src/utils.ts', 'pr:*.ts'],
@@ -46,7 +42,7 @@ describe('parseRmprOptions', () => {
 
   test('parses --rmpr rmfilter with additional options and returns cleaned comment', () => {
     const commentBody = 'Filter files\n--rmpr rmfilter --grep example --exclude node_modules';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         rmfilter: ['--', '--grep', 'example', '--exclude', 'node_modules'],
@@ -57,7 +53,7 @@ describe('parseRmprOptions', () => {
 
   test('returns null options for comment with no --rmpr lines and full comment', () => {
     const commentBody = 'Just a regular comment';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: null,
       cleanedComment: 'Just a regular comment',
@@ -66,7 +62,7 @@ describe('parseRmprOptions', () => {
 
   test('handles empty --rmpr line and returns cleaned comment', () => {
     const commentBody = '--rmpr \nSome other content';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: null,
       cleanedComment: 'Some other content',
@@ -76,7 +72,7 @@ describe('parseRmprOptions', () => {
   test('parses mixed options with quoted paths and returns cleaned comment', () => {
     const commentBody =
       'Update imports\n--rmpr include "src/utils.ts"\nrmpr: with-imports\n--rmpr rmfilter "--grep example"';
-    const result = parseRmprOptions(commentBody);
+    const result = parseCommandOptionsFromComment(commentBody);
     expect(result).toEqual({
       options: {
         include: ['src/utils.ts'],

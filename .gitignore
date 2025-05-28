@@ -36,3 +36,5 @@ repomix-*
 task.yml
 **/*-agent-output.md
 **/.claude/settings.local.json
+rmplan-validation-failure.yml
+rmplan-conversion-failure.yml

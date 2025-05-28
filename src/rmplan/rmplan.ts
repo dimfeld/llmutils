@@ -6,15 +6,25 @@ import os from 'os';
 import path from 'path';
 import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
-import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
+import { getInstructionsFromGithubIssue, fetchIssueAndComments } from '../common/github/issues.js';
+import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import { waitForEnter } from '../common/terminal.js';
 import { error, log, warn } from '../logging.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { handleRmprCommand } from '../rmpr/main.js';
-import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
-import { extractMarkdownToYaml, markStepDone, prepareNextStep } from './actions.js';
+import {
+  argsFromRmprOptions,
+  parseCommandOptionsFromComment,
+  type RmprOptions,
+} from '../rmpr/comment_options.js';
+import {
+  extractMarkdownToYaml,
+  markStepDone,
+  prepareNextStep,
+  type ExtractMarkdownToYamlOptions,
+} from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
@@ -124,6 +134,8 @@ program
 
     let planText: string | undefined;
     let combinedRmprOptions: RmprOptions | null = null;
+    let issueResult: Awaited<ReturnType<typeof getInstructionsFromGithubIssue>> | undefined;
+    let issueUrlsForExtract: string[] = [];
 
     let planFile = options.plan;
 
@@ -172,10 +184,13 @@ program
         process.exit(1);
       }
     } else if (options.issue) {
-      let issueResult = await getInstructionsFromGithubIssue(options.issue);
+      issueResult = await getInstructionsFromGithubIssue(options.issue);
       planText = issueResult.plan;
       // Extract combinedRmprOptions from the result if it exists
       combinedRmprOptions = issueResult.rmprOptions ?? null;
+
+      // Construct the issue URL
+      issueUrlsForExtract.push(issueResult.issue.url);
 
       let tasksDir = config.paths?.tasks;
       let suggestedFilename = tasksDir
@@ -286,7 +301,17 @@ program
             path.basename(planFile, '.md') + '.yml'
           );
         }
-        const outputYaml = await extractMarkdownToYaml(input, config, options.quiet ?? false);
+        const extractOptions: ExtractMarkdownToYamlOptions = {
+          planRmfilterArgs: allRmfilterOptions,
+          issueUrls: issueUrlsForExtract,
+        };
+
+        const outputYaml = await extractMarkdownToYaml(
+          input,
+          config,
+          options.quiet ?? false,
+          extractOptions
+        );
         if (outputFilename) {
           // no need to print otherwise, extractMarkdownToYaml already did
           await Bun.write(outputFilename, outputYaml);
@@ -342,7 +367,7 @@ program
 
     try {
       const config = await loadEffectiveConfig(options.config);
-      const outputYaml = await extractMarkdownToYaml(inputText, config, options.quiet ?? false);
+      const outputYaml = await extractMarkdownToYaml(inputText, config, options.quiet ?? false, {});
       if (options.output) {
         let outputFilename = options.output;
         if (outputFilename.endsWith('.md')) {
