@@ -463,7 +463,7 @@ tasks:
           9.  The output YAML string contains these fields in the specified
           order (id, status, priority first, then other metadata, then goal,
           details, timestamps, tasks, changedFiles).
-        done: false
+        done: true
   - title: 3. Runtime Status and Timestamp Updates
     description: Update `rmplan agent` and `markStepDone` to manage `status`,
       `updatedAt`, and `changedFiles` fields during plan execution.
