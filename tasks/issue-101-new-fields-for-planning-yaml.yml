@@ -521,7 +521,7 @@ tasks:
                     planData.status = 'done';
                   }
                   ```
-        done: false
+        done: true
       - prompt: >
           Create a test file `src/rmplan/agent.test.ts` if it doesn't exist, or
           add tests to it.
