@@ -649,7 +649,7 @@ tasks:
 
           Remember to mock `getGitRoot` if `baseDir` is not passed to
           `markStepDone`.
-        done: false
+        done: true
   - title: 4. Update `parseCommandOptionsFromComment` for `rmfilter` prefix
     description: Refine `parseCommandOptionsFromComment` in
       `src/rmpr/comment_options.ts` to correctly handle the `rmfilter` prefix by

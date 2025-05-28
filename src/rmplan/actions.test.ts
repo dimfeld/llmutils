@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeAll } from 'bun:test';
+import { describe, test, expect, mock, beforeAll, beforeEach, afterEach } from 'bun:test';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -6,6 +6,7 @@ import yaml from 'yaml';
 import { extractMarkdownToYaml } from './actions.js';
 import type { RmplanConfig, ExtractMarkdownToYamlOptions } from './actions.js';
 import { getDefaultConfig } from './configSchema.js';
+import type { PlanSchema } from './planSchema.js';
 
 // We're going to test the logic for resolving the working directory directly
 describe('executePostApplyCommand directory resolution', () => {
@@ -178,7 +179,7 @@ tasks:
       expect(date.toString()).not.toBe('Invalid Date');
       const diff = now.getTime() - date.getTime();
       expect(diff).toBeGreaterThanOrEqual(0);
-      expect(diff).toBeLessThan(5000); // Within 5 seconds
+      expect(diff).toBeLessThan(5000);
     };
 
     expectRecentDate(parsed.createdAt);
@@ -363,5 +364,292 @@ tasks:
     expect(parsed.status).toBe('pending');
     expect(parsed.priority).toBe('unknown');
     expect(parsed.createdAt).toBeDefined();
+  });
+});
+
+describe('markStepDone', () => {
+  let tempDir: string;
+  let planFilePath: string;
+
+  beforeEach(async () => {
+    // Create a temporary directory for testing
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'markstepdone-test-'));
+    planFilePath = path.join(tempDir, 'test-plan.yml');
+  });
+
+  afterEach(async () => {
+    // Clean up the temporary directory
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('updatedAt is updated', async () => {
+    // Create a plan with an old updatedAt timestamp
+    const oldTimestamp = new Date(Date.now() - 3600000).toISOString();
+    const initialPlanData: PlanSchema = {
+      id: 'test-id',
+      status: 'in progress',
+      priority: 'unknown',
+      goal: 'Test Goal',
+      details: 'Test Details',
+      createdAt: oldTimestamp,
+      updatedAt: oldTimestamp,
+      planGeneratedAt: oldTimestamp,
+      promptsGeneratedAt: oldTimestamp,
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test Description',
+          files: ['test.ts'],
+          include_imports: false,
+          include_importers: false,
+          steps: [
+            { prompt: 'Step 1', done: false },
+            { prompt: 'Step 2', done: false },
+          ],
+        },
+      ],
+    };
+    await fs.writeFile(planFilePath, yaml.stringify(initialPlanData));
+
+    // Mock getGitRoot
+    mock.module('../rmfilter/utils.js', () => ({
+      getGitRoot: mock(() => Promise.resolve(tempDir)),
+      commitAll: mock(() => Promise.resolve(0)),
+      quiet: false,
+    }));
+
+    // Mock getChangedFiles to avoid actual git operations
+    mock.module('../rmfilter/additional_docs.js', () => ({
+      getChangedFiles: mock(() => Promise.resolve([])),
+    }));
+
+    const { markStepDone } = await import('./actions.js');
+
+    // Call markStepDone
+    await markStepDone(planFilePath, { steps: 1 }, { taskIndex: 0, stepIndex: 0 });
+
+    // Read the updated plan
+    const updatedPlanText = await fs.readFile(planFilePath, 'utf-8');
+    const updatedPlanData = yaml.parse(updatedPlanText) as PlanSchema;
+
+    // Verify updatedAt is recent
+    const updatedAtTime = new Date(updatedPlanData.updatedAt!).getTime();
+    const now = Date.now();
+    expect(now - updatedAtTime).toBeLessThan(5000);
+    expect(updatedAtTime).toBeGreaterThan(new Date(oldTimestamp).getTime());
+  });
+
+  test('changedFiles is updated', async () => {
+    const initialPlanData: PlanSchema = {
+      id: 'test-id',
+      status: 'in progress',
+      priority: 'unknown',
+      goal: 'Test Goal',
+      details: 'Test Details',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      planGeneratedAt: new Date().toISOString(),
+      promptsGeneratedAt: new Date().toISOString(),
+      baseBranch: 'main',
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test Description',
+          files: ['test.ts'],
+          include_imports: false,
+          include_importers: false,
+          steps: [{ prompt: 'Step 1', done: false }],
+        },
+      ],
+    };
+    await fs.writeFile(planFilePath, yaml.stringify(initialPlanData));
+
+    // Mock getGitRoot
+    mock.module('../rmfilter/utils.js', () => ({
+      getGitRoot: mock(() => Promise.resolve(tempDir)),
+      commitAll: mock(() => Promise.resolve(0)),
+      quiet: false,
+    }));
+
+    // Mock getChangedFiles to return specific files
+    const mockChangedFiles = ['fileA.ts', 'fileB.ts'];
+    mock.module('../rmfilter/additional_docs.js', () => ({
+      getChangedFiles: mock((gitRoot: string, baseBranch?: string) => {
+        expect(gitRoot).toBe(tempDir);
+        expect(baseBranch).toBe('main');
+        return Promise.resolve(mockChangedFiles);
+      }),
+    }));
+
+    const { markStepDone } = await import('./actions.js');
+
+    // Call markStepDone
+    await markStepDone(planFilePath, { steps: 1 }, { taskIndex: 0, stepIndex: 0 });
+
+    // Read the updated plan
+    const updatedPlanText = await fs.readFile(planFilePath, 'utf-8');
+    const updatedPlanData = yaml.parse(updatedPlanText) as PlanSchema;
+
+    // Verify changedFiles matches the mocked list
+    expect(updatedPlanData.changedFiles).toEqual(mockChangedFiles);
+  });
+
+  test('status becomes "done" when all steps complete', async () => {
+    const initialPlanData: PlanSchema = {
+      id: 'test-id',
+      status: 'in progress',
+      priority: 'unknown',
+      goal: 'Test Goal',
+      details: 'Test Details',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      planGeneratedAt: new Date().toISOString(),
+      promptsGeneratedAt: new Date().toISOString(),
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test Description',
+          files: ['test.ts'],
+          include_imports: false,
+          include_importers: false,
+          steps: [{ prompt: 'Step 1', done: false }],
+        },
+      ],
+    };
+    await fs.writeFile(planFilePath, yaml.stringify(initialPlanData));
+
+    // Mock dependencies
+    mock.module('../rmfilter/utils.js', () => ({
+      getGitRoot: mock(() => Promise.resolve(tempDir)),
+      commitAll: mock(() => Promise.resolve(0)),
+      quiet: false,
+    }));
+
+    mock.module('../rmfilter/additional_docs.js', () => ({
+      getChangedFiles: mock(() => Promise.resolve([])),
+    }));
+
+    const { markStepDone } = await import('./actions.js');
+
+    // Call markStepDone to mark the only step as done
+    await markStepDone(planFilePath, { steps: 1 }, { taskIndex: 0, stepIndex: 0 });
+
+    // Read the updated plan
+    const updatedPlanText = await fs.readFile(planFilePath, 'utf-8');
+    const updatedPlanData = yaml.parse(updatedPlanText) as PlanSchema;
+
+    // Verify status is 'done'
+    expect(updatedPlanData.status).toBe('done');
+    // Verify the step is marked as done
+    expect(updatedPlanData.tasks[0].steps[0].done).toBe(true);
+  });
+
+  test('status remains "in progress" if not all steps complete', async () => {
+    const initialPlanData: PlanSchema = {
+      id: 'test-id',
+      status: 'in progress',
+      priority: 'unknown',
+      goal: 'Test Goal',
+      details: 'Test Details',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      planGeneratedAt: new Date().toISOString(),
+      promptsGeneratedAt: new Date().toISOString(),
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test Description',
+          files: ['test.ts'],
+          include_imports: false,
+          include_importers: false,
+          steps: [
+            { prompt: 'Step 1', done: false },
+            { prompt: 'Step 2', done: false },
+          ],
+        },
+      ],
+    };
+    await fs.writeFile(planFilePath, yaml.stringify(initialPlanData));
+
+    // Mock dependencies
+    mock.module('../rmfilter/utils.js', () => ({
+      getGitRoot: mock(() => Promise.resolve(tempDir)),
+      commitAll: mock(() => Promise.resolve(0)),
+      quiet: false,
+    }));
+
+    mock.module('../rmfilter/additional_docs.js', () => ({
+      getChangedFiles: mock(() => Promise.resolve([])),
+    }));
+
+    const { markStepDone } = await import('./actions.js');
+
+    // Call markStepDone to mark only the first step as done
+    await markStepDone(planFilePath, { steps: 1 }, { taskIndex: 0, stepIndex: 0 });
+
+    // Read the updated plan
+    const updatedPlanText = await fs.readFile(planFilePath, 'utf-8');
+    const updatedPlanData = yaml.parse(updatedPlanText) as PlanSchema;
+
+    // Verify status remains 'in progress'
+    expect(updatedPlanData.status).toBe('in progress');
+    // Verify only the first step is marked as done
+    expect(updatedPlanData.tasks[0].steps[0].done).toBe(true);
+    expect(updatedPlanData.tasks[0].steps[1].done).toBe(false);
+  });
+
+  test('changedFiles is updated with baseBranch unset', async () => {
+    const initialPlanData: PlanSchema = {
+      id: 'test-id',
+      status: 'in progress',
+      priority: 'unknown',
+      goal: 'Test Goal',
+      details: 'Test Details',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      planGeneratedAt: new Date().toISOString(),
+      promptsGeneratedAt: new Date().toISOString(),
+      // baseBranch is not set
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test Description',
+          files: ['test.ts'],
+          include_imports: false,
+          include_importers: false,
+          steps: [{ prompt: 'Step 1', done: false }],
+        },
+      ],
+    };
+    await fs.writeFile(planFilePath, yaml.stringify(initialPlanData));
+
+    // Mock getGitRoot
+    mock.module('../rmfilter/utils.js', () => ({
+      getGitRoot: mock(() => Promise.resolve(tempDir)),
+      commitAll: mock(() => Promise.resolve(0)),
+      quiet: false,
+    }));
+
+    // Mock getChangedFiles to verify it's called with undefined baseBranch
+    const mockChangedFiles = ['fileC.ts'];
+    mock.module('../rmfilter/additional_docs.js', () => ({
+      getChangedFiles: mock((gitRoot: string, baseBranch?: string) => {
+        expect(gitRoot).toBe(tempDir);
+        expect(baseBranch).toBeUndefined();
+        return Promise.resolve(mockChangedFiles);
+      }),
+    }));
+
+    const { markStepDone } = await import('./actions.js');
+
+    // Call markStepDone
+    await markStepDone(planFilePath, { steps: 1 }, { taskIndex: 0, stepIndex: 0 });
+
+    // Read the updated plan
+    const updatedPlanText = await fs.readFile(planFilePath, 'utf-8');
+    const updatedPlanData = yaml.parse(updatedPlanText) as PlanSchema;
+
+    // Verify changedFiles is updated
+    expect(updatedPlanData.changedFiles).toEqual(mockChangedFiles);
   });
 });
