@@ -105,7 +105,10 @@ export function argsFromRmprOptions(options: RmprOptions, pr?: PullRequest): str
  * @param prefix The prefix to look for (e.g., 'rmpr' or 'rmfilter')
  * @returns Parsed options (or null if none) and comment with prefix lines removed
  */
-export function parseCommandOptionsFromComment(commentBody: string, prefix: string): ParseRmprResult {
+export function parseCommandOptionsFromComment(
+  commentBody: string,
+  prefix: string
+): ParseRmprResult {
   const isSpecialCommentLine = (line: string): boolean => {
     return (
       line.startsWith(`--${prefix}`) ||
@@ -125,7 +128,7 @@ export function parseCommandOptionsFromComment(commentBody: string, prefix: stri
   }
 
   const options: RmprOptions = {};
-  
+
   if (prefix === 'rmfilter') {
     // For rmfilter prefix, just collect all arguments after the prefix
     for (const line of prefixLines) {

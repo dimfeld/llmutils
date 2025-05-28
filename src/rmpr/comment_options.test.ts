@@ -162,7 +162,8 @@ describe('argsFromRmprOptions', () => {
 
 describe('parseCommandOptionsFromComment', () => {
   test('parses rmfilter comments', () => {
-    const commentBody = 'Please use these options\n--rmfilter --with-imports --bare\nrmfilter: --include src/**/*.ts';
+    const commentBody =
+      'Please use these options\n--rmfilter --with-imports --bare\nrmfilter: --include src/**/*.ts';
     const result = parseCommandOptionsFromComment(commentBody, 'rmfilter');
     expect(result).toEqual({
       options: {

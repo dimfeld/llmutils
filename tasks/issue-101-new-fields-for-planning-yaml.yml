@@ -295,7 +295,7 @@ tasks:
 
           Update call sites of the original `parseRmprOptions` to now call
           `parseCommandOptionsFromComment(commentBody, 'rmpr')`.
-        done: false
+        done: true
       - prompt: >
           Modify the `generate` command's action in `src/rmplan/rmplan.ts`.
 

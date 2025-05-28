@@ -200,7 +200,10 @@ export async function handleRmprCommand(
       options: {},
     };
 
-    const { options: rmprOptions, cleanedComment } = parseCommandOptionsFromComment(comment.comment.body, 'rmpr');
+    const { options: rmprOptions, cleanedComment } = parseCommandOptionsFromComment(
+      comment.comment.body,
+      'rmpr'
+    );
     if (rmprOptions) {
       commentsForThisFile.options = combineRmprOptions(commentsForThisFile.options, rmprOptions);
       debugLog(`Parsed --rmpr options for comment ${comment.comment.id}:`, rmprOptions);
