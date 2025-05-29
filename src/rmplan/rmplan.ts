@@ -4,6 +4,8 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import * as fs from 'fs/promises';
+import yaml from 'yaml';
 import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
 import { getInstructionsFromGithubIssue, fetchIssueAndComments } from '../common/github/issues.js';
@@ -36,6 +38,9 @@ import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
 import { generateText } from 'ai';
 import { createModel } from '../common/model_factory.ts';
+import { parseMarkdownPlan, type ParsedPhase } from './markdown_parser.js';
+import { generateProjectId, generatePhaseId } from './id_utils.js';
+import type { PhaseSchema } from './planSchema.js';
 
 await loadEnv();
 
@@ -500,6 +505,216 @@ program
       process.exit(1);
     }
   });
+
+program
+  .command('parse')
+  .description('Parse a phase-based markdown plan into YAML files for each phase.')
+  .requiredOption('-i, --input <markdownFile>', 'Path to the input phase-based markdown plan file.')
+  .requiredOption(
+    '-o, --output-dir <outputDir>',
+    'Directory to save the generated phase YAML files.'
+  )
+  .option('--project-id <id>', 'Specify a project ID. If not provided, one will be generated.')
+  .option(
+    '--issue <issue_number_or_url>',
+    'GitHub issue number or URL to associate with the project and use for naming.'
+  )
+  .action(async (options) => {
+    try {
+      // Read the input markdown file
+      const markdownContent = await Bun.file(options.input).text();
+
+      // Parse the markdown plan
+      const parsedPlan = await parseMarkdownPlan(markdownContent);
+
+      // Determine the project ID
+      let projectId: string;
+      let issueUrl: string | undefined;
+
+      if (options.projectId) {
+        projectId = options.projectId;
+      } else if (options.issue) {
+        // Parse the issue
+        const issueInfo = await parsePrOrIssueNumber(options.issue);
+        if (!issueInfo || !issueInfo.owner || !issueInfo.repo) {
+          error(
+            'Could not parse GitHub issue URL or number. Please provide a valid issue URL or use --project-id.'
+          );
+          process.exit(1);
+        }
+
+        // Fetch issue details
+        const issueData = await fetchIssueAndComments({
+          owner: issueInfo.owner,
+          repo: issueInfo.repo,
+          number: issueInfo.number,
+        });
+
+        issueUrl = issueData.issue.url;
+
+        // Create project ID from issue
+        const slugifiedTitle = issueData.issue.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .substring(0, 50);
+
+        projectId = `issue-${issueData.issue.number}-${slugifiedTitle}`;
+      } else {
+        // Generate project ID from overall goal
+        const prompt = `Generate a concise 3-5 word title for this project goal. Response should be ONLY the title, nothing else.
+
+Goal: ${parsedPlan.overallGoal}
+Details: ${parsedPlan.overallDetails?.substring(0, 200) || ''}`;
+
+        const model = createModel('google/gemini-2.0-flash');
+        const result = await generateText({
+          model,
+          prompt,
+          maxTokens: 20,
+          temperature: 0.3,
+        });
+
+        const title = result.text.trim();
+        projectId = generateProjectId(title);
+      }
+
+      // Create output directory
+      const projectDir = path.join(options.outputDir, projectId);
+      await fs.mkdir(projectDir, { recursive: true });
+
+      // Create phase schema objects
+      const phaseSchemas: PhaseSchema[] = [];
+      const phaseIndexToId = new Map<number, string>();
+
+      // First pass: create phase schemas with raw dependencies
+      for (const phase of parsedPlan.phases) {
+        const phaseId = generatePhaseId(projectId, phase.numericIndex);
+        phaseIndexToId.set(phase.numericIndex, phaseId);
+
+        const phaseSchema: PhaseSchema = {
+          id: phaseId,
+          goal: phase.goal,
+          details: phase.details,
+          tasks: phase.tasks.map((task) => ({
+            title: task.title,
+            description: task.description,
+            files: [],
+            include_imports: false,
+            include_importers: false,
+            steps: [],
+          })),
+          status: 'pending',
+          priority: 'unknown',
+          dependencies: phase.dependencies,
+          planGeneratedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          rmfilter: parsedPlan.rmfilter || [],
+          issue: issueUrl ? [issueUrl] : [],
+        };
+
+        phaseSchemas.push(phaseSchema);
+      }
+
+      // Second pass: resolve dependencies
+      for (const phaseSchema of phaseSchemas) {
+        const resolvedDependencies: string[] = [];
+
+        for (const dep of phaseSchema.dependencies || []) {
+          // Extract phase number from strings like "Phase 1", "Phase 2"
+          const match = dep.match(/Phase\s+(\d+)/i);
+          if (match) {
+            const depIndex = parseInt(match[1], 10);
+            const depId = phaseIndexToId.get(depIndex);
+            if (depId) {
+              resolvedDependencies.push(depId);
+            } else {
+              warn(`Warning: Dependency "${dep}" references a non-existent phase`);
+            }
+          } else {
+            warn(`Warning: Could not parse dependency "${dep}"`);
+          }
+        }
+
+        phaseSchema.dependencies = resolvedDependencies;
+      }
+
+      // Check for circular dependencies
+      const hasCycle = detectCircularDependencies(phaseSchemas);
+      if (hasCycle) {
+        error('Error: Circular dependency detected in phase dependencies');
+        error('Please manually edit the phase files to fix the circular dependencies');
+        // Continue anyway but warn the user
+      }
+
+      // Write phase YAML files
+      for (const phaseSchema of phaseSchemas) {
+        const phaseIndex = parseInt(phaseSchema.id.split('-').pop()!, 10);
+        const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+${yaml.stringify(phaseSchema)}`;
+
+        const phaseFilePath = path.join(projectDir, `phase_${phaseIndex}.yaml`);
+        await Bun.write(phaseFilePath, yamlContent);
+      }
+
+      log(
+        chalk.green(`✓ Successfully parsed markdown plan into ${phaseSchemas.length} phase files`)
+      );
+      log(`Output directory: ${projectDir}`);
+    } catch (err) {
+      error('Failed to parse markdown plan:', err);
+      process.exit(1);
+    }
+  });
+
+/**
+ * Detect circular dependencies in phases
+ */
+function detectCircularDependencies(phases: PhaseSchema[]): boolean {
+  const graph = new Map<string, Set<string>>();
+
+  // Build dependency graph
+  for (const phase of phases) {
+    if (!graph.has(phase.id)) {
+      graph.set(phase.id, new Set());
+    }
+    for (const dep of phase.dependencies || []) {
+      graph.get(phase.id)!.add(dep);
+    }
+  }
+
+  // DFS to detect cycles
+  const visited = new Set<string>();
+  const recursionStack = new Set<string>();
+
+  function hasCycleDFS(node: string): boolean {
+    visited.add(node);
+    recursionStack.add(node);
+
+    const neighbors = graph.get(node) || new Set();
+    for (const neighbor of neighbors) {
+      if (!visited.has(neighbor)) {
+        if (hasCycleDFS(neighbor)) return true;
+      } else if (recursionStack.has(neighbor)) {
+        return true;
+      }
+    }
+
+    recursionStack.delete(node);
+    return false;
+  }
+
+  for (const phase of phases) {
+    if (!visited.has(phase.id)) {
+      if (hasCycleDFS(phase.id)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
 
 const executorNames = executors
   .values()
