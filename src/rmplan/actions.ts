@@ -11,6 +11,9 @@ import { findAdditionalDocs } from '../rmfilter/additional_docs.js';
 import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
 import { Extractor } from '../treesitter/extract.js';
 import { generatePlanId } from '../common/id_generator.js';
+import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
+import { fetchIssueAndComments } from '../common/github/issues.js';
+import { generateProjectId, generatePhaseId, slugify } from './id_utils.js';
 import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
 import type { PlanSchema, PhaseSchema } from './planSchema.js';
 import { planSchema, phaseSchema } from './planSchema.js';
@@ -20,6 +23,7 @@ import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 import { getChangedFiles } from '../rmfilter/additional_docs.js';
 import { fixYaml } from './fix_yaml.js';
 import type { PhaseGenerationContext } from './prompt.js';
+import * as fs from 'fs/promises';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -661,6 +665,9 @@ export async function executePostApplyCommand(
 export interface ExtractMarkdownToYamlOptions {
   issueUrls?: string[];
   planRmfilterArgs?: string[];
+  outputDir?: string;
+  projectId?: string;
+  issueUrl?: string;
 }
 
 export async function extractMarkdownToYaml(
@@ -668,8 +675,7 @@ export async function extractMarkdownToYaml(
   config: RmplanConfig,
   quiet: boolean,
   options: ExtractMarkdownToYamlOptions = {}
-): Promise<string> {
-  let validatedPlan: PlanSchema;
+): Promise<string | { message: string; projectDir: string }> {
   let convertedYaml: string;
 
   try {
@@ -686,6 +692,29 @@ export async function extractMarkdownToYaml(
     }
     convertedYaml = await convertMarkdownToYaml(inputText, config, !streamToConsole);
   }
+
+  // Parse the YAML to check if it's multi-phase
+  let parsedYaml;
+  try {
+    parsedYaml = yaml.parse(convertedYaml);
+  } catch (e) {
+    await Bun.write('rmplan-parse-failure.yml', convertedYaml);
+    error('Failed to parse YAML. Saved raw output to rmplan-parse-failure.yml');
+    throw e;
+  }
+
+  // Check if this is a multi-phase plan
+  if (parsedYaml.phases && Array.isArray(parsedYaml.phases)) {
+    // Multi-phase plan - save as separate files
+    if (!options.outputDir) {
+      throw new Error('Multi-phase plan detected but no output directory specified');
+    }
+
+    return await saveMultiPhaseYaml(parsedYaml, options, config, quiet);
+  }
+
+  // Single-phase plan - continue with existing logic
+  let validatedPlan: PlanSchema;
 
   if (!convertedYaml.startsWith('# yaml-language-server')) {
     const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
@@ -782,6 +811,143 @@ export async function extractMarkdownToYaml(
   }
 
   return yaml.stringify(orderedPlan);
+}
+
+async function saveMultiPhaseYaml(
+  parsedYaml: any,
+  options: ExtractMarkdownToYamlOptions,
+  config: RmplanConfig,
+  quiet: boolean
+): Promise<{ message: string; projectDir: string }> {
+  // Determine project ID
+  let projectId: string;
+  let issueUrl: string | undefined;
+
+  if (options.projectId) {
+    projectId = slugify(options.projectId);
+  } else if (options.issueUrl) {
+    // Parse the issue
+    const issueInfo = await parsePrOrIssueNumber(options.issueUrl);
+    if (!issueInfo || !issueInfo.owner || !issueInfo.repo) {
+      throw new Error('Could not parse GitHub issue URL or number');
+    }
+
+    // Fetch issue details
+    const issueData = await fetchIssueAndComments({
+      owner: issueInfo.owner,
+      repo: issueInfo.repo,
+      number: issueInfo.number,
+    });
+
+    issueUrl = issueData.issue.url;
+
+    // Create project ID from issue
+    const slugTitle = slugify(issueData.issue.title);
+    const maxSlugLength = 50;
+    const truncatedSlugTitle =
+      slugTitle.length > maxSlugLength
+        ? slugTitle.substring(0, maxSlugLength).replace(/-+$/, '')
+        : slugTitle;
+
+    projectId = `issue-${issueData.issue.number}-${truncatedSlugTitle}`;
+  } else {
+    // Generate from first phase goal
+    const firstPhase = parsedYaml.phases[0];
+    projectId = generateProjectId(slugify(firstPhase.goal).substring(0, 30));
+  }
+
+  if (!quiet) {
+    log(chalk.blue('Using Project ID:'), projectId);
+  }
+
+  // Create output directory
+  if (!options.outputDir) {
+    throw new Error('outputDir is required for multi-phase plans');
+  }
+  const projectDir = path.join(options.outputDir, projectId);
+  await fs.mkdir(projectDir, { recursive: true });
+
+  // Process phases
+  const phaseIndexToId = new Map<number, string>();
+  let successfulWrites = 0;
+  const failedPhases: number[] = [];
+
+  // First pass: generate IDs and update dependencies
+  for (let i = 0; i < parsedYaml.phases.length; i++) {
+    const phase = parsedYaml.phases[i];
+    const phaseId = phase.id || generatePhaseId(projectId, i + 1);
+    phaseIndexToId.set(i + 1, phaseId);
+    phase.id = phaseId;
+
+    // Add metadata if not present
+    const now = new Date().toISOString();
+    phase.planGeneratedAt = phase.planGeneratedAt || now;
+    phase.createdAt = phase.createdAt || now;
+    phase.updatedAt = phase.updatedAt || now;
+    phase.status = phase.status || 'pending';
+    phase.priority = phase.priority || 'unknown';
+
+    // Add rmfilter and issue from options
+    if (options.planRmfilterArgs?.length) {
+      phase.rmfilter = options.planRmfilterArgs;
+    }
+    if (issueUrl) {
+      phase.issue = [issueUrl];
+    }
+
+    // Update dependencies to use phase IDs
+    if (phase.dependencies && Array.isArray(phase.dependencies)) {
+      phase.dependencies = phase.dependencies.map((dep: string) => {
+        // If it's already in the correct format, keep it
+        if (dep.startsWith(projectId)) return dep;
+        // Otherwise convert from "project-N" to actual phase ID
+        const match = dep.match(/-(\d+)$/);
+        if (match) {
+          const depIndex = parseInt(match[1], 10);
+          return phaseIndexToId.get(depIndex) || dep;
+        }
+        return dep;
+      });
+    }
+  }
+
+  // Write phase YAML files
+  for (let i = 0; i < parsedYaml.phases.length; i++) {
+    const phase = parsedYaml.phases[i];
+    const phaseIndex = i + 1;
+
+    // Validate phase
+    const validationResult = phaseSchema.safeParse(phase);
+    if (!validationResult.success) {
+      warn(`Warning: Phase ${phaseIndex} failed validation:`, validationResult.error.issues);
+      failedPhases.push(phaseIndex);
+      continue;
+    }
+
+    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(validationResult.data)}`;
+    const phaseFilePath = path.join(projectDir, `phase_${phaseIndex}.yaml`);
+
+    try {
+      await Bun.write(phaseFilePath, yamlContent);
+      successfulWrites++;
+    } catch (err) {
+      warn(`Warning: Failed to write phase ${phaseIndex} YAML file:`, err);
+      failedPhases.push(phaseIndex);
+    }
+  }
+
+  if (successfulWrites === 0) {
+    throw new Error('Failed to write any phase YAML files');
+  }
+
+  const message = chalk.green(
+    `✓ Successfully converted markdown to ${successfulWrites} phase files`
+  );
+  if (failedPhases.length > 0) {
+    warn(`Warning: Failed to write ${failedPhases.length} phase files: ${failedPhases.join(', ')}`);
+  }
+
+  return { message, projectDir };
 }
 
 /**

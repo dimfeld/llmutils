@@ -1,11 +1,5 @@
 import { describe, test, expect, mock } from 'bun:test';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
-import yaml from 'yaml';
-import { parseMarkdownPlan } from './markdown_parser.js';
 import { generateProjectId, slugify } from './id_utils.js';
-import type { PhaseSchema } from './planSchema.js';
 
 describe('rmplan parse - project ID generation logic', () => {
   describe('Project ID generation with GitHub issues', () => {
@@ -178,63 +172,6 @@ Respond with ONLY the slug-style title.`;
       const projectId = slugify(customId);
 
       expect(projectId).toBe('project-name');
-    });
-  });
-
-  describe('Integration with markdown parsing', () => {
-    test('creates phase files with correct project ID', async () => {
-      const markdownContent = `# Goal
-
-Implement authentication system.
-
-## Details
-
-Add OAuth2 authentication to the application.
-
-### Phase 1: Setup OAuth
-
-#### Goal
-
-Set up OAuth2 provider integration.
-
-##### Task: Configure OAuth provider
-
-**Description:** Set up OAuth2 credentials and configuration.
-`;
-
-      const parsedPlan = await parseMarkdownPlan(markdownContent);
-      const projectId = 'test-auth-project-abc123';
-
-      // Verify phase ID generation
-      expect(parsedPlan.phases.length).toBe(1);
-      const phaseId = `${projectId}-1`;
-
-      // Create phase schema as would be done in the parse command
-      const phaseSchema: PhaseSchema = {
-        id: phaseId,
-        goal: parsedPlan.phases[0].goal,
-        details: parsedPlan.phases[0].details,
-        tasks: parsedPlan.phases[0].tasks.map((task) => ({
-          title: task.title,
-          description: task.description,
-          files: [],
-          include_imports: false,
-          include_importers: false,
-          steps: [],
-        })),
-        status: 'pending',
-        priority: 'medium',
-        dependencies: [],
-        planGeneratedAt: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        rmfilter: [],
-        issue: [],
-      };
-
-      expect(phaseSchema.id).toBe('test-auth-project-abc123-1');
-      expect(phaseSchema.goal).toBe('Set up OAuth2 provider integration.');
-      expect(phaseSchema.tasks[0].title).toBe('Configure OAuth provider');
     });
   });
 });

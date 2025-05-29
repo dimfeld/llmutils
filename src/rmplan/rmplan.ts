@@ -4,7 +4,6 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
-import * as fs from 'fs/promises';
 import yaml from 'yaml';
 import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
@@ -39,10 +38,9 @@ import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
 import { generateText } from 'ai';
 import { createModel } from '../common/model_factory.ts';
-import { parseMarkdownPlan, type ParsedPhase } from './markdown_parser.js';
-import { generateProjectId, generatePhaseId, slugify } from './id_utils.js';
-import { phaseSchema, type PhaseSchema } from './planSchema.js';
+import { phaseSchema } from './planSchema.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
+import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';
 
 await loadEnv();
 
@@ -313,17 +311,22 @@ program
           issueUrls: issueUrlsForExtract,
         };
 
-        const outputYaml = await extractMarkdownToYaml(
+        const outputResult = await extractMarkdownToYaml(
           input,
           config,
           options.quiet ?? false,
           extractOptions
         );
-        if (outputFilename) {
-          // no need to print otherwise, extractMarkdownToYaml already did
-          await Bun.write(outputFilename, outputYaml);
+        if (typeof outputResult === 'string' && outputFilename) {
+          // Single-phase plan - save to file
+          await Bun.write(outputFilename, outputResult);
           if (!options.quiet) {
             log(`Wrote result to ${outputFilename}`);
+          }
+        } else if (typeof outputResult !== 'string') {
+          // Multi-phase plan - inform user
+          if (!options.quiet) {
+            error('Multi-phase plan detected. Use the extract command with --output-dir instead.');
           }
         }
       }
@@ -348,8 +351,20 @@ program
   .description('Convert a Markdown project plan into YAML')
   .option('-o, --output <outputFile>', 'Write result to a file instead of stdout')
   .option(
+    '--output-dir <outputDir>',
+    'Directory to save the generated phase YAML files (for multi-phase plans)'
+  )
+  .option(
     '--plan <planFile>',
     'The path of the original Markdown project description file. If set, rmplan will write the output to the same path, but with a .yml extension.'
+  )
+  .option(
+    '--project-id <id>',
+    'Specify a project ID for multi-phase plans. If not provided, one will be generated.'
+  )
+  .option(
+    '--issue <issue_number_or_url>',
+    'GitHub issue number or URL to associate with the project and use for naming.'
   )
   .option('--quiet', 'Suppress informational output')
   .allowExcessArguments(true)
@@ -374,19 +389,41 @@ program
 
     try {
       const config = await loadEffectiveConfig(options.config);
-      const outputYaml = await extractMarkdownToYaml(inputText, config, options.quiet ?? false, {});
-      if (options.output) {
-        let outputFilename = options.output;
-        if (outputFilename.endsWith('.md')) {
-          outputFilename = outputFilename.slice(0, -3);
-          outputFilename += '.yml';
-        }
-        await Bun.write(outputFilename, outputYaml);
-        if (!options.quiet) {
-          log(`Wrote result to ${outputFilename}`);
+
+      // Extract markdown to YAML using LLM
+      const extractOptions: ExtractMarkdownToYamlOptions = {
+        outputDir: options.outputDir,
+        projectId: options.projectId,
+        issueUrl: options.issue,
+      };
+
+      const result = await extractMarkdownToYaml(
+        inputText,
+        config,
+        options.quiet ?? false,
+        extractOptions
+      );
+
+      if (typeof result === 'string') {
+        // Single-phase plan - output as before
+        if (options.output) {
+          let outputFilename = options.output;
+          if (outputFilename.endsWith('.md')) {
+            outputFilename = outputFilename.slice(0, -3);
+            outputFilename += '.yml';
+          }
+          await Bun.write(outputFilename, result);
+          if (!options.quiet) {
+            log(`Wrote result to ${outputFilename}`);
+          }
+        } else {
+          console.log(result);
         }
       } else {
-        console.log(outputYaml);
+        // Multi-phase plan - result contains information about saved files
+        if (!options.quiet) {
+          log(result.message);
+        }
       }
     } catch (e) {
       process.exit(1);
@@ -507,316 +544,6 @@ program
       process.exit(1);
     }
   });
-
-program
-  .command('parse')
-  .description('Parse a phase-based markdown plan into YAML files for each phase.')
-  .requiredOption('-i, --input <markdownFile>', 'Path to the input phase-based markdown plan file.')
-  .requiredOption(
-    '-o, --output-dir <outputDir>',
-    'Directory to save the generated phase YAML files.'
-  )
-  .option('--project-id <id>', 'Specify a project ID. If not provided, one will be generated.')
-  .option(
-    '--issue <issue_number_or_url>',
-    'GitHub issue number or URL to associate with the project and use for naming.'
-  )
-  .action(async (options) => {
-    let projectId: string | undefined;
-    let markdownContent: string | undefined;
-
-    try {
-      // Read the input markdown file
-      try {
-        markdownContent = await Bun.file(options.input).text();
-      } catch (err) {
-        error(`Failed to read input file: ${options.input}`);
-        error('Error details:', err);
-        process.exit(1);
-      }
-
-      // Parse the markdown plan
-      let parsedPlan;
-      try {
-        parsedPlan = await parseMarkdownPlan(markdownContent);
-      } catch (err) {
-        error('Failed to parse markdown plan. The markdown structure may be invalid.');
-        error('Error details:', err);
-
-        // Save the problematic markdown for manual inspection
-        const errorDir = options.outputDir;
-        await fs.mkdir(errorDir, { recursive: true });
-        const errorMdPath = path.join(errorDir, 'feature_plan.error.md');
-        const errorLogPath = path.join(errorDir, 'parse_error.log');
-
-        await Bun.write(errorMdPath, markdownContent);
-        await Bun.write(
-          errorLogPath,
-          `Parse error at ${new Date().toISOString()}\n\nError: ${err}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
-        );
-
-        error(`Original markdown saved to: ${errorMdPath}`);
-        error(`Error log saved to: ${errorLogPath}`);
-        process.exit(1);
-      }
-
-      // Determine the project ID
-      let issueUrl: string | undefined;
-
-      if (options.projectId) {
-        // Sanitize the provided project ID to ensure it's a valid directory name
-        projectId = slugify(options.projectId);
-      } else if (options.issue) {
-        // Parse the issue
-        const issueInfo = await parsePrOrIssueNumber(options.issue);
-        if (!issueInfo || !issueInfo.owner || !issueInfo.repo) {
-          error(
-            'Could not parse GitHub issue URL or number. Please provide a valid issue URL or use --project-id.'
-          );
-          process.exit(1);
-        }
-
-        // Fetch issue details
-        const issueData = await fetchIssueAndComments({
-          owner: issueInfo.owner,
-          repo: issueInfo.repo,
-          number: issueInfo.number,
-        });
-
-        issueUrl = issueData.issue.url;
-
-        // Create project ID from issue
-        const slugTitle = slugify(issueData.issue.title);
-
-        // Truncate slugTitle if it's too long to keep projectId manageable
-        const maxSlugLength = 50;
-        const truncatedSlugTitle =
-          slugTitle.length > maxSlugLength
-            ? slugTitle.substring(0, maxSlugLength).replace(/-+$/, '')
-            : slugTitle;
-
-        projectId = `issue-${issueData.issue.number}-${truncatedSlugTitle}`;
-      } else {
-        // Generate project ID from overall goal using LLM
-        try {
-          const prompt = `Based on the following project goal and details, suggest a very short, concise, slug-style title (2-5 words, lowercase, hyphenated).
-Goal: ${parsedPlan.overallGoal}
-Details: ${parsedPlan.overallDetails?.substring(0, 200) || ''}
-Respond with ONLY the slug-style title.`;
-
-          const model = createModel('google/gemini-2.0-flash');
-          const result = await generateText({
-            model,
-            prompt,
-            maxTokens: 20,
-            temperature: 0.3,
-          });
-
-          const llmGeneratedTitle = slugify(result.text.trim());
-          projectId = generateProjectId(llmGeneratedTitle);
-        } catch (err) {
-          warn('Failed to generate project ID from LLM:', err);
-          // Fall back to a generic projectId
-          projectId = generateProjectId('unnamed-project');
-        }
-      }
-
-      // Log the project ID
-      log(chalk.blue('Using Project ID:'), projectId);
-
-      // Create output directory
-      // At this point, projectId is guaranteed to be defined
-      if (!projectId) {
-        throw new Error('Failed to determine project ID');
-      }
-
-      const projectDir = path.join(options.outputDir, projectId);
-      await fs.mkdir(projectDir, { recursive: true });
-
-      // Create phase schema objects
-      const phaseSchemas: PhaseSchema[] = [];
-      const phaseIndexToId = new Map<number, string>();
-
-      // First pass: create phase schemas with raw dependencies
-      for (const phase of parsedPlan.phases) {
-        const phaseId = generatePhaseId(projectId, phase.numericIndex);
-        phaseIndexToId.set(phase.numericIndex, phaseId);
-
-        const phaseSchema: PhaseSchema = {
-          id: phaseId,
-          goal: phase.goal,
-          details: phase.details,
-          tasks: phase.tasks.map((task) => ({
-            title: task.title,
-            description: task.description,
-            files: [],
-            include_imports: false,
-            include_importers: false,
-            steps: [],
-          })),
-          status: 'pending',
-          priority: 'unknown',
-          dependencies: phase.dependencies,
-          planGeneratedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          rmfilter: parsedPlan.rmfilter || [],
-          issue: issueUrl ? [issueUrl] : [],
-        };
-
-        phaseSchemas.push(phaseSchema);
-      }
-
-      // Second pass: resolve dependencies
-      for (const phaseSchema of phaseSchemas) {
-        const resolvedDependencies: string[] = [];
-
-        for (const dep of phaseSchema.dependencies || []) {
-          // Extract phase number from strings like "Phase 1", "Phase 2"
-          const match = dep.match(/Phase\s+(\d+)/i);
-          if (match) {
-            const depIndex = parseInt(match[1], 10);
-            const depId = phaseIndexToId.get(depIndex);
-            if (depId) {
-              resolvedDependencies.push(depId);
-            } else {
-              warn(`Warning: Dependency "${dep}" references a non-existent phase`);
-            }
-          } else {
-            warn(`Warning: Could not parse dependency "${dep}"`);
-          }
-        }
-
-        phaseSchema.dependencies = resolvedDependencies;
-      }
-
-      // Check for circular dependencies
-      const hasCycle = detectCircularDependencies(phaseSchemas);
-      if (hasCycle) {
-        error('Error: Circular dependency detected in phase dependencies');
-        error('Please manually edit the phase files to fix the circular dependencies');
-        // Continue anyway but warn the user
-      }
-
-      // Write phase YAML files
-      let successfulWrites = 0;
-      const failedPhases: number[] = [];
-
-      for (const phaseSchema of phaseSchemas) {
-        const phaseIndex = parseInt(phaseSchema.id.split('-').pop()!, 10);
-        const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-${yaml.stringify(phaseSchema)}`;
-
-        const phaseFilePath = path.join(projectDir, `phase_${phaseIndex}.yaml`);
-
-        try {
-          await Bun.write(phaseFilePath, yamlContent);
-          successfulWrites++;
-        } catch (err) {
-          warn(`Warning: Failed to write phase ${phaseIndex} YAML file`);
-          warn('Error:', err);
-          failedPhases.push(phaseIndex);
-
-          // Try to save error version
-          try {
-            const errorPath = path.join(projectDir, `phase_${phaseIndex}.error.yaml`);
-            await Bun.write(errorPath, yamlContent);
-            warn(`Saved error version to: ${errorPath}`);
-          } catch (saveErr) {
-            warn('Failed to save error version:', saveErr);
-          }
-        }
-      }
-
-      if (successfulWrites === 0) {
-        error('Failed to write any phase YAML files');
-        process.exit(1);
-      }
-
-      log(chalk.green(`✓ Successfully parsed markdown plan into ${successfulWrites} phase files`));
-
-      if (failedPhases.length > 0) {
-        warn(
-          `Warning: Failed to write ${failedPhases.length} phase files: ${failedPhases.join(', ')}`
-        );
-      }
-
-      log(`Output directory: ${projectDir}`);
-    } catch (err) {
-      error('Unexpected error during parse operation:', err);
-
-      // Try to save error information
-      if (markdownContent && projectId) {
-        try {
-          const errorDir = path.join(options.outputDir, projectId || 'error');
-          await fs.mkdir(errorDir, { recursive: true });
-          const errorMdPath = path.join(errorDir, 'feature_plan.error.md');
-          const errorLogPath = path.join(errorDir, 'parse_error.log');
-
-          await Bun.write(errorMdPath, markdownContent);
-          await Bun.write(
-            errorLogPath,
-            `Unexpected error at ${new Date().toISOString()}\n\nError: ${err}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
-          );
-
-          error(`Original markdown saved to: ${errorMdPath}`);
-          error(`Error log saved to: ${errorLogPath}`);
-        } catch (saveErr) {
-          error('Failed to save error information:', saveErr);
-        }
-      }
-
-      process.exit(1);
-    }
-  });
-
-/**
- * Detect circular dependencies in phases
- */
-function detectCircularDependencies(phases: PhaseSchema[]): boolean {
-  const graph = new Map<string, Set<string>>();
-
-  // Build dependency graph
-  for (const phase of phases) {
-    if (!graph.has(phase.id)) {
-      graph.set(phase.id, new Set());
-    }
-    for (const dep of phase.dependencies || []) {
-      graph.get(phase.id)!.add(dep);
-    }
-  }
-
-  // DFS to detect cycles
-  const visited = new Set<string>();
-  const recursionStack = new Set<string>();
-
-  function hasCycleDFS(node: string): boolean {
-    visited.add(node);
-    recursionStack.add(node);
-
-    const neighbors = graph.get(node) || new Set();
-    for (const neighbor of neighbors) {
-      if (!visited.has(neighbor)) {
-        if (hasCycleDFS(neighbor)) return true;
-      } else if (recursionStack.has(neighbor)) {
-        return true;
-      }
-    }
-
-    recursionStack.delete(node);
-    return false;
-  }
-
-  for (const phase of phases) {
-    if (!visited.has(phase.id)) {
-      if (hasCycleDFS(phase.id)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
 
 const executorNames = executors
   .values()
@@ -1020,8 +747,7 @@ ${codebaseContextXml}
 </codebase_context>`;
 
       // 10. Call LLM
-      const modelId =
-        options.model || config.models?.execution || 'anthropic/claude-3-5-sonnet-latest';
+      const modelId = options.model || config.models?.execution || DEFAULT_RUN_MODEL;
       const model = createModel(modelId);
 
       log('Generating detailed steps for phase using model:', modelId);

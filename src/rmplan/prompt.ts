@@ -27,6 +27,21 @@ tasks:
     steps:
       - prompt: [multi-line string using the | character]`;
 
+export const phaseExampleFormatGeneric = `phases:
+  - id: [phase-id]
+    goal: [phase goal]
+    details: [phase details]
+    dependencies: [list of phase IDs this phase depends on, or empty list]
+    tasks:
+      - title: [task title]
+        description: [task description]
+        files: []
+        include_imports: false
+        include_importers: false
+        steps: []
+    status: pending
+    priority: unknown`;
+
 // Define the desired Markdown structure for the plan
 export const planMarkdownExampleFormat = `
 # Goal

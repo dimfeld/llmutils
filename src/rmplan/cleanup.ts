@@ -1,6 +1,6 @@
 import { streamText } from 'ai';
 import { createModel } from '../common/model_factory.js';
-import { planExampleFormatGeneric } from './prompt.js';
+import { planExampleFormatGeneric, phaseExampleFormatGeneric } from './prompt.js';
 import { CURRENT_DIFF, getChangedFiles } from '../rmfilter/additional_docs.ts';
 import { getGitRoot } from '../rmfilter/utils.ts';
 import { debugLog, error, log } from '../logging.ts';
@@ -20,21 +20,38 @@ Here is the text that needs to be converted to valid YAML:
 
 **Instructions:**
 
-1.  **Convert the Markdown input into YAML format.**
-2.  **Strictly adhere to the following YAML schema:**
+1.  **Detect the format:** First, determine if this is a multi-phase plan or a single-phase plan.
+    - Multi-phase plans contain sections like "### Phase 1:", "### Phase 2:" etc.
+    - Single-phase plans do not have phase sections
+    
+2.  **Convert based on format:**
+
+    **For SINGLE-PHASE plans**, use this schema:
     \`\`\`yaml
 ${planExampleFormatGeneric}
     \`\`\`
-3.  **Handle Markdown lists:** Convert Markdown lists under 'Files:' and numbered lists under 'Steps:' into YAML sequences.
-4.  **Handle Multi-line Strings:** For step prompts, use the YAML pipe character | instead of the > character for multi-line strings.
-5.  **Indentation:** Use exactly 2 spaces for YAML indentation levels.
-6.  **String quoting:** Use double quotes for YAML strings when necessary. Commonly you will see single-line strings with a colon ":", especially in task titles. These need to be quoted.
-7.  **Output Format:** Output *only* the raw, valid YAML string. Do **not** include any introductory text, explanations, comments, or Markdown fences (like \`\`\`yaml or \`\`\`).
+    
+    **For MULTI-PHASE plans**, use this schema:
+    \`\`\`yaml
+${phaseExampleFormatGeneric}
+    \`\`\`
+    
+3.  **Handle phase dependencies:** For multi-phase plans, convert dependency references like "Phase 1, Phase 2" to phase IDs in format "project-1", "project-2" etc. Use "project" as the default project prefix.
 
-**Example Input (Markdown):**
-See the structure in the provided Markdown input text.
-**Required Output (YAML):**
-A single block of valid YAML text conforming to the schema.`;
+4.  **Handle Markdown lists:** Convert Markdown lists appropriately into YAML sequences.
+
+5.  **Handle Multi-line Strings:** For step prompts, use the YAML pipe character | for multi-line strings.
+
+6.  **Indentation:** Use exactly 2 spaces for YAML indentation levels.
+
+7.  **String quoting:** Use double quotes for YAML strings when necessary, especially for strings containing colons.
+
+8.  **Output Format:** Output *only* the raw, valid YAML string. Do **not** include any introductory text, explanations, comments, or Markdown fences (like \`\`\`yaml or \`\`\`).
+
+**Important for multi-phase plans:**
+- Each phase should have an id like "project-1", "project-2" etc.
+- Tasks should NOT have detailed steps or file lists - only title and description
+- Set status to "pending" and priority to "unknown" for all phases`;
 
 export async function convertMarkdownToYaml(
   markdownInput: string,
