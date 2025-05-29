@@ -279,7 +279,7 @@ For each task listed above, you need to generate:
 
 ### Guidelines:
 
-1. **Test-Driven Development**: 
+1. **Test-Driven Development**:
    - Include test creation/modification as early steps when appropriate
    - Prefer to not mocks unless you have to, since they often end up just testing the mocks. Prefer dependency injection.
 2. **Incremental Progress**: Each step should be small, achievable, and verifiable

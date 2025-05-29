@@ -24,7 +24,7 @@ export interface PrepareNextStepOptions {
   withImports?: boolean;
   withAllImports?: boolean;
   withImporters?: boolean;
-  selectSteps?: boolean;
+  selectSteps?: boolean | 'all';
   rmfilterArgs?: string[];
   model?: string;
   autofind?: boolean;
@@ -131,6 +131,9 @@ export async function prepareNextStep(
         `Automatically selected the only pending step: [1] ${pendingSteps[0].prompt.split('\n')[0]}...`
       )
     );
+  } else if (selectSteps === 'all') {
+    log(`Selected all pending steps`);
+    selectedPendingSteps = pendingSteps;
   } else {
     const maxWidth = process.stdout.columns - 12;
     const selectedIndex = await select({
@@ -285,7 +288,7 @@ export async function prepareNextStep(
 
     // Add all files
     const filePrefix = options.filePathPrefix || '';
-    files.forEach((file) => promptParts.push(`- ${path.relative(gitRoot, file)}`));
+    files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
 
     // Add MDC files with their descriptions if available
     if (filteredMdcFiles.length > 0) {

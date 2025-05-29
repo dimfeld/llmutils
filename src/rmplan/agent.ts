@@ -287,21 +287,15 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         break;
       }
 
-      log(
-        boldMarkdownHeaders(
-          `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
-        )
-      );
-
       const executorStepOptions = executor.prepareStepOptions?.() ?? {};
       const stepPreparationResult = await prepareNextStep(
         config,
         currentPlanFile,
         {
           previous: true,
-          ...executorStepOptions,
-          model: executorStepOptions.model || agentExecutionModel,
           selectSteps: false,
+          model: agentExecutionModel,
+          ...executorStepOptions,
           filePathPrefix: executor.filePathPrefix,
         },
         currentBaseDir
@@ -314,6 +308,21 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       if (!stepPreparationResult) {
         break;
       }
+
+      let stepIndexes: string;
+      if (stepPreparationResult.numStepsSelected === 1) {
+        stepIndexes = `Step ${stepPreparationResult.stepIndex + 1}`;
+      } else {
+        const endIndex =
+          stepPreparationResult.stepIndex + stepPreparationResult.numStepsSelected + 1;
+        stepIndexes = `Steps ${stepPreparationResult.stepIndex + 1}-${endIndex}`;
+      }
+
+      log(
+        boldMarkdownHeaders(
+          `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, ${stepIndexes}...`
+        )
+      );
 
       const { promptFilePath, taskIndex, stepIndex, rmfilterArgs } = stepPreparationResult;
 
