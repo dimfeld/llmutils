@@ -537,7 +537,7 @@ tasks:
 
           - Referencing `changedFilesFromDependencies` and `previousPhasesInfo`
           to build upon prior work.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/actions.ts` (or a new `src/rmplan/phase_actions.ts` if
           preferred for organization):
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:46:40.907Z
+updatedAt: 2025-05-29T02:51:17.603Z
 changedFiles:
   - package.json
   - src/rmplan/cleanup.test.ts
@@ -990,6 +990,7 @@ changedFiles:
   - src/rmplan/markdown_parser.ts
   - src/rmplan/parse.test.ts
   - src/rmplan/planSchema.ts
+  - src/rmplan/prompt.test.ts
   - src/rmplan/prompt.ts
   - src/rmplan/rmplan.ts
   - tasks/issue-98-detailed-planning-mode.md
