@@ -96,6 +96,18 @@ export const phaseBasedMarkdownExampleFormat = `
 **Description:** [Task 2 description]
 `;
 
+export interface PhaseGenerationContext {
+  overallProjectGoal: string;
+  overallProjectDetails: string;
+  currentPhaseGoal: string;
+  currentPhaseDetails: string;
+  currentPhaseTasks: Array<{ title: string; description: string }>; // Tasks from the current phase YAML (before step generation)
+  previousPhasesInfo: Array<{ id: string; title: string; goal: string; description: string }>; // Info from dependent, completed phases
+  changedFilesFromDependencies: string[]; // Concatenated list of changedFiles from completed dependencies
+  rmfilterArgsFromPlan: string[]; // rmfilter args from the original plan/request
+  // Potentially add baseBranch if needed
+}
+
 export function planPrompt(plan: string) {
   // The first half of this prompt is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
   return `This is a project plan for an upcoming feature.
@@ -152,5 +164,118 @@ ${phaseBasedMarkdownExampleFormat}
 
 
 If there are any changes requested or comments made after your create this plan, think about how to make the changes to the project plan, update the project plan appropriately, and output the entire updated plan again in the proper format.
+`;
+}
+
+export function generatePhaseStepsPrompt(context: PhaseGenerationContext): string {
+  // Format previous phases info
+  const previousPhasesSection =
+    context.previousPhasesInfo.length > 0
+      ? `# Previous Completed Phases
+
+${context.previousPhasesInfo
+  .map(
+    (phase) =>
+      `## ${phase.title} (ID: ${phase.id})
+**Goal:** ${phase.goal}
+**Description:** ${phase.description}`
+  )
+  .join('\n\n')}
+
+# Files Changed in Previous Phases
+${context.changedFilesFromDependencies.join('\n')}
+`
+      : '';
+
+  // Format current phase tasks
+  const tasksSection = context.currentPhaseTasks
+    .map(
+      (task, index) =>
+        `### Task ${index + 1}: ${task.title}
+**Description:** ${task.description}`
+    )
+    .join('\n\n');
+
+  return `# Phase Implementation Generation
+
+You are generating detailed implementation steps for a specific phase of a larger project.
+
+## Overall Project Context
+
+**Project Goal:** ${context.overallProjectGoal}
+
+**Project Details:** ${context.overallProjectDetails}
+
+${previousPhasesSection}
+
+## Current Phase Details
+
+**Phase Goal:** ${context.currentPhaseGoal}
+
+**Phase Details:** ${context.currentPhaseDetails}
+
+## Tasks to Implement
+
+${tasksSection}
+
+## Instructions
+
+For each task listed above, you need to generate:
+1. **files**: The specific files that need to be created or modified for this task
+2. **include_imports**: Whether to include imported files in the context (true/false)
+3. **include_importers**: Whether to include files that import the target files (true/false)
+4. **steps**: Detailed implementation steps, each with a specific prompt
+
+### Guidelines:
+
+1. **Test-Driven Development**: Include test creation/modification as early steps when appropriate
+2. **Incremental Progress**: Each step should be small, achievable, and verifiable
+3. **Build on Previous Work**: Reference and utilize code/patterns from completed phases listed above
+4. **File Selection**: 
+   - Be specific about which files need modification
+   - Consider files changed in previous phases when they're relevant
+   - Set include_imports to true when you need to understand interfaces and dependencies
+   - Set include_importers to true when changes might affect calling code
+5. **Step Prompts**: 
+   - Write clear, actionable prompts for each step
+   - Include specific implementation details and requirements
+   - Reference relevant patterns from the codebase
+
+### Output Format
+
+Generate a YAML snippet containing ONLY the tasks array with fully populated implementation details:
+
+\`\`\`yaml
+tasks:
+  - title: [Task 1 Title]
+    description: [Task 1 Description]
+    files:
+      - path/to/file1.ts
+      - path/to/file2.ts
+    include_imports: [true/false]
+    include_importers: [true/false]
+    steps:
+      - prompt: |
+          [Detailed, multi-line prompt for step 1]
+          [Include specific requirements and context]
+      - prompt: |
+          [Detailed prompt for step 2]
+  - title: [Task 2 Title]
+    description: [Task 2 Description]
+    files:
+      - path/to/file3.ts
+    include_imports: [true/false]
+    include_importers: [true/false]
+    steps:
+      - prompt: |
+          [Detailed prompt for this task]
+\`\`\`
+
+IMPORTANT: 
+- Output ONLY the YAML tasks array, no other text
+- Ensure all fields are properly populated
+- Use proper YAML syntax with correct indentation
+- Multi-line prompts should use the pipe (|) character
+- Consider the rmfilter arguments that will be used: ${context.rmfilterArgsFromPlan.join(' ')}
 `;
 }
