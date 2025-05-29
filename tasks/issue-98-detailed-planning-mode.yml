@@ -468,7 +468,7 @@ tasks:
 
 
           Use `bun:test`. Create temporary files and directories as needed.
-        done: false
+        done: true
   - title: 5. Per-Phase Prompt Template and Context Aggregation Logic
     description: Create the LLM prompt template for generating detailed steps within
       a phase. Implement the logic to aggregate all necessary context for this
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:34:45.218Z
+updatedAt: 2025-05-29T02:46:40.907Z
 changedFiles:
   - package.json
   - src/rmplan/cleanup.test.ts
@@ -988,6 +988,7 @@ changedFiles:
   - src/rmplan/id_utils.ts
   - src/rmplan/markdown_parser.test.ts
   - src/rmplan/markdown_parser.ts
+  - src/rmplan/parse.test.ts
   - src/rmplan/planSchema.ts
   - src/rmplan/prompt.ts
   - src/rmplan/rmplan.ts
