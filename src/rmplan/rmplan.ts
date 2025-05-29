@@ -585,20 +585,19 @@ program
   });
 
 program
-  .command('generate-phase')
+  .command('prepare <yamlFile>')
   .description('Generate detailed steps and prompts for a specific phase.')
-  .requiredOption('-p, --phase <phaseYamlFile>', 'Path to the phase YAML file.')
   .option('--force', 'Override dependency completion check and proceed with generation.')
   .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
-  .action(async (options) => {
+  .action(async (options, yamlFile) => {
     const globalOpts = program.opts();
 
     try {
       // 1. Load RmplanConfig using loadEffectiveConfig
       const config = await loadEffectiveConfig(globalOpts.config);
 
-      // 2. Resolve options.phaseYamlFile to an absolute path
-      const phaseYamlFile = path.resolve(options.phase);
+      // 2. Resolve to an absolute path
+      const phaseYamlFile = path.resolve(yamlFile);
 
       // 3. Load the target phase YAML file
       const phaseContent = await Bun.file(phaseYamlFile).text();
