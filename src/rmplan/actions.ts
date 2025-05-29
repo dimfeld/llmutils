@@ -12,13 +12,14 @@ import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
 import { Extractor } from '../treesitter/extract.js';
 import { generatePlanId } from '../common/id_generator.js';
 import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
-import type { PlanSchema } from './planSchema.js';
-import { planSchema } from './planSchema.js';
+import type { PlanSchema, PhaseSchema } from './planSchema.js';
+import { planSchema, phaseSchema } from './planSchema.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 import { getChangedFiles } from '../rmfilter/additional_docs.js';
 import { fixYaml } from './fix_yaml.js';
+import type { PhaseGenerationContext } from './prompt.js';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -781,4 +782,143 @@ export async function extractMarkdownToYaml(
   }
 
   return yaml.stringify(orderedPlan);
+}
+
+/**
+ * Gathers all necessary context for generating detailed implementation steps for a phase.
+ * @param phaseFilePath Path to the phase YAML file to generate steps for
+ * @param projectPlanDir Directory containing all phase YAML files
+ * @returns Context object containing all information needed for phase step generation
+ */
+export async function gatherPhaseGenerationContext(
+  phaseFilePath: string,
+  projectPlanDir: string
+): Promise<PhaseGenerationContext> {
+  try {
+    // 1. Load and validate the target phase YAML file
+    const phaseContent = await Bun.file(phaseFilePath).text();
+    const parsedPhase = yaml.parse(phaseContent);
+    const validationResult = phaseSchema.safeParse(parsedPhase);
+
+    if (!validationResult.success) {
+      throw new Error(
+        `Failed to validate phase YAML at ${phaseFilePath}: ${JSON.stringify(validationResult.error.issues, null, 2)}`
+      );
+    }
+
+    const currentPhaseData = validationResult.data;
+
+    // 2. Determine the overall project plan's goal and details
+    let overallProjectGoal = '';
+    let overallProjectDetails = '';
+
+    // Try to read feature_plan.md from parent directory
+    const featurePlanPath = path.join(path.dirname(projectPlanDir), 'feature_plan.md');
+
+    try {
+      const featurePlanContent = await Bun.file(featurePlanPath).text();
+
+      // Simple parsing for goal and details from markdown
+      const goalMatch = featurePlanContent.match(/^#\s+Goal\s*\n\s*(.+?)(?=\n#|\n##|$)/ims);
+      const detailsMatch = featurePlanContent.match(
+        /^##\s+Details\s*\n\s*([\s\S]+?)(?=\n#|\n---|\n##|$)/im
+      );
+
+      if (goalMatch) {
+        overallProjectGoal = goalMatch[1].trim();
+      }
+      if (detailsMatch) {
+        overallProjectDetails = detailsMatch[1].trim();
+      }
+    } catch (e) {
+      // If feature_plan.md doesn't exist or can't be read, fall back to current phase data
+      warn(`Could not read feature_plan.md at ${featurePlanPath}, using phase data as fallback`);
+      overallProjectGoal = currentPhaseData.goal;
+      overallProjectDetails = currentPhaseData.details;
+    }
+
+    // 3. Initialize arrays for previous phases info and changed files
+    const previousPhasesInfo: Array<{
+      id: string;
+      title: string;
+      goal: string;
+      description: string;
+    }> = [];
+    const changedFilesFromDependencies: string[] = [];
+
+    // 4. Process each dependency
+    if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
+      for (const dependencyId of currentPhaseData.dependencies) {
+        const dependencyPath = path.join(projectPlanDir, `${dependencyId}.yaml`);
+
+        try {
+          const dependencyContent = await Bun.file(dependencyPath).text();
+          const parsedDependency = yaml.parse(dependencyContent);
+          const validatedDependency = phaseSchema.safeParse(parsedDependency);
+
+          if (!validatedDependency.success) {
+            throw new Error(
+              `Failed to validate dependency YAML at ${dependencyPath}: ${JSON.stringify(validatedDependency.error.issues, null, 2)}`
+            );
+          }
+
+          const dependencyData = validatedDependency.data;
+
+          // Check if dependency is done
+          if (dependencyData.status !== 'done') {
+            throw new Error(
+              `Dependency ${dependencyId} is not completed (status: ${dependencyData.status}). All dependencies must be completed before generating phase steps.`
+            );
+          }
+
+          // Extract title from details or use ID as fallback
+          const title = dependencyData.details.split('\n')[0] || `Phase ${dependencyId}`;
+
+          previousPhasesInfo.push({
+            id: dependencyData.id,
+            title: title,
+            goal: dependencyData.goal,
+            description: dependencyData.details,
+          });
+
+          // Add changed files from this dependency
+          if (dependencyData.changedFiles && dependencyData.changedFiles.length > 0) {
+            changedFilesFromDependencies.push(...dependencyData.changedFiles);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message.includes('ENOENT')) {
+            throw new Error(`Dependency phase file not found: ${dependencyPath}`);
+          }
+          throw e;
+        }
+      }
+    }
+
+    // Deduplicate changed files
+    const uniqueChangedFiles = Array.from(new Set(changedFilesFromDependencies));
+
+    // 5. Build and return the context object
+    const context: PhaseGenerationContext = {
+      overallProjectGoal,
+      overallProjectDetails,
+      currentPhaseGoal: currentPhaseData.goal,
+      currentPhaseDetails: currentPhaseData.details,
+      currentPhaseTasks: currentPhaseData.tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+      })),
+      previousPhasesInfo,
+      changedFilesFromDependencies: uniqueChangedFiles,
+      rmfilterArgsFromPlan: currentPhaseData.rmfilter || [],
+    };
+
+    return context;
+  } catch (e) {
+    if (e instanceof Error) {
+      error(`Error gathering phase generation context: ${e.message}`);
+    } else {
+      error(`Error gathering phase generation context: ${String(e)}`);
+    }
+    throw e;
+  }
 }
