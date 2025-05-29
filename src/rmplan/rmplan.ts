@@ -40,7 +40,7 @@ import { WorkspaceLock } from './workspace/workspace_lock.js';
 import { generateText } from 'ai';
 import { createModel } from '../common/model_factory.ts';
 import { parseMarkdownPlan, type ParsedPhase } from './markdown_parser.js';
-import { generateProjectId, generatePhaseId } from './id_utils.js';
+import { generateProjectId, generatePhaseId, slugify } from './id_utils.js';
 import { phaseSchema, type PhaseSchema } from './planSchema.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 
@@ -564,7 +564,8 @@ program
       let issueUrl: string | undefined;
 
       if (options.projectId) {
-        projectId = options.projectId;
+        // Sanitize the provided project ID to ensure it's a valid directory name
+        projectId = slugify(options.projectId);
       } else if (options.issue) {
         // Parse the issue
         const issueInfo = await parsePrOrIssueNumber(options.issue);
@@ -585,31 +586,43 @@ program
         issueUrl = issueData.issue.url;
 
         // Create project ID from issue
-        const slugifiedTitle = issueData.issue.title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .substring(0, 50);
+        const slugTitle = slugify(issueData.issue.title);
 
-        projectId = `issue-${issueData.issue.number}-${slugifiedTitle}`;
+        // Truncate slugTitle if it's too long to keep projectId manageable
+        const maxSlugLength = 50;
+        const truncatedSlugTitle =
+          slugTitle.length > maxSlugLength
+            ? slugTitle.substring(0, maxSlugLength).replace(/-+$/, '')
+            : slugTitle;
+
+        projectId = `issue-${issueData.issue.number}-${truncatedSlugTitle}`;
       } else {
-        // Generate project ID from overall goal
-        const prompt = `Generate a concise 3-5 word title for this project goal. Response should be ONLY the title, nothing else.
-
+        // Generate project ID from overall goal using LLM
+        try {
+          const prompt = `Based on the following project goal and details, suggest a very short, concise, slug-style title (2-5 words, lowercase, hyphenated).
 Goal: ${parsedPlan.overallGoal}
-Details: ${parsedPlan.overallDetails?.substring(0, 200) || ''}`;
+Details: ${parsedPlan.overallDetails?.substring(0, 200) || ''}
+Respond with ONLY the slug-style title.`;
 
-        const model = createModel('google/gemini-2.0-flash');
-        const result = await generateText({
-          model,
-          prompt,
-          maxTokens: 20,
-          temperature: 0.3,
-        });
+          const model = createModel('google/gemini-2.0-flash');
+          const result = await generateText({
+            model,
+            prompt,
+            maxTokens: 20,
+            temperature: 0.3,
+          });
 
-        const title = result.text.trim();
-        projectId = generateProjectId(title);
+          const llmGeneratedTitle = slugify(result.text.trim());
+          projectId = generateProjectId(llmGeneratedTitle);
+        } catch (err) {
+          warn('Failed to generate project ID from LLM:', err);
+          // Fall back to a generic projectId
+          projectId = generateProjectId('unnamed-project');
+        }
       }
+
+      // Log the project ID
+      log(chalk.blue('Using Project ID:'), projectId);
 
       // Create output directory
       // At this point, projectId is guaranteed to be defined
