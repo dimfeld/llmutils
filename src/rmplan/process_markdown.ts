@@ -3,7 +3,6 @@ import chalk from 'chalk';
 import * as fs from 'fs/promises';
 import path from 'path';
 import yaml from 'yaml';
-import { generatePlanId } from '../common/id_generator.js';
 import { createModel } from '../common/model_factory.js';
 import { boldMarkdownHeaders, error, log, warn } from '../logging.js';
 import type { RmplanConfig } from './configSchema.js';
@@ -175,7 +174,7 @@ export async function extractMarkdownToYaml(
     validatedPlan = result.data;
 
     // Set metadata fields
-    validatedPlan.id = generatePlanId();
+    validatedPlan.id = generateProjectId();
     const now = new Date().toISOString();
     validatedPlan.createdAt = now;
     validatedPlan.updatedAt = now;
@@ -270,16 +269,9 @@ async function saveMultiPhaseYaml(
   quiet: boolean
 ): Promise<string> {
   // Determine project ID
-  let projectId: string;
   let issueUrl: string | undefined;
 
-  if (options.projectId) {
-    projectId = slugify(options.projectId);
-  } else {
-    // Generate from first phase goal
-    const firstPhase = parsedYaml.phases[0];
-    projectId = generateProjectId(slugify(firstPhase.goal).substring(0, 30));
-  }
+  const projectId = generateProjectId();
 
   if (!quiet) {
     log(chalk.blue('Using Project ID:'), projectId);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { slugify } from './id_utils.js';
 
-describe('rmplan parse - project ID generation logic', () => {
+describe('slugify', () => {
   test('truncates long issue titles', async () => {
     const title =
       'This is an extremely long issue title that should definitely be truncated when creating the project ID to avoid excessively long directory names in the filesystem';
