@@ -265,6 +265,130 @@ Implement user authentication.
       expect(result.phases[0].tasks).toHaveLength(1);
       expect(result.phases[0].tasks[0].title).toBe('Implement user authentication.');
     });
+
+    test('should handle plan with no overall goal but has tasks', async () => {
+      const markdown = `##### Task: Setup database
+
+**Description:** Initialize PostgreSQL database with required schemas.
+
+##### Task: Create API endpoints
+
+**Description:** Implement REST API for user management.`;
+
+      const result = await parseMarkdownPlan(markdown);
+
+      expect(result.overallGoal).toBe('');
+      expect(result.overallDetails).toBe('');
+      expect(result.phases).toHaveLength(1);
+      expect(result.phases[0].numericIndex).toBe(1);
+      expect(result.phases[0].title).toBe('Implementation');
+      expect(result.phases[0].goal).toBe('Complete the implementation');
+      expect(result.phases[0].details).toBe('');
+      expect(result.phases[0].tasks).toHaveLength(2);
+      expect(result.phases[0].tasks[0].title).toBe('Setup database');
+      expect(result.phases[0].tasks[0].description).toBe(
+        'Initialize PostgreSQL database with required schemas.'
+      );
+      expect(result.phases[0].tasks[1].title).toBe('Create API endpoints');
+      expect(result.phases[0].tasks[1].description).toBe('Implement REST API for user management.');
+    });
+
+    test('should create sensible defaults when markdown has minimal content', async () => {
+      const markdown = `Some random content without proper structure.`;
+
+      const result = await parseMarkdownPlan(markdown);
+
+      expect(result.overallGoal).toBe('');
+      expect(result.overallDetails).toBe('');
+      expect(result.phases).toHaveLength(1);
+      expect(result.phases[0].numericIndex).toBe(1);
+      expect(result.phases[0].title).toBe('Implementation');
+      expect(result.phases[0].goal).toBe('Complete the implementation');
+      expect(result.phases[0].details).toBe('');
+      expect(result.phases[0].tasks).toHaveLength(1);
+      expect(result.phases[0].tasks[0].title).toBe('Implement feature');
+      expect(result.phases[0].tasks[0].description).toBe(
+        'Complete the implementation as described in the overall goal.'
+      );
+    });
+
+    test('should handle single-phase markdown with sections after tasks', async () => {
+      const markdown = `# Goal
+
+Create a logging system.
+
+## Details
+
+Implement a flexible logging framework.
+
+##### Task: Design Logger Interface
+
+**Description:** Create the core logger interface and types.
+
+##### Task: Implement Console Logger
+
+**Description:** Build the console logging implementation.
+
+## Additional Notes
+
+This section should be ignored.
+
+### Random Section
+
+This should also be ignored.`;
+
+      const result = await parseMarkdownPlan(markdown);
+
+      expect(result.overallGoal).toBe('Create a logging system.');
+      expect(result.overallDetails).toBe('Implement a flexible logging framework.');
+      expect(result.phases).toHaveLength(1);
+      expect(result.phases[0].tasks).toHaveLength(2);
+      expect(result.phases[0].tasks[0].title).toBe('Design Logger Interface');
+      expect(result.phases[0].tasks[1].title).toBe('Implement Console Logger');
+    });
+
+    test('should handle markdown with various headers but no phase headers', async () => {
+      const markdown = `# Goal
+
+Build a caching system.
+
+## Details
+
+Implement an in-memory cache with TTL support.
+
+### Architecture Overview
+
+The cache will use a Map-based storage.
+
+#### Implementation Notes
+
+Use setTimeout for TTL management.
+
+##### Task: Create Cache Class
+
+**Description:** Implement the main cache class with get/set methods.
+
+##### Task: Add TTL Support
+
+**Description:** Add time-to-live functionality.
+
+### Performance Considerations
+
+Ensure O(1) lookups.`;
+
+      const result = await parseMarkdownPlan(markdown);
+
+      expect(result.overallGoal).toBe('Build a caching system.');
+      expect(result.overallDetails).toBe('Implement an in-memory cache with TTL support.');
+      expect(result.phases).toHaveLength(1);
+      expect(result.phases[0].numericIndex).toBe(1);
+      expect(result.phases[0].title).toBe('Implementation');
+      expect(result.phases[0].goal).toBe('Build a caching system.');
+      expect(result.phases[0].details).toBe('Implement an in-memory cache with TTL support.');
+      expect(result.phases[0].tasks).toHaveLength(2);
+      expect(result.phases[0].tasks[0].title).toBe('Create Cache Class');
+      expect(result.phases[0].tasks[1].title).toBe('Add TTL Support');
+    });
   });
 
   describe('Edge cases', () => {
