@@ -18,6 +18,7 @@ import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
 import { getChangedFiles } from '../rmfilter/additional_docs.js';
+import { fixYaml } from './fix_yaml.js';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -692,7 +693,7 @@ export async function extractMarkdownToYaml(
 
   // Parse and validate the YAML
   try {
-    const parsedObject = yaml.parse(convertedYaml);
+    const parsedObject = fixYaml(convertedYaml);
     const result = planSchema.safeParse(parsedObject);
     if (!result.success) {
       error('Validation errors after LLM conversion:', result.error);
