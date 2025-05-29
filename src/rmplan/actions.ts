@@ -1,29 +1,21 @@
 import { select } from '@inquirer/prompts';
+import chalk from 'chalk';
 import os from 'node:os';
 import path from 'path';
 import yaml from 'yaml';
-import chalk from 'chalk';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
-import type { MdcFile } from '../rmfilter/mdc.js';
-import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
-import { findAdditionalDocs } from '../rmfilter/additional_docs.js';
-import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
-import { Extractor } from '../treesitter/extract.js';
-import { generatePlanId } from '../common/id_generator.js';
-import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
-import { fetchIssueAndComments } from '../common/github/issues.js';
-import { generateProjectId, generatePhaseId, slugify } from './id_utils.js';
-import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
-import type { PlanSchema, PhaseSchema } from './planSchema.js';
-import { planSchema, phaseSchema } from './planSchema.js';
-import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
-import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
-import { getChangedFiles } from '../rmfilter/additional_docs.js';
+import { findAdditionalDocs, getChangedFiles } from '../rmfilter/additional_docs.js';
+import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
+import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
+import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
+import { Extractor } from '../treesitter/extract.js';
+import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
+import type { PlanSchema } from './planSchema.js';
+import { phaseSchema, planSchema } from './planSchema.js';
 import { fixYaml } from './fix_yaml.js';
 import type { PhaseGenerationContext } from './prompt.js';
-import * as fs from 'fs/promises';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;

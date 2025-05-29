@@ -20,13 +20,7 @@ import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
 import { handleRmprCommand } from '../rmpr/main.js';
-import {
-  extractMarkdownToYaml,
-  gatherPhaseGenerationContext,
-  markStepDone,
-  prepareNextStep,
-  type ExtractMarkdownToYamlOptions,
-} from './actions.js';
+import { gatherPhaseGenerationContext, markStepDone, prepareNextStep } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
@@ -36,6 +30,7 @@ import { phaseSchema } from './planSchema.js';
 import { generatePhaseStepsPrompt, planPrompt, simplePlanPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
+import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './process_markdown.ts';
 
 await loadEnv();
 
@@ -44,7 +39,7 @@ async function generateSuggestedFilename(planText: string, config: any): Promise
     // Extract first 500 characters of the plan for context
     const planSummary = planText.slice(0, 500);
 
-    const prompt = `Given this plan text, suggest a concise and descriptive filename (without extension). 
+    const prompt = `Given this plan text, suggest a concise and descriptive filename (without extension).
 The filename should:
 - Be lowercase with hyphens between words
 - Be descriptive of the main task or feature
