@@ -363,6 +363,314 @@ Migrate data from the old system.
     });
   });
 
+  describe('rmplan parse project ID generation', () => {
+    // TODO: These tests require mocking external dependencies (GitHub API, LLM calls)
+    // which is challenging in integration tests that run the CLI through shell commands.
+    // Consider refactoring to:
+    // 1. Add unit tests for the project ID generation logic in isolation
+    // 2. Add a test mode flag to the CLI that uses test doubles
+    // 3. Or move these to unit tests that test the functions directly
+
+    test.skip('generates project ID using issue flag', async () => {
+      // Create markdown content
+      const markdownContent = `# Goal
+
+Implement authentication system.
+
+## Details
+
+Add OAuth2 authentication to the application.
+
+### Phase 1: Setup OAuth
+
+#### Goal
+
+Set up OAuth2 provider integration.
+
+##### Task: Configure OAuth provider
+
+**Description:** Set up OAuth2 credentials and configuration.
+`;
+
+      await fs.writeFile('auth_plan.md', markdownContent);
+
+      // Mock the GitHub API calls
+      mock.module(path.join(originalCwd, 'src/common/github/issues.ts'), () => ({
+        fetchIssueAndComments: async () => ({
+          issue: {
+            number: 123,
+            title: 'Add OAuth2 Authentication Support',
+            body: 'We need to add OAuth2 authentication to the application.',
+            url: 'https://github.com/owner/repo/issues/123',
+            state: 'open',
+            user: {
+              login: 'testuser',
+            },
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+          comments: [],
+        }),
+      }));
+
+      mock.module(path.join(originalCwd, 'src/common/github/identifiers.ts'), () => ({
+        parsePrOrIssueNumber: async (input: string) => {
+          if (input === '123' || input === 'https://github.com/owner/repo/issues/123') {
+            return {
+              owner: 'owner',
+              repo: 'repo',
+              number: 123,
+            };
+          }
+          return null;
+        },
+      }));
+
+      const rmplanPath = path.join(originalCwd, 'src/rmplan/rmplan.ts');
+      const result =
+        await $`bun run ${rmplanPath} parse --input auth_plan.md --output-dir ./parsed_plan --issue 123`.quiet();
+
+      expect(result.exitCode).toBe(0);
+
+      // Verify the project ID format
+      const projects = await fs.readdir('./parsed_plan');
+      expect(projects.length).toBe(1);
+
+      const projectId = projects[0];
+      expect(projectId).toBe('issue-123-add-oauth2-authentication-support');
+
+      // Verify phase files were created
+      const phaseFiles = await fs.readdir(path.join('./parsed_plan', projectId));
+      expect(phaseFiles).toContain('phase_1.yaml');
+
+      // Verify phase content includes issue reference
+      const phaseContent = await fs.readFile(
+        path.join('./parsed_plan', projectId, 'phase_1.yaml'),
+        'utf-8'
+      );
+      const phase: PhaseSchema = yaml.parse(phaseContent.split('\n').slice(1).join('\n'));
+      expect(phase.issue).toContain('https://github.com/owner/repo/issues/123');
+    });
+
+    test.skip('generates project ID using LLM when no issue provided', async () => {
+      // Create markdown content
+      const markdownContent = `# Goal
+
+Build a real-time chat application with WebSocket support.
+
+## Details
+
+Create a chat application that supports real-time messaging, user presence, and message history.
+
+##### Task: Set up WebSocket server
+
+**Description:** Implement WebSocket server for real-time communication.
+`;
+
+      await fs.writeFile('chat_plan.md', markdownContent);
+
+      // Mock the model factory to return a predictable title
+      mock.module(path.join(originalCwd, 'src/common/model_factory.ts'), () => ({
+        createModel: () => ({
+          // Not used in this test
+        }),
+      }));
+
+      // Mock generateText to return a predictable slug
+      mock.module('ai', () => ({
+        generateText: async () => ({
+          text: 'realtime-chat-websocket',
+        }),
+      }));
+
+      const rmplanPath = path.join(originalCwd, 'src/rmplan/rmplan.ts');
+      const result =
+        await $`bun run ${rmplanPath} parse --input chat_plan.md --output-dir ./parsed_plan`.quiet();
+
+      expect(result.exitCode).toBe(0);
+
+      // Verify the project ID format
+      const projects = await fs.readdir('./parsed_plan');
+      expect(projects.length).toBe(1);
+
+      const projectId = projects[0];
+      // Should have format: realtime-chat-websocket-XXXXXX (6 char unique ID)
+      expect(projectId).toMatch(/^realtime-chat-websocket-[a-z0-9]{6}$/);
+
+      // Verify phase files were created
+      const phaseFiles = await fs.readdir(path.join('./parsed_plan', projectId));
+      expect(phaseFiles.length).toBeGreaterThan(0);
+    });
+
+    test('uses provided project ID when specified', async () => {
+      // Create markdown content
+      const markdownContent = `# Goal
+
+Implement feature X.
+
+## Details
+
+Build feature X with Y and Z components.
+
+##### Task: Build component Y
+
+**Description:** Implement component Y.
+`;
+
+      await fs.writeFile('feature_plan.md', markdownContent);
+
+      const rmplanPath = path.join(originalCwd, 'src/rmplan/rmplan.ts');
+      const result =
+        await $`bun run ${rmplanPath} parse --input feature_plan.md --output-dir ./parsed_plan --project-id "My Custom Project ID!"`.quiet();
+
+      expect(result.exitCode).toBe(0);
+
+      // Verify the project ID was slugified
+      const projects = await fs.readdir('./parsed_plan');
+      expect(projects.length).toBe(1);
+
+      const projectId = projects[0];
+      expect(projectId).toBe('my-custom-project-id');
+
+      // Verify phase files were created
+      const phaseFiles = await fs.readdir(path.join('./parsed_plan', projectId));
+      expect(phaseFiles.length).toBeGreaterThan(0);
+    });
+
+    test.skip('handles GitHub issue URL format', async () => {
+      // Create markdown content
+      const markdownContent = `# Goal
+
+Fix bug in payment processing.
+
+## Details
+
+Payment processing fails for certain card types.
+
+##### Task: Debug payment flow
+
+**Description:** Investigate and fix the payment processing issue.
+`;
+
+      await fs.writeFile('bug_plan.md', markdownContent);
+
+      // Mock the GitHub API calls
+      mock.module(path.join(originalCwd, 'src/common/github/issues.ts'), () => ({
+        fetchIssueAndComments: async () => ({
+          issue: {
+            number: 456,
+            title: 'Payment Processing Bug: Visa Cards Failing',
+            body: 'Users report that Visa card payments are failing.',
+            url: 'https://github.com/myorg/myrepo/issues/456',
+            state: 'open',
+            user: {
+              login: 'reporter',
+            },
+            created_at: '2024-01-02T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+          comments: [],
+        }),
+      }));
+
+      mock.module(path.join(originalCwd, 'src/common/github/identifiers.ts'), () => ({
+        parsePrOrIssueNumber: async (input: string) => {
+          if (input === 'https://github.com/myorg/myrepo/issues/456') {
+            return {
+              owner: 'myorg',
+              repo: 'myrepo',
+              number: 456,
+            };
+          }
+          return null;
+        },
+      }));
+
+      const rmplanPath = path.join(originalCwd, 'src/rmplan/rmplan.ts');
+      const result =
+        await $`bun run ${rmplanPath} parse --input bug_plan.md --output-dir ./parsed_plan --issue https://github.com/myorg/myrepo/issues/456`.quiet();
+
+      expect(result.exitCode).toBe(0);
+
+      // Verify the project ID format
+      const projects = await fs.readdir('./parsed_plan');
+      expect(projects.length).toBe(1);
+
+      const projectId = projects[0];
+      expect(projectId).toBe('issue-456-payment-processing-bug-visa-cards-failing');
+    });
+
+    test.skip('truncates long issue titles in project ID', async () => {
+      // Create markdown content
+      const markdownContent = `# Goal
+
+Implement complex feature.
+
+## Details
+
+This is a complex feature with many requirements.
+
+##### Task: Build feature
+
+**Description:** Build the feature.
+`;
+
+      await fs.writeFile('complex_plan.md', markdownContent);
+
+      // Mock the GitHub API calls with a very long title
+      mock.module(path.join(originalCwd, 'src/common/github/issues.ts'), () => ({
+        fetchIssueAndComments: async () => ({
+          issue: {
+            number: 789,
+            title:
+              'This is an extremely long issue title that should definitely be truncated when creating the project ID to avoid excessively long directory names',
+            body: 'Long issue description.',
+            url: 'https://github.com/owner/repo/issues/789',
+            state: 'open',
+            user: {
+              login: 'user',
+            },
+            created_at: '2024-01-03T00:00:00Z',
+            updated_at: '2024-01-03T00:00:00Z',
+          },
+          comments: [],
+        }),
+      }));
+
+      mock.module(path.join(originalCwd, 'src/common/github/identifiers.ts'), () => ({
+        parsePrOrIssueNumber: async (input: string) => {
+          if (input === '789') {
+            return {
+              owner: 'owner',
+              repo: 'repo',
+              number: 789,
+            };
+          }
+          return null;
+        },
+      }));
+
+      const rmplanPath = path.join(originalCwd, 'src/rmplan/rmplan.ts');
+      const result =
+        await $`bun run ${rmplanPath} parse --input complex_plan.md --output-dir ./parsed_plan --issue 789`.quiet();
+
+      expect(result.exitCode).toBe(0);
+
+      // Verify the project ID format and length
+      const projects = await fs.readdir('./parsed_plan');
+      expect(projects.length).toBe(1);
+
+      const projectId = projects[0];
+      // Should start with issue-789- and have the title truncated to 50 chars
+      expect(projectId).toMatch(/^issue-789-/);
+
+      // Extract the slug part (after issue-789-)
+      const slugPart = projectId.substring('issue-789-'.length);
+      expect(slugPart.length).toBeLessThanOrEqual(50);
+      expect(slugPart).not.toEndWith('-'); // No trailing hyphen
+    });
+  });
+
   describe('Error scenarios for rmplan generate-phase', () => {
     async function setupPhaseFiles() {
       const projectId = 'test-project';
