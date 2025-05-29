@@ -326,7 +326,7 @@ tasks:
           a new heading or specific marker.
 
           *   A function to parse task details.
-        done: false
+        done: true
       - prompt: >
           Create `src/rmplan/markdown_parser.test.ts`.
 
@@ -980,11 +980,14 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:21:24.163Z
+updatedAt: 2025-05-29T02:25:17.047Z
 changedFiles:
+  - package.json
   - src/rmplan/cleanup.test.ts
   - src/rmplan/id_utils.test.ts
   - src/rmplan/id_utils.ts
+  - src/rmplan/markdown_parser.test.ts
+  - src/rmplan/markdown_parser.ts
   - src/rmplan/planSchema.ts
   - src/rmplan/prompt.ts
   - tasks/issue-98-detailed-planning-mode.md
