@@ -653,7 +653,7 @@ tasks:
           `options.phaseYamlFile`.
 
           14. Log success.
-        done: false
+        done: true
       - prompt: >
           Create integration tests for the `rmplan generate-phase` command.
 
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:53:30.348Z
+updatedAt: 2025-05-29T02:58:20.085Z
 changedFiles:
   - package.json
   - src/rmplan/actions.ts
