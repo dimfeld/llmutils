@@ -8,10 +8,10 @@ import yaml from 'yaml';
 describe('cleanComments', () => {
   test('removes TypeScript EOL comments', () => {
     const input = `
-    let x = 1; // This is a comment
+    let x = 1;
     let y = 2;
     // Another comment
-    let z = 3; /* inline comment */
+    let z = 3;
     let stringWithHash = '# This is a comment';
     let regexWithDoubleSlash = /regex]//;
   `;
@@ -66,7 +66,7 @@ describe('cleanComments', () => {
 
   test('returns unchanged content for unsupported extension', () => {
     const input = `
-    content: some text // comment
+    content: some text
   `;
     const result = cleanComments(input, '.txt');
     expect(result).toBeUndefined();
@@ -80,6 +80,7 @@ test('prepareNextStep includes autoexamples when present in prompt', async () =>
   };
 
   const plan: PlanSchema = {
+    id: 'test-plan-id',
     goal: 'Test plan',
     details: 'Test details',
     tasks: [

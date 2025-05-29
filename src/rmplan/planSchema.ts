@@ -40,3 +40,7 @@ export const phaseSchema = z
   .describe('rmplan phase file schema');
 
 export type PhaseSchema = z.infer<typeof phaseSchema>;
+
+// Backward compatibility - export phaseSchema as planSchema
+export const planSchema = phaseSchema;
+export type PlanSchema = PhaseSchema;
