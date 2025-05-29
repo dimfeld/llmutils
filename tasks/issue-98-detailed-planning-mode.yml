@@ -730,7 +730,7 @@ tasks:
           Add specific unit tests in `markdown_parser.test.ts` for these
           single-phase scenarios, including cases with and without explicit
           tasks in the markdown.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/rmplan.ts`:
 
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T03:14:00.700Z
+updatedAt: 2025-05-29T03:16:01.621Z
 changedFiles:
   - package.json
   - src/rmplan/actions.ts
