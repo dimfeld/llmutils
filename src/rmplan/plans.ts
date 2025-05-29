@@ -4,6 +4,7 @@ import * as yaml from 'yaml';
 import { phaseSchema } from './planSchema.js';
 
 export interface PlanSummary {
+  title: string;
   status?: 'pending' | 'in_progress' | 'done';
   priority?: 'unknown' | 'low' | 'medium' | 'high' | 'urgent';
   dependencies?: string[];
@@ -26,6 +27,7 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
       if (result.success) {
         const plan = result.data;
         plans.set(plan.id, {
+          title: plan.title,
           status: plan.status,
           priority: plan.priority,
           dependencies: plan.dependencies,

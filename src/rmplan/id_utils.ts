@@ -5,12 +5,13 @@ import { generatePlanId } from '../common/id_generator.js';
  * @param text - The text to slugify
  * @returns A slugified version of the text
  */
-export function slugify(text: string): string {
+export function slugify(text: string, maxLength = 50): string {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-') // Replace non-alphanumeric (except hyphens) with hyphens
     .replace(/-+/g, '-') // Replace multiple consecutive hyphens with single hyphen
-    .replace(/^-+|-+$/g, ''); // Remove leading and trailing hyphens
+    .replace(/^-+|-+$/g, '') // Remove leading and trailing hyphens
+    .slice(0, maxLength);
 }
 
 /**

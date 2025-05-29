@@ -1,4 +1,5 @@
 export const planExampleFormat = `
+title: A concise single-sentence title for the project plan
 goal: the goal of the project plan
 details: details and analysis about the plan
 tasks:
@@ -15,7 +16,8 @@ tasks:
           describing what to do.
       - prompt: Another step`;
 
-export const planExampleFormatGeneric = `goal: [single-line string]
+export const planExampleFormatGeneric = `title: [single-line string - a concise title for the plan]
+goal: [single-line string]
 details: [single-line or multi-line string]
 tasks:
   - title: [single-line string]
@@ -29,6 +31,7 @@ tasks:
 
 export const phaseExampleFormatGeneric = `phases:
   - id: [phase-id]
+    title: [phase title - a concise single-sentence title]
     goal: [phase goal]
     details: [phase details]
     dependencies: [list of phase IDs this phase depends on, or empty list]
@@ -44,10 +47,13 @@ export const phaseExampleFormatGeneric = `phases:
 
 // Define the desired Markdown structure for the plan
 export const planMarkdownExampleFormat = `
-# Goal
+# Title
+[A concise single-sentence title for the project]
+
+## Goal
 [Project goal here]
 
-## Details
+### Details
 [Detailed description and analysis]
 
 ---
@@ -76,10 +82,13 @@ Include Imports: Yes
 
 // Define the phase-based Markdown structure for the plan
 export const phaseBasedMarkdownExampleFormat = `
-# Goal
+# Title
+[A concise single-sentence title for the overall project]
+
+## Goal
 [Overall project goal]
 
-## Details
+### Details
 [Overall project details and analysis]
 
 ---
@@ -154,8 +163,10 @@ When testing, prefer to use real tests and not mock functions or modules. Prefer
 The goal is to output a high-level phase-based plan. Focus on the overall structure and organization of the project, breaking it into phases and tasks.
 
 When generating the final output, create a phase-based plan with:
+- A title: A concise single-sentence title that captures the essence of the project
 - An overall goal and project details
 - Multiple phases (or a single phase for smaller features), each with:
+  - A phase title: A concise single-sentence title for the phase
   - A phase-specific goal
   - Dependencies on other phases (if any)
   - Phase details
@@ -203,7 +214,7 @@ When testing, prefer to use real tests and not mock functions or modules. Prefer
 
 The goal is to output prompts, but context, etc is important as well. Include plenty of information about which files to edit, what to do and how to do it, but you do not need to output code samples.
 
-When generating the final output with the prompts, output an overall goal, project details, and then a list of tasks.
+When generating the final output with the prompts, output a title (a concise single-sentence title for the project), an overall goal, project details, and then a list of tasks.
 
 Each task should have a list of relevant files, flags for "include imports" and "include importers", and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
 
