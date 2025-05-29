@@ -947,7 +947,7 @@ tasks:
 
           5.  The output directory for phase YAMLs will be
           `${options.outputDir}/${projectId}`. Ensure this directory is created.
-        done: false
+        done: true
       - prompt: >
           Update tests in `src/rmplan/id_utils.test.ts` for the modified
           `generateProjectId` and new `slugify` function.
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T03:37:48.421Z
+updatedAt: 2025-05-29T03:42:53.263Z
 changedFiles:
   - README.md
   - package.json
@@ -1000,4 +1000,5 @@ changedFiles:
   - src/rmplan/rmplan.ts
   - tasks/issue-98-detailed-planning-mode.md
   - tasks/issue-98-detailed-planning-mode.yml
+  - test-id-generation.ts
   - test-id-utils.ts
