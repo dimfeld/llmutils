@@ -294,35 +294,30 @@ program
 
         let input = await waitForEnter(true);
 
-        let outputFilename: string | undefined;
+        let outputPath: string;
         if (planFile) {
-          outputFilename = path.join(
-            path.dirname(planFile),
-            path.basename(planFile, '.md') + '.yml'
-          );
+          // Use the directory of the plan file for output
+          outputPath = path.join(path.dirname(planFile), path.basename(planFile, '.md'));
+        } else {
+          // Default to current directory with a generated name
+          outputPath = 'rmplan-output';
         }
+
         const extractOptions: ExtractMarkdownToYamlOptions = {
+          output: outputPath,
           planRmfilterArgs: allRmfilterOptions,
           issueUrls: issueUrlsForExtract,
         };
 
-        const outputResult = await extractMarkdownToYaml(
+        const message = await extractMarkdownToYaml(
           input,
           config,
           options.quiet ?? false,
           extractOptions
         );
-        if (typeof outputResult === 'string' && outputFilename) {
-          // Single-phase plan - save to file
-          await Bun.write(outputFilename, outputResult);
-          if (!options.quiet) {
-            log(`Wrote result to ${outputFilename}`);
-          }
-        } else if (typeof outputResult !== 'string') {
-          // Multi-phase plan - inform user
-          if (!options.quiet) {
-            error('Multi-phase plan detected. Use the extract command with --output-dir instead.');
-          }
+
+        if (!options.quiet) {
+          log(message);
         }
       }
     } finally {
@@ -385,42 +380,36 @@ program
     try {
       const config = await loadEffectiveConfig(options.config);
 
+      // Determine output path
+      let outputPath: string;
+      if (options.output) {
+        outputPath = options.output;
+      } else if (options.outputDir) {
+        outputPath = options.outputDir;
+      } else {
+        error('Either --output or --output-dir must be specified');
+        process.exit(1);
+      }
+
       // Extract markdown to YAML using LLM
       const extractOptions: ExtractMarkdownToYamlOptions = {
-        outputDir: options.outputDir,
+        output: outputPath,
         projectId: options.projectId,
         issueUrl: options.issue,
       };
 
-      const result = await extractMarkdownToYaml(
+      const message = await extractMarkdownToYaml(
         inputText,
         config,
         options.quiet ?? false,
         extractOptions
       );
 
-      if (typeof result === 'string') {
-        // Single-phase plan - output as before
-        if (options.output) {
-          let outputFilename = options.output;
-          if (outputFilename.endsWith('.md')) {
-            outputFilename = outputFilename.slice(0, -3);
-            outputFilename += '.yml';
-          }
-          await Bun.write(outputFilename, result);
-          if (!options.quiet) {
-            log(`Wrote result to ${outputFilename}`);
-          }
-        } else {
-          console.log(result);
-        }
-      } else {
-        // Multi-phase plan - result contains information about saved files
-        if (!options.quiet) {
-          log(result.message);
-        }
+      if (!options.quiet) {
+        log(message);
       }
     } catch (e) {
+      error('Failed to extract markdown to YAML:', e);
       process.exit(1);
     }
   });

@@ -665,7 +665,7 @@ export async function executePostApplyCommand(
 export interface ExtractMarkdownToYamlOptions {
   issueUrls?: string[];
   planRmfilterArgs?: string[];
-  outputDir?: string;
+  output: string;
   projectId?: string;
   issueUrl?: string;
 }
@@ -674,8 +674,8 @@ export async function extractMarkdownToYaml(
   inputText: string,
   config: RmplanConfig,
   quiet: boolean,
-  options: ExtractMarkdownToYamlOptions = {}
-): Promise<string | { message: string; projectDir: string }> {
+  options: ExtractMarkdownToYamlOptions
+): Promise<string> {
   let convertedYaml: string;
 
   try {
@@ -706,10 +706,6 @@ export async function extractMarkdownToYaml(
   // Check if this is a multi-phase plan
   if (parsedYaml.phases && Array.isArray(parsedYaml.phases)) {
     // Multi-phase plan - save as separate files
-    if (!options.outputDir) {
-      throw new Error('Multi-phase plan detected but no output directory specified');
-    }
-
     return await saveMultiPhaseYaml(parsedYaml, options, config, quiet);
   }
 
@@ -810,7 +806,17 @@ export async function extractMarkdownToYaml(
     orderedPlan.changedFiles = validatedPlan.changedFiles;
   }
 
-  return yaml.stringify(orderedPlan);
+  const yamlContent = yaml.stringify(orderedPlan);
+
+  // Write single-phase plan to output file
+  const outputPath = options.output.endsWith('.yml') ? options.output : `${options.output}.yml`;
+  await Bun.write(outputPath, yamlContent);
+
+  if (!quiet) {
+    log(`Wrote plan to ${outputPath}`);
+  }
+
+  return `Wrote single-phase plan to ${outputPath}`;
 }
 
 async function saveMultiPhaseYaml(
@@ -818,7 +824,7 @@ async function saveMultiPhaseYaml(
   options: ExtractMarkdownToYamlOptions,
   config: RmplanConfig,
   quiet: boolean
-): Promise<{ message: string; projectDir: string }> {
+): Promise<string> {
   // Determine project ID
   let projectId: string;
   let issueUrl: string | undefined;
@@ -860,12 +866,9 @@ async function saveMultiPhaseYaml(
     log(chalk.blue('Using Project ID:'), projectId);
   }
 
-  // Create output directory
-  if (!options.outputDir) {
-    throw new Error('outputDir is required for multi-phase plans');
-  }
-  const projectDir = path.join(options.outputDir, projectId);
-  await fs.mkdir(projectDir, { recursive: true });
+  // Create output directory - use options.output as the directory for multi-phase
+  const outputDir = options.output;
+  await fs.mkdir(outputDir, { recursive: true });
 
   // Process phases
   const phaseIndexToId = new Map<number, string>();
@@ -925,7 +928,7 @@ async function saveMultiPhaseYaml(
     }
 
     const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(validationResult.data)}`;
-    const phaseFilePath = path.join(projectDir, `phase_${phaseIndex}.yaml`);
+    const phaseFilePath = path.join(outputDir, `phase-${phaseIndex}.yml`);
 
     try {
       await Bun.write(phaseFilePath, yamlContent);
@@ -940,14 +943,16 @@ async function saveMultiPhaseYaml(
     throw new Error('Failed to write any phase YAML files');
   }
 
-  const message = chalk.green(
-    `✓ Successfully converted markdown to ${successfulWrites} phase files`
-  );
+  if (!quiet) {
+    log(chalk.green(`✓ Successfully converted markdown to ${successfulWrites} phase files`));
+    log(`Output directory: ${outputDir}`);
+  }
+
   if (failedPhases.length > 0) {
     warn(`Warning: Failed to write ${failedPhases.length} phase files: ${failedPhases.join(', ')}`);
   }
 
-  return { message, projectDir };
+  return `Wrote ${successfulWrites} phase files to directory ${outputDir}`;
 }
 
 /**
