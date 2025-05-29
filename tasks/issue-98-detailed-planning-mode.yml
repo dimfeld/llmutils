@@ -700,7 +700,7 @@ tasks:
               *   Mock LLM to return invalid YAML.
               *   Verify an error is logged and raw output is saved.
           Use `bun:test`.
-        done: false
+        done: true
   - title: 7. Single-Phase Project Support and Error Handling Refinements
     description: Ensure that single-phase projects (where the markdown plan has no
       explicit `### Phase X` headers) are correctly handled by `rmplan parse`
@@ -980,11 +980,12 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:58:20.085Z
+updatedAt: 2025-05-29T03:14:00.700Z
 changedFiles:
   - package.json
   - src/rmplan/actions.ts
   - src/rmplan/cleanup.test.ts
+  - src/rmplan/generate-phase.test.ts
   - src/rmplan/id_utils.test.ts
   - src/rmplan/id_utils.ts
   - src/rmplan/markdown_parser.test.ts
