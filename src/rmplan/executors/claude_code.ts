@@ -284,7 +284,7 @@ function formatJsonMessage(input: string) {
           }>;
           outputLines.push(chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`));
 
-          todos.forEach((todo, index) => {
+          const todoLines = todos.map((todo) => {
             const statusIcon =
               todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '→' : '•';
             const priorityColor =
@@ -294,8 +294,9 @@ function formatJsonMessage(input: string) {
                   ? chalk.yellow
                   : chalk.gray;
 
-            outputLines.push(`  ${statusIcon} [${priorityColor(todo.priority)}] ${todo.content}`);
+            return `  ${statusIcon} [${priorityColor(todo.priority)}] ${todo.content}`;
           });
+          outputLines.push(todoLines.join('\n'));
         } else {
           outputLines.push(
             chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
