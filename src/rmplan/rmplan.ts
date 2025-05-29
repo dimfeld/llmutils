@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { input } from '@inquirer/prompts';
+import { generateText } from 'ai';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import os from 'os';
@@ -7,40 +8,34 @@ import path from 'path';
 import yaml from 'yaml';
 import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
-import { getInstructionsFromGithubIssue, fetchIssueAndComments } from '../common/github/issues.js';
-import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
+import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
+import { createModel } from '../common/model_factory.ts';
+import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';
+import { sshAwarePasteAction } from '../common/ssh_detection.ts';
 import { waitForEnter } from '../common/terminal.js';
 import { error, log, warn } from '../logging.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
+import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
+import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
 import { handleRmprCommand } from '../rmpr/main.js';
 import {
-  argsFromRmprOptions,
-  parseCommandOptionsFromComment,
-  type RmprOptions,
-} from '../rmpr/comment_options.js';
-import {
   extractMarkdownToYaml,
+  gatherPhaseGenerationContext,
   markStepDone,
   prepareNextStep,
-  gatherPhaseGenerationContext,
   type ExtractMarkdownToYamlOptions,
 } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
-import { planPrompt, generatePhaseStepsPrompt } from './prompt.js';
-import { executors } from './executors/index.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
-import { sshAwarePasteAction } from '../common/ssh_detection.ts';
+import { executors } from './executors/index.js';
+import { phaseSchema } from './planSchema.js';
+import { generatePhaseStepsPrompt, planPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
-import { generateText } from 'ai';
-import { createModel } from '../common/model_factory.ts';
-import { phaseSchema } from './planSchema.js';
-import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
-import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';
 
 await loadEnv();
 
