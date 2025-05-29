@@ -33,7 +33,7 @@ import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
 import { phaseSchema } from './planSchema.js';
-import { generatePhaseStepsPrompt, planPrompt } from './prompt.js';
+import { generatePhaseStepsPrompt, planPrompt, simplePlanPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
 
@@ -102,6 +102,10 @@ program
   .option('--plan <file>', 'Plan text file to use')
   .option('--plan-editor', 'Open plan in editor')
   .option('--issue <url|number>', 'Issue URL or number to use for the plan text')
+  .option(
+    '--simple',
+    'For simpler tasks, generate a single-phase plan that already includes the prompts'
+  )
   .option('--autofind', 'Automatically find relevant files based on plan')
   .option('--quiet', 'Suppress informational output')
   .option(
@@ -215,8 +219,13 @@ program
       }
     }
 
+    if (!planText) {
+      error('No plan text was provided.');
+      process.exit(1);
+    }
+
     // planText now contains the loaded plan
-    const promptString = planPrompt(planText!);
+    const promptString = options.simple ? simplePlanPrompt(planText) : planPrompt(planText);
     const tmpPromptPath = path.join(os.tmpdir(), `rmplan-prompt-${Date.now()}.md`);
     let exitRes: number | undefined;
     let wrotePrompt = false;
@@ -229,7 +238,7 @@ program
       let additionalFiles: string[] = [];
       if (options.autofind) {
         log('[Autofind] Searching for relevant files based on plan...');
-        const query = planText!;
+        const query = planText;
 
         const rmfindOptions: RmfindOptions = {
           baseDir: gitRoot,
@@ -341,16 +350,12 @@ program
   .description('Convert a Markdown project plan into YAML')
   .option('-o, --output <outputFile>', 'Write result to a file instead of stdout')
   .option(
-    '--output-dir <outputDir>',
-    'Directory to save the generated phase YAML files (for multi-phase plans)'
-  )
-  .option(
     '--plan <planFile>',
     'The path of the original Markdown project description file. If set, rmplan will write the output to the same path, but with a .yml extension.'
   )
   .option(
     '--project-id <id>',
-    'Specify a project ID for multi-phase plans. If not provided, one will be generated.'
+    'Specify a project ID for multi-phase plans. If not provided, the project ID will be inferred from the plan.'
   )
   .option(
     '--issue <issue_number_or_url>',
@@ -370,32 +375,28 @@ program
       inputText = await clipboard.read();
     }
 
+    let outputPath = options.output;
     if (options.plan && !options.output) {
       let name = options.plan.endsWith('.yml')
         ? options.plan
         : path.basename(options.plan, '.md') + '.yml';
-      options.output = path.join(path.dirname(options.plan), name);
+      outputPath = path.join(path.dirname(options.plan), name);
+    }
+
+    // Determine output path
+    if (!outputPath) {
+      error('Either --output or --plan must be specified');
+      process.exit(1);
     }
 
     try {
       const config = await loadEffectiveConfig(options.config);
 
-      // Determine output path
-      let outputPath: string;
-      if (options.output) {
-        outputPath = options.output;
-      } else if (options.outputDir) {
-        outputPath = options.outputDir;
-      } else {
-        error('Either --output or --output-dir must be specified');
-        process.exit(1);
-      }
-
       // Extract markdown to YAML using LLM
       const extractOptions: ExtractMarkdownToYamlOptions = {
         output: outputPath,
         projectId: options.projectId,
-        issueUrl: options.issue,
+        issueUrls: options.issue ? [options.issue] : [],
       };
 
       const message = await extractMarkdownToYaml(
@@ -675,7 +676,7 @@ program
           const errorLogPath = phaseYamlFile.replace('.yaml', '.context_error.log');
           await Bun.write(
             errorLogPath,
-            `Context gathering error at ${new Date().toISOString()}\n\nError: ${err}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+            `Context gathering error at ${new Date().toISOString()}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
           );
           error('Error log saved to:', errorLogPath);
         } catch (saveErr) {
@@ -700,7 +701,7 @@ program
       try {
         const gitRoot = (await getGitRoot()) || process.cwd();
         codebaseContextXml = await runRmfilterProgrammatically(
-          rmfilterArgs,
+          [...rmfilterArgs, '--bare'],
           gitRoot,
           projectPlanDir
         );
@@ -709,10 +710,10 @@ program
 
         // Save rmfilter error
         try {
-          const errorLogPath = phaseYamlFile.replace('.yaml', '.rmfilter_error.log');
+          const errorLogPath = phaseYamlFile.replace('.yml', '.rmfilter_error.log');
           await Bun.write(
             errorLogPath,
-            `Rmfilter error at ${new Date().toISOString()}\n\nArgs: ${JSON.stringify(rmfilterArgs, null, 2)}\n\nError: ${err}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+            `Rmfilter error at ${new Date().toISOString()}\n\nArgs: ${JSON.stringify(rmfilterArgs, null, 2)}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
           );
           error('Error log saved to:', errorLogPath);
         } catch (saveErr) {

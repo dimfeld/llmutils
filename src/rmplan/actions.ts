@@ -831,31 +831,6 @@ async function saveMultiPhaseYaml(
 
   if (options.projectId) {
     projectId = slugify(options.projectId);
-  } else if (options.issueUrl) {
-    // Parse the issue
-    const issueInfo = await parsePrOrIssueNumber(options.issueUrl);
-    if (!issueInfo || !issueInfo.owner || !issueInfo.repo) {
-      throw new Error('Could not parse GitHub issue URL or number');
-    }
-
-    // Fetch issue details
-    const issueData = await fetchIssueAndComments({
-      owner: issueInfo.owner,
-      repo: issueInfo.repo,
-      number: issueInfo.number,
-    });
-
-    issueUrl = issueData.issue.url;
-
-    // Create project ID from issue
-    const slugTitle = slugify(issueData.issue.title);
-    const maxSlugLength = 50;
-    const truncatedSlugTitle =
-      slugTitle.length > maxSlugLength
-        ? slugTitle.substring(0, maxSlugLength).replace(/-+$/, '')
-        : slugTitle;
-
-    projectId = `issue-${issueData.issue.number}-${truncatedSlugTitle}`;
   } else {
     // Generate from first phase goal
     const firstPhase = parsedYaml.phases[0];
@@ -904,7 +879,8 @@ async function saveMultiPhaseYaml(
         // If it's already in the correct format, keep it
         if (dep.startsWith(projectId)) return dep;
         // Otherwise convert from "project-N" to actual phase ID
-        const match = dep.match(/-(\d+)$/);
+        let match = dep.match(/-(\d+)$/) || dep.match(/Phase (\d+)$/) || dep.match(/(\d+)/);
+
         if (match) {
           const depIndex = parseInt(match[1], 10);
           return phaseIndexToId.get(depIndex) || dep;

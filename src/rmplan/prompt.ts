@@ -182,6 +182,44 @@ If there are any changes requested or comments made after your create this plan,
 `;
 }
 
+export function simplePlanPrompt(plan: string) {
+  return `This is a project plan for an upcoming feature.
+
+# Project Plan
+${plan}
+
+# Plan Creation
+
+Please think about how to accomplish the task and create a detailed, step-by-step blueprint for it. The blueprint should
+work in the context of the provided codebase. Examine the provided codebase and identify which files need to be edited for each step.
+
+Break it down into small, iterative chunks that build on each other. Look at these chunks and then go another round to break it into small steps. Review the results and make sure that the steps are small enough to be implemented safely with strong testing, but big enough to move the project forward. Iterate until you feel that the steps are right sized for this project.
+
+From here you should have the foundation to provide a series of prompts for a code-generation LLM that will implement each step in a test-driven manner. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each prompt builds on the previous prompts, and ends with everything wired together. There should be no hanging or orphaned code that isn't integrated into a previous step. At the end of the task, update the relevant documentation in README.md or other files too.
+
+This plan will be executed by an AI coding agent, so "manual verify" instructions can be added as notes but should not be part of the plan.
+
+When testing, prefer to use real tests and not mock functions or modules. Prefer dependency injection instead of mocks. Tests that need IO can create files in a temporary directory.
+
+The goal is to output prompts, but context, etc is important as well. Include plenty of information about which files to edit, what to do and how to do it, but you do not need to output code samples.
+
+When generating the final output with the prompts, output an overall goal, project details, and then a list of tasks.
+
+Each task should have a list of relevant files, flags for "include imports" and "include importers", and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
+
+The "include imports" flag on a task indicates if we should look at files imported by the files in the list. Self-contained edits may not need this flag to be set, but it should be enabled when you think it will be useful to look at extra function or type definitions in imported files to make correct changes.
+
+The "include importers" flag on a task indicates if we should look at the files that import the files in the list. This is useful, for example, when a function or object signature is going to change and we want to make sure we don't break any code that uses it. This brings in a lot of extra files that may not be relevant, so use sparingly.
+
+Use the following Markdown format for your final prompt output:
+
+\`\`\`
+${planMarkdownExampleFormat}
+\`\`\`
+
+If there are any changes requested or comments made after your create this plan, think about how to make the changes to the project plan, update the project plan appropriately, and output the entire updated plan again in the proper format.`;
+}
+
 export function generatePhaseStepsPrompt(context: PhaseGenerationContext): string {
   // Format previous phases info
   const previousPhasesSection =
@@ -246,15 +284,16 @@ For each task listed above, you need to generate:
 1. **Test-Driven Development**: Include test creation/modification as early steps when appropriate
 2. **Incremental Progress**: Each step should be small, achievable, and verifiable
 3. **Build on Previous Work**: Reference and utilize code/patterns from completed phases listed above
-4. **File Selection**: 
+4. **File Selection**:
    - Be specific about which files need modification
    - Consider files changed in previous phases when they're relevant
    - Set include_imports to true when you need to understand interfaces and dependencies
    - Set include_importers to true when changes might affect calling code
-5. **Step Prompts**: 
+5. **Step Prompts**:
    - Write clear, actionable prompts for each step
    - Include specific implementation details and requirements
    - Reference relevant patterns from the codebase
+   - No need to generate code, the agent reading the prompt will generate it from the prompt.
 
 ### Output Format
 
@@ -286,7 +325,7 @@ tasks:
           [Detailed prompt for this task]
 \`\`\`
 
-IMPORTANT: 
+IMPORTANT:
 - Output ONLY the YAML tasks array, no other text
 - Ensure all fields are properly populated
 - Use proper YAML syntax with correct indentation
