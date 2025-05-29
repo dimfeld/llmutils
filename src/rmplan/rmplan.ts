@@ -31,7 +31,12 @@ import { readAllPlans } from './plans.js';
 import { generatePhaseStepsPrompt, planPrompt, simplePlanPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
-import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './process_markdown.ts';
+import {
+  extractMarkdownToYaml,
+  findYamlStart,
+  type ExtractMarkdownToYamlOptions,
+} from './process_markdown.ts';
+import { fixYaml } from './fix_yaml.ts';
 
 await loadEnv();
 
@@ -722,7 +727,6 @@ ${codebaseContextXml}
       const { text } = await generateText({
         model,
         prompt: fullPrompt,
-        maxTokens: 8000,
         temperature: 0.2,
       });
 
@@ -730,10 +734,8 @@ ${codebaseContextXml}
       let parsedTasks;
       try {
         // Extract YAML from the response (LLM might include markdown formatting)
-        const yamlMatch = text.match(/```yaml\s*([\s\S]*?)\s*```/);
-        const yamlContent = yamlMatch ? yamlMatch[1] : text;
-
-        const parsed = yaml.parse(yamlContent);
+        const yamlContent = findYamlStart(text);
+        const parsed = fixYaml(yamlContent);
 
         // Validate that we got a tasks array
         if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
@@ -783,8 +785,9 @@ ${yaml.stringify(currentPhaseData)}`;
       }
 
       // Update timestamps
-      currentPhaseData.promptsGeneratedAt = new Date().toISOString();
-      currentPhaseData.updatedAt = new Date().toISOString();
+      const now = new Date().toISOString();
+      currentPhaseData.promptsGeneratedAt = now;
+      currentPhaseData.updatedAt = now;
 
       // 13. Write the updated phase YAML back to file
       const updatedYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json

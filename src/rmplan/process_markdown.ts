@@ -10,6 +10,7 @@ import { generatePhaseId, generateProjectId, slugify } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
+import { fixYaml } from './fix_yaml.js';
 
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
@@ -139,7 +140,7 @@ export async function extractMarkdownToYaml(
   // Parse the YAML to check if it's multi-phase
   let parsedYaml;
   try {
-    parsedYaml = yaml.parse(convertedYaml);
+    parsedYaml = fixYaml(convertedYaml);
   } catch (e) {
     await Bun.write('rmplan-parse-failure.yml', convertedYaml);
     error('Failed to parse YAML. Saved raw output to rmplan-parse-failure.yml');
@@ -162,8 +163,7 @@ export async function extractMarkdownToYaml(
 
   // Parse and validate the YAML
   try {
-    const parsedObject = yaml.parse(convertedYaml);
-    const result = planSchema.safeParse(parsedObject);
+    const result = planSchema.safeParse(parsedYaml);
     if (!result.success) {
       error('Validation errors after LLM conversion:', result.error);
       // Save the failed YAML for debugging
@@ -179,7 +179,10 @@ export async function extractMarkdownToYaml(
     validatedPlan.createdAt = now;
     validatedPlan.updatedAt = now;
     validatedPlan.planGeneratedAt = now;
-    validatedPlan.promptsGeneratedAt = now;
+
+    if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
+      validatedPlan.promptsGeneratedAt = now;
+    }
 
     // Set defaults for status and priority if not already set
     if (!validatedPlan.status) {
