@@ -199,7 +199,7 @@ Break it down into small, iterative chunks that build on each other. Look at the
 
 From here you should have the foundation to provide a series of prompts for a code-generation LLM that will implement each step in a test-driven manner. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each prompt builds on the previous prompts, and ends with everything wired together. There should be no hanging or orphaned code that isn't integrated into a previous step. At the end of the task, update the relevant documentation in README.md or other files too.
 
-This plan will be executed by an AI coding agent, so "manual verify" instructions can be added as notes but should not be part of the plan.
+This plan will be executed by an AI coding agent, so "manual verify" instructions do not need to be part of the plan.
 
 When testing, prefer to use real tests and not mock functions or modules. Prefer dependency injection instead of mocks. Tests that need IO can create files in a temporary directory.
 
@@ -279,10 +279,13 @@ For each task listed above, you need to generate:
 
 ### Guidelines:
 
-1. **Test-Driven Development**: Include test creation/modification as early steps when appropriate
+1. **Test-Driven Development**: 
+   - Include test creation/modification as early steps when appropriate
+   - Prefer to not mocks unless you have to, since they often end up just testing the mocks. Prefer dependency injection.
 2. **Incremental Progress**: Each step should be small, achievable, and verifiable
 3. **Build on Previous Work**: Reference and utilize code/patterns from completed phases listed above
 4. **Description**:
+   - Most of the details on the task should go into the description.
    - Work from the existing task description, but you can add details if needed.
    - Reference relevant patterns from the codebase and other information which provides context for the steps.
 5. **File Selection**:
@@ -290,8 +293,7 @@ For each task listed above, you need to generate:
    - Consider files changed in previous phases when they're relevant
 6. **Step Prompts**:
    - Write clear, actionable prompts for each step
-   - Each step should be at most a few sentences long
-   - Reference relevant patterns from the codebase
+   - Each step should be at most a few sentences long and related to the information in the task's description.
    - No need to generate code, the agent reading the prompt will generate it from the prompt.
 
 ### Output Format
