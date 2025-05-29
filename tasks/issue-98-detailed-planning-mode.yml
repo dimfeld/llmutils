@@ -786,7 +786,7 @@ tasks:
           execution:
               - Log the error clearly.
               - Save any available context or partial output to disk for debugging.
-        done: false
+        done: true
       - prompt: >
           Update integration tests for `rmplan parse` and `rmplan
           generate-phase` to cover:
@@ -980,11 +980,12 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T03:16:01.621Z
+updatedAt: 2025-05-29T03:24:46.872Z
 changedFiles:
   - package.json
   - src/rmplan/actions.ts
   - src/rmplan/cleanup.test.ts
+  - src/rmplan/cleanup.ts
   - src/rmplan/generate-phase.test.ts
   - src/rmplan/id_utils.test.ts
   - src/rmplan/id_utils.ts
