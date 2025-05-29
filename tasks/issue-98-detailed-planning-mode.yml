@@ -216,7 +216,7 @@ tasks:
           5.  Retain existing instructions about test-driven development,
           documentation updates, and incremental progress, as these are still
           relevant at a high level.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/rmplan.ts`:
 
@@ -980,12 +980,13 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:18:41.130Z
+updatedAt: 2025-05-29T02:20:59.319Z
 changedFiles:
   - src/rmplan/cleanup.test.ts
   - src/rmplan/id_utils.test.ts
   - src/rmplan/id_utils.ts
   - src/rmplan/planSchema.ts
+  - src/rmplan/prompt.ts
   - tasks/issue-98-detailed-planning-mode.md
   - tasks/issue-98-detailed-planning-mode.yml
   - test-id-utils.ts
