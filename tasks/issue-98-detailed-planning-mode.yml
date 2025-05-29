@@ -577,7 +577,7 @@ tasks:
 
           This function needs robust error handling for file loading and
           parsing.
-        done: false
+        done: true
   - title: 6. Implement `rmplan generate-phase` Command
     description: Create the `rmplan generate-phase --phase <phase_yaml_file>`
       command. This command loads a phase YAML, checks its dependencies, gathers
@@ -980,9 +980,10 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:51:17.603Z
+updatedAt: 2025-05-29T02:53:30.348Z
 changedFiles:
   - package.json
+  - src/rmplan/actions.ts
   - src/rmplan/cleanup.test.ts
   - src/rmplan/id_utils.test.ts
   - src/rmplan/id_utils.ts
