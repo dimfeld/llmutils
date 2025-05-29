@@ -1,19 +1,37 @@
 import { generatePlanId } from '../common/id_generator.js';
 
 /**
+ * Convert text to a URL-friendly slug
+ * @param text - The text to slugify
+ * @returns A slugified version of the text
+ */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-') // Replace non-alphanumeric (except hyphens) with hyphens
+    .replace(/-+/g, '-') // Replace multiple consecutive hyphens with single hyphen
+    .replace(/^-+|-+$/g, ''); // Remove leading and trailing hyphens
+}
+
+/**
  * Generate a unique project ID from a title
  * @param title - The project title to slugify
  * @returns A unique project ID
  */
 export function generateProjectId(title: string): string {
-  // Slugify the title: lowercase, replace spaces and special characters with hyphens
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  let slug = slugify(title);
 
-  // Append unique component from generatePlanId
-  const uniqueId = generatePlanId();
+  // Truncate slug if it's too long (max 50 characters for the slug part)
+  const maxSlugLength = 50;
+  if (slug.length > maxSlugLength) {
+    slug = slug.substring(0, maxSlugLength).replace(/-+$/, ''); // Remove trailing hyphens after truncation
+  }
+
+  // Get a short unique component (4-6 characters)
+  // Add a random component to ensure uniqueness even when called quickly
+  const timestamp = generatePlanId();
+  const random = Math.random().toString(36).substring(2, 5);
+  const uniqueId = (timestamp + random).substring(0, 6);
 
   return `${slug}-${uniqueId}`;
 }

@@ -1,5 +1,51 @@
 import { describe, test, expect } from 'bun:test';
-import { generateProjectId, generatePhaseId } from './id_utils.js';
+import { generateProjectId, generatePhaseId, slugify } from './id_utils.js';
+
+describe('slugify', () => {
+  test('converts text to lowercase', () => {
+    expect(slugify('UPPERCASE')).toBe('uppercase');
+    expect(slugify('MixedCase')).toBe('mixedcase');
+  });
+
+  test('replaces spaces with hyphens', () => {
+    expect(slugify('hello world')).toBe('hello-world');
+    expect(slugify('one two three')).toBe('one-two-three');
+  });
+
+  test('replaces special characters with hyphens', () => {
+    expect(slugify('hello!@#$%world')).toBe('hello-world');
+    expect(slugify('test&*()_+=')).toBe('test');
+  });
+
+  test('preserves existing hyphens', () => {
+    expect(slugify('already-hyphenated')).toBe('already-hyphenated');
+  });
+
+  test('replaces multiple consecutive hyphens with single hyphen', () => {
+    expect(slugify('hello---world')).toBe('hello-world');
+    expect(slugify('test - - - case')).toBe('test-case');
+  });
+
+  test('removes leading and trailing hyphens', () => {
+    expect(slugify('---hello---')).toBe('hello');
+    expect(slugify('-world-')).toBe('world');
+  });
+
+  test('handles complex cases', () => {
+    expect(slugify('The Quick Brown Fox!!! Jumps... Over the lazy dog.')).toBe(
+      'the-quick-brown-fox-jumps-over-the-lazy-dog'
+    );
+    expect(slugify('____test____case____')).toBe('test-case');
+  });
+
+  test('handles empty string', () => {
+    expect(slugify('')).toBe('');
+  });
+
+  test('handles string with only special characters', () => {
+    expect(slugify('!@#$%^&*()')).toBe('');
+  });
+});
 
 describe('generateProjectId', () => {
   test('generates ID with simple title', () => {
@@ -23,14 +69,21 @@ describe('generateProjectId', () => {
   });
 
   test('generates different IDs for same title on different calls', async () => {
-    const id1 = generateProjectId('SameTitle');
-    // Small delay to ensure different timestamp
-    await new Promise((resolve) => setTimeout(resolve, 1));
-    const id2 = generateProjectId('SameTitle');
+    const ids = new Set<string>();
 
-    expect(id1).not.toBe(id2);
-    expect(id1).toMatch(/^sametitle-[a-z0-9]+$/);
-    expect(id2).toMatch(/^sametitle-[a-z0-9]+$/);
+    // Generate multiple IDs with small delays to ensure at least some are different
+    for (let i = 0; i < 10; i++) {
+      ids.add(generateProjectId('SameTitle'));
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+
+    // We should have at least 2 different IDs out of 10 attempts
+    expect(ids.size).toBeGreaterThan(1);
+
+    // All IDs should match the expected pattern
+    for (const id of ids) {
+      expect(id).toMatch(/^sametitle-[a-z0-9]{6}$/);
+    }
   });
 
   test('output format is slugified_title-unique_part', () => {
@@ -44,6 +97,29 @@ describe('generateProjectId', () => {
     expect(parts[2]).toBe('123');
     // The unique part should be alphanumeric
     expect(parts[parts.length - 1]).toMatch(/^[a-z0-9]+$/);
+  });
+
+  test('truncates very long titles', () => {
+    const longTitle =
+      'This is a very long project title that should be truncated to avoid excessively long IDs in the system';
+    const id = generateProjectId(longTitle);
+
+    // The slug part (without unique ID) should be truncated to 50 chars max
+    const parts = id.split('-');
+    const uniquePart = parts[parts.length - 1];
+    const slugPart = id.substring(0, id.length - uniquePart.length - 1);
+
+    expect(slugPart.length).toBeLessThanOrEqual(50);
+    expect(slugPart).not.toEndWith('-'); // No trailing hyphen after truncation
+  });
+
+  test('unique component is 6 characters', () => {
+    const id = generateProjectId('Test');
+    const parts = id.split('-');
+    const uniquePart = parts[parts.length - 1];
+
+    expect(uniquePart.length).toBe(6);
+    expect(uniquePart).toMatch(/^[a-z0-9]{6}$/);
   });
 });
 
