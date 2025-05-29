@@ -148,7 +148,7 @@ tasks:
 
 
           Use `bun:test` for assertions.
-        done: false
+        done: true
   - title: 2. Modify Planning Prompt for Phase-Based Markdown Generation
     description: Update the existing planning prompt in `src/rmplan/prompt.ts` to
       instruct the LLM to generate high-level, phase-based plans in Markdown.
@@ -980,9 +980,10 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:17:49.925Z
+updatedAt: 2025-05-29T02:18:41.130Z
 changedFiles:
   - src/rmplan/cleanup.test.ts
+  - src/rmplan/id_utils.test.ts
   - src/rmplan/id_utils.ts
   - src/rmplan/planSchema.ts
   - tasks/issue-98-detailed-planning-mode.md
