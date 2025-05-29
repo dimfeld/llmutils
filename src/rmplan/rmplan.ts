@@ -10,33 +10,24 @@ import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
 import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
 import { createModel } from '../common/model_factory.ts';
-import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';
 import { sshAwarePasteAction } from '../common/ssh_detection.ts';
 import { waitForEnter } from '../common/terminal.js';
 import { error, log, warn } from '../logging.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
-import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
 import { handleRmprCommand } from '../rmpr/main.js';
-import { gatherPhaseGenerationContext, markStepDone, prepareNextStep } from './actions.js';
+import { markStepDone, prepareNextStep, preparePhase } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
-import { phaseSchema } from './planSchema.js';
-import { readAllPlans } from './plans.js';
-import { generatePhaseStepsPrompt, planPrompt, simplePlanPrompt } from './prompt.js';
+import { planPrompt, simplePlanPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
-import {
-  extractMarkdownToYaml,
-  findYamlStart,
-  type ExtractMarkdownToYamlOptions,
-} from './process_markdown.ts';
-import { fixYaml } from './fix_yaml.ts';
+import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './process_markdown.ts';
 
 await loadEnv();
 
@@ -595,209 +586,21 @@ program
   .description('Generate detailed steps and prompts for a specific phase.')
   .option('--force', 'Override dependency completion check and proceed with generation.')
   .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
-  .action(async (options, yamlFile) => {
+  .action(async (yamlFile, options) => {
     const globalOpts = program.opts();
 
     try {
-      // 1. Load RmplanConfig using loadEffectiveConfig
+      // Load RmplanConfig using loadEffectiveConfig
       const config = await loadEffectiveConfig(globalOpts.config);
 
-      // 2. Resolve to an absolute path
+      // Resolve to an absolute path
       const phaseYamlFile = path.resolve(yamlFile);
 
-      // 3. Load the target phase YAML file
-      const phaseContent = await Bun.file(phaseYamlFile).text();
-      const parsedPhase = yaml.parse(phaseContent);
-      const validationResult = phaseSchema.safeParse(parsedPhase);
-
-      if (!validationResult.success) {
-        error('Failed to validate phase YAML:', validationResult.error.issues);
-        process.exit(1);
-      }
-
-      const currentPhaseData = validationResult.data;
-
-      // 4. Dependency Checking using readAllPlans
-      if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
-        const projectPlanDir = path.dirname(phaseYamlFile);
-        const allPlans = await readAllPlans(projectPlanDir);
-
-        for (const dependencyId of currentPhaseData.dependencies) {
-          const dependencyPlan = allPlans.get(dependencyId);
-
-          if (!dependencyPlan) {
-            warn(`Warning: Could not find dependency ${dependencyId} in project directory`);
-            if (!options.force) {
-              error('Cannot proceed without checking all dependencies. Use --force to override.');
-              process.exit(1);
-            }
-            continue;
-          }
-
-          if (dependencyPlan.status !== 'done') {
-            const msg = `Dependency ${dependencyId} is not complete (status: ${dependencyPlan.status}).`;
-            warn(msg);
-
-            if (!options.force) {
-              error('Cannot proceed without completed dependencies. Use --force to override.');
-              process.exit(1);
-            }
-
-            warn('Proceeding despite incomplete dependencies due to --force flag.');
-          }
-        }
-      }
-
-      // 5. Determine projectPlanDir
-      const projectPlanDir = path.dirname(phaseYamlFile);
-
-      // 6. Call gatherPhaseGenerationContext
-      let phaseGenCtx;
-      try {
-        phaseGenCtx = await gatherPhaseGenerationContext(phaseYamlFile, projectPlanDir);
-      } catch (err) {
-        error('Failed to gather phase generation context:', err);
-
-        // Save context gathering error
-        try {
-          const errorLogPath = phaseYamlFile.replace('.yaml', '.context_error.log');
-          await Bun.write(
-            errorLogPath,
-            `Context gathering error at ${new Date().toISOString()}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
-          );
-          error('Error log saved to:', errorLogPath);
-        } catch (saveErr) {
-          warn('Failed to save error log:', saveErr);
-        }
-
-        process.exit(1);
-      }
-
-      // 7. Prepare rmfilter arguments for codebase context
-      const rmfilterArgs = [...phaseGenCtx.rmfilterArgsFromPlan];
-
-      // Add files from tasks if any are pre-populated
-      for (const task of currentPhaseData.tasks) {
-        if (task.files && task.files.length > 0) {
-          rmfilterArgs.push(...task.files);
-        }
-      }
-
-      // 8. Invoke rmfilter programmatically
-      let codebaseContextXml: string;
-      try {
-        const gitRoot = (await getGitRoot()) || process.cwd();
-        codebaseContextXml = await runRmfilterProgrammatically(
-          [...rmfilterArgs, '--bare'],
-          gitRoot,
-          projectPlanDir
-        );
-      } catch (err) {
-        error('Failed to execute rmfilter:', err);
-
-        // Save rmfilter error
-        try {
-          const errorLogPath = phaseYamlFile.replace('.yml', '.rmfilter_error.log');
-          await Bun.write(
-            errorLogPath,
-            `Rmfilter error at ${new Date().toISOString()}\n\nArgs: ${JSON.stringify(rmfilterArgs, null, 2)}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
-          );
-          error('Error log saved to:', errorLogPath);
-        } catch (saveErr) {
-          warn('Failed to save error log:', saveErr);
-        }
-
-        process.exit(1);
-      }
-
-      // 9. Construct LLM Prompt for Step Generation
-      const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
-      const fullPrompt = `${phaseStepsPrompt}
-
-<codebase_context>
-${codebaseContextXml}
-</codebase_context>`;
-
-      // 10. Call LLM
-      const modelId = options.model || config.models?.execution || DEFAULT_RUN_MODEL;
-      const model = createModel(modelId);
-
-      log('Generating detailed steps for phase using model:', modelId);
-
-      const { text } = await generateText({
-        model,
-        prompt: fullPrompt,
-        temperature: 0.2,
+      // Call the new preparePhase function
+      await preparePhase(phaseYamlFile, config, {
+        force: options.force,
+        model: options.model,
       });
-
-      // 11. Parse LLM Output
-      let parsedTasks;
-      try {
-        // Extract YAML from the response (LLM might include markdown formatting)
-        const yamlContent = findYamlStart(text);
-        const parsed = fixYaml(yamlContent);
-
-        // Validate that we got a tasks array
-        if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
-          throw new Error('LLM output does not contain a valid tasks array');
-        }
-
-        parsedTasks = parsed.tasks;
-      } catch (err) {
-        // Save raw LLM output for debugging
-        const errorFilePath = phaseYamlFile.replace('.yaml', '.llm_error.txt');
-        const partialErrorPath = phaseYamlFile.replace('.yaml', '.partial_error.yaml');
-
-        try {
-          await Bun.write(errorFilePath, text);
-          error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
-
-          // Save the current phase YAML state before any modifications
-          const currentYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-${yaml.stringify(currentPhaseData)}`;
-          await Bun.write(partialErrorPath, currentYaml);
-          error('Current phase state saved to:', partialErrorPath);
-        } catch (saveErr) {
-          error('Failed to save error files:', saveErr);
-        }
-
-        error('Parse error:', err);
-        error('Please manually correct the LLM output or retry with a different model');
-        process.exit(1);
-      }
-
-      // 12. Update Phase YAML
-      // Merge LLM-generated task details into currentPhaseData.tasks
-      for (let i = 0; i < currentPhaseData.tasks.length; i++) {
-        const existingTask = currentPhaseData.tasks[i];
-        const llmTask = parsedTasks[i];
-
-        if (!llmTask) {
-          warn(`Warning: LLM did not generate details for task ${i + 1}: ${existingTask.title}`);
-          continue;
-        }
-
-        // Update task with LLM-generated details
-        existingTask.files = llmTask.files || [];
-        existingTask.include_imports = llmTask.include_imports ?? false;
-        existingTask.include_importers = llmTask.include_importers ?? false;
-        existingTask.steps = llmTask.steps || [];
-      }
-
-      // Update timestamps
-      const now = new Date().toISOString();
-      currentPhaseData.promptsGeneratedAt = now;
-      currentPhaseData.updatedAt = now;
-
-      // 13. Write the updated phase YAML back to file
-      const updatedYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-${yaml.stringify(currentPhaseData)}`;
-
-      await Bun.write(phaseYamlFile, updatedYaml);
-
-      // 14. Log success
-      log(chalk.green('✓ Successfully generated detailed steps for phase'));
-      log(`Updated phase file: ${phaseYamlFile}`);
     } catch (err) {
       error('Failed to generate phase details:', err);
       process.exit(1);

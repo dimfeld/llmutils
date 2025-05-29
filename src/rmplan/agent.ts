@@ -9,6 +9,7 @@ import {
   findPendingTask,
   markStepDone,
   prepareNextStep,
+  preparePhase,
 } from './actions.ts';
 import { loadEffectiveConfig } from './configLoader.ts';
 import {
@@ -200,6 +201,39 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         process.exit(1);
       }
     }
+  }
+
+  // Check if the plan needs preparation
+  try {
+    const fileContent = await Bun.file(currentPlanFile).text();
+    const parsed = yaml.parse(fileContent);
+    const planResult = planSchema.safeParse(parsed);
+
+    if (planResult.success) {
+      const planData = planResult.data;
+
+      // Check if prompts have been generated
+      const needsPreparation =
+        !planData.promptsGeneratedAt ||
+        planData.tasks.some((task) => !task.steps || task.steps.length === 0);
+
+      if (needsPreparation) {
+        log('Plan needs preparation. Generating detailed steps and prompts...');
+        try {
+          await preparePhase(currentPlanFile, config, {
+            model: options.model,
+          });
+          log('Successfully prepared the plan with detailed steps.');
+        } catch (err) {
+          error('Failed to automatically prepare the plan:', err);
+          error('You may need to run "rmplan prepare" manually.');
+          process.exit(1);
+        }
+      }
+    }
+  } catch (err) {
+    warn('Could not check if plan needs preparation:', err);
+    // Continue anyway - the main loop will catch any issues
   }
 
   // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor

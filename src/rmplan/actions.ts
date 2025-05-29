@@ -656,6 +656,228 @@ export async function executePostApplyCommand(
 }
 
 /**
+ * Prepares a phase by generating detailed steps and prompts for all tasks.
+ * @param phaseYamlFile Path to the phase YAML file to prepare
+ * @param config RmplanConfig instance
+ * @param options Options including force flag and model override
+ * @returns Promise that resolves when preparation is complete
+ */
+export async function preparePhase(
+  phaseYamlFile: string,
+  config: RmplanConfig,
+  options: { force?: boolean; model?: string } = {}
+): Promise<void> {
+  const { generateText } = await import('ai');
+  const { createModel } = await import('../common/model_factory.ts');
+  const { DEFAULT_RUN_MODEL } = await import('../common/run_and_apply.ts');
+  const { runRmfilterProgrammatically } = await import('../rmfilter/rmfilter.js');
+  const { generatePhaseStepsPrompt } = await import('./prompt.js');
+  const { readAllPlans } = await import('./plans.js');
+
+  try {
+    // 1. Load the target phase YAML file
+    const phaseContent = await Bun.file(phaseYamlFile).text();
+    const parsedPhase = yaml.parse(phaseContent);
+    const validationResult = phaseSchema.safeParse(parsedPhase);
+
+    if (!validationResult.success) {
+      throw new Error(
+        `Failed to validate phase YAML: ${JSON.stringify(validationResult.error.issues, null, 2)}`
+      );
+    }
+
+    const currentPhaseData = validationResult.data;
+
+    // 2. Dependency Checking using readAllPlans
+    if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
+      const projectPlanDir = path.dirname(phaseYamlFile);
+      const allPlans = await readAllPlans(projectPlanDir);
+
+      for (const dependencyId of currentPhaseData.dependencies) {
+        const dependencyPlan = allPlans.get(dependencyId);
+
+        if (!dependencyPlan) {
+          warn(`Warning: Could not find dependency ${dependencyId} in project directory`);
+          if (!options.force) {
+            throw new Error(
+              'Cannot proceed without checking all dependencies. Use --force to override.'
+            );
+          }
+          continue;
+        }
+
+        if (dependencyPlan.status !== 'done') {
+          const msg = `Dependency ${dependencyId} is not complete (status: ${dependencyPlan.status}).`;
+          warn(msg);
+
+          if (!options.force) {
+            throw new Error(
+              'Cannot proceed without completed dependencies. Use --force to override.'
+            );
+          }
+
+          warn('Proceeding despite incomplete dependencies due to --force flag.');
+        }
+      }
+    }
+
+    // 3. Determine projectPlanDir
+    const projectPlanDir = path.dirname(phaseYamlFile);
+
+    // 4. Call gatherPhaseGenerationContext
+    let phaseGenCtx;
+    try {
+      phaseGenCtx = await gatherPhaseGenerationContext(phaseYamlFile, projectPlanDir);
+    } catch (err) {
+      error('Failed to gather phase generation context:', err);
+
+      // Save context gathering error
+      try {
+        const errorLogPath = phaseYamlFile.replace('.yaml', '.context_error.log');
+        await Bun.write(
+          errorLogPath,
+          `Context gathering error at ${new Date().toISOString()}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+        );
+        error('Error log saved to:', errorLogPath);
+      } catch (saveErr) {
+        warn('Failed to save error log:', saveErr);
+      }
+
+      throw err;
+    }
+
+    // 5. Prepare rmfilter arguments for codebase context
+    const rmfilterArgs = [...phaseGenCtx.rmfilterArgsFromPlan];
+
+    // Add files from tasks if any are pre-populated
+    for (const task of currentPhaseData.tasks) {
+      if (task.files && task.files.length > 0) {
+        rmfilterArgs.push(...task.files);
+      }
+    }
+
+    // 6. Invoke rmfilter programmatically
+    let codebaseContextXml: string;
+    try {
+      const gitRoot = (await getGitRoot()) || process.cwd();
+      codebaseContextXml = await runRmfilterProgrammatically(
+        [...rmfilterArgs, '--bare'],
+        gitRoot,
+        projectPlanDir
+      );
+    } catch (err) {
+      error('Failed to execute rmfilter:', err);
+
+      // Save rmfilter error
+      try {
+        const errorLogPath = phaseYamlFile.replace('.yml', '.rmfilter_error.log');
+        await Bun.write(
+          errorLogPath,
+          `Rmfilter error at ${new Date().toISOString()}\n\nArgs: ${JSON.stringify(rmfilterArgs, null, 2)}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+        );
+        error('Error log saved to:', errorLogPath);
+      } catch (saveErr) {
+        warn('Failed to save error log:', saveErr);
+      }
+
+      throw err;
+    }
+
+    // 7. Construct LLM Prompt for Step Generation
+    const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
+    const fullPrompt = `${phaseStepsPrompt}
+
+<codebase_context>
+${codebaseContextXml}
+</codebase_context>`;
+
+    // 8. Call LLM
+    const modelId = options.model || config.models?.execution || DEFAULT_RUN_MODEL;
+    const model = createModel(modelId);
+
+    log('Generating detailed steps for phase using model:', modelId);
+
+    const { text } = await generateText({
+      model,
+      prompt: fullPrompt,
+      temperature: 0.2,
+    });
+
+    // 9. Parse LLM Output
+    let parsedTasks;
+    try {
+      // Extract YAML from the response (LLM might include markdown formatting)
+      const yamlContent = findYamlStart(text);
+      const parsed = fixYaml(yamlContent);
+
+      // Validate that we got a tasks array
+      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
+        throw new Error('LLM output does not contain a valid tasks array');
+      }
+
+      parsedTasks = parsed.tasks;
+    } catch (err) {
+      // Save raw LLM output for debugging
+      const errorFilePath = phaseYamlFile.replace('.yaml', '.llm_error.txt');
+      const partialErrorPath = phaseYamlFile.replace('.yaml', '.partial_error.yaml');
+
+      try {
+        await Bun.write(errorFilePath, text);
+        error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
+
+        // Save the current phase YAML state before any modifications
+        const currentYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+${yaml.stringify(currentPhaseData)}`;
+        await Bun.write(partialErrorPath, currentYaml);
+        error('Current phase state saved to:', partialErrorPath);
+      } catch (saveErr) {
+        error('Failed to save error files:', saveErr);
+      }
+
+      error('Parse error:', err);
+      error('Please manually correct the LLM output or retry with a different model');
+      throw err;
+    }
+
+    // 10. Update Phase YAML
+    // Merge LLM-generated task details into currentPhaseData.tasks
+    for (let i = 0; i < currentPhaseData.tasks.length; i++) {
+      const existingTask = currentPhaseData.tasks[i];
+      const llmTask = parsedTasks[i];
+
+      if (!llmTask) {
+        warn(`Warning: LLM did not generate details for task ${i + 1}: ${existingTask.title}`);
+        continue;
+      }
+
+      // Update task with LLM-generated details
+      existingTask.files = llmTask.files || [];
+      existingTask.include_imports = llmTask.include_imports ?? false;
+      existingTask.include_importers = llmTask.include_importers ?? false;
+      existingTask.steps = llmTask.steps || [];
+    }
+
+    // Update timestamps
+    const now = new Date().toISOString();
+    currentPhaseData.promptsGeneratedAt = now;
+    currentPhaseData.updatedAt = now;
+
+    // 11. Write the updated phase YAML back to file
+    const updatedYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+${yaml.stringify(currentPhaseData)}`;
+
+    await Bun.write(phaseYamlFile, updatedYaml);
+
+    // 12. Log success
+    log(chalk.green('✓ Successfully generated detailed steps for phase'));
+    log(`Updated phase file: ${phaseYamlFile}`);
+  } catch (err) {
+    error('Failed to generate phase details:', err);
+    throw err;
+  }
+}
+
+/**
  * Gathers all necessary context for generating detailed implementation steps for a phase.
  * @param phaseFilePath Path to the phase YAML file to generate steps for
  * @param projectPlanDir Directory containing all phase YAML files
