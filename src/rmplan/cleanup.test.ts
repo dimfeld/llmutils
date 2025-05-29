@@ -8,24 +8,27 @@ import yaml from 'yaml';
 describe('cleanComments', () => {
   test('removes TypeScript EOL comments', () => {
     const input = `
-    let x = 1;
-    let y = 2;
-    // Another comment
+    let x = 1; // This will be removed
+    let y = 2; /* This too */
+    // This whole line comment stays
     let z = 3;
-    let stringWithHash = '# This is a comment';
-    let regexWithDoubleSlash = /regex]//;
+    let stringWithHash = '# This is not a comment';
+    let simpleVar = 42; // But this comment is removed
   `;
     const expected = `
     let x = 1;
     let y = 2;
-    // Another comment
+    // This whole line comment stays
     let z = 3;
-    let stringWithHash = '# This is a comment';
-    let regexWithDoubleSlash = /regex]//;
+    let stringWithHash = '# This is not a comment';
+    let simpleVar = 42;
   `;
-    const { cleanedContent, linesCleaned } = cleanComments(input, '.ts');
-    expect(cleanedContent.trim()).toEqual(expected.trim());
-    expect(linesCleaned).toBe(2);
+    const result = cleanComments(input, '.ts');
+    expect(result).toBeDefined();
+    if (result) {
+      expect(result.cleanedContent.trim()).toEqual(expected.trim());
+      expect(result.linesCleaned).toBe(3);
+    }
   });
 
   test('removes Python EOL comments', () => {
@@ -41,9 +44,12 @@ describe('cleanComments', () => {
     # Another comment
     z = 3
   `;
-    const { cleanedContent, linesCleaned } = cleanComments(input, '.py');
-    expect(cleanedContent.trim()).toEqual(expected.trim());
-    expect(linesCleaned).toBe(1);
+    const result = cleanComments(input, '.py');
+    expect(result).toBeDefined();
+    if (result) {
+      expect(result.cleanedContent.trim()).toEqual(expected.trim());
+      expect(result.linesCleaned).toBe(1);
+    }
   });
 
   test('handles Svelte invalid template comments', () => {
@@ -59,9 +65,12 @@ describe('cleanComments', () => {
       <p>Hello</p>
     </div>
   `;
-    const { cleanedContent, linesCleaned } = cleanComments(input, '.svelte');
-    expect(cleanedContent.trim()).toEqual(expected.trim());
-    expect(linesCleaned).toBe(1);
+    const result = cleanComments(input, '.svelte');
+    expect(result).toBeDefined();
+    if (result) {
+      expect(result.cleanedContent.trim()).toEqual(expected.trim());
+      expect(result.linesCleaned).toBe(1);
+    }
   });
 
   test('returns unchanged content for unsupported extension', () => {

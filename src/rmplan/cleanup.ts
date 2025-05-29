@@ -84,9 +84,9 @@ export function findYamlStart(text: string): string {
   return text;
 }
 
-const doubleSlash = / \/\/ \s*.*$/;
-const slashStar = / \/\*[\s\S]*?\*\/$/;
-const hash = /#\s*.*$/gm;
+const doubleSlash = /\/\/\s*.*$/;
+const slashStar = /\/\*[\s\S]*?\*\/$/;
+const hash = /#\s*.*$/;
 // Gemini sometimes adds comments like {} which are not valid syntax
 const invalidSvelteTemplateComment = /\{\/\*([\s\S]+)\*\/\}/;
 
@@ -128,30 +128,30 @@ export function cleanComments(
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
-    // Skip empty lines
-    let trimmed = line.trimStart();
-    if (!trimmed) {
-      continue;
-    }
-
+    
     // Check each pattern for this extension
     for (const pattern of commentPatterns[ext]) {
       // Special case for invalid Svelte template comments since they happen on standalone lines and can be fixed.
       const match = line.match(pattern);
       if (match && pattern === invalidSvelteTemplateComment) {
-        let startIndex = match.index;
+        let startIndex = match.index!;
         lines[i] = lines[i].slice(0, startIndex) + `<!--${match[1]}-->`;
         linesCleaned++;
         break;
       }
 
-      // Check if line has code followed by a comment
-      if (match && trimmed.length > match[0].length) {
-        // Remove the comment part
-        line = line.replace(pattern, '').trimEnd();
-        lines[i] = line;
-        linesCleaned++;
-        break;
+      // For regular comments, check if there's code before the comment
+      if (match && match.index !== undefined) {
+        // Get the part before the comment
+        const beforeComment = line.slice(0, match.index);
+        const trimmedBefore = beforeComment.trim();
+        
+        // Only remove if there's actual code before the comment (not just whitespace)
+        if (trimmedBefore.length > 0) {
+          lines[i] = beforeComment.trimEnd();
+          linesCleaned++;
+          break;
+        }
       }
     }
   }

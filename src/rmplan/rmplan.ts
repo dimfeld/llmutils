@@ -522,15 +522,45 @@ program
     'GitHub issue number or URL to associate with the project and use for naming.'
   )
   .action(async (options) => {
+    let projectId: string | undefined;
+    let markdownContent: string | undefined;
+
     try {
       // Read the input markdown file
-      const markdownContent = await Bun.file(options.input).text();
+      try {
+        markdownContent = await Bun.file(options.input).text();
+      } catch (err) {
+        error(`Failed to read input file: ${options.input}`);
+        error('Error details:', err);
+        process.exit(1);
+      }
 
       // Parse the markdown plan
-      const parsedPlan = await parseMarkdownPlan(markdownContent);
+      let parsedPlan;
+      try {
+        parsedPlan = await parseMarkdownPlan(markdownContent);
+      } catch (err) {
+        error('Failed to parse markdown plan. The markdown structure may be invalid.');
+        error('Error details:', err);
+
+        // Save the problematic markdown for manual inspection
+        const errorDir = options.outputDir;
+        await fs.mkdir(errorDir, { recursive: true });
+        const errorMdPath = path.join(errorDir, 'feature_plan.error.md');
+        const errorLogPath = path.join(errorDir, 'parse_error.log');
+
+        await Bun.write(errorMdPath, markdownContent);
+        await Bun.write(
+          errorLogPath,
+          `Parse error at ${new Date().toISOString()}\n\nError: ${err}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+        );
+
+        error(`Original markdown saved to: ${errorMdPath}`);
+        error(`Error log saved to: ${errorLogPath}`);
+        process.exit(1);
+      }
 
       // Determine the project ID
-      let projectId: string;
       let issueUrl: string | undefined;
 
       if (options.projectId) {
@@ -582,6 +612,11 @@ Details: ${parsedPlan.overallDetails?.substring(0, 200) || ''}`;
       }
 
       // Create output directory
+      // At this point, projectId is guaranteed to be defined
+      if (!projectId) {
+        throw new Error('Failed to determine project ID');
+      }
+
       const projectDir = path.join(options.outputDir, projectId);
       await fs.mkdir(projectDir, { recursive: true });
 
@@ -651,21 +686,73 @@ Details: ${parsedPlan.overallDetails?.substring(0, 200) || ''}`;
       }
 
       // Write phase YAML files
+      let successfulWrites = 0;
+      const failedPhases: number[] = [];
+
       for (const phaseSchema of phaseSchemas) {
         const phaseIndex = parseInt(phaseSchema.id.split('-').pop()!, 10);
         const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 ${yaml.stringify(phaseSchema)}`;
 
         const phaseFilePath = path.join(projectDir, `phase_${phaseIndex}.yaml`);
-        await Bun.write(phaseFilePath, yamlContent);
+
+        try {
+          await Bun.write(phaseFilePath, yamlContent);
+          successfulWrites++;
+        } catch (err) {
+          warn(`Warning: Failed to write phase ${phaseIndex} YAML file`);
+          warn('Error:', err);
+          failedPhases.push(phaseIndex);
+
+          // Try to save error version
+          try {
+            const errorPath = path.join(projectDir, `phase_${phaseIndex}.error.yaml`);
+            await Bun.write(errorPath, yamlContent);
+            warn(`Saved error version to: ${errorPath}`);
+          } catch (saveErr) {
+            warn('Failed to save error version:', saveErr);
+          }
+        }
       }
 
-      log(
-        chalk.green(`✓ Successfully parsed markdown plan into ${phaseSchemas.length} phase files`)
-      );
+      if (successfulWrites === 0) {
+        error('Failed to write any phase YAML files');
+        process.exit(1);
+      }
+
+      log(chalk.green(`✓ Successfully parsed markdown plan into ${successfulWrites} phase files`));
+
+      if (failedPhases.length > 0) {
+        warn(
+          `Warning: Failed to write ${failedPhases.length} phase files: ${failedPhases.join(', ')}`
+        );
+      }
+
       log(`Output directory: ${projectDir}`);
     } catch (err) {
-      error('Failed to parse markdown plan:', err);
+      error('Unexpected error during parse operation:', err);
+
+      // Try to save error information
+      if (markdownContent && projectId) {
+        try {
+          const errorDir = path.join(options.outputDir, projectId || 'error');
+          await fs.mkdir(errorDir, { recursive: true });
+          const errorMdPath = path.join(errorDir, 'feature_plan.error.md');
+          const errorLogPath = path.join(errorDir, 'parse_error.log');
+
+          await Bun.write(errorMdPath, markdownContent);
+          await Bun.write(
+            errorLogPath,
+            `Unexpected error at ${new Date().toISOString()}\n\nError: ${err}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+          );
+
+          error(`Original markdown saved to: ${errorMdPath}`);
+          error(`Error log saved to: ${errorLogPath}`);
+        } catch (saveErr) {
+          error('Failed to save error information:', saveErr);
+        }
+      }
+
       process.exit(1);
     }
   });
@@ -853,7 +940,26 @@ program
       const projectPlanDir = path.dirname(phaseYamlFile);
 
       // 6. Call gatherPhaseGenerationContext
-      const phaseGenCtx = await gatherPhaseGenerationContext(phaseYamlFile, projectPlanDir);
+      let phaseGenCtx;
+      try {
+        phaseGenCtx = await gatherPhaseGenerationContext(phaseYamlFile, projectPlanDir);
+      } catch (err) {
+        error('Failed to gather phase generation context:', err);
+
+        // Save context gathering error
+        try {
+          const errorLogPath = phaseYamlFile.replace('.yaml', '.context_error.log');
+          await Bun.write(
+            errorLogPath,
+            `Context gathering error at ${new Date().toISOString()}\n\nError: ${err}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+          );
+          error('Error log saved to:', errorLogPath);
+        } catch (saveErr) {
+          warn('Failed to save error log:', saveErr);
+        }
+
+        process.exit(1);
+      }
 
       // 7. Prepare rmfilter arguments for codebase context
       const rmfilterArgs = [...phaseGenCtx.rmfilterArgsFromPlan];
@@ -866,12 +972,31 @@ program
       }
 
       // 8. Invoke rmfilter programmatically
-      const gitRoot = (await getGitRoot()) || process.cwd();
-      const codebaseContextXml = await runRmfilterProgrammatically(
-        rmfilterArgs,
-        gitRoot,
-        projectPlanDir
-      );
+      let codebaseContextXml: string;
+      try {
+        const gitRoot = (await getGitRoot()) || process.cwd();
+        codebaseContextXml = await runRmfilterProgrammatically(
+          rmfilterArgs,
+          gitRoot,
+          projectPlanDir
+        );
+      } catch (err) {
+        error('Failed to execute rmfilter:', err);
+
+        // Save rmfilter error
+        try {
+          const errorLogPath = phaseYamlFile.replace('.yaml', '.rmfilter_error.log');
+          await Bun.write(
+            errorLogPath,
+            `Rmfilter error at ${new Date().toISOString()}\n\nArgs: ${JSON.stringify(rmfilterArgs, null, 2)}\n\nError: ${err}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+          );
+          error('Error log saved to:', errorLogPath);
+        } catch (saveErr) {
+          warn('Failed to save error log:', saveErr);
+        }
+
+        process.exit(1);
+      }
 
       // 9. Construct LLM Prompt for Step Generation
       const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
@@ -912,10 +1037,24 @@ ${codebaseContextXml}
         parsedTasks = parsed.tasks;
       } catch (err) {
         // Save raw LLM output for debugging
-        const errorFilePath = phaseYamlFile.replace('.yaml', '.llm_error.yaml');
-        await Bun.write(errorFilePath, text);
-        error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
+        const errorFilePath = phaseYamlFile.replace('.yaml', '.llm_error.txt');
+        const partialErrorPath = phaseYamlFile.replace('.yaml', '.partial_error.yaml');
+
+        try {
+          await Bun.write(errorFilePath, text);
+          error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
+
+          // Save the current phase YAML state before any modifications
+          const currentYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+${yaml.stringify(currentPhaseData)}`;
+          await Bun.write(partialErrorPath, currentYaml);
+          error('Current phase state saved to:', partialErrorPath);
+        } catch (saveErr) {
+          error('Failed to save error files:', saveErr);
+        }
+
         error('Parse error:', err);
+        error('Please manually correct the LLM output or retry with a different model');
         process.exit(1);
       }
 
