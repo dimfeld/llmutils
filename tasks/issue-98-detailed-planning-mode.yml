@@ -798,7 +798,7 @@ tasks:
               - `parse`: Input malformed markdown, verify error output and saved files.
               - `parse`: Input markdown with circular dependencies, verify error output.
               - `generate-phase`: Mock LLM to return malformed YAML, verify error output and saved files.
-        done: false
+        done: true
   - title: 8. Documentation Update
     description: Update the `README.md` file to include documentation for the new
       "Detailed Planning Mode" feature, including the new CLI commands,
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T03:24:46.872Z
+updatedAt: 2025-05-29T03:32:18.565Z
 changedFiles:
   - package.json
   - src/rmplan/actions.ts
@@ -989,6 +989,7 @@ changedFiles:
   - src/rmplan/generate-phase.test.ts
   - src/rmplan/id_utils.test.ts
   - src/rmplan/id_utils.ts
+  - src/rmplan/integration.test.ts
   - src/rmplan/markdown_parser.test.ts
   - src/rmplan/markdown_parser.ts
   - src/rmplan/parse.test.ts
