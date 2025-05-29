@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const phaseSchema = z
   .object({
-    title: z.string(),
+    title: z.string().optional(),
     goal: z.string(),
     details: z.string(),
     tasks: z.array(
