@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const planSchema = z
+export const phaseSchema = z
   .object({
     goal: z.string(),
     details: z.string(),
@@ -12,16 +12,18 @@ export const planSchema = z
         include_imports: z.boolean().default(false),
         include_importers: z.boolean().default(false),
         examples: z.array(z.string()).optional(),
-        steps: z.array(
-          z.object({
-            prompt: z.string(),
-            examples: z.array(z.string()).optional(),
-            done: z.boolean().default(false),
-          })
-        ),
+        steps: z
+          .array(
+            z.object({
+              prompt: z.string(),
+              examples: z.array(z.string()).optional(),
+              done: z.boolean().default(false),
+            })
+          )
+          .default([]),
       })
     ),
-    id: z.string().optional(),
+    id: z.string(),
     status: z.enum(['pending', 'in_progress', 'done']).default('pending').optional(),
     priority: z.enum(['unknown', 'low', 'medium', 'high', 'urgent']).default('unknown').optional(),
     dependencies: z.array(z.string()).default([]).optional(),
@@ -35,6 +37,6 @@ export const planSchema = z
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
   })
-  .describe('rmplan plan file schema');
+  .describe('rmplan phase file schema');
 
-export type PlanSchema = z.infer<typeof planSchema>;
+export type PhaseSchema = z.infer<typeof phaseSchema>;

@@ -92,7 +92,7 @@ tasks:
 
           Export `phaseSchema` and its corresponding TypeScript type
           `PhaseSchema`.
-        done: false
+        done: true
       - prompt: >
           Create a new file `src/rmplan/id_utils.ts`.
 
@@ -980,4 +980,8 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:13:54.225Z
+updatedAt: 2025-05-29T02:15:18.242Z
+changedFiles:
+  - src/rmplan/planSchema.ts
+  - tasks/issue-98-detailed-planning-mode.md
+  - tasks/issue-98-detailed-planning-mode.yml
