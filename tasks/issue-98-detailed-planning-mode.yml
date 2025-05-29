@@ -359,7 +359,7 @@ tasks:
           raw markdown strings as input.
 
           Focus on the accuracy of the parsed structure (`ParsedMarkdownPlan`).
-        done: false
+        done: true
   - title: 4. Implement `rmplan parse` Command
     description: Create the `rmplan parse --input <markdown_file> --output-dir
       <dir>` command. This command will use the markdown parser from Task 3,
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:25:17.047Z
+updatedAt: 2025-05-29T02:29:53.631Z
 changedFiles:
   - package.json
   - src/rmplan/cleanup.test.ts
