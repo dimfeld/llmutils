@@ -866,7 +866,7 @@ tasks:
           start sections.
 
           Maintain a clear and concise style.
-        done: false
+        done: true
   - title: 9. Refine Project ID Generation for `rmplan parse`
     description: Refine the project ID generation logic within the `rmplan parse`
       command. If a GitHub issue is provided, the project ID should be
@@ -980,8 +980,9 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T03:32:18.565Z
+updatedAt: 2025-05-29T03:34:39.697Z
 changedFiles:
+  - README.md
   - package.json
   - src/rmplan/actions.ts
   - src/rmplan/cleanup.test.ts
