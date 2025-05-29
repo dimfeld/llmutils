@@ -25,12 +25,13 @@ import {
   extractMarkdownToYaml,
   markStepDone,
   prepareNextStep,
+  gatherPhaseGenerationContext,
   type ExtractMarkdownToYamlOptions,
 } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
-import { planPrompt } from './prompt.js';
+import { planPrompt, generatePhaseStepsPrompt } from './prompt.js';
 import { executors } from './executors/index.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.ts';
@@ -40,7 +41,8 @@ import { generateText } from 'ai';
 import { createModel } from '../common/model_factory.ts';
 import { parseMarkdownPlan, type ParsedPhase } from './markdown_parser.js';
 import { generateProjectId, generatePhaseId } from './id_utils.js';
-import type { PhaseSchema } from './planSchema.js';
+import { phaseSchema, type PhaseSchema } from './planSchema.js';
+import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 
 await loadEnv();
 
@@ -771,6 +773,185 @@ program
       await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
     } catch (err) {
       error('Failed to list workspaces:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('generate-phase')
+  .description('Generate detailed steps and prompts for a specific phase.')
+  .requiredOption('-p, --phase <phaseYamlFile>', 'Path to the phase YAML file.')
+  .option('--force', 'Override dependency completion check and proceed with generation.')
+  .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
+  .action(async (options) => {
+    const globalOpts = program.opts();
+
+    try {
+      // 1. Load RmplanConfig using loadEffectiveConfig
+      const config = await loadEffectiveConfig(globalOpts.config);
+
+      // 2. Resolve options.phaseYamlFile to an absolute path
+      const phaseYamlFile = path.resolve(options.phase);
+
+      // 3. Load the target phase YAML file
+      const phaseContent = await Bun.file(phaseYamlFile).text();
+      const parsedPhase = yaml.parse(phaseContent);
+      const validationResult = phaseSchema.safeParse(parsedPhase);
+
+      if (!validationResult.success) {
+        error('Failed to validate phase YAML:', validationResult.error.issues);
+        process.exit(1);
+      }
+
+      const currentPhaseData = validationResult.data;
+
+      // 4. Dependency Checking
+      for (const dependencyId of currentPhaseData.dependencies || []) {
+        // Extract phase index from dependency ID (e.g., "projectid-1" -> "1")
+        const phaseIndexMatch = dependencyId.match(/-(\d+)$/);
+        if (!phaseIndexMatch) {
+          warn(`Warning: Could not parse phase index from dependency ID: ${dependencyId}`);
+          continue;
+        }
+
+        const phaseIndex = phaseIndexMatch[1];
+        const dependencyPath = path.join(path.dirname(phaseYamlFile), `phase_${phaseIndex}.yaml`);
+
+        try {
+          const depContent = await Bun.file(dependencyPath).text();
+          const parsedDep = yaml.parse(depContent);
+          const depValidation = phaseSchema.safeParse(parsedDep);
+
+          if (!depValidation.success) {
+            warn(`Warning: Failed to validate dependency ${dependencyId}`);
+            continue;
+          }
+
+          const depData = depValidation.data;
+
+          if (depData.status !== 'done') {
+            const msg = `Dependency ${dependencyId} is not complete (status: ${depData.status}).`;
+            warn(msg);
+
+            if (!options.force) {
+              error('Cannot proceed without completed dependencies. Use --force to override.');
+              process.exit(1);
+            }
+
+            warn('Proceeding despite incomplete dependencies due to --force flag.');
+          }
+        } catch (err) {
+          warn(`Warning: Could not read dependency file ${dependencyPath}:`, err);
+          if (!options.force) {
+            error('Cannot proceed without checking all dependencies. Use --force to override.');
+            process.exit(1);
+          }
+        }
+      }
+
+      // 5. Determine projectPlanDir
+      const projectPlanDir = path.dirname(phaseYamlFile);
+
+      // 6. Call gatherPhaseGenerationContext
+      const phaseGenCtx = await gatherPhaseGenerationContext(phaseYamlFile, projectPlanDir);
+
+      // 7. Prepare rmfilter arguments for codebase context
+      const rmfilterArgs = [...phaseGenCtx.rmfilterArgsFromPlan];
+
+      // Add files from tasks if any are pre-populated
+      for (const task of currentPhaseData.tasks) {
+        if (task.files && task.files.length > 0) {
+          rmfilterArgs.push(...task.files);
+        }
+      }
+
+      // 8. Invoke rmfilter programmatically
+      const gitRoot = (await getGitRoot()) || process.cwd();
+      const codebaseContextXml = await runRmfilterProgrammatically(
+        rmfilterArgs,
+        gitRoot,
+        projectPlanDir
+      );
+
+      // 9. Construct LLM Prompt for Step Generation
+      const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
+      const fullPrompt = `${phaseStepsPrompt}
+
+<codebase_context>
+${codebaseContextXml}
+</codebase_context>`;
+
+      // 10. Call LLM
+      const modelId =
+        options.model || config.models?.execution || 'anthropic/claude-3-5-sonnet-latest';
+      const model = createModel(modelId);
+
+      log('Generating detailed steps for phase using model:', modelId);
+
+      const { text } = await generateText({
+        model,
+        prompt: fullPrompt,
+        maxTokens: 8000,
+        temperature: 0.2,
+      });
+
+      // 11. Parse LLM Output
+      let parsedTasks;
+      try {
+        // Extract YAML from the response (LLM might include markdown formatting)
+        const yamlMatch = text.match(/```yaml\s*([\s\S]*?)\s*```/);
+        const yamlContent = yamlMatch ? yamlMatch[1] : text;
+
+        const parsed = yaml.parse(yamlContent);
+
+        // Validate that we got a tasks array
+        if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
+          throw new Error('LLM output does not contain a valid tasks array');
+        }
+
+        parsedTasks = parsed.tasks;
+      } catch (err) {
+        // Save raw LLM output for debugging
+        const errorFilePath = phaseYamlFile.replace('.yaml', '.llm_error.yaml');
+        await Bun.write(errorFilePath, text);
+        error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
+        error('Parse error:', err);
+        process.exit(1);
+      }
+
+      // 12. Update Phase YAML
+      // Merge LLM-generated task details into currentPhaseData.tasks
+      for (let i = 0; i < currentPhaseData.tasks.length; i++) {
+        const existingTask = currentPhaseData.tasks[i];
+        const llmTask = parsedTasks[i];
+
+        if (!llmTask) {
+          warn(`Warning: LLM did not generate details for task ${i + 1}: ${existingTask.title}`);
+          continue;
+        }
+
+        // Update task with LLM-generated details
+        existingTask.files = llmTask.files || [];
+        existingTask.include_imports = llmTask.include_imports ?? false;
+        existingTask.include_importers = llmTask.include_importers ?? false;
+        existingTask.steps = llmTask.steps || [];
+      }
+
+      // Update timestamps
+      currentPhaseData.promptsGeneratedAt = new Date().toISOString();
+      currentPhaseData.updatedAt = new Date().toISOString();
+
+      // 13. Write the updated phase YAML back to file
+      const updatedYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+${yaml.stringify(currentPhaseData)}`;
+
+      await Bun.write(phaseYamlFile, updatedYaml);
+
+      // 14. Log success
+      log(chalk.green('✓ Successfully generated detailed steps for phase'));
+      log(`Updated phase file: ${phaseYamlFile}`);
+    } catch (err) {
+      error('Failed to generate phase details:', err);
       process.exit(1);
     }
   });
