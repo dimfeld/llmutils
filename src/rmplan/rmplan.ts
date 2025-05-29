@@ -27,6 +27,7 @@ import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
 import { phaseSchema } from './planSchema.js';
+import { readAllPlans } from './plans.js';
 import { generatePhaseStepsPrompt, planPrompt, simplePlanPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
@@ -611,32 +612,25 @@ program
 
       const currentPhaseData = validationResult.data;
 
-      // 4. Dependency Checking
-      for (const dependencyId of currentPhaseData.dependencies || []) {
-        // Extract phase index from dependency ID (e.g., "projectid-1" -> "1")
-        const phaseIndexMatch = dependencyId.match(/-(\d+)$/);
-        if (!phaseIndexMatch) {
-          warn(`Warning: Could not parse phase index from dependency ID: ${dependencyId}`);
-          continue;
-        }
+      // 4. Dependency Checking using readAllPlans
+      if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
+        const projectPlanDir = path.dirname(phaseYamlFile);
+        const allPlans = await readAllPlans(projectPlanDir);
 
-        const phaseIndex = phaseIndexMatch[1];
-        const dependencyPath = path.join(path.dirname(phaseYamlFile), `phase_${phaseIndex}.yaml`);
+        for (const dependencyId of currentPhaseData.dependencies) {
+          const dependencyPlan = allPlans.get(dependencyId);
 
-        try {
-          const depContent = await Bun.file(dependencyPath).text();
-          const parsedDep = yaml.parse(depContent);
-          const depValidation = phaseSchema.safeParse(parsedDep);
-
-          if (!depValidation.success) {
-            warn(`Warning: Failed to validate dependency ${dependencyId}`);
+          if (!dependencyPlan) {
+            warn(`Warning: Could not find dependency ${dependencyId} in project directory`);
+            if (!options.force) {
+              error('Cannot proceed without checking all dependencies. Use --force to override.');
+              process.exit(1);
+            }
             continue;
           }
 
-          const depData = depValidation.data;
-
-          if (depData.status !== 'done') {
-            const msg = `Dependency ${dependencyId} is not complete (status: ${depData.status}).`;
+          if (dependencyPlan.status !== 'done') {
+            const msg = `Dependency ${dependencyId} is not complete (status: ${dependencyPlan.status}).`;
             warn(msg);
 
             if (!options.force) {
@@ -645,12 +639,6 @@ program
             }
 
             warn('Proceeding despite incomplete dependencies due to --force flag.');
-          }
-        } catch (err) {
-          warn(`Warning: Could not read dependency file ${dependencyPath}:`, err);
-          if (!options.force) {
-            error('Cannot proceed without checking all dependencies. Use --force to override.');
-            process.exit(1);
           }
         }
       }
