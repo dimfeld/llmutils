@@ -8,8 +8,6 @@ tasks:
     files:
       - src/index.ts
       - other files
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: |
           This is a multiline prompt
@@ -24,8 +22,6 @@ tasks:
     description: [single-line or multi-line string]
     files:
       - [list of relevant file paths]
-    include_imports: [boolean]
-    include_importers: [boolean]
     steps:
       - prompt: [multi-line string using the | character]`;
 
@@ -39,8 +35,6 @@ export const phaseExampleFormatGeneric = `phases:
       - title: [task title]
         description: [task description]
         files: []
-        include_imports: false
-        include_importers: false
         steps: []
     status: pending
     priority: unknown`;
@@ -63,8 +57,6 @@ export const planMarkdownExampleFormat = `
 **Files:**
 - path/to/relevant/file1.ext
 - path/to/another/file.ext
-
-Include Imports: Yes
 
 **Steps:**
 1.  **Prompt:**
@@ -179,7 +171,6 @@ IMPORTANT: In this high-level plan, tasks should ONLY include:
 Do NOT include in tasks:
 - Detailed implementation steps or prompts
 - File lists
-- include_imports or include_importers flags
 
 These implementation details will be generated later when each phase is expanded.
 
@@ -216,11 +207,9 @@ The goal is to output prompts, but context, etc is important as well. Include pl
 
 When generating the final output with the prompts, output a title (a concise single-sentence title for the project), an overall goal, project details, and then a list of tasks.
 
-Each task should have a list of relevant files, flags for "include imports" and "include importers", and a list of steps, where each step is a prompt. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
+Each task should have a list of relevant files and a list of steps, where each step is a prompt a few sentences long. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
 
-The "include imports" flag on a task indicates if we should look at files imported by the files in the list. Self-contained edits may not need this flag to be set, but it should be enabled when you think it will be useful to look at extra function or type definitions in imported files to make correct changes.
-
-The "include importers" flag on a task indicates if we should look at the files that import the files in the list. This is useful, for example, when a function or object signature is going to change and we want to make sure we don't break any code that uses it. This brings in a lot of extra files that may not be relevant, so use sparingly.
+Every step in a task should be at most a few sentences long and relate to the information in the task's description. If a step needs to be more than a few sentences, consider that it should be separate task.
 
 Use the following Markdown format for your final prompt output:
 
@@ -286,23 +275,22 @@ ${tasksSection}
 
 For each task listed above, you need to generate:
 1. **files**: The specific files that need to be created or modified for this task
-2. **include_imports**: Whether to include imported files in the context (true/false)
-3. **include_importers**: Whether to include files that import the target files (true/false)
-4. **steps**: Detailed implementation steps, each with a specific prompt
+4. **steps**: Implementation steps -- each step should be a prompt a few sentences long
 
 ### Guidelines:
 
 1. **Test-Driven Development**: Include test creation/modification as early steps when appropriate
 2. **Incremental Progress**: Each step should be small, achievable, and verifiable
 3. **Build on Previous Work**: Reference and utilize code/patterns from completed phases listed above
-4. **File Selection**:
+4. **Description**:
+   - Work from the existing task description, but you can add details if needed.
+   - Reference relevant patterns from the codebase and other information which provides context for the steps.
+5. **File Selection**:
    - Be specific about which files need modification
    - Consider files changed in previous phases when they're relevant
-   - Set include_imports to true when you need to understand interfaces and dependencies
-   - Set include_importers to true when changes might affect calling code
-5. **Step Prompts**:
+6. **Step Prompts**:
    - Write clear, actionable prompts for each step
-   - Include specific implementation details and requirements
+   - Each step should be at most a few sentences long
    - Reference relevant patterns from the codebase
    - No need to generate code, the agent reading the prompt will generate it from the prompt.
 
@@ -317,8 +305,6 @@ tasks:
     files:
       - path/to/file1.ts
       - path/to/file2.ts
-    include_imports: [true/false]
-    include_importers: [true/false]
     steps:
       - prompt: |
           [Detailed, multi-line prompt for step 1]
@@ -329,8 +315,6 @@ tasks:
     description: [Task 2 Description]
     files:
       - path/to/file3.ts
-    include_imports: [true/false]
-    include_importers: [true/false]
     steps:
       - prompt: |
           [Detailed prompt for this task]

@@ -98,8 +98,6 @@ test('prepareNextStep includes autoexamples when present in prompt', async () =>
         title: 'Test task',
         description: 'Test description',
         files: ['test.ts'],
-        include_imports: false,
-        include_importers: false,
         steps: [
           {
             prompt: 'This step includes example1 in its prompt',

@@ -97,12 +97,7 @@ export async function prepareNextStep(
     throw new Error('No pending steps found in the plan.');
   }
   const activeTask = result.task;
-  const performImportAnalysis =
-    withImports ||
-    withAllImports ||
-    withImporters ||
-    activeTask.include_imports ||
-    activeTask.include_importers;
+  const performImportAnalysis = withImports || withAllImports || withImporters;
 
   // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
   const cleanFiles = activeTask.files.map((file) => file.replace(/\s*\([^)]*\)\s*$/, '').trim());
@@ -367,11 +362,11 @@ export async function prepareNextStep(
       const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
       if (withAllImports) {
         importCommandBlockArgs.push('--with-all-imports');
-      } else if (withImports || activeTask.include_imports) {
+      } else if (withImports) {
         importCommandBlockArgs.push('--with-imports');
       }
 
-      if (withImporters || activeTask.include_importers) {
+      if (withImporters) {
         importCommandBlockArgs.push('--with-importers');
       }
 
@@ -851,9 +846,8 @@ ${yaml.stringify(currentPhaseData)}`;
       }
 
       // Update task with LLM-generated details
+      existingTask.description = llmTask.description || existingTask.description;
       existingTask.files = llmTask.files || [];
-      existingTask.include_imports = llmTask.include_imports ?? false;
-      existingTask.include_importers = llmTask.include_importers ?? false;
       existingTask.steps = llmTask.steps || [];
     }
 
