@@ -5,6 +5,9 @@
     "RmplanPlan": {
       "type": "object",
       "properties": {
+        "title": {
+          "type": "string"
+        },
         "goal": {
           "type": "string"
         },
@@ -65,14 +68,14 @@
                     "prompt"
                   ],
                   "additionalProperties": false
-                }
+                },
+                "default": []
               }
             },
             "required": [
               "title",
               "description",
-              "files",
-              "steps"
+              "files"
             ],
             "additionalProperties": false
           }
@@ -158,12 +161,14 @@
         }
       },
       "required": [
+        "title",
         "goal",
         "details",
-        "tasks"
+        "tasks",
+        "id"
       ],
       "additionalProperties": false,
-      "description": "rmplan plan file schema"
+      "description": "rmplan phase file schema"
     }
   }
 }
