@@ -968,9 +968,9 @@ tasks:
 
           - Test the path where an LLM generates the title (mock the
           `generateText` call, verify a `slug-UNIQUEID` format).
-        done: false
+        done: true
 id: 1453cny
-status: in_progress
+status: done
 priority: unknown
 rmfilter:
   - src/rmplan
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T03:42:53.263Z
+updatedAt: 2025-05-29T03:48:40.485Z
 changedFiles:
   - README.md
   - package.json
@@ -993,6 +993,7 @@ changedFiles:
   - src/rmplan/integration.test.ts
   - src/rmplan/markdown_parser.test.ts
   - src/rmplan/markdown_parser.ts
+  - src/rmplan/parse-id-generation.test.ts
   - src/rmplan/parse.test.ts
   - src/rmplan/planSchema.ts
   - src/rmplan/prompt.test.ts
