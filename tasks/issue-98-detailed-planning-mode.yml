@@ -234,7 +234,7 @@ tasks:
 
           The user will then manually save this output or pipe it to a file
           (e.g., `feature_plan.md`).
-        done: false
+        done: true
   - title: 3. Implement Markdown Parser Logic
     description: Create a new module `src/rmplan/markdown_parser.ts` to parse the
       phase-based markdown generated in the previous task. This parser will
@@ -980,7 +980,7 @@ issue:
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-05-29T02:20:59.319Z
+updatedAt: 2025-05-29T02:21:24.163Z
 changedFiles:
   - src/rmplan/cleanup.test.ts
   - src/rmplan/id_utils.test.ts
