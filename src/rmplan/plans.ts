@@ -114,8 +114,12 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
  * - Its status is 'pending' (or not set, which defaults to pending)
  * - All its dependencies have status 'done'
  *
+ * Plans are prioritized by:
+ * 1. Priority (urgent > high > medium > low > undefined)
+ * 2. ID (alphabetically)
+ *
  * @param directory - The directory to search for plans
- * @returns The plan with the lowest ID that is ready, or null if none found
+ * @returns The highest priority ready plan, or null if none found
  */
 export async function findNextReadyPlan(directory: string): Promise<PlanSummary | null> {
   const plans = await readAllPlans(directory);
@@ -144,8 +148,19 @@ export async function findNextReadyPlan(directory: string): Promise<PlanSummary 
     return null;
   }
 
-  // Sort by ID to get the lowest
+  // Sort by priority first (highest priority first), then by ID
   readyCandidates.sort((a, b) => {
+    // Define priority order - higher number means higher priority
+    const priorityOrder: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
+    const aPriority = a.priority ? priorityOrder[a.priority] || 0 : 0;
+    const bPriority = b.priority ? priorityOrder[b.priority] || 0 : 0;
+
+    // Sort by priority descending (highest first)
+    if (aPriority !== bPriority) {
+      return bPriority - aPriority;
+    }
+
+    // If priorities are the same, sort by ID ascending
     const aId = a.id || '';
     const bId = b.id || '';
     return aId.localeCompare(bId);

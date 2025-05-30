@@ -3,7 +3,7 @@ import { mkdtemp, rm, mkdir, writeFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
-import { readAllPlans, resolvePlanFile } from './plans.js';
+import { readAllPlans, resolvePlanFile, findNextReadyPlan } from './plans.js';
 
 describe('resolvePlanFile', () => {
   let tempDir: string;
@@ -240,6 +240,266 @@ describe('readAllPlans', () => {
       expect(plans.size).toBe(0);
     } finally {
       await rm(emptyDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('findNextReadyPlan', () => {
+  let tempDir: string;
+
+  beforeAll(async () => {
+    tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-findnext-test-')));
+
+    // Create test plans with various priorities and dependencies
+    const plans = [
+      {
+        filename: 'low-priority-1.yml',
+        content: {
+          id: 'low-1',
+          title: 'Low Priority 1',
+          goal: 'Low priority goal',
+          details: 'Details',
+          status: 'pending',
+          priority: 'low',
+          tasks: [],
+        },
+      },
+      {
+        filename: 'urgent-priority.yml',
+        content: {
+          id: 'urgent-1',
+          title: 'Urgent Priority',
+          goal: 'Urgent goal',
+          details: 'Details',
+          status: 'pending',
+          priority: 'urgent',
+          tasks: [],
+        },
+      },
+      {
+        filename: 'medium-priority.yml',
+        content: {
+          id: 'medium-1',
+          title: 'Medium Priority',
+          goal: 'Medium goal',
+          details: 'Details',
+          status: 'pending',
+          priority: 'medium',
+          tasks: [],
+        },
+      },
+      {
+        filename: 'high-priority.yml',
+        content: {
+          id: 'high-1',
+          title: 'High Priority',
+          goal: 'High goal',
+          details: 'Details',
+          status: 'pending',
+          priority: 'high',
+          tasks: [],
+        },
+      },
+      {
+        filename: 'no-priority.yml',
+        content: {
+          id: 'no-priority-1',
+          title: 'No Priority',
+          goal: 'No priority goal',
+          details: 'Details',
+          status: 'pending',
+          tasks: [],
+        },
+      },
+      {
+        filename: 'high-priority-2.yml',
+        content: {
+          id: 'high-2',
+          title: 'High Priority 2',
+          goal: 'Second high priority goal',
+          details: 'Details',
+          status: 'pending',
+          priority: 'high',
+          tasks: [],
+        },
+      },
+      {
+        filename: 'done-plan.yml',
+        content: {
+          id: 'done-1',
+          title: 'Done Plan',
+          goal: 'Already done',
+          details: 'Details',
+          status: 'done',
+          priority: 'urgent',
+          tasks: [],
+        },
+      },
+      {
+        filename: 'blocked-plan.yml',
+        content: {
+          id: 'blocked-1',
+          title: 'Blocked Plan',
+          goal: 'Blocked by dependency',
+          details: 'Details',
+          status: 'pending',
+          priority: 'urgent',
+          dependencies: ['done-1', 'low-1'], // low-1 is not done, so this is blocked
+          tasks: [],
+        },
+      },
+      {
+        filename: 'ready-with-deps.yml',
+        content: {
+          id: 'ready-deps-1',
+          title: 'Ready with Dependencies',
+          goal: 'Has dependencies but they are done',
+          details: 'Details',
+          status: 'pending',
+          priority: 'medium',
+          dependencies: ['done-1'], // done-1 is done, so this is ready
+          tasks: [],
+        },
+      },
+    ];
+
+    for (const { filename, content } of plans) {
+      await writeFile(join(tempDir, filename), yaml.stringify(content));
+    }
+  });
+
+  afterAll(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should return the highest priority ready plan', async () => {
+    const nextPlan = await findNextReadyPlan(tempDir);
+    expect(nextPlan).toBeDefined();
+    expect(nextPlan!.id).toBe('urgent-1');
+  });
+
+  it('should sort by ID when priorities are equal', async () => {
+    // Remove the urgent plan to test high priority sorting
+    await rm(join(tempDir, 'urgent-priority.yml'));
+
+    const nextPlan = await findNextReadyPlan(tempDir);
+    expect(nextPlan).toBeDefined();
+    expect(nextPlan!.id).toBe('high-1'); // high-1 comes before high-2 alphabetically
+  });
+
+  it('should skip blocked plans even if they have high priority', async () => {
+    // The blocked-1 plan has urgent priority but depends on low-1 which is not done
+    const plans = await readAllPlans(tempDir);
+    const blockedPlan = plans.get('blocked-1');
+    expect(blockedPlan).toBeDefined();
+    expect(blockedPlan!.priority).toBe('urgent');
+
+    // But it should not be returned as the next plan
+    const nextPlan = await findNextReadyPlan(tempDir);
+    expect(nextPlan).toBeDefined();
+    expect(nextPlan!.id).not.toBe('blocked-1');
+  });
+
+  it('should include plans with all dependencies done', async () => {
+    const plans = await readAllPlans(tempDir);
+    const readyWithDeps = plans.get('ready-deps-1');
+    expect(readyWithDeps).toBeDefined();
+    expect(readyWithDeps!.dependencies).toEqual(['done-1']);
+
+    // Create a fresh directory with only the dependency test plans
+    const depTestDir = await mkdtemp(join(tmpdir(), 'dep-test-'));
+    try {
+      await writeFile(
+        join(depTestDir, 'done-dep.yml'),
+        yaml.stringify({
+          id: 'done-dep',
+          title: 'Done Dependency',
+          goal: 'Already done',
+          details: 'Details',
+          status: 'done',
+          tasks: [],
+        })
+      );
+
+      await writeFile(
+        join(depTestDir, 'ready-with-deps.yml'),
+        yaml.stringify({
+          id: 'ready-with-deps',
+          title: 'Ready with Dependencies',
+          goal: 'Has dependencies but they are done',
+          details: 'Details',
+          status: 'pending',
+          priority: 'medium',
+          dependencies: ['done-dep'],
+          tasks: [],
+        })
+      );
+
+      const nextPlan = await findNextReadyPlan(depTestDir);
+      expect(nextPlan).toBeDefined();
+      expect(nextPlan!.id).toBe('ready-with-deps');
+    } finally {
+      await rm(depTestDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should return null when no plans are ready', async () => {
+    // Create a directory with only done plans
+    const doneDir = await mkdtemp(join(tmpdir(), 'done-'));
+    try {
+      await writeFile(
+        join(doneDir, 'done.yml'),
+        yaml.stringify({
+          id: 'done-plan',
+          title: 'Done',
+          goal: 'Already done',
+          details: 'Details',
+          status: 'done',
+          tasks: [],
+        })
+      );
+
+      const nextPlan = await findNextReadyPlan(doneDir);
+      expect(nextPlan).toBeNull();
+    } finally {
+      await rm(doneDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should prioritize plans without priority lower than those with low priority', async () => {
+    // Create a fresh directory with only no-priority and low-priority plans
+    const priorityTestDir = await mkdtemp(join(tmpdir(), 'priority-test-'));
+    try {
+      await writeFile(
+        join(priorityTestDir, 'no-priority.yml'),
+        yaml.stringify({
+          id: 'no-priority',
+          title: 'No Priority',
+          goal: 'No priority goal',
+          details: 'Details',
+          status: 'pending',
+          tasks: [],
+        })
+      );
+
+      await writeFile(
+        join(priorityTestDir, 'low-priority.yml'),
+        yaml.stringify({
+          id: 'low-priority',
+          title: 'Low Priority',
+          goal: 'Low priority goal',
+          details: 'Details',
+          status: 'pending',
+          priority: 'low',
+          tasks: [],
+        })
+      );
+
+      const nextPlan = await findNextReadyPlan(priorityTestDir);
+      expect(nextPlan).toBeDefined();
+      expect(nextPlan!.id).toBe('low-priority'); // Low priority is higher than no priority
+    } finally {
+      await rm(priorityTestDir, { recursive: true, force: true });
     }
   });
 });
