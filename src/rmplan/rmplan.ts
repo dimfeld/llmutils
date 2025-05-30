@@ -34,6 +34,22 @@ import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './proc
 
 await loadEnv();
 
+/**
+ * Resolves the tasks directory path, handling both absolute and relative paths.
+ * If tasks path is relative, it's resolved relative to the git root.
+ */
+async function resolveTasksDir(config: any): Promise<string> {
+  const gitRoot = (await getGitRoot()) || process.cwd();
+
+  if (config.paths?.tasks) {
+    return path.isAbsolute(config.paths.tasks)
+      ? config.paths.tasks
+      : path.join(gitRoot, config.paths.tasks);
+  }
+
+  return gitRoot;
+}
+
 async function generateSuggestedFilename(planText: string, config: any): Promise<string> {
   try {
     // Extract first 500 characters of the plan for context
@@ -169,6 +185,11 @@ program
         });
 
         if (savePath) {
+          // If the path is relative resolve it against the git root
+          if (!path.isAbsolute(savePath) && config.paths?.tasks) {
+            savePath = path.resolve(gitRoot, path.basename(suggestedFilename));
+          }
+
           try {
             await Bun.write(savePath, planText);
             planFile = savePath;
@@ -191,8 +212,8 @@ program
       // Construct the issue URL
       issueUrlsForExtract.push(issueResult.issue.url);
 
-      let tasksDir = config.paths?.tasks;
-      let suggestedFilename = tasksDir
+      let tasksDir = await resolveTasksDir(config);
+      let suggestedFilename = config.paths?.tasks
         ? path.join(tasksDir, issueResult.suggestedFileName)
         : issueResult.suggestedFileName;
 
@@ -589,8 +610,7 @@ function createAgentCommand(command: Command, description: string) {
         if (options.next) {
           // Find the next ready plan
           const config = await loadEffectiveConfig(globalOpts.config);
-          const gitRoot = (await getGitRoot()) || process.cwd();
-          const tasksDir = config.paths?.tasks || gitRoot;
+          const tasksDir = await resolveTasksDir(config);
           const nextPlan = await findNextReadyPlan(tasksDir);
 
           if (!nextPlan) {
@@ -683,10 +703,9 @@ program
     try {
       const globalOpts = program.opts();
       const config = await loadEffectiveConfig(globalOpts.config);
-      const gitRoot = (await getGitRoot()) || process.cwd();
 
       // Determine directory to search
-      let searchDir = options.dir || config.paths?.tasks || gitRoot;
+      let searchDir = options.dir || (await resolveTasksDir(config));
 
       // Read all plans
       const plans = await readAllPlans(searchDir);
@@ -863,8 +882,7 @@ program
 
       if (options.next) {
         // Find the next ready plan
-        const gitRoot = (await getGitRoot()) || process.cwd();
-        const tasksDir = config.paths?.tasks || gitRoot;
+        const tasksDir = await resolveTasksDir(config);
         const nextPlan = await findNextReadyPlan(tasksDir);
 
         if (!nextPlan) {
@@ -908,8 +926,7 @@ program
 
       if (options.next) {
         // Find the next ready plan
-        const gitRoot = (await getGitRoot()) || process.cwd();
-        const tasksDir = config.paths?.tasks || gitRoot;
+        const tasksDir = await resolveTasksDir(config);
         const nextPlan = await findNextReadyPlan(tasksDir);
 
         if (!nextPlan) {
@@ -958,8 +975,7 @@ program
         log('\n' + chalk.bold('Dependencies:'));
         log('─'.repeat(60));
 
-        const gitRoot = (await getGitRoot()) || process.cwd();
-        const tasksDir = config.paths?.tasks || gitRoot;
+        const tasksDir = await resolveTasksDir(config);
         const allPlans = await readAllPlans(tasksDir);
 
         for (const depId of plan.dependencies) {

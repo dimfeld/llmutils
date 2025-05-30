@@ -1,5 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import * as path from 'node:path';
 import * as yaml from 'yaml';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
 import { loadEffectiveConfig } from './configLoader.js';
@@ -98,7 +99,15 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
   // Try to find by plan ID
   const config = await loadEffectiveConfig(configPath);
   const gitRoot = (await getGitRoot()) || process.cwd();
-  const tasksDir = config.paths?.tasks || gitRoot;
+
+  let tasksDir: string;
+  if (config.paths?.tasks) {
+    tasksDir = path.isAbsolute(config.paths.tasks)
+      ? config.paths.tasks
+      : path.join(gitRoot, config.paths.tasks);
+  } else {
+    tasksDir = gitRoot;
+  }
 
   const plans = await readAllPlans(tasksDir);
   const matchingPlan = plans.get(planArg);
