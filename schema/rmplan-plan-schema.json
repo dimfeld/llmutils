@@ -29,7 +29,8 @@
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
+                },
+                "default": []
               },
               "examples": {
                 "type": "array",
@@ -66,8 +67,7 @@
             },
             "required": [
               "title",
-              "description",
-              "files"
+              "description"
             ],
             "additionalProperties": false
           }
@@ -150,13 +150,32 @@
         "updatedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "project": {
+          "type": "object",
+          "properties": {
+            "goal": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "details": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "goal",
+            "title",
+            "details"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
         "goal",
         "details",
-        "tasks",
-        "id"
+        "tasks"
       ],
       "additionalProperties": false,
       "description": "rmplan phase file schema"

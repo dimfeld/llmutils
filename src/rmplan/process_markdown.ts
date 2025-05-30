@@ -97,11 +97,19 @@ export function findYamlStart(text: string): string {
     text = text.slice(3, -3).trim();
   }
 
-  // Look for multiphase YAML first
-  let startIndex = text.indexOf('phases:');
-  if (startIndex === -1) {
-    // single-phase YAML will start with "goal:"
-    startIndex = text.indexOf('goal:');
+  // Look for the first line that looks like a YAML key
+  // A YAML key typically starts with a word character, contains alphanumeric/underscores/hyphens,
+  // and ends with a colon (potentially followed by whitespace or a value)
+  const lines = text.split('\n');
+  let startIndex = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    // Match a line that looks like a YAML key: starts with a letter, followed by word chars/hyphens, then colon
+    if (/^[a-zA-Z][a-zA-Z0-9_-]*:/.test(line)) {
+      startIndex = text.indexOf(lines[i]);
+      break;
+    }
   }
 
   // Remove potential introductory lines before the actual YAML content
@@ -290,6 +298,13 @@ async function saveMultiPhaseYaml(
   const outputDir = options.output;
   await fs.mkdir(outputDir, { recursive: true });
 
+  // Extract overall project information from the parsed YAML
+  const projectInfo = {
+    goal: parsedYaml.goal || '',
+    title: parsedYaml.title || '',
+    details: parsedYaml.details || '',
+  };
+
   // Process phases
   const phaseIndexToId = new Map<number, string>();
   let successfulWrites = 0;
@@ -309,6 +324,11 @@ async function saveMultiPhaseYaml(
     phase.updatedAt = phase.updatedAt || now;
     phase.status = phase.status || 'pending';
     phase.priority = phase.priority || 'unknown';
+
+    // Add overall project information to each phase
+    if (projectInfo.goal || projectInfo.title || projectInfo.details) {
+      phase.project = projectInfo;
+    }
 
     // Add rmfilter and issue from options
     if (options.planRmfilterArgs?.length) {

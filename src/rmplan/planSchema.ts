@@ -35,6 +35,13 @@ export const phaseSchema = z
     promptsGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
+    project: z
+      .object({
+        goal: z.string(),
+        title: z.string(),
+        details: z.string(),
+      })
+      .optional(),
   })
   .describe('rmplan phase file schema');
 

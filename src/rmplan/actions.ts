@@ -1,4 +1,5 @@
 import { select } from '@inquirer/prompts';
+import { generateText } from 'ai';
 import chalk from 'chalk';
 import os from 'node:os';
 import path from 'path';
@@ -16,7 +17,12 @@ import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
 import { fixYaml } from './fix_yaml.js';
 import type { PhaseGenerationContext } from './prompt.js';
+import { generatePhaseStepsPrompt } from './prompt.js';
 import { convertMarkdownToYaml, findYamlStart } from './process_markdown.js';
+import { createModel } from '../common/model_factory.js';
+import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
+import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
+import { readAllPlans } from './plans.js';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -665,13 +671,6 @@ export async function preparePhase(
   config: RmplanConfig,
   options: { force?: boolean; model?: string } = {}
 ): Promise<void> {
-  const { generateText } = await import('ai');
-  const { createModel } = await import('../common/model_factory.ts');
-  const { DEFAULT_RUN_MODEL } = await import('../common/run_and_apply.ts');
-  const { runRmfilterProgrammatically } = await import('../rmfilter/rmfilter.js');
-  const { generatePhaseStepsPrompt } = await import('./prompt.js');
-  const { readAllPlans } = await import('./plans.js');
-
   try {
     // 1. Load the target phase YAML file
     const phaseContent = await Bun.file(phaseYamlFile).text();
@@ -790,7 +789,7 @@ ${codebaseContextXml}
 </codebase_context>`;
 
     // 8. Call LLM
-    const modelId = options.model || config.models?.execution || DEFAULT_RUN_MODEL;
+    const modelId = options.model || config.models?.planning || DEFAULT_RUN_MODEL;
     const model = createModel(modelId);
 
     log('Generating detailed steps for phase using model:', modelId);
@@ -901,30 +900,13 @@ export async function gatherPhaseGenerationContext(
     // 2. Determine the overall project plan's goal and details
     let overallProjectGoal = '';
     let overallProjectDetails = '';
+    let overallProjectTitle = '';
 
-    // Try to read feature_plan.md from parent directory
-    const featurePlanPath = path.join(path.dirname(projectPlanDir), 'feature_plan.md');
-
-    try {
-      const featurePlanContent = await Bun.file(featurePlanPath).text();
-
-      // Simple parsing for goal and details from markdown
-      const goalMatch = featurePlanContent.match(/^#\s+Goal\s*\n\s*(.+?)(?=\n#|\n##|$)/ims);
-      const detailsMatch = featurePlanContent.match(
-        /^##\s+Details\s*\n\s*([\s\S]+?)(?=\n#|\n---|\n##|$)/im
-      );
-
-      if (goalMatch) {
-        overallProjectGoal = goalMatch[1].trim();
-      }
-      if (detailsMatch) {
-        overallProjectDetails = detailsMatch[1].trim();
-      }
-    } catch (e) {
-      // If feature_plan.md doesn't exist or can't be read, fall back to current phase data
-      warn(`Could not read feature_plan.md at ${featurePlanPath}, using phase data as fallback`);
-      overallProjectGoal = currentPhaseData.goal;
-      overallProjectDetails = currentPhaseData.details;
+    // Check if the phase has project-level fields
+    if (currentPhaseData.project) {
+      overallProjectGoal = currentPhaseData.project.goal;
+      overallProjectDetails = currentPhaseData.project.details;
+      overallProjectTitle = currentPhaseData.project.title;
     }
 
     // 3. Initialize arrays for previous phases info and changed files
@@ -991,6 +973,7 @@ export async function gatherPhaseGenerationContext(
     const context: PhaseGenerationContext = {
       overallProjectGoal,
       overallProjectDetails,
+      overallProjectTitle: overallProjectTitle || undefined,
       currentPhaseGoal: currentPhaseData.goal,
       currentPhaseDetails: currentPhaseData.details,
       currentPhaseTasks: currentPhaseData.tasks.map((task) => ({

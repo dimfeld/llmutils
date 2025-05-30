@@ -104,6 +104,10 @@
             "convert_yaml": {
               "type": "string",
               "description": "Model spec for rmplan markdown-to-yaml extraction"
+            },
+            "planning": {
+              "type": "string",
+              "description": "Model spec for rmplan prepare phase generation"
             }
           },
           "additionalProperties": false

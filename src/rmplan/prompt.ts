@@ -25,7 +25,10 @@ tasks:
     steps:
       - prompt: [multi-line string using the | character]`;
 
-export const phaseExampleFormatGeneric = `phases:
+export const phaseExampleFormatGeneric = `title: [single-line string - a concise title for the project]
+goal: [single-line string]
+details: [single-line or multi-line string]
+phases:
   - title: [phase title - a concise single-sentence title]
     goal: [phase goal]
     details: [phase details]
@@ -126,6 +129,7 @@ export const phaseBasedMarkdownExampleFormat = `
 export interface PhaseGenerationContext {
   overallProjectGoal: string;
   overallProjectDetails: string;
+  overallProjectTitle?: string; // Optional project title
   currentPhaseGoal: string;
   currentPhaseDetails: string;
   currentPhaseTasks: Array<{ title: string; description: string }>; // Tasks from the current phase YAML (before step generation)
@@ -261,17 +265,32 @@ ${context.changedFilesFromDependencies.join('\n')}
     )
     .join('\n\n');
 
+  // Build the overall project context section only if we have meaningful content
+  const hasProjectContext =
+    context.overallProjectGoal || context.overallProjectDetails || context.overallProjectTitle;
+
+  let projectContextSection = '';
+  if (hasProjectContext) {
+    const contextParts: string[] = ['## Overall Project Context\n'];
+
+    if (context.overallProjectTitle) {
+      contextParts.push(`**Project Title:** ${context.overallProjectTitle}\n`);
+    }
+    if (context.overallProjectGoal) {
+      contextParts.push(`**Project Goal:** ${context.overallProjectGoal}\n`);
+    }
+    if (context.overallProjectDetails) {
+      contextParts.push(`**Project Details:** ${context.overallProjectDetails}\n`);
+    }
+
+    projectContextSection = contextParts.join('\n') + '\n';
+  }
+
   return `# Phase Implementation Generation
 
-You are generating detailed implementation steps for a specific phase of a larger project.
+You are generating detailed implementation steps for a specific phase${hasProjectContext ? ' of a larger project' : ''}.
 
-## Overall Project Context
-
-**Project Goal:** ${context.overallProjectGoal}
-
-**Project Details:** ${context.overallProjectDetails}
-
-${previousPhasesSection}
+${projectContextSection}${previousPhasesSection}
 
 ## Current Phase Details
 
