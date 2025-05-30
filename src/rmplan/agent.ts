@@ -297,6 +297,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           model: agentExecutionModel,
           ...executorStepOptions,
           filePathPrefix: executor.filePathPrefix,
+          rmfilterArgs: options.rmfilterArgs,
         },
         currentBaseDir
       ).catch((err) => {

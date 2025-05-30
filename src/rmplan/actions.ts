@@ -669,7 +669,7 @@ export async function executePostApplyCommand(
 export async function preparePhase(
   phaseYamlFile: string,
   config: RmplanConfig,
-  options: { force?: boolean; model?: string } = {}
+  options: { force?: boolean; model?: string; rmfilterArgs?: string[] } = {}
 ): Promise<void> {
   try {
     // 1. Load the target phase YAML file
@@ -724,7 +724,11 @@ export async function preparePhase(
     // 4. Call gatherPhaseGenerationContext
     let phaseGenCtx;
     try {
-      phaseGenCtx = await gatherPhaseGenerationContext(phaseYamlFile, projectPlanDir);
+      phaseGenCtx = await gatherPhaseGenerationContext(
+        phaseYamlFile,
+        projectPlanDir,
+        options.rmfilterArgs
+      );
     } catch (err) {
       error('Failed to gather phase generation context:', err);
 
@@ -881,7 +885,8 @@ ${yaml.stringify(currentPhaseData)}`;
  */
 export async function gatherPhaseGenerationContext(
   phaseFilePath: string,
-  projectPlanDir: string
+  projectPlanDir: string,
+  rmfilterArgs?: string[]
 ): Promise<PhaseGenerationContext> {
   try {
     // 1. Load and validate the target phase YAML file
@@ -982,7 +987,7 @@ export async function gatherPhaseGenerationContext(
       })),
       previousPhasesInfo,
       changedFilesFromDependencies: uniqueChangedFiles,
-      rmfilterArgsFromPlan: currentPhaseData.rmfilter || [],
+      rmfilterArgsFromPlan: [...(currentPhaseData.rmfilter || []), ...(rmfilterArgs || [])],
     };
 
     return context;

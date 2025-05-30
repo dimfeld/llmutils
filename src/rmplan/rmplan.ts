@@ -602,8 +602,14 @@ function createAgentCommand(command: Command, description: string) {
     .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
     .option('--next', 'Execute the next plan that is ready to be implemented')
     .allowExcessArguments(true)
+    .allowUnknownOption(true)
     .action(async (planFile, options) => {
       const globalOpts = program.opts();
+
+      // Find '--' in process.argv to get extra args for rmfilter
+      const doubleDashIdx = process.argv.indexOf('--');
+      const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
+
       try {
         let resolvedPlanFile: string;
 
@@ -630,6 +636,8 @@ function createAgentCommand(command: Command, description: string) {
           resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
         }
 
+        // Pass rmfilterArgs to rmplanAgent
+        options.rmfilterArgs = rmfilterArgs;
         await rmplanAgent(resolvedPlanFile, options, globalOpts);
       } catch (err) {
         error(`Failed to process plan: ${err as Error}`);
@@ -871,8 +879,14 @@ program
   .option('--force', 'Override dependency completion check and proceed with generation.')
   .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
   .option('--next', 'Prepare the next plan that is ready to be implemented')
+  .allowExcessArguments(true)
+  .allowUnknownOption(true)
   .action(async (yamlFile, options) => {
     const globalOpts = program.opts();
+
+    // Find '--' in process.argv to get extra args for rmfilter
+    const doubleDashIdx = process.argv.indexOf('--');
+    const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
 
     try {
       // Load RmplanConfig using loadEffectiveConfig
@@ -905,6 +919,7 @@ program
       await preparePhase(phaseYamlFile, config, {
         force: options.force,
         model: options.model,
+        rmfilterArgs: rmfilterArgs,
       });
     } catch (err) {
       error('Failed to generate phase details:', err);
