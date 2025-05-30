@@ -24,7 +24,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
-import { readAllPlans, resolvePlanFile } from './plans.js';
+import { readAllPlans, resolvePlanFile, findNextReadyPlan } from './plans.js';
 import { planPrompt, simplePlanPrompt } from './prompt.js';
 import type { PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
@@ -543,7 +543,7 @@ const executorNames = executors
   .join(', ');
 
 program
-  .command('agent <planFile>')
+  .command('agent [planFile]')
   .description('Automatically execute steps in a plan YAML file. Can be a file path or plan ID.')
   .option('-m, --model <model>', 'Model to use for LLM')
   .option(`-x, --executor <name>`, 'The executor to use for plan execution')
@@ -561,11 +561,34 @@ program
   )
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
+  .option('--next', 'Execute the next plan that is ready to be implemented')
   .allowExcessArguments(true)
   .action(async (planFile, options) => {
     const globalOpts = program.opts();
     try {
-      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      let resolvedPlanFile: string;
+
+      if (options.next) {
+        // Find the next ready plan
+        const config = await loadEffectiveConfig(globalOpts.config);
+        const tasksDir = config.paths?.tasks || process.cwd();
+        const nextPlan = await findNextReadyPlan(tasksDir);
+
+        if (!nextPlan) {
+          log('No ready plans found. All pending plans have incomplete dependencies.');
+          return;
+        }
+
+        log(chalk.green(`Found next ready plan: ${nextPlan.id} - ${nextPlan.title || 'Untitled'}`));
+        resolvedPlanFile = nextPlan.filename;
+      } else {
+        if (!planFile) {
+          error('Please provide a plan file or use --next to find the next ready plan');
+          process.exit(1);
+        }
+        resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      }
+
       await rmplanAgent(resolvedPlanFile, options, globalOpts);
     } catch (err) {
       error(`Failed to process plan: ${err as Error}`);
@@ -574,7 +597,7 @@ program
   });
 
 program
-  .command('run <planFile>')
+  .command('run [planFile]')
   .description(
     'Alias for "agent". Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
   )
@@ -594,11 +617,34 @@ program
   )
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
+  .option('--next', 'Execute the next plan that is ready to be implemented')
   .allowExcessArguments(true)
   .action(async (planFile, options) => {
     const globalOpts = program.opts();
     try {
-      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      let resolvedPlanFile: string;
+
+      if (options.next) {
+        // Find the next ready plan
+        const config = await loadEffectiveConfig(globalOpts.config);
+        const tasksDir = config.paths?.tasks || process.cwd();
+        const nextPlan = await findNextReadyPlan(tasksDir);
+
+        if (!nextPlan) {
+          log('No ready plans found. All pending plans have incomplete dependencies.');
+          return;
+        }
+
+        log(chalk.green(`Found next ready plan: ${nextPlan.id} - ${nextPlan.title || 'Untitled'}`));
+        resolvedPlanFile = nextPlan.filename;
+      } else {
+        if (!planFile) {
+          error('Please provide a plan file or use --next to find the next ready plan');
+          process.exit(1);
+        }
+        resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      }
+
       await rmplanAgent(resolvedPlanFile, options, globalOpts);
     } catch (err) {
       error(`Failed to process plan: ${err as Error}`);
@@ -821,14 +867,36 @@ program
   });
 
 program
-  .command('show <planFile>')
+  .command('show [planFile]')
   .description('Display detailed information about a plan. Can be a file path or plan ID.')
-  .action(async (planFile) => {
+  .option('--next', 'Show the next plan that is ready to be implemented')
+  .action(async (planFile, options) => {
     const globalOpts = program.opts();
 
     try {
       const config = await loadEffectiveConfig(globalOpts.config);
-      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+
+      let resolvedPlanFile: string;
+
+      if (options.next) {
+        // Find the next ready plan
+        const tasksDir = config.paths?.tasks || process.cwd();
+        const nextPlan = await findNextReadyPlan(tasksDir);
+
+        if (!nextPlan) {
+          log('No ready plans found. All pending plans have incomplete dependencies.');
+          return;
+        }
+
+        log(chalk.green(`Found next ready plan: ${nextPlan.id}`));
+        resolvedPlanFile = nextPlan.filename;
+      } else {
+        if (!planFile) {
+          error('Please provide a plan file or use --next to find the next ready plan');
+          process.exit(1);
+        }
+        resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      }
 
       // Read the plan file
       const content = await Bun.file(resolvedPlanFile).text();

@@ -107,3 +107,49 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
 
   throw new Error(`No plan found with ID or file path: ${planArg}`);
 }
+
+/**
+ * Finds the next plan that is ready to be implemented.
+ * A plan is ready if:
+ * - Its status is 'pending' (or not set, which defaults to pending)
+ * - All its dependencies have status 'done'
+ *
+ * @param directory - The directory to search for plans
+ * @returns The plan with the lowest ID that is ready, or null if none found
+ */
+export async function findNextReadyPlan(directory: string): Promise<PlanSummary | null> {
+  const plans = await readAllPlans(directory);
+
+  // Convert to array and filter for pending plans
+  let candidates = Array.from(plans.values()).filter((plan) => {
+    const status = plan.status || 'pending';
+    return status === 'pending';
+  });
+
+  // Check dependencies for each candidate
+  const readyCandidates = candidates.filter((plan) => {
+    if (!plan.dependencies || plan.dependencies.length === 0) {
+      // No dependencies, so it's ready
+      return true;
+    }
+
+    // Check if all dependencies are done
+    return plan.dependencies.every((depId) => {
+      const depPlan = plans.get(depId);
+      return depPlan && depPlan.status === 'done';
+    });
+  });
+
+  if (readyCandidates.length === 0) {
+    return null;
+  }
+
+  // Sort by ID to get the lowest
+  readyCandidates.sort((a, b) => {
+    const aId = a.id || '';
+    const bId = b.id || '';
+    return aId.localeCompare(bId);
+  });
+
+  return readyCandidates[0];
+}

@@ -291,6 +291,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
 - **Plan Inspection**: Display detailed information about plans including dependencies with resolution, tasks with completion status, and metadata.
+- **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, and `run` commands.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
 
@@ -377,6 +378,9 @@ rmplan show plan.yml
 # Show plan information using its ID
 rmplan show my-feature-123
 
+# Show the next plan that is ready to be implemented
+rmplan show --next
+
 # Automatically execute steps in a plan, choosing a specific model
 rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
 # Or use the 'run' alias
@@ -384,6 +388,11 @@ rmplan run plan.yml --model google/gemini-2.5-flash-preview-05-20
 
 # Execute a specific number of steps automatically
 rmplan agent plan.yml --steps 3
+
+# Execute the next ready plan (pending with all dependencies complete)
+rmplan agent --next
+# Or using the run alias
+rmplan run --next
 
 # Execute plan with auto-created workspace
 rmplan agent plan.yml --workspace-task-id task-123
