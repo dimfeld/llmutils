@@ -309,9 +309,9 @@ The general usage pattern is that you will:
 
 Then repeat steps 5 through 7 until the task is done.
 
-**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `my-feature-123`) for commands like `done`, `next`, `agent`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
+**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `my-feature-123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
 
-Alternatively, you can use the `agent` command to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
+Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
 
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
 
@@ -379,6 +379,8 @@ rmplan show my-feature-123
 
 # Automatically execute steps in a plan, choosing a specific model
 rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
+# Or use the 'run' alias
+rmplan run plan.yml --model google/gemini-2.5-flash-preview-05-20
 
 # Execute a specific number of steps automatically
 rmplan agent plan.yml --steps 3

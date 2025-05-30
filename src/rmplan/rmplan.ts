@@ -574,6 +574,39 @@ program
   });
 
 program
+  .command('run <planFile>')
+  .description(
+    'Alias for "agent". Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
+  )
+  .option('-m, --model <model>', 'Model to use for LLM')
+  .option(`-x, --executor <name>`, 'The executor to use for plan execution')
+  .addHelpText('after', `Available executors: ${executorNames}`)
+  .option('--steps <steps>', 'Number of steps to execute')
+  .option('--no-log', 'Do not log to file')
+  .option(
+    '--workspace <id>',
+    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
+  )
+  .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
+  .option(
+    '--new-workspace',
+    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+  )
+  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
+  .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
+  .allowExcessArguments(true)
+  .action(async (planFile, options) => {
+    const globalOpts = program.opts();
+    try {
+      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      await rmplanAgent(resolvedPlanFile, options, globalOpts);
+    } catch (err) {
+      error(`Failed to process plan: ${err as Error}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command('workspaces')
   .description('List all workspaces and their lock status')
   .option('--repo <url>', 'Filter by repository URL (defaults to current repo)')
