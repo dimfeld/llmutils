@@ -26,6 +26,7 @@ import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
 import { readAllPlans, resolvePlanFile } from './plans.js';
 import { planPrompt, simplePlanPrompt } from './prompt.js';
+import type { PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
 import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './process_markdown.ts';
@@ -441,7 +442,7 @@ program
         }
       }
     } catch (err) {
-      error(`Failed to process plan: ${err}`);
+      error(`Failed to process plan: ${err as Error}`);
       process.exit(1);
     }
   });
@@ -567,7 +568,7 @@ program
       const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
       await rmplanAgent(resolvedPlanFile, options, globalOpts);
     } catch (err) {
-      error(`Failed to process plan: ${err}`);
+      error(`Failed to process plan: ${err as Error}`);
       process.exit(1);
     }
   });
@@ -648,12 +649,13 @@ program
             aVal = a.status || '';
             bVal = b.status || '';
             break;
-          case 'priority':
+          case 'priority': {
             // Sort priority in reverse (high first)
             const priorityOrder = { urgent: 5, high: 4, medium: 3, low: 2, unknown: 1 };
             aVal = priorityOrder[a.priority || 'unknown'];
             bVal = priorityOrder[b.priority || 'unknown'];
             break;
+          }
           case 'created':
             aVal = a.createdAt || '';
             bVal = b.createdAt || '';
@@ -757,6 +759,150 @@ program
       });
     } catch (err) {
       error('Failed to generate phase details:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('show <planFile>')
+  .description('Display detailed information about a plan. Can be a file path or plan ID.')
+  .action(async (planFile) => {
+    const globalOpts = program.opts();
+
+    try {
+      const config = await loadEffectiveConfig(globalOpts.config);
+      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+
+      // Read the plan file
+      const content = await Bun.file(resolvedPlanFile).text();
+      const plan = yaml.parse(content) as PlanSchema;
+
+      // Display basic information
+      log(chalk.bold('\nPlan Information:'));
+      log('─'.repeat(60));
+      log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
+      log(`${chalk.cyan('Title:')} ${plan.title || 'Untitled'}`);
+      log(`${chalk.cyan('Status:')} ${plan.status || 'pending'}`);
+      log(`${chalk.cyan('Priority:')} ${plan.priority || 'unknown'}`);
+      log(`${chalk.cyan('Goal:')} ${plan.goal}`);
+      log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
+
+      if (plan.baseBranch) {
+        log(`${chalk.cyan('Base Branch:')} ${plan.baseBranch}`);
+      }
+
+      if (plan.createdAt) {
+        log(`${chalk.cyan('Created:')} ${new Date(plan.createdAt).toLocaleString()}`);
+      }
+
+      if (plan.updatedAt) {
+        log(`${chalk.cyan('Updated:')} ${new Date(plan.updatedAt).toLocaleString()}`);
+      }
+
+      // Display dependencies with resolution
+      if (plan.dependencies && plan.dependencies.length > 0) {
+        log('\n' + chalk.bold('Dependencies:'));
+        log('─'.repeat(60));
+
+        const tasksDir = config.paths?.tasks || process.cwd();
+        const allPlans = await readAllPlans(tasksDir);
+
+        for (const depId of plan.dependencies) {
+          const depPlan = allPlans.get(depId);
+          if (depPlan) {
+            const statusIcon =
+              depPlan.status === 'done' ? '✓' : depPlan.status === 'in_progress' ? '⏳' : '○';
+            const statusColor =
+              depPlan.status === 'done'
+                ? chalk.green
+                : depPlan.status === 'in_progress'
+                  ? chalk.yellow
+                  : chalk.gray;
+            log(
+              `  ${statusIcon} ${chalk.cyan(depId)} - ${depPlan.title || 'Untitled'} ${statusColor(`[${depPlan.status || 'pending'}]`)}`
+            );
+          } else {
+            log(`  ○ ${chalk.cyan(depId)} ${chalk.red('[Not found]')}`);
+          }
+        }
+      }
+
+      // Display issues and PRs
+      if (plan.issue && plan.issue.length > 0) {
+        log('\n' + chalk.bold('Issues:'));
+        log('─'.repeat(60));
+        plan.issue.forEach((url) => log(`  • ${url}`));
+      }
+
+      if (plan.pullRequest && plan.pullRequest.length > 0) {
+        log('\n' + chalk.bold('Pull Requests:'));
+        log('─'.repeat(60));
+        plan.pullRequest.forEach((url) => log(`  • ${url}`));
+      }
+
+      // Display details
+      if (plan.details) {
+        log('\n' + chalk.bold('Details:'));
+        log('─'.repeat(60));
+        log(plan.details);
+      }
+
+      // Display tasks with completion status
+      if (plan.tasks && plan.tasks.length > 0) {
+        log('\n' + chalk.bold('Tasks:'));
+        log('─'.repeat(60));
+
+        plan.tasks.forEach((task, taskIdx) => {
+          const totalSteps = task.steps.length;
+          const doneSteps = task.steps.filter((s) => s.done).length;
+          const taskComplete = totalSteps > 0 && doneSteps === totalSteps;
+          const taskIcon = taskComplete ? '✓' : totalSteps > 0 && doneSteps > 0 ? '⏳' : '○';
+          const taskColor = taskComplete
+            ? chalk.green
+            : totalSteps > 0 && doneSteps > 0
+              ? chalk.yellow
+              : chalk.white;
+
+          log(`\n${taskIcon} ${chalk.bold(`Task ${taskIdx + 1}:`)} ${taskColor(task.title)}`);
+          if (totalSteps > 0) {
+            log(`  Progress: ${doneSteps}/${totalSteps} steps completed`);
+          }
+          log(`  ${chalk.gray(task.description)}`);
+
+          if (task.files && task.files.length > 0) {
+            log(`  Files: ${task.files.join(', ')}`);
+          }
+
+          if (task.steps && task.steps.length > 0) {
+            log('  Steps:');
+            task.steps.forEach((step, stepIdx) => {
+              const stepIcon = step.done ? '✓' : '○';
+              const stepColor = step.done ? chalk.green : chalk.gray;
+              const prompt = step.prompt.split('\n')[0]; // First line only
+              const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
+              log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
+            });
+          }
+        });
+      }
+
+      // Display rmfilter args if present
+      if (plan.rmfilter && plan.rmfilter.length > 0) {
+        log('\n' + chalk.bold('RmFilter Arguments:'));
+        log('─'.repeat(60));
+        log(`  ${plan.rmfilter.join(' ')}`);
+      }
+
+      // Display changed files if present
+      if (plan.changedFiles && plan.changedFiles.length > 0) {
+        log('\n' + chalk.bold('Changed Files:'));
+        log('─'.repeat(60));
+        plan.changedFiles.forEach((file) => log(`  • ${file}`));
+      }
+
+      log(''); // Empty line at the end
+    } catch (err) {
+      error(`Failed to show plan: ${err as Error}`);
       process.exit(1);
     }
   });

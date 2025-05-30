@@ -290,6 +290,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
+- **Plan Inspection**: Display detailed information about plans including dependencies with resolution, tasks with completion status, and metadata.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
 
@@ -362,6 +363,12 @@ rmplan list --sort status --reverse
 
 # List plans from a specific directory
 rmplan list --dir ./my-plans
+
+# Show detailed information about a plan
+rmplan show plan.yml
+
+# Show plan information using its ID
+rmplan show my-feature-123
 
 # Automatically execute steps in a plan, choosing a specific model
 rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
