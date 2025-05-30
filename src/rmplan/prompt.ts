@@ -288,7 +288,7 @@ ${context.changedFilesFromDependencies.join('\n')}
 
   return `# Phase Implementation Generation
 
-You are generating detailed implementation steps for a specific phase${hasProjectContext ? ' of a larger project' : ''}.
+You are generating detailed implementation steps${hasProjectContext ? ' for a specific phase of a larger project' : ' for a project'}.
 
 ${projectContextSection}${previousPhasesSection}
 
