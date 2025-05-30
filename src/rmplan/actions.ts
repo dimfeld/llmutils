@@ -23,6 +23,9 @@ import { createModel } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 import { readAllPlans } from './plans.js';
+import * as clipboard from '../common/clipboard.js';
+import { sshAwarePasteAction } from '../common/ssh_detection.js';
+import { waitForEnter } from '../common/terminal.js';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -669,7 +672,7 @@ export async function executePostApplyCommand(
 export async function preparePhase(
   phaseYamlFile: string,
   config: RmplanConfig,
-  options: { force?: boolean; model?: string; rmfilterArgs?: string[] } = {}
+  options: { force?: boolean; model?: string; rmfilterArgs?: string[]; direct?: boolean } = {}
 ): Promise<void> {
   try {
     // 1. Load the target phase YAML file
@@ -792,17 +795,38 @@ export async function preparePhase(
 ${codebaseContextXml}
 </codebase_context>`;
 
-    // 8. Call LLM
-    const modelId = options.model || config.models?.planning || DEFAULT_RUN_MODEL;
-    const model = createModel(modelId);
+    // 8. Call LLM or use clipboard/paste mode
+    let text: string;
 
-    log('Generating detailed steps for phase using model:', modelId);
+    if (options.direct) {
+      // Direct LLM call (original behavior)
+      const modelId = options.model || config.models?.planning || DEFAULT_RUN_MODEL;
+      const model = createModel(modelId);
 
-    const { text } = await generateText({
-      model,
-      prompt: fullPrompt,
-      temperature: 0.2,
-    });
+      log('Generating detailed steps for phase using model:', modelId);
+
+      const result = await generateText({
+        model,
+        prompt: fullPrompt,
+        temperature: 0.2,
+      });
+      text = result.text;
+    } else {
+      // Clipboard/paste mode (new default)
+      await clipboard.write(fullPrompt);
+      log(chalk.green('✓ Phase preparation prompt copied to clipboard'));
+      log(
+        chalk.bold(
+          `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} with the detailed steps, or Ctrl+C to exit.`
+        )
+      );
+
+      text = await waitForEnter(true);
+
+      if (!text || !text.trim()) {
+        throw new Error('No response was pasted.');
+      }
+    }
 
     // 9. Parse LLM Output
     let parsedTasks;

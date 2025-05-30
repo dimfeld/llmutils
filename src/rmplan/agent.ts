@@ -222,6 +222,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         try {
           await preparePhase(currentPlanFile, config, {
             model: options.model,
+            direct: options.direct,
           });
           log('Successfully prepared the plan with detailed steps.');
         } catch (err) {

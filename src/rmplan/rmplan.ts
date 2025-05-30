@@ -187,7 +187,7 @@ program
         if (savePath) {
           // If the path is relative resolve it against the git root
           if (!path.isAbsolute(savePath) && config.paths?.tasks) {
-            savePath = path.resolve(gitRoot, path.basename(suggestedFilename));
+            savePath = path.resolve(gitRoot, suggestedFilename);
           }
 
           try {
@@ -601,6 +601,10 @@ function createAgentCommand(command: Command, description: string) {
     .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
     .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
     .option('--next', 'Execute the next plan that is ready to be implemented')
+    .option(
+      '--direct',
+      'Call LLM directly instead of copying prompt to clipboard during preparation'
+    )
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planFile, options) => {
@@ -893,6 +897,7 @@ program
   .option('--force', 'Override dependency completion check and proceed with generation.')
   .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
   .option('--next', 'Prepare the next plan that is ready to be implemented')
+  .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (yamlFile, options) => {
@@ -929,11 +934,11 @@ program
         phaseYamlFile = await resolvePlanFile(yamlFile, globalOpts.config);
       }
 
-      // Call the new preparePhase function
       await preparePhase(phaseYamlFile, config, {
         force: options.force,
         model: options.model,
         rmfilterArgs: rmfilterArgs,
+        direct: options.direct,
       });
     } catch (err) {
       error('Failed to generate phase details:', err);
