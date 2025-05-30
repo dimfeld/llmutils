@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import { table } from 'table';
 import yaml from 'yaml';
 import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
@@ -759,20 +760,20 @@ program
       log(chalk.bold('Plan Files:'));
       log('');
 
-      // Header
-      const header = [
+      // Prepare table data
+      const tableData: string[][] = [];
+
+      // Header row
+      tableData.push([
         chalk.bold('ID'),
         chalk.bold('Title'),
         chalk.bold('Status'),
         chalk.bold('Priority'),
         chalk.bold('Dependencies'),
         chalk.bold('File'),
-      ].join(' | ');
+      ]);
 
-      log(header);
-      log('-'.repeat(120));
-
-      // Rows
+      // Data rows
       for (const plan of planArray) {
         const statusColor =
           plan.status === 'done'
@@ -794,19 +795,44 @@ program
                   ? chalk.blue
                   : chalk.white;
 
-        const row = [
-          chalk.cyan((plan.id || 'no-id').padEnd(15)),
-          (plan.title || 'Untitled').slice(0, 30).padEnd(30),
-          statusColor((plan.status || 'pending').padEnd(12)),
-          priorityColor((plan.priority || 'unknown').padEnd(8)),
-          (plan.dependencies?.join(', ') || '-').slice(0, 20).padEnd(20),
+        tableData.push([
+          chalk.cyan(plan.id || 'no-id'),
+          plan.title || 'Untitled', // Show full title
+          statusColor(plan.status || 'pending'),
+          priorityColor(plan.priority || 'unknown'),
+          plan.dependencies?.join(', ') || '-',
           chalk.gray(path.relative(searchDir, plan.filename)),
-        ].join(' | ');
-
-        log(row);
+        ]);
       }
 
-      log('');
+      // Configure table options
+      const tableConfig = {
+        columns: {
+          1: { width: 50, wrapWord: true }, // Title column - wider and wraps
+          4: { width: 20, wrapWord: true }, // Dependencies column
+        },
+        border: {
+          topBody: '─',
+          topJoin: '┬',
+          topLeft: '┌',
+          topRight: '┐',
+          bottomBody: '─',
+          bottomJoin: '┴',
+          bottomLeft: '└',
+          bottomRight: '┘',
+          bodyLeft: '│',
+          bodyRight: '│',
+          bodyJoin: '│',
+          joinBody: '─',
+          joinLeft: '├',
+          joinRight: '┤',
+          joinJoin: '┼',
+        },
+      };
+
+      const output = table(tableData, tableConfig);
+      log(output);
+
       log(`Showing: ${planArray.length} of ${plans.size} plan(s)`);
     } catch (err) {
       error('Failed to list plans:', err);

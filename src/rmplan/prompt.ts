@@ -141,9 +141,9 @@ export interface PhaseGenerationContext {
 
 export function planPrompt(plan: string) {
   // The first half of this prompt is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
-  return `This is a project plan for an upcoming feature.
+  return `This is a description for an upcoming feature, and you will be tasked with creating a plan for it.
 
-# Project Plan
+# Project Description
 
 ${plan}
 
@@ -201,9 +201,10 @@ If there are any changes requested or comments made after your create this plan,
 }
 
 export function simplePlanPrompt(plan: string) {
-  return `This is a project plan for an upcoming feature.
+  return `This is a description for an upcoming feature, and you will be tasked with creating a plan for it.
 
-# Project Plan
+# Project Description
+
 ${plan}
 
 # Plan Creation

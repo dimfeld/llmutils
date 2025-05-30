@@ -5,6 +5,23 @@ export const phaseSchema = z
     title: z.string().optional(),
     goal: z.string(),
     details: z.string(),
+    id: z.string().optional(),
+    status: z.enum(['pending', 'in_progress', 'done']).default('pending').optional(),
+    priority: z.enum(['unknown', 'low', 'medium', 'high', 'urgent']).default('unknown').optional(),
+    dependencies: z.array(z.string()).default([]).optional(),
+    issue: z.array(z.string().url()).default([]).optional(),
+    pullRequest: z.array(z.string().url()).default([]).optional(),
+    planGeneratedAt: z.string().datetime().optional(),
+    promptsGeneratedAt: z.string().datetime().optional(),
+    createdAt: z.string().datetime().optional(),
+    updatedAt: z.string().datetime().optional(),
+    project: z
+      .object({
+        title: z.string(),
+        goal: z.string(),
+        details: z.string(),
+      })
+      .optional(),
     tasks: z.array(
       z.object({
         title: z.string(),
@@ -22,26 +39,9 @@ export const phaseSchema = z
           .default([]),
       })
     ),
-    id: z.string().optional(),
-    status: z.enum(['pending', 'in_progress', 'done']).default('pending').optional(),
-    priority: z.enum(['unknown', 'low', 'medium', 'high', 'urgent']).default('unknown').optional(),
-    dependencies: z.array(z.string()).default([]).optional(),
     baseBranch: z.string().optional(),
     changedFiles: z.array(z.string()).default([]).optional(),
     rmfilter: z.array(z.string()).default([]).optional(),
-    issue: z.array(z.string().url()).default([]).optional(),
-    pullRequest: z.array(z.string().url()).default([]).optional(),
-    planGeneratedAt: z.string().datetime().optional(),
-    promptsGeneratedAt: z.string().datetime().optional(),
-    createdAt: z.string().datetime().optional(),
-    updatedAt: z.string().datetime().optional(),
-    project: z
-      .object({
-        goal: z.string(),
-        title: z.string(),
-        details: z.string(),
-      })
-      .optional(),
   })
   .describe('rmplan phase file schema');
 
