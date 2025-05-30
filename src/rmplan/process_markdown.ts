@@ -97,8 +97,14 @@ export function findYamlStart(text: string): string {
     text = text.slice(3, -3).trim();
   }
 
+  // Look for multiphase YAML first
+  let startIndex = text.indexOf('phases:');
+  if (startIndex === -1) {
+    // single-phase YAML will start with "goal:"
+    startIndex = text.indexOf('goal:');
+  }
+
   // Remove potential introductory lines before the actual YAML content
-  const startIndex = text.indexOf('goal:');
   if (startIndex >= 0) {
     text = text.slice(startIndex);
   }
