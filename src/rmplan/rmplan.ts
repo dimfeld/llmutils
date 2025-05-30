@@ -271,22 +271,38 @@ program
       // Combine user CLI args and issue rmpr options
       const allRmfilterOptions = [...userCliRmfilterArgs, ...issueRmfilterOptions];
 
-      // Append autofound files to rmfilter args
-      const rmfilterFullArgs = [
-        'rmfilter',
-        ...allRmfilterOptions,
-        '--',
-        ...additionalFiles,
-        '--bare',
-        '--copy',
-        '--instructions',
-        `@${tmpPromptPath}`,
-      ];
-      const proc = logSpawn(rmfilterFullArgs, {
-        cwd: gitRoot,
-        stdio: ['inherit', 'inherit', 'inherit'],
-      });
-      exitRes = await proc.exited;
+      // Check if no files are provided to rmfilter
+      const hasNoFiles = additionalFiles.length === 0 && allRmfilterOptions.length === 0;
+
+      if (hasNoFiles) {
+        warn(
+          chalk.yellow(
+            '\n⚠️  Warning: No files specified for rmfilter. The prompt will only contain the planning instructions without any code context.'
+          )
+        );
+
+        // Copy the prompt directly to clipboard without running rmfilter
+        await clipboard.write(promptString);
+        log('Prompt copied to clipboard');
+        exitRes = 0;
+      } else {
+        // Append autofound files to rmfilter args
+        const rmfilterFullArgs = [
+          'rmfilter',
+          ...allRmfilterOptions,
+          '--',
+          ...additionalFiles,
+          '--bare',
+          '--copy',
+          '--instructions',
+          `@${tmpPromptPath}`,
+        ];
+        const proc = logSpawn(rmfilterFullArgs, {
+          cwd: gitRoot,
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+        exitRes = await proc.exited;
+      }
 
       if (exitRes === 0 && !options.noExtract) {
         log(
