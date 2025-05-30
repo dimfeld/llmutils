@@ -589,7 +589,8 @@ function createAgentCommand(command: Command, description: string) {
         if (options.next) {
           // Find the next ready plan
           const config = await loadEffectiveConfig(globalOpts.config);
-          const tasksDir = config.paths?.tasks || process.cwd();
+          const gitRoot = (await getGitRoot()) || process.cwd();
+          const tasksDir = config.paths?.tasks || gitRoot;
           const nextPlan = await findNextReadyPlan(tasksDir);
 
           if (!nextPlan) {
@@ -682,9 +683,10 @@ program
     try {
       const globalOpts = program.opts();
       const config = await loadEffectiveConfig(globalOpts.config);
+      const gitRoot = (await getGitRoot()) || process.cwd();
 
       // Determine directory to search
-      let searchDir = options.dir || config.paths?.tasks || process.cwd();
+      let searchDir = options.dir || config.paths?.tasks || gitRoot;
 
       // Read all plans
       const plans = await readAllPlans(searchDir);
@@ -861,7 +863,8 @@ program
 
       if (options.next) {
         // Find the next ready plan
-        const tasksDir = config.paths?.tasks || process.cwd();
+        const gitRoot = (await getGitRoot()) || process.cwd();
+        const tasksDir = config.paths?.tasks || gitRoot;
         const nextPlan = await findNextReadyPlan(tasksDir);
 
         if (!nextPlan) {
@@ -905,7 +908,8 @@ program
 
       if (options.next) {
         // Find the next ready plan
-        const tasksDir = config.paths?.tasks || process.cwd();
+        const gitRoot = (await getGitRoot()) || process.cwd();
+        const tasksDir = config.paths?.tasks || gitRoot;
         const nextPlan = await findNextReadyPlan(tasksDir);
 
         if (!nextPlan) {
@@ -954,7 +958,8 @@ program
         log('\n' + chalk.bold('Dependencies:'));
         log('─'.repeat(60));
 
-        const tasksDir = config.paths?.tasks || process.cwd();
+        const gitRoot = (await getGitRoot()) || process.cwd();
+        const tasksDir = config.paths?.tasks || gitRoot;
         const allPlans = await readAllPlans(tasksDir);
 
         for (const depId of plan.dependencies) {

@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import * as yaml from 'yaml';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
 import { loadEffectiveConfig } from './configLoader.js';
+import { getGitRoot } from '../rmfilter/utils.js';
 
 export type PlanSummary = {
   id: string;
@@ -96,7 +97,8 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
 
   // Try to find by plan ID
   const config = await loadEffectiveConfig(configPath);
-  const tasksDir = config.paths?.tasks || process.cwd();
+  const gitRoot = (await getGitRoot()) || process.cwd();
+  const tasksDir = config.paths?.tasks || gitRoot;
 
   const plans = await readAllPlans(tasksDir);
   const matchingPlan = plans.get(planArg);
