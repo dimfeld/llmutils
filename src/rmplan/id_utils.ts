@@ -1,8 +1,8 @@
 const EPOCH = new Date('2025-05-01T00:00:00.000Z').getTime();
 
 export function timestamp(): string {
-  const timestamp = Date.now() - EPOCH;
-  return Math.abs(timestamp).toString(36).padStart(6, '0');
+  const timestamp = Math.round((Date.now() - EPOCH) / 1000);
+  return Math.abs(timestamp).toString(36).padStart(5, '0');
 }
 
 /**
@@ -29,11 +29,10 @@ export function slugify(text: string, maxLength = 50): string {
  * @returns A unique project ID
  */
 export function generateProjectId(): string {
-  // Get a short unique component (6 characters)
-  // Use timestamp for first 3-4 chars, counter + random for remaining
   const randomStr = Math.floor(Math.random() * 46656)
     .toString(36)
-    .padStart(3, '0'); // 36^3 = 46656
+    .padStart(2, '0')
+    .slice(0, 2);
 
   return timestamp() + randomStr;
 }

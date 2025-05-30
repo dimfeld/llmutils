@@ -348,7 +348,14 @@ async function saveMultiPhaseYaml(
       continue;
     }
 
-    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(validationResult.data)}`;
+    const orderedContent = Object.fromEntries(
+      Object.keys(planSchema.shape).map((key) => {
+        const value = validationResult.data[key as keyof PlanSchema];
+        return [key, value];
+      })
+    );
+
+    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(orderedContent)}`;
     const phaseFilePath = path.join(outputDir, `phase-${phaseIndex}.yml`);
 
     try {

@@ -84,13 +84,6 @@ describe('timestamp', () => {
     expect(id).toMatch(/^[0-9a-z]+$/);
   });
 
-  test('should generate different IDs when called a few milliseconds apart', async () => {
-    const id1 = timestamp();
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    const id2 = timestamp();
-    expect(id1).not.toBe(id2);
-  });
-
   test('should generate sortable IDs (later IDs should be lexicographically greater)', async () => {
     const ids: string[] = [];
 
