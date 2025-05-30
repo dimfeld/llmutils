@@ -346,6 +346,15 @@ rmplan done plan.yml --commit
 # Mark the next 2 steps as done and commit changes
 rmplan done plan.yml --commit --steps 2
 
+# List all plan files in the tasks directory
+rmplan list
+
+# List plans with custom sorting
+rmplan list --sort status --reverse
+
+# List plans from a specific directory
+rmplan list --dir ./my-plans
+
 # Automatically execute steps in a plan, choosing a specific model
 rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
 

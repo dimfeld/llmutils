@@ -24,6 +24,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
+import { readAllPlans } from './plans.js';
 import { planPrompt, simplePlanPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
@@ -577,6 +578,136 @@ program
       await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
     } catch (err) {
       error('Failed to list workspaces:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('list')
+  .description('List all plan files in the tasks directory')
+  .option(
+    '--dir <directory>',
+    'Directory to search for plan files (defaults to configured tasks directory)'
+  )
+  .option(
+    '--sort <field>',
+    'Sort by: id, title, status, priority, created, updated (default: id)',
+    'id'
+  )
+  .option('--reverse', 'Reverse sort order')
+  .action(async (options) => {
+    try {
+      const globalOpts = program.opts();
+      const config = await loadEffectiveConfig(globalOpts.config);
+
+      // Determine directory to search
+      let searchDir = options.dir || config.paths?.tasks || process.cwd();
+
+      // Read all plans
+      const plans = await readAllPlans(searchDir);
+
+      if (plans.size === 0) {
+        log('No plan files found in', searchDir);
+        return;
+      }
+
+      // Convert to array and sort
+      let planArray = Array.from(plans.values());
+
+      // Sort based on the specified field
+      planArray.sort((a, b) => {
+        let aVal: string | number;
+        let bVal: string | number;
+        switch (options.sort) {
+          case 'title':
+            aVal = (a.title || '').toLowerCase();
+            bVal = (b.title || '').toLowerCase();
+            break;
+          case 'status':
+            aVal = a.status || '';
+            bVal = b.status || '';
+            break;
+          case 'priority':
+            // Sort priority in reverse (high first)
+            const priorityOrder = { urgent: 5, high: 4, medium: 3, low: 2, unknown: 1 };
+            aVal = priorityOrder[a.priority || 'unknown'];
+            bVal = priorityOrder[b.priority || 'unknown'];
+            break;
+          case 'created':
+            aVal = a.createdAt || '';
+            bVal = b.createdAt || '';
+            break;
+          case 'updated':
+            aVal = a.updatedAt || '';
+            bVal = b.updatedAt || '';
+            break;
+          case 'id':
+          default:
+            aVal = a.id || '';
+            bVal = b.id || '';
+            break;
+        }
+
+        if (aVal < bVal) return options.reverse ? 1 : -1;
+        if (aVal > bVal) return options.reverse ? -1 : 1;
+        return 0;
+      });
+
+      // Display as table
+      log(chalk.bold('Plan Files:'));
+      log('');
+
+      // Header
+      const header = [
+        chalk.bold('ID'),
+        chalk.bold('Title'),
+        chalk.bold('Status'),
+        chalk.bold('Priority'),
+        chalk.bold('Dependencies'),
+        chalk.bold('File'),
+      ].join(' | ');
+
+      log(header);
+      log('-'.repeat(120));
+
+      // Rows
+      for (const plan of planArray) {
+        const statusColor =
+          plan.status === 'done'
+            ? chalk.green
+            : plan.status === 'in_progress'
+              ? chalk.yellow
+              : plan.status === 'pending'
+                ? chalk.white
+                : chalk.gray;
+
+        const priorityColor =
+          plan.priority === 'urgent'
+            ? chalk.magenta
+            : plan.priority === 'high'
+              ? chalk.red
+              : plan.priority === 'medium'
+                ? chalk.yellow
+                : plan.priority === 'low'
+                  ? chalk.blue
+                  : chalk.white;
+
+        const row = [
+          chalk.cyan((plan.id || 'no-id').padEnd(15)),
+          (plan.title || 'Untitled').slice(0, 30).padEnd(30),
+          statusColor((plan.status || 'pending').padEnd(12)),
+          priorityColor((plan.priority || 'unknown').padEnd(8)),
+          (plan.dependencies?.join(', ') || '-').slice(0, 20).padEnd(20),
+          chalk.gray(path.relative(searchDir, plan.filename)),
+        ].join(' | ');
+
+        log(row);
+      }
+
+      log('');
+      log(`Total: ${plans.size} plan(s)`);
+    } catch (err) {
+      error('Failed to list plans:', err);
       process.exit(1);
     }
   });

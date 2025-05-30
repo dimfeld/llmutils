@@ -3,10 +3,17 @@ import { join } from 'node:path';
 import * as yaml from 'yaml';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
 
-export type PlanSummary = Pick<
-  PlanSchema,
-  'id' | 'title' | 'status' | 'priority' | 'dependencies' | 'goal' | 'createdAt' | 'updatedAt'
-> & { filename: string };
+export type PlanSummary = {
+  id: string;
+  title?: string;
+  status?: 'pending' | 'in_progress' | 'done';
+  priority?: 'unknown' | 'low' | 'medium' | 'high' | 'urgent';
+  dependencies?: string[];
+  goal: string;
+  createdAt?: string;
+  updatedAt?: string;
+  filename: string;
+};
 
 export async function readAllPlans(directory: string): Promise<Map<string, PlanSummary>> {
   const plans = new Map<string, PlanSummary>();
@@ -20,17 +27,20 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
       const result = phaseSchema.safeParse(parsed);
       if (result.success) {
         const plan = result.data;
-        plans.set(plan.id, {
-          id: plan.id,
-          title: plan.title,
-          status: plan.status,
-          priority: plan.priority,
-          dependencies: plan.dependencies,
-          goal: plan.goal,
-          filename: fullPath,
-          createdAt: plan.createdAt,
-          updatedAt: plan.updatedAt,
-        });
+        // Only add plans that have an ID
+        if (plan.id) {
+          plans.set(plan.id, {
+            id: plan.id,
+            title: plan.title,
+            status: plan.status,
+            priority: plan.priority,
+            dependencies: plan.dependencies,
+            goal: plan.goal,
+            filename: fullPath,
+            createdAt: plan.createdAt,
+            updatedAt: plan.updatedAt,
+          });
+        }
       }
     } catch (error) {
       // Skip files that fail to parse or validate
