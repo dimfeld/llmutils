@@ -542,115 +542,75 @@ const executorNames = executors
   .toArray()
   .join(', ');
 
-program
-  .command('agent [planFile]')
-  .description('Automatically execute steps in a plan YAML file. Can be a file path or plan ID.')
-  .option('-m, --model <model>', 'Model to use for LLM')
-  .option(`-x, --executor <name>`, 'The executor to use for plan execution')
-  .addHelpText('after', `Available executors: ${executorNames}`)
-  .option('--steps <steps>', 'Number of steps to execute')
-  .option('--no-log', 'Do not log to file')
-  .option(
-    '--workspace <id>',
-    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
-  )
-  .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
-  .option(
-    '--new-workspace',
-    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
-  )
-  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
-  .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
-  .option('--next', 'Execute the next plan that is ready to be implemented')
-  .allowExcessArguments(true)
-  .action(async (planFile, options) => {
-    const globalOpts = program.opts();
-    try {
-      let resolvedPlanFile: string;
+// Shared function to create the agent/run command configuration
+function createAgentCommand(command: Command, description: string) {
+  return command
+    .description(description)
+    .option('-m, --model <model>', 'Model to use for LLM')
+    .option(`-x, --executor <name>`, 'The executor to use for plan execution')
+    .addHelpText('after', `Available executors: ${executorNames}`)
+    .option('--steps <steps>', 'Number of steps to execute')
+    .option('--no-log', 'Do not log to file')
+    .option(
+      '--workspace <id>',
+      'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
+    )
+    .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
+    .option(
+      '--new-workspace',
+      'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+    )
+    .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
+    .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
+    .option('--next', 'Execute the next plan that is ready to be implemented')
+    .allowExcessArguments(true)
+    .action(async (planFile, options) => {
+      const globalOpts = program.opts();
+      try {
+        let resolvedPlanFile: string;
 
-      if (options.next) {
-        // Find the next ready plan
-        const config = await loadEffectiveConfig(globalOpts.config);
-        const tasksDir = config.paths?.tasks || process.cwd();
-        const nextPlan = await findNextReadyPlan(tasksDir);
+        if (options.next) {
+          // Find the next ready plan
+          const config = await loadEffectiveConfig(globalOpts.config);
+          const tasksDir = config.paths?.tasks || process.cwd();
+          const nextPlan = await findNextReadyPlan(tasksDir);
 
-        if (!nextPlan) {
-          log('No ready plans found. All pending plans have incomplete dependencies.');
-          return;
+          if (!nextPlan) {
+            log('No ready plans found. All pending plans have incomplete dependencies.');
+            return;
+          }
+
+          log(
+            chalk.green(`Found next ready plan: ${nextPlan.id} - ${nextPlan.title || 'Untitled'}`)
+          );
+          resolvedPlanFile = nextPlan.filename;
+        } else {
+          if (!planFile) {
+            error('Please provide a plan file or use --next to find the next ready plan');
+            process.exit(1);
+          }
+          resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
         }
 
-        log(chalk.green(`Found next ready plan: ${nextPlan.id} - ${nextPlan.title || 'Untitled'}`));
-        resolvedPlanFile = nextPlan.filename;
-      } else {
-        if (!planFile) {
-          error('Please provide a plan file or use --next to find the next ready plan');
-          process.exit(1);
-        }
-        resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+        await rmplanAgent(resolvedPlanFile, options, globalOpts);
+      } catch (err) {
+        error(`Failed to process plan: ${err as Error}`);
+        process.exit(1);
       }
+    });
+}
 
-      await rmplanAgent(resolvedPlanFile, options, globalOpts);
-    } catch (err) {
-      error(`Failed to process plan: ${err as Error}`);
-      process.exit(1);
-    }
-  });
+// Create the agent command
+createAgentCommand(
+  program.command('agent [planFile]'),
+  'Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
+);
 
-program
-  .command('run [planFile]')
-  .description(
-    'Alias for "agent". Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
-  )
-  .option('-m, --model <model>', 'Model to use for LLM')
-  .option(`-x, --executor <name>`, 'The executor to use for plan execution')
-  .addHelpText('after', `Available executors: ${executorNames}`)
-  .option('--steps <steps>', 'Number of steps to execute')
-  .option('--no-log', 'Do not log to file')
-  .option(
-    '--workspace <id>',
-    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
-  )
-  .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
-  .option(
-    '--new-workspace',
-    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
-  )
-  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
-  .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
-  .option('--next', 'Execute the next plan that is ready to be implemented')
-  .allowExcessArguments(true)
-  .action(async (planFile, options) => {
-    const globalOpts = program.opts();
-    try {
-      let resolvedPlanFile: string;
-
-      if (options.next) {
-        // Find the next ready plan
-        const config = await loadEffectiveConfig(globalOpts.config);
-        const tasksDir = config.paths?.tasks || process.cwd();
-        const nextPlan = await findNextReadyPlan(tasksDir);
-
-        if (!nextPlan) {
-          log('No ready plans found. All pending plans have incomplete dependencies.');
-          return;
-        }
-
-        log(chalk.green(`Found next ready plan: ${nextPlan.id} - ${nextPlan.title || 'Untitled'}`));
-        resolvedPlanFile = nextPlan.filename;
-      } else {
-        if (!planFile) {
-          error('Please provide a plan file or use --next to find the next ready plan');
-          process.exit(1);
-        }
-        resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
-      }
-
-      await rmplanAgent(resolvedPlanFile, options, globalOpts);
-    } catch (err) {
-      error(`Failed to process plan: ${err as Error}`);
-      process.exit(1);
-    }
-  });
+// Create the run command as an alias
+createAgentCommand(
+  program.command('run [planFile]'),
+  'Alias for "agent". Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
+);
 
 program
   .command('workspaces')
