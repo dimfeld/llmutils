@@ -459,6 +459,7 @@ program
     const gitRoot = (await getGitRoot()) || process.cwd();
 
     try {
+      const config = await loadEffectiveConfig(globalOpts.config);
       const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
       const result = await markStepDone(
         resolvedPlanFile,
@@ -468,7 +469,8 @@ program
           commit: options.commit,
         },
         undefined,
-        gitRoot
+        gitRoot,
+        config
       );
 
       // If plan is complete and we're in a workspace, release the lock

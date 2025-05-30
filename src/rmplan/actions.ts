@@ -7,7 +7,11 @@ import yaml from 'yaml';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
-import { findAdditionalDocs, getChangedFiles } from '../rmfilter/additional_docs.js';
+import {
+  findAdditionalDocs,
+  getChangedFiles,
+  type GetChangedFilesOptions,
+} from '../rmfilter/additional_docs.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
 import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
@@ -417,7 +421,8 @@ export async function markStepDone(
   planFile: string,
   options: { task?: boolean; steps?: number; commit?: boolean },
   currentTask?: { taskIndex: number; stepIndex: number },
-  baseDir?: string
+  baseDir?: string,
+  config?: RmplanConfig
 ): Promise<{ planComplete: boolean; message: string }> {
   // 1. Load and parse the plan file
   const planText = await Bun.file(planFile).text();
@@ -519,7 +524,24 @@ export async function markStepDone(
 
   // Update changedFiles by comparing against baseBranch (or main/master if not set)
   try {
-    const changedFiles = await getChangedFiles(gitRoot, planData.baseBranch);
+    // Build exclude paths from config
+    const excludePaths: string[] = [];
+    if (config?.paths?.tasks) {
+      // Resolve tasks path relative to git root if it's relative
+      const tasksPath = path.isAbsolute(config.paths.tasks)
+        ? config.paths.tasks
+        : path.join(gitRoot, config.paths.tasks);
+
+      // Make it relative to git root for comparison
+      excludePaths.push(path.relative(gitRoot, tasksPath));
+    }
+
+    const options: GetChangedFilesOptions = {
+      baseBranch: planData.baseBranch,
+      excludePaths,
+    };
+
+    const changedFiles = await getChangedFiles(gitRoot, options);
     if (changedFiles.length > 0) {
       planData.changedFiles = changedFiles;
     }

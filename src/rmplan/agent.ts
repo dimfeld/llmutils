@@ -389,9 +389,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         log(boldMarkdownHeaders('\n## Marking done\n'));
         markResult = await markStepDone(
           currentPlanFile,
-          { steps: 1, commit: true },
+          { steps: stepPreparationResult.numStepsSelected, commit: true },
           { taskIndex, stepIndex },
-          currentBaseDir
+          currentBaseDir,
+          config
         );
         log(`Marked step as done: ${markResult.message.split('\n')[0]}`);
         if (markResult.planComplete) {
