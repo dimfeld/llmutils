@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement an automatic retry mechanism in apply-llm-edits that asks the
   LLM to fix failed edits before falling back to interactive mode.
 details: >
@@ -629,3 +630,5 @@ tasks:
               *   Pass `originalPromptContent` (or `undefined`) as the `originalPrompt` option.
               *   Pass `undefined` for the `llmRequester` option for now. The `--retry` flag currently serves only to indicate intent, but doesn't activate the LLM call from the CLI itself. Add a comment explaining this limitation.
         done: true
+id: 1j9md21
+status: done

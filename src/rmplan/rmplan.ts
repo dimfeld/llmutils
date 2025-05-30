@@ -625,7 +625,9 @@ function createAgentCommand(command: Command, description: string) {
           }
 
           log(
-            chalk.green(`Found next ready plan: ${nextPlan.id} - ${nextPlan.title || 'Untitled'}`)
+            chalk.green(
+              `Found next ready plan: ${nextPlan.id} - ${nextPlan.title || nextPlan.goal || 'Untitled'}`
+            )
           );
           resolvedPlanFile = nextPlan.filename;
         } else {
@@ -751,8 +753,8 @@ program
         let bVal: string | number;
         switch (options.sort) {
           case 'title':
-            aVal = (a.title || '').toLowerCase();
-            bVal = (b.title || '').toLowerCase();
+            aVal = (a.title || a.goal || '').toLowerCase();
+            bVal = (b.title || b.goal || '').toLowerCase();
             break;
           case 'status':
             aVal = a.status || '';
@@ -800,7 +802,7 @@ program
         chalk.bold('Priority'),
         chalk.bold('Tasks'),
         chalk.bold('Steps'),
-        chalk.bold('Dependencies'),
+        chalk.bold('Depends On'),
         chalk.bold('File'),
       ]);
 
@@ -837,7 +839,7 @@ program
 
         tableData.push([
           chalk.cyan(plan.id || 'no-id'),
-          plan.title || 'Untitled', // Show full title
+          plan.title || plan.goal || 'Untitled', // Show full title
           statusColor(statusDisplay),
           priorityColor(priorityDisplay),
           (plan.taskCount || 0).toString(),
@@ -851,7 +853,8 @@ program
       const tableConfig = {
         columns: {
           1: { width: 50, wrapWord: true }, // Title column - wider and wraps
-          6: { width: 20, wrapWord: true }, // Dependencies column
+          6: { width: 15, wrapWord: true }, // Dependencies column
+          7: { width: 20, wrapWord: true }, // File column
         },
         border: {
           topBody: '─',

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Add an 'agent' command to rmplan for automated plan execution.
 details: >-
   The agent command will automate the process of executing steps defined in an
@@ -447,3 +448,5 @@ tasks:
           5. Add a final log message outside the loop if it exited due to an
           error, e.g., "Agent stopped due to error.".
         done: true
+id: 1j9mdfb
+status: done

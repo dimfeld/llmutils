@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Enhance rmfilter to automatically discover and include relevant .mdc
   (Markdown Domain Configuration) files based on rules defined within the MDC
   files themselves (matching globs or grep terms against active source files),
@@ -357,3 +358,5 @@ tasks:
           potentially updated `docsTag` and `rulesTag` content when assembling
           `finalOutput`.
         done: true
+id: 1j9md25
+status: done

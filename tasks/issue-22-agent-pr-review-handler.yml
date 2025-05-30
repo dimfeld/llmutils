@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a new rmpr command-line tool (as a subcommand within the
   existing rmplan structure) to help developers address Pull Request review
   comments using an LLM. The tool will fetch PR review comments, allow the user
@@ -73,8 +74,6 @@ tasks:
       - src/rmplan/rmplan.ts
       - src/rmpr/main.ts
       - src/rmpr/types.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmplan/rmplan.ts` to add a new subcommand `rmpr`.
@@ -158,8 +157,6 @@ tasks:
       - src/rmpr/main.ts
       - src/common/github/pull_requests.ts
       - src/rmpr/types.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmpr/types.ts`, define a new interface
@@ -236,8 +233,6 @@ tasks:
       - src/rmpr/git_utils.ts
       - src/rmpr/main.ts
       - src/rmfilter/utils.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/rmpr/git_utils.ts`.
@@ -312,8 +307,6 @@ tasks:
       - src/rmpr/modes.ts
       - src/rmpr/types.ts
       - src/rmpr/main.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/rmpr/modes.ts`.
@@ -457,8 +450,6 @@ tasks:
       - src/rmpr/modes.ts
       - src/rmpr/types.ts
       - src/rmpr/main.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmpr/modes.ts`:
@@ -577,8 +568,6 @@ tasks:
       - src/apply-llm-edits/apply.ts
       - src/rmfilter/utils.ts
       - src/logging.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmpr/main.ts`, within `handleRmprCommand`, after fetching file
@@ -636,8 +625,6 @@ tasks:
       - src/rmpr/main.ts
       - src/rmplan/rmplan.ts
       - (Manual testing against a real or mock PR)
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Review and refine the `rmpr` command in `src/rmplan/rmplan.ts` and its
@@ -694,3 +681,5 @@ tasks:
           (No code output needed for this step, it's a guide for the developer
           implementing the plan).
         done: true
+id: 1j9mdwj
+status: done

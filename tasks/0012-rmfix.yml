@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement the `rmfix` utility, a command-line tool that runs a specified
   command, captures its output, and if the command fails, uses `rmfilter` to
   assemble context and assist in fixing the issue. The utility will support
@@ -56,8 +57,6 @@ tasks:
       - src/rmfix/types.ts
       - src/rmfilter/utils.ts
       - package.json
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Create the initial file structure for the `rmfix` utility.
@@ -450,8 +449,6 @@ tasks:
       - src/rmfix/command.ts
       - src/rmfix/rmfix.ts
       - src/rmfix/types.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/rmfix/command.ts`. This file will contain logic
@@ -569,8 +566,6 @@ tasks:
       - src/rmfilter/rmfilter.ts
       - src/rmfilter/config.ts
       - src/rmfilter/utils.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmfix/rmfix.ts`:
@@ -777,8 +772,6 @@ tasks:
       - src/rmfix/rmfix.ts
       - src/rmfilter/instructions.ts
       - src/rmfilter/utils.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmfix/rmfix.ts`'s `runRmfix` function.
@@ -1013,8 +1006,6 @@ tasks:
       - src/rmfix/types.ts
       - src/rmfix/cli.ts
       - src/rmfix/rmfix.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmfix/types.ts`, define the structure for a parsed test
@@ -1175,8 +1166,6 @@ tasks:
     files:
       - src/rmfix/command.ts
       - src/rmfix/rmfix.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Modify `prepareCommand` in `src/rmfix/command.ts`:
@@ -1561,3 +1550,5 @@ tasks:
             This means the `effectiveScriptArgs` in `prepareCommand` (which combines `scriptBaseArgs` and `initialCommandArgs` from user) should be what `npm run` passes after `--`.
             The current logic for `argsToExecute = ['run', initialCommand]; if (argsForNpmScript.length > 0) { argsToExecute.push('--', ...argsForNpmScript); }` where `argsForNpmScript` has been modified by injection seems correct.
         done: true
+id: 1j9mdvx
+status: done

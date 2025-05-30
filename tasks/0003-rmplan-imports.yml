@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Add import analysis options (--with-imports, --with-all-imports) to rmplan
   next command.
 details: >
@@ -290,3 +291,5 @@ tasks:
           standalone analysis) is reasonable (e.g., prints a warning and
           continues).
         done: true
+id: 1j9md73
+status: done

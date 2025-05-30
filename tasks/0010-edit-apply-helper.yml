@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Improve the error handling for edit application failures in applyLlmEdits
   by implementing an interactive resolution mode using @inquirer/prompts. This
   mode will handle "no exact match" errors by finding the closest match and
@@ -690,3 +691,5 @@ tasks:
           reads, temporary file operations, nvim execution) and user feedback
           clarity. Ensure `dryRun` is respected when writing files.
         done: false
+id: 1j9mdx8
+status: in_progress

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a feature for `answer-pr` to automatically detect the relevant
   Pull Request (PR) from the current Git or Jujutsu branch if no PR identifier
   is provided. Additionally, warn the user if an explicitly provided PR number
@@ -31,8 +32,6 @@ tasks:
       - src/rmpr/git_utils.ts
       - src/rmpr/git_utils.test.ts
       - src/rmfilter/utils.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmpr/git_utils.ts`, add a new asynchronous function
@@ -154,8 +153,6 @@ tasks:
       - src/common/github/pull_requests.test.ts
       - src/common/github/identifiers.ts
       - src/logging.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/common/github/pull_requests.ts`:
@@ -198,8 +195,6 @@ tasks:
       `prIdentifier` argument optional.
     files:
       - src/rmplan/rmplan.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmplan/rmplan.ts`:
@@ -229,8 +224,6 @@ tasks:
       - src/rmfilter/utils.ts
       - src/logging.ts
       - src/rmpr/main.test.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: |
           In `src/rmpr/main.ts`, within the `handleRmprCommand` function:
@@ -279,8 +272,6 @@ tasks:
       - src/rmpr/git_utils.ts
       - src/logging.ts
       - src/rmpr/main.test.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmpr/main.ts`, within `handleRmprCommand`:
@@ -326,3 +317,5 @@ tasks:
           *   Test 5: Explicit PR ID, `getCurrentBranchName` returns `null` ->
           No warning, no prompt.
         done: true
+id: 1j9mdfn
+status: done

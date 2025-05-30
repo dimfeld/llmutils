@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Write a comprehensive test suite for the state machine functionality in
   `dimfeld/llmutils`, ensuring robustness, correctness, and observability of the
   `StateMachine`, `Node`, `FlowNode`, and `SharedStore` components.
@@ -38,8 +39,6 @@ tasks:
       - src/state_machine/store.test.ts
       - src/state_machine/store.ts
       - src/state_machine/events.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new test file `src/state_machine/store.test.ts`.
@@ -139,8 +138,6 @@ tasks:
       - src/state_machine/store.test.ts
       - src/state_machine/store.ts
       - src/state_machine/events.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
@@ -216,8 +213,6 @@ tasks:
       - src/state_machine/store.ts
       - src/state_machine/events.ts
       - src/state_machine/telemetry.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Continue editing `src/state_machine/store.test.ts`.
@@ -325,8 +320,6 @@ tasks:
     files:
       - src/state_machine/telemetry.test.ts
       - src/state_machine/telemetry.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new test file `src/state_machine/telemetry.test.ts`.
@@ -434,8 +427,6 @@ tasks:
       - src/state_machine/events.ts
       - src/state_machine/telemetry.ts
       - src/state_machine/telemetry.test.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create `src/state_machine/nodes.test.ts`.
@@ -575,8 +566,6 @@ tasks:
       - src/state_machine/events.ts
       - src/state_machine/telemetry.ts
       - src/state_machine/telemetry.test.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create `src/state_machine/index.test.ts`.
@@ -681,8 +670,6 @@ tasks:
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/state_machine/index.test.ts`:
@@ -724,8 +711,6 @@ tasks:
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/state_machine/index.test.ts`:
@@ -805,8 +790,6 @@ tasks:
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/state_machine/index.test.ts`:
@@ -847,8 +830,6 @@ tasks:
     files:
       - src/state_machine/index.test.ts
       - src/state_machine/index.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/state_machine/index.test.ts`:
@@ -925,8 +906,6 @@ tasks:
       - src/state_machine/index.test.ts
       - src/state_machine/nodes.ts
       - src/state_machine/index.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/state_machine/nodes.test.ts`, add a new `describe` block for
@@ -1041,8 +1020,6 @@ tasks:
       - src/state_machine/store.test.ts
       - src/state_machine/telemetry.ts
       - src/state_machine/telemetry.test.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: |
           Review and enhance existing tests in `store.test.ts`, `nodes.test.ts`, and `index.test.ts` to include more detailed telemetry assertions.
@@ -1094,8 +1071,6 @@ tasks:
       details for developers regarding testing the state machine functionality.
     files:
       - src/state_machine/README.md
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Update the `src/state_machine/README.md` file.
@@ -1122,3 +1097,5 @@ tasks:
 
           6.  Ensure the overall README remains coherent and well-formatted.
         done: true
+id: 1j9mdef
+status: done

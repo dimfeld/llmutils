@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Refactor rmfind for programmatic use and add --autofind option to rmplan.
 details: >
   This plan involves two main parts:
@@ -308,3 +309,5 @@ tasks:
           prompt later in the `prepareNextStep` function (the part that runs if
           `rmfilter` is false).
         done: true
+id: 1j9md4g
+status: done

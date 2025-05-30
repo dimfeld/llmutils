@@ -5,6 +5,8 @@ import * as yaml from 'yaml';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { getGitRoot } from '../rmfilter/utils.js';
+import { debugLog } from '../logging.js';
+import { generateProjectId } from './id_utils.js';
 
 export type PlanSummary = {
   id: string;
@@ -25,7 +27,10 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
   const plans = new Map<string, PlanSummary>();
   const promises: Promise<void>[] = [];
 
+  debugLog(`Starting to scan directory for plan files: ${directory}`);
+
   async function readFile(fullPath: string) {
+    debugLog(`Reading plan file: ${fullPath}`);
     try {
       const content = await Bun.file(fullPath).text();
       const parsed = yaml.parse(content);
@@ -35,6 +40,8 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
         const plan = result.data;
         // Only add plans that have an ID
         if (plan.id) {
+          debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
+
           // Count tasks and steps, check for prompts
           let taskCount = 0;
           let stepCount = 0;
@@ -70,30 +77,82 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
             stepCount,
             hasPrompts,
           });
+        } else {
+          // Generate an ID for the plan and save it back
+          debugLog(`Plan file ${fullPath} has no ID, generating one`);
+
+          const newPlan = migrateLegacyPlan(plan);
+
+          // Save the updated plan back to the file
+          try {
+            const yamlContent = yaml.stringify(newPlan.plan);
+            const updatedContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+            await Bun.write(fullPath, updatedContent);
+            debugLog(
+              `Generated and saved ID ${newPlan.generatedId} and status ${plan.status} to ${fullPath}`
+            );
+
+            // Now add the plan to our collection
+            plans.set(newPlan.generatedId, {
+              id: newPlan.generatedId,
+              title: newPlan.plan.title,
+              status: newPlan.plan.status,
+              priority: newPlan.plan.priority,
+              dependencies: newPlan.plan.dependencies,
+              goal: newPlan.plan.goal,
+              filename: fullPath,
+              createdAt: newPlan.plan.createdAt,
+              updatedAt: newPlan.plan.updatedAt,
+              taskCount: newPlan.taskCount,
+              stepCount: newPlan.stepCount,
+              hasPrompts: newPlan.hasPrompts,
+            });
+          } catch (saveError) {
+            console.error(`Failed to save generated ID to ${fullPath}:`, saveError);
+            debugLog(`Error saving generated ID: ${saveError as Error}`);
+          }
         }
+      } else {
+        // Log validation errors
+        debugLog(`Schema validation failed for ${fullPath}:`);
+        result.error.issues.forEach((issue) => {
+          debugLog(`  - ${issue.path.join('.')}: ${issue.message}`);
+        });
       }
     } catch (error) {
-      // Skip files that fail to parse or validate
+      // Log detailed error information
       console.error(`Failed to read plan from ${fullPath}:`, error);
+      if (error instanceof Error) {
+        debugLog(`Error details: ${error.message}`);
+        if (error.stack) {
+          debugLog(`Stack trace: ${error.stack}`);
+        }
+      }
     }
   }
 
   async function scanDirectory(dir: string) {
+    debugLog(`Scanning directory: ${dir}`);
     const entries = await readdir(dir, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = join(dir, entry.name);
 
       if (entry.isDirectory()) {
+        debugLog(`Found subdirectory: ${fullPath}`);
         await scanDirectory(fullPath);
       } else if (entry.isFile() && (entry.name.endsWith('.yml') || entry.name.endsWith('.yaml'))) {
+        debugLog(`Found YAML file: ${fullPath}`);
         promises.push(readFile(fullPath));
+      } else {
+        debugLog(`Skipping non-YAML file: ${fullPath}`);
       }
     }
   }
 
   await scanDirectory(directory);
   await Promise.all(promises);
+  debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
   return plans;
 }
 
@@ -205,4 +264,43 @@ export async function findNextReadyPlan(directory: string): Promise<PlanSummary 
   });
 
   return readyCandidates[0];
+}
+
+function migrateLegacyPlan(plan: PlanSchema) {
+  const generatedId = generateProjectId();
+  plan.id = generatedId;
+
+  // Calculate status based on step completion
+  let taskCount = 0;
+  let stepCount = 0;
+  let doneStepCount = 0;
+  let hasPrompts = false;
+
+  if (plan.tasks) {
+    taskCount = plan.tasks.length;
+    for (const task of plan.tasks) {
+      if (task.steps) {
+        stepCount += task.steps.length;
+        doneStepCount += task.steps.filter((step) => step.done).length;
+        // Check if any step has a prompt
+        if (!hasPrompts && task.steps.some((step) => step.prompt && step.prompt.trim() !== '')) {
+          hasPrompts = true;
+        }
+      }
+    }
+  }
+
+  // Set status if not already set
+  if (!plan.status) {
+    if (stepCount === 0 || doneStepCount === 0) {
+      plan.status = 'pending';
+    } else if (doneStepCount === stepCount) {
+      plan.status = 'done';
+    } else {
+      plan.status = 'in_progress';
+    }
+    debugLog(`Setting status to ${plan.status} based on ${doneStepCount}/${stepCount} done steps`);
+  }
+
+  return { generatedId, plan, taskCount, stepCount, doneStepCount, hasPrompts };
 }
