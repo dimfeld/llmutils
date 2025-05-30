@@ -308,6 +308,8 @@ The general usage pattern is that you will:
 
 Then repeat steps 5 through 7 until the task is done.
 
+**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `my-feature-123`) for commands like `done`, `next`, `agent`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
+
 Alternatively, you can use the `agent` command to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
 
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
@@ -340,11 +342,17 @@ rmplan next plan.yml --rmfilter -- src/**/*.ts
 # Include previous steps in the prompt
 rmplan next plan.yml --previous
 
+# You can also use plan IDs instead of file paths
+rmplan next my-feature-123 --rmfilter
+
 # Mark the next step as done and commit changes
 rmplan done plan.yml --commit
 
 # Mark the next 2 steps as done and commit changes
 rmplan done plan.yml --commit --steps 2
+
+# You can also use plan IDs instead of file paths
+rmplan done my-feature-123 --commit
 
 # List all plan files in the tasks directory
 rmplan list
@@ -363,6 +371,9 @@ rmplan agent plan.yml --steps 3
 
 # Execute plan with auto-created workspace
 rmplan agent plan.yml --workspace-task-id task-123
+
+# You can also use plan IDs instead of file paths
+rmplan agent my-feature-123 --steps 3
 
 # Clean up end-of-line comments from changed files (by git diff, jj diff)
 rmplan cleanup

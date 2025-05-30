@@ -24,7 +24,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
-import { readAllPlans } from './plans.js';
+import { readAllPlans, resolvePlanFile } from './plans.js';
 import { planPrompt, simplePlanPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
@@ -410,37 +410,47 @@ program
 
 program
   .command('done <planFile>')
-  .description('Mark the next step/task in a plan YAML as done')
+  .description('Mark the next step/task in a plan YAML as done. Can be a file path or plan ID.')
   .option('--steps <steps>', 'Number of steps to mark as done', '1')
   .option('--task', 'Mark all steps in the current task as done')
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
+    const globalOpts = program.opts();
     const gitRoot = (await getGitRoot()) || process.cwd();
-    const result = await markStepDone(
-      planFile,
-      {
-        task: options.task,
-        steps: options.steps ? parseInt(options.steps, 10) : 1,
-        commit: options.commit,
-      },
-      undefined,
-      gitRoot
-    );
 
-    // If plan is complete and we're in a workspace, release the lock
-    if (result.planComplete) {
-      try {
-        await WorkspaceLock.releaseLock(gitRoot);
-        log('Released workspace lock');
-      } catch (err) {
-        // Ignore lock release errors - workspace might not be locked
+    try {
+      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      const result = await markStepDone(
+        resolvedPlanFile,
+        {
+          task: options.task,
+          steps: options.steps ? parseInt(options.steps, 10) : 1,
+          commit: options.commit,
+        },
+        undefined,
+        gitRoot
+      );
+
+      // If plan is complete and we're in a workspace, release the lock
+      if (result.planComplete) {
+        try {
+          await WorkspaceLock.releaseLock(gitRoot);
+          log('Released workspace lock');
+        } catch (err) {
+          // Ignore lock release errors - workspace might not be locked
+        }
       }
+    } catch (err) {
+      error(`Failed to process plan: ${err}`);
+      process.exit(1);
     }
   });
 
 program
   .command('next <planFile>')
-  .description('Prepare the next step(s) from a plan YAML for execution')
+  .description(
+    'Prepare the next step(s) from a plan YAML for execution. Can be a file path or plan ID.'
+  )
   .option('--rmfilter', 'Use rmfilter to generate the prompt')
   .option('--previous', 'Include information about previous completed steps')
   .option('--with-imports', 'Include direct imports of files found in the prompt or task files')
@@ -453,16 +463,18 @@ program
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planFile, options) => {
+    const globalOpts = program.opts();
     // Find '--' in process.argv to get extra args for rmfilter
     const doubleDashIdx = process.argv.indexOf('--');
     const cmdLineRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
-    const config = await loadEffectiveConfig(options.config);
+    const config = await loadEffectiveConfig(globalOpts.config);
     const gitRoot = (await getGitRoot()) || process.cwd();
 
     try {
+      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
       const result = await prepareNextStep(
         config,
-        planFile,
+        resolvedPlanFile,
         {
           rmfilter: options.rmfilter,
           previous: options.previous,
@@ -531,7 +543,7 @@ const executorNames = executors
 
 program
   .command('agent <planFile>')
-  .description('Automatically execute steps in a plan YAML file')
+  .description('Automatically execute steps in a plan YAML file. Can be a file path or plan ID.')
   .option('-m, --model <model>', 'Model to use for LLM')
   .option(`-x, --executor <name>`, 'The executor to use for plan execution')
   .addHelpText('after', `Available executors: ${executorNames}`)
@@ -549,7 +561,16 @@ program
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
   .allowExcessArguments(true)
-  .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
+  .action(async (planFile, options) => {
+    const globalOpts = program.opts();
+    try {
+      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      await rmplanAgent(resolvedPlanFile, options, globalOpts);
+    } catch (err) {
+      error(`Failed to process plan: ${err}`);
+      process.exit(1);
+    }
+  });
 
 program
   .command('workspaces')
@@ -714,7 +735,9 @@ program
 
 program
   .command('prepare <yamlFile>')
-  .description('Generate detailed steps and prompts for a specific phase.')
+  .description(
+    'Generate detailed steps and prompts for a specific phase. Can be a file path or plan ID.'
+  )
   .option('--force', 'Override dependency completion check and proceed with generation.')
   .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
   .action(async (yamlFile, options) => {
@@ -724,8 +747,8 @@ program
       // Load RmplanConfig using loadEffectiveConfig
       const config = await loadEffectiveConfig(globalOpts.config);
 
-      // Resolve to an absolute path
-      const phaseYamlFile = path.resolve(yamlFile);
+      // Resolve plan file (ID or path)
+      const phaseYamlFile = await resolvePlanFile(yamlFile, globalOpts.config);
 
       // Call the new preparePhase function
       await preparePhase(phaseYamlFile, config, {

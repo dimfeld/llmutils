@@ -1,7 +1,8 @@
-import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import * as yaml from 'yaml';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
+import { loadEffectiveConfig } from './configLoader.js';
 
 export type PlanSummary = {
   id: string;
@@ -65,4 +66,44 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
   await scanDirectory(directory);
   await Promise.all(promises);
   return plans;
+}
+
+/**
+ * Resolves a plan argument which can be either a file path or a plan ID.
+ * If the argument is a file path that exists, returns the absolute path.
+ * If the argument looks like a plan ID, searches for a matching plan in the tasks directory.
+ *
+ * @param planArg - The plan file path or plan ID
+ * @param configPath - Optional path to rmplan config file
+ * @returns The resolved absolute file path
+ * @throws Error if the plan cannot be found
+ */
+export async function resolvePlanFile(planArg: string, configPath?: string): Promise<string> {
+  // First, check if it's a file path that exists
+  try {
+    const absolutePath = resolve(planArg);
+    await stat(absolutePath);
+    return absolutePath;
+  } catch {
+    // Not a valid file path, continue to check if it's a plan ID
+  }
+
+  // If the argument contains path separators or file extensions, it's likely a file path
+  if (planArg.includes('/') || planArg.includes('\\') || planArg.includes('.')) {
+    // It was meant to be a file path but doesn't exist
+    throw new Error(`Plan file not found: ${planArg}`);
+  }
+
+  // Try to find by plan ID
+  const config = await loadEffectiveConfig(configPath);
+  const tasksDir = config.paths?.tasks || process.cwd();
+
+  const plans = await readAllPlans(tasksDir);
+  const matchingPlan = plans.get(planArg);
+
+  if (matchingPlan) {
+    return matchingPlan.filename;
+  }
+
+  throw new Error(`No plan found with ID or file path: ${planArg}`);
 }

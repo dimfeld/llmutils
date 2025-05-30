@@ -965,7 +965,7 @@ export async function gatherPhaseGenerationContext(
           const title = dependencyData.details.split('\n')[0] || `Phase ${dependencyId}`;
 
           previousPhasesInfo.push({
-            id: dependencyData.id,
+            id: dependencyData.id || dependencyId,
             title: title,
             goal: dependencyData.goal,
             description: dependencyData.details,
