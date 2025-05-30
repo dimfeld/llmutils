@@ -21,6 +21,11 @@ export type PlanSummary = {
   taskCount?: number;
   stepCount?: number;
   hasPrompts?: boolean;
+  project?: {
+    title: string;
+    goal: string;
+    details: string;
+  };
 };
 
 export async function readAllPlans(directory: string): Promise<Map<string, PlanSummary>> {
@@ -80,6 +85,7 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
           taskCount,
           stepCount,
           hasPrompts,
+          project: plan.project,
         });
       } else {
         // Log validation errors

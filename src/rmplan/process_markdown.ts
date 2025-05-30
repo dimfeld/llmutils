@@ -55,8 +55,7 @@ ${phaseExampleFormatGeneric}
 
 **Important for multi-phase plans:**
 - Each phase should have an id like "project-1", "project-2" etc.
-- Tasks should NOT have detailed steps or file lists - only title and description
-- Set status to "pending" and priority to "unknown" for all phases`;
+`;
 
 export async function convertMarkdownToYaml(
   markdownInput: string,
@@ -311,7 +310,7 @@ async function saveMultiPhaseYaml(
   // First pass: generate IDs and update dependencies
   for (let i = 0; i < parsedYaml.phases.length; i++) {
     const phase = parsedYaml.phases[i];
-    const phaseId = phase.id || generatePhaseId(projectId, i + 1);
+    const phaseId = generatePhaseId(projectId, i + 1);
     phaseIndexToId.set(i + 1, phaseId);
     phase.id = phaseId;
 
@@ -320,8 +319,6 @@ async function saveMultiPhaseYaml(
     phase.planGeneratedAt = phase.planGeneratedAt || now;
     phase.createdAt = phase.createdAt || now;
     phase.updatedAt = phase.updatedAt || now;
-    phase.status = phase.status || 'pending';
-    phase.priority = phase.priority || 'unknown';
 
     // Add overall project information to each phase
     if (projectInfo.goal || projectInfo.title || projectInfo.details) {
@@ -339,9 +336,7 @@ async function saveMultiPhaseYaml(
     // Update dependencies to use phase IDs
     if (phase.dependencies && Array.isArray(phase.dependencies)) {
       phase.dependencies = phase.dependencies.map((dep: string) => {
-        // If it's already in the correct format, keep it
-        if (dep.startsWith(projectId)) return dep;
-        // Otherwise convert from "project-N" to actual phase ID
+        // Convert from "project-N" or similar to actual phase ID
         let match = dep.match(/-(\d+)$/) || dep.match(/Phase (\d+)$/) || dep.match(/(\d+)/);
 
         if (match) {

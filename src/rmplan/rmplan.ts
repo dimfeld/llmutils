@@ -31,6 +31,7 @@ import type { PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
 import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './process_markdown.ts';
+import { getCombinedTitle, getCombinedGoal, getCombinedTitleFromSummary } from './display_utils.js';
 
 await loadEnv();
 
@@ -630,7 +631,7 @@ function createAgentCommand(command: Command, description: string) {
 
           log(
             chalk.green(
-              `Found next ready plan: ${nextPlan.id} - ${nextPlan.title || nextPlan.goal || 'Untitled'}`
+              `Found next ready plan: ${nextPlan.id} - ${getCombinedTitleFromSummary(nextPlan)}`
             )
           );
           resolvedPlanFile = nextPlan.filename;
@@ -843,7 +844,7 @@ program
 
         tableData.push([
           chalk.cyan(plan.id || 'no-id'),
-          plan.title || plan.goal || 'Untitled', // Show full title
+          getCombinedTitleFromSummary(plan), // Show combined title
           statusColor(statusDisplay),
           priorityColor(priorityDisplay),
           (plan.taskCount || 0).toString(),
@@ -923,7 +924,11 @@ program
           return;
         }
 
-        log(chalk.green(`Found next ready plan: ${nextPlan.id} - ${nextPlan.title || 'Untitled'}`));
+        log(
+          chalk.green(
+            `Found next ready plan: ${nextPlan.id} - ${getCombinedTitleFromSummary(nextPlan)}`
+          )
+        );
         phaseYamlFile = nextPlan.filename;
       } else {
         if (!yamlFile) {
@@ -997,7 +1002,7 @@ program
       log(chalk.bold('\nPlan Information:'));
       log('─'.repeat(60));
       log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
-      log(`${chalk.cyan('Title:')} ${plan.title || 'Untitled'}`);
+      log(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
 
       // Display "ready" for pending plans with prompts
       const actualStatus = plan.status || 'pending';
@@ -1007,7 +1012,7 @@ program
       log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
 
       log(`${chalk.cyan('Priority:')} ${plan.priority || ''}`);
-      log(`${chalk.cyan('Goal:')} ${plan.goal}`);
+      log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
       log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
 
       if (plan.baseBranch) {
@@ -1042,7 +1047,7 @@ program
                   ? chalk.yellow
                   : chalk.gray;
             log(
-              `  ${statusIcon} ${chalk.cyan(depId)} - ${depPlan.title || 'Untitled'} ${statusColor(`[${depPlan.status || 'pending'}]`)}`
+              `  ${statusIcon} ${chalk.cyan(depId)} - ${getCombinedTitleFromSummary(depPlan)} ${statusColor(`[${depPlan.status || 'pending'}]`)}`
             );
           } else {
             log(`  ○ ${chalk.cyan(depId)} ${chalk.red('[Not found]')}`);
