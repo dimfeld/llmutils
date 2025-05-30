@@ -26,16 +26,13 @@ tasks:
       - prompt: [multi-line string using the | character]`;
 
 export const phaseExampleFormatGeneric = `phases:
-  - id: [phase-id]
-    title: [phase title - a concise single-sentence title]
+  - title: [phase title - a concise single-sentence title]
     goal: [phase goal]
     details: [phase details]
     dependencies: [list of phase IDs this phase depends on, or empty list]
     tasks:
       - title: [task title]
         description: [task description]
-        files: []
-        steps: []
     status: pending
     priority: unknown`;
 

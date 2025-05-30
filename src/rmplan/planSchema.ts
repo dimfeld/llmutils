@@ -9,7 +9,7 @@ export const phaseSchema = z
       z.object({
         title: z.string(),
         description: z.string(),
-        files: z.array(z.string()),
+        files: z.array(z.string()).default([]),
         examples: z.array(z.string()).optional(),
         steps: z
           .array(
@@ -22,7 +22,7 @@ export const phaseSchema = z
           .default([]),
       })
     ),
-    id: z.string(),
+    id: z.string().optional(),
     status: z.enum(['pending', 'in_progress', 'done']).default('pending').optional(),
     priority: z.enum(['unknown', 'low', 'medium', 'high', 'urgent']).default('unknown').optional(),
     dependencies: z.array(z.string()).default([]).optional(),
