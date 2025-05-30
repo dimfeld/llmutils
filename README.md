@@ -355,8 +355,15 @@ rmplan done plan.yml --commit --steps 2
 # You can also use plan IDs instead of file paths
 rmplan done my-feature-123 --commit
 
-# List all plan files in the tasks directory
+# List all plan files in the tasks directory (shows pending and in_progress by default)
 rmplan list
+
+# List all plans including completed ones
+rmplan list --all
+
+# List only plans with specific statuses
+rmplan list --status done
+rmplan list --status pending in_progress
 
 # List plans with custom sorting
 rmplan list --sort status --reverse

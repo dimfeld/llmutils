@@ -617,6 +617,11 @@ program
     'id'
   )
   .option('--reverse', 'Reverse sort order')
+  .option(
+    '--status <status...>',
+    'Filter by status (can specify multiple). Valid values: pending, in_progress, done'
+  )
+  .option('--all', 'Show all plans regardless of status (overrides default filter)')
   .action(async (options) => {
     try {
       const globalOpts = program.opts();
@@ -633,8 +638,27 @@ program
         return;
       }
 
-      // Convert to array and sort
+      // Filter plans based on status
       let planArray = Array.from(plans.values());
+
+      if (!options.all) {
+        // Determine which statuses to show
+        let statusesToShow: Set<string>;
+
+        if (options.status && options.status.length > 0) {
+          // Use explicitly specified statuses
+          statusesToShow = new Set(options.status);
+        } else {
+          // Default: show pending and in_progress
+          statusesToShow = new Set(['pending', 'in_progress']);
+        }
+
+        // Filter plans
+        planArray = planArray.filter((plan) => {
+          const status = plan.status || 'pending';
+          return statusesToShow.has(status);
+        });
+      }
 
       // Sort based on the specified field
       planArray.sort((a, b) => {
@@ -728,7 +752,7 @@ program
       }
 
       log('');
-      log(`Total: ${plans.size} plan(s)`);
+      log(`Showing: ${planArray.length} of ${plans.size} plan(s)`);
     } catch (err) {
       error('Failed to list plans:', err);
       process.exit(1);
