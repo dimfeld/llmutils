@@ -799,12 +799,13 @@ program
   });
 
 program
-  .command('prepare <yamlFile>')
+  .command('prepare [yamlFile]')
   .description(
     'Generate detailed steps and prompts for a specific phase. Can be a file path or plan ID.'
   )
   .option('--force', 'Override dependency completion check and proceed with generation.')
   .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
+  .option('--next', 'Prepare the next plan that is ready to be implemented')
   .action(async (yamlFile, options) => {
     const globalOpts = program.opts();
 
@@ -812,8 +813,28 @@ program
       // Load RmplanConfig using loadEffectiveConfig
       const config = await loadEffectiveConfig(globalOpts.config);
 
-      // Resolve plan file (ID or path)
-      const phaseYamlFile = await resolvePlanFile(yamlFile, globalOpts.config);
+      let phaseYamlFile: string;
+
+      if (options.next) {
+        // Find the next ready plan
+        const tasksDir = config.paths?.tasks || process.cwd();
+        const nextPlan = await findNextReadyPlan(tasksDir);
+
+        if (!nextPlan) {
+          log('No ready plans found. All pending plans have incomplete dependencies.');
+          return;
+        }
+
+        log(chalk.green(`Found next ready plan: ${nextPlan.id} - ${nextPlan.title || 'Untitled'}`));
+        phaseYamlFile = nextPlan.filename;
+      } else {
+        if (!yamlFile) {
+          error('Please provide a plan file or use --next to find the next ready plan');
+          process.exit(1);
+        }
+        // Resolve plan file (ID or path)
+        phaseYamlFile = await resolvePlanFile(yamlFile, globalOpts.config);
+      }
 
       // Call the new preparePhase function
       await preparePhase(phaseYamlFile, config, {

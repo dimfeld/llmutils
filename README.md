@@ -291,7 +291,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
 - **Plan Inspection**: Display detailed information about plans including dependencies with resolution, tasks with completion status, and metadata.
-- **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, and `run` commands.
+- **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, `run`, and `prepare` commands.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
 
@@ -311,6 +311,8 @@ The general usage pattern is that you will:
 Then repeat steps 5 through 7 until the task is done.
 
 **Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `my-feature-123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
+
+The `prepare` command is used to generate detailed steps and prompts for a phase plan that doesn't already have them. This is useful when you have a high-level plan outline but need to expand it with specific implementation steps.
 
 Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
 
@@ -355,6 +357,15 @@ rmplan done plan.yml --commit --steps 2
 
 # You can also use plan IDs instead of file paths
 rmplan done my-feature-123 --commit
+
+# Generate detailed steps and prompts for a phase that doesn't have them yet
+rmplan prepare plan.yml
+
+# Prepare the next ready plan
+rmplan prepare --next
+
+# Force preparation even if dependencies aren't complete
+rmplan prepare plan.yml --force
 
 # List all plan files in the tasks directory (shows pending and in_progress by default)
 rmplan list
