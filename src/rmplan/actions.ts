@@ -764,7 +764,7 @@ export async function preparePhase(
       codebaseContextXml = await runRmfilterProgrammatically(
         [...rmfilterArgs, '--bare'],
         gitRoot,
-        projectPlanDir
+        gitRoot
       );
     } catch (err) {
       error('Failed to execute rmfilter:', err);

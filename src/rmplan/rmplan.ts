@@ -798,20 +798,29 @@ program
         chalk.bold('Title'),
         chalk.bold('Status'),
         chalk.bold('Priority'),
+        chalk.bold('Tasks'),
+        chalk.bold('Steps'),
         chalk.bold('Dependencies'),
         chalk.bold('File'),
       ]);
 
       // Data rows
       for (const plan of planArray) {
+        // Display "ready" for pending plans with prompts
+        const actualStatus = plan.status || 'pending';
+        const isReady = actualStatus === 'pending' && plan.hasPrompts;
+        const statusDisplay = isReady ? 'ready' : actualStatus;
+
         const statusColor =
-          plan.status === 'done'
+          actualStatus === 'done'
             ? chalk.green
-            : plan.status === 'in_progress'
-              ? chalk.yellow
-              : plan.status === 'pending'
-                ? chalk.white
-                : chalk.gray;
+            : isReady
+              ? chalk.cyan
+              : actualStatus === 'in_progress'
+                ? chalk.yellow
+                : actualStatus === 'pending'
+                  ? chalk.white
+                  : chalk.gray;
 
         const priorityColor =
           plan.priority === 'urgent'
@@ -829,8 +838,10 @@ program
         tableData.push([
           chalk.cyan(plan.id || 'no-id'),
           plan.title || 'Untitled', // Show full title
-          statusColor(plan.status || 'pending'),
+          statusColor(statusDisplay),
           priorityColor(priorityDisplay),
+          (plan.taskCount || 0).toString(),
+          (plan.stepCount || 0).toString(),
           plan.dependencies?.join(', ') || '-',
           chalk.gray(path.relative(searchDir, plan.filename)),
         ]);
@@ -840,7 +851,7 @@ program
       const tableConfig = {
         columns: {
           1: { width: 50, wrapWord: true }, // Title column - wider and wraps
-          4: { width: 20, wrapWord: true }, // Dependencies column
+          6: { width: 20, wrapWord: true }, // Dependencies column
         },
         border: {
           topBody: '─',
@@ -963,12 +974,30 @@ program
       const content = await Bun.file(resolvedPlanFile).text();
       const plan = yaml.parse(content) as PlanSchema;
 
+      // Check if plan has prompts
+      let hasPrompts = false;
+      if (plan.tasks) {
+        for (const task of plan.tasks) {
+          if (task.steps && task.steps.some((step) => step.prompt && step.prompt.trim() !== '')) {
+            hasPrompts = true;
+            break;
+          }
+        }
+      }
+
       // Display basic information
       log(chalk.bold('\nPlan Information:'));
       log('─'.repeat(60));
       log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
       log(`${chalk.cyan('Title:')} ${plan.title || 'Untitled'}`);
-      log(`${chalk.cyan('Status:')} ${plan.status || 'pending'}`);
+
+      // Display "ready" for pending plans with prompts
+      const actualStatus = plan.status || 'pending';
+      const isReady = actualStatus === 'pending' && hasPrompts;
+      const statusDisplay = isReady ? 'ready' : actualStatus;
+      const statusColor = isReady ? chalk.cyan : chalk.white;
+      log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
+
       log(`${chalk.cyan('Priority:')} ${plan.priority || ''}`);
       log(`${chalk.cyan('Goal:')} ${plan.goal}`);
       log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);

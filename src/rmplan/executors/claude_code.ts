@@ -126,6 +126,7 @@ export class ClaudeCodeExecutor implements Executor {
       args.push('--model', this.sharedOptions.model);
     }
 
+    log(contextContent);
     args.push('-p', contextContent);
 
     let splitter = createLineSplitter();

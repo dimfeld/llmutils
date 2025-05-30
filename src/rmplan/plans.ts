@@ -16,6 +16,9 @@ export type PlanSummary = {
   createdAt?: string;
   updatedAt?: string;
   filename: string;
+  taskCount?: number;
+  stepCount?: number;
+  hasPrompts?: boolean;
 };
 
 export async function readAllPlans(directory: string): Promise<Map<string, PlanSummary>> {
@@ -32,6 +35,27 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
         const plan = result.data;
         // Only add plans that have an ID
         if (plan.id) {
+          // Count tasks and steps, check for prompts
+          let taskCount = 0;
+          let stepCount = 0;
+          let hasPrompts = false;
+
+          if (plan.tasks) {
+            taskCount = plan.tasks.length;
+            for (const task of plan.tasks) {
+              if (task.steps) {
+                stepCount += task.steps.length;
+                // Check if any step has a prompt
+                if (
+                  !hasPrompts &&
+                  task.steps.some((step) => step.prompt && step.prompt.trim() !== '')
+                ) {
+                  hasPrompts = true;
+                }
+              }
+            }
+          }
+
           plans.set(plan.id, {
             id: plan.id,
             title: plan.title,
@@ -42,6 +66,9 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
             filename: fullPath,
             createdAt: plan.createdAt,
             updatedAt: plan.updatedAt,
+            taskCount,
+            stepCount,
+            hasPrompts,
           });
         }
       }
