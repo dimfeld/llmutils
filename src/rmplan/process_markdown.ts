@@ -335,6 +335,70 @@ async function saveMultiPhaseYaml(
     }
   }
 
+  // Second pass: remove redundant dependencies
+  // Build a map of all dependencies for each phase
+  const phaseDependencies = new Map<string, Set<string>>();
+
+  for (const phase of parsedYaml.phases) {
+    if (phase.dependencies && Array.isArray(phase.dependencies)) {
+      phaseDependencies.set(phase.id, new Set(phase.dependencies));
+    } else {
+      phaseDependencies.set(phase.id, new Set());
+    }
+  }
+
+  // For each phase, compute all transitive dependencies
+  function getTransitiveDependencies(phaseId: string, visited = new Set<string>()): Set<string> {
+    if (visited.has(phaseId)) {
+      return new Set();
+    }
+    visited.add(phaseId);
+
+    const directDeps = phaseDependencies.get(phaseId) || new Set();
+    const allDeps = new Set(directDeps);
+
+    for (const dep of directDeps) {
+      const transitiveDeps = getTransitiveDependencies(dep, visited);
+      for (const transDep of transitiveDeps) {
+        allDeps.add(transDep);
+      }
+    }
+
+    return allDeps;
+  }
+
+  // Remove redundant dependencies
+  for (const phase of parsedYaml.phases) {
+    if (!phase.dependencies || phase.dependencies.length === 0) {
+      continue;
+    }
+
+    const originalDeps = new Set<string>(phase.dependencies);
+    const necessaryDeps = new Set<string>();
+
+    // For each dependency, check if it's transitively included by another dependency
+    for (const dep of originalDeps) {
+      let isRedundant = false;
+
+      for (const otherDep of originalDeps) {
+        if (dep === otherDep) continue;
+
+        const transitiveDeps = getTransitiveDependencies(otherDep);
+        if (transitiveDeps.has(dep)) {
+          isRedundant = true;
+          break;
+        }
+      }
+
+      if (!isRedundant) {
+        necessaryDeps.add(dep);
+      }
+    }
+
+    // Update the phase dependencies
+    phase.dependencies = Array.from(necessaryDeps).sort();
+  }
+
   // Write phase YAML files
   for (let i = 0; i < parsedYaml.phases.length; i++) {
     const phase = parsedYaml.phases[i];
