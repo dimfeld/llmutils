@@ -80,36 +80,50 @@ export const phaseBasedMarkdownExampleFormat = `
 ## Goal
 [Overall project goal]
 
-### Details
+## Details
 [Overall project details and analysis]
 
----
+## Phase 1: [Phase Title]
 
-### Phase 1: [Phase Title]
-#### Goal
+### Goal
 [Phase-specific goal]
-#### Dependencies
+
+### Dependencies
 [None or comma-separated list, e.g., Phase 2, Phase 3]
-#### Details
+
+### Details
 [Phase description]
-##### Task: [Task 1 Title]
-**Description:** [Task 1 description]
-##### Task: [Task 2 Title]
-**Description:** [Task 2 description]
 
----
+### Tasks
 
-### Phase 2: [Phase Title]
-#### Goal
+#### Task 1: [Task 1 Title]
+
+[Task 1 description]
+
+#### Task 2: [Task 2 Title]
+
+[Task 2 description]
+
+## Phase 2: [Phase Title]
+
+### Goal
 [Phase-specific goal]
-#### Dependencies
+
+### Dependencies
 [None or comma-separated list, e.g., Phase 1]
-#### Details
+
+### Details
 [Phase description]
-##### Task: [Task 1 Title]
-**Description:** [Task 1 description]
-##### Task: [Task 2 Title]
-**Description:** [Task 2 description]
+
+### Tasks
+
+#### Task 1: [Task 1 Title]
+
+[Task 1 description]
+
+#### Task 2: [Task 2 Title]
+
+[Task 2 description]
 `;
 
 export interface PhaseGenerationContext {
@@ -162,15 +176,16 @@ When generating the final output, create a phase-based plan with:
   - A phase-specific goal
   - Dependencies on other phases (if any)
   - Phase details
-  - A list of tasks with titles and descriptions only
+  - A list of tasks with titles and descriptions
 
-IMPORTANT: In this high-level plan, tasks should ONLY include:
-- A title
-- A description
+IMPORTANT: In this high-level plan, tasks must include BOTH a title and a description.
 
-Do NOT include in tasks:
+The title must be a single-sentence title that captures the essence of the task.
+The description may be anywhere in length from one sentence to a paragraph, depending on the complexity of the task.
+
+Tasks should only include a title and description. Do NOT include in tasks:
 - Detailed implementation steps or prompts
-- File lists
+- File names to edit
 
 These implementation details will be generated later when each phase is expanded.
 
