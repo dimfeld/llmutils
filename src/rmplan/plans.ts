@@ -8,7 +8,7 @@ export type PlanSummary = {
   id: string;
   title?: string;
   status?: 'pending' | 'in_progress' | 'done';
-  priority?: 'unknown' | 'low' | 'medium' | 'high' | 'urgent';
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
   dependencies?: string[];
   goal: string;
   createdAt?: string;

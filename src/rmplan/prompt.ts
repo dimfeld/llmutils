@@ -36,8 +36,7 @@ phases:
     tasks:
       - title: [task title]
         description: [task description]
-    status: pending
-    priority: unknown`;
+    status: pending`;
 
 // Define the desired Markdown structure for the plan
 export const planMarkdownExampleFormat = `

@@ -731,9 +731,9 @@ program
             break;
           case 'priority': {
             // Sort priority in reverse (high first)
-            const priorityOrder = { urgent: 5, high: 4, medium: 3, low: 2, unknown: 1 };
-            aVal = priorityOrder[a.priority || 'unknown'];
-            bVal = priorityOrder[b.priority || 'unknown'];
+            const priorityOrder: Record<string, number> = { urgent: 5, high: 4, medium: 3, low: 2 };
+            aVal = a.priority ? priorityOrder[a.priority] || 0 : 0;
+            bVal = b.priority ? priorityOrder[b.priority] || 0 : 0;
             break;
           }
           case 'created':
@@ -795,11 +795,13 @@ program
                   ? chalk.blue
                   : chalk.white;
 
+        const priorityDisplay = plan.priority || '';
+
         tableData.push([
           chalk.cyan(plan.id || 'no-id'),
           plan.title || 'Untitled', // Show full title
           statusColor(plan.status || 'pending'),
-          priorityColor(plan.priority || 'unknown'),
+          priorityColor(priorityDisplay),
           plan.dependencies?.join(', ') || '-',
           chalk.gray(path.relative(searchDir, plan.filename)),
         ]);
@@ -931,7 +933,7 @@ program
       log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
       log(`${chalk.cyan('Title:')} ${plan.title || 'Untitled'}`);
       log(`${chalk.cyan('Status:')} ${plan.status || 'pending'}`);
-      log(`${chalk.cyan('Priority:')} ${plan.priority || 'unknown'}`);
+      log(`${chalk.cyan('Priority:')} ${plan.priority || ''}`);
       log(`${chalk.cyan('Goal:')} ${plan.goal}`);
       log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
 

@@ -198,13 +198,11 @@ export async function extractMarkdownToYaml(
       validatedPlan.promptsGeneratedAt = now;
     }
 
-    // Set defaults for status and priority if not already set
+    // Set defaults for status if not already set
     if (!validatedPlan.status) {
       validatedPlan.status = 'pending';
     }
-    if (!validatedPlan.priority) {
-      validatedPlan.priority = 'unknown';
-    }
+    // Don't set a default priority - let it remain undefined
 
     // Populate issue and rmfilter arrays from options
     if (options.issueUrls && options.issueUrls.length > 0) {
