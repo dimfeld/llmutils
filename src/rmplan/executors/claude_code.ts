@@ -10,6 +10,7 @@ import type { Executor, ExecutorCommonOptions } from './types.ts';
 
 const claudeCodeOptionsSchema = z.object({
   allowedTools: z.array(z.string()).optional(),
+  allowAllTools: z.boolean().optional(),
   includeDefaultTools: z.boolean().default(true),
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
@@ -48,7 +49,9 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
-    const { disallowedTools, mcpConfigFile } = this.options;
+    let { disallowedTools, allowAllTools, mcpConfigFile } = this.options;
+
+    allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
 
     const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
 
@@ -101,6 +104,10 @@ export class ClaudeCodeExecutor implements Executor {
       '--allowedTools',
       allowedTools.join(','),
     ].filter(Boolean);
+
+    if (allowAllTools) {
+      args.push('--dangerously-skip-permissions');
+    }
 
     if (disallowedTools) {
       args.push('--disallowedTools', disallowedTools.join(','));
