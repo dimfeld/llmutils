@@ -178,7 +178,7 @@ When generating the final output, create a phase-based plan with:
 IMPORTANT: In this high-level plan, tasks must include BOTH a title and a description.
 
 The title must be a single-sentence title that captures the essence of the task.
-The description may be anywhere in length from one sentence to a paragraph, depending on the complexity of the task.
+The description may be anywhere in length from one sentence to a paragraph, depending on the complexity of the task. Tasks should be self-contained pieces of functionality. If you have been provided a list of tasks you may split the provided tasks to make them better self-contained.
 
 Tasks should only include a title and description. Do NOT include in tasks:
 - Detailed implementation steps or prompts
