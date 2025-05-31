@@ -306,6 +306,32 @@ export async function findCurrentPlan(directory: string): Promise<PlanSummary | 
  * @returns Array of plan summaries in execution order
  * @throws Error if a circular dependency is detected
  */
+/**
+ * Checks if a plan is ready to be executed.
+ * A plan is ready if:
+ * - Its status is 'pending' (or not set)
+ * - All its dependencies have status 'done'
+ */
+export function isPlanReady(plan: PlanSummary, allPlans: Map<string, PlanSummary>): boolean {
+  const status = plan.status || 'pending';
+
+  // Only pending plans can be "ready"
+  if (status !== 'pending') {
+    return false;
+  }
+
+  // If no dependencies, it's ready
+  if (!plan.dependencies || plan.dependencies.length === 0) {
+    return true;
+  }
+
+  // Check if all dependencies are done
+  return plan.dependencies.every((depId) => {
+    const depPlan = allPlans.get(depId);
+    return depPlan && depPlan.status === 'done';
+  });
+}
+
 export async function collectDependenciesInOrder(
   planId: string,
   allPlans: Map<string, PlanSummary>,

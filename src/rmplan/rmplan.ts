@@ -31,6 +31,7 @@ import {
   findNextReadyPlan,
   findCurrentPlan,
   collectDependenciesInOrder,
+  isPlanReady,
 } from './plans.js';
 import { planPrompt, simplePlanPrompt } from './prompt.js';
 import type { PlanSchema } from './planSchema.js';
@@ -787,7 +788,7 @@ program
   .option('--reverse', 'Reverse sort order')
   .option(
     '--status <status...>',
-    'Filter by status (can specify multiple). Valid values: pending, in_progress, done'
+    'Filter by status (can specify multiple). Valid values: pending, in_progress, done, ready'
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
   .action(async (options) => {
@@ -824,6 +825,14 @@ program
         // Filter plans
         planArray = planArray.filter((plan) => {
           const status = plan.status || 'pending';
+
+          // Handle "ready" status filter
+          if (statusesToShow.has('ready')) {
+            if (isPlanReady(plan, plans)) {
+              return true;
+            }
+          }
+
           return statusesToShow.has(status);
         });
       }
@@ -889,9 +898,9 @@ program
 
       // Data rows
       for (const plan of planArray) {
-        // Display "ready" for pending plans with prompts
+        // Display "ready" for pending plans whose dependencies are all done
         const actualStatus = plan.status || 'pending';
-        const isReady = actualStatus === 'pending' && plan.hasPrompts;
+        const isReady = isPlanReady(plan, plans);
         const statusDisplay = isReady ? 'ready' : actualStatus;
 
         const statusColor =
@@ -924,7 +933,7 @@ program
           statusColor(statusDisplay),
           priorityColor(priorityDisplay),
           (plan.taskCount || 0).toString(),
-          (plan.stepCount || 0).toString(),
+          plan.stepCount === 0 || !plan.stepCount ? '-' : plan.stepCount.toString(),
           plan.dependencies?.join(', ') || '-',
           chalk.gray(path.relative(searchDir, plan.filename)),
         ]);
@@ -1079,16 +1088,9 @@ program
       const content = await Bun.file(resolvedPlanFile).text();
       const plan = yaml.parse(content) as PlanSchema;
 
-      // Check if plan has prompts
-      let hasPrompts = false;
-      if (plan.tasks) {
-        for (const task of plan.tasks) {
-          if (task.steps && task.steps.some((step) => step.prompt && step.prompt.trim() !== '')) {
-            hasPrompts = true;
-            break;
-          }
-        }
-      }
+      // Check if plan is ready (we'll need to load all plans to check dependencies)
+      const tasksDir = await resolveTasksDir(config);
+      const allPlans = await readAllPlans(tasksDir);
 
       // Display basic information
       log(chalk.bold('\nPlan Information:'));
@@ -1096,9 +1098,20 @@ program
       log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
       log(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
 
-      // Display "ready" for pending plans with prompts
+      // Display "ready" for pending plans whose dependencies are done
       const actualStatus = plan.status || 'pending';
-      const isReady = actualStatus === 'pending' && hasPrompts;
+      const isReady = plan.id
+        ? isPlanReady(
+            {
+              id: plan.id,
+              status: actualStatus,
+              dependencies: plan.dependencies,
+              goal: plan.goal,
+              filename: resolvedPlanFile,
+            },
+            allPlans
+          )
+        : false;
       const statusDisplay = isReady ? 'ready' : actualStatus;
       const statusColor = isReady ? chalk.cyan : chalk.white;
       log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
@@ -1123,9 +1136,6 @@ program
       if (plan.dependencies && plan.dependencies.length > 0) {
         log('\n' + chalk.bold('Dependencies:'));
         log('─'.repeat(60));
-
-        const tasksDir = await resolveTasksDir(config);
-        const allPlans = await readAllPlans(tasksDir);
 
         for (const depId of plan.dependencies) {
           const depPlan = allPlans.get(depId);
