@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Implement `add` Command and Enhance `generate` Command
+goal: To enable users to create basic plan files using a new `add` command and
+  then populate these files with detailed tasks and steps using an enhanced
+  `generate` command.
+details: This phase focuses on introducing the `add` command for scaffolding new
+  plan files. It also involves modifying the existing `generate` command to work
+  with these pre-existing (but empty) plan files, populating them with
+  LLM-generated content in place, rather than always creating a new file.
+id: 1l52aj2-1
+status: pending
+dependencies: []
+planGeneratedAt: 2025-05-31T20:32:33.555Z
+createdAt: 2025-05-31T20:32:33.555Z
+updatedAt: 2025-05-31T20:32:33.555Z
+project:
+  title: Enhance rmplan with `add` and `split` commands for improved plan creation
+    and organization.
+  goal: The overall goal of this project is to introduce two new commands, `add`
+    and `split`, to the `rmplan` CLI tool. The `add` command will facilitate the
+    quick creation of new, empty plan files. The `generate` command will be
+    enhanced to populate these empty plans. The `split` command will enable
+    users to break down large, existing plans into multiple, smaller phase-based
+    plan files using an LLM.
+  details: This project aims to improve the workflow of creating and managing
+    complex project plans with `rmplan`. The `add` command will allow users to
+    initialize a plan with a title and optional metadata like dependencies and
+    priority. The `generate` command will then be able to take this stub plan
+    and use an LLM to fill in the detailed tasks and steps, updating the
+    existing file. The `split` command will address the need to break down
+    large, already detailed plans. It will leverage an LLM to analyze the tasks
+    within a single plan file and intelligently divide them into a sequence of
+    new, phase-specific plan files, automatically inferring dependencies between
+    these new phases. This enhancement will provide users with more flexibility
+    in how they create and structure their plans, catering to both starting new
+    plans from scratch and reorganizing existing ones.
+tasks:
+  - title: Define `add` command in `rmplan.ts` and implement basic YAML file creation.
+    description: This task involves adding the `add` command to the main `rmplan.ts`
+      command-line interface. The command should accept positional arguments
+      which will be used as the `title` for the new plan. It will then create a
+      new YAML file in the configured tasks directory (or the current directory
+      if not specified). This YAML file will be initialized with a unique `id`
+      (generated using `generateProjectId` from `id_utils.ts`), the provided
+      `title`, and placeholder `goal` and `details` fields, adhering to the
+      `PlanSchema`.
+    files: []
+    steps: []
+  - title: "Implement `add` command options: `edit`, `depends-on`, `priority`."
+    description: This task will extend the `add` command to support several
+      command-line options. The `--edit` option should open the newly generated
+      YAML file in the system's default editor (specified by the `$EDITOR`
+      environment variable). The `--depends-on` option will allow users to
+      specify one or more plan IDs that the new plan depends on, populating the
+      `dependencies` array in the YAML. The `--priority` option will set the
+      `priority` field in the YAML file.
+    files: []
+    steps: []
+  - title: Modify `generate` command to populate tasks and steps in existing plan
+      files.
+    description: >
+      This task requires updating the existing `generate` command in
+      `src/rmplan/rmplan.ts`. When the `generate` command is provided with a
+      path to an existing plan YAML file that primarily contains metadata (like
+      `id`, `title`, `goal`, `details`) but lacks a `tasks` array or has an
+      empty one, it should:
+
+      1.  Load the content of the specified plan file.
+
+      2.  Use the plan's `title`, `goal`, and `details` to construct a
+      descriptive text input for the LLM.
+
+      3.  Invoke an LLM (using a prompt similar to the current
+      `simplePlanPrompt`) to generate the detailed `tasks`, including their
+      `steps` and associated `files`.
+
+      4.  Parse the LLM's output (which is typically Markdown and then converted
+      to a YAML structure).
+
+      5.  Merge the newly generated `tasks` array into the data structure loaded
+      from the original plan file.
+
+      6.  Update the `planGeneratedAt` and `promptsGeneratedAt` timestamp fields
+      in the plan data.
+
+      7.  Write the fully populated plan data back to the original YAML file,
+      effectively updating it in place.
+
+      This modification will likely involve adapting logic within
+      `src/rmplan/process_markdown.ts` or `src/rmplan/actions.ts`.
+    files: []
+    steps: []
+  - title: Add tests for `add` command and updated `generate` functionality.
+    description: This task focuses on creating a comprehensive suite of tests. For
+      the `add` command, tests should cover its basic file creation capabilities
+      and the correct handling of all its options (`--edit`, `--depends-on`,
+      `--priority`). For the updated `generate` command, tests should verify its
+      ability to correctly read an existing stub plan file, interact with the
+      LLM (potentially mocked for deterministic testing) to populate tasks and
+      steps, and save the updated content back to the original file.
+    files: []
+    steps: []
+rmfilter:
+  - src/rmplan

@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Implement `split` Command for Plan Decomposition
+goal: To provide users with a `split` command that can take a large, detailed
+  plan file and, using an LLM, break it down into multiple, smaller,
+  phase-specific plan files with inferred inter-dependencies.
+details: This phase introduces the `split` command. This command is designed for
+  situations where a single plan file has become too large or complex and needs
+  to be divided into more manageable phases. The core of this command will
+  involve prompting an LLM to reorganize the existing tasks into a multi-phase
+  structure and then saving these phases as individual plan files.
+id: 1l52aj2-2
+status: pending
+dependencies:
+  - 1l52aj2-1
+planGeneratedAt: 2025-05-31T20:32:33.555Z
+createdAt: 2025-05-31T20:32:33.555Z
+updatedAt: 2025-05-31T20:32:33.555Z
+project:
+  title: Enhance rmplan with `add` and `split` commands for improved plan creation
+    and organization.
+  goal: The overall goal of this project is to introduce two new commands, `add`
+    and `split`, to the `rmplan` CLI tool. The `add` command will facilitate the
+    quick creation of new, empty plan files. The `generate` command will be
+    enhanced to populate these empty plans. The `split` command will enable
+    users to break down large, existing plans into multiple, smaller phase-based
+    plan files using an LLM.
+  details: This project aims to improve the workflow of creating and managing
+    complex project plans with `rmplan`. The `add` command will allow users to
+    initialize a plan with a title and optional metadata like dependencies and
+    priority. The `generate` command will then be able to take this stub plan
+    and use an LLM to fill in the detailed tasks and steps, updating the
+    existing file. The `split` command will address the need to break down
+    large, already detailed plans. It will leverage an LLM to analyze the tasks
+    within a single plan file and intelligently divide them into a sequence of
+    new, phase-specific plan files, automatically inferring dependencies between
+    these new phases. This enhancement will provide users with more flexibility
+    in how they create and structure their plans, catering to both starting new
+    plans from scratch and reorganizing existing ones.
+tasks:
+  - title: Define `split` command in `rmplan.ts` and implement input plan loading.
+    description: This task involves adding the new `split` command to the
+      `src/rmplan/rmplan.ts` CLI. The command will accept a file path to an
+      existing, fully planned-out YAML file (i.e., a file compliant with
+      `PlanSchema` and containing tasks and steps). The initial implementation
+      will focus on correctly loading and parsing this input plan file.
+    files: []
+    steps: []
+  - title: Design LLM prompt for reorganizing tasks into a multi-phase structure.
+    description: >
+      This task requires creating a new, specialized prompt, likely in
+      `src/rmplan/prompt.ts`. The prompt will instruct an LLM to process the
+      `title`, `goal`, `details`, and the entire `tasks` array (including
+      sub-tasks like `description`, `files`, and `steps`) from the input plan.
+      The LLM's objective will be to:
+
+      1.  Define an overarching project `title`, `goal`, and `details`, which
+      can be derived from the input plan's top-level fields.
+
+      2.  Logically group the provided tasks into a sequence of distinct
+      `phases`.
+
+      3.  For each phase, generate a phase-specific `title`, `goal`, and
+      `details`.
+
+      4.  Assign the original tasks to these newly defined phases.
+
+      5.  Infer and explicitly list any dependencies between these new phases
+      (e.g., "Phase 2 depends on Phase 1").
+
+      The LLM should be guided to output this information in a structured format
+      that can be easily parsed, ideally matching the input structure expected
+      by the `saveMultiPhaseYaml` function (a top-level object with `title`,
+      `goal`, `details`, and a `phases` array).
+    files: []
+    steps: []
+  - title: Implement LLM interaction and parsing for the `split` command.
+    description: This task involves integrating the LLM call within the `split`
+      command's logic. It will use the prompt designed in the previous task,
+      sending the content of the input plan to the LLM. The command will then
+      need to parse the LLM's response. This parsing logic will likely leverage
+      or adapt existing functions from `src/rmplan/process_markdown.ts`, such as
+      `convertMarkdownToYaml` and `findYamlStart`, to transform the LLM's
+      (potentially Markdown-formatted) output into a structured JavaScript
+      object representing the multi-phase plan.
+    files: []
+    steps: []
+  - title: Implement creation of new phase-specific plan files using
+      `saveMultiPhaseYaml`.
+    description: This task focuses on utilizing the existing `saveMultiPhaseYaml`
+      function found in `src/rmplan/process_markdown.ts`. The structured
+      multi-phase plan object obtained from the LLM (in Task 2.3) will be passed
+      to this function. `saveMultiPhaseYaml` will then be responsible for
+      creating individual YAML files for each phase. These files will be stored
+      in a new subdirectory, typically named after the original plan file or a
+      generated project ID. This task also includes ensuring that `projectId`
+      and `phaseId` are correctly generated (using `id_utils.ts`) and embedded
+      in the respective phase files.
+    files: []
+    steps: []
+  - title: Add tests for the `split` command.
+    description: >
+      This task involves developing a robust set of tests for the `split`
+      command. Test cases should cover:
+
+      1.  Loading various valid input plan files.
+
+      2.  Mocking the LLM interaction to provide predefined multi-phase
+      structures, allowing for deterministic testing of the subsequent file
+      generation logic.
+
+      3.  Verifying the correct creation of output phase files in the
+      appropriate subdirectory.
+
+      4.  Checking the content of these generated phase files for correctness,
+      including task distribution, phase metadata, and inferred dependencies.
+    files: []
+    steps: []
+rmfilter:
+  - src/rmplan
