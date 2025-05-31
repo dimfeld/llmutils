@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Add the ability for an `.mdc` file to reference other files using an
   `include` field in its frontmatter, prepending the content of these included
   files to the MDC file's main content within the final prompt output.
@@ -379,3 +380,5 @@ tasks:
           content matching without includes). Ensure all mocks are properly set
           up and cleaned up.
         done: false
+id: 1j9md7d
+status: pending

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Update rmplan to generate plans in Markdown and convert to YAML during
   extraction using an LLM.
 details: >
@@ -156,3 +157,5 @@ tasks:
           uses the `validatedPlan` obtained after successful conversion and
           validation.
         done: true
+id: 1j9md7d
+status: done

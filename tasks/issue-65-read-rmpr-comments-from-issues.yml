@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: "Implement the feature: Read `rmpr` comments from GitHub issues and use
   them to provide arguments to `rmfilter` when using the `rmplan generate
   --issue` command."
@@ -47,7 +48,6 @@ tasks:
       - src/rmpr/comment_options.ts
       - src/rmpr/comment_options.test.ts
       - src/logging.ts
-    include_imports: false
     steps:
       - prompt: >
           Modify `src/rmpr/comment_options.ts`.
@@ -124,7 +124,6 @@ tasks:
     files:
       - src/common/github/issues.ts
       - src/rmpr/comment_options.ts
-    include_imports: false
     steps:
       - prompt: >
           Modify `src/common/github/issues.ts`.
@@ -165,7 +164,6 @@ tasks:
       - src/rmpr/comment_options.ts
       - src/common/github/issues.ts
       - src/logging.ts
-    include_imports: true
     steps:
       - prompt: >
           Modify `src/rmplan/rmplan.ts`.
@@ -198,3 +196,5 @@ tasks:
           Ensure `chalk` is imported at the top if it's used for logging:
           `import chalk from 'chalk';`.
         done: true
+id: 1j9md2t
+status: done

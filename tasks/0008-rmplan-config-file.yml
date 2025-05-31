@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Enhance `rmplan` to support loading configuration from a YAML file,
   enabling customizable behavior, starting with post-apply commands for the
   agent.
@@ -456,3 +457,5 @@ tasks:
              // ... rest of the loop ...
           ```
         done: true
+id: 1j9md80
+status: done

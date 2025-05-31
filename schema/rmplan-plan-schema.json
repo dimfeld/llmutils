@@ -5,6 +5,9 @@
     "RmplanPlan": {
       "type": "object",
       "properties": {
+        "title": {
+          "type": "string"
+        },
         "goal": {
           "type": "string"
         },
@@ -26,15 +29,8 @@
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
-              },
-              "include_imports": {
-                "type": "boolean",
-                "default": false
-              },
-              "include_importers": {
-                "type": "boolean",
-                "default": false
+                },
+                "default": []
               },
               "examples": {
                 "type": "array",
@@ -65,14 +61,13 @@
                     "prompt"
                   ],
                   "additionalProperties": false
-                }
+                },
+                "default": []
               }
             },
             "required": [
               "title",
-              "description",
-              "files",
-              "steps"
+              "description"
             ],
             "additionalProperties": false
           }
@@ -155,6 +150,26 @@
         "updatedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "project": {
+          "type": "object",
+          "properties": {
+            "goal": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "details": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "goal",
+            "title",
+            "details"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -163,7 +178,7 @@
         "tasks"
       ],
       "additionalProperties": false,
-      "description": "rmplan plan file schema"
+      "description": "rmplan phase file schema"
     }
   }
 }

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement new metadata fields for `rmplan` YAML files, including `id`,
   `status`, `priority`, timestamps, and fields for tracking issues, pull
   requests, and changed files. This involves updating the plan schema,
@@ -70,8 +71,6 @@ tasks:
       - src/rmplan/planSchema.ts
       - src/common/id_generator.ts
       - src/common/id_generator.test.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmplan/planSchema.ts` to include the new metadata fields.
@@ -200,8 +199,6 @@ tasks:
       - src/common/id_generator.ts
       - src/rmfilter/utils.ts
       - src/rmplan/actions.test.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify the `extractMarkdownToYaml` function in
@@ -475,8 +472,6 @@ tasks:
       - src/rmfilter/utils.ts
       - src/rmplan/agent.test.ts
       - src/rmplan/actions.test.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify the `rmplanAgent` function in `src/rmplan/agent.ts`.
@@ -657,8 +652,6 @@ tasks:
     files:
       - src/rmpr/comment_options.ts
       - src/rmpr/comment_options.test.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Refine the `parseCommandOptionsFromComment` function in
@@ -770,3 +763,5 @@ tasks:
           including those that use the `rmfilter` flag *within* an `rmpr` line
           (e.g., `--rmpr include-all rmfilter --grep foo`).
         done: true
+id: 1j9mdri
+status: done

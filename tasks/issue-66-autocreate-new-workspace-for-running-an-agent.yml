@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a feature to automatically create a new workspace (Git clone or
   worktree) for running an `rmplan` agent, based on repository-level
   configuration. This includes managing the workspace lifecycle, customizing its
@@ -36,8 +37,6 @@ tasks:
     files:
       - src/rmplan/configSchema.ts
       - src/rmplan/configLoader.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmplan/configSchema.ts`.
@@ -99,8 +98,6 @@ tasks:
       - src/rmplan/workspace_manager.ts
       - src/rmfilter/utils.ts
       - src/rmplan/configSchema.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/rmplan/workspace_manager.ts`.
@@ -179,8 +176,6 @@ tasks:
     files:
       - src/rmplan/workspace_manager.ts
       - src/rmfilter/utils.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmplan/workspace_manager.ts`.
@@ -249,8 +244,6 @@ tasks:
     files:
       - src/rmplan/workspace_manager.ts
       - src/rmplan/actions.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmplan/workspace_manager.ts`.
@@ -315,8 +308,6 @@ tasks:
     files:
       - src/rmplan/workspace_tracker.ts
       - src/rmplan/workspace_manager.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/rmplan/workspace_tracker.ts`.
@@ -409,8 +400,6 @@ tasks:
       - src/rmplan/rmplan.ts
       - src/rmplan/workspace_manager.ts
       - src/rmfilter/utils.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmplan/rmplan.ts`.
@@ -503,8 +492,6 @@ tasks:
     files:
       - README.md
       - (Potentially other documentation files if they exist)
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Update `README.md` (and any other relevant documentation files).
@@ -528,3 +515,5 @@ tasks:
 
           5.  Provide examples of how to configure and use this feature.
         done: true
+id: 1j9md1a
+status: done

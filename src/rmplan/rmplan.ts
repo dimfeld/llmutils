@@ -1,50 +1,69 @@
 #!/usr/bin/env bun
 import { input } from '@inquirer/prompts';
+import { generateText } from 'ai';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import { table } from 'table';
+import yaml from 'yaml';
 import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
-import { getInstructionsFromGithubIssue, fetchIssueAndComments } from '../common/github/issues.js';
-import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
+import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
+import { createModel } from '../common/model_factory.ts';
+import { sshAwarePasteAction } from '../common/ssh_detection.ts';
 import { waitForEnter } from '../common/terminal.js';
 import { error, log, warn } from '../logging.js';
 import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
+import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
 import { handleRmprCommand } from '../rmpr/main.js';
-import {
-  argsFromRmprOptions,
-  parseCommandOptionsFromComment,
-  type RmprOptions,
-} from '../rmpr/comment_options.js';
-import {
-  extractMarkdownToYaml,
-  markStepDone,
-  prepareNextStep,
-  type ExtractMarkdownToYamlOptions,
-} from './actions.js';
+import { markStepDone, prepareNextStep, preparePhase } from './actions.js';
 import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
-import { planPrompt } from './prompt.js';
-import { executors } from './executors/index.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
-import { sshAwarePasteAction } from '../common/ssh_detection.ts';
+import { executors } from './executors/index.js';
+import {
+  readAllPlans,
+  resolvePlanFile,
+  findNextReadyPlan,
+  findCurrentPlan,
+  collectDependenciesInOrder,
+  isPlanReady,
+} from './plans.js';
+import { planPrompt, simplePlanPrompt } from './prompt.js';
+import type { PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
-import { generateText } from 'ai';
-import { createModel } from '../common/model_factory.ts';
+import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './process_markdown.ts';
+import { getCombinedTitle, getCombinedGoal, getCombinedTitleFromSummary } from './display_utils.js';
 
 await loadEnv();
+
+/**
+ * Resolves the tasks directory path, handling both absolute and relative paths.
+ * If tasks path is relative, it's resolved relative to the git root.
+ */
+async function resolveTasksDir(config: any): Promise<string> {
+  const gitRoot = (await getGitRoot()) || process.cwd();
+
+  if (config.paths?.tasks) {
+    return path.isAbsolute(config.paths.tasks)
+      ? config.paths.tasks
+      : path.join(gitRoot, config.paths.tasks);
+  }
+
+  return gitRoot;
+}
 
 async function generateSuggestedFilename(planText: string, config: any): Promise<string> {
   try {
     // Extract first 500 characters of the plan for context
     const planSummary = planText.slice(0, 500);
 
-    const prompt = `Given this plan text, suggest a concise and descriptive filename (without extension). 
+    const prompt = `Given this plan text, suggest a concise and descriptive filename (without extension).
 The filename should:
 - Be lowercase with hyphens between words
 - Be descriptive of the main task or feature
@@ -102,6 +121,10 @@ program
   .option('--plan <file>', 'Plan text file to use')
   .option('--plan-editor', 'Open plan in editor')
   .option('--issue <url|number>', 'Issue URL or number to use for the plan text')
+  .option(
+    '--simple',
+    'For simpler tasks, generate a single-phase plan that already includes the prompts'
+  )
   .option('--autofind', 'Automatically find relevant files based on plan')
   .option('--quiet', 'Suppress informational output')
   .option(
@@ -170,6 +193,11 @@ program
         });
 
         if (savePath) {
+          // If the path is relative resolve it against the git root
+          if (!path.isAbsolute(savePath) && config.paths?.tasks) {
+            savePath = path.resolve(gitRoot, suggestedFilename);
+          }
+
           try {
             await Bun.write(savePath, planText);
             planFile = savePath;
@@ -192,8 +220,8 @@ program
       // Construct the issue URL
       issueUrlsForExtract.push(issueResult.issue.url);
 
-      let tasksDir = config.paths?.tasks;
-      let suggestedFilename = tasksDir
+      let tasksDir = await resolveTasksDir(config);
+      let suggestedFilename = config.paths?.tasks
         ? path.join(tasksDir, issueResult.suggestedFileName)
         : issueResult.suggestedFileName;
 
@@ -215,8 +243,13 @@ program
       }
     }
 
+    if (!planText) {
+      error('No plan text was provided.');
+      process.exit(1);
+    }
+
     // planText now contains the loaded plan
-    const promptString = planPrompt(planText!);
+    const promptString = options.simple ? simplePlanPrompt(planText) : planPrompt(planText);
     const tmpPromptPath = path.join(os.tmpdir(), `rmplan-prompt-${Date.now()}.md`);
     let exitRes: number | undefined;
     let wrotePrompt = false;
@@ -229,7 +262,7 @@ program
       let additionalFiles: string[] = [];
       if (options.autofind) {
         log('[Autofind] Searching for relevant files based on plan...');
-        const query = planText!;
+        const query = planText;
 
         const rmfindOptions: RmfindOptions = {
           baseDir: gitRoot,
@@ -268,22 +301,38 @@ program
       // Combine user CLI args and issue rmpr options
       const allRmfilterOptions = [...userCliRmfilterArgs, ...issueRmfilterOptions];
 
-      // Append autofound files to rmfilter args
-      const rmfilterFullArgs = [
-        'rmfilter',
-        ...allRmfilterOptions,
-        '--',
-        ...additionalFiles,
-        '--bare',
-        '--copy',
-        '--instructions',
-        `@${tmpPromptPath}`,
-      ];
-      const proc = logSpawn(rmfilterFullArgs, {
-        cwd: gitRoot,
-        stdio: ['inherit', 'inherit', 'inherit'],
-      });
-      exitRes = await proc.exited;
+      // Check if no files are provided to rmfilter
+      const hasNoFiles = additionalFiles.length === 0 && allRmfilterOptions.length === 0;
+
+      if (hasNoFiles) {
+        warn(
+          chalk.yellow(
+            '\n⚠️  Warning: No files specified for rmfilter. The prompt will only contain the planning instructions without any code context.'
+          )
+        );
+
+        // Copy the prompt directly to clipboard without running rmfilter
+        await clipboard.write(promptString);
+        log('Prompt copied to clipboard');
+        exitRes = 0;
+      } else {
+        // Append autofound files to rmfilter args
+        const rmfilterFullArgs = [
+          'rmfilter',
+          ...allRmfilterOptions,
+          '--',
+          ...additionalFiles,
+          '--bare',
+          '--copy',
+          '--instructions',
+          `@${tmpPromptPath}`,
+        ];
+        const proc = logSpawn(rmfilterFullArgs, {
+          cwd: gitRoot,
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+        exitRes = await proc.exited;
+      }
 
       if (exitRes === 0 && !options.noExtract) {
         log(
@@ -294,30 +343,30 @@ program
 
         let input = await waitForEnter(true);
 
-        let outputFilename: string | undefined;
+        let outputPath: string;
         if (planFile) {
-          outputFilename = path.join(
-            path.dirname(planFile),
-            path.basename(planFile, '.md') + '.yml'
-          );
+          // Use the directory of the plan file for output
+          outputPath = path.join(path.dirname(planFile), path.basename(planFile, '.md'));
+        } else {
+          // Default to current directory with a generated name
+          outputPath = 'rmplan-output';
         }
+
         const extractOptions: ExtractMarkdownToYamlOptions = {
+          output: outputPath,
           planRmfilterArgs: allRmfilterOptions,
           issueUrls: issueUrlsForExtract,
         };
 
-        const outputYaml = await extractMarkdownToYaml(
+        const message = await extractMarkdownToYaml(
           input,
           config,
           options.quiet ?? false,
           extractOptions
         );
-        if (outputFilename) {
-          // no need to print otherwise, extractMarkdownToYaml already did
-          await Bun.write(outputFilename, outputYaml);
-          if (!options.quiet) {
-            log(`Wrote result to ${outputFilename}`);
-          }
+
+        if (!options.quiet) {
+          log(message);
         }
       }
     } finally {
@@ -344,6 +393,14 @@ program
     '--plan <planFile>',
     'The path of the original Markdown project description file. If set, rmplan will write the output to the same path, but with a .yml extension.'
   )
+  .option(
+    '--project-id <id>',
+    'Specify a project ID for multi-phase plans. If not provided, the project ID will be inferred from the plan.'
+  )
+  .option(
+    '--issue <issue_number_or_url>',
+    'GitHub issue number or URL to associate with the project and use for naming.'
+  )
   .option('--quiet', 'Suppress informational output')
   .allowExcessArguments(true)
   .action(async (inputFile, options) => {
@@ -358,67 +415,91 @@ program
       inputText = await clipboard.read();
     }
 
+    let outputPath = options.output;
     if (options.plan && !options.output) {
       let name = options.plan.endsWith('.yml')
         ? options.plan
         : path.basename(options.plan, '.md') + '.yml';
-      options.output = path.join(path.dirname(options.plan), name);
+      outputPath = path.join(path.dirname(options.plan), name);
+    }
+
+    // Determine output path
+    if (!outputPath) {
+      error('Either --output or --plan must be specified');
+      process.exit(1);
     }
 
     try {
       const config = await loadEffectiveConfig(options.config);
-      const outputYaml = await extractMarkdownToYaml(inputText, config, options.quiet ?? false, {});
-      if (options.output) {
-        let outputFilename = options.output;
-        if (outputFilename.endsWith('.md')) {
-          outputFilename = outputFilename.slice(0, -3);
-          outputFilename += '.yml';
-        }
-        await Bun.write(outputFilename, outputYaml);
-        if (!options.quiet) {
-          log(`Wrote result to ${outputFilename}`);
-        }
-      } else {
-        console.log(outputYaml);
+
+      // Extract markdown to YAML using LLM
+      const extractOptions: ExtractMarkdownToYamlOptions = {
+        output: outputPath,
+        projectId: options.projectId,
+        issueUrls: options.issue ? [options.issue] : [],
+      };
+
+      const message = await extractMarkdownToYaml(
+        inputText,
+        config,
+        options.quiet ?? false,
+        extractOptions
+      );
+
+      if (!options.quiet) {
+        log(message);
       }
     } catch (e) {
+      error('Failed to extract markdown to YAML:', e);
       process.exit(1);
     }
   });
 
 program
   .command('done <planFile>')
-  .description('Mark the next step/task in a plan YAML as done')
+  .description('Mark the next step/task in a plan YAML as done. Can be a file path or plan ID.')
   .option('--steps <steps>', 'Number of steps to mark as done', '1')
   .option('--task', 'Mark all steps in the current task as done')
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options) => {
+    const globalOpts = program.opts();
     const gitRoot = (await getGitRoot()) || process.cwd();
-    const result = await markStepDone(
-      planFile,
-      {
-        task: options.task,
-        steps: options.steps ? parseInt(options.steps, 10) : 1,
-        commit: options.commit,
-      },
-      undefined,
-      gitRoot
-    );
 
-    // If plan is complete and we're in a workspace, release the lock
-    if (result.planComplete) {
-      try {
-        await WorkspaceLock.releaseLock(gitRoot);
-        log('Released workspace lock');
-      } catch (err) {
-        // Ignore lock release errors - workspace might not be locked
+    try {
+      const config = await loadEffectiveConfig(globalOpts.config);
+      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      const result = await markStepDone(
+        resolvedPlanFile,
+        {
+          task: options.task,
+          steps: options.steps ? parseInt(options.steps, 10) : 1,
+          commit: options.commit,
+        },
+        undefined,
+        gitRoot,
+        config
+      );
+
+      // If plan is complete and we're in a workspace, release the lock
+      if (result.planComplete) {
+        try {
+          await WorkspaceLock.releaseLock(gitRoot);
+          log('Released workspace lock');
+        } catch (err) {
+          // Ignore lock release errors - workspace might not be locked
+        }
       }
+    } catch (err) {
+      error(`Failed to process plan: ${err as Error}`);
+      process.exit(1);
     }
   });
 
 program
   .command('next <planFile>')
-  .description('Prepare the next step(s) from a plan YAML for execution')
+  .description(
+    'Prepare the next step(s) from a plan YAML for execution. Can be a file path or plan ID.'
+  )
   .option('--rmfilter', 'Use rmfilter to generate the prompt')
   .option('--previous', 'Include information about previous completed steps')
   .option('--with-imports', 'Include direct imports of files found in the prompt or task files')
@@ -431,16 +512,18 @@ program
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planFile, options) => {
+    const globalOpts = program.opts();
     // Find '--' in process.argv to get extra args for rmfilter
     const doubleDashIdx = process.argv.indexOf('--');
     const cmdLineRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
-    const config = await loadEffectiveConfig(options.config);
+    const config = await loadEffectiveConfig(globalOpts.config);
     const gitRoot = (await getGitRoot()) || process.cwd();
 
     try {
+      const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
       const result = await prepareNextStep(
         config,
-        planFile,
+        resolvedPlanFile,
         {
           rmfilter: options.rmfilter,
           previous: options.previous,
@@ -507,27 +590,157 @@ const executorNames = executors
   .toArray()
   .join(', ');
 
-program
-  .command('agent <planFile>')
-  .description('Automatically execute steps in a plan YAML file')
-  .option('-m, --model <model>', 'Model to use for LLM')
-  .option(`-x, --executor <name>`, 'The executor to use for plan execution')
-  .addHelpText('after', `Available executors: ${executorNames}`)
-  .option('--steps <steps>', 'Number of steps to execute')
-  .option('--no-log', 'Do not log to file')
-  .option(
-    '--workspace <id>',
-    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
-  )
-  .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
-  .option(
-    '--new-workspace',
-    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
-  )
-  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
-  .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
-  .allowExcessArguments(true)
-  .action((planFile, options) => rmplanAgent(planFile, options, program.opts()));
+// Shared function to create the agent/run command configuration
+function createAgentCommand(command: Command, description: string) {
+  return command
+    .description(description)
+    .option('-m, --model <model>', 'Model to use for LLM')
+    .option(`-x, --executor <name>`, 'The executor to use for plan execution')
+    .addHelpText('after', `Available executors: ${executorNames}`)
+    .option('--steps <steps>', 'Number of steps to execute')
+    .option('--no-log', 'Do not log to file')
+    .option(
+      '--workspace <id>',
+      'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
+    )
+    .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
+    .option(
+      '--new-workspace',
+      'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+    )
+    .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
+    .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
+    .option('--next', 'Execute the next plan that is ready to be implemented')
+    .option('--current', 'Execute the current plan (in_progress or next ready plan)')
+    .option('--with-dependencies', 'Also execute all dependencies first in the correct order')
+    .option(
+      '--direct',
+      'Call LLM directly instead of copying prompt to clipboard during preparation'
+    )
+    .allowExcessArguments(true)
+    .allowUnknownOption(true)
+    .action(async (planFile, options) => {
+      const globalOpts = program.opts();
+
+      // Find '--' in process.argv to get extra args for rmfilter
+      const doubleDashIdx = process.argv.indexOf('--');
+      const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
+
+      try {
+        let resolvedPlanFile: string;
+
+        if (options.next || options.current) {
+          // Find the next ready plan or current plan
+          const config = await loadEffectiveConfig(globalOpts.config);
+          const tasksDir = await resolveTasksDir(config);
+          const plan = options.current
+            ? await findCurrentPlan(tasksDir)
+            : await findNextReadyPlan(tasksDir);
+
+          if (!plan) {
+            if (options.current) {
+              log('No current plans found. No plans are in progress or ready to be implemented.');
+            } else {
+              log('No ready plans found. All pending plans have incomplete dependencies.');
+            }
+            return;
+          }
+
+          const message = options.current
+            ? `Found current plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
+            : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
+          log(chalk.green(message));
+          resolvedPlanFile = plan.filename;
+        } else {
+          if (!planFile) {
+            error('Please provide a plan file or use --next/--current to find a plan');
+            process.exit(1);
+          }
+          resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+        }
+
+        // Check if we need to execute dependencies first
+        if (options.withDependencies) {
+          const config = await loadEffectiveConfig(globalOpts.config);
+          const tasksDir = await resolveTasksDir(config);
+          const allPlans = await readAllPlans(tasksDir);
+
+          // Get the plan's ID
+          const planContent = await Bun.file(resolvedPlanFile).text();
+          const planData = yaml.parse(planContent) as PlanSchema;
+
+          if (!planData.id) {
+            error('Plan must have an ID to execute with dependencies');
+            process.exit(1);
+          }
+
+          try {
+            // Collect all plans to execute in order
+            const plansToExecute = await collectDependenciesInOrder(planData.id, allPlans);
+
+            if (plansToExecute.length > 1) {
+              log(chalk.bold('\n📋 Plans to execute in order:'));
+              plansToExecute.forEach((plan, index) => {
+                const status = plan.status || 'pending';
+                const statusIcon = status === 'done' ? '✓' : status === 'in_progress' ? '⏳' : '○';
+                log(
+                  `  ${index + 1}. ${statusIcon} ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
+                );
+              });
+              log('');
+            }
+
+            // Execute each plan in order
+            for (const plan of plansToExecute) {
+              if (plan.status === 'done') {
+                log(chalk.gray(`Skipping completed plan: ${plan.id}`));
+                continue;
+              }
+
+              log(
+                chalk.bold(`\n🚀 Executing plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`)
+              );
+              log('─'.repeat(80));
+
+              // Pass rmfilterArgs to rmplanAgent
+              const planOptions = { ...options, rmfilterArgs };
+              await rmplanAgent(plan.filename, planOptions, globalOpts);
+
+              log(chalk.green(`✓ Completed plan: ${plan.id}`));
+            }
+
+            log(chalk.bold('\n✅ All plans executed successfully!'));
+          } catch (err) {
+            if (err instanceof Error && err.message.includes('Circular dependency')) {
+              error(err.message);
+            } else {
+              error(`Failed to collect dependencies: ${err as Error}`);
+            }
+            process.exit(1);
+          }
+        } else {
+          // Pass rmfilterArgs to rmplanAgent
+          options.rmfilterArgs = rmfilterArgs;
+          await rmplanAgent(resolvedPlanFile, options, globalOpts);
+        }
+      } catch (err) {
+        error(`Failed to process plan: ${err as Error}`);
+        process.exit(1);
+      }
+    });
+}
+
+// Create the agent command
+createAgentCommand(
+  program.command('agent [planFile]'),
+  'Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
+);
+
+// Create the run command as an alias
+createAgentCommand(
+  program.command('run [planFile]'),
+  'Alias for "agent". Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
+);
 
 program
   .command('workspaces')
@@ -556,6 +769,490 @@ program
       await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
     } catch (err) {
       error('Failed to list workspaces:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('list')
+  .description('List all plan files in the tasks directory')
+  .option(
+    '--dir <directory>',
+    'Directory to search for plan files (defaults to configured tasks directory)'
+  )
+  .option(
+    '--sort <field>',
+    'Sort by: id, title, status, priority, created, updated (default: id)',
+    'id'
+  )
+  .option('--reverse', 'Reverse sort order')
+  .option(
+    '--status <status...>',
+    'Filter by status (can specify multiple). Valid values: pending, in_progress, done, ready'
+  )
+  .option('--all', 'Show all plans regardless of status (overrides default filter)')
+  .action(async (options) => {
+    try {
+      const globalOpts = program.opts();
+      const config = await loadEffectiveConfig(globalOpts.config);
+
+      // Determine directory to search
+      let searchDir = options.dir || (await resolveTasksDir(config));
+
+      // Read all plans
+      const plans = await readAllPlans(searchDir);
+
+      if (plans.size === 0) {
+        log('No plan files found in', searchDir);
+        return;
+      }
+
+      // Filter plans based on status
+      let planArray = Array.from(plans.values());
+
+      if (!options.all) {
+        // Determine which statuses to show
+        let statusesToShow: Set<string>;
+
+        if (options.status && options.status.length > 0) {
+          // Use explicitly specified statuses
+          statusesToShow = new Set(options.status);
+        } else {
+          // Default: show pending and in_progress
+          statusesToShow = new Set(['pending', 'in_progress']);
+        }
+
+        // Filter plans
+        planArray = planArray.filter((plan) => {
+          const status = plan.status || 'pending';
+
+          // Handle "ready" status filter
+          if (statusesToShow.has('ready')) {
+            if (isPlanReady(plan, plans)) {
+              return true;
+            }
+          }
+
+          return statusesToShow.has(status);
+        });
+      }
+
+      // Sort based on the specified field
+      planArray.sort((a, b) => {
+        let aVal: string | number;
+        let bVal: string | number;
+        switch (options.sort) {
+          case 'title':
+            aVal = (a.title || a.goal || '').toLowerCase();
+            bVal = (b.title || b.goal || '').toLowerCase();
+            break;
+          case 'status':
+            aVal = a.status || '';
+            bVal = b.status || '';
+            break;
+          case 'priority': {
+            // Sort priority in reverse (high first)
+            const priorityOrder: Record<string, number> = { urgent: 5, high: 4, medium: 3, low: 2 };
+            aVal = a.priority ? priorityOrder[a.priority] || 0 : 0;
+            bVal = b.priority ? priorityOrder[b.priority] || 0 : 0;
+            break;
+          }
+          case 'created':
+            aVal = a.createdAt || '';
+            bVal = b.createdAt || '';
+            break;
+          case 'updated':
+            aVal = a.updatedAt || '';
+            bVal = b.updatedAt || '';
+            break;
+          case 'id':
+          default:
+            aVal = a.id || '';
+            bVal = b.id || '';
+            break;
+        }
+
+        if (aVal < bVal) return options.reverse ? 1 : -1;
+        if (aVal > bVal) return options.reverse ? -1 : 1;
+        return 0;
+      });
+
+      // Display as table
+      log(chalk.bold('Plan Files:'));
+      log('');
+
+      // Prepare table data
+      const tableData: string[][] = [];
+
+      // Header row
+      tableData.push([
+        chalk.bold('ID'),
+        chalk.bold('Title'),
+        chalk.bold('Status'),
+        chalk.bold('Priority'),
+        chalk.bold('Tasks'),
+        chalk.bold('Steps'),
+        chalk.bold('Depends On'),
+        chalk.bold('File'),
+      ]);
+
+      // Data rows
+      for (const plan of planArray) {
+        // Display "ready" for pending plans whose dependencies are all done
+        const actualStatus = plan.status || 'pending';
+        const isReady = isPlanReady(plan, plans);
+        const statusDisplay = isReady ? 'ready' : actualStatus;
+
+        const statusColor =
+          actualStatus === 'done'
+            ? chalk.green
+            : isReady
+              ? chalk.cyan
+              : actualStatus === 'in_progress'
+                ? chalk.yellow
+                : actualStatus === 'pending'
+                  ? chalk.white
+                  : chalk.gray;
+
+        const priorityColor =
+          plan.priority === 'urgent'
+            ? chalk.magenta
+            : plan.priority === 'high'
+              ? chalk.red
+              : plan.priority === 'medium'
+                ? chalk.yellow
+                : plan.priority === 'low'
+                  ? chalk.blue
+                  : chalk.white;
+
+        const priorityDisplay = plan.priority || '';
+
+        tableData.push([
+          chalk.cyan(plan.id || 'no-id'),
+          getCombinedTitleFromSummary(plan), // Show combined title
+          statusColor(statusDisplay),
+          priorityColor(priorityDisplay),
+          (plan.taskCount || 0).toString(),
+          plan.stepCount === 0 || !plan.stepCount ? '-' : plan.stepCount.toString(),
+          plan.dependencies?.join(', ') || '-',
+          chalk.gray(path.relative(searchDir, plan.filename)),
+        ]);
+      }
+
+      // Configure table options
+      const tableConfig = {
+        columns: {
+          1: { width: 50, wrapWord: true }, // Title column - wider and wraps
+          6: { width: 15, wrapWord: true }, // Dependencies column
+          7: { width: 20, wrapWord: true }, // File column
+        },
+        border: {
+          topBody: '─',
+          topJoin: '┬',
+          topLeft: '┌',
+          topRight: '┐',
+          bottomBody: '─',
+          bottomJoin: '┴',
+          bottomLeft: '└',
+          bottomRight: '┘',
+          bodyLeft: '│',
+          bodyRight: '│',
+          bodyJoin: '│',
+          joinBody: '─',
+          joinLeft: '├',
+          joinRight: '┤',
+          joinJoin: '┼',
+        },
+      };
+
+      const output = table(tableData, tableConfig);
+      log(output);
+
+      log(`Showing: ${planArray.length} of ${plans.size} plan(s)`);
+    } catch (err) {
+      error('Failed to list plans:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('prepare [yamlFile]')
+  .description(
+    'Generate detailed steps and prompts for a specific phase. Can be a file path or plan ID.'
+  )
+  .option('--force', 'Override dependency completion check and proceed with generation.')
+  .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
+  .option('--next', 'Prepare the next plan that is ready to be implemented')
+  .option('--current', 'Prepare the current plan (in_progress or next ready plan)')
+  .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
+  .allowExcessArguments(true)
+  .allowUnknownOption(true)
+  .action(async (yamlFile, options) => {
+    const globalOpts = program.opts();
+
+    // Find '--' in process.argv to get extra args for rmfilter
+    const doubleDashIdx = process.argv.indexOf('--');
+    const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
+
+    try {
+      // Load RmplanConfig using loadEffectiveConfig
+      const config = await loadEffectiveConfig(globalOpts.config);
+
+      let phaseYamlFile: string;
+
+      if (options.next || options.current) {
+        // Find the next ready plan or current plan
+        const tasksDir = await resolveTasksDir(config);
+        const plan = options.current
+          ? await findCurrentPlan(tasksDir)
+          : await findNextReadyPlan(tasksDir);
+
+        if (!plan) {
+          if (options.current) {
+            log('No current plans found. No plans are in progress or ready to be implemented.');
+          } else {
+            log('No ready plans found. All pending plans have incomplete dependencies.');
+          }
+          return;
+        }
+
+        const message = options.current
+          ? `Found current plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
+          : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
+        log(chalk.green(message));
+        phaseYamlFile = plan.filename;
+      } else {
+        if (!yamlFile) {
+          error('Please provide a plan file or use --next/--current to find a plan');
+          process.exit(1);
+        }
+        // Resolve plan file (ID or path)
+        phaseYamlFile = await resolvePlanFile(yamlFile, globalOpts.config);
+      }
+
+      await preparePhase(phaseYamlFile, config, {
+        force: options.force,
+        model: options.model,
+        rmfilterArgs: rmfilterArgs,
+        direct: options.direct,
+      });
+    } catch (err) {
+      error('Failed to generate phase details:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('show [planFile]')
+  .description('Display detailed information about a plan. Can be a file path or plan ID.')
+  .option('--next', 'Show the next plan that is ready to be implemented')
+  .option('--current', 'Show the current plan (in_progress or next ready plan)')
+  .action(async (planFile, options) => {
+    const globalOpts = program.opts();
+
+    try {
+      const config = await loadEffectiveConfig(globalOpts.config);
+
+      let resolvedPlanFile: string;
+
+      if (options.next || options.current) {
+        // Find the next ready plan or current plan
+        const tasksDir = await resolveTasksDir(config);
+        const plan = options.current
+          ? await findCurrentPlan(tasksDir)
+          : await findNextReadyPlan(tasksDir);
+
+        if (!plan) {
+          if (options.current) {
+            log('No current plans found. No plans are in progress or ready to be implemented.');
+          } else {
+            log('No ready plans found. All pending plans have incomplete dependencies.');
+          }
+          return;
+        }
+
+        const message = options.current
+          ? `Found current plan: ${plan.id}`
+          : `Found next ready plan: ${plan.id}`;
+        log(chalk.green(message));
+        resolvedPlanFile = plan.filename;
+      } else {
+        if (!planFile) {
+          error('Please provide a plan file or use --next/--current to find a plan');
+          process.exit(1);
+        }
+        resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+      }
+
+      // Read the plan file
+      const content = await Bun.file(resolvedPlanFile).text();
+      const plan = yaml.parse(content) as PlanSchema;
+
+      // Check if plan is ready (we'll need to load all plans to check dependencies)
+      const tasksDir = await resolveTasksDir(config);
+      const allPlans = await readAllPlans(tasksDir);
+
+      // Display basic information
+      log(chalk.bold('\nPlan Information:'));
+      log('─'.repeat(60));
+      log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
+      log(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
+
+      // Display "ready" for pending plans whose dependencies are done
+      const actualStatus = plan.status || 'pending';
+      const isReady = plan.id
+        ? isPlanReady(
+            {
+              id: plan.id,
+              status: actualStatus,
+              dependencies: plan.dependencies,
+              goal: plan.goal,
+              filename: resolvedPlanFile,
+            },
+            allPlans
+          )
+        : false;
+      const statusDisplay = isReady ? 'ready' : actualStatus;
+      const statusColor = isReady ? chalk.cyan : chalk.white;
+      log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
+
+      log(`${chalk.cyan('Priority:')} ${plan.priority || ''}`);
+      log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
+      log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
+
+      if (plan.baseBranch) {
+        log(`${chalk.cyan('Base Branch:')} ${plan.baseBranch}`);
+      }
+
+      if (plan.createdAt) {
+        log(`${chalk.cyan('Created:')} ${new Date(plan.createdAt).toLocaleString()}`);
+      }
+
+      if (plan.updatedAt) {
+        log(`${chalk.cyan('Updated:')} ${new Date(plan.updatedAt).toLocaleString()}`);
+      }
+
+      // Display dependencies with resolution
+      if (plan.dependencies && plan.dependencies.length > 0) {
+        log('\n' + chalk.bold('Dependencies:'));
+        log('─'.repeat(60));
+
+        for (const depId of plan.dependencies) {
+          const depPlan = allPlans.get(depId);
+          if (depPlan) {
+            const statusIcon =
+              depPlan.status === 'done' ? '✓' : depPlan.status === 'in_progress' ? '⏳' : '○';
+            const statusColor =
+              depPlan.status === 'done'
+                ? chalk.green
+                : depPlan.status === 'in_progress'
+                  ? chalk.yellow
+                  : chalk.gray;
+            log(
+              `  ${statusIcon} ${chalk.cyan(depId)} - ${getCombinedTitleFromSummary(depPlan)} ${statusColor(`[${depPlan.status || 'pending'}]`)}`
+            );
+          } else {
+            log(`  ○ ${chalk.cyan(depId)} ${chalk.red('[Not found]')}`);
+          }
+        }
+      }
+
+      // Display issues and PRs
+      if (plan.issue && plan.issue.length > 0) {
+        log('\n' + chalk.bold('Issues:'));
+        log('─'.repeat(60));
+        plan.issue.forEach((url) => log(`  • ${url}`));
+      }
+
+      if (plan.pullRequest && plan.pullRequest.length > 0) {
+        log('\n' + chalk.bold('Pull Requests:'));
+        log('─'.repeat(60));
+        plan.pullRequest.forEach((url) => log(`  • ${url}`));
+      }
+
+      // Display details
+      if (plan.details) {
+        log('\n' + chalk.bold('Details:'));
+        log('─'.repeat(60));
+        log(plan.details);
+      }
+
+      // Display tasks with completion status
+      if (plan.tasks && plan.tasks.length > 0) {
+        log('\n' + chalk.bold('Tasks:'));
+        log('─'.repeat(60));
+
+        plan.tasks.forEach((task, taskIdx) => {
+          const totalSteps = task.steps.length;
+          const doneSteps = task.steps.filter((s) => s.done).length;
+          const taskComplete = totalSteps > 0 && doneSteps === totalSteps;
+          const taskIcon = taskComplete ? '✓' : totalSteps > 0 && doneSteps > 0 ? '⏳' : '○';
+          const taskColor = taskComplete
+            ? chalk.green
+            : totalSteps > 0 && doneSteps > 0
+              ? chalk.yellow
+              : chalk.white;
+
+          log(`\n${taskIcon} ${chalk.bold(`Task ${taskIdx + 1}:`)} ${taskColor(task.title)}`);
+          if (totalSteps > 0) {
+            log(`  Progress: ${doneSteps}/${totalSteps} steps completed`);
+          }
+          log(`  ${chalk.gray(task.description)}`);
+
+          if (task.files && task.files.length > 0) {
+            log(`  Files: ${task.files.join(', ')}`);
+          }
+
+          if (task.steps && task.steps.length > 0) {
+            log('  Steps:');
+            task.steps.forEach((step, stepIdx) => {
+              const stepIcon = step.done ? '✓' : '○';
+              const stepColor = step.done ? chalk.green : chalk.gray;
+              const prompt = step.prompt.split('\n')[0]; // First line only
+              const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
+              log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
+            });
+          }
+        });
+      }
+
+      // Display rmfilter args if present
+      if (plan.rmfilter && plan.rmfilter.length > 0) {
+        log('\n' + chalk.bold('RmFilter Arguments:'));
+        log('─'.repeat(60));
+        log(`  ${plan.rmfilter.join(' ')}`);
+      }
+
+      // Display changed files if present
+      if (plan.changedFiles && plan.changedFiles.length > 0) {
+        log('\n' + chalk.bold('Changed Files:'));
+        log('─'.repeat(60));
+        plan.changedFiles.forEach((file) => log(`  • ${file}`));
+      }
+
+      log(''); // Empty line at the end
+    } catch (err) {
+      error(`Failed to show plan: ${err as Error}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('edit <planArg>')
+  .description('Open a plan file in your editor. Can be a file path or plan ID.')
+  .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')
+  .action(async (planArg, options) => {
+    const globalOpts = program.opts();
+    try {
+      const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);
+      const editor = options.editor || process.env.EDITOR || 'nano';
+      
+      const editorProcess = logSpawn([editor, resolvedPlanFile], {
+        stdio: ['inherit', 'inherit', 'inherit'],
+      });
+      await editorProcess.exited;
+    } catch (err) {
+      error(`Failed to open plan file: ${err as Error}`);
       process.exit(1);
     }
   });

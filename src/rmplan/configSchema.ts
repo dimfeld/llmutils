@@ -92,6 +92,10 @@ export const rmplanConfigSchema = z
           .string()
           .optional()
           .describe('Model spec for rmplan markdown-to-yaml extraction'),
+        stepGeneration: z
+          .string()
+          .optional()
+          .describe('Model spec for rmplan prepare phase generation'),
       })
       .optional(),
     /** Default executor to use when not specified via --executor option */

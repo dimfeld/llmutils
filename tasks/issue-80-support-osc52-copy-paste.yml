@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement OSC52 copy/paste support in `llmutils` to enhance functionality
   within SSH sessions, falling back to the existing `clipboardy` mechanism when
   not in SSH or when OSC52 is not available/fails.
@@ -61,8 +62,6 @@ tasks:
     files:
       - src/common/ssh_detection.ts
       - src/common/ssh_detection.test.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/common/ssh_detection.ts`.
@@ -142,8 +141,6 @@ tasks:
     files:
       - src/common/osc52.ts
       - src/common/osc52.test.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/common/osc52.ts`.
@@ -351,8 +348,6 @@ tasks:
       - src/common/clipboard.test.ts
       - src/common/ssh_detection.ts
       - src/common/osc52.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/common/clipboard.ts`.
@@ -521,8 +516,6 @@ tasks:
       - src/apply-llm-edits/cmd.ts
       - src/rmrun.ts
       - src/common/clipboard.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmfilter/rmfilter.ts`:
@@ -676,8 +669,6 @@ tasks:
       requirements.
     files:
       - README.md
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Update `README.md`.
@@ -692,3 +683,5 @@ tasks:
           tool's section if applicable (e.g., `rmfilter` or `apply-llm-edits`
           often involve clipboard).
         done: true
+id: 1j9mdp0
+status: done

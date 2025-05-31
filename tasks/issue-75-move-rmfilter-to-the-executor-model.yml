@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Refactor the `rmfilter` command to replace its current `--run` option with
   a more flexible `--executor` option, aligning its execution model with
   `rmplan`. This will allow users to specify different executors to process the
@@ -36,8 +37,6 @@ tasks:
     files:
       - src/rmfilter/config.ts
       - src/rmfilter/rmfilter.ts
-    include_imports: false
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmfilter/config.ts`.
@@ -75,8 +74,6 @@ tasks:
       - src/rmplan/executors/types.ts
       - src/rmplan/configSchema.ts
       - src/common/run_and_apply.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmfilter/rmfilter.ts`.
@@ -203,3 +200,5 @@ tasks:
           No code changes are expected from this prompt, only verification. If
           discrepancies are found, point them out.
         done: true
+id: 1j9mdqt
+status: done

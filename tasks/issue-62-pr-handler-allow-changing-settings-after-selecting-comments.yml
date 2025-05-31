@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a feature in the `rmpr` (PR handler) tool to allow users to
   change settings (LLM model for editing, `rmfilter` options for context
   gathering) after selecting review comments but before the LLM prompt is
@@ -57,8 +58,6 @@ tasks:
     files:
       - src/rmpr/main.ts
       - src/rmfilter/utils.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmpr/main.ts`.
@@ -113,8 +112,6 @@ tasks:
       variable.
     files:
       - src/rmpr/main.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmpr/main.ts`, building upon the previous step.
@@ -150,8 +147,6 @@ tasks:
       `additionalUserRmFilterArgs` variable.
     files:
       - src/rmpr/main.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmpr/main.ts`, building upon the previous steps.
@@ -175,8 +170,6 @@ tasks:
       `runStreamingPrompt`.
     files:
       - src/rmpr/main.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Modify `src/rmpr/main.ts`, building upon the previous steps.
@@ -227,3 +220,5 @@ tasks:
           This ensures that user's choices for model and rmfilter arguments are
           respected in the subsequent processing steps.
         done: true
+id: 1j9md7y
+status: done

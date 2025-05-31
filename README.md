@@ -8,7 +8,7 @@ The scripts are:
 - `apply-llm-edits` - Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
 - `rmrun` - Send the rmfilter output to a language model and apply the edits back.
 - `rmfind` - Find relevant files to use with rmfilter
-- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks.
+- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks. Includes multi-phase planning for breaking large features into incremental deliverables.
 - `rmpr` - Handle pull request comments and reviews with AI assistance
 
 All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
@@ -51,6 +51,7 @@ assume a repository written with Typescript and PNPM workspaces.
     - [Post-Apply Commands](#post-apply-commands)
   - [Executors](#executors)
     - [Available Executors](#available-executors)
+  - [Multi-Phase Project Planning](#multi-phase-project-planning)
 - [rmpr](#rmpr)
   - [Key Features](#key-features-4)
   - [Usage](#usage-2)
@@ -289,6 +290,8 @@ You can find the task plans for this repository under the "tasks" directory.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
+- **Plan Inspection**: Display detailed information about plans including dependencies with resolution, tasks with completion status, and metadata.
+- **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, `run`, and `prepare` commands.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
 
@@ -307,7 +310,11 @@ The general usage pattern is that you will:
 
 Then repeat steps 5 through 7 until the task is done.
 
-Alternatively, you can use the `agent` command to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
+**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `my-feature-123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
+
+The `prepare` command is used to generate detailed steps and prompts for a phase plan that doesn't already have them. This is useful when you have a high-level plan outline but need to expand it with specific implementation steps.
+
+Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
 
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
 
@@ -339,20 +346,70 @@ rmplan next plan.yml --rmfilter -- src/**/*.ts
 # Include previous steps in the prompt
 rmplan next plan.yml --previous
 
+# You can also use plan IDs instead of file paths
+rmplan next my-feature-123 --rmfilter
+
 # Mark the next step as done and commit changes
 rmplan done plan.yml --commit
 
 # Mark the next 2 steps as done and commit changes
 rmplan done plan.yml --commit --steps 2
 
+# You can also use plan IDs instead of file paths
+rmplan done my-feature-123 --commit
+
+# Generate detailed steps and prompts for a phase that doesn't have them yet
+rmplan prepare plan.yml
+
+# Prepare the next ready plan
+rmplan prepare --next
+
+# Force preparation even if dependencies aren't complete
+rmplan prepare plan.yml --force
+
+# List all plan files in the tasks directory (shows pending and in_progress by default)
+rmplan list
+
+# List all plans including completed ones
+rmplan list --all
+
+# List only plans with specific statuses
+rmplan list --status done
+rmplan list --status pending in_progress
+
+# List plans with custom sorting
+rmplan list --sort status --reverse
+
+# List plans from a specific directory
+rmplan list --dir ./my-plans
+
+# Show detailed information about a plan
+rmplan show plan.yml
+
+# Show plan information using its ID
+rmplan show my-feature-123
+
+# Show the next plan that is ready to be implemented
+rmplan show --next
+
 # Automatically execute steps in a plan, choosing a specific model
 rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
+# Or use the 'run' alias
+rmplan run plan.yml --model google/gemini-2.5-flash-preview-05-20
 
 # Execute a specific number of steps automatically
 rmplan agent plan.yml --steps 3
 
+# Execute the next ready plan (pending with all dependencies complete)
+rmplan agent --next
+# Or using the run alias
+rmplan run --next
+
 # Execute plan with auto-created workspace
 rmplan agent plan.yml --workspace-task-id task-123
+
+# You can also use plan IDs instead of file paths
+rmplan agent my-feature-123 --steps 3
 
 # Clean up end-of-line comments from changed files (by git diff, jj diff)
 rmplan cleanup
@@ -587,6 +644,118 @@ rmplan agent plan.yml --executor claude-code
 rmplan agent plan.yml --executor direct-call
 ```
 
+## Multi-Phase Project Planning
+
+The `rmplan` utility supports a detailed planning mode that enables breaking large software features into phases, with each phase delivering a working component that builds on previous phases. This approach ensures incremental, validated progress through complex implementations.
+
+### Overview
+
+Phase-based planning is designed for projects that are too large or complex to implement in a single pass. Instead of generating all implementation details upfront, this mode:
+
+- Breaks the project into distinct phases, each with clear goals and deliverables
+- Generates high-level plans first, then creates detailed implementation steps for each phase as needed
+- Ensures each phase delivers working functionality that can be tested and merged
+- Tracks dependencies between phases to ensure proper sequencing
+
+### Workflow
+
+The multi-phase workflow consists of three main commands:
+
+1. **`rmplan generate --input plan.md --output feature_plan.md`**: Generates a high-level markdown plan with phases. This command now outputs a structured markdown document containing:
+
+   - Overall project goal and details
+   - Multiple phases, each with goals, dependencies, and high-level tasks
+
+2. **`rmplan parse --input feature_plan.md --output-dir ./my_feature_plan`**: Parses the markdown plan into individual phase YAML files. This creates a directory structure with one YAML file per phase.
+
+3. **`rmplan generate-phase --phase ./my_feature_plan/my_project_id/phase_1.yaml`**: Generates detailed implementation steps for a specific phase. This populates the phase YAML with concrete prompts, file lists, and other details needed for execution.
+
+The iterative process is:
+
+- Generate the overall plan
+- Parse it into phases
+- For each phase: generate details → implement → review → merge
+- Proceed to the next phase only after the previous one is complete
+
+### File Structure
+
+After parsing a multi-phase plan, you'll have this structure:
+
+```
+project-directory/
+├── plan.md                  # Original input for `rmplan generate`
+├── feature_plan.md          # Generated phase-based markdown plan
+└── my_feature_plan/         # Directory specified in `rmplan parse --output-dir`
+    └── my_project_id/       # Directory named after the auto-generated/specified project ID
+        ├── phase_1.yaml
+        ├── phase_2.yaml
+        └── ...
+```
+
+### Markdown Plan Structure
+
+The generated markdown plan (`feature_plan.md`) follows this structure:
+
+```markdown
+## Project Goal
+
+[Overall project description]
+
+## Project Details
+
+[Additional context and requirements]
+
+### Phase 1: [Phase Title]
+
+#### Goal
+
+[What this phase accomplishes]
+
+#### Dependencies
+
+- None (for first phase)
+- Phase X: [Dependency description] (for later phases)
+
+#### Details
+
+[Phase-specific context]
+
+##### Task: [Task Title]
+
+[High-level task description without implementation details]
+```
+
+### Phase YAML Structure
+
+Each phase YAML file follows the standard `planSchema` with these key differences:
+
+- Tasks initially have empty `steps[]` arrays
+- `projectId` links all phases together
+- `phaseId` identifies the specific phase
+- Dependencies are tracked in the phase metadata
+
+The `rmplan generate-phase` command populates the empty `steps[]` with detailed implementation instructions.
+
+### Project Naming
+
+The `projectId` is automatically determined in this order:
+
+1. From a GitHub issue number (if using `--issue`)
+2. Auto-generated using a timestamp-based ID
+
+### Single-Phase Projects
+
+If the generated markdown plan contains no `### Phase X` headers, `rmplan parse` treats it as a single-phase project, maintaining backward compatibility with existing workflows.
+
+### Error Handling
+
+The system includes robust error handling:
+
+- Invalid markdown structure saves the raw content for manual correction
+- Parsing errors save partial outputs to disk
+- LLM response errors save the raw response for inspection
+- All error outputs include helpful messages about next steps
+
 ## answer-pr
 
 The `rmplan answer-pr` command helps handle GitHub pull request review comments using language models. It can fetch PR comments, let you select which ones to address, and automate responses with AI assistance.
@@ -713,6 +882,19 @@ rmplan agent tasks/0003-new-feature.yml --executor claude-code
 
 # Execute a plan in a newly created, isolated workspace
 rmplan agent tasks/my-feature.yml --workspace-task-id feature-xyz
+
+# Multi-phase planning workflow
+# 1. Generate a phase-based plan
+rmplan generate --input tasks/large-feature.md --output tasks/large-feature-plan.md -- src/**/*.ts
+
+# 2. Parse the markdown plan into phase YAML files
+rmplan parse --input tasks/large-feature-plan.md --output-dir ./large-feature-phases
+
+# 3. Generate detailed steps for the first phase
+rmplan generate-phase --phase ./large-feature-phases/project-xyz/phase_1.yaml
+
+# 4. Execute the phase (using any of the execution methods)
+rmplan agent ./large-feature-phases/project-xyz/phase_1.yaml
 ```
 
 ### Using answer-pr

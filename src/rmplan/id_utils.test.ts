@@ -1,0 +1,136 @@
+import { describe, test, expect } from 'bun:test';
+import { generateProjectId, generatePhaseId, slugify, timestamp } from './id_utils.js';
+
+describe('slugify', () => {
+  test('converts text to lowercase', () => {
+    expect(slugify('UPPERCASE')).toBe('uppercase');
+    expect(slugify('MixedCase')).toBe('mixedcase');
+  });
+
+  test('replaces spaces with hyphens', () => {
+    expect(slugify('hello world')).toBe('hello-world');
+    expect(slugify('one two three')).toBe('one-two-three');
+  });
+
+  test('replaces special characters with hyphens', () => {
+    expect(slugify('hello!@#$%world')).toBe('hello-world');
+    expect(slugify('test&*()_+=')).toBe('test');
+  });
+
+  test('preserves existing hyphens', () => {
+    expect(slugify('already-hyphenated')).toBe('already-hyphenated');
+  });
+
+  test('replaces multiple consecutive hyphens with single hyphen', () => {
+    expect(slugify('hello---world')).toBe('hello-world');
+    expect(slugify('test - - - case')).toBe('test-case');
+  });
+
+  test('removes leading and trailing hyphens', () => {
+    expect(slugify('---hello---')).toBe('hello');
+    expect(slugify('-world-')).toBe('world');
+  });
+
+  test('handles complex cases', () => {
+    expect(slugify('The Quick Brown Fox!!! Jumps... Over the lazy dog.')).toBe(
+      'the-quick-brown-fox-jumps-over-the-lazy-dog'
+    );
+    expect(slugify('____test____case____')).toBe('test-case');
+  });
+
+  test('handles empty string', () => {
+    expect(slugify('')).toBe('');
+  });
+
+  test('handles string with only special characters', () => {
+    expect(slugify('!@#$%^&*()')).toBe('');
+  });
+});
+
+describe('generatePhaseId', () => {
+  test('generates phase ID with correct format', () => {
+    const projectId = 'my-project-abc123';
+    const phaseIndex = 1;
+    const phaseId = generatePhaseId(projectId, phaseIndex);
+
+    expect(phaseId).toBe('my-project-abc123-1');
+  });
+
+  test('handles different phase indices', () => {
+    const projectId = 'test-project-xyz789';
+
+    expect(generatePhaseId(projectId, 1)).toBe('test-project-xyz789-1');
+    expect(generatePhaseId(projectId, 2)).toBe('test-project-xyz789-2');
+    expect(generatePhaseId(projectId, 10)).toBe('test-project-xyz789-10');
+  });
+
+  test('preserves complex project IDs', () => {
+    const projectId = 'complex-project-name-with-many-parts-123abc';
+    const phaseIndex = 3;
+    const phaseId = generatePhaseId(projectId, phaseIndex);
+
+    expect(phaseId).toBe('complex-project-name-with-many-parts-123abc-3');
+  });
+});
+
+describe('timestamp', () => {
+  test('should return a string', () => {
+    const id = timestamp();
+    expect(typeof id).toBe('string');
+  });
+
+  test('should return a string consisting only of base36 characters (0-9, a-z)', () => {
+    const id = timestamp();
+    expect(id).toMatch(/^[0-9a-z]+$/);
+  });
+
+  test('should generate sortable IDs (later IDs should be lexicographically greater)', async () => {
+    const ids: string[] = [];
+
+    // Generate several IDs with small delays
+    for (let i = 0; i < 5; i++) {
+      ids.push(timestamp());
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+
+    // Check that each ID is greater than or equal to the previous one
+    for (let i = 1; i < ids.length; i++) {
+      expect(ids[i] >= ids[i - 1]).toBe(true);
+    }
+  });
+
+  test('should produce a valid base36 string even when Date.now() - EPOCH is negative', () => {
+    // Mock Date.now to return a time before the epoch
+    const originalDateNow = Date.now;
+    const mockedTime = new Date('2025-04-01T00:00:00.000Z').getTime();
+
+    Date.now = () => mockedTime;
+
+    try {
+      const id = timestamp();
+      // Should still be a valid base36 string
+      expect(id).toMatch(/^[0-9a-z]+$/);
+      // Should not be empty
+      expect(id.length).toBeGreaterThan(0);
+    } finally {
+      // Restore original Date.now
+      Date.now = originalDateNow;
+    }
+  });
+
+  test('should generate reasonably short IDs for dates close to the epoch', () => {
+    const originalDateNow = Date.now;
+    // Set time to 1 hour after epoch
+    const mockedTime = new Date('2025-05-01T01:00:00.000Z').getTime();
+
+    Date.now = () => mockedTime;
+
+    try {
+      const id = timestamp();
+      // ID should be relatively short for times close to epoch
+      expect(id.length).toBeLessThanOrEqual(6);
+    } finally {
+      Date.now = originalDateNow;
+    }
+  });
+});

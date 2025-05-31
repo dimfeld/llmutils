@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a feature in the rmpr tool to automatically add a reply to
   GitHub Pull Request review threads that have been addressed by a commit. The
   reply should include a reference to the commit SHA. If posting the reply fails
@@ -38,8 +39,6 @@ tasks:
     files:
       - src/common/github/pull_requests.ts
       - src/logging.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/common/github/pull_requests.ts`, please add a new asynchronous
@@ -147,8 +146,6 @@ tasks:
       - src/rmpr/git_utils.ts
       - src/rmfilter/utils.ts
       - src/logging.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmpr/git_utils.ts`, please add a new asynchronous function
@@ -258,8 +255,6 @@ tasks:
       - src/logging.ts
       - src/common/github/identifiers.ts
       - src/rmfilter/utils.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           In `src/rmpr/main.ts`, we need to integrate the functionality to post
@@ -303,3 +298,5 @@ tasks:
           if `options.commit` is true AND the commit operation itself was
           successful.
         done: true
+id: 1j9mdaq
+status: done

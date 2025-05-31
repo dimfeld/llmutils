@@ -9,6 +9,7 @@ import {
   findPendingTask,
   markStepDone,
   prepareNextStep,
+  preparePhase,
 } from './actions.ts';
 import { loadEffectiveConfig } from './configLoader.ts';
 import {
@@ -202,6 +203,39 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   }
 
+  // Check if the plan needs preparation
+  try {
+    const fileContent = await Bun.file(currentPlanFile).text();
+    const parsed = yaml.parse(fileContent);
+    const planResult = planSchema.safeParse(parsed);
+
+    if (planResult.success) {
+      const planData = planResult.data;
+
+      // Check if prompts have been generated
+      const needsPreparation =
+        !planData.promptsGeneratedAt ||
+        planData.tasks.some((task) => !task.steps || task.steps.length === 0);
+
+      if (needsPreparation) {
+        log('Plan needs preparation. Generating detailed steps and prompts...');
+        try {
+          await preparePhase(currentPlanFile, config, {
+            model: options.model,
+            direct: options.direct,
+          });
+          log('Successfully prepared the plan with detailed steps.');
+        } catch (err) {
+          error('Failed to automatically prepare the plan:', err);
+          process.exit(1);
+        }
+      }
+    }
+  } catch (err) {
+    warn('Could not check if plan needs preparation:', err);
+    // Continue anyway - the main loop will catch any issues
+  }
+
   // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
   const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
   const agentExecutionModel =
@@ -253,22 +287,17 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         break;
       }
 
-      log(
-        boldMarkdownHeaders(
-          `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, Step ${pendingTaskInfo.stepIndex + 1}...`
-        )
-      );
-
       const executorStepOptions = executor.prepareStepOptions?.() ?? {};
       const stepPreparationResult = await prepareNextStep(
         config,
         currentPlanFile,
         {
           previous: true,
-          ...executorStepOptions,
-          model: executorStepOptions.model || agentExecutionModel,
           selectSteps: false,
+          model: agentExecutionModel,
+          ...executorStepOptions,
           filePathPrefix: executor.filePathPrefix,
+          rmfilterArgs: options.rmfilterArgs,
         },
         currentBaseDir
       ).catch((err) => {
@@ -280,6 +309,21 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       if (!stepPreparationResult) {
         break;
       }
+
+      let stepIndexes: string;
+      if (stepPreparationResult.numStepsSelected === 1) {
+        stepIndexes = `Step ${stepPreparationResult.stepIndex + 1}`;
+      } else {
+        const endIndex =
+          stepPreparationResult.stepIndex + stepPreparationResult.numStepsSelected + 1;
+        stepIndexes = `Steps ${stepPreparationResult.stepIndex + 1}-${endIndex}`;
+      }
+
+      log(
+        boldMarkdownHeaders(
+          `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}, ${stepIndexes}...`
+        )
+      );
 
       const { promptFilePath, taskIndex, stepIndex, rmfilterArgs } = stepPreparationResult;
 
@@ -344,9 +388,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         log(boldMarkdownHeaders('\n## Marking done\n'));
         markResult = await markStepDone(
           currentPlanFile,
-          { steps: 1, commit: true },
+          { steps: stepPreparationResult.numStepsSelected, commit: true },
           { taskIndex, stepIndex },
-          currentBaseDir
+          currentBaseDir,
+          config
         );
         log(`Marked step as done: ${markResult.message.split('\n')[0]}`);
         if (markResult.planComplete) {

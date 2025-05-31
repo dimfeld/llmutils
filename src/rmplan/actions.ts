@@ -1,24 +1,35 @@
 import { select } from '@inquirer/prompts';
+import { generateText } from 'ai';
+import chalk from 'chalk';
 import os from 'node:os';
 import path from 'path';
 import yaml from 'yaml';
-import chalk from 'chalk';
 import { Resolver } from '../dependency_graph/resolve.js';
 import { ImportWalker } from '../dependency_graph/walk_imports.js';
-import type { MdcFile } from '../rmfilter/mdc.js';
+import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
+import {
+  findAdditionalDocs,
+  getChangedFiles,
+  type GetChangedFilesOptions,
+} from '../rmfilter/additional_docs.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
-import { findAdditionalDocs } from '../rmfilter/additional_docs.js';
 import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
+import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { Extractor } from '../treesitter/extract.js';
-import { generatePlanId } from '../common/id_generator.js';
 import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
-import { planSchema } from './planSchema.js';
-import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
-import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
-import { convertMarkdownToYaml, findYamlStart } from './cleanup.js';
-import { getChangedFiles } from '../rmfilter/additional_docs.js';
+import { phaseSchema, planSchema } from './planSchema.js';
 import { fixYaml } from './fix_yaml.js';
+import type { PhaseGenerationContext } from './prompt.js';
+import { generatePhaseStepsPrompt } from './prompt.js';
+import { convertMarkdownToYaml, findYamlStart } from './process_markdown.js';
+import { createModel } from '../common/model_factory.js';
+import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
+import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
+import { readAllPlans, type PlanSummary } from './plans.js';
+import * as clipboard from '../common/clipboard.js';
+import { sshAwarePasteAction } from '../common/ssh_detection.js';
+import { waitForEnter } from '../common/terminal.js';
 
 export interface PrepareNextStepOptions {
   rmfilter?: boolean;
@@ -26,7 +37,7 @@ export interface PrepareNextStepOptions {
   withImports?: boolean;
   withAllImports?: boolean;
   withImporters?: boolean;
-  selectSteps?: boolean;
+  selectSteps?: boolean | 'all';
   rmfilterArgs?: string[];
   model?: string;
   autofind?: boolean;
@@ -99,12 +110,7 @@ export async function prepareNextStep(
     throw new Error('No pending steps found in the plan.');
   }
   const activeTask = result.task;
-  const performImportAnalysis =
-    withImports ||
-    withAllImports ||
-    withImporters ||
-    activeTask.include_imports ||
-    activeTask.include_importers;
+  const performImportAnalysis = withImports || withAllImports || withImporters;
 
   // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
   const cleanFiles = activeTask.files.map((file) => file.replace(/\s*\([^)]*\)\s*$/, '').trim());
@@ -138,6 +144,9 @@ export async function prepareNextStep(
         `Automatically selected the only pending step: [1] ${pendingSteps[0].prompt.split('\n')[0]}...`
       )
     );
+  } else if (selectSteps === 'all') {
+    log(`Selected all pending steps`);
+    selectedPendingSteps = pendingSteps;
   } else {
     const maxWidth = process.stdout.columns - 12;
     const selectedIndex = await select({
@@ -292,7 +301,7 @@ export async function prepareNextStep(
 
     // Add all files
     const filePrefix = options.filePathPrefix || '';
-    files.forEach((file) => promptParts.push(`- ${path.relative(gitRoot, file)}`));
+    files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
 
     // Add MDC files with their descriptions if available
     if (filteredMdcFiles.length > 0) {
@@ -369,11 +378,11 @@ export async function prepareNextStep(
       const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
       if (withAllImports) {
         importCommandBlockArgs.push('--with-all-imports');
-      } else if (withImports || activeTask.include_imports) {
+      } else if (withImports) {
         importCommandBlockArgs.push('--with-imports');
       }
 
-      if (withImporters || activeTask.include_importers) {
+      if (withImporters) {
         importCommandBlockArgs.push('--with-importers');
       }
 
@@ -412,7 +421,8 @@ export async function markStepDone(
   planFile: string,
   options: { task?: boolean; steps?: number; commit?: boolean },
   currentTask?: { taskIndex: number; stepIndex: number },
-  baseDir?: string
+  baseDir?: string,
+  config?: RmplanConfig
 ): Promise<{ planComplete: boolean; message: string }> {
   // 1. Load and parse the plan file
   const planText = await Bun.file(planFile).text();
@@ -514,7 +524,24 @@ export async function markStepDone(
 
   // Update changedFiles by comparing against baseBranch (or main/master if not set)
   try {
-    const changedFiles = await getChangedFiles(gitRoot, planData.baseBranch);
+    // Build exclude paths from config
+    const excludePaths: string[] = [];
+    if (config?.paths?.tasks) {
+      // Resolve tasks path relative to git root if it's relative
+      const tasksPath = path.isAbsolute(config.paths.tasks)
+        ? config.paths.tasks
+        : path.join(gitRoot, config.paths.tasks);
+
+      // Make it relative to git root for comparison
+      excludePaths.push(path.relative(gitRoot, tasksPath));
+    }
+
+    const options: GetChangedFilesOptions = {
+      baseBranch: planData.baseBranch,
+      excludePaths,
+    };
+
+    const changedFiles = await getChangedFiles(gitRoot, options);
     if (changedFiles.length > 0) {
       planData.changedFiles = changedFiles;
     }
@@ -657,128 +684,382 @@ export async function executePostApplyCommand(
   return true;
 }
 
-export interface ExtractMarkdownToYamlOptions {
-  issueUrls?: string[];
-  planRmfilterArgs?: string[];
+/**
+ * Prepares a phase by generating detailed steps and prompts for all tasks.
+ * @param phaseYamlFile Path to the phase YAML file to prepare
+ * @param config RmplanConfig instance
+ * @param options Options including force flag and model override
+ * @returns Promise that resolves when preparation is complete
+ */
+export async function preparePhase(
+  phaseYamlFile: string,
+  config: RmplanConfig,
+  options: { force?: boolean; model?: string; rmfilterArgs?: string[]; direct?: boolean } = {}
+): Promise<void> {
+  try {
+    // Load the target phase YAML file
+    const phaseContent = await Bun.file(phaseYamlFile).text();
+    const parsedPhase = yaml.parse(phaseContent);
+    const validationResult = phaseSchema.safeParse(parsedPhase);
+
+    if (!validationResult.success) {
+      throw new Error(
+        `Failed to validate phase YAML: ${JSON.stringify(validationResult.error.issues, null, 2)}`
+      );
+    }
+
+    const currentPhaseData = validationResult.data;
+    const projectPlanDir = path.dirname(phaseYamlFile);
+    const allPlans = await readAllPlans(projectPlanDir);
+
+    // Dependency Checking
+    if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
+      for (const dependencyId of currentPhaseData.dependencies) {
+        const dependencyPlan = allPlans.get(dependencyId);
+
+        if (!dependencyPlan) {
+          warn(`Warning: Could not find dependency ${dependencyId} in project directory`);
+          if (!options.force) {
+            throw new Error(
+              'Cannot proceed without checking all dependencies. Use --force to override.'
+            );
+          }
+          continue;
+        }
+
+        if (dependencyPlan.status !== 'done') {
+          const msg = `Dependency ${dependencyId} is not complete (status: ${dependencyPlan.status}).`;
+          warn(msg);
+
+          if (!options.force) {
+            throw new Error(
+              'Cannot proceed without completed dependencies. Use --force to override.'
+            );
+          }
+
+          warn('Proceeding despite incomplete dependencies due to --force flag.');
+        }
+      }
+    }
+
+    // Call gatherPhaseGenerationContext
+    let phaseGenCtx;
+    try {
+      phaseGenCtx = await gatherPhaseGenerationContext(
+        phaseYamlFile,
+        projectPlanDir,
+        allPlans,
+        options.rmfilterArgs
+      );
+    } catch (err) {
+      error('Failed to gather phase generation context:', err);
+
+      // Save context gathering error
+      try {
+        const errorLogPath = phaseYamlFile.replace('.yaml', '.context_error.log');
+        await Bun.write(
+          errorLogPath,
+          `Context gathering error at ${new Date().toISOString()}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
+        );
+        error('Error log saved to:', errorLogPath);
+      } catch (saveErr) {
+        warn('Failed to save error log:', saveErr);
+      }
+
+      throw err;
+    }
+
+    // Prepare rmfilter arguments for codebase context
+    const rmfilterArgs = [...phaseGenCtx.rmfilterArgsFromPlan];
+
+    // Add files from tasks if any are pre-populated
+    for (const task of currentPhaseData.tasks) {
+      if (task.files && task.files.length > 0) {
+        rmfilterArgs.push(...task.files);
+      }
+    }
+
+    // 6. Invoke rmfilter programmatically
+    let codebaseContextXml: string;
+    try {
+      const gitRoot = (await getGitRoot()) || process.cwd();
+      codebaseContextXml = await runRmfilterProgrammatically(
+        [...rmfilterArgs, '--bare'],
+        gitRoot,
+        gitRoot
+      );
+    } catch (err) {
+      error('Failed to execute rmfilter:', err);
+      throw err;
+    }
+
+    // 7. Construct LLM Prompt for Step Generation
+    const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
+    const fullPrompt = `${phaseStepsPrompt}
+
+<codebase_context>
+${codebaseContextXml}
+</codebase_context>`;
+
+    // 8. Call LLM or use clipboard/paste mode
+    let text: string;
+
+    if (options.direct) {
+      // Direct LLM call (original behavior)
+      const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
+      const model = createModel(modelId);
+
+      log('Generating detailed steps for phase using model:', modelId);
+
+      const result = await generateText({
+        model,
+        prompt: fullPrompt,
+        temperature: 0.2,
+      });
+      text = result.text;
+    } else {
+      // Clipboard/paste mode (new default)
+      await clipboard.write(fullPrompt);
+      log(chalk.green('✓ Phase preparation prompt copied to clipboard'));
+      log(
+        chalk.bold(
+          `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} with the detailed steps, or Ctrl+C to exit.`
+        )
+      );
+
+      text = await waitForEnter(true);
+
+      if (!text || !text.trim()) {
+        throw new Error('No response was pasted.');
+      }
+    }
+
+    // 9. Parse LLM Output
+    let parsedTasks;
+    try {
+      // Extract YAML from the response (LLM might include markdown formatting)
+      const yamlContent = findYamlStart(text);
+      const parsed = fixYaml(yamlContent);
+
+      // Validate that we got a tasks array
+      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
+        throw new Error('LLM output does not contain a valid tasks array');
+      }
+
+      parsedTasks = parsed.tasks;
+    } catch (err) {
+      // Save raw LLM output for debugging
+      const errorFilePath = phaseYamlFile.replace('.yaml', '.llm_error.txt');
+      const partialErrorPath = phaseYamlFile.replace('.yaml', '.partial_error.yaml');
+
+      try {
+        await Bun.write(errorFilePath, text);
+        error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
+
+        // Save the current phase YAML state before any modifications
+        const currentYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+${yaml.stringify(currentPhaseData)}`;
+        await Bun.write(partialErrorPath, currentYaml);
+        error('Current phase state saved to:', partialErrorPath);
+      } catch (saveErr) {
+        error('Failed to save error files:', saveErr);
+      }
+
+      error('Parse error:', err);
+      error('Please manually correct the LLM output or retry with a different model');
+      throw err;
+    }
+
+    // 10. Update Phase YAML
+    // Merge LLM-generated task details into currentPhaseData.tasks
+    for (let i = 0; i < currentPhaseData.tasks.length; i++) {
+      const existingTask = currentPhaseData.tasks[i];
+      const llmTask = parsedTasks[i];
+
+      if (!llmTask) {
+        warn(`Warning: LLM did not generate details for task ${i + 1}: ${existingTask.title}`);
+        continue;
+      }
+
+      // Update task with LLM-generated details
+      existingTask.description = llmTask.description || existingTask.description;
+      existingTask.files = llmTask.files || [];
+      existingTask.steps = llmTask.steps || [];
+    }
+
+    // Update timestamps
+    const now = new Date().toISOString();
+    currentPhaseData.promptsGeneratedAt = now;
+    currentPhaseData.updatedAt = now;
+
+    // 11. Write the updated phase YAML back to file
+    const updatedYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+${yaml.stringify(currentPhaseData)}`;
+
+    await Bun.write(phaseYamlFile, updatedYaml);
+
+    // 12. Log success
+    log(chalk.green('✓ Successfully generated detailed steps for phase'));
+    log(`Updated phase file: ${phaseYamlFile}`);
+  } catch (err) {
+    error('Failed to generate phase details:', err);
+    throw err;
+  }
 }
 
-export async function extractMarkdownToYaml(
-  inputText: string,
-  config: RmplanConfig,
-  quiet: boolean,
-  options: ExtractMarkdownToYamlOptions = {}
-): Promise<string> {
-  let validatedPlan: PlanSchema;
-  let convertedYaml: string;
-
+/**
+ * Gathers all necessary context for generating detailed implementation steps for a phase.
+ * @param phaseFilePath Path to the phase YAML file to generate steps for
+ * @param projectPlanDir Directory containing all phase YAML files
+ * @returns Context object containing all information needed for phase step generation
+ */
+async function gatherPhaseGenerationContext(
+  phaseFilePath: string,
+  projectPlanDir: string,
+  allPlans: Map<string, PlanSummary>,
+  rmfilterArgs?: string[]
+): Promise<PhaseGenerationContext> {
   try {
-    // First try to see if it's YAML already.
-    let maybeYaml = findYamlStart(inputText);
-    const parsedObject = yaml.parse(maybeYaml);
-    convertedYaml = yaml.stringify(parsedObject);
-  } catch {
-    // Print output if not quiet
-    const streamToConsole = !quiet;
-    const numLines = inputText.split('\n').length;
-    if (!quiet) {
-      warn(boldMarkdownHeaders(`\n## Converting ${numLines} lines of Markdown to YAML\n`));
-    }
-    convertedYaml = await convertMarkdownToYaml(inputText, config, !streamToConsole);
-  }
+    // 1. Load and validate the target phase YAML file
+    const phaseContent = await Bun.file(phaseFilePath).text();
+    const parsedPhase = yaml.parse(phaseContent);
+    const validationResult = phaseSchema.safeParse(parsedPhase);
 
-  if (!convertedYaml.startsWith('# yaml-language-server')) {
-    const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
-    convertedYaml = schemaLine + '\n' + convertedYaml;
-  }
-
-  // Parse and validate the YAML
-  try {
-    const parsedObject = fixYaml(convertedYaml);
-    const result = planSchema.safeParse(parsedObject);
-    if (!result.success) {
-      error('Validation errors after LLM conversion:', result.error);
-      // Save the failed YAML for debugging
-      await Bun.write('rmplan-validation-failure.yml', convertedYaml);
-      console.error('Invalid YAML (saved to rmplan-validation-failure.yml):', convertedYaml);
-      throw new Error('Validation failed');
-    }
-    validatedPlan = result.data;
-
-    // Set metadata fields
-    validatedPlan.id = generatePlanId();
-    const now = new Date().toISOString();
-    validatedPlan.createdAt = now;
-    validatedPlan.updatedAt = now;
-    validatedPlan.planGeneratedAt = now;
-    validatedPlan.promptsGeneratedAt = now;
-
-    // Set defaults for status and priority if not already set
-    if (!validatedPlan.status) {
-      validatedPlan.status = 'pending';
-    }
-    if (!validatedPlan.priority) {
-      validatedPlan.priority = 'unknown';
+    if (!validationResult.success) {
+      throw new Error(
+        `Failed to validate phase YAML at ${phaseFilePath}: ${JSON.stringify(validationResult.error.issues, null, 2)}`
+      );
     }
 
-    // Populate issue and rmfilter arrays from options
-    if (options.issueUrls && options.issueUrls.length > 0) {
-      validatedPlan.issue = options.issueUrls;
+    const currentPhaseData = validationResult.data;
+
+    // 2. Determine the overall project plan's goal and details
+    let overallProjectGoal = '';
+    let overallProjectDetails = '';
+    let overallProjectTitle = '';
+
+    // Check if the phase has project-level fields
+    if (currentPhaseData.project) {
+      overallProjectGoal = currentPhaseData.project.goal;
+      overallProjectDetails = currentPhaseData.project.details;
+      overallProjectTitle = currentPhaseData.project.title;
     }
-    if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
-      validatedPlan.rmfilter = options.planRmfilterArgs;
+
+    // 3. Initialize arrays for previous phases info and changed files
+    const previousPhasesInfo: Array<{
+      id: string;
+      title: string;
+      goal: string;
+      description: string;
+    }> = [];
+    const changedFilesFromDependencies: string[] = [];
+
+    // 4. Process each dependency
+    if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
+      // Read all plans in the directory to find dependencies by ID
+      const allPlans = await readAllPlans(projectPlanDir);
+
+      for (const dependencyId of currentPhaseData.dependencies) {
+        const dependencyPlan = allPlans.get(dependencyId);
+
+        if (!dependencyPlan) {
+          throw new Error(
+            `Dependency phase with ID '${dependencyId}' not found in project directory`
+          );
+        }
+
+        const dependencyPath = dependencyPlan.filename;
+
+        try {
+          const dependencyContent = await Bun.file(dependencyPath).text();
+          const parsedDependency = yaml.parse(dependencyContent);
+          const validatedDependency = phaseSchema.safeParse(parsedDependency);
+
+          if (!validatedDependency.success) {
+            throw new Error(
+              `Failed to validate dependency YAML at ${dependencyPath}: ${JSON.stringify(validatedDependency.error.issues, null, 2)}`
+            );
+          }
+
+          const dependencyData = validatedDependency.data;
+
+          // Check if dependency is done
+          if (dependencyData.status !== 'done') {
+            throw new Error(
+              `Dependency ${dependencyId} is not completed (status: ${dependencyData.status}). All dependencies must be completed before generating phase steps.`
+            );
+          }
+
+          // Extract title from details or use ID as fallback
+          const title = dependencyData.details.split('\n')[0] || `Phase ${dependencyId}`;
+
+          previousPhasesInfo.push({
+            id: dependencyData.id || dependencyId,
+            title: title,
+            goal: dependencyData.goal,
+            description: dependencyData.details,
+          });
+
+          // Add changed files from this dependency
+          if (dependencyData.changedFiles && dependencyData.changedFiles.length > 0) {
+            changedFilesFromDependencies.push(...dependencyData.changedFiles);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message.includes('ENOENT')) {
+            throw new Error(`Dependency phase file not found: ${dependencyPath}`);
+          }
+          throw e;
+        }
+      }
     }
+
+    // Deduplicate changed files
+    const uniqueChangedFiles = Array.from(new Set(changedFilesFromDependencies));
+
+    const changedFilesExist = (
+      await Promise.all(
+        uniqueChangedFiles.map(async (file) => {
+          try {
+            if (await Bun.file(file).exists()) {
+              return file;
+            }
+            return false;
+          } catch (err) {
+            return false;
+          }
+        })
+      )
+    ).filter(Boolean) as string[];
+
+    const rmfilterArgsFromPlan = [...(currentPhaseData.rmfilter || []), ...(rmfilterArgs || [])];
+
+    if (changedFilesExist.length > 0) {
+      rmfilterArgsFromPlan.push('--', ...changedFilesExist);
+    }
+
+    // 5. Build and return the context object
+    const context: PhaseGenerationContext = {
+      overallProjectGoal,
+      overallProjectDetails,
+      overallProjectTitle: overallProjectTitle || undefined,
+      currentPhaseGoal: currentPhaseData.goal,
+      currentPhaseDetails: currentPhaseData.details,
+      currentPhaseTasks: currentPhaseData.tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+      })),
+      previousPhasesInfo,
+      changedFilesFromDependencies: changedFilesExist,
+      rmfilterArgsFromPlan,
+    };
+
+    return context;
   } catch (e) {
-    // Save the failed YAML for debugging
-    await Bun.write('rmplan-conversion-failure.yml', convertedYaml);
-    error(
-      'Failed to parse YAML output from LLM conversion. Saved raw output to rmplan-conversion-failure.yml'
-    );
-    error('Parsing error:', e);
+    if (e instanceof Error) {
+      error(`Error gathering phase generation context: ${e.message}`);
+    } else {
+      error(`Error gathering phase generation context: ${String(e)}`);
+    }
     throw e;
   }
-
-  // Create ordered plan with all fields
-  const orderedPlan: any = {
-    id: validatedPlan.id,
-  };
-
-  // Always include status and priority
-  if (validatedPlan.status) {
-    orderedPlan.status = validatedPlan.status;
-  }
-  if (validatedPlan.priority) {
-    orderedPlan.priority = validatedPlan.priority;
-  }
-
-  // Add optional fields only if they have values
-  if (validatedPlan.dependencies?.length) {
-    orderedPlan.dependencies = validatedPlan.dependencies;
-  }
-  if (validatedPlan.baseBranch) {
-    orderedPlan.baseBranch = validatedPlan.baseBranch;
-  }
-  if (validatedPlan.rmfilter?.length) {
-    orderedPlan.rmfilter = validatedPlan.rmfilter;
-  }
-  if (validatedPlan.issue?.length) {
-    orderedPlan.issue = validatedPlan.issue;
-  }
-  if (validatedPlan.pullRequest?.length) {
-    orderedPlan.pullRequest = validatedPlan.pullRequest;
-  }
-
-  // Add required fields
-  orderedPlan.goal = validatedPlan.goal;
-  orderedPlan.details = validatedPlan.details;
-  orderedPlan.planGeneratedAt = validatedPlan.planGeneratedAt;
-  orderedPlan.promptsGeneratedAt = validatedPlan.promptsGeneratedAt;
-  orderedPlan.createdAt = validatedPlan.createdAt;
-  orderedPlan.updatedAt = validatedPlan.updatedAt;
-  orderedPlan.tasks = validatedPlan.tasks;
-
-  if (validatedPlan.changedFiles?.length) {
-    orderedPlan.changedFiles = validatedPlan.changedFiles;
-  }
-
-  return yaml.stringify(orderedPlan);
 }

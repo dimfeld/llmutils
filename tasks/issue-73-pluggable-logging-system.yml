@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a pluggable logging system for `dimfeld/llmutils` to allow log
   output to be directed to various targets like the console, Discord messages,
   etc., in preparation for chatbot integration.
@@ -42,8 +43,6 @@ tasks:
       adapter within asynchronous contexts.
     files:
       - src/logging/adapter.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/logging/adapter.ts`.
@@ -81,8 +80,6 @@ tasks:
     files:
       - src/logging/common.ts
       - src/logging.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/logging/common.ts`.
@@ -150,8 +147,6 @@ tasks:
       - src/logging/common.ts
       - src/rmfilter/utils.js
       - src/logging.ts
-    include_imports: true
-    include_importers: false
     steps:
       - prompt: >
           Create a new file `src/logging/console.ts`.
@@ -260,8 +255,6 @@ tasks:
       - src/logging/adapter.ts
       - src/logging/console.ts
       - src/logging/common.ts
-    include_imports: true
-    include_importers: true
     steps:
       - prompt: >
           Modify the existing file `src/logging.ts`.
@@ -319,3 +312,5 @@ tasks:
           public API are preserved, either through direct implementation,
           re-exporting from common modules, or by using the adapter pattern.
         done: true
+id: 1j9mdio
+status: done

@@ -410,10 +410,24 @@ async function getTrunkBranch(gitRoot: string): Promise<string> {
   return defaultBranch || 'main';
 }
 
+export interface GetChangedFilesOptions {
+  baseBranch?: string;
+  excludePaths?: string[];
+}
+
 /**
  * Gets the list of changed files compared to a base branch
  */
-export async function getChangedFiles(gitRoot: string, baseBranch?: string): Promise<string[]> {
+export async function getChangedFiles(
+  gitRoot: string,
+  options: GetChangedFilesOptions | string = {}
+): Promise<string[]> {
+  // Support legacy string parameter for backward compatibility
+  const opts: GetChangedFilesOptions =
+    typeof options === 'string' ? { baseBranch: options } : options;
+
+  const { excludePaths = [] } = opts;
+  let baseBranch = opts.baseBranch;
   if (!baseBranch) {
     baseBranch = await getTrunkBranch(gitRoot);
   }
@@ -430,6 +444,21 @@ export async function getChangedFiles(gitRoot: string, baseBranch?: string): Pro
     'bun.lock',
     'yarn.lock',
     'Cargo.lock',
+    '.gitignore',
+    '.gitattributes',
+    '.editorconfig',
+    '.prettierrc',
+    '.prettierignore',
+    '.eslintrc',
+    '.eslintignore',
+    'tsconfig.json',
+    'tsconfig.build.json',
+    '.vscode/settings.json',
+    '.idea/**/*',
+    '*.log',
+    '*.tmp',
+    '.DS_Store',
+    'Thumbs.db',
   ];
 
   let changedFiles: string[] = [];
@@ -464,6 +493,25 @@ export async function getChangedFiles(gitRoot: string, baseBranch?: string): Pro
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => !!line);
+  }
+
+  // Filter out files based on excludePaths
+  if (excludePaths.length > 0) {
+    changedFiles = changedFiles.filter((file) => {
+      // Check if the file starts with any of the exclude paths
+      return !excludePaths.some((excludePath) => {
+        // Normalize paths for comparison
+        const normalizedFile = path.normalize(file);
+        const normalizedExclude = path.normalize(excludePath);
+
+        // Check if file is under the exclude path
+        return (
+          normalizedFile.startsWith(normalizedExclude + path.sep) ||
+          normalizedFile === normalizedExclude ||
+          normalizedFile.startsWith(normalizedExclude + '/')
+        );
+      });
+    });
   }
 
   return changedFiles;
