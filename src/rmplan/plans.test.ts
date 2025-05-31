@@ -210,17 +210,16 @@ describe('readAllPlans', () => {
   it('should read all valid plan files recursively', async () => {
     const plans = await readAllPlans(tempDir);
 
-    expect(plans.size).toBe(4); // Now includes plan with generated ID
+    expect(plans.size).toBe(3);
     expect(plans.has('plan-1')).toBe(true);
     expect(plans.has('plan-2')).toBe(true);
     expect(plans.has('nested-plan')).toBe(true);
 
-    // The no-id.yml file should have a generated ID
+    // The no-id.yml file should not be included
     const generatedIdPlan = Array.from(plans.values()).find((p) =>
       p.filename.endsWith('no-id.yml')
     );
-    expect(generatedIdPlan).toBeDefined();
-    expect(generatedIdPlan?.id).toMatch(/^[0-9a-z]{7}$/); // Generated IDs are 7 characters
+    expect(generatedIdPlan).toBeUndefined();
   });
 
   it('should include correct plan summaries', async () => {
