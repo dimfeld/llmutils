@@ -714,7 +714,7 @@ function createAgentCommand(command: Command, description: string) {
             if (err instanceof Error && err.message.includes('Circular dependency')) {
               error(err.message);
             } else {
-              error(`Failed to collect dependencies: ${err}`);
+              error(`Failed to collect dependencies: ${err as Error}`);
             }
             process.exit(1);
           }
