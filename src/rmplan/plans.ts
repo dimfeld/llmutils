@@ -295,3 +295,68 @@ export async function findNextReadyPlan(directory: string): Promise<PlanSummary 
 export async function findCurrentPlan(directory: string): Promise<PlanSummary | null> {
   return findNextPlan(directory, { includePending: true, includeInProgress: true });
 }
+
+/**
+ * Collects all dependencies of a plan in topological order (dependencies first).
+ * This ensures that when executing plans, dependencies are completed before their dependents.
+ *
+ * @param planId - The ID of the plan to collect dependencies for
+ * @param allPlans - Map of all available plans
+ * @param visited - Set of already visited plan IDs (to detect cycles)
+ * @returns Array of plan summaries in execution order
+ * @throws Error if a circular dependency is detected
+ */
+export async function collectDependenciesInOrder(
+  planId: string,
+  allPlans: Map<string, PlanSummary>,
+  visited: Set<string> = new Set()
+): Promise<PlanSummary[]> {
+  // Check for circular dependencies
+  if (visited.has(planId)) {
+    throw new Error(
+      `Circular dependency detected: ${Array.from(visited).join(' -> ')} -> ${planId}`
+    );
+  }
+
+  const plan = allPlans.get(planId);
+  if (!plan) {
+    throw new Error(`Plan not found: ${planId}`);
+  }
+
+  // Mark this plan as visited
+  visited.add(planId);
+
+  const result: PlanSummary[] = [];
+
+  // First, collect all dependencies
+  if (plan.dependencies && plan.dependencies.length > 0) {
+    for (const depId of plan.dependencies) {
+      const depPlan = allPlans.get(depId);
+      if (!depPlan) {
+        throw new Error(`Dependency not found: ${depId} (required by ${planId})`);
+      }
+
+      // Skip dependencies that are already done
+      if (depPlan.status === 'done') {
+        continue;
+      }
+
+      // Recursively collect dependencies of this dependency
+      const subDeps = await collectDependenciesInOrder(depId, allPlans, new Set(visited));
+
+      // Add sub-dependencies that aren't already in our result
+      for (const subDep of subDeps) {
+        if (!result.some((p) => p.id === subDep.id)) {
+          result.push(subDep);
+        }
+      }
+    }
+  }
+
+  // Finally, add the current plan itself (if not done)
+  if (plan.status !== 'done' && !result.some((p) => p.id === plan.id)) {
+    result.push(plan);
+  }
+
+  return result;
+}

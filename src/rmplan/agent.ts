@@ -227,7 +227,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           log('Successfully prepared the plan with detailed steps.');
         } catch (err) {
           error('Failed to automatically prepare the plan:', err);
-          error('You may need to run "rmplan prepare" manually.');
           process.exit(1);
         }
       }

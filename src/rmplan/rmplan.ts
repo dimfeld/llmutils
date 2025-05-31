@@ -25,7 +25,13 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
-import { readAllPlans, resolvePlanFile, findNextReadyPlan, findCurrentPlan } from './plans.js';
+import {
+  readAllPlans,
+  resolvePlanFile,
+  findNextReadyPlan,
+  findCurrentPlan,
+  collectDependenciesInOrder,
+} from './plans.js';
 import { planPrompt, simplePlanPrompt } from './prompt.js';
 import type { PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
@@ -605,6 +611,7 @@ function createAgentCommand(command: Command, description: string) {
     .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
     .option('--next', 'Execute the next plan that is ready to be implemented')
     .option('--current', 'Execute the current plan (in_progress or next ready plan)')
+    .option('--with-dependencies', 'Also execute all dependencies first in the correct order')
     .option(
       '--direct',
       'Call LLM directly instead of copying prompt to clipboard during preparation'
@@ -651,9 +658,70 @@ function createAgentCommand(command: Command, description: string) {
           resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
         }
 
-        // Pass rmfilterArgs to rmplanAgent
-        options.rmfilterArgs = rmfilterArgs;
-        await rmplanAgent(resolvedPlanFile, options, globalOpts);
+        // Check if we need to execute dependencies first
+        if (options.withDependencies) {
+          const config = await loadEffectiveConfig(globalOpts.config);
+          const tasksDir = await resolveTasksDir(config);
+          const allPlans = await readAllPlans(tasksDir);
+
+          // Get the plan's ID
+          const planContent = await Bun.file(resolvedPlanFile).text();
+          const planData = yaml.parse(planContent) as PlanSchema;
+
+          if (!planData.id) {
+            error('Plan must have an ID to execute with dependencies');
+            process.exit(1);
+          }
+
+          try {
+            // Collect all plans to execute in order
+            const plansToExecute = await collectDependenciesInOrder(planData.id, allPlans);
+
+            if (plansToExecute.length > 1) {
+              log(chalk.bold('\n📋 Plans to execute in order:'));
+              plansToExecute.forEach((plan, index) => {
+                const status = plan.status || 'pending';
+                const statusIcon = status === 'done' ? '✓' : status === 'in_progress' ? '⏳' : '○';
+                log(
+                  `  ${index + 1}. ${statusIcon} ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
+                );
+              });
+              log('');
+            }
+
+            // Execute each plan in order
+            for (const plan of plansToExecute) {
+              if (plan.status === 'done') {
+                log(chalk.gray(`Skipping completed plan: ${plan.id}`));
+                continue;
+              }
+
+              log(
+                chalk.bold(`\n🚀 Executing plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`)
+              );
+              log('─'.repeat(80));
+
+              // Pass rmfilterArgs to rmplanAgent
+              const planOptions = { ...options, rmfilterArgs };
+              await rmplanAgent(plan.filename, planOptions, globalOpts);
+
+              log(chalk.green(`✓ Completed plan: ${plan.id}`));
+            }
+
+            log(chalk.bold('\n✅ All plans executed successfully!'));
+          } catch (err) {
+            if (err instanceof Error && err.message.includes('Circular dependency')) {
+              error(err.message);
+            } else {
+              error(`Failed to collect dependencies: ${err}`);
+            }
+            process.exit(1);
+          }
+        } else {
+          // Pass rmfilterArgs to rmplanAgent
+          options.rmfilterArgs = rmfilterArgs;
+          await rmplanAgent(resolvedPlanFile, options, globalOpts);
+        }
       } catch (err) {
         error(`Failed to process plan: ${err as Error}`);
         process.exit(1);
