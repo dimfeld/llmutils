@@ -180,30 +180,57 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
   throw new Error(`No plan found with ID or file path: ${planArg}`);
 }
 
+export type PlanFilterOptions = {
+  includePending?: boolean;
+  includeInProgress?: boolean;
+};
+
 /**
- * Finds the next plan that is ready to be implemented.
+ * Finds the next plan based on filter options.
+ * By default finds pending plans only (for backward compatibility).
+ *
  * A plan is ready if:
- * - Its status is 'pending' (or not set, which defaults to pending)
+ * - Its status matches the filter options
  * - All its dependencies have status 'done'
  *
  * Plans are prioritized by:
- * 1. Priority (urgent > high > medium > low > undefined)
- * 2. ID (alphabetically)
+ * 1. Status (in_progress > pending) when both are included
+ * 2. Priority (urgent > high > medium > low > undefined)
+ * 3. ID (alphabetically)
  *
  * @param directory - The directory to search for plans
- * @returns The highest priority ready plan, or null if none found
+ * @param options - Filter options for status types to include
+ * @returns The highest priority plan matching criteria, or null if none found
  */
-export async function findNextReadyPlan(directory: string): Promise<PlanSummary | null> {
+export async function findNextPlan(
+  directory: string,
+  options: PlanFilterOptions = { includePending: true }
+): Promise<PlanSummary | null> {
   const plans = await readAllPlans(directory);
 
-  // Convert to array and filter for pending plans
+  // Convert to array and filter based on options
   let candidates = Array.from(plans.values()).filter((plan) => {
     const status = plan.status || 'pending';
-    return status === 'pending';
+
+    if (options.includeInProgress && status === 'in_progress') {
+      return true;
+    }
+    if (options.includePending && status === 'pending') {
+      return true;
+    }
+    return false;
   });
 
   // Check dependencies for each candidate
   const readyCandidates = candidates.filter((plan) => {
+    const status = plan.status || 'pending';
+
+    // In-progress plans are always ready
+    if (status === 'in_progress') {
+      return true;
+    }
+
+    // For pending plans, check dependencies
     if (!plan.dependencies || plan.dependencies.length === 0) {
       // No dependencies, so it's ready
       return true;
@@ -220,8 +247,20 @@ export async function findNextReadyPlan(directory: string): Promise<PlanSummary 
     return null;
   }
 
-  // Sort by priority first (highest priority first), then by ID
+  // Sort by status first (if both types included), then priority, then by ID
   readyCandidates.sort((a, b) => {
+    // Status order - in_progress comes first (only when both types are included)
+    if (options.includeInProgress && options.includePending) {
+      const aStatus = a.status || 'pending';
+      const bStatus = b.status || 'pending';
+
+      if (aStatus !== bStatus) {
+        // in_progress should come before pending
+        if (aStatus === 'in_progress') return -1;
+        if (bStatus === 'in_progress') return 1;
+      }
+    }
+
     // Define priority order - higher number means higher priority
     const priorityOrder: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
     const aPriority = a.priority ? priorityOrder[a.priority] || 0 : 0;
@@ -239,4 +278,20 @@ export async function findNextReadyPlan(directory: string): Promise<PlanSummary 
   });
 
   return readyCandidates[0];
+}
+
+/**
+ * Finds the next plan that is ready to be implemented.
+ * @deprecated Use findNextPlan with { includePending: true } instead
+ */
+export async function findNextReadyPlan(directory: string): Promise<PlanSummary | null> {
+  return findNextPlan(directory, { includePending: true });
+}
+
+/**
+ * Finds the next plan that is currently being worked on or ready to be implemented.
+ * @deprecated Use findNextPlan with { includePending: true, includeInProgress: true } instead
+ */
+export async function findCurrentPlan(directory: string): Promise<PlanSummary | null> {
+  return findNextPlan(directory, { includePending: true, includeInProgress: true });
 }

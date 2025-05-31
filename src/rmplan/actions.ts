@@ -26,7 +26,7 @@ import { convertMarkdownToYaml, findYamlStart } from './process_markdown.js';
 import { createModel } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
-import { readAllPlans } from './plans.js';
+import { readAllPlans, type PlanSummary } from './plans.js';
 import * as clipboard from '../common/clipboard.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.js';
 import { waitForEnter } from '../common/terminal.js';
@@ -697,7 +697,7 @@ export async function preparePhase(
   options: { force?: boolean; model?: string; rmfilterArgs?: string[]; direct?: boolean } = {}
 ): Promise<void> {
   try {
-    // 1. Load the target phase YAML file
+    // Load the target phase YAML file
     const phaseContent = await Bun.file(phaseYamlFile).text();
     const parsedPhase = yaml.parse(phaseContent);
     const validationResult = phaseSchema.safeParse(parsedPhase);
@@ -709,12 +709,11 @@ export async function preparePhase(
     }
 
     const currentPhaseData = validationResult.data;
+    const projectPlanDir = path.dirname(phaseYamlFile);
+    const allPlans = await readAllPlans(projectPlanDir);
 
-    // 2. Dependency Checking using readAllPlans
+    // Dependency Checking
     if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
-      const projectPlanDir = path.dirname(phaseYamlFile);
-      const allPlans = await readAllPlans(projectPlanDir);
-
       for (const dependencyId of currentPhaseData.dependencies) {
         const dependencyPlan = allPlans.get(dependencyId);
 
@@ -743,15 +742,13 @@ export async function preparePhase(
       }
     }
 
-    // 3. Determine projectPlanDir
-    const projectPlanDir = path.dirname(phaseYamlFile);
-
-    // 4. Call gatherPhaseGenerationContext
+    // Call gatherPhaseGenerationContext
     let phaseGenCtx;
     try {
       phaseGenCtx = await gatherPhaseGenerationContext(
         phaseYamlFile,
         projectPlanDir,
+        allPlans,
         options.rmfilterArgs
       );
     } catch (err) {
@@ -772,7 +769,7 @@ export async function preparePhase(
       throw err;
     }
 
-    // 5. Prepare rmfilter arguments for codebase context
+    // Prepare rmfilter arguments for codebase context
     const rmfilterArgs = [...phaseGenCtx.rmfilterArgsFromPlan];
 
     // Add files from tasks if any are pre-populated
@@ -793,19 +790,6 @@ export async function preparePhase(
       );
     } catch (err) {
       error('Failed to execute rmfilter:', err);
-
-      // Save rmfilter error
-      try {
-        const errorLogPath = phaseYamlFile.replace('.yml', '.rmfilter_error.log');
-        await Bun.write(
-          errorLogPath,
-          `Rmfilter error at ${new Date().toISOString()}\n\nArgs: ${JSON.stringify(rmfilterArgs, null, 2)}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
-        );
-        error('Error log saved to:', errorLogPath);
-      } catch (saveErr) {
-        warn('Failed to save error log:', saveErr);
-      }
-
       throw err;
     }
 
@@ -822,7 +806,7 @@ ${codebaseContextXml}
 
     if (options.direct) {
       // Direct LLM call (original behavior)
-      const modelId = options.model || config.models?.planning || DEFAULT_RUN_MODEL;
+      const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
       const model = createModel(modelId);
 
       log('Generating detailed steps for phase using model:', modelId);
@@ -929,9 +913,10 @@ ${yaml.stringify(currentPhaseData)}`;
  * @param projectPlanDir Directory containing all phase YAML files
  * @returns Context object containing all information needed for phase step generation
  */
-export async function gatherPhaseGenerationContext(
+async function gatherPhaseGenerationContext(
   phaseFilePath: string,
   projectPlanDir: string,
+  allPlans: Map<string, PlanSummary>,
   rmfilterArgs?: string[]
 ): Promise<PhaseGenerationContext> {
   try {
@@ -1031,6 +1016,27 @@ export async function gatherPhaseGenerationContext(
     // Deduplicate changed files
     const uniqueChangedFiles = Array.from(new Set(changedFilesFromDependencies));
 
+    const changedFilesExist = (
+      await Promise.all(
+        uniqueChangedFiles.map(async (file) => {
+          try {
+            if (await Bun.file(file).exists()) {
+              return file;
+            }
+            return false;
+          } catch (err) {
+            return false;
+          }
+        })
+      )
+    ).filter(Boolean) as string[];
+
+    const rmfilterArgsFromPlan = [...(currentPhaseData.rmfilter || []), ...(rmfilterArgs || [])];
+
+    if (changedFilesExist.length > 0) {
+      rmfilterArgsFromPlan.push('--', ...changedFilesExist);
+    }
+
     // 5. Build and return the context object
     const context: PhaseGenerationContext = {
       overallProjectGoal,
@@ -1043,8 +1049,8 @@ export async function gatherPhaseGenerationContext(
         description: task.description,
       })),
       previousPhasesInfo,
-      changedFilesFromDependencies: uniqueChangedFiles,
-      rmfilterArgsFromPlan: [...(currentPhaseData.rmfilter || []), ...(rmfilterArgs || [])],
+      changedFilesFromDependencies: changedFilesExist,
+      rmfilterArgsFromPlan,
     };
 
     return context;

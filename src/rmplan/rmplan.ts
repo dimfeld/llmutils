@@ -25,7 +25,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
-import { readAllPlans, resolvePlanFile, findNextReadyPlan } from './plans.js';
+import { readAllPlans, resolvePlanFile, findNextReadyPlan, findCurrentPlan } from './plans.js';
 import { planPrompt, simplePlanPrompt } from './prompt.js';
 import type { PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
@@ -604,6 +604,7 @@ function createAgentCommand(command: Command, description: string) {
     .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
     .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
     .option('--next', 'Execute the next plan that is ready to be implemented')
+    .option('--current', 'Execute the current plan (in_progress or next ready plan)')
     .option(
       '--direct',
       'Call LLM directly instead of copying prompt to clipboard during preparation'
@@ -620,26 +621,31 @@ function createAgentCommand(command: Command, description: string) {
       try {
         let resolvedPlanFile: string;
 
-        if (options.next) {
-          // Find the next ready plan
+        if (options.next || options.current) {
+          // Find the next ready plan or current plan
           const config = await loadEffectiveConfig(globalOpts.config);
           const tasksDir = await resolveTasksDir(config);
-          const nextPlan = await findNextReadyPlan(tasksDir);
+          const plan = options.current
+            ? await findCurrentPlan(tasksDir)
+            : await findNextReadyPlan(tasksDir);
 
-          if (!nextPlan) {
-            log('No ready plans found. All pending plans have incomplete dependencies.');
+          if (!plan) {
+            if (options.current) {
+              log('No current plans found. No plans are in progress or ready to be implemented.');
+            } else {
+              log('No ready plans found. All pending plans have incomplete dependencies.');
+            }
             return;
           }
 
-          log(
-            chalk.green(
-              `Found next ready plan: ${nextPlan.id} - ${getCombinedTitleFromSummary(nextPlan)}`
-            )
-          );
-          resolvedPlanFile = nextPlan.filename;
+          const message = options.current
+            ? `Found current plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
+            : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
+          log(chalk.green(message));
+          resolvedPlanFile = plan.filename;
         } else {
           if (!planFile) {
-            error('Please provide a plan file or use --next to find the next ready plan');
+            error('Please provide a plan file or use --next/--current to find a plan');
             process.exit(1);
           }
           resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
@@ -900,6 +906,7 @@ program
   .option('--force', 'Override dependency completion check and proceed with generation.')
   .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
   .option('--next', 'Prepare the next plan that is ready to be implemented')
+  .option('--current', 'Prepare the current plan (in_progress or next ready plan)')
   .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
@@ -916,25 +923,30 @@ program
 
       let phaseYamlFile: string;
 
-      if (options.next) {
-        // Find the next ready plan
+      if (options.next || options.current) {
+        // Find the next ready plan or current plan
         const tasksDir = await resolveTasksDir(config);
-        const nextPlan = await findNextReadyPlan(tasksDir);
+        const plan = options.current
+          ? await findCurrentPlan(tasksDir)
+          : await findNextReadyPlan(tasksDir);
 
-        if (!nextPlan) {
-          log('No ready plans found. All pending plans have incomplete dependencies.');
+        if (!plan) {
+          if (options.current) {
+            log('No current plans found. No plans are in progress or ready to be implemented.');
+          } else {
+            log('No ready plans found. All pending plans have incomplete dependencies.');
+          }
           return;
         }
 
-        log(
-          chalk.green(
-            `Found next ready plan: ${nextPlan.id} - ${getCombinedTitleFromSummary(nextPlan)}`
-          )
-        );
-        phaseYamlFile = nextPlan.filename;
+        const message = options.current
+          ? `Found current plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
+          : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
+        log(chalk.green(message));
+        phaseYamlFile = plan.filename;
       } else {
         if (!yamlFile) {
-          error('Please provide a plan file or use --next to find the next ready plan');
+          error('Please provide a plan file or use --next/--current to find a plan');
           process.exit(1);
         }
         // Resolve plan file (ID or path)
@@ -957,6 +969,7 @@ program
   .command('show [planFile]')
   .description('Display detailed information about a plan. Can be a file path or plan ID.')
   .option('--next', 'Show the next plan that is ready to be implemented')
+  .option('--current', 'Show the current plan (in_progress or next ready plan)')
   .action(async (planFile, options) => {
     const globalOpts = program.opts();
 
@@ -965,21 +978,30 @@ program
 
       let resolvedPlanFile: string;
 
-      if (options.next) {
-        // Find the next ready plan
+      if (options.next || options.current) {
+        // Find the next ready plan or current plan
         const tasksDir = await resolveTasksDir(config);
-        const nextPlan = await findNextReadyPlan(tasksDir);
+        const plan = options.current
+          ? await findCurrentPlan(tasksDir)
+          : await findNextReadyPlan(tasksDir);
 
-        if (!nextPlan) {
-          log('No ready plans found. All pending plans have incomplete dependencies.');
+        if (!plan) {
+          if (options.current) {
+            log('No current plans found. No plans are in progress or ready to be implemented.');
+          } else {
+            log('No ready plans found. All pending plans have incomplete dependencies.');
+          }
           return;
         }
 
-        log(chalk.green(`Found next ready plan: ${nextPlan.id}`));
-        resolvedPlanFile = nextPlan.filename;
+        const message = options.current
+          ? `Found current plan: ${plan.id}`
+          : `Found next ready plan: ${plan.id}`;
+        log(chalk.green(message));
+        resolvedPlanFile = plan.filename;
       } else {
         if (!planFile) {
-          error('Please provide a plan file or use --next to find the next ready plan');
+          error('Please provide a plan file or use --next/--current to find a plan');
           process.exit(1);
         }
         resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
