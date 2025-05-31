@@ -259,13 +259,33 @@ export async function prepareNextStep(
     }
   }
 
-  // 5. Build the LLM prompt
-  const promptParts: string[] = [
-    `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`,
+  const promptParts: string[] = [];
+
+  if (planData.project?.goal) {
+    promptParts.push(
+      `# Project Goal: ${planData.project.goal}\n`,
+      'These instructions define a particular step of a feature implementation for this project'
+    );
+
+    if (planData.project.details) {
+      promptParts.push(`## Project Details:\n\n${planData.project.details}\n`);
+    }
+
+    promptParts.push(
+      `# Current Phase Goal: ${planData.goal}\n\n## Phase Details:\n\n${planData.details}\n`
+    );
+  } else {
+    // 5. Build the LLM prompt
+    promptParts.push(
+      `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
+    );
+  }
+
+  promptParts.push(
     `## Overall Task: ${activeTask.title}\n`,
     `Description: ${activeTask.description}`,
-    'This tasks is composed of subtasks, listed below. Only implement the specific subtasks mentioned.',
-  ];
+    'This tasks is composed of subtasks, listed below. Only implement the specific subtasks mentioned.'
+  );
   if (previous && completedSteps.length > 0) {
     promptParts.push('## Completed Subtasks in this Task:');
     completedSteps.forEach((step) => promptParts.push(`- [DONE] ${step.prompt.split('\n')[0]}...`));
