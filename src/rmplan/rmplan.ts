@@ -1238,6 +1238,26 @@ program
   });
 
 program
+  .command('edit <planArg>')
+  .description('Open a plan file in your editor. Can be a file path or plan ID.')
+  .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')
+  .action(async (planArg, options) => {
+    const globalOpts = program.opts();
+    try {
+      const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);
+      const editor = options.editor || process.env.EDITOR || 'nano';
+      
+      const editorProcess = logSpawn([editor, resolvedPlanFile], {
+        stdio: ['inherit', 'inherit', 'inherit'],
+      });
+      await editorProcess.exited;
+    } catch (err) {
+      error(`Failed to open plan file: ${err as Error}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command('answer-pr [prIdentifier]')
   .description(
     'Address Pull Request (PR) review comments using an LLM. If no PR identifier is provided, it will try to detect the PR from the current branch.'
