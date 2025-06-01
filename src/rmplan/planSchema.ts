@@ -50,3 +50,15 @@ export type PhaseSchema = z.infer<typeof phaseSchema>;
 // Backward compatibility - export phaseSchema as planSchema
 export const planSchema = phaseSchema;
 export type PlanSchema = PhaseSchema;
+
+// Multi-phase plan schema for split command
+export const multiPhasePlanSchema = z
+  .object({
+    title: z.string().optional(),
+    goal: z.string(),
+    details: z.string().optional(),
+    phases: z.array(phaseSchema),
+  })
+  .describe('Multi-phase plan structure for split command');
+
+export type MultiPhasePlanSchema = z.infer<typeof multiPhasePlanSchema>;

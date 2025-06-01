@@ -35,7 +35,7 @@ import {
   collectDependenciesInOrder,
   isPlanReady,
 } from './plans.js';
-import { planPrompt, simplePlanPrompt } from './prompt.js';
+import { planPrompt, simplePlanPrompt, generateSplitPlanPrompt } from './prompt.js';
 import type { PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
@@ -467,7 +467,7 @@ program
             stubPlanData.updatedAt = now;
 
             // Prepare the YAML content with schema line
-    const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+            const schemaLine = `# yaml-language-server: $schema=https:
             const yamlContent = yaml.stringify(stubPlanData);
             const fullContent = schemaLine + '\n' + yamlContent;
 
@@ -681,7 +681,8 @@ program
       const yamlContent = yaml.stringify(plan);
 
       // Prepend the yaml-language-server schema line
-      const fullContent = `# yaml-language-server: $schema=https:
+      const schemaLine = `# yaml-language-server: $schema=https:
+      const fullContent = schemaLine + '\n' + yamlContent;
 
       // Write the YAML string to the new plan file
       await Bun.write(filePath, fullContent);
@@ -1545,11 +1546,75 @@ program
         process.exit(1);
       }
 
-      // Step 5: Log the plan's title and goal for now
+      // Step 5: Generate the prompt for splitting the plan
       const validatedPlan = result.data;
       log(`Plan loaded successfully:`);
       log(`  Title: ${validatedPlan.title || 'No title'}`);
       log(`  Goal: ${validatedPlan.goal}`);
+      
+      // Step 6: Load configuration and generate the prompt
+      const config = await loadEffectiveConfig(globalOpts.config);
+      const prompt = generateSplitPlanPrompt(validatedPlan);
+      
+      // Step 7: Call the LLM to reorganize the plan
+      log('\nCalling LLM to reorganize plan into phases...');
+      const modelSpec = config.models?.convert_yaml || 'google/gemini-2.0-flash';
+      const model = createModel(modelSpec);
+      
+      let llmResponse: string;
+      try {
+        const llmResult = await generateText({
+          model,
+          prompt,
+          temperature: 0.2,
+        });
+        llmResponse = llmResult.text;
+      } catch (err) {
+        error(`Failed to call LLM: ${err as Error}`);
+        process.exit(1);
+      }
+      
+      // Step 8: Extract and parse the YAML from the LLM response
+      log('\nParsing LLM response...');
+      let parsedMultiPhase: any;
+      try {
+        const yamlContent = findYamlStart(llmResponse);
+        const cleanedYaml = fixYaml(yamlContent);
+        parsedMultiPhase = yaml.parse(cleanedYaml);
+      } catch (err) {
+        error(`Failed to parse YAML from LLM response: ${err as Error}`);
+        
+        // Save raw response for debugging
+        const debugFile = 'rmplan-split-raw-response.txt';
+        await Bun.write(debugFile, llmResponse);
+        error(`\nRaw LLM response saved to ${debugFile} for debugging.`);
+        process.exit(1);
+      }
+      
+      // Step 9: Validate the multi-phase plan structure
+      const { multiPhasePlanSchema } = await import('./planSchema.js');
+      const validationResult = multiPhasePlanSchema.safeParse(parsedMultiPhase);
+      
+      if (!validationResult.success) {
+        error('Multi-phase plan validation failed:');
+        validationResult.error.issues.forEach((issue) => {
+          error(`  - ${issue.path.join('.')}: ${issue.message}`);
+        });
+        
+        // Save invalid YAML for debugging
+        const debugFile = 'rmplan-split-invalid.yml';
+        await Bun.write(debugFile, cleanedYaml);
+        error(`\nInvalid YAML saved to ${debugFile} for debugging.`);
+        process.exit(1);
+      }
+      
+      // Step 10: Process the validated multi-phase plan
+      const multiPhasePlan = validationResult.data;
+      log(chalk.green('\n✓ Successfully reorganized plan into phases:'));
+      log(`  Total phases: ${multiPhasePlan.phases.length}`);
+      multiPhasePlan.phases.forEach((phase, index) => {
+        log(`  Phase ${index + 1}: ${phase.title || 'Untitled'} (${phase.tasks.length} tasks)`);
+      });
     } catch (err) {
       error(`Failed to process plan file: ${err as Error}`);
       process.exit(1);

@@ -14,7 +14,7 @@ dependencies:
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:43:49.796Z
 createdAt: 2025-05-31T20:32:33.555Z
-updatedAt: 2025-06-01T02:53:31.927Z
+updatedAt: 2025-06-01T02:56:09.038Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -253,7 +253,7 @@ tasks:
 
           2. Call `generateSplitPlanPrompt` with the loaded `planData` to get
           the LLM prompt string.
-        done: false
+        done: true
       - prompt: >
           Still in the `split` command's action:
 
@@ -268,7 +268,7 @@ tasks:
           previous step, and appropriate parameters (e.g., `temperature: 0.2`).
 
           4. Retrieve the LLM's response text.
-        done: false
+        done: true
       - prompt: >
           After getting the LLM's response text:
 
@@ -283,7 +283,7 @@ tasks:
 
           5. Parse the cleaned YAML string into a JavaScript object using
           `yaml.parse()`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/planSchema.ts`, define a new Zod schema named
           `multiPhasePlanSchema`. This schema should represent the structure of
@@ -299,7 +299,7 @@ tasks:
           `planSchema`).
 
           Export this new schema.
-        done: false
+        done: true
       - prompt: >
           Back in `src/rmplan/rmplan.ts`, in the `split` command's action:
 
@@ -315,12 +315,12 @@ tasks:
 
           4. If validation succeeds, store the validated multi-phase plan
           object. For now, log a success message.
-        done: false
+        done: true
       - prompt: >
           Add error handling around the LLM call (`generateText`) and YAML
           parsing steps. Catch any exceptions, log informative error messages,
           and exit gracefully.
-        done: false
+        done: true
   - title: Implement creation of new phase-specific plan files using
       `saveMultiPhaseYaml`.
     description: >
@@ -474,6 +474,7 @@ changedFiles:
   - CLAUDE.md
   - src/rmplan/actions.ts
   - src/rmplan/executors/claude_code.ts
+  - src/rmplan/planSchema.ts
   - src/rmplan/prompt.ts
   - src/rmplan/rmplan.test.ts
   - src/rmplan/rmplan.ts
