@@ -7,12 +7,12 @@ details: This phase focuses on introducing the `add` command for scaffolding new
   with these pre-existing (but empty) plan files, populating them with
   LLM-generated content in place, rather than always creating a new file.
 id: 1l52aj2-1
-status: in_progress
+status: done
 dependencies: []
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:19:59.271Z
 createdAt: 2025-05-31T20:32:33.555Z
-updatedAt: 2025-06-01T02:30:47.451Z
+updatedAt: 2025-06-01T02:39:05.891Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -314,7 +314,7 @@ tasks:
 
           Mock `loadEffectiveConfig` to return a controlled configuration,
           especially for `paths.tasks`.
-        done: false
+        done: true
       - prompt: >
           Test `rmplan add "Test Plan Title"`:
 
@@ -328,7 +328,7 @@ tasks:
           string), `title` matches, `goal` and `details` are placeholders,
           `status` is "pending", `createdAt` and `updatedAt` are recent
           timestamps, and `tasks` is an empty array.
-        done: false
+        done: true
       - prompt: >
           Test `rmplan add "Edit Test" --edit`:
 
@@ -337,22 +337,22 @@ tasks:
           - Verify it's called with the correct editor command (e.g., from
           `process.env.EDITOR` or a default) and the path to the newly created
           file.
-        done: false
+        done: true
       - prompt: >
           Test `rmplan add "Deps Test" --depends-on dep1 dep2`:
 
           - Verify the created YAML file's `dependencies` field is `['dep1',
           'dep2']`.
-        done: false
+        done: true
       - prompt: |
           Test `rmplan add "Priority Test" --priority high`:
           - Verify the created YAML file's `priority` field is `"high"`.
-        done: false
+        done: true
       - prompt: >
           Test `rmplan add` behavior with `paths.tasks` configured vs.
           unconfigured to ensure file creation in the correct location (mock
           `getGitRoot` and `process.cwd()` as needed for predictable paths).
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/rmplan.test.ts` (or a new `generate_update.test.ts`),
           write tests for the updated `generate <existing_stub_file>`
@@ -361,7 +361,7 @@ tasks:
           Set up a temporary directory. Create a "stub" plan YAML file (e.g.,
           `stub-plan.yml`) with `id`, `title`, `goal`, `details`, `status:
           "pending"`, `createdAt`, `updatedAt`, and an empty `tasks: []`.
-        done: false
+        done: true
       - prompt: >
           Mock the LLM call chain for `generate <existing_stub_file>`:
 
@@ -374,7 +374,7 @@ tasks:
           (representing a full plan containing tasks) when called with the LLM's
           Markdown output. This mock should bypass the internal LLM call of
           `convertMarkdownToYaml`.
-        done: false
+        done: true
       - prompt: >
           Execute `rmplan generate <path_to_stub-plan.yml>` programmatically.
 
@@ -391,7 +391,7 @@ tasks:
 
           - Original `id`, `title`, `goal`, `details`, `status`, `createdAt` are
           preserved.
-        done: false
+        done: true
       - prompt: >
           Test the case where `generate <existing_plan_with_tasks.yml>` is
           called on a plan that already has tasks.
@@ -400,11 +400,12 @@ tasks:
           is not inappropriately modified by this specific new pathway (it
           should fall back to existing `generate` behavior for non-stubs or
           error if that's the design).
-        done: false
+        done: true
 rmfilter:
   - src/rmplan
 changedFiles:
   - CLAUDE.md
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/rmplan.test.ts
   - src/rmplan/rmplan.ts
-  - test-add-command.ts
   - test-stub-plan.yml
