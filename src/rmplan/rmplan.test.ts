@@ -110,7 +110,9 @@ describe('rmplan add command', () => {
         };
 
         const yamlContent = yaml.stringify(plan);
-        const fullContent = `# yaml-language-server: $schema=https:
+        const schemaLine =
+          '# yaml-language-server: $schema=https:
+        const fullContent = schemaLine + '\n' + yamlContent;
         await Bun.write(filePath, fullContent);
 
         mockAction();
@@ -206,7 +208,9 @@ describe('rmplan add command', () => {
           };
 
           const yamlContent = yaml.stringify(plan);
-          const fullContent = `# yaml-language-server: $schema=https:
+          const schemaLine =
+            '# yaml-language-server: $schema=https:
+          const fullContent = schemaLine + '\n' + yamlContent;
           await Bun.write(filePath, fullContent);
 
           if (options.edit) {
@@ -262,7 +266,9 @@ describe('rmplan add command', () => {
         }
 
         const yamlContent = yaml.stringify(plan);
-        const fullContent = `# yaml-language-server: $schema=https:
+        const schemaLine =
+          '# yaml-language-server: $schema=https:
+        const fullContent = schemaLine + '\n' + yamlContent;
         await Bun.write(filePath, fullContent);
       });
 
@@ -320,7 +326,9 @@ describe('rmplan add command', () => {
         }
 
         const yamlContent = yaml.stringify(plan);
-        const fullContent = `# yaml-language-server: $schema=https:
+        const schemaLine =
+          '# yaml-language-server: $schema=https:
+        const fullContent = schemaLine + '\n' + yamlContent;
         await Bun.write(filePath, fullContent);
       });
 
@@ -379,7 +387,9 @@ describe('rmplan add command', () => {
       };
 
       const yamlContent = yaml.stringify(plan);
-      const fullContent = `# yaml-language-server: $schema=https:
+      const schemaLine =
+        '# yaml-language-server: $schema=https:
+      const fullContent = schemaLine + '\n' + yamlContent;
       await Bun.write(filePath, fullContent);
     });
 
@@ -426,7 +436,9 @@ describe('rmplan add command', () => {
         };
 
         const yamlContent = yaml.stringify(plan);
-        const fullContent = `# yaml-language-server: $schema=https:
+        const schemaLine =
+          '# yaml-language-server: $schema=https:
+        const fullContent = schemaLine + '\n' + yamlContent;
         await Bun.write(filePath, fullContent);
       });
 
@@ -523,7 +535,9 @@ describe('rmplan split command', () => {
 
     const planFilePath = join(tasksDir, 'valid-plan.yml');
     const yamlContent = yaml.stringify(validPlan);
-    const fullContent = `# yaml-language-server: $schema=https:
+    const schemaLine =
+      '# yaml-language-server: $schema=https:
+    const fullContent = schemaLine + '\n' + yamlContent;
     await Bun.write(planFilePath, fullContent);
 
     const { Command } = await import('commander');
@@ -773,7 +787,9 @@ describe('rmplan generate command - stub plan update', () => {
 
     const stubFilePath = join(tasksDir, 'stub-plan.yml');
     const yamlContent = yaml.stringify(stubPlan);
-    const fullContent = `# yaml-language-server: $schema=https:
+    const schemaLine =
+      '# yaml-language-server: $schema=https:
+    const fullContent = schemaLine + '\n' + yamlContent;
     await Bun.write(stubFilePath, fullContent);
 
     // Mock the LLM and conversion functions
@@ -908,7 +924,9 @@ Execute the test suite`;
 
         // Write back
         const updatedYaml = yaml.stringify(parsedPlan);
-        const updatedContent = `# yaml-language-server: $schema=https:
+        const schemaLine =
+          '# yaml-language-server: $schema=https:
+        const updatedContent = schemaLine + '\n' + updatedYaml;
         await Bun.write(options.plan, updatedContent);
       });
 
@@ -973,7 +991,9 @@ Execute the test suite`;
 
     const planFilePath = join(tasksDir, 'existing-plan.yml');
     const yamlContent = yaml.stringify(existingPlan);
-    const fullContent = `# yaml-language-server: $schema=https:
+    const schemaLine =
+      '# yaml-language-server: $schema=https:
+    const fullContent = schemaLine + '\n' + yamlContent;
     await Bun.write(planFilePath, fullContent);
 
     // Keep a copy of the original content

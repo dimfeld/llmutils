@@ -14,7 +14,7 @@ dependencies:
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:43:49.796Z
 createdAt: 2025-05-31T20:32:33.555Z
-updatedAt: 2025-06-01T02:56:09.038Z
+updatedAt: 2025-06-01T03:02:51.870Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -350,7 +350,7 @@ tasks:
           (without extension) and appending "-phases" (e.g., if input is
           `my-plan.yml`, output dir is `my-plan-phases/`). Use `path.dirname`,
           `path.basename`, and `path.extname`.
-        done: false
+        done: true
       - prompt: >
           Prepare the `options` argument for `saveMultiPhaseYaml`. The key field
           is `output`, which should be the directory path determined in the
@@ -361,7 +361,7 @@ tasks:
 
           The `issueUrl` is not directly applicable here unless a new option is
           added to `split`.
-        done: false
+        done: true
       - prompt: >
           Call `await saveMultiPhaseYaml(parsedMultiPhasePlan, extractOptions,
           config, quiet)` where `parsedMultiPhasePlan` is the object from Task
@@ -372,11 +372,11 @@ tasks:
           The `saveMultiPhaseYaml` function already handles `projectId` and
           `phaseId` generation, embedding project info, and processing
           dependencies.
-        done: false
+        done: true
       - prompt: >
           Log the message returned by `saveMultiPhaseYaml` (which indicates
           where files were written or if errors occurred).
-        done: false
+        done: true
       - prompt: >
           Review `saveMultiPhaseYaml` in `src/rmplan/process_markdown.ts` to
           confirm its existing logic for generating `projectId` (using
@@ -385,7 +385,7 @@ tasks:
           human-readable names like "Phase 1" to generated phase IDs) aligns
           with the LLM prompt design from Task 2. No changes should be needed if
           it's already robust.
-        done: false
+        done: true
   - title: Add tests for the `split` command.
     description: >
       This task involves developing a robust set of tests for the `split`
@@ -475,6 +475,7 @@ changedFiles:
   - src/rmplan/actions.ts
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/planSchema.ts
+  - src/rmplan/process_markdown.ts
   - src/rmplan/prompt.ts
   - src/rmplan/rmplan.test.ts
   - src/rmplan/rmplan.ts

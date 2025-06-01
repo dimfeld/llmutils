@@ -170,7 +170,7 @@ export async function extractMarkdownToYaml(
   let validatedPlan: PlanSchema;
 
   if (!convertedYaml.startsWith('# yaml-language-server')) {
-    const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+    const schemaLine = `# yaml-language-server: $schema=https:
     convertedYaml = schemaLine + '\n' + convertedYaml;
   }
 
@@ -276,7 +276,7 @@ export async function extractMarkdownToYaml(
   return `Wrote single-phase plan to ${outputPath}`;
 }
 
-async function saveMultiPhaseYaml(
+export async function saveMultiPhaseYaml(
   parsedYaml: any,
   options: ExtractMarkdownToYamlOptions,
   config: RmplanConfig,
@@ -432,7 +432,7 @@ async function saveMultiPhaseYaml(
       })
     );
 
-    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(orderedContent)}`;
+    const yamlContent = `# yaml-language-server: $schema=https:
     const phaseFilePath = path.join(outputDir, `phase-${phaseIndex}.yml`);
 
     try {
