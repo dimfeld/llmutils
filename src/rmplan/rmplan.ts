@@ -531,16 +531,7 @@ program
             issueUrls: issueUrlsForExtract,
           };
 
-          const message = await extractMarkdownToYaml(
-            input,
-            config,
-            options.quiet ?? false,
-            extractOptions
-          );
-
-          if (!options.quiet) {
-            log(message);
-          }
+          await extractMarkdownToYaml(input, config, options.quiet ?? false, extractOptions);
         }
       }
     } finally {
@@ -613,16 +604,7 @@ program
         issueUrls: options.issue ? [options.issue] : [],
       };
 
-      const message = await extractMarkdownToYaml(
-        inputText,
-        config,
-        options.quiet ?? false,
-        extractOptions
-      );
-
-      if (!options.quiet) {
-        log(message);
-      }
+      await extractMarkdownToYaml(inputText, config, options.quiet ?? false, extractOptions);
     } catch (e) {
       error('Failed to extract markdown to YAML:', e);
       process.exit(1);

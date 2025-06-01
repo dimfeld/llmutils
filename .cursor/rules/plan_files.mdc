@@ -1,0 +1,23 @@
+---
+description: Plan File Conventions
+alwaysApply: true
+type: rules
+---
+
+When writing new commands that can use a plan file, always take either a plan ID or file path, and use `resolvePlanFile` in src/rmplan/plans.ts to find the file.
+
+Its structure looks like:
+
+```
+/**
+ * Resolves a plan argument which can be either a file path or a plan ID.
+ * If the argument is a file path that exists, returns the absolute path.
+ * If the argument looks like a plan ID, searches for a matching plan in the tasks directory.
+ *
+ * @param planArg - The plan file path or plan ID
+ * @param configPath - Optional path to rmplan config file
+ * @returns The resolved absolute file path
+ * @throws Error if the plan cannot be found
+ */
+export async function resolvePlanFile(planArg: string, configPath?: string): Promise<string>;
+```

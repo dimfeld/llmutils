@@ -176,6 +176,7 @@ You can check if compilation works using `bun run check`
 ## Writing Code
 
 See @.cursor/rules/general.mdc for coding guidelines and patterns
+See .cursor/rules/plan_files.mdc for tips on working with plan files in rmplan commands
 
 ## Code Quality Best Practices
 

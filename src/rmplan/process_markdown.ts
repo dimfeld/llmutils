@@ -132,7 +132,7 @@ export async function extractMarkdownToYaml(
   config: RmplanConfig,
   quiet: boolean,
   options: ExtractMarkdownToYamlOptions
-): Promise<string> {
+) {
   let convertedYaml: string;
 
   try {
@@ -270,10 +270,8 @@ export async function extractMarkdownToYaml(
   await Bun.write(outputPath, yamlContent);
 
   if (!quiet) {
-    log(`Wrote plan to ${outputPath}`);
+    log(chalk.green('Success!'), `Wrote single-phase plan to ${outputPath}`);
   }
-
-  return `Wrote single-phase plan to ${outputPath}`;
 }
 
 export async function saveMultiPhaseYaml(
@@ -281,7 +279,7 @@ export async function saveMultiPhaseYaml(
   options: ExtractMarkdownToYamlOptions,
   config: RmplanConfig,
   quiet: boolean
-): Promise<string> {
+) {
   // Determine project ID
   let issueUrl: string | undefined;
 
@@ -312,7 +310,7 @@ export async function saveMultiPhaseYaml(
   // First pass: generate IDs and update dependencies
   for (let i = 0; i < parsedYaml.phases.length; i++) {
     const phase = parsedYaml.phases[i];
-    const phaseId = generatePhaseId(projectId, i + 1);
+    const phaseId = actuallyMultiphase ? generatePhaseId(projectId, i + 1) : projectId;
     phaseIndexToId.set(i + 1, phaseId);
     phase.id = phaseId;
 
@@ -465,6 +463,4 @@ export async function saveMultiPhaseYaml(
   if (failedPhases.length > 0) {
     warn(`Warning: Failed to write ${failedPhases.length} phase files: ${failedPhases.join(', ')}`);
   }
-
-  return `Wrote ${successfulWrites} phase files to directory ${outputDir}`;
 }
