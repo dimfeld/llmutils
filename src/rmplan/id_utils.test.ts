@@ -45,6 +45,35 @@ describe('slugify', () => {
   test('handles string with only special characters', () => {
     expect(slugify('!@#$%^&*()')).toBe('');
   });
+
+  test('truncates at word boundary when exceeding maxLength', () => {
+    const longText = 'this-is-a-very-long-slug-that-should-be-truncated-at-word-boundary';
+    const result = slugify(longText, 30);
+    expect(result.length).toBeLessThanOrEqual(30);
+    expect(result).toBe('this-is-a-very-long-slug-that');
+  });
+
+  test('truncates at exact maxLength when no word boundary available', () => {
+    const longWord = 'thisisaverylongwordwithouthyphens';
+    const result = slugify(longWord, 20);
+    expect(result.length).toBe(20);
+    expect(result).toBe('thisisaverylongwordw');
+  });
+
+  test('does not truncate when text is shorter than maxLength', () => {
+    const shortText = 'short-text';
+    const result = slugify(shortText, 50);
+    expect(result).toBe('short-text');
+  });
+
+  test('handles truncation with trailing hyphen removal', () => {
+    // This should truncate to 'this-is-a-test' not 'this-is-a-test-'
+    const text = 'this-is-a-test-case-with-many-words';
+    const result = slugify(text, 15);
+    expect(result.length).toBeLessThanOrEqual(15);
+    expect(result).toBe('this-is-a-test');
+    expect(result).not.toEndWith('-');
+  });
 });
 
 describe('generatePhaseId', () => {

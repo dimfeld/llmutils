@@ -15,11 +15,27 @@ export function slugify(text: string, maxLength = 50): string {
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-') // Replace non-alphanumeric (except hyphens) with hyphens
     .replace(/-+/g, '-') // Replace multiple consecutive hyphens with single hyphen
-    .replace(/^-+|-+$/g, '') // Remove leading and trailing hyphens
-    .slice(0, maxLength);
+    .replace(/^-+|-+$/g, ''); // Remove leading and trailing hyphens
+
+  // If slug is longer than maxLength, truncate at word boundary
+  if (slug.length > maxLength) {
+    // Find the last hyphen before or at maxLength
+    const lastHyphenIndex = slug.lastIndexOf('-', maxLength);
+
+    if (lastHyphenIndex > 0) {
+      // Truncate at the last word boundary
+      slug = slug.slice(0, lastHyphenIndex);
+    } else {
+      // If no hyphen found, just truncate at maxLength
+      slug = slug.slice(0, maxLength);
+    }
+  }
+
+  // Remove trailing hyphen if present
   if (slug.endsWith('-')) {
     slug = slug.slice(0, -1);
   }
+
   return slug;
 }
 

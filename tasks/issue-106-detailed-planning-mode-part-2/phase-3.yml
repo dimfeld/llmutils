@@ -5,13 +5,13 @@ details: This final phase focuses on polishing the newly implemented features.
   It includes updating all relevant documentation, refining command-line help
   messages, and ensuring a smooth user experience.
 id: 1l52aj2-3
-status: in_progress
+status: done
 dependencies:
   - 1l52aj2-2
 planGeneratedAt: 2025-05-31T20:32:33.556Z
 promptsGeneratedAt: 2025-06-01T08:09:33.849Z
 createdAt: 2025-05-31T20:32:33.556Z
-updatedAt: 2025-06-01T08:20:41.729Z
+updatedAt: 2025-06-01T08:24:55.147Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -93,14 +93,14 @@ tasks:
           Review the command descriptions for `add` and `split` in rmplan.ts.
           Ensure they are concise but informative. The descriptions should
           immediately convey the value and use case for each command.
-        done: false
+        done: true
       - prompt: >
           Review all error messages related to these commands, including
           validation errors, file operation failures, and dependency checks.
           Ensure error messages are informative and guide users toward
           resolution. Check that success messages and progress indicators
           provide clear feedback about what's happening.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan
   - src/common
@@ -109,5 +109,7 @@ changedFiles:
   - CLAUDE.md
   - README.md
   - src/rmplan/executors/claude_code.ts
+  - src/rmplan/id_utils.test.ts
+  - src/rmplan/id_utils.ts
   - src/rmplan/plans.ts
   - src/rmplan/rmplan.ts

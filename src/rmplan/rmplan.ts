@@ -321,7 +321,7 @@ program
           process.exit(1);
         }
 
-        log(chalk.blue('Generating tasks for stub plan:'), options.plan);
+        log(chalk.blue('🔄 Detected stub plan. Generating detailed tasks for:'), options.plan);
       } catch (err) {
         error(`Failed to process stub plan: ${err as Error}`);
         process.exit(1);
@@ -476,7 +476,9 @@ program
             // Write back to the original file
             await Bun.write(options.plan, fullContent);
 
-            log(chalk.green('✓ Updated plan with generated tasks:'), options.plan);
+            log(chalk.green('✓ Successfully generated tasks and updated plan:'), options.plan);
+            log(chalk.gray(`  Generated ${generatedTasks.length} tasks`));
+            log(chalk.gray('  Next step: Use "rmplan next" or "rmplan run" to execute the plan'));
           } catch (err) {
             error(`Failed to generate tasks for stub plan: ${err as Error}`);
             process.exit(1);
@@ -606,7 +608,7 @@ program
 
 program
   .command('add <title...>')
-  .description('Create a new plan file with the specified title')
+  .description('Create a new plan stub file that can be filled with tasks using generate')
   .option('--edit', 'Open the newly created plan file in your editor')
   .option('--depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('--priority <level>', 'Set the priority level (low, medium, high, urgent)')
@@ -690,7 +692,8 @@ program
       await Bun.write(filePath, fullContent);
 
       // Log success message
-      log(chalk.green('✓ Created plan:'), filePath);
+      log(chalk.green('✓ Created plan stub:'), filePath);
+      log(chalk.gray('  Next step: Use "rmplan generate" to add detailed tasks to this plan'));
 
       // Open in editor if requested
       if (options.edit) {
@@ -701,7 +704,7 @@ program
         await editorProcess.exited;
       }
     } catch (err) {
-      error('Failed to create plan:', err);
+      error(`Failed to create plan: ${err as Error}`);
       process.exit(1);
     }
   });
@@ -1512,7 +1515,9 @@ program
 
 program
   .command('split <planArg>')
-  .description('Split a large plan file into multiple phase-specific plan files')
+  .description(
+    'Use LLM to intelligently split a large plan into smaller, phase-based plans with dependencies'
+  )
   .action(async (planArg) => {
     const globalOpts = program.opts();
 
@@ -1525,7 +1530,7 @@ program
       try {
         content = await Bun.file(resolvedPlanFile).text();
       } catch (err) {
-        error(`Failed to read plan file: ${err as Error}`);
+        error(`Failed to read plan file '${resolvedPlanFile}': ${err as Error}`);
         process.exit(1);
       }
 
@@ -1534,7 +1539,7 @@ program
       try {
         parsedPlan = yaml.parse(content);
       } catch (err) {
-        error(`Failed to parse YAML: ${err as Error}`);
+        error(`Failed to parse YAML from '${resolvedPlanFile}': ${err as Error}`);
         process.exit(1);
       }
 
@@ -1542,7 +1547,8 @@ program
       const result = planSchema.safeParse(parsedPlan);
 
       if (!result.success) {
-        error('Plan file validation failed:');
+        error(`Plan file validation failed for '${resolvedPlanFile}':`);
+        error('Ensure the file has required fields: id, goal, and at least one task.');
         result.error.issues.forEach((issue) => {
           error(`  - ${issue.path.join('.')}: ${issue.message}`);
         });
@@ -1551,16 +1557,19 @@ program
 
       // Step 5: Generate the prompt for splitting the plan
       const validatedPlan = result.data;
-      log(`Plan loaded successfully:`);
+      log(chalk.blue('📄 Plan loaded successfully:'));
       log(`  Title: ${validatedPlan.title || 'No title'}`);
       log(`  Goal: ${validatedPlan.goal}`);
+      if (validatedPlan.tasks) {
+        log(`  Tasks: ${validatedPlan.tasks.length}`);
+      }
 
       // Step 6: Load configuration and generate the prompt
       const splitConfig = await loadEffectiveConfig(globalOpts.config);
       const prompt = generateSplitPlanPrompt(validatedPlan);
 
       // Step 7: Call the LLM to reorganize the plan
-      log('\nCalling LLM to reorganize plan into phases...');
+      log(chalk.blue('\n🤖 Analyzing plan structure and identifying logical phases...'));
       const modelSpec = splitConfig.models?.stepGeneration || 'google/gemini-2.0-flash';
       const model = createModel(modelSpec);
 
@@ -1578,12 +1587,13 @@ program
         });
         llmResponse = llmResult.text;
       } catch (err) {
-        error(`Failed to call LLM: ${err as Error}`);
+        error(`Failed to call LLM for plan splitting: ${err as Error}`);
+        error('Check your model configuration and API credentials.');
         process.exit(1);
       }
 
       // Step 8: Extract and parse the YAML from the LLM response
-      log('\nParsing LLM response...');
+      log(chalk.blue('\n📝 Processing LLM-generated phase structure...'));
       let parsedMultiPhase: any;
       let cleanedYaml: string;
       try {
@@ -1591,7 +1601,7 @@ program
         cleanedYaml = fixYaml(yamlContent);
         parsedMultiPhase = yaml.parse(cleanedYaml);
       } catch (err) {
-        error(`Failed to parse YAML from LLM response: ${err as Error}`);
+        error(`Failed to parse multi-phase plan from LLM response: ${err as Error}`);
 
         // Save raw response for debugging
         const debugFile = 'rmplan-split-raw-response.yml';
@@ -1604,7 +1614,9 @@ program
       const validationResult = multiPhasePlanSchema.safeParse(parsedMultiPhase);
 
       if (!validationResult.success) {
-        error('Multi-phase plan validation failed:');
+        error(
+          'Multi-phase plan validation failed. The LLM output does not match expected structure:'
+        );
         validationResult.error.issues.forEach((issue) => {
           error(`  - ${issue.path.join('.')}: ${issue.message}`);
         });
@@ -1645,7 +1657,7 @@ program
       // Log the result message
       log(message);
     } catch (err) {
-      error(`Failed to process plan file: ${err as Error}`);
+      error(`Unexpected error while splitting plan: ${err as Error}`);
       process.exit(1);
     }
   });
