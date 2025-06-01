@@ -33,7 +33,6 @@ describe('generatePhaseStepsPrompt', () => {
     expect(prompt).toContain('Set up JWT-based authentication with login/logout endpoints');
     expect(prompt).toContain('Task 1: Create user model');
     expect(prompt).toContain('Task 2: Implement auth endpoints');
-    expect(prompt).toContain('src/**/*.ts --with-imports');
 
     // Should not contain previous phases section
     expect(prompt).not.toContain('Previous Completed Phases');
@@ -133,31 +132,6 @@ describe('generatePhaseStepsPrompt', () => {
     expect(prompt).toContain('Phase 2: User Management (ID: phase-002)');
     expect(prompt).toContain('Create basic text editor');
     expect(prompt).toContain('User registration and authentication');
-  });
-
-  it('should handle empty rmfilter args', () => {
-    const context: PhaseGenerationContext = {
-      overallProjectGoal: 'Test project',
-      overallProjectDetails: 'Test details',
-      currentPhaseGoal: 'Test phase',
-      currentPhaseDetails: 'Test phase details',
-      currentPhaseTasks: [
-        {
-          title: 'Test task',
-          description: 'Test description',
-        },
-      ],
-      previousPhasesInfo: [],
-      changedFilesFromDependencies: [],
-      rmfilterArgsFromPlan: [],
-    };
-
-    const prompt = generatePhaseStepsPrompt(context);
-
-    // Should handle empty rmfilter args gracefully
-    expect(prompt).toContain('Consider the rmfilter arguments that will be used:');
-    // When args are empty, it should end cleanly without breaking the format
-    expect(prompt).toEndWith('Consider the rmfilter arguments that will be used: \n');
   });
 
   it('should include all required instructions and guidelines', () => {

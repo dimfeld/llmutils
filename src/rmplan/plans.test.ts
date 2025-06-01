@@ -3,7 +3,7 @@ import { mkdtemp, rm, mkdir, writeFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
-import { readAllPlans, resolvePlanFile, findNextReadyPlan } from './plans.js';
+import { findNextPlan, readAllPlans, resolvePlanFile } from './plans.js';
 
 describe('resolvePlanFile', () => {
   let tempDir: string;
@@ -379,7 +379,7 @@ describe('findNextReadyPlan', () => {
   });
 
   it('should return the highest priority ready plan', async () => {
-    const nextPlan = await findNextReadyPlan(tempDir);
+    const nextPlan = await findNextPlan(tempDir, { includePending: true });
     expect(nextPlan).toBeDefined();
     expect(nextPlan!.id).toBe('urgent-1');
   });
@@ -388,7 +388,7 @@ describe('findNextReadyPlan', () => {
     // Remove the urgent plan to test high priority sorting
     await rm(join(tempDir, 'urgent-priority.yml'));
 
-    const nextPlan = await findNextReadyPlan(tempDir);
+    const nextPlan = await findNextPlan(tempDir, { includePending: true });
     expect(nextPlan).toBeDefined();
     expect(nextPlan!.id).toBe('high-1'); // high-1 comes before high-2 alphabetically
   });
@@ -401,7 +401,7 @@ describe('findNextReadyPlan', () => {
     expect(blockedPlan!.priority).toBe('urgent');
 
     // But it should not be returned as the next plan
-    const nextPlan = await findNextReadyPlan(tempDir);
+    const nextPlan = await findNextPlan(tempDir, { includePending: true });
     expect(nextPlan).toBeDefined();
     expect(nextPlan!.id).not.toBe('blocked-1');
   });
@@ -441,7 +441,7 @@ describe('findNextReadyPlan', () => {
         })
       );
 
-      const nextPlan = await findNextReadyPlan(depTestDir);
+      const nextPlan = await findNextPlan(depTestDir, { includePending: true });
       expect(nextPlan).toBeDefined();
       expect(nextPlan!.id).toBe('ready-with-deps');
     } finally {
@@ -465,7 +465,7 @@ describe('findNextReadyPlan', () => {
         })
       );
 
-      const nextPlan = await findNextReadyPlan(doneDir);
+      const nextPlan = await findNextPlan(doneDir, { includePending: true });
       expect(nextPlan).toBeNull();
     } finally {
       await rm(doneDir, { recursive: true, force: true });
@@ -501,7 +501,7 @@ describe('findNextReadyPlan', () => {
         })
       );
 
-      const nextPlan = await findNextReadyPlan(priorityTestDir);
+      const nextPlan = await findNextPlan(priorityTestDir, { includePending: true });
       expect(nextPlan).toBeDefined();
       expect(nextPlan!.id).toBe('low-priority'); // Low priority is higher than no priority
     } finally {
