@@ -74,6 +74,7 @@ export class ClaudeCodeExecutor implements Executor {
           'Bash(pwd)',
           'Bash(rg:*)',
           'Bash(sed:*)',
+          // Allow Claude to delete its own test scripts
           'Bash(rm test-:*)',
           'Bash(rm -f test-:*)',
           'Bash(jj status)',

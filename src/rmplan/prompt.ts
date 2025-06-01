@@ -1,3 +1,5 @@
+import type { PlanSchema } from './planSchema.js';
+
 export const planExampleFormat = `
 title: A concise single-sentence title for the project plan
 goal: the goal of the project plan
@@ -360,4 +362,103 @@ IMPORTANT:
 - Multi-line prompts should use the pipe (|) character
 - Consider the rmfilter arguments that will be used: ${context.rmfilterArgsFromPlan.join(' ')}
 `;
+}
+
+export function generateSplitPlanPrompt(plan: PlanSchema): string {
+  // Construct the prompt explaining the goal
+  const prompt = `# Plan Reorganization Task
+
+You are tasked with taking a single, detailed project plan and reorganizing its tasks into a multi-phase structure.
+
+## Input Plan
+
+You have been provided with:
+- **Title**: ${plan.title || 'Not specified'}
+- **Goal**: ${plan.goal}
+- **Details**: ${plan.details}
+- **Tasks**: A list of ${plan.tasks.length} tasks, each containing:
+  - Title
+  - Description
+  - Files (list of file paths)
+  - Steps (list of implementation steps with prompts)
+
+## Your Task
+
+Please perform the following actions:
+
+1. **Define the overarching project structure**:
+   - Create or derive a project-level title, goal, and details
+   - These can be based on the input plan's top-level fields or adjusted as needed
+
+2. **Logically group tasks into distinct phases**:
+   - Analyze the provided tasks and identify natural phase boundaries
+   - Group related tasks that work together to deliver specific functionality
+   - Consider dependencies and logical progression between tasks
+
+3. **For each phase, generate**:
+   - A phase-specific title (concise single sentence)
+   - A phase-specific goal
+   - Phase details explaining what will be accomplished
+   - Assignment of the relevant original tasks to this phase
+
+4. **Identify and list dependencies**:
+   - Determine which phases depend on other phases
+   - Express dependencies in a clear, human-readable format (e.g., "Phase 2 depends on Phase 1")
+   - Dependencies should reflect the logical order of implementation
+
+5. **Preserve all original task content**:
+   - Keep all task titles, descriptions, files, and steps exactly as provided
+   - Do not modify or remove any task details
+   - Simply organize the existing tasks into the new phase structure
+
+## Output Format
+
+Output a YAML structure following this format:
+
+\`\`\`yaml
+title: [Overarching project title]
+goal: [Overarching project goal]
+details: [Overarching project details]
+phases:
+  - title: [Phase 1 title - concise single sentence]
+    goal: [Phase 1 specific goal]
+    details: [Phase 1 details]
+    dependencies: []  # Empty for first phase
+    tasks:
+      - title: [Original task title]
+        description: [Original task description]
+        files:
+          - [Original file paths]
+        steps:
+          - prompt: |
+              [Original step prompt]
+  - title: [Phase 2 title]
+    goal: [Phase 2 goal]
+    details: [Phase 2 details]
+    dependencies: ["Phase 1"]  # Human-readable dependency reference
+    tasks:
+      - title: [Original task title]
+        description: [Original task description]
+        files:
+          - [Original file paths]
+        steps:
+          - prompt: |
+              [Original step prompt]
+\`\`\`
+
+## Important Notes
+
+- The overall structure should have a top-level object with title, goal, details, and a phases array
+- Each phase within the phases array should be structured like a plan with its own title, goal, details, and tasks
+- All original task details (description, files, steps) MUST be preserved exactly as provided
+- Dependencies should be expressed in human-readable format that can later be mapped to phase IDs
+- Output ONLY the raw YAML string without any surrounding text, explanations, or markdown code fences
+- Do not include \`\`\`yaml or \`\`\` markers in your output
+
+## Original Tasks to Reorganize
+
+${JSON.stringify(plan.tasks, null, 2)}
+`;
+
+  return prompt;
 }
