@@ -57,19 +57,21 @@ await loadEnv();
 /**
  * Updates the status of a plan file and saves it back to disk
  */
-async function setPlanStatus(
+export async function setPlanStatus(
   planFile: string,
   status: 'pending' | 'in_progress' | 'done'
 ): Promise<void> {
   const content = await Bun.file(planFile).text();
-  const plan = yaml.parse(content) as PlanSchema;
+  // Remove yaml-language-server schema comment if present
+  const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
+  const plan = yaml.parse(yamlContent) as PlanSchema;
 
   plan.status = status;
   plan.updatedAt = new Date().toISOString();
 
-  const yamlContent = yaml.stringify(plan);
+  const updatedYamlContent = yaml.stringify(plan);
   const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
-  const fullContent = schemaLine + '\n' + yamlContent;
+  const fullContent = schemaLine + '\n' + updatedYamlContent;
 
   await Bun.write(planFile, fullContent);
 }
@@ -1733,20 +1735,22 @@ workspaceCommand
       // Resolve plan file if provided
       let resolvedPlanFilePath: string | undefined;
       let planData: PlanSchema | undefined;
-      
+
       if (planIdentifier) {
         try {
           resolvedPlanFilePath = await resolvePlanFile(planIdentifier, globalOpts.config);
-          
+
           // Read and parse the plan file
           const content = await Bun.file(resolvedPlanFilePath).text();
-          planData = yaml.parse(content) as PlanSchema;
-          
+          // Remove yaml-language-server schema comment if present
+          const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
+          planData = yaml.parse(yamlContent) as PlanSchema;
+
           // If no custom ID was provided, use the plan's ID if available
           if (!options.id && planData.id) {
             workspaceId = planData.id;
           }
-          
+
           log(`Using plan: ${planData.title || planData.goal || resolvedPlanFilePath}`);
         } catch (err) {
           error(`Failed to resolve plan: ${err as Error}`);
@@ -1756,26 +1760,31 @@ workspaceCommand
 
       log(`Creating workspace with ID: ${workspaceId}`);
 
+      // Update plan status BEFORE creating workspace if a plan was provided
+      if (resolvedPlanFilePath && planData) {
+        try {
+          await setPlanStatus(resolvedPlanFilePath, 'in_progress');
+          log('Plan status updated to in_progress in original location');
+        } catch (err) {
+          warn(`Failed to update plan status: ${err as Error}`);
+        }
+      }
+
       // Create the workspace
-      const workspace = await createWorkspace(
-        gitRoot,
-        workspaceId,
-        resolvedPlanFilePath,
-        config
-      );
+      const workspace = await createWorkspace(gitRoot, workspaceId, resolvedPlanFilePath, config);
 
       if (!workspace) {
         error('Failed to create workspace');
         process.exit(1);
       }
 
-      // Update plan status if a plan was provided
-      if (resolvedPlanFilePath && planData) {
+      // Update plan status in the new workspace if plan was copied
+      if (workspace.planFilePathInWorkspace) {
         try {
-          await setPlanStatus(resolvedPlanFilePath, 'in_progress');
-          log('Plan status updated to in_progress');
+          await setPlanStatus(workspace.planFilePathInWorkspace, 'in_progress');
+          log('Plan status updated to in_progress in workspace');
         } catch (err) {
-          warn(`Failed to update plan status: ${err as Error}`);
+          warn(`Failed to update plan status in workspace: ${err as Error}`);
         }
       }
 
@@ -1790,7 +1799,9 @@ workspaceCommand
       log('Next steps:');
       log(`  1. cd ${workspace.path}`);
       if (resolvedPlanFilePath) {
-        log(`  2. rmplan next ${path.basename(workspace.planFilePathInWorkspace || resolvedPlanFilePath)}`);
+        log(
+          `  2. rmplan next ${path.basename(workspace.planFilePathInWorkspace || resolvedPlanFilePath)}`
+        );
       } else {
         log('  2. Start working on your task');
       }
