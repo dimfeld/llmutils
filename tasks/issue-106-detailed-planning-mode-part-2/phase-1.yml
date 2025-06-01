@@ -12,7 +12,7 @@ dependencies: []
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:19:59.271Z
 createdAt: 2025-05-31T20:32:33.555Z
-updatedAt: 2025-06-01T02:25:55.184Z
+updatedAt: 2025-06-01T02:30:47.451Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -213,7 +213,7 @@ tasks:
 
           First, check if `options.plan` is a file path (and not `undefined`
           from `--plan-editor` or `--issue`).
-        done: false
+        done: true
       - prompt: >
           If `options.plan` is a file path, attempt to read the file. If it
           doesn't exist or reading fails, proceed with the existing "generate
@@ -223,7 +223,7 @@ tasks:
 
           If the file exists and is readable, parse its content as YAML using
           `yaml.parse()`. Validate the parsed object against `PlanSchema`.
-        done: false
+        done: true
       - prompt: >
           After successfully parsing and validating the existing plan file,
           check if it's a "stub" plan. A stub plan is one that either has no
@@ -234,7 +234,7 @@ tasks:
           `generate` logic (which might involve creating a new plan based on the
           input, or simply exiting if this specific scenario isn't meant to
           overwrite). This task focuses on populating stubs.
-        done: false
+        done: true
       - prompt: >
           If the loaded plan is a stub:
 
@@ -253,7 +253,7 @@ tasks:
           5. Call the LLM (e.g., `generateText({ model, prompt: llmPromptString
           })`) to get the Markdown output containing tasks and steps
           (`llmMarkdownOutput`).
-        done: false
+        done: true
       - prompt: >
           Process the `llmMarkdownOutput`:
 
@@ -269,7 +269,7 @@ tasks:
           3. Extract the `tasks` array from `parsedGeneratedPlan.tasks`. If
           `parsedGeneratedPlan.tasks` is not found or is not an array, handle
           this as an error (e.g., LLM failed to produce valid tasks).
-        done: false
+        done: true
       - prompt: >
           Merge the extracted `generatedTasks` into the original `planData`
           (loaded from the stub file). Replace `planData.tasks` with
@@ -282,7 +282,7 @@ tasks:
           - `promptsGeneratedAt = new Date().toISOString()`
 
           - `updatedAt = new Date().toISOString()`
-        done: false
+        done: true
       - prompt: >
           Serialize the updated `planData` back to a YAML string using
           `yaml.stringify()`. Prepend the `yaml-language-server` schema line.
@@ -292,7 +292,7 @@ tasks:
 
           Log a success message, e.g., `log(chalk.green('✓ Updated plan with
           generated tasks:'), options.plan);`.
-        done: false
+        done: true
   - title: Add tests for `add` command and updated `generate` functionality.
     description: >
       This task focuses on creating a comprehensive suite of tests. For the
@@ -407,3 +407,4 @@ changedFiles:
   - CLAUDE.md
   - src/rmplan/rmplan.ts
   - test-add-command.ts
+  - test-stub-plan.yml
