@@ -8,12 +8,12 @@ details: This phase focuses on adding the new command to the CLI, implementing
   location and the new workspace. Existing workspace management and plan
   utilities will be leveraged and extended.
 id: 1m3whpf-1
-status: in_progress
+status: done
 dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
 promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z
-updatedAt: 2025-06-01T10:05:49.877Z
+updatedAt: 2025-06-01T10:07:22.334Z
 project:
   title: Add `rmplan workspace add` Command
   goal: The project aims to introduce a new CLI command, `rmplan workspace add`,
@@ -420,7 +420,7 @@ tasks:
 
           Describe its purpose: explicitly creating a new workspace, optionally
           linking it to a plan.
-        done: false
+        done: true
       - prompt: >
           Document the syntax for `rmplan workspace add [planIdentifier] [--id
           <workspaceId>]`.
@@ -428,7 +428,7 @@ tasks:
           Explain the optional `planIdentifier` (can be a plan ID or file path).
 
           Explain the optional `--id <workspaceId>` option.
-        done: false
+        done: true
       - prompt: >
           Provide examples of usage:
 
@@ -442,7 +442,7 @@ tasks:
 
           - Creating a workspace with a plan by ID and a custom workspace ID:
           `rmplan workspace add my-plan-id --id my-dev-space`
-        done: false
+        done: true
       - prompt: >
           Briefly explain the behavior when a plan is associated: the plan's
           status is updated to `in_progress` in both the original location and
@@ -450,11 +450,12 @@ tasks:
 
           If there are other documentation files detailing CLI commands (e.g., a
           dedicated `docs/cli.md`), update them similarly.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan
   - src/common
 changedFiles:
+  - README.md
   - src/rmplan/plans.test.ts
   - src/rmplan/plans.ts
   - src/rmplan/rmplan.test.ts

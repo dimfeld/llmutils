@@ -296,6 +296,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, `run`, and `prepare` commands.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
+- **Manual Workspace Management**: Use the `workspace add` command to explicitly create workspaces with or without plan associations.
 
 ### Usage
 
@@ -446,7 +447,63 @@ rmplan answer-pr
 
 # Answer PR review comments for a specific PR
 rmplan answer-pr dimfeld/llmutils#82
+
+# Create a new workspace without associating it with a plan
+rmplan workspace add
+
+# Create a workspace with a specific ID
+rmplan workspace add --id my-custom-ws
+
+# Create a workspace and associate it with a plan by file path
+rmplan workspace add path/to/my-plan.yml
+
+# Create a workspace with a plan by ID and a custom workspace ID
+rmplan workspace add my-plan-id --id my-dev-space
 ```
+
+#### Workspace Add Command
+
+The `workspace add` command allows you to manually create and initialize a new workspace. This provides explicit control over workspace creation, which is particularly useful when you want to set up a workspace environment before running an agent or for tasks not yet defined by a formal plan file.
+
+**Key Features:**
+
+- Create workspaces with or without associating them to a plan
+- Optionally specify a custom workspace ID
+- When a plan is associated, the plan's status is automatically updated to `in_progress` in both the original location and the new workspace
+- The plan file is copied into the new workspace when associated
+
+**Syntax:** `rmplan workspace add [planIdentifier] [--id <workspaceId>]`
+
+**Options:**
+
+- `planIdentifier` (optional): Can be either a plan ID or file path. If provided, the workspace will be associated with this plan.
+- `--id <workspaceId>` (optional): Specify a custom workspace ID. If not provided, a unique ID will be automatically generated.
+
+**Usage Examples:**
+
+```bash
+# Create a workspace without a plan
+rmplan workspace add
+
+# Create a workspace with a specific ID, no plan
+rmplan workspace add --id my-custom-ws
+
+# Create a workspace and associate it with a plan by file path
+rmplan workspace add path/to/my-plan.yml
+
+# Create a workspace with a plan by ID and a custom workspace ID
+rmplan workspace add my-plan-id --id my-dev-space
+```
+
+**Behavior:**
+
+- When no plan is specified, creates an empty workspace ready for manual use
+- When a plan is specified:
+  - The plan file is resolved (by ID or path)
+  - Its status is updated to `in_progress` in the current context
+  - The plan file is copied to the new workspace
+  - The plan's status in the new workspace is also set to `in_progress`
+- All workspaces are tracked in `~/.config/rmfilter/workspaces.json`
 
 #### Cleanup Command
 
