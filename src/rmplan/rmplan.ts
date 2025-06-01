@@ -1704,14 +1704,100 @@ workspaceCommand
   .description('Create a new workspace, optionally linked to a plan')
   .option('--id <workspaceId>', 'Specify a custom workspace ID')
   .action(async (planIdentifier, options) => {
-    // Placeholder implementation - will be completed in Task 5
     const globalOpts = program.opts();
 
-    log('Creating workspace...');
-    log(`Plan identifier: ${planIdentifier || '(none)'}`);
-    log(`Workspace ID: ${options.id || '(auto-generated)'}`);
+    try {
+      // Load configuration
+      const config = await loadEffectiveConfig(globalOpts.config);
+      const gitRoot = (await getGitRoot()) || process.cwd();
 
-    // TODO: Implement actual workspace creation logic in Task 5
+      // Check if workspace creation is enabled
+      if (!config.workspaceCreation) {
+        error('Workspace creation is not enabled in configuration.');
+        error('Add "workspaceCreation" section to your rmplan config file.');
+        process.exit(1);
+      }
+
+      // Determine workspace ID
+      let workspaceId: string;
+      if (options.id) {
+        workspaceId = options.id;
+      } else if (planIdentifier) {
+        // Generate ID based on plan
+        workspaceId = generateProjectId();
+      } else {
+        // Generate a random ID for standalone workspace
+        workspaceId = generateProjectId();
+      }
+
+      // Resolve plan file if provided
+      let resolvedPlanFilePath: string | undefined;
+      let planData: PlanSchema | undefined;
+      
+      if (planIdentifier) {
+        try {
+          resolvedPlanFilePath = await resolvePlanFile(planIdentifier, globalOpts.config);
+          
+          // Read and parse the plan file
+          const content = await Bun.file(resolvedPlanFilePath).text();
+          planData = yaml.parse(content) as PlanSchema;
+          
+          // If no custom ID was provided, use the plan's ID if available
+          if (!options.id && planData.id) {
+            workspaceId = planData.id;
+          }
+          
+          log(`Using plan: ${planData.title || planData.goal || resolvedPlanFilePath}`);
+        } catch (err) {
+          error(`Failed to resolve plan: ${err as Error}`);
+          process.exit(1);
+        }
+      }
+
+      log(`Creating workspace with ID: ${workspaceId}`);
+
+      // Create the workspace
+      const workspace = await createWorkspace(
+        gitRoot,
+        workspaceId,
+        resolvedPlanFilePath,
+        config
+      );
+
+      if (!workspace) {
+        error('Failed to create workspace');
+        process.exit(1);
+      }
+
+      // Update plan status if a plan was provided
+      if (resolvedPlanFilePath && planData) {
+        try {
+          await setPlanStatus(resolvedPlanFilePath, 'in_progress');
+          log('Plan status updated to in_progress');
+        } catch (err) {
+          warn(`Failed to update plan status: ${err as Error}`);
+        }
+      }
+
+      // Success message
+      log(chalk.green('✓ Workspace created successfully!'));
+      log(`  Path: ${workspace.path}`);
+      log(`  ID: ${workspace.taskId}`);
+      if (workspace.planFilePathInWorkspace) {
+        log(`  Plan file: ${path.relative(workspace.path, workspace.planFilePathInWorkspace)}`);
+      }
+      log('');
+      log('Next steps:');
+      log(`  1. cd ${workspace.path}`);
+      if (resolvedPlanFilePath) {
+        log(`  2. rmplan next ${path.basename(workspace.planFilePathInWorkspace || resolvedPlanFilePath)}`);
+      } else {
+        log('  2. Start working on your task');
+      }
+    } catch (err) {
+      error(`Failed to create workspace: ${err as Error}`);
+      process.exit(1);
+    }
   });
 
 await program.parseAsync(process.argv);

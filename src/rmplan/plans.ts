@@ -39,7 +39,9 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
     debugLog(`Reading plan file: ${fullPath}`);
     try {
       const content = await Bun.file(fullPath).text();
-      const parsed = yaml.parse(content);
+      // Remove yaml-language-server schema comment if present
+      const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
+      const parsed = yaml.parse(yamlContent);
 
       const result = phaseSchema.safeParse(parsed);
       if (result.success) {
