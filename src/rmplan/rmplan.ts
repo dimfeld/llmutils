@@ -15,7 +15,6 @@ import { createModel } from '../common/model_factory.ts';
 import { sshAwarePasteAction } from '../common/ssh_detection.ts';
 import { waitForEnter } from '../common/terminal.js';
 import { error, log, warn } from '../logging.js';
-import { getInstructionsFromEditor } from '../rmfilter/instructions.js';
 import { getGitRoot, logSpawn, setDebug, setQuiet } from '../rmfilter/utils.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
@@ -222,7 +221,31 @@ program
       }
     } else if (options.planEditor) {
       try {
-        planText = await getInstructionsFromEditor('rmplan-plan.md');
+        // Create a temporary file for the plan editor
+        const tmpPlanPath = path.join(os.tmpdir(), `rmplan-editor-${Date.now()}.md`);
+
+        // Open editor with the temporary file
+        const editor = process.env.EDITOR || 'nano';
+        const editorProcess = logSpawn([editor, tmpPlanPath], {
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+        await editorProcess.exited;
+
+        // Read the plan text from the temporary file
+        try {
+          planText = await Bun.file(tmpPlanPath).text();
+        } catch (err) {
+          error('Failed to read plan from editor.');
+          process.exit(1);
+        } finally {
+          // Clean up the temporary file
+          try {
+            await Bun.file(tmpPlanPath).unlink();
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        }
+
         if (!planText || !planText.trim()) {
           error('No plan text was provided from the editor.');
           process.exit(1);

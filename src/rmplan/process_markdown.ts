@@ -291,9 +291,11 @@ export async function saveMultiPhaseYaml(
     log(chalk.blue('Using Project ID:'), projectId);
   }
 
-  // Create output directory - use options.output as the directory for multi-phase
+  // Check if there's actually just one phase. In this case we still do the multi-phase
+  // code since it will bring in the goal and details from both the global and phase,
+  // but we end up saving to a single file instead of a subdirectory.
+  const actuallyMultiphase = parsedYaml.phases.length > 1;
   const outputDir = options.output;
-  await fs.mkdir(outputDir, { recursive: true });
 
   // Extract overall project information from the parsed YAML
   const projectInfo = {
@@ -433,7 +435,9 @@ export async function saveMultiPhaseYaml(
     );
 
     const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(orderedContent)}`;
-    const phaseFilePath = path.join(outputDir, `phase-${phaseIndex}.yml`);
+    const phaseFilePath = actuallyMultiphase
+      ? path.join(outputDir, `phase-${phaseIndex}.yml`)
+      : `${options.output}.yml`;
 
     try {
       await Bun.write(phaseFilePath, yamlContent);
@@ -449,8 +453,13 @@ export async function saveMultiPhaseYaml(
   }
 
   if (!quiet) {
-    log(chalk.green(`✓ Successfully converted markdown to ${successfulWrites} phase files`));
-    log(`Output directory: ${outputDir}`);
+    if (actuallyMultiphase) {
+      log(chalk.green(`✓ Successfully converted markdown to ${successfulWrites} phase files`));
+      log(`Output directory: ${outputDir}`);
+    } else {
+      log(chalk.green(`✓ Successfully converted markdown to 1 phase file`));
+      log(`Output file: ${options.output}.yml`);
+    }
   }
 
   if (failedPhases.length > 0) {
