@@ -13,7 +13,7 @@ dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
 promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z
-updatedAt: 2025-06-01T09:20:40.257Z
+updatedAt: 2025-06-01T09:22:25.949Z
 project:
   title: Add `rmplan workspace add` Command
   goal: The project aims to introduce a new CLI command, `rmplan workspace add`,
@@ -164,7 +164,7 @@ tasks:
           Update any related JSDoc comments for `originalPlanFilePath` and
           `taskId` to clarify that `taskId` is the workspace ID and
           `originalPlanFilePath` links to a plan, if any.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_manager.ts`, modify the `Workspace`
           interface.
@@ -176,7 +176,7 @@ tasks:
           the path of the copied plan within the workspace.
 
           Update JSDoc for `taskId` to indicate it's the workspace ID.
-        done: false
+        done: true
   - title: Enhance `createWorkspace` for optional plan file
     description: >
       Update the `createWorkspace` function in
@@ -458,3 +458,5 @@ changedFiles:
   - src/rmplan/plans.test.ts
   - src/rmplan/plans.ts
   - src/rmplan/rmplan.ts
+  - src/rmplan/workspace/workspace_manager.ts
+  - src/rmplan/workspace/workspace_tracker.ts
