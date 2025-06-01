@@ -39,8 +39,14 @@ import { planPrompt, simplePlanPrompt } from './prompt.js';
 import type { PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
-import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './process_markdown.ts';
+import {
+  extractMarkdownToYaml,
+  type ExtractMarkdownToYamlOptions,
+  convertMarkdownToYaml,
+  findYamlStart,
+} from './process_markdown.ts';
 import { getCombinedTitle, getCombinedGoal, getCombinedTitleFromSummary } from './display_utils.js';
+import { fixYaml } from './fix_yaml.js';
 
 await loadEnv();
 
@@ -166,8 +172,48 @@ program
 
     if (options.plan) {
       try {
-        planText = await Bun.file(options.plan).text();
+        const fileContent = await Bun.file(options.plan).text();
         planFile = options.plan;
+
+        // Check if the file is a YAML plan file by trying to parse it
+        let isYamlPlan = false;
+        let parsedPlan: PlanSchema | null = null;
+
+        try {
+          // Try to parse as YAML
+          const yamlContent = findYamlStart(fileContent);
+          parsedPlan = yaml.parse(yamlContent) as PlanSchema;
+
+          // Validate that it has plan structure (at least id or goal)
+          if (parsedPlan && (parsedPlan.id || parsedPlan.goal)) {
+            isYamlPlan = true;
+          }
+        } catch {
+          // Not a valid YAML plan, treat as markdown
+          isYamlPlan = false;
+        }
+
+        if (isYamlPlan && parsedPlan) {
+          // Check if it's a stub plan (no tasks or empty tasks array)
+          const isStubPlan = !parsedPlan.tasks || parsedPlan.tasks.length === 0;
+
+          if (!isStubPlan) {
+            // Plan already has tasks - log a message and continue with normal flow
+            log(
+              chalk.yellow(
+                'Plan already contains tasks. To regenerate, remove the tasks array from the YAML file.'
+              )
+            );
+            planText = fileContent; // Use the original content
+          } else {
+            // It's a stub plan - we'll handle task generation below
+            // For now, set planText to null to trigger special handling
+            planText = null as any; // We'll handle this case specially
+          }
+        } else {
+          // Regular markdown file
+          planText = fileContent;
+        }
       } catch (err) {
         error(`Failed to read plan file: ${options.plan}`);
         process.exit(1);
@@ -242,6 +288,41 @@ program
           error('Failed to save plan to file:', err);
           process.exit(1);
         }
+      }
+    }
+
+    // Special handling for stub YAML plans
+    let stubPlanData: PlanSchema | null = null;
+    if (options.plan && planText === null) {
+      // We detected a stub plan earlier, now we need to load it properly
+      try {
+        const fileContent = await Bun.file(options.plan).text();
+        const yamlContent = findYamlStart(fileContent);
+        stubPlanData = yaml.parse(yamlContent) as PlanSchema;
+
+        // Construct planText from stub's title, goal, and details
+        const planParts: string[] = [];
+        if (stubPlanData.title) {
+          planParts.push(`# ${stubPlanData.title}`);
+        }
+        if (stubPlanData.goal) {
+          planParts.push(`\n## Goal\n${stubPlanData.goal}`);
+        }
+        if (stubPlanData.details) {
+          planParts.push(`\n## Details\n${stubPlanData.details}`);
+        }
+
+        planText = planParts.join('\n');
+
+        if (!planText || !planText.trim()) {
+          error('Stub plan must have at least a title, goal, or details to generate tasks.');
+          process.exit(1);
+        }
+
+        log(chalk.blue('Generating tasks for stub plan:'), options.plan);
+      } catch (err) {
+        error(`Failed to process stub plan: ${err as Error}`);
+        process.exit(1);
       }
     }
 
@@ -337,38 +418,102 @@ program
       }
 
       if (exitRes === 0 && !options.noExtract) {
-        log(
-          chalk.bold(
-            `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
-          )
-        );
+        // Special handling for stub plans - directly generate tasks without user interaction
+        if (stubPlanData) {
+          log(chalk.blue('\nGenerating tasks for stub plan using LLM...'));
 
-        let input = await waitForEnter(true);
+          try {
+            // Generate the markdown plan using LLM
+            const modelSpec = config.models?.convert_yaml || 'google/gemini-2.0-flash';
+            const model = createModel(modelSpec);
 
-        let outputPath: string;
-        if (planFile) {
-          // Use the directory of the plan file for output
-          outputPath = path.join(path.dirname(planFile), path.basename(planFile, '.md'));
+            const llmResult = await generateText({
+              model,
+              prompt: promptString,
+              temperature: 0.7,
+              maxTokens: 4000,
+            });
+
+            const llmMarkdownOutput = llmResult.text;
+
+            // Convert the markdown to YAML
+            const yamlString = await convertMarkdownToYaml(llmMarkdownOutput, config, true);
+
+            // Parse the generated YAML to extract tasks
+            let parsedGeneratedPlan: any;
+            try {
+              const cleanedYaml = findYamlStart(yamlString);
+              const fixedYaml = fixYaml(cleanedYaml);
+              parsedGeneratedPlan = yaml.parse(fixedYaml);
+            } catch (parseErr) {
+              error(`Failed to parse generated YAML: ${parseErr as Error}`);
+              process.exit(1);
+            }
+
+            // Extract tasks from the generated plan
+            const generatedTasks = parsedGeneratedPlan.tasks;
+            if (!generatedTasks || !Array.isArray(generatedTasks) || generatedTasks.length === 0) {
+              error('LLM failed to generate valid tasks');
+              process.exit(1);
+            }
+
+            // Merge tasks into the original stub plan
+            stubPlanData.tasks = generatedTasks;
+
+            // Update timestamps
+            const now = new Date().toISOString();
+            stubPlanData.planGeneratedAt = now;
+            stubPlanData.promptsGeneratedAt = now;
+            stubPlanData.updatedAt = now;
+
+            // Prepare the YAML content with schema line
+            const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+            const yamlContent = yaml.stringify(stubPlanData);
+            const fullContent = schemaLine + '\n' + yamlContent;
+
+            // Write back to the original file
+            await Bun.write(options.plan, fullContent);
+
+            log(chalk.green('✓ Updated plan with generated tasks:'), options.plan);
+          } catch (err) {
+            error(`Failed to generate tasks for stub plan: ${err as Error}`);
+            process.exit(1);
+          }
         } else {
-          // Default to current directory with a generated name
-          outputPath = 'rmplan-output';
-        }
+          // Normal flow - user pastes from chat
+          log(
+            chalk.bold(
+              `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
+            )
+          );
 
-        const extractOptions: ExtractMarkdownToYamlOptions = {
-          output: outputPath,
-          planRmfilterArgs: allRmfilterOptions,
-          issueUrls: issueUrlsForExtract,
-        };
+          let input = await waitForEnter(true);
 
-        const message = await extractMarkdownToYaml(
-          input,
-          config,
-          options.quiet ?? false,
-          extractOptions
-        );
+          let outputPath: string;
+          if (planFile) {
+            // Use the directory of the plan file for output
+            outputPath = path.join(path.dirname(planFile), path.basename(planFile, '.md'));
+          } else {
+            // Default to current directory with a generated name
+            outputPath = 'rmplan-output';
+          }
 
-        if (!options.quiet) {
-          log(message);
+          const extractOptions: ExtractMarkdownToYamlOptions = {
+            output: outputPath,
+            planRmfilterArgs: allRmfilterOptions,
+            issueUrls: issueUrlsForExtract,
+          };
+
+          const message = await extractMarkdownToYaml(
+            input,
+            config,
+            options.quiet ?? false,
+            extractOptions
+          );
+
+          if (!options.quiet) {
+            log(message);
+          }
         }
       }
     } finally {
@@ -536,7 +681,7 @@ program
       const yamlContent = yaml.stringify(plan);
 
       // Prepend the yaml-language-server schema line
-      const fullContent = `# yaml-language-server: $schema=https:
+      const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
 
       // Write the YAML string to the new plan file
       await Bun.write(filePath, fullContent);
