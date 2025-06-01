@@ -13,7 +13,7 @@ dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
 promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z
-updatedAt: 2025-06-01T09:50:54.853Z
+updatedAt: 2025-06-01T10:05:49.877Z
 project:
   title: Add `rmplan workspace add` Command
   goal: The project aims to introduce a new CLI command, `rmplan workspace add`,
@@ -378,7 +378,7 @@ tasks:
           - Handling `resolvePlanFile` error.
 
           - Handling `createWorkspace` error.
-        done: false
+        done: true
       - prompt: >
           Write integration-style tests (these might still involve some mocking,
           but test more of the actual functions interacting).
@@ -399,12 +399,12 @@ tasks:
 
           Consider testing the full CLI invocation if feasible, or test the
           command handler function directly.
-        done: false
+        done: true
       - prompt: >
           Ensure the tests for `setPlanStatus` (from Task 2) are comprehensive
           and cover edge cases like invalid YAML content or file permissions (if
           possible without excessive mocking).
-        done: false
+        done: true
   - title: Update documentation
     description: Update the project's `README.md` file and any other relevant
       documentation to include details about the new `rmplan workspace add`
@@ -457,8 +457,10 @@ rmfilter:
 changedFiles:
   - src/rmplan/plans.test.ts
   - src/rmplan/plans.ts
+  - src/rmplan/rmplan.test.ts
   - src/rmplan/rmplan.ts
   - src/rmplan/workspace/workspace_add.test.ts
   - src/rmplan/workspace/workspace_manager.test.ts
   - src/rmplan/workspace/workspace_manager.ts
   - src/rmplan/workspace/workspace_tracker.ts
+  - src/rmplan/workspace_add_command.test.ts

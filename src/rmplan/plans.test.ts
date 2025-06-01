@@ -639,4 +639,94 @@ describe('setPlanStatus', () => {
 
     await expect(setPlanStatus(invalidPlanPath, 'done')).rejects.toThrow();
   });
+
+  it('should handle empty YAML file', async () => {
+    const emptyPath = join(tempDir, 'empty.yml');
+    await writeFile(emptyPath, '');
+
+    await expect(setPlanStatus(emptyPath, 'done')).rejects.toThrow();
+  });
+
+  it('should handle file with only comments', async () => {
+    const commentOnlyPath = join(tempDir, 'comments-only.yml');
+    await writeFile(commentOnlyPath, '# Just a comment\n# Another comment');
+
+    await expect(setPlanStatus(commentOnlyPath, 'done')).rejects.toThrow();
+  });
+
+  it('should preserve other fields when updating status', async () => {
+    const planPath = join(tempDir, 'preserve-fields.yml');
+    const originalPlan: PlanSchema = {
+      id: 'preserve-test',
+      title: 'Preserve Fields Test',
+      goal: 'Test field preservation',
+      details: 'Detailed description',
+      status: 'pending',
+      priority: 'high',
+      dependencies: ['dep1', 'dep2'],
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Task description',
+          files: [],
+          steps: [
+            { prompt: 'Step 1', done: true },
+            { prompt: 'Step 2', done: false },
+          ],
+        },
+      ],
+    };
+
+    await writeFile(planPath, yaml.stringify(originalPlan));
+
+    await setPlanStatus(planPath, 'in_progress');
+
+    const updatedContent = await readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedContent) as any;
+
+    // Check that all fields are preserved
+    expect(updatedPlan.id).toBe(originalPlan.id);
+    expect(updatedPlan.title).toBe(originalPlan.title);
+    expect(updatedPlan.goal).toBe(originalPlan.goal);
+    expect(updatedPlan.details).toBe(originalPlan.details);
+    expect(updatedPlan.priority).toBe(originalPlan.priority);
+    expect(updatedPlan.dependencies).toEqual(originalPlan.dependencies);
+    expect(updatedPlan.createdAt).toBe(originalPlan.createdAt);
+    expect(updatedPlan.tasks).toEqual(originalPlan.tasks);
+
+    // Only status and updatedAt should change
+    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.updatedAt).not.toBe(originalPlan.updatedAt);
+  });
+
+  it('should handle concurrent updates gracefully', async () => {
+    const planPath = join(tempDir, 'concurrent-test.yml');
+    const originalPlan: PlanSchema = {
+      id: 'concurrent',
+      title: 'Concurrent Test',
+      goal: 'Test concurrent updates',
+      details: 'Testing',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writeFile(planPath, yaml.stringify(originalPlan));
+
+    // Attempt concurrent updates
+    const promises = [
+      setPlanStatus(planPath, 'in_progress'),
+      setPlanStatus(planPath, 'done'),
+      setPlanStatus(planPath, 'pending'),
+    ];
+
+    // All should complete without error
+    await expect(Promise.all(promises)).resolves.toBeDefined();
+
+    // Final state should be one of the statuses
+    const finalContent = await readFile(planPath, 'utf-8');
+    const finalPlan = yaml.parse(finalContent) as PlanSchema;
+    expect(['pending', 'in_progress', 'done']).toContain(finalPlan.status);
+  });
 });
