@@ -12,7 +12,7 @@ dependencies: []
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:19:59.271Z
 createdAt: 2025-05-31T20:32:33.555Z
-updatedAt: 2025-06-01T02:23:43.746Z
+updatedAt: 2025-06-01T02:25:55.184Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -128,7 +128,7 @@ tasks:
       - prompt: >
           In `src/rmplan/rmplan.ts`, modify the `add` command definition to
           include an optional boolean flag `--edit`.
-        done: false
+        done: true
       - prompt: >
           Update the `add` command's action. After successfully creating the
           plan file, if the `options.edit` flag is true:
@@ -141,28 +141,28 @@ tasks:
 
           3. Await `proc.exited` to ensure the command waits for the editor to
           close.
-        done: false
+        done: true
       - prompt: >
           Modify the `add` command definition to include an optional option
           `--depends-on <ids...>` which accepts one or more plan IDs.
-        done: false
+        done: true
       - prompt: >
           Update the `add` command's action to handle the `options.dependsOn`
           array. If provided and not empty, add a `dependencies` field to the
           plan object with the value of `options.dependsOn` before serializing
           to YAML.
-        done: false
+        done: true
       - prompt: >
           Modify the `add` command definition to include an optional option
           `--priority <level>`, where `<level>` should be validated against the
           allowed enum values in `PlanSchema` (low, medium, high, urgent).
-        done: false
+        done: true
       - prompt: >
           Update the `add` command's action to handle `options.priority`. If
           provided, add a `priority` field to the plan object with the validated
           value before serializing to YAML. Ensure the value is one of the
           allowed priorities.
-        done: false
+        done: true
   - title: Modify `generate` command to populate tasks and steps in existing plan
       files.
     description: >

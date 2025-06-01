@@ -460,6 +460,9 @@ program
 program
   .command('add <title...>')
   .description('Create a new plan file with the specified title')
+  .option('--edit', 'Open the newly created plan file in your editor')
+  .option('--depends-on <ids...>', 'Specify plan IDs that this plan depends on')
+  .option('--priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .action(async (title, options) => {
     const globalOpts = program.opts();
 
@@ -496,6 +499,17 @@ program
       // Construct the full path to the new plan file
       const filePath = path.join(targetDir, filename);
 
+      // Validate priority if provided
+      if (options.priority) {
+        const validPriorities = ['low', 'medium', 'high', 'urgent'];
+        if (!validPriorities.includes(options.priority)) {
+          error(
+            `Invalid priority level: ${options.priority}. Must be one of: ${validPriorities.join(', ')}`
+          );
+          process.exit(1);
+        }
+      }
+
       // Create the initial plan object adhering to PlanSchema
       const plan: PlanSchema = {
         id: planId,
@@ -508,6 +522,16 @@ program
         tasks: [],
       };
 
+      // Add dependencies if provided
+      if (options.dependsOn && options.dependsOn.length > 0) {
+        plan.dependencies = options.dependsOn;
+      }
+
+      // Add priority if provided
+      if (options.priority) {
+        plan.priority = options.priority as 'low' | 'medium' | 'high' | 'urgent';
+      }
+
       // Convert plan object to YAML string
       const yamlContent = yaml.stringify(plan);
 
@@ -519,6 +543,15 @@ program
 
       // Log success message
       log(chalk.green('✓ Created plan:'), filePath);
+
+      // Open in editor if requested
+      if (options.edit) {
+        const editor = process.env.EDITOR || 'nano';
+        const editorProcess = Bun.spawn([editor, filePath], {
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+        await editorProcess.exited;
+      }
     } catch (err) {
       error('Failed to create plan:', err);
       process.exit(1);
