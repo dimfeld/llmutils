@@ -559,7 +559,9 @@ describe('createWorkspace', () => {
     });
 
     // Verify branch name uses new convention
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Creating and checking out branch llmutils-ws/task-456'));
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('Creating and checking out branch llmutils-ws/task-456')
+    );
   });
 
   test('createWorkspace with a plan file - plan is copied to workspace', async () => {
@@ -615,7 +617,9 @@ describe('createWorkspace', () => {
     expect(copiedPlanContent).toBe(planContent);
 
     // Verify logging
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Copying plan file to workspace: test-plan.yml'));
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('Copying plan file to workspace: test-plan.yml')
+    );
   });
 
   test('createWorkspace with post-clone commands - LLMUTILS_PLAN_FILE_PATH env var set correctly', async () => {
@@ -676,7 +680,9 @@ describe('createWorkspace', () => {
     // Verify environment variables
     expect(capturedEnv).toBeDefined();
     expect(capturedEnv!.LLMUTILS_TASK_ID).toBe(taskId);
-    expect(capturedEnv!.LLMUTILS_PLAN_FILE_PATH).toBe(path.join(targetClonePath, 'env-test-plan.yml'));
+    expect(capturedEnv!.LLMUTILS_PLAN_FILE_PATH).toBe(
+      path.join(targetClonePath, 'env-test-plan.yml')
+    );
   });
 
   test('createWorkspace without plan - LLMUTILS_PLAN_FILE_PATH not set in post-clone commands', async () => {

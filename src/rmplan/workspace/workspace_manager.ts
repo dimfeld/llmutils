@@ -144,7 +144,7 @@ export async function createWorkspace(
   if (originalPlanFilePath) {
     const planFileName = path.basename(originalPlanFilePath);
     planFilePathInWorkspace = path.join(targetClonePath, planFileName);
-    
+
     try {
       log(`Copying plan file to workspace: ${planFileName}`);
       await fs.copyFile(originalPlanFilePath, planFilePathInWorkspace);
@@ -172,10 +172,11 @@ export async function createWorkspace(
         ...commandConfig.env,
         LLMUTILS_TASK_ID: taskId, // This is the workspace ID
       };
-      if (planFilePathInWorkspace) { // Check the variable holding the copied plan's path
+      if (planFilePathInWorkspace) {
+        // Check the variable holding the copied plan's path
         envVars.LLMUTILS_PLAN_FILE_PATH = planFilePathInWorkspace;
       }
-      
+
       const commandWithEnv: PostApplyCommand = {
         ...commandConfig,
         env: envVars,

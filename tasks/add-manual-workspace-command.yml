@@ -13,7 +13,7 @@ dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
 promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z
-updatedAt: 2025-06-01T09:22:25.949Z
+updatedAt: 2025-06-01T09:33:11.312Z
 project:
   title: Add `rmplan workspace add` Command
   goal: The project aims to introduce a new CLI command, `rmplan workspace add`,
@@ -207,13 +207,13 @@ tasks:
           Change the `originalPlanFilePath` parameter from
           `originalPlanFilePath: string` to `originalPlanFilePath: string |
           undefined`.
-        done: false
+        done: true
       - prompt: >
           Update the branch name generation within `createWorkspace`. Instead of
           `llmutils-task/\${taskId}`, use `llmutils-ws/\${taskId}`.
 
           The `taskId` parameter already represents the workspace ID.
-        done: false
+        done: true
       - prompt: >
           After successful repository clone and branch checkout, and before
           running post-clone commands:
@@ -230,7 +230,7 @@ tasks:
           `fs.copyFile`. Log this action.
 
           Else, `planFilePathInWorkspace` remains `undefined`.
-        done: false
+        done: true
       - prompt: >
           Modify the setup of environment variables for `postCloneCommands`.
 
@@ -253,21 +253,21 @@ tasks:
           // ... update commandWithEnv.env with envVars
 
           ```
-        done: false
+        done: true
       - prompt: >
           Update the call to `recordWorkspace` within `createWorkspace`.
 
           The `originalPlanFilePath` argument passed to `recordWorkspace` should
           be the `originalPlanFilePath` received by `createWorkspace` (which can
           be `undefined`).
-        done: false
+        done: true
       - prompt: >
           Update the returned `Workspace` object to include the new
           `planFilePathInWorkspace` field (which can be `undefined`).
 
           Its structure will be `{ path: targetClonePath, originalPlanFilePath,
           planFilePathInWorkspace, taskId }`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/workspace/workspace_manager.test.ts`, update existing
           tests and add new ones for `createWorkspace` to cover:
@@ -283,7 +283,7 @@ tasks:
 
           Ensure mocks for `fs` operations (like copyFile) and `recordWorkspace`
           are correctly handled if used.
-        done: false
+        done: true
   - title: Implement core logic for `workspace add` command handler
     description: Develop the action handler for the `rmplan rmplan workspace add`
       command. This logic will integrate previous tasks to create workspaces,
@@ -458,5 +458,6 @@ changedFiles:
   - src/rmplan/plans.test.ts
   - src/rmplan/plans.ts
   - src/rmplan/rmplan.ts
+  - src/rmplan/workspace/workspace_manager.test.ts
   - src/rmplan/workspace/workspace_manager.ts
   - src/rmplan/workspace/workspace_tracker.ts
