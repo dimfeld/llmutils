@@ -8,10 +8,10 @@ import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
  * Interface representing detailed information about a created workspace
  */
 export interface WorkspaceInfo {
-  /** Unique identifier for the task */
+  /** Unique identifier for the workspace */
   taskId: string;
-  /** Absolute path to the plan file in the main repo */
-  originalPlanFilePath: string;
+  /** Absolute path to the plan file in the main repo, if workspace is associated with a plan */
+  originalPlanFilePath?: string;
   /** URL of the repository that was cloned */
   repositoryUrl: string;
   /** Absolute path to the cloned workspace */

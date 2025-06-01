@@ -13,9 +13,11 @@ import { getDefaultTrackingFilePath, recordWorkspace } from './workspace_tracker
 export interface Workspace {
   /** Absolute path to the workspace */
   path: string;
-  /** Absolute path to the original plan file */
-  originalPlanFilePath: string;
-  /** Unique identifier for the task */
+  /** Absolute path to the original plan file, if workspace is associated with a plan */
+  originalPlanFilePath?: string;
+  /** Path to the copied plan file within the workspace, if a plan was copied */
+  planFilePathInWorkspace?: string;
+  /** Unique identifier for the workspace */
   taskId: string;
 }
 
