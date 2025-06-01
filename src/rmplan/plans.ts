@@ -1,12 +1,13 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import * as path from 'node:path';
 import * as yaml from 'yaml';
-import { phaseSchema, type PlanSchema } from './planSchema.js';
+import { phaseSchema, type PlanSchema, planSchema } from './planSchema.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { getGitRoot } from '../rmfilter/utils.js';
 import { debugLog } from '../logging.js';
 import { generateProjectId } from './id_utils.js';
+import { fixYaml } from './fix_yaml.js';
 
 export type PlanSummary = {
   id: string;
@@ -426,4 +427,24 @@ export async function writePlanFile(filePath: string, plan: PlanSchema): Promise
   const fullContent = schemaLine + yamlContent;
 
   await Bun.write(absolutePath, fullContent);
+}
+
+/**
+ * Updates the status and updatedAt fields of a plan file.
+ *
+ * @param planFilePath - The path to the plan YAML file
+ * @param newStatus - The new status to set
+ * @throws Error if the file cannot be read, parsed, or validated
+ */
+export async function setPlanStatus(
+  planFilePath: string,
+  newStatus: PlanSchema['status']
+): Promise<void> {
+  // Read the content of the plan file
+  const plan = await readPlanFile(planFilePath);
+  plan.status = newStatus;
+  plan.updatedAt = new Date().toISOString();
+  await writePlanFile(planFilePath, plan);
+
+  debugLog(`Updated plan status in ${planFilePath} to ${newStatus}`);
 }

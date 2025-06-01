@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, mock } from 'bun:test';
-import { mkdtemp, rm, mkdir, writeFile, realpath } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, realpath, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
-import { findNextPlan, readAllPlans, resolvePlanFile } from './plans.js';
+import { findNextPlan, readAllPlans, resolvePlanFile, setPlanStatus } from './plans.js';
+import type { PlanSchema } from './planSchema.js';
 
 describe('resolvePlanFile', () => {
   let tempDir: string;
@@ -507,5 +508,135 @@ describe('findNextReadyPlan', () => {
     } finally {
       await rm(priorityTestDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('setPlanStatus', () => {
+  let tempDir: string;
+
+  beforeAll(async () => {
+    tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-setstatus-test-')));
+  });
+
+  afterAll(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should successfully update status and updatedAt for a valid plan', async () => {
+    const planPath = join(tempDir, 'test-plan.yml');
+    const originalPlan: PlanSchema = {
+      id: 'test-plan',
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      tasks: [],
+    };
+
+    await writeFile(planPath, yaml.stringify(originalPlan));
+
+    const beforeTime = new Date();
+    await setPlanStatus(planPath, 'in_progress');
+    const afterTime = new Date();
+
+    const updatedContent = await readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+
+    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.id).toBe(originalPlan.id);
+    expect(updatedPlan.title).toBe(originalPlan.title);
+    expect(updatedPlan.goal).toBe(originalPlan.goal);
+    expect(updatedPlan.details).toBe(originalPlan.details);
+    expect(updatedPlan.priority).toBe(originalPlan.priority);
+    expect(updatedPlan.createdAt).toBe(originalPlan.createdAt);
+
+    // Check that updatedAt is more recent
+    const updatedAt = new Date(updatedPlan.updatedAt!);
+    expect(updatedAt.getTime()).toBeGreaterThanOrEqual(beforeTime.getTime());
+    expect(updatedAt.getTime()).toBeLessThanOrEqual(afterTime.getTime());
+  });
+
+  it('should handle non-existent plan files', async () => {
+    const nonExistentPath = join(tempDir, 'non-existent.yml');
+
+    await expect(setPlanStatus(nonExistentPath, 'done')).rejects.toThrow();
+  });
+
+  it('should handle files that are not valid YAML', async () => {
+    const invalidYamlPath = join(tempDir, 'invalid.yml');
+    await writeFile(invalidYamlPath, 'invalid yaml content {{{');
+
+    await expect(setPlanStatus(invalidYamlPath, 'done')).rejects.toThrow();
+  });
+
+  it('should ensure updatedAt is more recent after an update', async () => {
+    const planPath = join(tempDir, 'time-test-plan.yml');
+    const originalTime = '2024-01-01T00:00:00.000Z';
+    const originalPlan: PlanSchema = {
+      id: 'time-test',
+      title: 'Time Test Plan',
+      goal: 'Test time update',
+      details: 'Test details',
+      status: 'pending',
+      updatedAt: originalTime,
+      tasks: [],
+    };
+
+    await writeFile(planPath, yaml.stringify(originalPlan));
+
+    // Wait a bit to ensure time difference
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    await setPlanStatus(planPath, 'done');
+
+    const updatedContent = await readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+
+    expect(new Date(updatedPlan.updatedAt!).getTime()).toBeGreaterThan(
+      new Date(originalTime).getTime()
+    );
+  });
+
+  it('should handle plans without updatedAt field', async () => {
+    const planPath = join(tempDir, 'no-updatedat-plan.yml');
+    const originalPlan: PlanSchema = {
+      id: 'no-updatedat',
+      title: 'No UpdatedAt Plan',
+      goal: 'Test without updatedAt',
+      details: 'Test details',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writeFile(planPath, yaml.stringify(originalPlan));
+
+    const beforeTime = new Date();
+    await setPlanStatus(planPath, 'in_progress');
+
+    const updatedContent = await readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+
+    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.updatedAt).toBeDefined();
+
+    const updatedAt = new Date(updatedPlan.updatedAt!);
+    expect(updatedAt.getTime()).toBeGreaterThanOrEqual(beforeTime.getTime());
+  });
+
+  it('should validate against plan schema and throw on invalid structure', async () => {
+    const invalidPlanPath = join(tempDir, 'invalid-plan.yml');
+    const invalidPlan = {
+      // Missing required fields like 'goal' and 'details'
+      id: 'invalid',
+      title: 'Invalid Plan',
+      tasks: 'not-an-array', // Invalid type
+    };
+
+    await writeFile(invalidPlanPath, yaml.stringify(invalidPlan));
+
+    await expect(setPlanStatus(invalidPlanPath, 'done')).rejects.toThrow();
   });
 });

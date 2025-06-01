@@ -13,7 +13,7 @@ dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
 promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z
-updatedAt: 2025-06-01T09:18:05.303Z
+updatedAt: 2025-06-01T09:20:40.257Z
 project:
   title: Add `rmplan workspace add` Command
   goal: The project aims to introduce a new CLI command, `rmplan workspace add`,
@@ -111,7 +111,7 @@ tasks:
           - Handling files that are not valid YAML.
 
           - Ensuring `updatedAt` is more recent after an update.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/plans.ts`, implement the `setPlanStatus` function.
 
@@ -141,7 +141,7 @@ tasks:
 
           Ensure robust error handling for file operations and YAML
           parsing/validation.
-        done: false
+        done: true
   - title: Adapt `WorkspaceInfo` and related types for optional plan
     description: Modify the `WorkspaceInfo` interface in
       `src/rmplan/workspace/workspace_tracker.ts` and the `Workspace` interface
@@ -455,4 +455,6 @@ rmfilter:
   - src/rmplan
   - src/common
 changedFiles:
+  - src/rmplan/plans.test.ts
+  - src/rmplan/plans.ts
   - src/rmplan/rmplan.ts
