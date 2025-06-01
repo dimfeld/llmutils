@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import * as fs from 'node:fs/promises';
 import { table } from 'table';
 import yaml from 'yaml';
 import * as clipboard from '../common/clipboard.ts';
@@ -25,6 +26,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
+import { generateProjectId, slugify } from './id_utils.js';
 import {
   readAllPlans,
   resolvePlanFile,
@@ -451,6 +453,74 @@ program
       }
     } catch (e) {
       error('Failed to extract markdown to YAML:', e);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('add <title...>')
+  .description('Create a new plan file with the specified title')
+  .action(async (title, options) => {
+    const globalOpts = program.opts();
+
+    try {
+      // Join the title arguments to form the complete plan title
+      const planTitle = title.join(' ');
+
+      // Load the effective configuration
+      const config = await loadEffectiveConfig(globalOpts.config);
+
+      // Determine the target directory for the new plan file
+      let targetDir: string;
+      if (config.paths?.tasks) {
+        if (path.isAbsolute(config.paths.tasks)) {
+          targetDir = config.paths.tasks;
+        } else {
+          // Resolve relative to git root
+          const gitRoot = (await getGitRoot()) || process.cwd();
+          targetDir = path.join(gitRoot, config.paths.tasks);
+        }
+      } else {
+        targetDir = process.cwd();
+      }
+
+      // Ensure the target directory exists
+      await fs.mkdir(targetDir, { recursive: true });
+
+      // Generate a unique plan ID
+      const planId = generateProjectId();
+
+      // Create a slugified filename from the plan title
+      const filename = slugify(planTitle) + '.yml';
+
+      // Construct the full path to the new plan file
+      const filePath = path.join(targetDir, filename);
+
+      // Create the initial plan object adhering to PlanSchema
+      const plan: PlanSchema = {
+        id: planId,
+        title: planTitle,
+        goal: 'Goal to be defined.',
+        details: 'Details to be added.',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      };
+
+      // Convert plan object to YAML string
+      const yamlContent = yaml.stringify(plan);
+
+      // Prepend the yaml-language-server schema line
+      const fullContent = `# yaml-language-server: $schema=https:
+
+      // Write the YAML string to the new plan file
+      await Bun.write(filePath, fullContent);
+
+      // Log success message
+      log(chalk.green('✓ Created plan:'), filePath);
+    } catch (err) {
+      error('Failed to create plan:', err);
       process.exit(1);
     }
   });
@@ -929,7 +999,7 @@ program
 
         tableData.push([
           chalk.cyan(plan.id || 'no-id'),
-          getCombinedTitleFromSummary(plan), // Show combined title
+          getCombinedTitleFromSummary(plan),
           statusColor(statusDisplay),
           priorityColor(priorityDisplay),
           (plan.taskCount || 0).toString(),
@@ -942,9 +1012,9 @@ program
       // Configure table options
       const tableConfig = {
         columns: {
-          1: { width: 50, wrapWord: true }, // Title column - wider and wraps
-          6: { width: 15, wrapWord: true }, // Dependencies column
-          7: { width: 20, wrapWord: true }, // File column
+          1: { width: 50, wrapWord: true },
+          6: { width: 15, wrapWord: true },
+          7: { width: 20, wrapWord: true },
         },
         border: {
           topBody: '─',
@@ -1208,7 +1278,7 @@ program
             task.steps.forEach((step, stepIdx) => {
               const stepIcon = step.done ? '✓' : '○';
               const stepColor = step.done ? chalk.green : chalk.gray;
-              const prompt = step.prompt.split('\n')[0]; // First line only
+              const prompt = step.prompt.split('\n')[0];
               const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
               log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
             });
@@ -1230,7 +1300,7 @@ program
         plan.changedFiles.forEach((file) => log(`  • ${file}`));
       }
 
-      log(''); // Empty line at the end
+      log('');
     } catch (err) {
       error(`Failed to show plan: ${err as Error}`);
       process.exit(1);
@@ -1246,7 +1316,7 @@ program
     try {
       const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);
       const editor = options.editor || process.env.EDITOR || 'nano';
-      
+
       const editorProcess = logSpawn([editor, resolvedPlanFile], {
         stdio: ['inherit', 'inherit', 'inherit'],
       });
