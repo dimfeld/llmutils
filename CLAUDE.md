@@ -145,7 +145,8 @@ When adding new features, ensure test coverage for:
 - Edge cases and error handling
 - Different file formats and configurations
 
-- Don't mock in tests if you can help it, but if you have to, use bun's `mock.module`
+- Don't mock in tests if you can help it.
+- Make sure that tests actually test the real code. Don't mock so many things in tests that you aren't testing anything.
 
 ## Telemetry & Observability
 

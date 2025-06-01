@@ -1,4 +1,5 @@
 import type { PlanSchema } from './planSchema.js';
+import yaml from 'yaml';
 
 export const planExampleFormat = `
 title: A concise single-sentence title for the project plan
@@ -403,13 +404,12 @@ Please perform the following actions:
 
 4. **Identify and list dependencies**:
    - Determine which phases depend on other phases
-   - Express dependencies in a clear, human-readable format (e.g., "Phase 2 depends on Phase 1")
+   - Express dependencies in a clear format (e.g., dependencies: ["Phase 2"])
    - Dependencies should reflect the logical order of implementation
 
-5. **Preserve all original task content**:
-   - Keep all task titles, descriptions, files, and steps exactly as provided
-   - Do not modify or remove any task details
-   - Simply organize the existing tasks into the new phase structure
+5. **Task modification**:
+   - Tasks may be split into multiple other tasks to reduce complexity as part of this process.
+   - The requirements of the original task must be met by the new tasks.
 
 ## Output Format
 
@@ -457,7 +457,7 @@ phases:
 
 ## Original Tasks to Reorganize
 
-${JSON.stringify(plan.tasks, null, 2)}
+${yaml.stringify(plan.tasks, null, 2)}
 `;
 
   return prompt;
