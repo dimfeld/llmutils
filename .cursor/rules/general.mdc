@@ -1,0 +1,17 @@
+---
+description: General Coding Rules
+alwaysApply: true
+type: rules
+---
+
+### Process Management
+
+- **Avoid `process.chdir()`**: Changes global working directory for entire process, causing side effects
+- **Use `cwd` parameters**: Pass directory context to individual operations (like `logSpawn`) for isolation
+- **Thread parameters through call chains**: When removing global state, update function signatures systematically
+
+### Function Signature Evolution
+
+- **Update call chains systematically**: `commitAll()` → `markStepDone()` → `prepareNextStep()` → calling code
+- **Let TypeScript guide you**: Use compilation errors to find all call sites that need updates
+- **Maintain backward compatibility when possible**: Add optional parameters before making them required

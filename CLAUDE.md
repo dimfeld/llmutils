@@ -173,27 +173,17 @@ TypeScript is used throughout the codebase with strict type checking:
 
 You can check if compilation works using `bun run check`
 
-## Workflow Tips
+## Writing Code
 
-- Run `bun run format` to format code after making changes
+See @.cursor/rules/general.mdc for coding guidelines and patterns
 
 ## Code Quality Best Practices
 
 - Use @inquirer/prompts for asking questions to the user
 
-### Process Management
-
-- **Avoid `process.chdir()`**: Changes global working directory for entire process, causing side effects
-- **Use `cwd` parameters**: Pass directory context to individual operations (like `logSpawn`) for isolation
-- **Thread parameters through call chains**: When removing global state, update function signatures systematically
-
 ### Testing Strategies
 
-- **Prefer real filesystem operations**: Use `fs.mkdtemp()` for temporary directories instead of mocking filesystem calls
-- **Hybrid mocking approach**:
-  - Consider mocking complicated external dependencies (logging, process spawning) for interaction verification
-  - Use real implementations for core functionality (filesystem operations) for integration confidence
-- **Real filesystem tests catch issues mocks miss**: Permission problems, path resolution bugs, cleanup behavior
+See @.cursor/rules/testing.mdc for testing strategy
 
 ### Refactoring Approach
 
@@ -201,12 +191,6 @@ You can check if compilation works using `bun run check`
 - **Use todo lists**: Break complex changes into trackable items for systematic progress
 - **Run type checks frequently**: Catch signature mismatches early in the refactoring process
 - **Make incremental commits**: Each commit should focus on a single logical change
-
-### Function Signature Evolution
-
-- **Update call chains systematically**: `commitAll()` → `markStepDone()` → `prepareNextStep()` → calling code
-- **Let TypeScript guide you**: Use compilation errors to find all call sites that need updates
-- **Maintain backward compatibility when possible**: Add optional parameters before making them required
 
 ## Personal Workflow Notes
 
@@ -225,6 +209,3 @@ You can check if compilation works using `bun run check`
 
 - When printing an error message in a template string in a catch block, use `${err as Error}` to avoid eslint complaining
 
-```
-
-```

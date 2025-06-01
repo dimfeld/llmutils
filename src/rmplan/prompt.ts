@@ -362,7 +362,6 @@ IMPORTANT:
 - Ensure all fields are properly populated
 - Use proper YAML syntax with correct indentation
 - Multi-line prompts should use the pipe (|) character
-- Consider the rmfilter arguments that will be used: ${context.rmfilterArgsFromPlan.join(' ')}
 `;
 }
 
