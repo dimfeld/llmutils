@@ -8,3 +8,7 @@ postApplyCommands:
     command: bun run format
     allowFailure: true
     hideOutputOnSuccess: true
+workspaceCreation:
+  postCloneCommands:
+  - title: Install Dependencies
+    command: bun install
