@@ -14,7 +14,7 @@ dependencies:
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:43:49.796Z
 createdAt: 2025-05-31T20:32:33.555Z
-updatedAt: 2025-06-01T02:49:44.030Z
+updatedAt: 2025-06-01T02:53:31.927Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -162,7 +162,7 @@ tasks:
           `generateSplitPlanPrompt` that accepts an object conforming to
           `PlanSchema` (the original plan) as an argument and returns a string
           (the LLM prompt).
-        done: false
+        done: true
       - prompt: >
           Inside `generateSplitPlanPrompt`, construct the prompt. Start by
           explaining the overall goal: to take a single, detailed project plan
@@ -171,7 +171,7 @@ tasks:
           Mention that the input will be the `title`, `goal`, `details`, and the
           full `tasks` array (including `description`, `files`, and `steps`) of
           the original plan.
-        done: false
+        done: true
       - prompt: >
           Instruct the LLM to perform the following actions:
 
@@ -190,7 +190,7 @@ tasks:
 
           5.  Infer and explicitly list dependencies between the new phases. For
           example, "Phase 2 depends on Phase 1".
-        done: false
+        done: true
       - prompt: >
           Specify the desired output format. The LLM should output a YAML
           structure.
@@ -213,7 +213,7 @@ tasks:
           for the overall structure and `planExampleFormatGeneric` for the
           structure of each phase within the `phases` array as a guide for the
           LLM.
-        done: false
+        done: true
       - prompt: >
           Emphasize that all original task details (including `description`,
           `files`, and `steps` for each task) must be preserved and correctly
@@ -226,7 +226,7 @@ tasks:
 
           Instruct the LLM to output *only* the raw YAML string, without any
           surrounding text, explanations, or markdown fences.
-        done: false
+        done: true
   - title: Implement LLM interaction and parsing for the `split` command.
     description: >
       This task involves integrating the LLM call within the `split` command's
@@ -474,5 +474,6 @@ changedFiles:
   - CLAUDE.md
   - src/rmplan/actions.ts
   - src/rmplan/executors/claude_code.ts
+  - src/rmplan/prompt.ts
   - src/rmplan/rmplan.test.ts
   - src/rmplan/rmplan.ts
