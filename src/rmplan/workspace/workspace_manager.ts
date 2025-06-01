@@ -25,14 +25,14 @@ export interface Workspace {
  * Creates a new workspace for a task based on the provided configuration
  * @param mainRepoRoot The git root of the main repository
  * @param taskId Unique identifier for the task
- * @param originalPlanFilePath Absolute path to the original plan file
+ * @param originalPlanFilePath Absolute path to the original plan file (optional)
  * @param config Configuration for rmplan
  * @returns A Workspace object if successful, null otherwise
  */
 export async function createWorkspace(
   mainRepoRoot: string,
   taskId: string,
-  originalPlanFilePath: string,
+  originalPlanFilePath: string | undefined,
   config: RmplanConfig
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
@@ -117,7 +117,7 @@ export async function createWorkspace(
   }
 
   // Step 5: Create and checkout a new branch
-  const branchName = `llmutils-task/${taskId}`;
+  const branchName = `llmutils-ws/${taskId}`;
   try {
     log(`Creating and checking out branch ${branchName}`);
     const { exitCode, stderr } = await spawnAndLogOutput(['git', 'checkout', '-b', branchName], {
@@ -139,7 +139,28 @@ export async function createWorkspace(
     return null;
   }
 
-  // Step 6: Run post-clone commands if specified
+  // Step 6: Copy plan file if provided
+  let planFilePathInWorkspace: string | undefined;
+  if (originalPlanFilePath) {
+    const planFileName = path.basename(originalPlanFilePath);
+    planFilePathInWorkspace = path.join(targetClonePath, planFileName);
+    
+    try {
+      log(`Copying plan file to workspace: ${planFileName}`);
+      await fs.copyFile(originalPlanFilePath, planFilePathInWorkspace);
+    } catch (error) {
+      log(`Error copying plan file: ${String(error)}`);
+      // Clean up the clone
+      try {
+        await fs.rm(targetClonePath, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+      return null;
+    }
+  }
+
+  // Step 7: Run post-clone commands if specified
   if (workspaceConfig.postCloneCommands?.length) {
     log('Running post-clone commands');
 
@@ -147,13 +168,17 @@ export async function createWorkspace(
       // Add task-specific environment variables to the command config
       // Note: We don't resolve workingDirectory here, as executePostApplyCommand
       // will resolve it against targetClonePath. This is documented in its implementation.
+      const envVars: Record<string, string> = {
+        ...commandConfig.env,
+        LLMUTILS_TASK_ID: taskId, // This is the workspace ID
+      };
+      if (planFilePathInWorkspace) { // Check the variable holding the copied plan's path
+        envVars.LLMUTILS_PLAN_FILE_PATH = planFilePathInWorkspace;
+      }
+      
       const commandWithEnv: PostApplyCommand = {
         ...commandConfig,
-        env: {
-          ...commandConfig.env,
-          LLMUTILS_TASK_ID: taskId,
-          LLMUTILS_PLAN_FILE_PATH: originalPlanFilePath,
-        },
+        env: envVars,
       };
 
       log(`Running post-clone command: "${commandConfig.title || commandConfig.command}"`);
@@ -179,9 +204,10 @@ export async function createWorkspace(
   debugLog(`Successfully created workspace at ${targetClonePath}`);
 
   // Create workspace object
-  const workspace = {
+  const workspace: Workspace = {
     path: targetClonePath,
     originalPlanFilePath,
+    planFilePathInWorkspace,
     taskId,
   };
 

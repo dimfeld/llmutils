@@ -71,7 +71,8 @@ describe('createWorkspace', () => {
   test('createWorkspace with rmplan method - successful clone and branch creation', async () => {
     // Setup
     const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
+    const planPath = path.join(testTempDir, 'plan-123.yml');
+    await fs.writeFile(planPath, 'id: test-123\ntitle: Test Plan');
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'repo-task-123');
@@ -109,6 +110,7 @@ describe('createWorkspace', () => {
     expect(result).toEqual({
       path: expect.stringContaining('repo-task-123'),
       originalPlanFilePath: planPath,
+      planFilePathInWorkspace: expect.stringContaining('plan-123.yml'),
       taskId,
     });
 
@@ -127,7 +129,8 @@ describe('createWorkspace', () => {
   test('createWorkspace with rmplan method - infers repository URL if not provided', async () => {
     // Setup
     const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
+    const planPath = path.join(testTempDir, 'plan-infer.yml');
+    await fs.writeFile(planPath, 'id: test-infer\ntitle: Test Infer URL');
     const inferredRepositoryUrl = 'https://github.com/inferred/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'repo-task-123');
@@ -205,7 +208,8 @@ describe('createWorkspace', () => {
   test('createWorkspace with rmplan method - runs post-clone commands', async () => {
     // Setup
     const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
+    const planPath = path.join(testTempDir, 'plan-postcmds.yml');
+    await fs.writeFile(planPath, 'id: test-postcmds\ntitle: Test Post Commands');
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'repo-task-123');
@@ -265,7 +269,7 @@ describe('createWorkspace', () => {
         command: 'npm install',
         env: expect.objectContaining({
           LLMUTILS_TASK_ID: taskId,
-          LLMUTILS_PLAN_FILE_PATH: planPath,
+          LLMUTILS_PLAN_FILE_PATH: path.join(targetClonePath, 'plan-postcmds.yml'),
         }),
       }),
       expect.stringContaining('repo-task-123')
@@ -278,7 +282,7 @@ describe('createWorkspace', () => {
         command: 'npm run build',
         env: expect.objectContaining({
           LLMUTILS_TASK_ID: taskId,
-          LLMUTILS_PLAN_FILE_PATH: planPath,
+          LLMUTILS_PLAN_FILE_PATH: path.join(targetClonePath, 'plan-postcmds.yml'),
         }),
       }),
       expect.stringContaining('repo-task-123')
@@ -386,7 +390,8 @@ describe('createWorkspace', () => {
   test('createWorkspace with rmplan method - post-clone command fails and cleans up workspace', async () => {
     // Setup
     const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
+    const planPath = path.join(testTempDir, 'plan-failcleanup.yml');
+    await fs.writeFile(planPath, 'id: test-failcleanup\ntitle: Test Fail Cleanup');
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'repo-task-123');
@@ -447,7 +452,8 @@ describe('createWorkspace', () => {
   test('createWorkspace with rmplan method - post-clone command fails but allowFailure is true', async () => {
     // Setup
     const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
+    const planPath = path.join(testTempDir, 'plan-allowfail.yml');
+    await fs.writeFile(planPath, 'id: test-allowfail\ntitle: Test Allow Failure');
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'repo-task-123');
@@ -495,6 +501,7 @@ describe('createWorkspace', () => {
     expect(result).toEqual({
       path: expect.stringContaining('repo-task-123'),
       originalPlanFilePath: planPath,
+      planFilePathInWorkspace: expect.stringContaining('plan-allowfail.yml'),
       taskId,
     });
 
@@ -507,10 +514,276 @@ describe('createWorkspace', () => {
     expect(stats.isDirectory()).toBe(true);
   });
 
+  test('createWorkspace without a plan file', async () => {
+    // Setup
+    const taskId = 'task-456';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-456');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      // Simulate git clone by creating the target directory
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Execute with undefined plan file
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(result).toEqual({
+      path: expect.stringContaining('repo-task-456'),
+      originalPlanFilePath: undefined,
+      planFilePathInWorkspace: undefined,
+      taskId,
+    });
+
+    // Verify branch name uses new convention
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Creating and checking out branch llmutils-ws/task-456'));
+  });
+
+  test('createWorkspace with a plan file - plan is copied to workspace', async () => {
+    // Setup
+    const taskId = 'task-789';
+    const planPath = path.join(testTempDir, 'test-plan.yml');
+    const planContent = 'id: test-plan\ntitle: Test Plan\nstatus: pending';
+    await fs.writeFile(planPath, planContent);
+
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-789');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      // Simulate git clone by creating the target directory
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Execute with plan file
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(result).toEqual({
+      path: expect.stringContaining('repo-task-789'),
+      originalPlanFilePath: planPath,
+      planFilePathInWorkspace: path.join(targetClonePath, 'test-plan.yml'),
+      taskId,
+    });
+
+    // Verify the plan file was copied
+    const copiedPlanContent = await fs.readFile(result!.planFilePathInWorkspace!, 'utf-8');
+    expect(copiedPlanContent).toBe(planContent);
+
+    // Verify logging
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Copying plan file to workspace: test-plan.yml'));
+  });
+
+  test('createWorkspace with post-clone commands - LLMUTILS_PLAN_FILE_PATH env var set correctly', async () => {
+    // Setup
+    const taskId = 'task-env-test';
+    const planPath = path.join(testTempDir, 'env-test-plan.yml');
+    const planContent = 'id: env-test\ntitle: Env Test Plan';
+    await fs.writeFile(planPath, planContent);
+
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-env-test');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        postCloneCommands: [
+          {
+            title: 'Test command',
+            command: 'echo test',
+          },
+        ],
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Track the environment variables passed to executePostApplyCommand
+    let capturedEnv: Record<string, string> | undefined;
+    mockExecutePostApplyCommand.mockImplementation(async (commandConfig) => {
+      capturedEnv = commandConfig.env;
+      return true;
+    });
+
+    // Execute
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(mockExecutePostApplyCommand).toHaveBeenCalledTimes(1);
+
+    // Verify environment variables
+    expect(capturedEnv).toBeDefined();
+    expect(capturedEnv!.LLMUTILS_TASK_ID).toBe(taskId);
+    expect(capturedEnv!.LLMUTILS_PLAN_FILE_PATH).toBe(path.join(targetClonePath, 'env-test-plan.yml'));
+  });
+
+  test('createWorkspace without plan - LLMUTILS_PLAN_FILE_PATH not set in post-clone commands', async () => {
+    // Setup
+    const taskId = 'task-no-plan-env';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-no-plan-env');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        postCloneCommands: [
+          {
+            title: 'Test command',
+            command: 'echo test',
+          },
+        ],
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Track the environment variables
+    let capturedEnv: Record<string, string> | undefined;
+    mockExecutePostApplyCommand.mockImplementation(async (commandConfig) => {
+      capturedEnv = commandConfig.env;
+      return true;
+    });
+
+    // Execute without plan file
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(mockExecutePostApplyCommand).toHaveBeenCalledTimes(1);
+
+    // Verify environment variables
+    expect(capturedEnv).toBeDefined();
+    expect(capturedEnv!.LLMUTILS_TASK_ID).toBe(taskId);
+    expect(capturedEnv!.LLMUTILS_PLAN_FILE_PATH).toBeUndefined();
+  });
+
+  test('createWorkspace verifies new branch naming convention', async () => {
+    // Setup
+    const taskId = 'branch-test';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-branch-test');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Capture the git checkout command arguments
+    let checkoutArgs: string[] | undefined;
+    mockSpawnAndLogOutput.mockImplementationOnce(async (args) => {
+      checkoutArgs = args;
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Execute
+    await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify the branch name uses the new convention
+    expect(checkoutArgs).toBeDefined();
+    expect(checkoutArgs).toContain('llmutils-ws/branch-test');
+  });
+
   test('createWorkspace with rmplan method - no postCloneCommands provided', async () => {
     // Setup
     const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
+    const planPath = path.join(testTempDir, 'plan-nopostcmds.yml');
+    await fs.writeFile(planPath, 'id: test-nopostcmds\ntitle: Test No Post Commands');
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'repo-task-123');
@@ -549,6 +822,7 @@ describe('createWorkspace', () => {
     expect(result).toEqual({
       path: expect.stringContaining('repo-task-123'),
       originalPlanFilePath: planPath,
+      planFilePathInWorkspace: expect.stringContaining('plan-nopostcmds.yml'),
       taskId,
     });
 
@@ -562,7 +836,8 @@ describe('createWorkspace', () => {
   test('createWorkspace with rmplan method - postCloneCommands with relative workingDirectory', async () => {
     // Setup
     const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
+    const planPath = path.join(testTempDir, 'plan-reldir.yml');
+    await fs.writeFile(planPath, 'id: test-reldir\ntitle: Test Relative Dir');
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
     const relativeSubdir = 'packages/core';
@@ -629,7 +904,8 @@ describe('createWorkspace', () => {
   test('createWorkspace with rmplan method - successfully executes multiple post-clone commands', async () => {
     // Setup
     const taskId = 'task-123';
-    const planPath = '/path/to/plan.yml';
+    const planPath = path.join(testTempDir, 'plan-multicmds.yml');
+    await fs.writeFile(planPath, 'id: test-multicmds\ntitle: Test Multiple Commands');
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
     const expectedClonePath = path.join(cloneLocation, `repo-${taskId}`);
