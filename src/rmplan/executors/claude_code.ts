@@ -53,6 +53,8 @@ export class ClaudeCodeExecutor implements Executor {
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
+    // TODO Interactive mode needs some work. It's not taking the prompt right away
+    // Also it isn't integrated with the logging
     interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
 
     const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
@@ -141,6 +143,7 @@ export class ClaudeCodeExecutor implements Executor {
 
     if (interactive) {
       // In interactive mode, use Bun.spawn directly with inherited stdio
+      debugLog(args);
       const proc = Bun.spawn(args, {
         cwd: await getGitRoot(),
         stdio: ['inherit', 'inherit', 'inherit'],

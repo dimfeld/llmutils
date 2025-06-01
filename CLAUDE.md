@@ -208,4 +208,3 @@ See @.cursor/rules/testing.mdc for testing strategy
 ## Quick Tips
 
 - When printing an error message in a template string in a catch block, use `${err as Error}` to avoid eslint complaining
-

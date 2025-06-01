@@ -10,5 +10,5 @@ postApplyCommands:
     hideOutputOnSuccess: true
 workspaceCreation:
   postCloneCommands:
-  - title: Install Dependencies
-    command: bun install
+    - title: Install Dependencies
+      command: bun install

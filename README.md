@@ -8,7 +8,7 @@ The scripts are:
 - `apply-llm-edits` - Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
 - `rmrun` - Send the rmfilter output to a language model and apply the edits back.
 - `rmfind` - Find relevant files to use with rmfilter
-- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, and executing tasks. Includes multi-phase planning for breaking large features into incremental deliverables.
+- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, splitting, and executing tasks. Includes multi-phase planning for breaking large features into incremental deliverables.
 - `rmpr` - Handle pull request comments and reviews with AI assistance
 
 All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
@@ -287,6 +287,8 @@ You can find the task plans for this repository under the "tasks" directory.
 ### Key Features {#key-features-3}
 
 - **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
+- **Plan Creation**: Use the `add` command to quickly create new plan stub files with metadata like dependencies and priority.
+- **Plan Splitting**: Use the `split` command to intelligently break down large, complex plans into multiple phase-based plans using an LLM.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
@@ -313,6 +315,10 @@ Then repeat steps 5 through 7 until the task is done.
 **Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `my-feature-123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
 
 The `prepare` command is used to generate detailed steps and prompts for a phase plan that doesn't already have them. This is useful when you have a high-level plan outline but need to expand it with specific implementation steps.
+
+The `add` command allows you to quickly create new plan stub files with just a title. These stubs can then be populated with detailed tasks using the `generate` command. This is particularly useful when you want to quickly capture ideas for future work or create a set of related plans with proper dependencies.
+
+The `split` command helps manage complexity by using an LLM to intelligently break down a large, detailed plan into multiple smaller, phase-based plans. Each phase becomes a separate plan file with proper dependencies, allowing you to tackle complex projects incrementally while maintaining the full context and details from the original plan.
 
 Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
 
@@ -366,6 +372,21 @@ rmplan prepare --next
 
 # Force preparation even if dependencies aren't complete
 rmplan prepare plan.yml --force
+
+# Create a new plan stub file with a title and optional metadata
+rmplan add "Implement OAuth authentication" --output tasks/oauth-auth.yml
+
+# Create a plan with dependencies
+rmplan add "Add user roles" --depends-on oauth-auth --output tasks/user-roles.yml
+
+# Create a high-priority plan and open in editor
+rmplan add "Fix security vulnerability" --priority high --edit
+
+# Split a large plan into phase-based plans using an LLM
+rmplan split tasks/large-feature.yml --output-dir ./feature-phases
+
+# Split and include specific documentation for context
+rmplan split tasks/complex-refactor.yml --output-dir ./refactor-phases -- docs/architecture.md
 
 # List all plan files in the tasks directory (shows pending and in_progress by default)
 rmplan list
@@ -670,6 +691,8 @@ The multi-phase workflow consists of three main commands:
 
 3. **`rmplan generate-phase --phase ./my_feature_plan/my_project_id/phase_1.yaml`**: Generates detailed implementation steps for a specific phase. This populates the phase YAML with concrete prompts, file lists, and other details needed for execution.
 
+**Alternative approach with `split`**: If you already have a detailed, single-file plan that has grown too large or complex, you can use the `rmplan split` command to intelligently break it down into phase-based plans. This command uses an LLM to analyze the existing tasks and create a logical phase structure with proper dependencies, preserving all the original task details.
+
 The iterative process is:
 
 - Generate the overall plan
@@ -882,6 +905,13 @@ rmplan agent tasks/0003-new-feature.yml --executor claude-code
 
 # Execute a plan in a newly created, isolated workspace
 rmplan agent tasks/my-feature.yml --workspace-task-id feature-xyz
+
+# Create new plan stubs for quick capture of future work
+rmplan add "Implement user authentication" --output tasks/auth.yml
+rmplan add "Add logging system" --depends-on auth --priority medium --edit
+
+# Split a complex plan into manageable phases
+rmplan split tasks/big-refactor.yml --output-dir ./refactor-phases
 
 # Multi-phase planning workflow
 # 1. Generate a phase-based plan
