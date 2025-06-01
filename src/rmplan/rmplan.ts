@@ -468,7 +468,7 @@ program
             stubPlanData.updatedAt = now;
 
             // Prepare the YAML content with schema line
-            const schemaLine = `# yaml-language-server: $schema=https:
+            const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
             const yamlContent = yaml.stringify(stubPlanData);
             const fullContent = schemaLine + '\n' + yamlContent;
 
@@ -682,7 +682,7 @@ program
       const yamlContent = yaml.stringify(plan);
 
       // Prepend the yaml-language-server schema line
-      const schemaLine = `# yaml-language-server: $schema=https:
+      const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
       const fullContent = schemaLine + '\n' + yamlContent;
 
       // Write the YAML string to the new plan file
