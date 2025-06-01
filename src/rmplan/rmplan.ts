@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import os from 'os';
 import path from 'path';
+import * as fs from 'node:fs/promises';
 import { table } from 'table';
 import yaml from 'yaml';
 import * as clipboard from '../common/clipboard.ts';
@@ -25,6 +26,7 @@ import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { executors } from './executors/index.js';
+import { generateProjectId, slugify } from './id_utils.js';
 import {
   readAllPlans,
   resolvePlanFile,
@@ -33,12 +35,21 @@ import {
   collectDependenciesInOrder,
   isPlanReady,
 } from './plans.js';
-import { planPrompt, simplePlanPrompt } from './prompt.js';
-import type { PlanSchema } from './planSchema.js';
+import { planPrompt, simplePlanPrompt, generateSplitPlanPrompt } from './prompt.js';
+import { multiPhasePlanSchema, planSchema, type PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
-import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from './process_markdown.ts';
+import {
+  extractMarkdownToYaml,
+  type ExtractMarkdownToYamlOptions,
+  convertMarkdownToYaml,
+  findYamlStart,
+  saveMultiPhaseYaml,
+} from './process_markdown.ts';
 import { getCombinedTitle, getCombinedGoal, getCombinedTitleFromSummary } from './display_utils.js';
+import { fixYaml } from './fix_yaml.js';
+import { $ } from 'bun';
+import { runStreamingPrompt } from '../common/run_and_apply.ts';
 
 await loadEnv();
 
@@ -164,8 +175,48 @@ program
 
     if (options.plan) {
       try {
-        planText = await Bun.file(options.plan).text();
+        const fileContent = await Bun.file(options.plan).text();
         planFile = options.plan;
+
+        // Check if the file is a YAML plan file by trying to parse it
+        let isYamlPlan = false;
+        let parsedPlan: PlanSchema | null = null;
+
+        try {
+          // Try to parse as YAML
+          const yamlContent = findYamlStart(fileContent);
+          parsedPlan = yaml.parse(yamlContent) as PlanSchema;
+
+          // Validate that it has plan structure (at least id or goal)
+          if (parsedPlan && (parsedPlan.id || parsedPlan.goal)) {
+            isYamlPlan = true;
+          }
+        } catch {
+          // Not a valid YAML plan, treat as markdown
+          isYamlPlan = false;
+        }
+
+        if (isYamlPlan && parsedPlan) {
+          // Check if it's a stub plan (no tasks or empty tasks array)
+          const isStubPlan = !parsedPlan.tasks || parsedPlan.tasks.length === 0;
+
+          if (!isStubPlan) {
+            // Plan already has tasks - log a message and continue with normal flow
+            log(
+              chalk.yellow(
+                'Plan already contains tasks. To regenerate, remove the tasks array from the YAML file.'
+              )
+            );
+            planText = fileContent;
+          } else {
+            // It's a stub plan - we'll handle task generation below
+            // For now, set planText to null to trigger special handling
+            planText = null as any;
+          }
+        } else {
+          // Regular markdown file
+          planText = fileContent;
+        }
       } catch (err) {
         error(`Failed to read plan file: ${options.plan}`);
         process.exit(1);
@@ -240,6 +291,41 @@ program
           error('Failed to save plan to file:', err);
           process.exit(1);
         }
+      }
+    }
+
+    // Special handling for stub YAML plans
+    let stubPlanData: PlanSchema | null = null;
+    if (options.plan && planText === null) {
+      // We detected a stub plan earlier, now we need to load it properly
+      try {
+        const fileContent = await Bun.file(options.plan).text();
+        const yamlContent = findYamlStart(fileContent);
+        stubPlanData = yaml.parse(yamlContent) as PlanSchema;
+
+        // Construct planText from stub's title, goal, and details
+        const planParts: string[] = [];
+        if (stubPlanData.title) {
+          planParts.push(`# ${stubPlanData.title}`);
+        }
+        if (stubPlanData.goal) {
+          planParts.push(`\n## Goal\n${stubPlanData.goal}`);
+        }
+        if (stubPlanData.details) {
+          planParts.push(`\n## Details\n${stubPlanData.details}`);
+        }
+
+        planText = planParts.join('\n');
+
+        if (!planText || !planText.trim()) {
+          error('Stub plan must have at least a title, goal, or details to generate tasks.');
+          process.exit(1);
+        }
+
+        log(chalk.blue('Generating tasks for stub plan:'), options.plan);
+      } catch (err) {
+        error(`Failed to process stub plan: ${err as Error}`);
+        process.exit(1);
       }
     }
 
@@ -335,38 +421,102 @@ program
       }
 
       if (exitRes === 0 && !options.noExtract) {
-        log(
-          chalk.bold(
-            `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
-          )
-        );
+        // Special handling for stub plans - directly generate tasks without user interaction
+        if (stubPlanData) {
+          log(chalk.blue('\nGenerating tasks for stub plan using LLM...'));
 
-        let input = await waitForEnter(true);
+          try {
+            // Generate the markdown plan using LLM
+            const modelSpec = config.models?.convert_yaml || 'google/gemini-2.0-flash';
+            const model = createModel(modelSpec);
 
-        let outputPath: string;
-        if (planFile) {
-          // Use the directory of the plan file for output
-          outputPath = path.join(path.dirname(planFile), path.basename(planFile, '.md'));
+            const llmResult = await generateText({
+              model,
+              prompt: promptString,
+              temperature: 0.7,
+              maxTokens: 4000,
+            });
+
+            const llmMarkdownOutput = llmResult.text;
+
+            // Convert the markdown to YAML
+            const yamlString = await convertMarkdownToYaml(llmMarkdownOutput, config, true);
+
+            // Parse the generated YAML to extract tasks
+            let parsedGeneratedPlan: any;
+            try {
+              const cleanedYaml = findYamlStart(yamlString);
+              const fixedYaml = fixYaml(cleanedYaml);
+              parsedGeneratedPlan = yaml.parse(fixedYaml);
+            } catch (parseErr) {
+              error(`Failed to parse generated YAML: ${parseErr as Error}`);
+              process.exit(1);
+            }
+
+            // Extract tasks from the generated plan
+            const generatedTasks = parsedGeneratedPlan.tasks;
+            if (!generatedTasks || !Array.isArray(generatedTasks) || generatedTasks.length === 0) {
+              error('LLM failed to generate valid tasks');
+              process.exit(1);
+            }
+
+            // Merge tasks into the original stub plan
+            stubPlanData.tasks = generatedTasks;
+
+            // Update timestamps
+            const now = new Date().toISOString();
+            stubPlanData.planGeneratedAt = now;
+            stubPlanData.promptsGeneratedAt = now;
+            stubPlanData.updatedAt = now;
+
+            // Prepare the YAML content with schema line
+            const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+            const yamlContent = yaml.stringify(stubPlanData);
+            const fullContent = schemaLine + '\n' + yamlContent;
+
+            // Write back to the original file
+            await Bun.write(options.plan, fullContent);
+
+            log(chalk.green('✓ Updated plan with generated tasks:'), options.plan);
+          } catch (err) {
+            error(`Failed to generate tasks for stub plan: ${err as Error}`);
+            process.exit(1);
+          }
         } else {
-          // Default to current directory with a generated name
-          outputPath = 'rmplan-output';
-        }
+          // Normal flow - user pastes from chat
+          log(
+            chalk.bold(
+              `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
+            )
+          );
 
-        const extractOptions: ExtractMarkdownToYamlOptions = {
-          output: outputPath,
-          planRmfilterArgs: allRmfilterOptions,
-          issueUrls: issueUrlsForExtract,
-        };
+          let input = await waitForEnter(true);
 
-        const message = await extractMarkdownToYaml(
-          input,
-          config,
-          options.quiet ?? false,
-          extractOptions
-        );
+          let outputPath: string;
+          if (planFile) {
+            // Use the directory of the plan file for output
+            outputPath = path.join(path.dirname(planFile), path.basename(planFile, '.md'));
+          } else {
+            // Default to current directory with a generated name
+            outputPath = 'rmplan-output';
+          }
 
-        if (!options.quiet) {
-          log(message);
+          const extractOptions: ExtractMarkdownToYamlOptions = {
+            output: outputPath,
+            planRmfilterArgs: allRmfilterOptions,
+            issueUrls: issueUrlsForExtract,
+          };
+
+          const message = await extractMarkdownToYaml(
+            input,
+            config,
+            options.quiet ?? false,
+            extractOptions
+          );
+
+          if (!options.quiet) {
+            log(message);
+          }
         }
       }
     } finally {
@@ -451,6 +601,108 @@ program
       }
     } catch (e) {
       error('Failed to extract markdown to YAML:', e);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('add <title...>')
+  .description('Create a new plan file with the specified title')
+  .option('--edit', 'Open the newly created plan file in your editor')
+  .option('--depends-on <ids...>', 'Specify plan IDs that this plan depends on')
+  .option('--priority <level>', 'Set the priority level (low, medium, high, urgent)')
+  .action(async (title, options) => {
+    const globalOpts = program.opts();
+
+    try {
+      // Join the title arguments to form the complete plan title
+      const planTitle = title.join(' ');
+
+      // Load the effective configuration
+      const config = await loadEffectiveConfig(globalOpts.config);
+
+      // Determine the target directory for the new plan file
+      let targetDir: string;
+      if (config.paths?.tasks) {
+        if (path.isAbsolute(config.paths.tasks)) {
+          targetDir = config.paths.tasks;
+        } else {
+          // Resolve relative to git root
+          const gitRoot = (await getGitRoot()) || process.cwd();
+          targetDir = path.join(gitRoot, config.paths.tasks);
+        }
+      } else {
+        targetDir = process.cwd();
+      }
+
+      // Ensure the target directory exists
+      await fs.mkdir(targetDir, { recursive: true });
+
+      // Generate a unique plan ID
+      const planId = generateProjectId();
+
+      // Create a slugified filename from the plan title
+      const filename = slugify(planTitle) + '.yml';
+
+      // Construct the full path to the new plan file
+      const filePath = path.join(targetDir, filename);
+
+      // Validate priority if provided
+      if (options.priority) {
+        const validPriorities = ['low', 'medium', 'high', 'urgent'];
+        if (!validPriorities.includes(options.priority)) {
+          error(
+            `Invalid priority level: ${options.priority}. Must be one of: ${validPriorities.join(', ')}`
+          );
+          process.exit(1);
+        }
+      }
+
+      // Create the initial plan object adhering to PlanSchema
+      const plan: PlanSchema = {
+        id: planId,
+        title: planTitle,
+        goal: 'Goal to be defined.',
+        details: 'Details to be added.',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      };
+
+      // Add dependencies if provided
+      if (options.dependsOn && options.dependsOn.length > 0) {
+        plan.dependencies = options.dependsOn;
+      }
+
+      // Add priority if provided
+      if (options.priority) {
+        plan.priority = options.priority as 'low' | 'medium' | 'high' | 'urgent';
+      }
+
+      // Convert plan object to YAML string
+      const yamlContent = yaml.stringify(plan);
+
+      // Prepend the yaml-language-server schema line
+      const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+      const fullContent = schemaLine + '\n' + yamlContent;
+
+      // Write the YAML string to the new plan file
+      await Bun.write(filePath, fullContent);
+
+      // Log success message
+      log(chalk.green('✓ Created plan:'), filePath);
+
+      // Open in editor if requested
+      if (options.edit) {
+        const editor = process.env.EDITOR || 'nano';
+        const editorProcess = Bun.spawn([editor, filePath], {
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+        await editorProcess.exited;
+      }
+    } catch (err) {
+      error('Failed to create plan:', err);
       process.exit(1);
     }
   });
@@ -757,7 +1009,6 @@ program
         // Try to get repo URL from current directory
         try {
           const gitRoot = await getGitRoot();
-          const { $ } = await import('bun');
           const result = await $`git remote get-url origin`.cwd(gitRoot).text();
           repoUrl = result.trim();
         } catch (err) {
@@ -929,7 +1180,7 @@ program
 
         tableData.push([
           chalk.cyan(plan.id || 'no-id'),
-          getCombinedTitleFromSummary(plan), // Show combined title
+          getCombinedTitleFromSummary(plan),
           statusColor(statusDisplay),
           priorityColor(priorityDisplay),
           (plan.taskCount || 0).toString(),
@@ -942,9 +1193,9 @@ program
       // Configure table options
       const tableConfig = {
         columns: {
-          1: { width: 50, wrapWord: true }, // Title column - wider and wraps
-          6: { width: 15, wrapWord: true }, // Dependencies column
-          7: { width: 20, wrapWord: true }, // File column
+          1: { width: 50, wrapWord: true },
+          6: { width: 15, wrapWord: true },
+          7: { width: 20, wrapWord: true },
         },
         border: {
           topBody: '─',
@@ -1208,7 +1459,7 @@ program
             task.steps.forEach((step, stepIdx) => {
               const stepIcon = step.done ? '✓' : '○';
               const stepColor = step.done ? chalk.green : chalk.gray;
-              const prompt = step.prompt.split('\n')[0]; // First line only
+              const prompt = step.prompt.split('\n')[0];
               const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
               log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
             });
@@ -1230,7 +1481,7 @@ program
         plan.changedFiles.forEach((file) => log(`  • ${file}`));
       }
 
-      log(''); // Empty line at the end
+      log('');
     } catch (err) {
       error(`Failed to show plan: ${err as Error}`);
       process.exit(1);
@@ -1246,13 +1497,153 @@ program
     try {
       const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);
       const editor = options.editor || process.env.EDITOR || 'nano';
-      
+
       const editorProcess = logSpawn([editor, resolvedPlanFile], {
         stdio: ['inherit', 'inherit', 'inherit'],
       });
       await editorProcess.exited;
     } catch (err) {
       error(`Failed to open plan file: ${err as Error}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('split <planArg>')
+  .description('Split a large plan file into multiple phase-specific plan files')
+  .action(async (planArg) => {
+    const globalOpts = program.opts();
+
+    try {
+      // Step 1: Resolve the input plan file path
+      const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);
+
+      // Step 2: Read the file content
+      let content: string;
+      try {
+        content = await Bun.file(resolvedPlanFile).text();
+      } catch (err) {
+        error(`Failed to read plan file: ${err as Error}`);
+        process.exit(1);
+      }
+
+      // Step 3: Parse the YAML content
+      let parsedPlan: any;
+      try {
+        parsedPlan = yaml.parse(content);
+      } catch (err) {
+        error(`Failed to parse YAML: ${err as Error}`);
+        process.exit(1);
+      }
+
+      // Step 4: Validate against planSchema
+      const result = planSchema.safeParse(parsedPlan);
+
+      if (!result.success) {
+        error('Plan file validation failed:');
+        result.error.issues.forEach((issue) => {
+          error(`  - ${issue.path.join('.')}: ${issue.message}`);
+        });
+        process.exit(1);
+      }
+
+      // Step 5: Generate the prompt for splitting the plan
+      const validatedPlan = result.data;
+      log(`Plan loaded successfully:`);
+      log(`  Title: ${validatedPlan.title || 'No title'}`);
+      log(`  Goal: ${validatedPlan.goal}`);
+
+      // Step 6: Load configuration and generate the prompt
+      const splitConfig = await loadEffectiveConfig(globalOpts.config);
+      const prompt = generateSplitPlanPrompt(validatedPlan);
+
+      // Step 7: Call the LLM to reorganize the plan
+      log('\nCalling LLM to reorganize plan into phases...');
+      const modelSpec = splitConfig.models?.stepGeneration || 'google/gemini-2.0-flash';
+      const model = createModel(modelSpec);
+
+      let llmResponse: string;
+      try {
+        const llmResult = await runStreamingPrompt({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.2,
+        });
+        llmResponse = llmResult.text;
+      } catch (err) {
+        error(`Failed to call LLM: ${err as Error}`);
+        process.exit(1);
+      }
+
+      // Step 8: Extract and parse the YAML from the LLM response
+      log('\nParsing LLM response...');
+      let parsedMultiPhase: any;
+      let cleanedYaml: string;
+      try {
+        const yamlContent = findYamlStart(llmResponse);
+        cleanedYaml = fixYaml(yamlContent);
+        parsedMultiPhase = yaml.parse(cleanedYaml);
+      } catch (err) {
+        error(`Failed to parse YAML from LLM response: ${err as Error}`);
+
+        // Save raw response for debugging
+        const debugFile = 'rmplan-split-raw-response.yml';
+        await Bun.write(debugFile, llmResponse);
+        error(`\nRaw LLM response saved to ${debugFile} for debugging.`);
+        process.exit(1);
+      }
+
+      // Step 9: Validate the multi-phase plan structure
+      const validationResult = multiPhasePlanSchema.safeParse(parsedMultiPhase);
+
+      if (!validationResult.success) {
+        error('Multi-phase plan validation failed:');
+        validationResult.error.issues.forEach((issue) => {
+          error(`  - ${issue.path.join('.')}: ${issue.message}`);
+        });
+
+        // Save invalid YAML for debugging
+        const debugFile = 'rmplan-split-invalid.yml';
+        await Bun.write(debugFile, cleanedYaml);
+        error(`\nInvalid YAML saved to ${debugFile} for debugging.`);
+        process.exit(1);
+      }
+
+      // Step 10: Process the validated multi-phase plan
+      const multiPhasePlan = validationResult.data;
+      log(chalk.green('\n✓ Successfully reorganized plan into phases:'));
+      log(`  Total phases: ${multiPhasePlan.phases.length}`);
+      multiPhasePlan.phases.forEach((phase, index) => {
+        log(`  Phase ${index + 1}: ${phase.title || 'Untitled'} (${phase.tasks.length} tasks)`);
+      });
+
+      // Step 11: Save the multi-phase plan using saveMultiPhaseYaml
+      // Determine output directory path
+      const outputDir = path.join(
+        path.dirname(resolvedPlanFile),
+        path.basename(resolvedPlanFile, path.extname(resolvedPlanFile))
+      );
+
+      // Prepare options for saveMultiPhaseYaml
+      const extractOptions: ExtractMarkdownToYamlOptions = {
+        output: outputDir,
+        projectId: validatedPlan.id,
+        issueUrls: validatedPlan.issue,
+      };
+
+      // Call saveMultiPhaseYaml
+      const quiet = false;
+      const message = await saveMultiPhaseYaml(multiPhasePlan, extractOptions, splitConfig, quiet);
+
+      // Log the result message
+      log(message);
+    } catch (err) {
+      error(`Failed to process plan file: ${err as Error}`);
       process.exit(1);
     }
   });

@@ -1,4 +1,4 @@
-import { input, select } from '@inquirer/prompts';
+import { confirm, input, select } from '@inquirer/prompts';
 import * as path from 'node:path';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
@@ -138,7 +138,6 @@ export async function handleRmprCommand(
       );
 
       if (!options.yes) {
-        const { confirm } = await import('@inquirer/prompts');
         const proceed = await confirm({
           message: 'Proceed with this PR anyway?',
           default: true,

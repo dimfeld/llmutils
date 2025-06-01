@@ -14,6 +14,7 @@ const claudeCodeOptionsSchema = z.object({
   includeDefaultTools: z.boolean().default(true),
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
+  interactive: z.boolean().optional(),
 });
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
@@ -49,9 +50,10 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
-    let { disallowedTools, allowAllTools, mcpConfigFile } = this.options;
+    let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
+    interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
 
     const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
 
@@ -72,6 +74,9 @@ export class ClaudeCodeExecutor implements Executor {
           'Bash(pwd)',
           'Bash(rg:*)',
           'Bash(sed:*)',
+          // Allow Claude to delete its own test scripts
+          'Bash(rm test-:*)',
+          'Bash(rm -f test-:*)',
           'Bash(jj status)',
           'Bash(jj log:*)',
           'Bash(jj commit:*)',
@@ -95,15 +100,17 @@ export class ClaudeCodeExecutor implements Executor {
       allowedTools = allowedTools.filter((t) => !disallowedTools?.includes(t));
     }
 
-    const args = [
-      'claude',
-      '--verbose',
-      '--output-format',
-      'stream-json',
-      debug ? '--debug' : '',
-      '--allowedTools',
-      allowedTools.join(','),
-    ].filter(Boolean);
+    const args = ['claude'];
+
+    if (!interactive) {
+      args.push('--verbose', '--output-format', 'stream-json');
+    }
+
+    if (debug && !interactive) {
+      args.push('--debug');
+    }
+
+    args.push('--allowedTools', allowedTools.join(','));
 
     if (allowAllTools) {
       args.push('--dangerously-skip-permissions');
@@ -126,21 +133,38 @@ export class ClaudeCodeExecutor implements Executor {
       args.push('--model', this.sharedOptions.model);
     }
 
-    args.push('-p', contextContent);
+    if (!interactive) {
+      args.push('-p');
+    }
 
-    let splitter = createLineSplitter();
+    args.push(contextContent);
 
-    const result = await spawnAndLogOutput(args, {
-      cwd: await getGitRoot(),
-      formatStdout: (output) => {
-        let lines = splitter(output);
+    if (interactive) {
+      // In interactive mode, use Bun.spawn directly with inherited stdio
+      const proc = Bun.spawn(args, {
+        cwd: await getGitRoot(),
+        stdio: ['inherit', 'inherit', 'inherit'],
+      });
 
-        return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
-      },
-    });
+      const exitCode = await proc.exited;
 
-    if (result.exitCode !== 0) {
-      throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
+      if (exitCode !== 0) {
+        throw new Error(`Claude exited with non-zero exit code: ${exitCode}`);
+      }
+    } else {
+      let splitter = createLineSplitter();
+
+      const result = await spawnAndLogOutput(args, {
+        cwd: await getGitRoot(),
+        formatStdout: (output) => {
+          let lines = splitter(output);
+          return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
+        },
+      });
+
+      if (result.exitCode !== 0) {
+        throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
+      }
     }
   }
 }

@@ -1,0 +1,411 @@
+title: Implement `add` Command and Enhance `generate` Command
+goal: To enable users to create basic plan files using a new `add` command and
+  then populate these files with detailed tasks and steps using an enhanced
+  `generate` command.
+details: This phase focuses on introducing the `add` command for scaffolding new
+  plan files. It also involves modifying the existing `generate` command to work
+  with these pre-existing (but empty) plan files, populating them with
+  LLM-generated content in place, rather than always creating a new file.
+id: 1l52aj2-1
+status: done
+dependencies: []
+planGeneratedAt: 2025-05-31T20:32:33.555Z
+promptsGeneratedAt: 2025-06-01T02:19:59.271Z
+createdAt: 2025-05-31T20:32:33.555Z
+updatedAt: 2025-06-01T02:39:05.891Z
+project:
+  title: Enhance rmplan with `add` and `split` commands for improved plan creation
+    and organization.
+  goal: The overall goal of this project is to introduce two new commands, `add`
+    and `split`, to the `rmplan` CLI tool. The `add` command will facilitate the
+    quick creation of new, empty plan files. The `generate` command will be
+    enhanced to populate these empty plans. The `split` command will enable
+    users to break down large, existing plans into multiple, smaller phase-based
+    plan files using an LLM.
+  details: This project aims to improve the workflow of creating and managing
+    complex project plans with `rmplan`. The `add` command will allow users to
+    initialize a plan with a title and optional metadata like dependencies and
+    priority. The `generate` command will then be able to take this stub plan
+    and use an LLM to fill in the detailed tasks and steps, updating the
+    existing file. The `split` command will address the need to break down
+    large, already detailed plans. It will leverage an LLM to analyze the tasks
+    within a single plan file and intelligently divide them into a sequence of
+    new, phase-specific plan files, automatically inferring dependencies between
+    these new phases. This enhancement will provide users with more flexibility
+    in how they create and structure their plans, catering to both starting new
+    plans from scratch and reorganizing existing ones.
+tasks:
+  - title: Define `add` command in `rmplan.ts` and implement basic YAML file creation.
+    description: >
+      This task involves adding the `add` command to the main `rmplan.ts`
+      command-line interface. The command should accept positional arguments
+      which will be used as the `title` for the new plan. It will then create a
+      new YAML file in the configured tasks directory (or the current directory
+      if not specified). This YAML file will be initialized with a unique `id`
+      (generated using `generateProjectId` from `id_utils.ts`), the provided
+      `title`, and placeholder `goal` and `details` fields, adhering to the
+      `PlanSchema`.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/id_utils.ts
+      - src/rmplan/planSchema.ts
+      - src/rmplan/configLoader.ts
+      - src/rmfilter/utils.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.ts`, define a new command `add <title...>` using
+          `program.command()`.
+
+          The `<title...>` should be a variadic positional argument to capture
+          the full title.
+
+          This command will be responsible for creating new, empty plan files.
+        done: true
+      - prompt: >
+          Implement the action for the `add` command. Inside the action:
+
+          1. Join the `title...` arguments to form the complete plan title
+          string.
+
+          2. Load the effective configuration using
+          `loadEffectiveConfig(globalOpts.config)` from
+          `src/rmplan/configLoader.ts`.
+
+          3. Determine the target directory for the new plan file:
+             - If `config.paths.tasks` is set:
+               - If absolute, use it directly.
+               - If relative, resolve it against the git root (use `getGitRoot()` from `src/rmfilter/utils.ts`; if no git root, resolve against `process.cwd()`).
+             - Else (if `config.paths.tasks` is not set), use `process.cwd()`.
+             Ensure the target directory exists, creating it if necessary using `fs.mkdir` with `recursive: true`.
+        done: true
+      - prompt: >
+          Continue implementing the `add` command's action:
+
+          1. Generate a unique plan ID using `generateProjectId()` from
+          `src/rmplan/id_utils.ts`.
+
+          2. Create a slugified filename from the plan title using
+          `slugify(title)` from `src/rmplan/id_utils.ts`, and append `.yml`. For
+          example, "My New Plan" becomes "my-new-plan.yml".
+
+          3. Construct the full path to the new plan file within the target
+          directory.
+        done: true
+      - prompt: >
+          Continue implementing the `add` command's action:
+
+          1. Create the initial plan object adhering to `PlanSchema` from
+          `src/rmplan/planSchema.ts`. This object should include:
+             - `id`: The generated unique ID.
+             - `title`: The user-provided title.
+             - `goal`: A placeholder string, e.g., "Goal to be defined."
+             - `details`: A placeholder string, e.g., "Details to be added."
+             - `status`: "pending"
+             - `createdAt`: Current ISO timestamp.
+             - `updatedAt`: Current ISO timestamp.
+             - `tasks`: An empty array `[]`.
+          2. Convert this plan object to a YAML string using `yaml.stringify()`.
+          Prepend the `yaml-language-server` schema line.
+
+          3. Write the YAML string to the new plan file using `Bun.write()`.
+
+          4. Log a success message to the console indicating the path to the
+          created file, e.g., `log(chalk.green('✓ Created plan:'), filePath);`.
+        done: true
+  - title: "Implement `add` command options: `edit`, `depends-on`, `priority`."
+    description: >
+      This task will extend the `add` command to support several command-line
+      options. The `--edit` option should open the newly generated YAML file in
+      the system's default editor (specified by the `$EDITOR` environment
+      variable). The `--depends-on` option will allow users to specify one or
+      more plan IDs that the new plan depends on, populating the `dependencies`
+      array in the YAML. The `--priority` option will set the `priority` field
+      in the YAML file.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/planSchema.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.ts`, modify the `add` command definition to
+          include an optional boolean flag `--edit`.
+        done: true
+      - prompt: >
+          Update the `add` command's action. After successfully creating the
+          plan file, if the `options.edit` flag is true:
+
+          1. Determine the editor to use: `process.env.EDITOR` or fallback to a
+          common default like `nano`.
+
+          2. Use `Bun.spawn([editor, filePath], { stdio: ['inherit', 'inherit',
+          'inherit'] })` to open the file.
+
+          3. Await `proc.exited` to ensure the command waits for the editor to
+          close.
+        done: true
+      - prompt: >
+          Modify the `add` command definition to include an optional option
+          `--depends-on <ids...>` which accepts one or more plan IDs.
+        done: true
+      - prompt: >
+          Update the `add` command's action to handle the `options.dependsOn`
+          array. If provided and not empty, add a `dependencies` field to the
+          plan object with the value of `options.dependsOn` before serializing
+          to YAML.
+        done: true
+      - prompt: >
+          Modify the `add` command definition to include an optional option
+          `--priority <level>`, where `<level>` should be validated against the
+          allowed enum values in `PlanSchema` (low, medium, high, urgent).
+        done: true
+      - prompt: >
+          Update the `add` command's action to handle `options.priority`. If
+          provided, add a `priority` field to the plan object with the validated
+          value before serializing to YAML. Ensure the value is one of the
+          allowed priorities.
+        done: true
+  - title: Modify `generate` command to populate tasks and steps in existing plan
+      files.
+    description: >
+      This task requires updating the existing `generate` command in
+      `src/rmplan/rmplan.ts`. When the `generate` command is provided with a
+      path to an existing plan YAML file that primarily contains metadata (like
+      `id`, `title`, `goal`, `details`) but lacks a `tasks` array or has an
+      empty one, it should:
+
+      1. Load the content of the specified plan file.
+
+      2. Use the plan's `title`, `goal`, and `details` to construct a
+      descriptive text input for the LLM.
+
+      3. Invoke an LLM (using a prompt similar to the current
+      `simplePlanPrompt`) to generate the detailed `tasks`, including their
+      `steps` and associated `files`.
+
+      4. Parse the LLM's output (which is typically Markdown and then converted
+      to a YAML structure).
+
+      5. Merge the newly generated `tasks` array into the data structure loaded
+      from the original plan file.
+
+      6. Update the `planGeneratedAt` and `promptsGeneratedAt` timestamp fields
+      in the plan data.
+
+      7. Write the fully populated plan data back to the original YAML file,
+      effectively updating it in place.
+
+      This modification will likely involve adapting logic within
+      `src/rmplan/process_markdown.ts` or `src/rmplan/actions.ts`.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/prompt.ts
+      - src/common/model_factory.ts
+      - src/rmplan/process_markdown.ts
+      - src/rmplan/planSchema.ts
+      - src/rmplan/configLoader.ts
+      - src/rmplan/fix_yaml.ts
+      - node_modules/ai/dist/index.mjs
+      - node_modules/yaml/dist/index.mjs
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.ts`, locate the `generate` command's action.
+          Modify its logic to handle the case where `options.plan` (the plan
+          file path) is provided.
+
+          First, check if `options.plan` is a file path (and not `undefined`
+          from `--plan-editor` or `--issue`).
+        done: true
+      - prompt: >
+          If `options.plan` is a file path, attempt to read the file. If it
+          doesn't exist or reading fails, proceed with the existing "generate
+          new plan" logic (e.g., treating `options.plan` content as raw plan
+          text if it's not a YAML file, or erroring if it was supposed to be a
+          file).
+
+          If the file exists and is readable, parse its content as YAML using
+          `yaml.parse()`. Validate the parsed object against `PlanSchema`.
+        done: true
+      - prompt: >
+          After successfully parsing and validating the existing plan file,
+          check if it's a "stub" plan. A stub plan is one that either has no
+          `tasks` field or an empty `tasks` array.
+
+          If it is *not* a stub plan (i.e., it already has tasks), log a message
+          that the plan already contains tasks and proceed with the existing
+          `generate` logic (which might involve creating a new plan based on the
+          input, or simply exiting if this specific scenario isn't meant to
+          overwrite). This task focuses on populating stubs.
+        done: true
+      - prompt: >
+          If the loaded plan is a stub:
+
+          1. Construct `planText` for the LLM using the stub's `title`, `goal`,
+          and `details`.
+
+          2. Create the LLM prompt string using `simplePlanPrompt(planText)`
+          from `src/rmplan/prompt.ts`.
+
+          3. Load the rmplan config using `loadEffectiveConfig`.
+
+          4. Determine the model to use (e.g., `config.models.convert_yaml` or a
+          default like `google/gemini-2.0-flash`). Create the model instance
+          using `createModel()`.
+
+          5. Call the LLM (e.g., `generateText({ model, prompt: llmPromptString
+          })`) to get the Markdown output containing tasks and steps
+          (`llmMarkdownOutput`).
+        done: true
+      - prompt: >
+          Process the `llmMarkdownOutput`:
+
+          1. Use `convertMarkdownToYaml(llmMarkdownOutput, config, true)` from
+          `src/rmplan/process_markdown.ts` to convert the LLM's Markdown into a
+          YAML string. This function itself uses an LLM.
+
+          2. Parse this resulting YAML string (after potentially using
+          `findYamlStart` and `fixYaml`) to get a temporary plan object:
+          `parsedGeneratedPlan =
+          yaml.parse(fixYaml(findYamlStart(yamlStringFromConvert)))`.
+
+          3. Extract the `tasks` array from `parsedGeneratedPlan.tasks`. If
+          `parsedGeneratedPlan.tasks` is not found or is not an array, handle
+          this as an error (e.g., LLM failed to produce valid tasks).
+        done: true
+      - prompt: >
+          Merge the extracted `generatedTasks` into the original `planData`
+          (loaded from the stub file). Replace `planData.tasks` with
+          `generatedTasks`.
+
+          Update timestamp fields in `planData`:
+
+          - `planGeneratedAt = new Date().toISOString()`
+
+          - `promptsGeneratedAt = new Date().toISOString()`
+
+          - `updatedAt = new Date().toISOString()`
+        done: true
+      - prompt: >
+          Serialize the updated `planData` back to a YAML string using
+          `yaml.stringify()`. Prepend the `yaml-language-server` schema line.
+
+          Write this YAML string back to the original file path specified in
+          `options.plan`, overwriting its content.
+
+          Log a success message, e.g., `log(chalk.green('✓ Updated plan with
+          generated tasks:'), options.plan);`.
+        done: true
+  - title: Add tests for `add` command and updated `generate` functionality.
+    description: >
+      This task focuses on creating a comprehensive suite of tests. For the
+      `add` command, tests should cover its basic file creation capabilities and
+      the correct handling of all its options (`--edit`, `--depends-on`,
+      `--priority`). For the updated `generate` command, tests should verify its
+      ability to correctly read an existing stub plan file, interact with the
+      LLM (potentially mocked for deterministic testing) to populate tasks and
+      steps, and save the updated content back to the original file.
+    files:
+      - src/rmplan/rmplan.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.test.ts` (or a new `add.test.ts`), write tests
+          for the `add` command.
+
+          Use `beforeEach` and `afterEach` to set up and tear down a temporary
+          test directory (e.g., using `fs.mkdtemp` and `fs.rm`).
+
+          Mock `loadEffectiveConfig` to return a controlled configuration,
+          especially for `paths.tasks`.
+        done: true
+      - prompt: >
+          Test `rmplan add "Test Plan Title"`:
+
+          - Execute the command programmatically or by mocking
+          `Command.prototype.action`.
+
+          - Verify a YAML file (e.g., `test-plan-title.yml`) is created in the
+          expected directory.
+
+          - Read the file content and parse it. Verify `id` (exists and is
+          string), `title` matches, `goal` and `details` are placeholders,
+          `status` is "pending", `createdAt` and `updatedAt` are recent
+          timestamps, and `tasks` is an empty array.
+        done: true
+      - prompt: >
+          Test `rmplan add "Edit Test" --edit`:
+
+          - Mock `Bun.spawn` (or the relevant function for launching an editor).
+
+          - Verify it's called with the correct editor command (e.g., from
+          `process.env.EDITOR` or a default) and the path to the newly created
+          file.
+        done: true
+      - prompt: >
+          Test `rmplan add "Deps Test" --depends-on dep1 dep2`:
+
+          - Verify the created YAML file's `dependencies` field is `['dep1',
+          'dep2']`.
+        done: true
+      - prompt: |
+          Test `rmplan add "Priority Test" --priority high`:
+          - Verify the created YAML file's `priority` field is `"high"`.
+        done: true
+      - prompt: >
+          Test `rmplan add` behavior with `paths.tasks` configured vs.
+          unconfigured to ensure file creation in the correct location (mock
+          `getGitRoot` and `process.cwd()` as needed for predictable paths).
+        done: true
+      - prompt: >
+          In `src/rmplan/rmplan.test.ts` (or a new `generate_update.test.ts`),
+          write tests for the updated `generate <existing_stub_file>`
+          functionality.
+
+          Set up a temporary directory. Create a "stub" plan YAML file (e.g.,
+          `stub-plan.yml`) with `id`, `title`, `goal`, `details`, `status:
+          "pending"`, `createdAt`, `updatedAt`, and an empty `tasks: []`.
+        done: true
+      - prompt: >
+          Mock the LLM call chain for `generate <existing_stub_file>`:
+
+          1. Mock `generateText` (from `ai`) to return a predefined Markdown
+          string representing tasks and steps when called with the
+          `simplePlanPrompt`.
+
+          2. Mock `convertMarkdownToYaml` (from
+          `src/rmplan/process_markdown.ts`) to return a predefined YAML string
+          (representing a full plan containing tasks) when called with the LLM's
+          Markdown output. This mock should bypass the internal LLM call of
+          `convertMarkdownToYaml`.
+        done: true
+      - prompt: >
+          Execute `rmplan generate <path_to_stub-plan.yml>` programmatically.
+
+          Read the `stub-plan.yml` file after the command execution.
+
+          Parse its content and verify:
+
+          - The `tasks` array is populated based on the (mocked) LLM output.
+
+          - `planGeneratedAt` and `promptsGeneratedAt` are new, recent
+          timestamps.
+
+          - `updatedAt` timestamp is updated.
+
+          - Original `id`, `title`, `goal`, `details`, `status`, `createdAt` are
+          preserved.
+        done: true
+      - prompt: >
+          Test the case where `generate <existing_plan_with_tasks.yml>` is
+          called on a plan that already has tasks.
+
+          Ensure this new "update stub" logic is *not* triggered, and the file
+          is not inappropriately modified by this specific new pathway (it
+          should fall back to existing `generate` behavior for non-stubs or
+          error if that's the design).
+        done: true
+rmfilter:
+  - src/rmplan
+changedFiles:
+  - CLAUDE.md
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/rmplan.test.ts
+  - src/rmplan/rmplan.ts
+  - test-stub-plan.yml

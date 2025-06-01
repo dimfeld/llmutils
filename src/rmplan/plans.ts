@@ -320,6 +320,10 @@ export function isPlanReady(plan: PlanSummary, allPlans: Map<string, PlanSummary
     return false;
   }
 
+  if (!plan.taskCount) {
+    return false;
+  }
+
   // If no dependencies, it's ready
   if (!plan.dependencies || plan.dependencies.length === 0) {
     return true;

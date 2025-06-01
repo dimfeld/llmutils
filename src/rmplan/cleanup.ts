@@ -63,6 +63,11 @@ export function cleanComments(
       if (match && match.index !== undefined) {
         // Get the part before the comment
         const beforeComment = line.slice(0, match.index);
+        if (beforeComment.at(-1) !== ' ') {
+          // this isn't actually an EOL comment
+          continue;
+        }
+
         const trimmedBefore = beforeComment.trim();
 
         // Only remove if there's actual code before the comment (not just whitespace)

@@ -13,6 +13,7 @@ import {
 } from './workspace_tracker.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { getGitRoot } from '../../rmfilter/utils.js';
+import { $ } from 'bun';
 
 export interface AutoSelectOptions {
   /** Whether to run in interactive mode (prompt for stale locks) */
@@ -60,7 +61,6 @@ export class WorkspaceAutoSelector {
     if (!repositoryUrl) {
       try {
         const gitRoot = await getGitRoot(process.cwd());
-        const { $ } = await import('bun');
         const result = await $`git remote get-url origin`.cwd(gitRoot).text();
         repositoryUrl = result.trim();
       } catch (error) {

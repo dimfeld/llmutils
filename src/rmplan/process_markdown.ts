@@ -187,7 +187,7 @@ export async function extractMarkdownToYaml(
     validatedPlan = result.data;
 
     // Set metadata fields
-    validatedPlan.id = generateProjectId();
+    validatedPlan.id = options.projectId || generateProjectId();
     const now = new Date().toISOString();
     validatedPlan.createdAt = now;
     validatedPlan.updatedAt = now;
@@ -276,7 +276,7 @@ export async function extractMarkdownToYaml(
   return `Wrote single-phase plan to ${outputPath}`;
 }
 
-async function saveMultiPhaseYaml(
+export async function saveMultiPhaseYaml(
   parsedYaml: any,
   options: ExtractMarkdownToYamlOptions,
   config: RmplanConfig,
@@ -285,7 +285,7 @@ async function saveMultiPhaseYaml(
   // Determine project ID
   let issueUrl: string | undefined;
 
-  const projectId = generateProjectId();
+  const projectId = options.projectId || generateProjectId();
 
   if (!quiet) {
     log(chalk.blue('Using Project ID:'), projectId);
