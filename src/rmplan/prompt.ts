@@ -316,7 +316,7 @@ For each task listed above, you need to generate:
 1. **Test-Driven Development**:
    - Include test creation/modification as early steps when appropriate
    - Prefer to not mocks unless you have to, since they often end up just testing the mocks. Prefer dependency injection.
-2. **Incremental Progress**: Each step should be small, achievable, and verifiable
+2. **Incremental Progress**: Each step should be self-contained, achievable, and verifiable
 3. **Build on Previous Work**: Reference and utilize code/patterns from completed phases listed above
 4. **Description**:
    - Most of the details on the task should go into the description.
@@ -328,7 +328,8 @@ For each task listed above, you need to generate:
 6. **Step Prompts**:
    - Write clear, actionable prompts for each step
    - Each step should be at most a few sentences long and related to the information in the task's description.
-   - No need to generate code, the agent reading the prompt will generate it from the prompt.
+   - The agent implementing the code is smart and has access to the entire codebase, so you should be clear on what to do, but not overly prescriptive.
+   - No need to supply sample code in your prompts unless it illustrates a specific code pattern.
 
 ### Output Format
 
