@@ -39,6 +39,7 @@ import { planPrompt, simplePlanPrompt, generateSplitPlanPrompt } from './prompt.
 import { multiPhasePlanSchema, planSchema, type PlanSchema } from './planSchema.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
+import { createWorkspace } from './workspace/workspace_manager.js';
 import {
   extractMarkdownToYaml,
   type ExtractMarkdownToYamlOptions,
@@ -52,6 +53,26 @@ import { $ } from 'bun';
 import { runStreamingPrompt } from '../common/run_and_apply.ts';
 
 await loadEnv();
+
+/**
+ * Updates the status of a plan file and saves it back to disk
+ */
+async function setPlanStatus(
+  planFile: string,
+  status: 'pending' | 'in_progress' | 'done'
+): Promise<void> {
+  const content = await Bun.file(planFile).text();
+  const plan = yaml.parse(content) as PlanSchema;
+
+  plan.status = status;
+  plan.updatedAt = new Date().toISOString();
+
+  const yamlContent = yaml.stringify(plan);
+  const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+  const fullContent = schemaLine + '\n' + yamlContent;
+
+  await Bun.write(planFile, fullContent);
+}
 
 /**
  * Resolves the tasks directory path, handling both absolute and relative paths.
@@ -1672,6 +1693,25 @@ program
     }
 
     await handleRmprCommand(prIdentifier, options, globalOpts, config);
+  });
+
+// Create the workspace command
+const workspaceCommand = program.command('workspace').description('Manage workspaces for plans');
+
+// Add the 'add' subcommand to workspace
+workspaceCommand
+  .command('add [planIdentifier]')
+  .description('Create a new workspace, optionally linked to a plan')
+  .option('--id <workspaceId>', 'Specify a custom workspace ID')
+  .action(async (planIdentifier, options) => {
+    // Placeholder implementation - will be completed in Task 5
+    const globalOpts = program.opts();
+
+    log('Creating workspace...');
+    log(`Plan identifier: ${planIdentifier || '(none)'}`);
+    log(`Workspace ID: ${options.id || '(auto-generated)'}`);
+
+    // TODO: Implement actual workspace creation logic in Task 5
   });
 
 await program.parseAsync(process.argv);

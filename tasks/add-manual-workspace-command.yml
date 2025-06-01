@@ -1,4 +1,3 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement `rmplan workspace add` Command and Plan Association
 goal: To deliver a fully functional `rmplan workspace add` command that allows
   manual creation of workspaces, with optional linking to a plan file and
@@ -9,11 +8,12 @@ details: This phase focuses on adding the new command to the CLI, implementing
   location and the new workspace. Existing workspace management and plan
   utilities will be leveraged and extended.
 id: 1m3whpf-1
-status: pending
+status: in_progress
 dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
+promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z
-updatedAt: 2025-06-01T09:14:07.116Z
+updatedAt: 2025-06-01T09:18:05.303Z
 project:
   title: Add `rmplan workspace add` Command
   goal: The project aims to introduce a new CLI command, `rmplan workspace add`,
@@ -68,6 +68,7 @@ tasks:
           `createWorkspace`.
 
           Define a new subcommand `workspace` under the main `program`.
+        done: true
       - prompt: >
           Within the `workspace` subcommand, add an `add` command.
 
@@ -76,6 +77,7 @@ tasks:
 
           It should also accept an optional option `--id <workspaceId>` for
           specifying a custom workspace ID.
+        done: true
       - prompt: >
           Assign an asynchronous action handler to the `workspace add` command.
           This handler will take `planIdentifier` (string | undefined) and
@@ -83,6 +85,7 @@ tasks:
 
           The initial implementation of this handler can be a placeholder (e.g.,
           logging the inputs), as the full logic will be developed in Task 5.
+        done: true
   - title: Implement helper function to update plan status
     description: Create a new utility function, tentatively named `setPlanStatus`,
       likely within `src/rmplan/plans.ts`. This function will take a plan file
@@ -108,6 +111,7 @@ tasks:
           - Handling files that are not valid YAML.
 
           - Ensuring `updatedAt` is more recent after an update.
+        done: false
       - prompt: >
           In `src/rmplan/plans.ts`, implement the `setPlanStatus` function.
 
@@ -137,6 +141,7 @@ tasks:
 
           Ensure robust error handling for file operations and YAML
           parsing/validation.
+        done: false
   - title: Adapt `WorkspaceInfo` and related types for optional plan
     description: Modify the `WorkspaceInfo` interface in
       `src/rmplan/workspace/workspace_tracker.ts` and the `Workspace` interface
@@ -159,6 +164,7 @@ tasks:
           Update any related JSDoc comments for `originalPlanFilePath` and
           `taskId` to clarify that `taskId` is the workspace ID and
           `originalPlanFilePath` links to a plan, if any.
+        done: false
       - prompt: >
           In `src/rmplan/workspace/workspace_manager.ts`, modify the `Workspace`
           interface.
@@ -170,6 +176,7 @@ tasks:
           the path of the copied plan within the workspace.
 
           Update JSDoc for `taskId` to indicate it's the workspace ID.
+        done: false
   - title: Enhance `createWorkspace` for optional plan file
     description: >
       Update the `createWorkspace` function in
@@ -200,11 +207,13 @@ tasks:
           Change the `originalPlanFilePath` parameter from
           `originalPlanFilePath: string` to `originalPlanFilePath: string |
           undefined`.
+        done: false
       - prompt: >
           Update the branch name generation within `createWorkspace`. Instead of
           `llmutils-task/\${taskId}`, use `llmutils-ws/\${taskId}`.
 
           The `taskId` parameter already represents the workspace ID.
+        done: false
       - prompt: >
           After successful repository clone and branch checkout, and before
           running post-clone commands:
@@ -221,6 +230,7 @@ tasks:
           `fs.copyFile`. Log this action.
 
           Else, `planFilePathInWorkspace` remains `undefined`.
+        done: false
       - prompt: >
           Modify the setup of environment variables for `postCloneCommands`.
 
@@ -243,18 +253,21 @@ tasks:
           // ... update commandWithEnv.env with envVars
 
           ```
+        done: false
       - prompt: >
           Update the call to `recordWorkspace` within `createWorkspace`.
 
           The `originalPlanFilePath` argument passed to `recordWorkspace` should
           be the `originalPlanFilePath` received by `createWorkspace` (which can
           be `undefined`).
+        done: false
       - prompt: >
           Update the returned `Workspace` object to include the new
           `planFilePathInWorkspace` field (which can be `undefined`).
 
           Its structure will be `{ path: targetClonePath, originalPlanFilePath,
           planFilePathInWorkspace, taskId }`.
+        done: false
       - prompt: >
           In `src/rmplan/workspace/workspace_manager.test.ts`, update existing
           tests and add new ones for `createWorkspace` to cover:
@@ -270,6 +283,7 @@ tasks:
 
           Ensure mocks for `fs` operations (like copyFile) and `recordWorkspace`
           are correctly handled if used.
+        done: false
   - title: Implement core logic for `workspace add` command handler
     description: Develop the action handler for the `rmplan rmplan workspace add`
       command. This logic will integrate previous tasks to create workspaces,
@@ -289,6 +303,7 @@ tasks:
 
           3. Determine the `workspaceId`: if `options.id` is provided, use it;
           otherwise, generate one using `generateProjectId()`.
+        done: false
       - prompt: >
           If `planIdentifier` (the positional argument) is provided:
 
@@ -301,6 +316,7 @@ tasks:
 
           3. Invoke `createWorkspace(mainRepoRoot, workspaceId,
           originalPlanPath, config)`.
+        done: false
       - prompt: >
           Continuing from the previous step (if `planIdentifier` was provided):
 
@@ -309,6 +325,7 @@ tasks:
              Call `setPlanStatus(workspaceResult.planFilePathInWorkspace, 'in_progress')` to update the status of the copied plan file within the new workspace.
              Log a success message including the new workspace path and the associated plan.
           5. If `createWorkspace` fails (returns `null`), log an error message.
+        done: false
       - prompt: >
           If `planIdentifier` is NOT provided:
 
@@ -319,11 +336,13 @@ tasks:
           indicating the new workspace path and that no plan is associated.
 
           3. If `createWorkspace` fails, log an error message.
+        done: false
       - prompt: >
           Ensure all operations are wrapped in a try/catch block to handle
           errors gracefully and provide informative messages to the user.
 
           Log the generated or provided `workspaceId` being used.
+        done: false
   - title: Add comprehensive tests
     description: Write unit and integration tests to ensure the reliability of the
       new functionality. Test cases should cover various scenarios including
@@ -359,6 +378,7 @@ tasks:
           - Handling `resolvePlanFile` error.
 
           - Handling `createWorkspace` error.
+        done: false
       - prompt: >
           Write integration-style tests (these might still involve some mocking,
           but test more of the actual functions interacting).
@@ -379,10 +399,12 @@ tasks:
 
           Consider testing the full CLI invocation if feasible, or test the
           command handler function directly.
+        done: false
       - prompt: >
           Ensure the tests for `setPlanStatus` (from Task 2) are comprehensive
           and cover edge cases like invalid YAML content or file permissions (if
           possible without excessive mocking).
+        done: false
   - title: Update documentation
     description: Update the project's `README.md` file and any other relevant
       documentation to include details about the new `rmplan workspace add`
@@ -398,6 +420,7 @@ tasks:
 
           Describe its purpose: explicitly creating a new workspace, optionally
           linking it to a plan.
+        done: false
       - prompt: >
           Document the syntax for `rmplan workspace add [planIdentifier] [--id
           <workspaceId>]`.
@@ -405,6 +428,7 @@ tasks:
           Explain the optional `planIdentifier` (can be a plan ID or file path).
 
           Explain the optional `--id <workspaceId>` option.
+        done: false
       - prompt: >
           Provide examples of usage:
 
@@ -418,6 +442,7 @@ tasks:
 
           - Creating a workspace with a plan by ID and a custom workspace ID:
           `rmplan workspace add my-plan-id --id my-dev-space`
+        done: false
       - prompt: >
           Briefly explain the behavior when a plan is associated: the plan's
           status is updated to `in_progress` in both the original location and
@@ -425,7 +450,9 @@ tasks:
 
           If there are other documentation files detailing CLI commands (e.g., a
           dedicated `docs/cli.md`), update them similarly.
+        done: false
 rmfilter:
   - src/rmplan
   - src/common
-promptsGeneratedAt: 2025-06-01T09:14:07.116Z
+changedFiles:
+  - src/rmplan/rmplan.ts
