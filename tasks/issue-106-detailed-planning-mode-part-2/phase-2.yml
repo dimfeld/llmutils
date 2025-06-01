@@ -8,7 +8,7 @@ details: This phase introduces the `split` command. This command is designed for
   involve prompting an LLM to reorganize the existing tasks into a multi-phase
   structure and then saving these phases as individual plan files.
 id: 1l52aj2-2
-status: in_progress
+status: done
 dependencies:
   - 1l52aj2-1
 planGeneratedAt: 2025-05-31T20:32:33.555Z

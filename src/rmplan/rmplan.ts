@@ -30,10 +30,9 @@ import { generateProjectId, slugify } from './id_utils.js';
 import {
   readAllPlans,
   resolvePlanFile,
-  findNextReadyPlan,
-  findCurrentPlan,
   collectDependenciesInOrder,
   isPlanReady,
+  findNextPlan,
 } from './plans.js';
 import { planPrompt, simplePlanPrompt, generateSplitPlanPrompt } from './prompt.js';
 import { multiPhasePlanSchema, planSchema, type PlanSchema } from './planSchema.js';
@@ -885,9 +884,10 @@ function createAgentCommand(command: Command, description: string) {
           // Find the next ready plan or current plan
           const config = await loadEffectiveConfig(globalOpts.config);
           const tasksDir = await resolveTasksDir(config);
-          const plan = options.current
-            ? await findCurrentPlan(tasksDir)
-            : await findNextReadyPlan(tasksDir);
+          const plan = await findNextPlan(tasksDir, {
+            includeInProgress: options.current,
+            includePending: true,
+          });
 
           if (!plan) {
             if (options.current) {
@@ -1254,9 +1254,10 @@ program
       if (options.next || options.current) {
         // Find the next ready plan or current plan
         const tasksDir = await resolveTasksDir(config);
-        const plan = options.current
-          ? await findCurrentPlan(tasksDir)
-          : await findNextReadyPlan(tasksDir);
+        const plan = await findNextPlan(tasksDir, {
+          includePending: true,
+          includeInProgress: options.current,
+        });
 
         if (!plan) {
           if (options.current) {
@@ -1309,9 +1310,10 @@ program
       if (options.next || options.current) {
         // Find the next ready plan or current plan
         const tasksDir = await resolveTasksDir(config);
-        const plan = options.current
-          ? await findCurrentPlan(tasksDir)
-          : await findNextReadyPlan(tasksDir);
+        const plan = await findNextPlan(tasksDir, {
+          includePending: true,
+          includeInProgress: options.current,
+        });
 
         if (!plan) {
           if (options.current) {

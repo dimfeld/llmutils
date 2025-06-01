@@ -281,22 +281,6 @@ export async function findNextPlan(
 }
 
 /**
- * Finds the next plan that is ready to be implemented.
- * @deprecated Use findNextPlan with { includePending: true } instead
- */
-export async function findNextReadyPlan(directory: string): Promise<PlanSummary | null> {
-  return findNextPlan(directory, { includePending: true });
-}
-
-/**
- * Finds the next plan that is currently being worked on or ready to be implemented.
- * @deprecated Use findNextPlan with { includePending: true, includeInProgress: true } instead
- */
-export async function findCurrentPlan(directory: string): Promise<PlanSummary | null> {
-  return findNextPlan(directory, { includePending: true, includeInProgress: true });
-}
-
-/**
  * Collects all dependencies of a plan in topological order (dependencies first).
  * This ensures that when executing plans, dependencies are completed before their dependents.
  *
