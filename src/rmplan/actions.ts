@@ -24,7 +24,7 @@ import type { PhaseGenerationContext } from './prompt.js';
 import { generatePhaseStepsPrompt } from './prompt.js';
 import { convertMarkdownToYaml, findYamlStart } from './process_markdown.js';
 import { createModel } from '../common/model_factory.js';
-import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 import { readAllPlans, type PlanSummary } from './plans.js';
 import * as clipboard from '../common/clipboard.js';
@@ -825,20 +825,25 @@ ${codebaseContextXml}
     let text: string;
 
     if (options.direct) {
-      // Direct LLM call (original behavior)
+      // Direct LLM call
       const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
       const model = createModel(modelId);
 
       log('Generating detailed steps for phase using model:', modelId);
 
-      const result = await generateText({
+      const result = await runStreamingPrompt({
         model,
-        prompt: fullPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: fullPrompt,
+          },
+        ],
         temperature: 0.2,
       });
       text = result.text;
     } else {
-      // Clipboard/paste mode (new default)
+      // Clipboard/paste mode
       await clipboard.write(fullPrompt);
       log(chalk.green('✓ Phase preparation prompt copied to clipboard'));
       log(
@@ -877,7 +882,7 @@ ${codebaseContextXml}
         error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
 
         // Save the current phase YAML state before any modifications
-        const currentYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+        const currentYaml = `# yaml-language-server: $schema=https:
 ${yaml.stringify(currentPhaseData)}`;
         await Bun.write(partialErrorPath, currentYaml);
         error('Current phase state saved to:', partialErrorPath);
@@ -913,7 +918,7 @@ ${yaml.stringify(currentPhaseData)}`;
     currentPhaseData.updatedAt = now;
 
     // 11. Write the updated phase YAML back to file
-    const updatedYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+    const updatedYaml = `# yaml-language-server: $schema=https:
 ${yaml.stringify(currentPhaseData)}`;
 
     await Bun.write(phaseYamlFile, updatedYaml);

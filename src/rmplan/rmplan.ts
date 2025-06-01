@@ -204,11 +204,11 @@ program
                 'Plan already contains tasks. To regenerate, remove the tasks array from the YAML file.'
               )
             );
-            planText = fileContent; // Use the original content
+            planText = fileContent;
           } else {
             // It's a stub plan - we'll handle task generation below
             // For now, set planText to null to trigger special handling
-            planText = null as any; // We'll handle this case specially
+            planText = null as any;
           }
         } else {
           // Regular markdown file
@@ -467,7 +467,7 @@ program
             stubPlanData.updatedAt = now;
 
             // Prepare the YAML content with schema line
-            const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
+            const schemaLine = `# yaml-language-server: $schema=https:
             const yamlContent = yaml.stringify(stubPlanData);
             const fullContent = schemaLine + '\n' + yamlContent;
 
@@ -681,7 +681,7 @@ program
       const yamlContent = yaml.stringify(plan);
 
       // Prepend the yaml-language-server schema line
-      const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+      const fullContent = `# yaml-language-server: $schema=https:
 
       // Write the YAML string to the new plan file
       await Bun.write(filePath, fullContent);
@@ -1501,6 +1501,57 @@ program
       await editorProcess.exited;
     } catch (err) {
       error(`Failed to open plan file: ${err as Error}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('split <planFile>')
+  .description('Split a large plan file into multiple phase-specific plan files')
+  .action(async (planFile) => {
+    const globalOpts = program.opts();
+
+    try {
+      // Step 1: Resolve the input plan file path
+      const resolvedPlanFile = path.resolve(planFile);
+
+      // Step 2: Read the file content
+      let content: string;
+      try {
+        content = await Bun.file(resolvedPlanFile).text();
+      } catch (err) {
+        error(`Failed to read plan file: ${err as Error}`);
+        process.exit(1);
+      }
+
+      // Step 3: Parse the YAML content
+      let parsedPlan: any;
+      try {
+        parsedPlan = yaml.parse(content);
+      } catch (err) {
+        error(`Failed to parse YAML: ${err as Error}`);
+        process.exit(1);
+      }
+
+      // Step 4: Validate against planSchema
+      const { planSchema } = await import('./planSchema.js');
+      const result = planSchema.safeParse(parsedPlan);
+
+      if (!result.success) {
+        error('Plan file validation failed:');
+        result.error.issues.forEach((issue) => {
+          error(`  - ${issue.path.join('.')}: ${issue.message}`);
+        });
+        process.exit(1);
+      }
+
+      // Step 5: Log the plan's title and goal for now
+      const validatedPlan = result.data;
+      log(`Plan loaded successfully:`);
+      log(`  Title: ${validatedPlan.title || 'No title'}`);
+      log(`  Goal: ${validatedPlan.goal}`);
+    } catch (err) {
+      error(`Failed to process plan file: ${err as Error}`);
       process.exit(1);
     }
   });

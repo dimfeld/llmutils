@@ -74,6 +74,8 @@ export class ClaudeCodeExecutor implements Executor {
           'Bash(pwd)',
           'Bash(rg:*)',
           'Bash(sed:*)',
+          'Bash(rm test-:*)',
+          'Bash(rm -f test-:*)',
           'Bash(jj status)',
           'Bash(jj log:*)',
           'Bash(jj commit:*)',
@@ -131,8 +133,10 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     if (!interactive) {
-      args.push('-p', contextContent);
+      args.push('-p');
     }
+
+    args.push(contextContent);
 
     if (interactive) {
       // In interactive mode, use Bun.spawn directly with inherited stdio
@@ -147,7 +151,6 @@ export class ClaudeCodeExecutor implements Executor {
         throw new Error(`Claude exited with non-zero exit code: ${exitCode}`);
       }
     } else {
-      // Non-interactive mode uses the existing approach
       let splitter = createLineSplitter();
 
       const result = await spawnAndLogOutput(args, {

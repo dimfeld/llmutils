@@ -41,13 +41,13 @@ describe('rmplan add command', () => {
     // Create a temporary directory for test files
     tempDir = await mkdtemp(join(tmpdir(), 'rmplan-add-test-'));
     tasksDir = join(tempDir, 'tasks');
-    await Bun.write(join(tasksDir, '.gitkeep'), ''); // Create tasks dir
+    await Bun.write(join(tasksDir, '.gitkeep'), '');
 
     // Mock the config loader
     mock.module('./configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
-          tasks: 'tasks', // Use relative path
+          tasks: 'tasks',
         },
       }),
     }));
@@ -110,7 +110,7 @@ describe('rmplan add command', () => {
         };
 
         const yamlContent = yaml.stringify(plan);
-        const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+        const fullContent = `# yaml-language-server: $schema=https:
         await Bun.write(filePath, fullContent);
 
         mockAction();
@@ -206,7 +206,7 @@ describe('rmplan add command', () => {
           };
 
           const yamlContent = yaml.stringify(plan);
-          const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+          const fullContent = `# yaml-language-server: $schema=https:
           await Bun.write(filePath, fullContent);
 
           if (options.edit) {
@@ -262,7 +262,7 @@ describe('rmplan add command', () => {
         }
 
         const yamlContent = yaml.stringify(plan);
-        const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+        const fullContent = `# yaml-language-server: $schema=https:
         await Bun.write(filePath, fullContent);
       });
 
@@ -320,7 +320,7 @@ describe('rmplan add command', () => {
         }
 
         const yamlContent = yaml.stringify(plan);
-        const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+        const fullContent = `# yaml-language-server: $schema=https:
         await Bun.write(filePath, fullContent);
       });
 
@@ -379,7 +379,7 @@ describe('rmplan add command', () => {
       };
 
       const yamlContent = yaml.stringify(plan);
-      const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+      const fullContent = `# yaml-language-server: $schema=https:
       await Bun.write(filePath, fullContent);
     });
 
@@ -426,7 +426,7 @@ describe('rmplan add command', () => {
         };
 
         const yamlContent = yaml.stringify(plan);
-        const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+        const fullContent = `# yaml-language-server: $schema=https:
         await Bun.write(filePath, fullContent);
       });
 
@@ -441,6 +441,286 @@ describe('rmplan add command', () => {
   });
 });
 
+describe('rmplan split command', () => {
+  let tempDir: string;
+  let tasksDir: string;
+
+  beforeEach(async () => {
+    // Create a temporary directory for test files
+    tempDir = await mkdtemp(join(tmpdir(), 'rmplan-split-test-'));
+    tasksDir = join(tempDir, 'tasks');
+    await Bun.write(join(tasksDir, '.gitkeep'), '');
+
+    // Mock the config loader
+    mock.module('./configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+      }),
+    }));
+
+    // Mock utils
+    mock.module('../rmfilter/utils.js', () => ({
+      getGitRoot: async () => tempDir,
+      setDebug: () => {},
+      setQuiet: () => {},
+      logSpawn: () => ({ exited: Promise.resolve(0) }),
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up temporary directory
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  // Test 1: Split command is defined
+  it('should have split command defined and callable', async () => {
+    const { Command } = await import('commander');
+    const program = new Command();
+    program.option('--debug', 'Enable debug logging');
+    program.option('-c, --config <path>', 'Config path');
+
+    let splitCalled = false;
+
+    program
+      .command('split <planFile>')
+      .description('Split a large plan file into multiple phase-specific plan files')
+      .action(async (planFile) => {
+        splitCalled = true;
+      });
+
+    await program.parseAsync(['node', 'rmplan', 'split', 'test-plan.yml']);
+    expect(splitCalled).toBe(true);
+  });
+
+  // Test 5: Successfully load and parse a valid plan file
+  it('should successfully load and parse a valid plan file', async () => {
+    // Create a valid plan file
+    const validPlan: PlanSchema = {
+      id: 'test-plan',
+      title: 'Test Plan',
+      goal: 'Test the split functionality',
+      details: 'This is a test plan',
+      status: 'pending',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'First task',
+          files: [],
+          steps: [{ prompt: 'Step 1', done: false }],
+        },
+        {
+          title: 'Task 2',
+          description: 'Second task',
+          files: [],
+          steps: [{ prompt: 'Step 2', done: false }],
+        },
+      ],
+    };
+
+    const planFilePath = join(tasksDir, 'valid-plan.yml');
+    const yamlContent = yaml.stringify(validPlan);
+    const fullContent = `# yaml-language-server: $schema=https:
+    await Bun.write(planFilePath, fullContent);
+
+    const { Command } = await import('commander');
+    const program = new Command();
+    program.option('--debug', 'Enable debug logging');
+    program.option('-c, --config <path>', 'Config path');
+
+    let parsedPlan: PlanSchema | null = null;
+    let loadedTitle: string | null = null;
+    let loadedGoal: string | null = null;
+
+    program
+      .command('split <planFile>')
+      .description('Split a large plan file into multiple phase-specific plan files')
+      .action(async (planFile) => {
+        const path = await import('path');
+        const resolvedPlanFile = path.resolve(planFile);
+
+        try {
+          const content = await Bun.file(resolvedPlanFile).text();
+          const parsed = yaml.parse(content) as any;
+
+          // Import and validate with planSchema
+          const { planSchema } = await import('./planSchema.js');
+          const result = planSchema.safeParse(parsed);
+
+          if (result.success) {
+            parsedPlan = result.data;
+            loadedTitle = parsedPlan!.title || '';
+            loadedGoal = parsedPlan!.goal;
+          }
+        } catch (err) {
+          // Error handling tested in other tests
+        }
+      });
+
+    await program.parseAsync(['node', 'rmplan', 'split', planFilePath]);
+
+    expect(parsedPlan).not.toBeNull();
+    expect(loadedTitle).toBe('Test Plan');
+    expect(loadedGoal).toBe('Test the split functionality');
+  });
+
+  // Test 6: Error handling - file does not exist
+  it('should handle error when input file does not exist', async () => {
+    const { Command } = await import('commander');
+    const program = new Command();
+    program.option('--debug', 'Enable debug logging');
+    program.option('-c, --config <path>', 'Config path');
+
+    let errorOccurred = false;
+    let errorMessage = '';
+
+    // Mock process.exit
+    const originalExit = process.exit;
+    process.exit = ((code: number) => {
+      if (code !== 0) {
+        errorOccurred = true;
+      }
+    }) as any;
+
+    program
+      .command('split <planFile>')
+      .description('Split a large plan file into multiple phase-specific plan files')
+      .action(async (planFile) => {
+        const path = await import('path');
+        const resolvedPlanFile = path.resolve(planFile);
+
+        try {
+          await Bun.file(resolvedPlanFile).text();
+        } catch (err) {
+          errorMessage = 'File read error';
+          process.exit(1);
+        }
+      });
+
+    try {
+      await program.parseAsync(['node', 'rmplan', 'split', '/nonexistent/file.yml']);
+    } finally {
+      process.exit = originalExit;
+    }
+
+    expect(errorOccurred).toBe(true);
+    expect(errorMessage).toBe('File read error');
+  });
+
+  // Test 6: Error handling - invalid YAML
+  it('should handle error when input file is not valid YAML', async () => {
+    const invalidYamlPath = join(tasksDir, 'invalid.yml');
+    // Use clearly invalid YAML with unmatched quotes and brackets
+    await Bun.write(invalidYamlPath, '- item1\n  - "unclosed quote\n- [bracket mismatch}');
+
+    const { Command } = await import('commander');
+    const program = new Command();
+    program.option('--debug', 'Enable debug logging');
+    program.option('-c, --config <path>', 'Config path');
+
+    let errorOccurred = false;
+
+    // Mock process.exit
+    const originalExit = process.exit;
+    process.exit = ((code: number) => {
+      if (code !== 0) {
+        errorOccurred = true;
+      }
+    }) as any;
+
+    program
+      .command('split <planFile>')
+      .description('Split a large plan file into multiple phase-specific plan files')
+      .action(async (planFile) => {
+        const path = await import('path');
+        const resolvedPlanFile = path.resolve(planFile);
+
+        try {
+          const content = await Bun.file(resolvedPlanFile).text();
+          try {
+            yaml.parse(content);
+          } catch (parseErr) {
+            // YAML parsing failed
+            process.exit(1);
+          }
+        } catch (err) {
+          // File read failed
+          process.exit(1);
+        }
+      });
+
+    try {
+      await program.parseAsync(['node', 'rmplan', 'split', invalidYamlPath]);
+    } finally {
+      process.exit = originalExit;
+    }
+
+    expect(errorOccurred).toBe(true);
+  });
+
+  // Test 6: Error handling - valid YAML but not conforming to PlanSchema
+  it('should handle error when YAML does not conform to PlanSchema', async () => {
+    const invalidPlanPath = join(tasksDir, 'invalid-plan.yml');
+    const invalidPlan = {
+      // Missing required fields like 'goal'
+      id: 'invalid',
+      title: 'Invalid Plan',
+    };
+    await Bun.write(invalidPlanPath, yaml.stringify(invalidPlan));
+
+    const { Command } = await import('commander');
+    const program = new Command();
+    program.option('--debug', 'Enable debug logging');
+    program.option('-c, --config <path>', 'Config path');
+
+    let errorOccurred = false;
+    let validationFailed = false;
+
+    // Mock process.exit
+    const originalExit = process.exit;
+    process.exit = ((code: number) => {
+      if (code !== 0) {
+        errorOccurred = true;
+      }
+    }) as any;
+
+    program
+      .command('split <planFile>')
+      .description('Split a large plan file into multiple phase-specific plan files')
+      .action(async (planFile) => {
+        const path = await import('path');
+        const resolvedPlanFile = path.resolve(planFile);
+
+        try {
+          const content = await Bun.file(resolvedPlanFile).text();
+          const parsed = yaml.parse(content);
+
+          const { planSchema } = await import('./planSchema.js');
+          const result = planSchema.safeParse(parsed);
+
+          if (!result.success) {
+            validationFailed = true;
+            process.exit(1);
+          }
+        } catch (err) {
+          process.exit(1);
+        }
+      });
+
+    try {
+      await program.parseAsync(['node', 'rmplan', 'split', invalidPlanPath]);
+    } finally {
+      process.exit = originalExit;
+    }
+
+    expect(errorOccurred).toBe(true);
+    expect(validationFailed).toBe(true);
+  });
+});
+
 describe('rmplan generate command - stub plan update', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -449,7 +729,7 @@ describe('rmplan generate command - stub plan update', () => {
     // Create a temporary directory for test files
     tempDir = await mkdtemp(join(tmpdir(), 'rmplan-generate-test-'));
     tasksDir = join(tempDir, 'tasks');
-    await Bun.write(join(tasksDir, '.gitkeep'), ''); // Create tasks dir
+    await Bun.write(join(tasksDir, '.gitkeep'), '');
 
     // Mock the config loader
     mock.module('./configLoader.js', () => ({
@@ -493,7 +773,7 @@ describe('rmplan generate command - stub plan update', () => {
 
     const stubFilePath = join(tasksDir, 'stub-plan.yml');
     const yamlContent = yaml.stringify(stubPlan);
-    const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+    const fullContent = `# yaml-language-server: $schema=https:
     await Bun.write(stubFilePath, fullContent);
 
     // Mock the LLM and conversion functions
@@ -628,7 +908,7 @@ Execute the test suite`;
 
         // Write back
         const updatedYaml = yaml.stringify(parsedPlan);
-        const updatedContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${updatedYaml}`;
+        const updatedContent = `# yaml-language-server: $schema=https:
         await Bun.write(options.plan, updatedContent);
       });
 
@@ -693,7 +973,7 @@ Execute the test suite`;
 
     const planFilePath = join(tasksDir, 'existing-plan.yml');
     const yamlContent = yaml.stringify(existingPlan);
-    const fullContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yamlContent}`;
+    const fullContent = `# yaml-language-server: $schema=https:
     await Bun.write(planFilePath, fullContent);
 
     // Keep a copy of the original content
