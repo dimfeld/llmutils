@@ -292,7 +292,7 @@ export async function saveMultiPhaseYaml(
   // code since it will bring in the goal and details from both the global and phase,
   // but we end up saving to a single file instead of a subdirectory.
   const actuallyMultiphase = parsedYaml.phases.length > 1;
-  const outputDir = options.output;
+  const outputDir = options.output.endsWith('.yml') ? options.output.slice(0, -4) : options.output;
 
   // Extract overall project information from the parsed YAML
   const projectInfo = {

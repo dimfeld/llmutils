@@ -768,12 +768,14 @@ export async function preparePhase(
       }
     }
 
+    const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
+
     // 6. Invoke rmfilter programmatically
-    let codebaseContextXml: string;
+    let prompt: string;
     try {
       const gitRoot = (await getGitRoot()) || process.cwd();
-      codebaseContextXml = await runRmfilterProgrammatically(
-        [...rmfilterArgs, '--bare'],
+      prompt = await runRmfilterProgrammatically(
+        [...rmfilterArgs, '--bare', '--instructions', phaseStepsPrompt],
         gitRoot,
         gitRoot
       );
@@ -782,15 +784,7 @@ export async function preparePhase(
       throw err;
     }
 
-    // 7. Construct LLM Prompt for Step Generation
-    const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
-    const fullPrompt = `${phaseStepsPrompt}
-
-<codebase_context>
-${codebaseContextXml}
-</codebase_context>`;
-
-    // 8. Call LLM or use clipboard/paste mode
+    // 7. Call LLM or use clipboard/paste mode
     let text: string;
 
     if (options.direct) {
@@ -805,7 +799,7 @@ ${codebaseContextXml}
         messages: [
           {
             role: 'user',
-            content: fullPrompt,
+            content: prompt,
           },
         ],
         temperature: 0.2,
@@ -813,7 +807,7 @@ ${codebaseContextXml}
       text = result.text;
     } else {
       // Clipboard/paste mode
-      await clipboard.write(fullPrompt);
+      await clipboard.write(prompt);
       log(chalk.green('✓ Phase preparation prompt copied to clipboard'));
       log(
         chalk.bold(
