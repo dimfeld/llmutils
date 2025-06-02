@@ -1,17 +1,19 @@
 #!/usr/bin/env bun
 import { input } from '@inquirer/prompts';
 import { generateText } from 'ai';
+import { $ } from 'bun';
 import chalk from 'chalk';
 import { Command } from 'commander';
+import * as fs from 'node:fs/promises';
 import os from 'os';
 import path from 'path';
-import * as fs from 'node:fs/promises';
 import { table } from 'table';
 import yaml from 'yaml';
 import * as clipboard from '../common/clipboard.ts';
 import { loadEnv } from '../common/env.js';
 import { getInstructionsFromGithubIssue } from '../common/github/issues.js';
 import { createModel } from '../common/model_factory.ts';
+import { runStreamingPrompt } from '../common/run_and_apply.ts';
 import { sshAwarePasteAction } from '../common/ssh_detection.ts';
 import { waitForEnter } from '../common/terminal.js';
 import { error, log, warn } from '../logging.js';
@@ -24,34 +26,31 @@ import { rmplanAgent } from './agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
+import { getCombinedGoal, getCombinedTitle, getCombinedTitleFromSummary } from './display_utils.js';
 import { executors } from './executors/index.js';
+import { fixYaml } from './fix_yaml.js';
 import { generateProjectId, slugify } from './id_utils.js';
 import {
-  readAllPlans,
-  resolvePlanFile,
   collectDependenciesInOrder,
-  isPlanReady,
   findNextPlan,
+  isPlanReady,
+  readAllPlans,
   readPlanFile,
-  writePlanFile,
+  resolvePlanFile,
   setPlanStatus,
+  writePlanFile,
 } from './plans.js';
-import { planPrompt, simplePlanPrompt, generateSplitPlanPrompt } from './prompt.js';
-import { multiPhasePlanSchema, planSchema, type PlanSchema } from './planSchema.js';
+import { multiPhasePlanSchema, type PlanSchema } from './planSchema.js';
+import {
+  extractMarkdownToYaml,
+  findYamlStart,
+  saveMultiPhaseYaml,
+  type ExtractMarkdownToYamlOptions,
+} from './process_markdown.ts';
+import { generateSplitPlanPrompt, planPrompt, simplePlanPrompt } from './prompt.js';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace/workspace_lock.js';
 import { createWorkspace } from './workspace/workspace_manager.js';
-import {
-  extractMarkdownToYaml,
-  type ExtractMarkdownToYamlOptions,
-  convertMarkdownToYaml,
-  findYamlStart,
-  saveMultiPhaseYaml,
-} from './process_markdown.ts';
-import { getCombinedTitle, getCombinedGoal, getCombinedTitleFromSummary } from './display_utils.js';
-import { fixYaml } from './fix_yaml.js';
-import { $ } from 'bun';
-import { runStreamingPrompt } from '../common/run_and_apply.ts';
 
 await loadEnv();
 
@@ -415,7 +414,13 @@ program
       }
 
       // Combine user CLI args and issue rmpr options
-      const allRmfilterOptions = [...userCliRmfilterArgs, ...issueRmfilterOptions];
+      const allRmfilterOptions: string[] = [];
+      for (const argList of [userCliRmfilterArgs, issueRmfilterOptions, stubPlanData?.rmfilter]) {
+        if (!argList?.length) continue;
+        // Add a separator if some options already exist
+        if (allRmfilterOptions.length) allRmfilterOptions.push('--');
+        allRmfilterOptions.push(...argList);
+      }
 
       // Check if no files are provided to rmfilter
       const hasNoFiles = additionalFiles.length === 0 && allRmfilterOptions.length === 0;
@@ -476,9 +481,38 @@ program
           output: outputPath,
           planRmfilterArgs: allRmfilterOptions,
           issueUrls: issueUrlsForExtract,
+          stubPlanData: stubPlanData || undefined,
         };
 
-        await extractMarkdownToYaml(input, config, options.quiet ?? false, extractOptions);
+        const result = await extractMarkdownToYaml(
+          input,
+          config,
+          options.quiet ?? false,
+          extractOptions
+        );
+
+        // If we generated from a stub plan, handle file cleanup
+        if (stubPlanData && planFile) {
+          // Check if the result indicates multiple files were created
+          const isMultiPhase = result.includes('phase files');
+
+          if (isMultiPhase) {
+            // Multiple phase files were created in a subdirectory, remove the original stub
+            try {
+              await fs.unlink(planFile);
+              if (!options.quiet) {
+                log(chalk.blue('✓ Removed original stub plan file:', planFile));
+              }
+            } catch (err) {
+              warn(`Failed to remove original stub plan: ${err as Error}`);
+            }
+          } else {
+            // Single file was created, it should have overwritten the original
+            if (!options.quiet) {
+              log(chalk.blue('✓ Updated plan file in place:', outputPath));
+            }
+          }
+        }
       }
     } finally {
       if (wrotePrompt) {

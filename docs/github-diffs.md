@@ -1,6 +1,7 @@
 I'll create a TypeScript function that places comments next to the relevant code in a pull request diff, using the GitHub GraphQL API fields from `PullRequestReviewThread` (`path`, `diffSide`, `line`, `startLine`, `isOutdated`, etc.). The function will process a diff and align comments with the appropriate lines, handling both single-line and multi-line comments, and accounting for outdated comments. It will output an annotated version of the diff with comments inserted next to the relevant lines.
 
 ### Assumptions and Scope
+
 - **Input**: The function takes a pull request diff (as a string) and an array of `PullRequestReviewThread` objects (parsed from a GraphQL query).
 - **Output**: A string with the diff annotated by inserting comment text next to the relevant lines, preserving the diff format.
 - **Handling**:
@@ -17,6 +18,7 @@ I'll create a TypeScript function that places comments next to the relevant code
 ### TypeScript Function
 
 The function will:
+
 1. Parse the diff to map line numbers to diff lines.
 2. Process each comment thread, determining its position (`line`/`startLine` or `originalLine`/`originalStartLine`).
 3. Insert comments next to the appropriate diff lines, formatting them clearly.
@@ -108,16 +110,18 @@ function annotateDiffWithComments(diff: string, threads: PullRequestReviewThread
     // Get comment text (use first comment in thread)
     const commentBody = thread.comments.edges[0]?.node.body || 'No comment body';
     const commentPrefix = thread.isOutdated ? '[OUTDATED] ' : '';
-    const commentLines = commentBody.split('\n').map(line => `// ${commentPrefix}${line}`);
+    const commentLines = commentBody.split('\n').map((line) => `// ${commentPrefix}${line}`);
 
     // Handle single-line or multi-line comments
     const isMultiLine = startLine !== null && startLine !== endLine;
-    const targetLines = isMultiLine ? Array.from({ length: endLine - startLine! + 1 }, (_, i) => startLine! + i) : [endLine];
+    const targetLines = isMultiLine
+      ? Array.from({ length: endLine - startLine! + 1 }, (_, i) => startLine! + i)
+      : [endLine];
 
     // Find and annotate the relevant lines
     for (const targetLine of targetLines) {
       const diffLine = lineMap[file].find(
-        line => (thread.diffSide === 'LEFT' ? line.leftLineNum : line.rightLineNum) === targetLine
+        (line) => (thread.diffSide === 'LEFT' ? line.leftLineNum : line.rightLineNum) === targetLine
       );
       if (diffLine) {
         const lineIndex = annotatedLines.indexOf(diffLine.content);
@@ -138,15 +142,18 @@ export default annotateDiffWithComments;
 ### How It Works
 
 1. **Input Structure**:
+
    - `diff`: A string containing the unified diff (e.g., from GitHub’s `/repos/{owner}/{repo}/pulls/{pull_number}.diff`).
    - `threads`: An array of `PullRequestReviewThread` objects, each with `path`, `diffSide`, `line`, `startLine`, `originalLine`, `originalStartLine`, `isOutdated`, and `comments` (containing comment bodies).
 
 2. **Diff Parsing**:
+
    - Splits the diff into lines and processes headers (`diff --git`) to track the current file.
    - Parses hunk headers (e.g., `@@ -10,5 +12,6 @@`) to track line numbers for the left (`-`) and right (`+`) sides.
    - Builds a `lineMap` mapping file paths to arrays of `DiffLine` objects, each with the line content and optional `leftLineNum`/`rightLineNum`.
 
 3. **Comment Placement**:
+
    - For each thread, checks if the file (`path`) exists in the diff.
    - Uses `line`/`startLine` if `isOutdated` is `false`, or `originalLine`/`originalStartLine` if `isOutdated` is `true`.
    - Determines if the comment is single-line (`startLine` is `null` or equals `line`) or multi-line.
@@ -189,7 +196,9 @@ const threads: PullRequestReviewThread[] = [
     originalLine: 11,
     originalStartLine: null,
     isOutdated: true,
-    comments: { edges: [{ node: { body: 'Why remove this?', createdAt: '2025-05-01T12:00:00Z' } }] },
+    comments: {
+      edges: [{ node: { body: 'Why remove this?', createdAt: '2025-05-01T12:00:00Z' } }],
+    },
   },
 ];
 
@@ -198,6 +207,7 @@ console.log(annotatedDiff);
 ```
 
 **Output**:
+
 ```
 diff --git a/src/main.py b/src/main.py
 index 1234567..89abcde 100644
@@ -213,6 +223,7 @@ index 1234567..89abcde 100644
 ```
 
 ### Notes
+
 - **Comment Placement**: Comments are appended after the target line with `//` to distinguish them from code. Multi-line comments are split into multiple `//` lines.
 - **Outdated Comments**: Marked with `[OUTDATED]` to indicate they may not align with the current diff.
 - **Diff Side**: Ensures comments are placed based on `LEFT` (old version) or `RIGHT` (new version) line numbers.
@@ -220,6 +231,7 @@ index 1234567..89abcde 100644
 - **Extensibility**: You can modify the comment format (e.g., add author, timestamp) by adjusting the `commentLines` construction.
 
 ### Enhancements (If Needed)
+
 - **Resolve Outdated Comments**: Add logic to map `originalLine` to current lines by comparing diffs from the comment’s `createdAt` commit.
 - **Custom Formatting**: Allow passing a callback to customize comment formatting (e.g., include author, date, or HTML).
 - **Multi-Line Precision**: For multi-line comments, add markers for the start and end of the range.

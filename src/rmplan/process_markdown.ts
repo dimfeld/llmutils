@@ -126,6 +126,7 @@ export interface ExtractMarkdownToYamlOptions {
   output: string;
   projectId?: string;
   issueUrl?: string;
+  stubPlanData?: PlanSchema;
 }
 
 export async function extractMarkdownToYaml(
@@ -133,7 +134,7 @@ export async function extractMarkdownToYaml(
   config: RmplanConfig,
   quiet: boolean,
   options: ExtractMarkdownToYamlOptions
-) {
+): Promise<string> {
   let convertedYaml: string;
 
   try {
@@ -187,10 +188,11 @@ export async function extractMarkdownToYaml(
     }
     validatedPlan = result.data;
 
-    // Set metadata fields
-    validatedPlan.id = options.projectId || generateProjectId();
+    // Set metadata fields, using stubPlanData if provided
+    validatedPlan.id = options.stubPlanData?.id || options.projectId || generateProjectId();
     const now = new Date().toISOString();
-    validatedPlan.createdAt = now;
+    // Use createdAt from stub plan if available, otherwise use current timestamp
+    validatedPlan.createdAt = options.stubPlanData?.createdAt || now;
     validatedPlan.updatedAt = now;
     validatedPlan.planGeneratedAt = now;
 
@@ -202,9 +204,28 @@ export async function extractMarkdownToYaml(
     if (!validatedPlan.status) {
       validatedPlan.status = 'pending';
     }
-    // Don't set a default priority - let it remain undefined
 
-    // Populate issue and rmfilter arrays from options
+    // Inherit fields from stub plan if provided
+    if (options.stubPlanData) {
+      // Combine dependencies from both stub plan and generated plan
+      if (options.stubPlanData.dependencies) {
+        const existingDeps = new Set(validatedPlan.dependencies || []);
+        const stubDeps = new Set(options.stubPlanData.dependencies);
+        validatedPlan.dependencies = Array.from(new Set([...existingDeps, ...stubDeps]));
+      }
+      // Inherit priority if not already set
+      if (!validatedPlan.priority && options.stubPlanData.priority) {
+        validatedPlan.priority = options.stubPlanData.priority;
+      }
+      // Combine issue URLs from both sources
+      if (options.stubPlanData.issue) {
+        const existingIssues = new Set(validatedPlan.issue || []);
+        const stubIssues = new Set(options.stubPlanData.issue);
+        validatedPlan.issue = Array.from(new Set([...existingIssues, ...stubIssues]));
+      }
+    }
+
+    // Populate issue and rmfilter arrays from options (these take precedence over stub plan)
     if (options.issueUrls && options.issueUrls.length > 0) {
       validatedPlan.issue = options.issueUrls;
     }
@@ -271,6 +292,8 @@ export async function extractMarkdownToYaml(
   if (!quiet) {
     log(chalk.green('Success!'), `Wrote single-phase plan to ${outputPath}`);
   }
+
+  return `Successfully created plan file at ${outputPath}`;
 }
 
 export async function saveMultiPhaseYaml(
@@ -278,11 +301,11 @@ export async function saveMultiPhaseYaml(
   options: ExtractMarkdownToYamlOptions,
   config: RmplanConfig,
   quiet: boolean
-) {
-  // Determine project ID
+): Promise<string> {
+  // Determine project ID, preferring stubPlanData.id
   let issueUrl: string | undefined;
 
-  const projectId = options.projectId || generateProjectId();
+  const projectId = options.stubPlanData?.id || options.projectId || generateProjectId();
 
   if (!quiet) {
     log(chalk.blue('Using Project ID:'), projectId);
@@ -315,9 +338,10 @@ export async function saveMultiPhaseYaml(
 
     // Add metadata if not present
     const now = new Date().toISOString();
-    phase.planGeneratedAt = phase.planGeneratedAt || now;
-    phase.createdAt = phase.createdAt || now;
-    phase.updatedAt = phase.updatedAt || now;
+    phase.planGeneratedAt = now;
+    // Use createdAt from stub plan if available for all phases
+    phase.createdAt = options.stubPlanData?.createdAt || now;
+    phase.updatedAt = now;
 
     // Add overall project information to each phase
     if (projectInfo.goal || projectInfo.title || projectInfo.details) {
@@ -330,6 +354,26 @@ export async function saveMultiPhaseYaml(
     }
     if (issueUrl) {
       phase.issue = [issueUrl];
+    }
+
+    // Inherit fields from stub plan if provided
+    if (options.stubPlanData) {
+      // Combine dependencies from both stub plan and phase
+      if (options.stubPlanData.dependencies) {
+        const existingDeps = new Set(phase.dependencies || []);
+        const stubDeps = new Set(options.stubPlanData.dependencies);
+        phase.dependencies = Array.from(new Set([...existingDeps, ...stubDeps]));
+      }
+      // Inherit priority if not already set
+      if (!phase.priority && options.stubPlanData.priority) {
+        phase.priority = options.stubPlanData.priority;
+      }
+      // Combine issue URLs from both sources
+      if (options.stubPlanData.issue) {
+        const existingIssues = new Set(phase.issue || []);
+        const stubIssues = new Set(options.stubPlanData.issue);
+        phase.issue = Array.from(new Set([...existingIssues, ...stubIssues]));
+      }
     }
 
     // Update dependencies to use phase IDs
@@ -460,5 +504,12 @@ export async function saveMultiPhaseYaml(
 
   if (failedPhases.length > 0) {
     warn(`Warning: Failed to write ${failedPhases.length} phase files: ${failedPhases.join(', ')}`);
+  }
+
+  // Return a message about what was created
+  if (actuallyMultiphase) {
+    return `Successfully created ${successfulWrites} phase files in ${outputDir}`;
+  } else {
+    return `Successfully created plan file at ${options.output}.yml`;
   }
 }
