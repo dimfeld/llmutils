@@ -9,6 +9,7 @@ import type { RmplanConfig } from './configSchema.js';
 import { generatePhaseId, generateProjectId, slugify } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
+import { writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
 import { fixYaml } from './fix_yaml.js';
 
@@ -263,11 +264,9 @@ export async function extractMarkdownToYaml(
     orderedPlan.changedFiles = validatedPlan.changedFiles;
   }
 
-  const yamlContent = yaml.stringify(orderedPlan);
-
   // Write single-phase plan to output file
   const outputPath = options.output.endsWith('.yml') ? options.output : `${options.output}.yml`;
-  await Bun.write(outputPath, yamlContent);
+  await writePlanFile(outputPath, orderedPlan);
 
   if (!quiet) {
     log(chalk.green('Success!'), `Wrote single-phase plan to ${outputPath}`);
@@ -432,13 +431,12 @@ export async function saveMultiPhaseYaml(
       })
     );
 
-    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(orderedContent)}`;
     const phaseFilePath = actuallyMultiphase
       ? path.join(outputDir, `phase-${phaseIndex}.yml`)
       : `${options.output}.yml`;
 
     try {
-      await Bun.write(phaseFilePath, yamlContent);
+      await writePlanFile(phaseFilePath, orderedContent as PlanSchema);
       successfulWrites++;
     } catch (err) {
       warn(`Warning: Failed to write phase ${phaseIndex} YAML file:`, err);

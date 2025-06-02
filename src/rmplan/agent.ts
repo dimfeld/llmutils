@@ -11,6 +11,7 @@ import {
   prepareNextStep,
   preparePhase,
 } from './actions.ts';
+import { readPlanFile, writePlanFile } from './plans.ts';
 import { loadEffectiveConfig } from './configLoader.ts';
 import {
   buildExecutorAndLog,
@@ -18,7 +19,6 @@ import {
   defaultModelForExecutor,
 } from './executors/index.ts';
 import type { ExecutorCommonOptions } from './executors/types.ts';
-import { planSchema } from './planSchema.ts';
 import { createWorkspace } from './workspace/workspace_manager.ts';
 import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.ts';
 import { WorkspaceLock } from './workspace/workspace_lock.ts';
@@ -205,30 +205,24 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Check if the plan needs preparation
   try {
-    const fileContent = await Bun.file(currentPlanFile).text();
-    const parsed = yaml.parse(fileContent);
-    const planResult = planSchema.safeParse(parsed);
+    const planData = await readPlanFile(currentPlanFile);
 
-    if (planResult.success) {
-      const planData = planResult.data;
+    // Check if prompts have been generated
+    const needsPreparation =
+      !planData.promptsGeneratedAt ||
+      planData.tasks.some((task) => !task.steps || task.steps.length === 0);
 
-      // Check if prompts have been generated
-      const needsPreparation =
-        !planData.promptsGeneratedAt ||
-        planData.tasks.some((task) => !task.steps || task.steps.length === 0);
-
-      if (needsPreparation) {
-        log('Plan needs preparation. Generating detailed steps and prompts...');
-        try {
-          await preparePhase(currentPlanFile, config, {
-            model: options.model,
-            direct: options.direct,
-          });
-          log('Successfully prepared the plan with detailed steps.');
-        } catch (err) {
-          error('Failed to automatically prepare the plan:', err);
-          process.exit(1);
-        }
+    if (needsPreparation) {
+      log('Plan needs preparation. Generating detailed steps and prompts...');
+      try {
+        await preparePhase(currentPlanFile, config, {
+          model: options.model,
+          direct: options.direct,
+        });
+        log('Successfully prepared the plan with detailed steps.');
+      } catch (err) {
+        error('Failed to automatically prepare the plan:', err);
+        process.exit(1);
       }
     }
   } catch (err) {
@@ -257,28 +251,13 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     while (stepCount < maxSteps) {
       stepCount++;
 
-      const fileContent = await Bun.file(currentPlanFile).text();
-      let parsed;
-      try {
-        parsed = yaml.parse(fileContent);
-      } catch (err) {
-        error('Failed to parse YAML:', err);
-        process.exit(1);
-      }
-
-      const planResult = planSchema.safeParse(parsed);
-      if (!planResult.success) {
-        error('Validation errors:', JSON.stringify(planResult.error.issues, null, 2));
-        process.exit(1);
-      }
-
-      const planData = planResult.data;
+      const planData = await readPlanFile(currentPlanFile);
 
       // Check if status needs to be updated from 'pending' to 'in progress'
       if (planData.status === 'pending') {
         planData.status = 'in_progress';
         planData.updatedAt = new Date().toISOString();
-        await Bun.write(currentPlanFile, yaml.stringify(planData));
+        await writePlanFile(currentPlanFile, planData);
       }
 
       const pendingTaskInfo = findPendingTask(planData);

@@ -385,15 +385,15 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
   const absolutePath = resolve(filePath);
   const content = await Bun.file(absolutePath).text();
   const parsed = yaml.parse(content);
-  
+
   const result = phaseSchema.safeParse(parsed);
   if (!result.success) {
-    const errors = result.error.issues.map(issue => 
-      `  - ${issue.path.join('.')}: ${issue.message}`
-    ).join('\n');
+    const errors = result.error.issues
+      .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
+      .join('\n');
     throw new Error(`Invalid plan file ${filePath}:\n${errors}`);
   }
-  
+
   return result.data;
 }
 
@@ -404,25 +404,26 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
  */
 export async function writePlanFile(filePath: string, plan: PlanSchema): Promise<void> {
   const absolutePath = resolve(filePath);
-  
+
   // Validate the plan before writing
   const result = phaseSchema.safeParse(plan);
   if (!result.success) {
-    const errors = result.error.issues.map(issue => 
-      `  - ${issue.path.join('.')}: ${issue.message}`
-    ).join('\n');
+    const errors = result.error.issues
+      .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
+      .join('\n');
     throw new Error(`Invalid plan data:\n${errors}`);
   }
-  
+
   // Convert to YAML with proper formatting
   const yamlContent = yaml.stringify(result.data, {
     lineWidth: 0,
     nullStr: '',
   });
-  
+
   // Add the yaml-language-server schema line at the top
-  const schemaLine = '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
+  const schemaLine =
+    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
   const fullContent = schemaLine + yamlContent;
-  
+
   await Bun.write(absolutePath, fullContent);
 }

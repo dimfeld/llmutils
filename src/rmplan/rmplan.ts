@@ -32,6 +32,8 @@ import {
   collectDependenciesInOrder,
   isPlanReady,
   findNextPlan,
+  readPlanFile,
+  writePlanFile,
 } from './plans.js';
 import { planPrompt, simplePlanPrompt, generateSplitPlanPrompt } from './prompt.js';
 import { multiPhasePlanSchema, planSchema, type PlanSchema } from './planSchema.js';
@@ -491,13 +493,8 @@ program
             stubPlanData.promptsGeneratedAt = now;
             stubPlanData.updatedAt = now;
 
-            // Prepare the YAML content with schema line
-            const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
-            const yamlContent = yaml.stringify(stubPlanData);
-            const fullContent = schemaLine + '\n' + yamlContent;
-
             // Write back to the original file
-            await Bun.write(options.plan, fullContent);
+            await writePlanFile(options.plan, stubPlanData);
 
             log(chalk.green('✓ Successfully generated tasks and updated plan:'), options.plan);
             log(chalk.gray(`  Generated ${generatedTasks.length} tasks`));
@@ -686,15 +683,8 @@ program
         plan.priority = options.priority as 'low' | 'medium' | 'high' | 'urgent';
       }
 
-      // Convert plan object to YAML string
-      const yamlContent = yaml.stringify(plan);
-
-      // Prepend the yaml-language-server schema line
-      const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
-      const fullContent = schemaLine + '\n' + yamlContent;
-
-      // Write the YAML string to the new plan file
-      await Bun.write(filePath, fullContent);
+      // Write the plan to the new file
+      await writePlanFile(filePath, plan);
 
       // Log success message
       log(chalk.green('✓ Created plan stub:'), filePath);
@@ -926,8 +916,7 @@ function createAgentCommand(command: Command, description: string) {
           const allPlans = await readAllPlans(tasksDir);
 
           // Get the plan's ID
-          const planContent = await Bun.file(resolvedPlanFile).text();
-          const planData = yaml.parse(planContent) as PlanSchema;
+          const planData = await readPlanFile(resolvedPlanFile);
 
           if (!planData.id) {
             error('Plan must have an ID to execute with dependencies');
@@ -1346,8 +1335,7 @@ program
       }
 
       // Read the plan file
-      const content = await Bun.file(resolvedPlanFile).text();
-      const plan = yaml.parse(content) as PlanSchema;
+      const plan = await readPlanFile(resolvedPlanFile);
 
       // Check if plan is ready (we'll need to load all plans to check dependencies)
       const tasksDir = await resolveTasksDir(config);
@@ -1530,38 +1518,16 @@ program
       // Step 1: Resolve the input plan file path
       const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);
 
-      // Step 2: Read the file content
-      let content: string;
+      // Step 2: Read and validate the plan file
+      let validatedPlan: PlanSchema;
       try {
-        content = await Bun.file(resolvedPlanFile).text();
+        validatedPlan = await readPlanFile(resolvedPlanFile);
       } catch (err) {
-        error(`Failed to read plan file '${resolvedPlanFile}': ${err as Error}`);
+        error(`Failed to read or validate plan file '${resolvedPlanFile}': ${err as Error}`);
         process.exit(1);
       }
 
-      // Step 3: Parse the YAML content
-      let parsedPlan: any;
-      try {
-        parsedPlan = yaml.parse(content);
-      } catch (err) {
-        error(`Failed to parse YAML from '${resolvedPlanFile}': ${err as Error}`);
-        process.exit(1);
-      }
-
-      // Step 4: Validate against planSchema
-      const result = planSchema.safeParse(parsedPlan);
-
-      if (!result.success) {
-        error(`Plan file validation failed for '${resolvedPlanFile}':`);
-        error('Ensure the file has required fields: id, goal, and at least one task.');
-        result.error.issues.forEach((issue) => {
-          error(`  - ${issue.path.join('.')}: ${issue.message}`);
-        });
-        process.exit(1);
-      }
-
-      // Step 5: Generate the prompt for splitting the plan
-      const validatedPlan = result.data;
+      // Step 3: Generate the prompt for splitting the plan
       log(chalk.blue('📄 Plan loaded successfully:'));
       log(`  Title: ${validatedPlan.title || 'No title'}`);
       log(`  Goal: ${validatedPlan.goal}`);

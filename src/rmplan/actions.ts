@@ -26,7 +26,7 @@ import { convertMarkdownToYaml, findYamlStart } from './process_markdown.js';
 import { createModel } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
-import { readAllPlans, type PlanSummary } from './plans.js';
+import { readAllPlans, readPlanFile, writePlanFile, type PlanSummary } from './plans.js';
 import * as clipboard from '../common/clipboard.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.js';
 import { waitForEnter } from '../common/terminal.js';
@@ -97,14 +97,7 @@ export async function prepareNextStep(
   }
 
   // 1. Load and parse the plan file
-  const fileContent = await Bun.file(planFile).text();
-  const parsed = yaml.parse(fileContent);
-  const plan = planSchema.safeParse(parsed);
-  if (!plan.success) {
-    throw new Error('Validation errors: ' + JSON.stringify(plan.error.issues, null, 2));
-  }
-
-  const planData = plan.data;
+  const planData = await readPlanFile(planFile);
   const result = findPendingTask(planData);
   if (!result) {
     throw new Error('No pending steps found in the plan.');
@@ -580,8 +573,7 @@ export async function markStepDone(
   }
 
   // 6. Write updated plan back
-  const newPlanText = yaml.stringify(planData);
-  await Bun.write(planFile, newPlanText);
+  await writePlanFile(planFile, planData);
 
   // 7. Optionally commit
   const message = output.join('\n');
@@ -718,17 +710,7 @@ export async function preparePhase(
 ): Promise<void> {
   try {
     // Load the target phase YAML file
-    const phaseContent = await Bun.file(phaseYamlFile).text();
-    const parsedPhase = yaml.parse(phaseContent);
-    const validationResult = phaseSchema.safeParse(parsedPhase);
-
-    if (!validationResult.success) {
-      throw new Error(
-        `Failed to validate phase YAML: ${JSON.stringify(validationResult.error.issues, null, 2)}`
-      );
-    }
-
-    const currentPhaseData = validationResult.data;
+    const currentPhaseData = await readPlanFile(phaseYamlFile);
     const projectPlanDir = path.dirname(phaseYamlFile);
     const allPlans = await readAllPlans(projectPlanDir);
 
@@ -882,9 +864,7 @@ ${codebaseContextXml}
         error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
 
         // Save the current phase YAML state before any modifications
-        const currentYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-${yaml.stringify(currentPhaseData)}`;
-        await Bun.write(partialErrorPath, currentYaml);
+        await writePlanFile(partialErrorPath, currentPhaseData);
         error('Current phase state saved to:', partialErrorPath);
       } catch (saveErr) {
         error('Failed to save error files:', saveErr);
@@ -918,10 +898,7 @@ ${yaml.stringify(currentPhaseData)}`;
     currentPhaseData.updatedAt = now;
 
     // 11. Write the updated phase YAML back to file
-    const updatedYaml = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-${yaml.stringify(currentPhaseData)}`;
-
-    await Bun.write(phaseYamlFile, updatedYaml);
+    await writePlanFile(phaseYamlFile, currentPhaseData);
 
     // 12. Log success
     log(chalk.green('✓ Successfully generated detailed steps for phase'));
@@ -946,17 +923,7 @@ async function gatherPhaseGenerationContext(
 ): Promise<PhaseGenerationContext> {
   try {
     // 1. Load and validate the target phase YAML file
-    const phaseContent = await Bun.file(phaseFilePath).text();
-    const parsedPhase = yaml.parse(phaseContent);
-    const validationResult = phaseSchema.safeParse(parsedPhase);
-
-    if (!validationResult.success) {
-      throw new Error(
-        `Failed to validate phase YAML at ${phaseFilePath}: ${JSON.stringify(validationResult.error.issues, null, 2)}`
-      );
-    }
-
-    const currentPhaseData = validationResult.data;
+    const currentPhaseData = await readPlanFile(phaseFilePath);
 
     // 2. Determine the overall project plan's goal and details
     let overallProjectGoal = '';
@@ -996,17 +963,7 @@ async function gatherPhaseGenerationContext(
         const dependencyPath = dependencyPlan.filename;
 
         try {
-          const dependencyContent = await Bun.file(dependencyPath).text();
-          const parsedDependency = yaml.parse(dependencyContent);
-          const validatedDependency = phaseSchema.safeParse(parsedDependency);
-
-          if (!validatedDependency.success) {
-            throw new Error(
-              `Failed to validate dependency YAML at ${dependencyPath}: ${JSON.stringify(validatedDependency.error.issues, null, 2)}`
-            );
-          }
-
-          const dependencyData = validatedDependency.data;
+          const dependencyData = await readPlanFile(dependencyPath);
 
           // Check if dependency is done
           if (dependencyData.status !== 'done') {
