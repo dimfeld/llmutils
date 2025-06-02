@@ -64,7 +64,7 @@ function findBestMatchLine(
   if (targetLineInFile !== null) {
     // Convert 1-indexed to 0-indexed for comparison with match results
     const targetLine0Indexed = targetLineInFile - 1;
-    
+
     let bestMatch = matches[0];
     let minDistance = Math.abs(bestMatch.startLine - targetLine0Indexed);
 
@@ -79,7 +79,7 @@ function findBestMatchLine(
         minDistance = distance;
       }
     }
-    
+
     // Continue with the best match found and adjust based on diff context
     // Adjust line numbers based on the comment's position within the diff context
     let targetIndex = diffForContext.findIndex(
@@ -99,18 +99,20 @@ function findBestMatchLine(
     // We need to adjust within that match based on where the target line is within the diff context
     const contextStartLineInDiff = diffForContext[0].newLineNumber;
     const targetOffsetInContext = targetLineInFile - contextStartLineInDiff;
-    
+
     // The target line is at bestMatch.startLine + targetOffsetInContext
     const adjustedEndLine = bestMatch.startLine + targetOffsetInContext;
-    
+
     // For block comments, calculate the start line
     const adjustedStartLine =
-      targetStartLineInFile !== null && targetLineInFile !== null && targetStartLineInFile !== targetLineInFile
+      targetStartLineInFile !== null &&
+      targetLineInFile !== null &&
+      targetStartLineInFile !== targetLineInFile
         ? adjustedEndLine - (targetLineInFile - targetStartLineInFile)
         : adjustedEndLine;
 
     debugLog(`Adjusted lines: startLine=${adjustedStartLine}, endLine=${adjustedEndLine}`);
-    
+
     return {
       startLine: adjustedStartLine,
       endLine: adjustedEndLine,
@@ -123,7 +125,7 @@ function findBestMatchLine(
         bestMatch = match;
       }
     }
-    
+
     return {
       startLine: bestMatch.startLine,
       endLine: bestMatch.endLine,
