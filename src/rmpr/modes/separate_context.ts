@@ -13,12 +13,15 @@ export function formatReviewCommentsForSeparateContext(
   for (const comment of selectedComments) {
     let lineInfo: string;
     if (
-      comment.thread.originalStartLine &&
-      comment.thread.originalStartLine !== comment.thread.originalLine
+      comment.thread.startLine &&
+      comment.thread.line &&
+      comment.thread.startLine !== comment.thread.line
     ) {
-      lineInfo = `${comment.thread.originalStartLine}-${comment.thread.originalLine}`;
+      lineInfo = `${comment.thread.startLine}-${comment.thread.line}`;
+    } else if (comment.thread.line) {
+      lineInfo = `${comment.thread.line}`;
     } else {
-      lineInfo = `${comment.thread.originalLine}`;
+      lineInfo = 'outdated';
     }
 
     // Prefix each line of the comment body with 'Comment: '
@@ -26,15 +29,12 @@ export function formatReviewCommentsForSeparateContext(
     const prefixedCommentBody = commentBody.split('\n').map((line) => `Comment: ${line}`);
 
     // Format diffForContext with injected comments
-    const targetLine =
-      comment.thread.diffSide === 'LEFT'
-        ? comment.thread.originalLine
-        : (comment.thread.line ?? comment.thread.originalLine);
+    const targetLine = comment.thread.line;
     const diffKey = comment.thread.diffSide === 'LEFT' ? 'oldLineNumber' : 'newLineNumber';
 
-    let spliceBeforeIndex = comment.diffForContext.findLastIndex(
-      (line) => line[diffKey] > targetLine
-    );
+    let spliceBeforeIndex = targetLine
+      ? comment.diffForContext.findLastIndex((line) => line[diffKey] > targetLine)
+      : -1;
 
     let diffContentLines: string[];
     if (spliceBeforeIndex === -1) {
