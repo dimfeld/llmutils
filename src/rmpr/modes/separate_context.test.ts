@@ -10,10 +10,11 @@ describe('Separate Context Mode Logic', () => {
     id: string,
     path: string,
     body: string,
-    originalLine: number,
-    originalStartLine: number | null = null,
+    line: number | null,
+    startLine: number | null = null,
     diffHunk: string = standardHunk,
-    authorLogin: string | undefined = 'testuser'
+    authorLogin: string | undefined = 'testuser',
+    diffSide: 'RIGHT' | 'LEFT' = 'RIGHT'
   ): DetailedReviewComment => {
     const diff = parseDiff(diffHunk);
 
@@ -28,11 +29,11 @@ describe('Separate Context Mode Logic', () => {
       },
       thread: {
         path,
-        originalLine,
-        originalStartLine,
-        line: originalLine,
-        startLine: originalStartLine,
-        diffSide: 'RIGHT',
+        originalLine: line, // keeping for compatibility but not used
+        originalStartLine: startLine,
+        line,
+        startLine,
+        diffSide,
         id: `thread-${id}`,
       },
       diffForContext: diff!.changes,
@@ -75,7 +76,7 @@ describe('Separate Context Mode Logic', () => {
       expect(result).toBe(expected);
     });
 
-    test('should format multiple comments, joined by ---, with comments injected in diffs', () => {
+    test('should format multiple comments with comments injected in diffs', () => {
       const comments = [
         mockComment('c1', 'src/file1.ts', 'Comment 1\nline', 7, 6),
         mockComment('c2', 'src/file2.py', 'Comment 2', 12, null, standardHunk2, undefined),
@@ -104,6 +105,84 @@ describe('Separate Context Mode Logic', () => {
     test('should return an empty string if no comments are provided', () => {
       const result = formatReviewCommentsForSeparateContext([]);
       expect(result).toBe('<reviews></reviews>');
+    });
+
+    test('should handle LEFT side comments correctly', () => {
+      const leftHunk =
+        '@@ -10,3 +10,2 @@\n context before\n-removed line\n-another removed\n+added line\n context after';
+      const comments = [
+        mockComment(
+          'c1',
+          'src/file.ts',
+          'Comment on removed line',
+          11,
+          null,
+          leftHunk,
+          undefined,
+          'LEFT'
+        ),
+      ];
+      const result = formatReviewCommentsForSeparateContext(comments);
+      const expected = [
+        '<reviews>',
+        `<review file="src/file.ts" lines="11">`,
+        ' context before',
+        '-removed line',
+        'Comment: Comment on removed line',
+        '-another removed',
+        '+added line',
+        ' context after',
+        '</review>',
+        '</reviews>',
+      ].join('\n');
+      expect(result).toBe(expected);
+    });
+
+    test('should handle outdated comments with null line numbers', () => {
+      const comments = [mockComment('c1', 'src/file.ts', 'This is outdated', null, null)];
+      const result = formatReviewCommentsForSeparateContext(comments);
+      const expected = [
+        '<reviews>',
+        `<review file="src/file.ts" lines="outdated">`,
+        '-old line',
+        '+new line',
+        ' context',
+        'Comment: This is outdated',
+        '</review>',
+        '</reviews>',
+      ].join('\n');
+      expect(result).toBe(expected);
+    });
+
+    test('should handle RIGHT side comments on added lines', () => {
+      const rightHunk =
+        '@@ -5,2 +5,3 @@\n context\n-old content\n+new content\n+extra added line\n more context';
+      const comments = [
+        mockComment(
+          'c1',
+          'src/file.ts',
+          'Comment on new line',
+          6,
+          null,
+          rightHunk,
+          undefined,
+          'RIGHT'
+        ),
+      ];
+      const result = formatReviewCommentsForSeparateContext(comments);
+      const expected = [
+        '<reviews>',
+        `<review file="src/file.ts" lines="6">`,
+        ' context',
+        '-old content',
+        '+new content',
+        'Comment: Comment on new line',
+        '+extra added line',
+        ' more context',
+        '</review>',
+        '</reviews>',
+      ].join('\n');
+      expect(result).toBe(expected);
     });
   });
 });

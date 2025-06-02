@@ -172,12 +172,9 @@ describe('AI Comments Mode Logic', () => {
     });
 
     test('should handle null thread.line (outdated comment) by relying on diffForContext', () => {
-      const originalContent = [
-        'const a = 1;',
-        'const b = 2;',
-        'const c = 3;',
-        'const d = 4;',
-      ].join('\n');
+      const originalContent = ['const a = 1;', 'const b = 2;', 'const c = 3;', 'const d = 4;'].join(
+        '\n'
+      );
       const diffForContext = [
         { content: ' const b = 2;', oldLineNumber: 2, newLineNumber: 2 },
         { content: ' const c = 3;', oldLineNumber: 3, newLineNumber: 3 },
@@ -213,9 +210,7 @@ describe('AI Comments Mode Logic', () => {
         '  return data;',
         '}',
       ].join('\n');
-      const diffForContext = [
-        { content: '   return data;', oldLineNumber: 2, newLineNumber: 2 },
-      ];
+      const diffForContext = [{ content: '   return data;', oldLineNumber: 2, newLineNumber: 2 }];
       // Line 6 refers to the second occurrence
       const comments = [mockCommentBase('c1', 'Use cached data', 6, null, diffForContext)];
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
@@ -274,12 +269,12 @@ describe('AI Comments Mode Logic', () => {
 
     test('should insert a single-line comment', () => {
       const content = 'const a = 1;\nconst b = 2;';
-      const comments = [{
-        ...mockCommentBase('c1', 'Change b to 3', 2),
-        diffForContext: [
-          { content: ' const b = 2;', oldLineNumber: 2, newLineNumber: 2 },
-        ],
-      }];
+      const comments = [
+        {
+          ...mockCommentBase('c1', 'Change b to 3', 2),
+          diffForContext: [{ content: ' const b = 2;', oldLineNumber: 2, newLineNumber: 2 }],
+        },
+      ];
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         content,
         comments,
@@ -290,13 +285,15 @@ describe('AI Comments Mode Logic', () => {
 
     test('should insert a multi-line comment (block comment)', () => {
       const content = 'function foo() {\n  return 1;\n}';
-      const comments = [{
-        ...mockCommentBase('c1', 'Refactor this function\nIt is too complex', 2, 1),
-        diffForContext: [
-          { content: ' function foo() {', oldLineNumber: 1, newLineNumber: 1 },
-          { content: '   return 1;', oldLineNumber: 2, newLineNumber: 2 },
-        ],
-      }];
+      const comments = [
+        {
+          ...mockCommentBase('c1', 'Refactor this function\nIt is too complex', 2, 1),
+          diffForContext: [
+            { content: ' function foo() {', oldLineNumber: 1, newLineNumber: 1 },
+            { content: '   return 1;', oldLineNumber: 2, newLineNumber: 2 },
+          ],
+        },
+      ];
       // crypto.randomUUID().slice(0,8) will be "00000000"
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         content,
@@ -329,9 +326,7 @@ describe('AI Comments Mode Logic', () => {
         },
         {
           ...mockCommentBase('c1-single', 'x should be 20', 1),
-          diffForContext: [
-            { content: ' const x = 10;', oldLineNumber: 1, newLineNumber: 1 },
-          ],
+          diffForContext: [{ content: ' const x = 10;', oldLineNumber: 1, newLineNumber: 1 }],
         },
       ];
       // Sorted order: c1-single (line 1, no UUID), c2-multi (block line 3-4, UUID 00000000)
@@ -367,15 +362,11 @@ describe('AI Comments Mode Logic', () => {
         },
         {
           ...mockCommentBase('c-end', 'Comment for line 5', 5),
-          diffForContext: [
-            { content: ' line5', oldLineNumber: 5, newLineNumber: 5 },
-          ],
+          diffForContext: [{ content: ' line5', oldLineNumber: 5, newLineNumber: 5 }],
         },
         {
           ...mockCommentBase('c-begin', 'Comment for line 1', 1),
-          diffForContext: [
-            { content: ' line1', oldLineNumber: 1, newLineNumber: 1 },
-          ],
+          diffForContext: [{ content: ' line1', oldLineNumber: 1, newLineNumber: 1 }],
         },
       ];
       // Sorted: c-begin (single, no UUID), c-middle (block, UUID 00000000), c-end (single, no UUID)
@@ -403,12 +394,12 @@ describe('AI Comments Mode Logic', () => {
 
     test('should handle single-line comments on an empty file content ("")', () => {
       const content = '';
-      const comments = [{
-        ...mockCommentBase('c1', 'Add content here', 1),
-        diffForContext: [
-          { content: ' ', oldLineNumber: 1, newLineNumber: 1 },
-        ],
-      }];
+      const comments = [
+        {
+          ...mockCommentBase('c1', 'Add content here', 1),
+          diffForContext: [{ content: ' ', oldLineNumber: 1, newLineNumber: 1 }],
+        },
+      ];
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         content,
         comments,
@@ -424,15 +415,11 @@ describe('AI Comments Mode Logic', () => {
       const comments = [
         {
           ...mockCommentBase('id-z', 'Comment Z for line 2', 2, null),
-          diffForContext: [
-            { content: ' line2', oldLineNumber: 2, newLineNumber: 2 },
-          ],
+          diffForContext: [{ content: ' line2', oldLineNumber: 2, newLineNumber: 2 }],
         },
         {
           ...mockCommentBase('id-a', 'Comment A for line 2', 2, null),
-          diffForContext: [
-            { content: ' line2', oldLineNumber: 2, newLineNumber: 2 },
-          ],
+          diffForContext: [{ content: ' line2', oldLineNumber: 2, newLineNumber: 2 }],
         },
         {
           ...mockCommentBase('id-block', 'Block for line 1-2', 2, 1),
@@ -513,9 +500,7 @@ describe('AI Comments Mode Logic', () => {
         },
         {
           ...mockCommentBase('c2', 'Change to world', 1), // Single for print
-          diffForContext: [
-            { content: ' print("hello")', oldLineNumber: 1, newLineNumber: 1 },
-          ],
+          diffForContext: [{ content: ' print("hello")', oldLineNumber: 1, newLineNumber: 1 }],
         },
       ];
       // Sorted: c2 (single), c1 (block, UUID 00000000)
@@ -539,13 +524,15 @@ describe('AI Comments Mode Logic', () => {
 
     test('should use <!-- --> for HTML files (.html)', () => {
       const content = '<h1>Title</h1>\n<p>Text</p>';
-      const comments = [{
-        ...mockCommentBase('c1', 'Wrap in div', 2, 1), // Block for whole content
-        diffForContext: [
-          { content: ' <h1>Title</h1>', oldLineNumber: 1, newLineNumber: 1 },
-          { content: ' <p>Text</p>', oldLineNumber: 2, newLineNumber: 2 },
-        ],
-      }];
+      const comments = [
+        {
+          ...mockCommentBase('c1', 'Wrap in div', 2, 1), // Block for whole content
+          diffForContext: [
+            { content: ' <h1>Title</h1>', oldLineNumber: 1, newLineNumber: 1 },
+            { content: ' <p>Text</p>', oldLineNumber: 2, newLineNumber: 2 },
+          ],
+        },
+      ];
       // Block, UUID 00000000
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         content,
