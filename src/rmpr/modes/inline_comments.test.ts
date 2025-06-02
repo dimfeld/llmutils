@@ -7,13 +7,13 @@ describe('AI Comments Mode Logic', () => {
     const mockCommentBase = (
       id: string,
       body: string,
-      originalLine: number,
-      originalStartLine: number | null = null,
+      line: number | null,
+      startLine: number | null = null,
       diffForContext: DetailedReviewComment['diffForContext'] = [
         {
           content: 'mock diff hunk',
-          oldLineNumber: originalLine,
-          newLineNumber: originalLine,
+          oldLineNumber: line || 1,
+          newLineNumber: line || 1,
         },
       ]
     ): DetailedReviewComment => ({
@@ -29,10 +29,10 @@ describe('AI Comments Mode Logic', () => {
       thread: {
         id: `thread-${id}`,
         path: 'test.ts',
-        originalLine,
-        originalStartLine,
-        line: originalLine,
-        startLine: originalStartLine,
+        originalLine: line || 1,
+        originalStartLine: startLine,
+        line: line,
+        startLine: startLine,
         diffSide: 'RIGHT',
       },
       diffForContext,
@@ -170,14 +170,80 @@ describe('AI Comments Mode Logic', () => {
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
+
+    test('should handle null thread.line (outdated comment) by relying on diffForContext', () => {
+      const originalContent = [
+        'const a = 1;',
+        'const b = 2;',
+        'const c = 3;',
+        'const d = 4;',
+      ].join('\n');
+      const diffForContext = [
+        { content: ' const b = 2;', oldLineNumber: 2, newLineNumber: 2 },
+        { content: ' const c = 3;', oldLineNumber: 3, newLineNumber: 3 },
+      ];
+      // Pass null for line to simulate outdated comment
+      const comments = [mockCommentBase('c1', 'Fix this section', null, null, diffForContext)];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      // Should still find the best match based on diffForContext alone
+      // With null startLine/endLine, it defaults to a block comment
+      const expected = [
+        'const a = 1;',
+        '// AI_COMMENT_START',
+        '// AI: Fix this section',
+        'const b = 2;',
+        'const c = 3;',
+        '// AI_COMMENT_END',
+        'const d = 4;',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+
+    test('should handle multiple fuzzy matches without originalLine heuristic', () => {
+      const originalContent = [
+        'function process() {',
+        '  return data;',
+        '}',
+        '',
+        'function process() {',
+        '  return data;',
+        '}',
+      ].join('\n');
+      const diffForContext = [
+        { content: '   return data;', oldLineNumber: 2, newLineNumber: 2 },
+      ];
+      // Line 6 refers to the second occurrence
+      const comments = [mockCommentBase('c1', 'Use cached data', 6, null, diffForContext)];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      // Should place comment at the second occurrence (line 6)
+      const expected = [
+        'function process() {',
+        '  return data;',
+        '}',
+        '',
+        'function process() {',
+        '// AI: Use cached data',
+        '  return data;',
+        '}',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
   });
 
   describe('insertAiCommentsIntoFileContent - TypeScript (.ts)', () => {
     const mockCommentBase = (
       id: string,
       body: string,
-      originalLine: number,
-      originalStartLine: number | null = null
+      line: number,
+      startLine: number | null = null
     ): DetailedReviewComment => ({
       comment: {
         id,
@@ -191,24 +257,29 @@ describe('AI Comments Mode Logic', () => {
       thread: {
         id: `thread-${id}`,
         path: 'test.ts',
-        originalLine,
-        originalStartLine,
-        line: originalLine,
-        startLine: originalStartLine,
+        originalLine: line,
+        originalStartLine: startLine,
+        line: line,
+        startLine: startLine,
         diffSide: 'RIGHT',
       },
       diffForContext: [
         {
           content: 'mock diff hunk',
-          oldLineNumber: originalLine,
-          newLineNumber: originalLine,
+          oldLineNumber: line,
+          newLineNumber: line,
         },
       ],
     });
 
     test('should insert a single-line comment', () => {
       const content = 'const a = 1;\nconst b = 2;';
-      const comments = [mockCommentBase('c1', 'Change b to 3', 2)];
+      const comments = [{
+        ...mockCommentBase('c1', 'Change b to 3', 2),
+        diffForContext: [
+          { content: ' const b = 2;', oldLineNumber: 2, newLineNumber: 2 },
+        ],
+      }];
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         content,
         comments,
@@ -219,13 +290,20 @@ describe('AI Comments Mode Logic', () => {
 
     test('should insert a multi-line comment (block comment)', () => {
       const content = 'function foo() {\n  return 1;\n}';
-      const comments = [mockCommentBase('c1', 'Refactor this function\nIt is too complex', 2, 1)];
+      const comments = [{
+        ...mockCommentBase('c1', 'Refactor this function\nIt is too complex', 2, 1),
+        diffForContext: [
+          { content: ' function foo() {', oldLineNumber: 1, newLineNumber: 1 },
+          { content: '   return 1;', oldLineNumber: 2, newLineNumber: 2 },
+        ],
+      }];
       // crypto.randomUUID().slice(0,8) will be "00000000"
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         content,
         comments,
         'test.ts'
       );
+      // Block comment spans the entire function
       const expected = [
         '// AI_COMMENT_START',
         '// AI: Refactor this function',
@@ -233,7 +311,7 @@ describe('AI Comments Mode Logic', () => {
         'function foo() {',
         '  return 1;',
         '// AI_COMMENT_END',
-        '}', // Note: The closing brace should ideally be on a new line if the END marker is meant to be *after* line 3.
+        '}',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
@@ -242,8 +320,19 @@ describe('AI Comments Mode Logic', () => {
       const content = 'const x = 10;\n\nfunction bar() {\n';
       // Comments are provided in an order that differs from their sorted insertion order
       const comments = [
-        mockCommentBase('c2-multi', 'Add more logic here\nConsider edge cases', 4, 3),
-        mockCommentBase('c1-single', 'x should be 20', 1),
+        {
+          ...mockCommentBase('c2-multi', 'Add more logic here\nConsider edge cases', 4, 3),
+          diffForContext: [
+            { content: ' function bar() {', oldLineNumber: 3, newLineNumber: 3 },
+            { content: ' ', oldLineNumber: 4, newLineNumber: 4 },
+          ],
+        },
+        {
+          ...mockCommentBase('c1-single', 'x should be 20', 1),
+          diffForContext: [
+            { content: ' const x = 10;', oldLineNumber: 1, newLineNumber: 1 },
+          ],
+        },
       ];
       // Sorted order: c1-single (line 1, no UUID), c2-multi (block line 3-4, UUID 00000000)
 
@@ -255,13 +344,13 @@ describe('AI Comments Mode Logic', () => {
       const expected = [
         '// AI: x should be 20',
         'const x = 10;',
-        '',
         '// AI_COMMENT_START',
         '// AI: Add more logic here',
         '// AI: Consider edge cases',
-        'function bar() {',
         '',
+        'function bar() {',
         '// AI_COMMENT_END',
+        '',
       ].join('\n');
       expect(contentWithAiComments).toBe(expected);
     });
@@ -269,9 +358,25 @@ describe('AI Comments Mode Logic', () => {
     test('should insert comments at the beginning, middle, and end of the file', () => {
       const content = 'line1\nline2\nline3\nline4\nline5';
       const comments = [
-        mockCommentBase('c-middle', 'Block for line 2-3', 3, 2),
-        mockCommentBase('c-end', 'Comment for line 5', 5),
-        mockCommentBase('c-begin', 'Comment for line 1', 1),
+        {
+          ...mockCommentBase('c-middle', 'Block for line 2-3', 3, 2),
+          diffForContext: [
+            { content: ' line2', oldLineNumber: 2, newLineNumber: 2 },
+            { content: ' line3', oldLineNumber: 3, newLineNumber: 3 },
+          ],
+        },
+        {
+          ...mockCommentBase('c-end', 'Comment for line 5', 5),
+          diffForContext: [
+            { content: ' line5', oldLineNumber: 5, newLineNumber: 5 },
+          ],
+        },
+        {
+          ...mockCommentBase('c-begin', 'Comment for line 1', 1),
+          diffForContext: [
+            { content: ' line1', oldLineNumber: 1, newLineNumber: 1 },
+          ],
+        },
       ];
       // Sorted: c-begin (single, no UUID), c-middle (block, UUID 00000000), c-end (single, no UUID)
 
@@ -280,6 +385,7 @@ describe('AI Comments Mode Logic', () => {
         comments,
         'test.ts'
       );
+      // Comments are placed based on matched positions
       const expected = [
         '// AI: Comment for line 1',
         'line1',
@@ -297,25 +403,44 @@ describe('AI Comments Mode Logic', () => {
 
     test('should handle single-line comments on an empty file content ("")', () => {
       const content = '';
-      const comments = [mockCommentBase('c1', 'Add content here', 1)];
+      const comments = [{
+        ...mockCommentBase('c1', 'Add content here', 1),
+        diffForContext: [
+          { content: ' ', oldLineNumber: 1, newLineNumber: 1 },
+        ],
+      }];
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         content,
         comments,
         'test.ts'
       );
-      // Buggy behavior of duplication persists, now with prefixes.
-      // Expected: "// AI: Add content here"
-      // Actual (due to existing bug pattern): "// AI: Add content here\n\n// AI: Add content here"
-      const expectedBuggy = '// AI: Add content here\n\n// AI: Add content here';
-      expect(contentWithAiComments).toBe(expectedBuggy);
+      // For empty file, if no match is found, nothing is inserted
+      const expected = '';
+      expect(contentWithAiComments).toBe(expected);
     });
 
     test('should correctly sort and insert multiple comments affecting same/adjacent lines based on IDs', () => {
       const content = 'line1\nline2\nline3';
       const comments = [
-        mockCommentBase('id-z', 'Comment Z for line 2', 2, null),
-        mockCommentBase('id-a', 'Comment A for line 2', 2, null),
-        mockCommentBase('id-block', 'Block for line 1-2', 2, 1),
+        {
+          ...mockCommentBase('id-z', 'Comment Z for line 2', 2, null),
+          diffForContext: [
+            { content: ' line2', oldLineNumber: 2, newLineNumber: 2 },
+          ],
+        },
+        {
+          ...mockCommentBase('id-a', 'Comment A for line 2', 2, null),
+          diffForContext: [
+            { content: ' line2', oldLineNumber: 2, newLineNumber: 2 },
+          ],
+        },
+        {
+          ...mockCommentBase('id-block', 'Block for line 1-2', 2, 1),
+          diffForContext: [
+            { content: ' line1', oldLineNumber: 1, newLineNumber: 1 },
+            { content: ' line2', oldLineNumber: 2, newLineNumber: 2 },
+          ],
+        },
       ];
       // Sorted order by function:
       // 1. 'id-block' (block, line 1-2) -> uuid "00000000"
@@ -327,6 +452,7 @@ describe('AI Comments Mode Logic', () => {
         comments,
         'test.ts'
       );
+      // Multiple comments on same line are sorted by ID
       const expected = [
         '// AI_COMMENT_START',
         '// AI: Block for line 1-2',
@@ -345,8 +471,8 @@ describe('AI Comments Mode Logic', () => {
     const mockCommentBase = (
       id: string,
       body: string,
-      originalLine: number,
-      originalStartLine: number | null = null
+      line: number,
+      startLine: number | null = null
     ): DetailedReviewComment => ({
       comment: {
         id,
@@ -359,18 +485,18 @@ describe('AI Comments Mode Logic', () => {
       },
       thread: {
         path: 'dummy.txt',
-        originalLine,
-        originalStartLine,
+        originalLine: line,
+        originalStartLine: startLine,
         id: `thread-${id}`,
-        line: originalLine,
-        startLine: originalStartLine,
+        line: line,
+        startLine: startLine,
         diffSide: 'RIGHT',
       },
       diffForContext: [
         {
           content: 'mock diff hunk',
-          oldLineNumber: originalLine,
-          newLineNumber: originalLine,
+          oldLineNumber: line,
+          newLineNumber: line,
         },
       ],
     });
@@ -378,8 +504,19 @@ describe('AI Comments Mode Logic', () => {
     test('should use # for Python files (.py)', () => {
       const content = 'print("hello")\ndef foo():\n  pass';
       const comments = [
-        mockCommentBase('c1', 'Add docstring', 3, 2), // Block for def foo():
-        mockCommentBase('c2', 'Change to world', 1), // Single for print
+        {
+          ...mockCommentBase('c1', 'Add docstring', 3, 2), // Block for def foo():
+          diffForContext: [
+            { content: ' def foo():', oldLineNumber: 2, newLineNumber: 2 },
+            { content: '   pass', oldLineNumber: 3, newLineNumber: 3 },
+          ],
+        },
+        {
+          ...mockCommentBase('c2', 'Change to world', 1), // Single for print
+          diffForContext: [
+            { content: ' print("hello")', oldLineNumber: 1, newLineNumber: 1 },
+          ],
+        },
       ];
       // Sorted: c2 (single), c1 (block, UUID 00000000)
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
@@ -387,6 +524,7 @@ describe('AI Comments Mode Logic', () => {
         comments,
         'test.py'
       );
+      // Comments placed based on matched positions
       const expected = [
         '# AI: Change to world',
         'print("hello")',
@@ -401,13 +539,20 @@ describe('AI Comments Mode Logic', () => {
 
     test('should use <!-- --> for HTML files (.html)', () => {
       const content = '<h1>Title</h1>\n<p>Text</p>';
-      const comments = [mockCommentBase('c1', 'Wrap in div', 2, 1)]; // Block for whole content
+      const comments = [{
+        ...mockCommentBase('c1', 'Wrap in div', 2, 1), // Block for whole content
+        diffForContext: [
+          { content: ' <h1>Title</h1>', oldLineNumber: 1, newLineNumber: 1 },
+          { content: ' <p>Text</p>', oldLineNumber: 2, newLineNumber: 2 },
+        ],
+      }];
       // Block, UUID 00000000
       const { contentWithAiComments } = insertAiCommentsIntoFileContent(
         content,
         comments,
         'test.html'
       );
+      // HTML block comment placement
       const expected = [
         '<!-- AI_COMMENT_START -->',
         '<!-- AI: Wrap in div -->',
@@ -428,8 +573,19 @@ describe('AI Comments Mode Logic', () => {
       // Line 5: <h1>Hello {name}</h1>
       // Line 6: <h2>Goodbye</h2>
       const comments = [
-        mockCommentBase('c-script', 'Initialize to "Svelte"', 2), // Single-line in script
-        mockCommentBase('c-template', 'Add a class to h1', 6, 5), // Block on h1 and h2
+        {
+          ...mockCommentBase('c-script', 'Initialize to "Svelte"', 2), // Single-line in script
+          diffForContext: [
+            { content: '   let name = "world";', oldLineNumber: 2, newLineNumber: 2 },
+          ],
+        },
+        {
+          ...mockCommentBase('c-template', 'Add a class to h1', 6, 5), // Block on h1 and h2
+          diffForContext: [
+            { content: ' <h1>Hello {name}</h1>', oldLineNumber: 5, newLineNumber: 5 },
+            { content: ' <h2>Goodbye</h2>', oldLineNumber: 6, newLineNumber: 6 },
+          ],
+        },
       ];
       // Sorted: c-script (single), c-template (block, UUID 00000000)
       // `</script>` is on line 3. Its content starts after char for `\n` of line 2.
@@ -441,6 +597,7 @@ describe('AI Comments Mode Logic', () => {
         comments,
         'test.svelte'
       );
+      // Svelte comments with script and template sections
       const expected = [
         '<script>',
         '// AI: Initialize to "Svelte"',
