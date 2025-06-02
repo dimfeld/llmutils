@@ -82,8 +82,10 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
         project: plan.project,
       });
     } catch (error) {
-      // Log detailed error information
-      console.error(`Failed to read plan from ${fullPath}:`, error);
+      if ((error as Error).name !== 'PlanFileError') {
+        // Log detailed error information
+        console.error(`Failed to read plan from ${fullPath}:`, error);
+      }
     }
   }
 
@@ -372,7 +374,9 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
     const errors = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
       .join('\n');
-    throw new Error(`Invalid plan file ${filePath}:\n${errors}`);
+    let e = new Error(`Invalid plan file ${filePath}:\n${errors}`);
+    e.name = 'PlanFileError';
+    throw e;
   }
 
   return result.data;

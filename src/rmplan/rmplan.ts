@@ -179,7 +179,7 @@ program
       try {
         const filePath = await resolvePlanFile(options.plan, globalOpts.config);
         const fileContent = await Bun.file(filePath).text();
-        planFile = options.plan;
+        planFile = filePath;
 
         // Check if the file is a YAML plan file by trying to parse it
         let isYamlPlan = false;
@@ -326,7 +326,7 @@ program
     if (options.plan && planText === null) {
       // We detected a stub plan earlier, now we need to load it properly
       try {
-        const fileContent = await Bun.file(options.plan).text();
+        const fileContent = await Bun.file(planFile).text();
         const yamlContent = findYamlStart(fileContent);
         stubPlanData = yaml.parse(yamlContent) as PlanSchema;
 
@@ -349,7 +349,7 @@ program
           process.exit(1);
         }
 
-        log(chalk.blue('🔄 Detected stub plan. Generating detailed tasks for:'), options.plan);
+        log(chalk.blue('🔄 Detected stub plan. Generating detailed tasks for:'));
       } catch (err) {
         error(`Failed to process stub plan: ${err as Error}`);
         process.exit(1);
@@ -454,7 +454,8 @@ program
 
           try {
             // Generate the markdown plan using LLM
-            const modelSpec = config.models?.convert_yaml || 'google/gemini-2.0-flash';
+            const modelSpec =
+              config.models?.convert_yaml || 'google/gemini-2.5-flash-preview-05-20';
             const model = createModel(modelSpec);
 
             const llmResult = await generateText({
@@ -497,9 +498,9 @@ program
             stubPlanData.updatedAt = now;
 
             // Write back to the original file
-            await writePlanFile(options.plan, stubPlanData);
+            await writePlanFile(planFile, stubPlanData);
 
-            log(chalk.green('✓ Successfully generated tasks and updated plan:'), options.plan);
+            log(chalk.green('✓ Successfully generated tasks and updated plan:'), planFile);
             log(chalk.gray(`  Generated ${generatedTasks.length} tasks`));
             log(chalk.gray('  Next step: Use "rmplan next" or "rmplan run" to execute the plan'));
           } catch (err) {
