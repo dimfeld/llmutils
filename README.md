@@ -296,7 +296,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, `run`, and `prepare` commands.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
-- **Manual Workspace Management**: Use the `workspace add` command to explicitly create workspaces with or without plan associations.
+- **Manual Workspace Management**: Use the `workspace add` command to explicitly create workspaces with or without plan associations, and `workspace list` to view all workspaces and their lock status.
 
 ### Usage
 
@@ -448,6 +448,12 @@ rmplan answer-pr
 # Answer PR review comments for a specific PR
 rmplan answer-pr dimfeld/llmutils#82
 
+# List all workspaces and their lock status
+rmplan workspace list
+
+# List workspaces for a specific repository
+rmplan workspace list --repo https://github.com/dimfeld/llmutils.git
+
 # Create a new workspace without associating it with a plan
 rmplan workspace add
 
@@ -461,7 +467,28 @@ rmplan workspace add path/to/my-plan.yml
 rmplan workspace add my-plan-id --id my-dev-space
 ```
 
-#### Workspace Add Command
+#### Workspace Commands
+
+##### Workspace List
+
+The `workspace list` command displays all workspaces and their lock status for a repository. This helps you track which workspaces are in use and identify any stale locks.
+
+**Syntax:** `rmplan workspace list [--repo <url>]`
+
+**Options:**
+
+- `--repo <url>`: Filter by repository URL. If not specified, uses the current repository.
+
+**Output includes:**
+
+- Lock status (🔒 for locked, 🔓 for available)
+- Workspace path
+- Associated task ID
+- Branch name
+- Creation timestamp
+- For locked workspaces: PID, hostname, and lock age in hours
+
+##### Workspace Add
 
 The `workspace add` command allows you to manually create and initialize a new workspace. This provides explicit control over workspace creation, which is particularly useful when you want to set up a workspace environment before running an agent or for tasks not yet defined by a formal plan file.
 

@@ -994,36 +994,6 @@ createAgentCommand(
 );
 
 program
-  .command('workspaces')
-  .description('List all workspaces and their lock status')
-  .option('--repo <url>', 'Filter by repository URL (defaults to current repo)')
-  .action(async (options) => {
-    try {
-      const globalOpts = program.opts();
-      const config = await loadEffectiveConfig(globalOpts.config);
-      const trackingFilePath = config.paths?.trackingFile;
-
-      let repoUrl = options.repo;
-      if (!repoUrl) {
-        // Try to get repo URL from current directory
-        try {
-          const gitRoot = await getGitRoot();
-          const result = await $`git remote get-url origin`.cwd(gitRoot).text();
-          repoUrl = result.trim();
-        } catch (err) {
-          error('Could not determine repository URL. Please specify --repo');
-          process.exit(1);
-        }
-      }
-
-      await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
-    } catch (err) {
-      error('Failed to list workspaces:', err);
-      process.exit(1);
-    }
-  });
-
-program
   .command('list')
   .description('List all plan files in the tasks directory')
   .option(
@@ -1678,6 +1648,37 @@ program
 
 // Create the workspace command
 const workspaceCommand = program.command('workspace').description('Manage workspaces for plans');
+
+// Add the 'list' subcommand to workspace
+workspaceCommand
+  .command('list')
+  .description('List all workspaces and their lock status')
+  .option('--repo <url>', 'Filter by repository URL (defaults to current repo)')
+  .action(async (options) => {
+    try {
+      const globalOpts = program.opts();
+      const config = await loadEffectiveConfig(globalOpts.config);
+      const trackingFilePath = config.paths?.trackingFile;
+
+      let repoUrl = options.repo;
+      if (!repoUrl) {
+        // Try to get repo URL from current directory
+        try {
+          const gitRoot = await getGitRoot();
+          const result = await $`git remote get-url origin`.cwd(gitRoot).text();
+          repoUrl = result.trim();
+        } catch (err) {
+          error('Could not determine repository URL. Please specify --repo');
+          process.exit(1);
+        }
+      }
+
+      await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
+    } catch (err) {
+      error('Failed to list workspaces:', err);
+      process.exit(1);
+    }
+  });
 
 // Add the 'add' subcommand to workspace
 workspaceCommand
