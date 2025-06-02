@@ -173,7 +173,7 @@ program
     let issueResult: Awaited<ReturnType<typeof getInstructionsFromGithubIssue>> | undefined;
     let issueUrlsForExtract: string[] = [];
 
-    let planFile = options.plan;
+    let planFile: string | undefined = options.plan;
 
     if (options.plan) {
       try {
@@ -323,7 +323,7 @@ program
 
     // Special handling for stub YAML plans
     let stubPlanData: PlanSchema | null = null;
-    if (options.plan && planText === null) {
+    if (options.plan && planFile && planText === null) {
       // We detected a stub plan earlier, now we need to load it properly
       try {
         const fileContent = await Bun.file(planFile).text();
@@ -461,7 +461,7 @@ program
 
         let outputPath: string;
         if (planFile) {
-          if (planFile.endswith('.yml')) {
+          if (planFile.endsWith('.yml')) {
             outputPath = planFile;
           } else {
             // Use the directory of the plan file for output
