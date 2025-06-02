@@ -22,7 +22,7 @@ issue:
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-02T20:14:32.992Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-02T20:51:48.007Z
+updatedAt: 2025-06-02T20:55:52.139Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -361,7 +361,7 @@ tasks:
 
           3. Accurate `diffForTerminal` and `diffForContext` snippet generation
           based on `thread.line` and `thread.startLine`.
-        done: false
+        done: true
       - prompt: >
           In `selectReviewComments` within `src/common/github/pull_requests.ts`,
           modify the generation of the `short` property for each comment choice.
@@ -371,7 +371,7 @@ tasks:
           "file-level".
 
           Remove any use of `thread.originalLine`.
-        done: false
+        done: true
       - prompt: >
           Update the `Separator` text generation in `selectReviewComments`.
 
@@ -382,7 +382,7 @@ tasks:
           "path:outdated" or similar).
 
           Remove any use of `thread.originalLine` or `thread.originalStartLine`.
-        done: false
+        done: true
       - prompt: >
           Refactor the calculation of `start`, `end`, `terminalStart`,
           `terminalEnd`, `contextStart`, and `contextEnd` variables within
@@ -397,7 +397,7 @@ tasks:
           (`thread.comments.nodes[0].diffHunk`) is still the source. The range
           for display should gracefully handle this, perhaps showing the whole
           hunk or a fixed portion if specific lines cannot be targeted.
-        done: false
+        done: true
       - prompt: >
           Ensure that `filterDiffToRange` is called with line numbers derived
           from the new `start` and `end` calculations, which are based on
@@ -406,7 +406,7 @@ tasks:
           Verify that `diffForContext` (used in `DetailedReviewComment`) and
           `diffForTerminal` (used for display) are correctly generated using the
           current line information.
-        done: false
+        done: true
   - title: Implement comprehensive tests for the new line handling logic
     description: >
       New unit and integration tests will be developed, and existing ones
@@ -495,6 +495,7 @@ tasks:
           end-to-end consistency in line handling.
         done: false
 changedFiles:
+  - src/common/github/pull_requests.test.ts
   - src/common/github/pull_requests.ts
   - src/rmplan/actions.ts
   - src/rmpr/main.ts
