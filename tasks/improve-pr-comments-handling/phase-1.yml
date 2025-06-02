@@ -14,14 +14,15 @@ details: >
   the system will need to use other information, such as the `diffHunk` content,
   for positioning, rather than falling back to `originalLine` fields.
 id: 28
-status: pending
 priority: high
+status: in_progress
 dependencies: []
 issue:
   - https://github.com/dimfeld/llmutils/issues/112
 planGeneratedAt: 2025-06-02T19:27:55.318Z
+promptsGeneratedAt: 2025-06-02T20:14:32.992Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-07T07:26:41.495Z
+updatedAt: 2025-06-02T20:18:25.252Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -90,8 +91,85 @@ tasks:
       or placing these comments, potentially relying on `diffHunk` content
       matching or marking them as non-positionable for inline modes, will be
       established.
-    files: []
-    steps: []
+    files:
+      - src/rmpr/types.ts
+      - src/common/github/pull_requests.ts
+      - src/rmpr/modes/inline_comments.ts
+      - src/rmpr/modes/separate_context.ts
+      - src/rmpr/main.ts
+    steps:
+      - prompt: >
+          Modify the `DetailedReviewComment` interface in `src/rmpr/types.ts`.
+
+          Remove `originalLine` and `originalStartLine` from the
+          `Pick<ReviewThreadNode, ...>` definition for the `thread` property.
+
+          This change will enforce that these fields are no longer used, and
+          TypeScript will highlight all direct usages that need refactoring.
+        done: true
+      - prompt: >
+          Update the `selectReviewComments` function in
+          `src/common/github/pull_requests.ts`.
+
+          Since `originalLine` and `originalStartLine` are removed from
+          `DetailedReviewComment['thread']`, adjust the creation of
+          `DetailedReviewComment` objects (the `value` in choices).
+
+          Ensure that any logic within this function that previously might have
+          relied on these original line fields for constructing
+          `DetailedReviewComment` instances or for immediate local calculations
+          now uses `thread.line` and `thread.startLine` or adapts to their
+          absence.
+
+          (Task 4 will cover display-specific changes in this function more
+          deeply).
+        done: true
+      - prompt: >
+          Refactor `src/rmpr/modes/inline_comments.ts` (primarily
+          `insertAiCommentsIntoFileContent` and its helper `findBestMatchLine`).
+
+          Adapt the code to use `comment.thread.line` and
+          `comment.thread.startLine` for determining comment positions.
+
+          Address cases where `thread.line` and `thread.startLine` might be null
+          (e.g., for outdated comments). For such cases, the primary mechanism
+          for positioning will be `diffHunk` content matching via
+          `findBestMatchLine` (which will be further refined in Task 2). If a
+          comment cannot be reliably positioned, consider logging an error or a
+          specific handling strategy like placing it at the top/bottom of the
+          file or skipping insertion for that comment.
+
+          Remove any fallback logic that uses `originalLine` or
+          `originalStartLine`.
+        done: true
+      - prompt: >
+          Refactor `src/rmpr/modes/separate_context.ts` (primarily
+          `formatReviewCommentsForSeparateContext`).
+
+          Modify the logic to use `comment.thread.line` and
+          `comment.thread.startLine` for determining line information and
+          comment placement.
+
+          For comments where `thread.line` and `thread.startLine` are null,
+          establish a clear strategy: for instance, the `lines` attribute in the
+          XML might indicate "outdated", and the comment text could be appended
+          to the diff hunk rather than interleaved.
+
+          Remove any fallback logic that uses `originalLine` or
+          `originalStartLine`.
+        done: true
+      - prompt: >
+          Review `src/rmpr/main.ts` for any direct or indirect usage of
+          `originalLine` or `originalStartLine` from `DetailedReviewComment`
+          objects.
+
+          Ensure that all logic related to comment processing now relies on
+          `thread.line`, `thread.startLine`, or the new handling strategies for
+          outdated/non-positionable comments.
+
+          This includes how `DetailedReviewComment` objects are passed to
+          different modes or functions.
+        done: true
   - title: Enhance `findBestMatchLine` for `inline_comments.ts` to operate without
       `originalLine` references
     description: >
@@ -105,8 +183,77 @@ tasks:
       logic for selecting the "best" match among multiple fuzzy matches will be
       updated to no longer use `originalLine` as a guiding heuristic or
       tie-breaker, ensuring adherence to the project's constraint.
-    files: []
-    steps: []
+    files:
+      - src/rmpr/modes/inline_comments.ts
+      - src/rmpr/modes/inline_comments.test.ts
+    steps:
+      - prompt: >
+          Update the tests for `findBestMatchLine` in
+          `src/rmpr/modes/inline_comments.test.ts`.
+
+          Ensure test cases cover scenarios where:
+
+          1. `thread.line` (1-based) is provided and used for matching.
+
+          2. `thread.line` is null (outdated comment), forcing reliance on
+          `diffForContext` matching.
+
+          3. Multiple fuzzy matches exist, and the selection logic (without
+          `originalLine` heuristic) is verified.
+
+          These tests should reflect the function's new signature and behavior.
+        done: false
+      - prompt: >
+          Refactor the `findBestMatchLine` function in
+          `src/rmpr/modes/inline_comments.ts`.
+
+          Change its signature: instead of `originalStartLine: number | null,
+          originalLine: number` (which were 0-indexed), it should now accept
+          parameters representing the 1-indexed `thread.line` and
+          `thread.startLine` (e.g., `targetLineInFile: number | null,
+          targetStartLineInFile: number | null`).
+
+          Ensure internal logic correctly handles 0-indexed results from
+          `findClosestMatches` and 1-indexed line numbers from the thread.
+        done: false
+      - prompt: >
+          Implement the primary positioning logic in `findBestMatchLine`.
+
+          If `targetLineInFile` (derived from `thread.line`) is available, use
+          this 1-based line number as the main reference point when evaluating
+          matches from `findClosestMatches`.
+
+          The `originalReferenceLine` concept should now be based on
+          `targetLineInFile` (or `targetStartLineInFile`).
+        done: false
+      - prompt: >
+          Implement the fallback positioning logic for `findBestMatchLine` when
+          `targetLineInFile` (derived from `thread.line`) is null (e.g., for
+          outdated comments).
+
+          In this scenario, the function should rely solely on matching
+          `afterStateLines` (from `diffForContext`) against `originalContent`
+          using `findClosestMatches`.
+
+          The selection of the best match should be based purely on the match
+          score if no `targetLineInFile` is available.
+        done: false
+      - prompt: >
+          Update the tie-breaking logic within `findBestMatchLine` for selecting
+          the best match from `findClosestMatches` results.
+
+          Remove any usage of `originalLine` (or its equivalents from the old
+          signature) as a guiding heuristic or tie-breaker.
+
+          If `targetLineInFile` is available, prioritize matches closest to this
+          line after considering score. If `targetLineInFile` is null, rely on
+          the highest score.
+
+          The `targetIndex` calculation and subsequent adjustment of
+          `adjustedStartLine` and `adjustedEndLine` should also be based on the
+          new input parameters (`targetLineInFile`, `targetStartLineInFile`) and
+          the structure of `diffForContext`.
+        done: false
   - title: "Update `separate_context.ts` to use current line numbers and handle
       `diffSide: 'LEFT'` correctly"
     description: >
@@ -121,8 +268,69 @@ tasks:
       version of the file within that hunk. The implementation must ensure the
       comment is correctly associated with the deleted (`-`) lines or
       surrounding context lines.
-    files: []
-    steps: []
+    files:
+      - src/rmpr/modes/separate_context.ts
+      - src/rmpr/modes/separate_context.test.ts
+    steps:
+      - prompt: >
+          Update tests in `src/rmpr/modes/separate_context.test.ts`.
+
+          Add/modify test cases to verify:
+
+          1. Correct `lines` attribute generation using `thread.line` and
+          `thread.startLine`.
+
+          2. Proper "Comment: ..." insertion for `diffSide: 'RIGHT'` comments
+          using `thread.line` (maps to `newLineNumber`).
+
+          3. Proper "Comment: ..." insertion for `diffSide: 'LEFT'` comments
+          using `thread.line` (maps to `oldLineNumber`).
+
+          4. Handling of outdated comments (where `thread.line` is null) - e.g.,
+          `lines="outdated"` and comment appended to hunk.
+        done: false
+      - prompt: >
+          In `formatReviewCommentsForSeparateContext` within
+          `src/rmpr/modes/separate_context.ts`, modify the derivation of the
+          `lineInfo` string (used for the `lines` attribute of the `<review>`
+          tag).
+
+          It must now use `comment.thread.line` and `comment.thread.startLine`.
+
+          If `comment.thread.line` is null (e.g., for an outdated comment),
+          `lineInfo` should be a specific string like "outdated" or "unknown".
+        done: false
+      - prompt: >
+          Refactor the logic for determining `targetLine` and `diffKey` for
+          comment injection within `formatReviewCommentsForSeparateContext`.
+
+          If `comment.thread.diffSide` is `'LEFT'`, `targetLine` should be
+          `comment.thread.line`, and `diffKey` should be `'oldLineNumber'`.
+
+          If `comment.thread.diffSide` is `'RIGHT'`, `targetLine` should be
+          `comment.thread.line`, and `diffKey` should be `'newLineNumber'`.
+        done: false
+      - prompt: >
+          Adjust the comment injection logic in
+          `formatReviewCommentsForSeparateContext` for cases where
+          `comment.thread.line` is null (outdated comments).
+
+          Instead of attempting to find a `spliceBeforeIndex` based on a null
+          `targetLine`, append the `prefixedCommentBody` to the end of the
+          `diffContentLines`.
+
+          Ensure that the `diffForContext` (the hunk) is still included.
+        done: false
+      - prompt: >
+          Ensure that the `spliceBeforeIndex` calculation correctly uses the
+          `targetLine` (derived from `thread.line`) and the appropriate
+          `diffKey` (`oldLineNumber` for `LEFT`, `newLineNumber` for `RIGHT`) to
+          find the insertion point for the "Comment: ..." text within the
+          `diffForContext` lines.
+
+          Verify that this works for comments on added, deleted, and context
+          lines within the hunk.
+        done: false
   - title: Update `selectReviewComments` for accurate display and context
     description: >
       The `selectReviewComments` function in
@@ -134,8 +342,71 @@ tasks:
       reliance on `originalLine` or `originalStartLine` for these calculations
       or displays will be removed to ensure consistency with the new line
       handling approach.
-    files: []
-    steps: []
+    files:
+      - src/common/github/pull_requests.ts
+      - src/common/github/pull_requests.test.ts
+    steps:
+      - prompt: >
+          Create or update tests for `selectReviewComments` (e.g., in
+          `src/common/github/pull_requests.test.ts`).
+
+          Test cases should verify:
+
+          1. Correct display of line numbers in `short` representation and
+          `Separator` for comments with `thread.line` (both `LEFT` and `RIGHT`
+          sides).
+
+          2. Appropriate display for outdated comments (where `thread.line` is
+          null, e.g., "path:outdated").
+
+          3. Accurate `diffForTerminal` and `diffForContext` snippet generation
+          based on `thread.line` and `thread.startLine`.
+        done: false
+      - prompt: >
+          In `selectReviewComments` within `src/common/github/pull_requests.ts`,
+          modify the generation of the `short` property for each comment choice.
+
+          It should now display `thread.path` and `thread.line`. If
+          `thread.line` is null, use a placeholder like "outdated" or
+          "file-level".
+
+          Remove any use of `thread.originalLine`.
+        done: false
+      - prompt: >
+          Update the `Separator` text generation in `selectReviewComments`.
+
+          The `lineRange` (e.g., `== ${thread.path}:${lineRange} ==`) must be
+          derived from `thread.line` and `thread.startLine`.
+
+          If `thread.line` is null, the display should reflect this (e.g.,
+          "path:outdated" or similar).
+
+          Remove any use of `thread.originalLine` or `thread.originalStartLine`.
+        done: false
+      - prompt: >
+          Refactor the calculation of `start`, `end`, `terminalStart`,
+          `terminalEnd`, `contextStart`, and `contextEnd` variables within
+          `selectReviewComments`.
+
+          These are used for generating `diffForTerminal` and `diffForContext`.
+
+          Base these calculations primarily on `thread.line` and
+          `thread.startLine` (1-based).
+
+          If `thread.line` is null (outdated comment), the diff hunk
+          (`thread.comments.nodes[0].diffHunk`) is still the source. The range
+          for display should gracefully handle this, perhaps showing the whole
+          hunk or a fixed portion if specific lines cannot be targeted.
+        done: false
+      - prompt: >
+          Ensure that `filterDiffToRange` is called with line numbers derived
+          from the new `start` and `end` calculations, which are based on
+          `thread.line` and `thread.startLine`.
+
+          Verify that `diffForContext` (used in `DetailedReviewComment`) and
+          `diffForTerminal` (used for display) are correctly generated using the
+          current line information.
+        done: false
   - title: Implement comprehensive tests for the new line handling logic
     description: >
       New unit and integration tests will be developed, and existing ones
@@ -147,8 +418,88 @@ tasks:
       multi-line comments, and comments on context lines, added lines, and
       deleted lines. The tests will ensure that the system behaves as expected
       without any use of `originalLine` or `originalStartLine`.
-    files: []
-    steps: []
+    files:
+      - src/rmpr/modes/inline_comments.test.ts
+      - src/rmpr/modes/separate_context.test.ts
+      - src/common/github/pull_requests.test.ts
+      - src/rmpr/types.ts
+    steps:
+      - prompt: >
+          Review and augment tests in `src/rmpr/modes/inline_comments.test.ts`.
+
+          Add specific scenarios for:
+
+          - Comments where `thread.line` is null (outdated), ensuring
+          `findBestMatchLine` relies purely on `diffHunk` content matching.
+
+          - Multi-line comments correctly placed using `thread.line` and
+          `thread.startLine`.
+
+          - Comments on various parts of a diff (added, context lines) reflected
+          in the current file content.
+
+          Verify that no `originalLine` or `originalStartLine` logic influences
+          comment placement.
+        done: false
+      - prompt: >
+          Review and augment tests in `src/rmpr/modes/separate_context.test.ts`.
+
+          Add specific scenarios for:
+
+          - `diffSide: 'LEFT'` comments: `thread.line` correctly maps to
+          `oldLineNumber` in the hunk, and the `lines` attribute and comment
+          text are positioned accurately.
+
+          - `diffSide: 'RIGHT'` comments: `thread.line` correctly maps to
+          `newLineNumber`.
+
+          - Outdated comments (`thread.line` is null): Verify the `lines`
+          attribute (e.g., "outdated") and that the comment text is
+          appropriately associated with the `diffHunk`.
+
+          - Multi-line comments: Correct `lines` attribute and comment text
+          formatting.
+        done: false
+      - prompt: >
+          Develop or update tests for `selectReviewComments` in
+          `src/common/github/pull_requests.ts` (e.g., in
+          `pull_requests.test.ts`).
+
+          Cover scenarios for:
+
+          - Display of line numbers in UI elements (`short` path:line,
+          `Separator`) for `diffSide: 'RIGHT'` and `diffSide: 'LEFT'` comments
+          using `thread.line`.
+
+          - Display for outdated comments (`thread.line` is null).
+
+          - Correct generation of `diffForTerminal` and `diffForContext`
+          snippets using `thread.line` and `thread.startLine`, including for
+          `LEFT` side comments.
+        done: false
+      - prompt: >
+          For all new and updated tests, create mock `DetailedReviewComment`
+          objects that strictly adhere to the modified interface (i.e., without
+          `originalLine` and `originalStartLine` on the `thread` property, or
+          ensuring they are undefined if still present on the underlying
+          `ReviewThreadNode`).
+
+          This will help confirm that the tested functions do not inadvertently
+          access or rely on these removed/ignored fields.
+        done: false
+      - prompt: >
+          Consider integration-style tests (if feasible within the testing
+          setup) that simulate a flow from `selectReviewComments` through to
+          `inline_comments.ts` or `separate_context.ts` processing, using
+          various types of comments (LEFT/RIGHT, current/outdated) to ensure
+          end-to-end consistency in line handling.
+        done: false
+changedFiles:
+  - src/common/github/pull_requests.ts
+  - src/rmpr/main.ts
+  - src/rmpr/modes/inline_comments.ts
+  - src/rmpr/modes/separate_context.ts
+  - src/rmpr/types.ts
 rmfilter:
   - src/rmpr
   - src/common/github

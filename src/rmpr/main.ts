@@ -224,7 +224,7 @@ export async function handleRmprCommand(
 
   log(`Selected ${selectedComments.length} comments to address:`);
   selectedComments.forEach(({ comment, thread }, index) => {
-    log(`  ${index + 1}. [${thread.path}:${thread.originalLine}]:`);
+    log(`  ${index + 1}. [${thread.path}:${thread.line ?? 'N/A'}]:`);
     log(`     Body: "${comment.body.split('\n')[0]}..."`);
     log(`     Diff Hunk: "${comment.diffHunk.split('\n')[0]}..."`);
   });
@@ -482,11 +482,11 @@ export async function handleRmprCommand(
 
         if (success) {
           log(
-            `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+            `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.line ?? 'N/A'}`
           );
         } else {
           debugLog(
-            `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+            `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.line ?? 'N/A'}`
           );
         }
       }

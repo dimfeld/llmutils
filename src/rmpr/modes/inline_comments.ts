@@ -32,13 +32,16 @@ function getAfterStateLines(diffForContext: DetailedReviewComment['diffForContex
 function findBestMatchLine(
   originalContent: string,
   diffForContext: DetailedReviewComment['diffForContext'],
-  originalStartLine: number | null,
-  originalLine: number
+  startLine: number | null,
+  endLine: number | null
 ): { startLine: number; endLine: number } | null {
   const afterStateLines = getAfterStateLines(diffForContext);
   if (afterStateLines.length === 0) {
-    // Fallback to original line numbers if no valid context
-    return { startLine: originalStartLine ?? originalLine, endLine: originalLine };
+    // Fallback to line numbers if no valid context
+    if (startLine !== null && endLine !== null) {
+      return { startLine, endLine };
+    }
+    return null;
   }
 
   const matches = findClosestMatches(originalContent, afterStateLines, {
@@ -51,13 +54,13 @@ function findBestMatchLine(
     return null;
   }
 
-  // Find the match closest to the original line numbers
-  const originalReferenceLine = originalStartLine ?? originalLine;
+  // Find the match closest to the line numbers
+  const referenceLine = startLine ?? endLine ?? 1;
   let bestMatch = matches[0];
-  let minDistance = Math.abs(bestMatch.startLine - originalReferenceLine);
+  let minDistance = Math.abs(bestMatch.startLine - referenceLine);
 
   for (const match of matches.slice(1)) {
-    const distance = Math.abs(match.startLine - originalReferenceLine);
+    const distance = Math.abs(match.startLine - referenceLine);
     // Prefer match with higher score, or if scores are equal, the one with smaller distance
     if (
       match.score > bestMatch.score ||
@@ -71,12 +74,12 @@ function findBestMatchLine(
   // Adjust line numbers based on the comment's position within the diff context
   // Find the index of the target line in afterStateLines by matching newLineNumber
   let targetIndex = diffForContext.findIndex(
-    (diffLine) => diffLine.newLineNumber - 1 === originalReferenceLine
+    (diffLine) => diffLine.newLineNumber - 1 === referenceLine
   );
 
-  // If no exact match, fallback to using the original line numbers relative to the match
+  // If no exact match, fallback to using the line numbers relative to the match
   if (targetIndex === -1) {
-    error(`No matching newLineNumber found for line ${originalReferenceLine} in diffForContext`);
+    error(`No matching newLineNumber found for line ${referenceLine} in diffForContext`);
     return {
       startLine: bestMatch.startLine,
       endLine: bestMatch.endLine,
@@ -87,8 +90,8 @@ function findBestMatchLine(
   const lineOffset = diffForContext[targetIndex].newLineNumber - diffForContext[0].newLineNumber;
   const adjustedStartLine = bestMatch.startLine + lineOffset;
   const adjustedEndLine =
-    originalStartLine && originalStartLine !== originalLine
-      ? adjustedStartLine + (originalLine - originalStartLine)
+    startLine !== null && endLine !== null && startLine !== endLine
+      ? adjustedStartLine + (endLine - startLine)
       : adjustedStartLine;
 
   return {
@@ -221,8 +224,8 @@ export function insertAiCommentsIntoFileContent(
   // adjusted line numbers.
   const commentsWithAdjustedLines = commentsForFile
     .map((comment) => {
-      const startLine = comment.thread.startLine ?? comment.thread.originalStartLine;
-      const endLine = comment.thread.line ?? comment.thread.originalLine;
+      const startLine = comment.thread.startLine;
+      const endLine = comment.thread.line;
 
       debugLog({
         index1Start: startLine,
@@ -233,11 +236,14 @@ export function insertAiCommentsIntoFileContent(
         comment.diffForContext,
         // Pass zero-indexed line numbers
         startLine ? startLine - 1 : null,
-        endLine - 1
+        endLine ? endLine - 1 : null
       );
 
       if (!bestMatchResult) {
-        let lineRange = startLine ? `${startLine}-${endLine}` : endLine;
+        let lineRange =
+          startLine && endLine && startLine !== endLine
+            ? `${startLine}-${endLine}`
+            : (endLine ?? 'unknown');
         errors.push(
           singleLineWithPrefix(
             `Could not find matching comment content from ${filePath}:${lineRange}: `,
