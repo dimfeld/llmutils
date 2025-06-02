@@ -22,7 +22,7 @@ issue:
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-02T20:14:32.992Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-02T20:18:25.252Z
+updatedAt: 2025-06-02T20:46:22.512Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -202,7 +202,7 @@ tasks:
           `originalLine` heuristic) is verified.
 
           These tests should reflect the function's new signature and behavior.
-        done: false
+        done: true
       - prompt: >
           Refactor the `findBestMatchLine` function in
           `src/rmpr/modes/inline_comments.ts`.
@@ -215,7 +215,7 @@ tasks:
 
           Ensure internal logic correctly handles 0-indexed results from
           `findClosestMatches` and 1-indexed line numbers from the thread.
-        done: false
+        done: true
       - prompt: >
           Implement the primary positioning logic in `findBestMatchLine`.
 
@@ -225,7 +225,7 @@ tasks:
 
           The `originalReferenceLine` concept should now be based on
           `targetLineInFile` (or `targetStartLineInFile`).
-        done: false
+        done: true
       - prompt: >
           Implement the fallback positioning logic for `findBestMatchLine` when
           `targetLineInFile` (derived from `thread.line`) is null (e.g., for
@@ -237,7 +237,7 @@ tasks:
 
           The selection of the best match should be based purely on the match
           score if no `targetLineInFile` is available.
-        done: false
+        done: true
       - prompt: >
           Update the tie-breaking logic within `findBestMatchLine` for selecting
           the best match from `findClosestMatches` results.
@@ -253,7 +253,7 @@ tasks:
           `adjustedStartLine` and `adjustedEndLine` should also be based on the
           new input parameters (`targetLineInFile`, `targetStartLineInFile`) and
           the structure of `diffForContext`.
-        done: false
+        done: true
   - title: "Update `separate_context.ts` to use current line numbers and handle
       `diffSide: 'LEFT'` correctly"
     description: >
@@ -497,6 +497,7 @@ tasks:
 changedFiles:
   - src/common/github/pull_requests.ts
   - src/rmpr/main.ts
+  - src/rmpr/modes/inline_comments.test.ts
   - src/rmpr/modes/inline_comments.ts
   - src/rmpr/modes/separate_context.ts
   - src/rmpr/types.ts
