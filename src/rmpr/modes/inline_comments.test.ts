@@ -29,8 +29,6 @@ describe('AI Comments Mode Logic', () => {
       thread: {
         id: `thread-${id}`,
         path: 'test.ts',
-        originalLine: line || 1,
-        originalStartLine: startLine,
         line: line,
         startLine: startLine,
         diffSide: 'RIGHT',
@@ -252,8 +250,6 @@ describe('AI Comments Mode Logic', () => {
       thread: {
         id: `thread-${id}`,
         path: 'test.ts',
-        originalLine: line,
-        originalStartLine: startLine,
         line: line,
         startLine: startLine,
         diffSide: 'RIGHT',
@@ -454,6 +450,241 @@ describe('AI Comments Mode Logic', () => {
     });
   });
 
+  describe('insertAiCommentsIntoFileContent - Line Handling Without originalLine', () => {
+    const mockCommentBase = (
+      id: string,
+      body: string,
+      line: number | null,
+      startLine: number | null = null,
+      diffForContext: DetailedReviewComment['diffForContext'] = [
+        {
+          content: 'mock diff hunk',
+          oldLineNumber: line || 1,
+          newLineNumber: line || 1,
+        },
+      ]
+    ): DetailedReviewComment => ({
+      comment: {
+        id,
+        databaseId: 0,
+        body,
+        diffHunk: 'mock diff hunk',
+        author: {
+          login: 'testuser',
+        },
+      },
+      thread: {
+        id: `thread-${id}`,
+        path: 'test.ts',
+        // Explicitly exclude originalLine and originalStartLine to ensure no reliance
+        line: line,
+        startLine: startLine,
+        diffSide: 'RIGHT',
+      },
+      diffForContext,
+    });
+
+    test('should handle multi-line comment with both startLine and line set', () => {
+      const originalContent = [
+        'function process() {',
+        '  const data = [];',
+        '  for (let i = 0; i < 10; i++) {',
+        '    data.push(i);',
+        '  }',
+        '  return data;',
+        '}',
+      ].join('\n');
+      const diffForContext = [
+        { content: '   for (let i = 0; i < 10; i++) {', oldLineNumber: 3, newLineNumber: 3 },
+        { content: '     data.push(i);', oldLineNumber: 4, newLineNumber: 4 },
+        { content: '   }', oldLineNumber: 5, newLineNumber: 5 },
+      ];
+      const comments = [
+        mockCommentBase(
+          'c1',
+          'This loop could be optimized\nConsider using Array.from',
+          5,
+          3,
+          diffForContext
+        ),
+      ];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      const expected = [
+        'function process() {',
+        '  const data = [];',
+        '// AI_COMMENT_START',
+        '// AI: This loop could be optimized',
+        '// AI: Consider using Array.from',
+        '  for (let i = 0; i < 10; i++) {',
+        '    data.push(i);',
+        '  }',
+        '// AI_COMMENT_END',
+        '  return data;',
+        '}',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+
+    test('should handle outdated comment (null line) and rely purely on diffHunk matching', () => {
+      const originalContent = [
+        'const config = {',
+        '  debug: true,',
+        '  timeout: 5000,',
+        '  retries: 3,',
+        '};',
+      ].join('\n');
+      const diffForContext = [{ content: '   timeout: 5000,', oldLineNumber: 3, newLineNumber: 3 }];
+      // Outdated comment with null line
+      const comments = [
+        mockCommentBase('c1', 'Consider making timeout configurable', null, null, diffForContext),
+      ];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      // Should find the line based on diffForContext content matching
+      // With null line and null startLine, it might be treated as a single-line comment
+      const expected = [
+        'const config = {',
+        '  debug: true,',
+        '// AI: Consider making timeout configurable',
+        '  timeout: 5000,',
+        '  retries: 3,',
+        '};',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+
+    test('should handle comments on context lines (no +/- prefix in diff)', () => {
+      const originalContent = [
+        'class Calculator {',
+        '  add(a, b) {',
+        '    return a + b;',
+        '  }',
+        '  subtract(a, b) {',
+        '    return a - b;',
+        '  }',
+        '}',
+      ].join('\n');
+      const diffForContext = [
+        { content: '   add(a, b) {', oldLineNumber: 2, newLineNumber: 2 },
+        { content: '     return a + b;', oldLineNumber: 3, newLineNumber: 3 },
+      ];
+      const comments = [mockCommentBase('c1', 'Add type annotations', 2, null, diffForContext)];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      const expected = [
+        'class Calculator {',
+        '// AI: Add type annotations',
+        '  add(a, b) {',
+        '    return a + b;',
+        '  }',
+        '  subtract(a, b) {',
+        '    return a - b;',
+        '  }',
+        '}',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+
+    test('should handle multiple outdated comments relying on diffHunk content', () => {
+      const originalContent = [
+        'export function validate(input) {',
+        '  if (!input) return false;',
+        '  if (input.length < 3) return false;',
+        '  if (input.length > 100) return false;',
+        '  return true;',
+        '}',
+      ].join('\n');
+      const comments = [
+        mockCommentBase('c1', 'Extract to constant', null, null, [
+          { content: '   if (input.length < 3) return false;', oldLineNumber: 3, newLineNumber: 3 },
+        ]),
+        mockCommentBase('c2', 'Extract to constant', null, null, [
+          {
+            content: '   if (input.length > 100) return false;',
+            oldLineNumber: 4,
+            newLineNumber: 4,
+          },
+        ]),
+      ];
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        comments,
+        'test.ts'
+      );
+      const expected = [
+        'export function validate(input) {',
+        '  if (!input) return false;',
+        '// AI: Extract to constant',
+        '  if (input.length < 3) return false;',
+        '// AI: Extract to constant',
+        '  if (input.length > 100) return false;',
+        '  return true;',
+        '}',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+
+    test('should not use originalLine even if present in underlying ReviewThreadNode', () => {
+      // Create a comment where the thread might have originalLine but we don't use it
+      const comment: DetailedReviewComment = {
+        comment: {
+          id: 'c1',
+          databaseId: 0,
+          body: 'Fix this',
+          diffHunk: 'mock diff hunk',
+          author: {
+            login: 'testuser',
+          },
+        },
+        thread: {
+          id: 'thread-c1',
+          path: 'test.ts',
+          line: 3,
+          startLine: null,
+          diffSide: 'RIGHT',
+          // Simulate that originalLine might exist on the underlying object
+          // but our type doesn't include it
+        } as any, // Using any to simulate potential presence of originalLine
+        diffForContext: [{ content: ' const value = 42;', oldLineNumber: 3, newLineNumber: 3 }],
+      };
+
+      const originalContent = [
+        'function test() {',
+        '  const x = 1;',
+        '  const value = 42;',
+        '  return x + value;',
+        '}',
+      ].join('\n');
+
+      const { contentWithAiComments } = insertAiCommentsIntoFileContent(
+        originalContent,
+        [comment],
+        'test.ts'
+      );
+
+      // Should place comment based on thread.line (3) not any potential originalLine
+      const expected = [
+        'function test() {',
+        '  const x = 1;',
+        '// AI: Fix this',
+        '  const value = 42;',
+        '  return x + value;',
+        '}',
+      ].join('\n');
+      expect(contentWithAiComments).toBe(expected);
+    });
+  });
+
   describe('insertAiCommentsIntoFileContent - Other File Types', () => {
     const mockCommentBase = (
       id: string,
@@ -472,8 +703,6 @@ describe('AI Comments Mode Logic', () => {
       },
       thread: {
         path: 'dummy.txt',
-        originalLine: line,
-        originalStartLine: startLine,
         id: `thread-${id}`,
         line: line,
         startLine: startLine,

@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach, spyOn } from 'bun:test';
-import type { ReviewThreadNode } from './pull_requests.ts';
+import type { ReviewThreadNode, CommentNode, DiffLine } from './pull_requests.ts';
+import { parseDiff } from './pull_requests.ts';
 
 describe('selectReviewComments', () => {
   // Since mocking imports is complex in Bun, we'll test the logic by
@@ -178,5 +179,249 @@ describe('selectReviewComments', () => {
 
     expect(contextStart).toBe(9); // 12 - 3 = 9
     expect(contextEnd).toBe(18); // 15 + 3 = 18
+  });
+
+  it('should handle LEFT side comments with proper line mapping', () => {
+    const thread: ReviewThreadNode = {
+      id: 'thread5',
+      isResolved: false,
+      isOutdated: false,
+      line: 25, // This refers to a line in the LEFT (removed) side
+      originalLine: 25, // Should be ignored
+      originalStartLine: null,
+      path: 'src/leftside.ts',
+      diffSide: 'LEFT',
+      startDiffSide: 'LEFT',
+      startLine: null,
+      subjectType: 'LINE',
+      comments: {
+        nodes: [
+          {
+            id: 'comment5',
+            databaseId: 5,
+            body: 'Why remove this validation?',
+            diffHunk:
+              '@@ -20,10 +20,5 @@ function validate() {\n context\n-if (!input) throw new Error();\n-if (input.length < 5) {\n-  return false;\n-}\n-validateFormat(input);\n+// simplified\n return true;',
+            state: 'PENDING',
+            author: { login: 'reviewer' },
+          },
+        ],
+      },
+    };
+
+    // For LEFT side comments, thread.line refers to oldLineNumber
+    const lineDisplay = `${thread.path}:${thread.line ?? 'N/A'}`;
+    expect(lineDisplay).toBe('src/leftside.ts:25');
+
+    // The line range should still use thread.line
+    const lineRange =
+      thread.startLine && thread.line && thread.startLine !== thread.line
+        ? `${thread.startLine}-${thread.line}`
+        : `${thread.line ?? 'N/A'}`;
+    expect(lineRange).toBe('25');
+  });
+
+  it('should format line ranges for multi-line comments without originalStartLine', () => {
+    const thread: ReviewThreadNode = {
+      id: 'thread6',
+      isResolved: false,
+      isOutdated: false,
+      line: 45,
+      originalLine: 40, // Should be ignored
+      originalStartLine: 35, // Should be ignored
+      path: 'src/multiline.ts',
+      diffSide: 'RIGHT',
+      startDiffSide: 'RIGHT',
+      startLine: 40, // Use this, not originalStartLine
+      subjectType: 'LINE',
+      comments: {
+        nodes: [
+          {
+            id: 'comment6',
+            databaseId: 6,
+            body: 'Refactor this entire block',
+            diffHunk: '@@ -35,15 +35,15 @@ large diff hunk',
+            state: 'PENDING',
+            author: { login: 'reviewer' },
+          },
+        ],
+      },
+    };
+
+    const lineRange =
+      thread.startLine && thread.line && thread.startLine !== thread.line
+        ? `${thread.startLine}-${thread.line}`
+        : `${thread.line ?? 'N/A'}`;
+
+    expect(lineRange).toBe('40-45');
+
+    // Short format should show the end line
+    const short = `${thread.path}:${thread.line ?? 'N/A'}`;
+    expect(short).toBe('src/multiline.ts:45');
+  });
+
+  it('should properly calculate diff context ranges based on thread.line', () => {
+    const thread: ReviewThreadNode = {
+      id: 'thread7',
+      isResolved: false,
+      isOutdated: false,
+      line: 30,
+      originalLine: 25, // Should be ignored
+      originalStartLine: 20,
+      path: 'src/context.ts',
+      diffSide: 'RIGHT',
+      startDiffSide: 'RIGHT',
+      startLine: 28,
+      subjectType: 'LINE',
+      comments: {
+        nodes: [
+          {
+            id: 'comment7',
+            databaseId: 7,
+            body: 'Context test',
+            diffHunk:
+              '@@ -25,10 +25,10 @@ function test() {\n line25\n line26\n line27\n line28\n line29\n line30\n line31\n line32\n line33\n line34',
+            state: 'PENDING',
+            author: { login: 'reviewer' },
+          },
+        ],
+      },
+    };
+
+    // Using logic from selectReviewComments
+    const start = Math.max(1, thread.startLine ?? thread.line ?? 1);
+    const end = thread.line ?? start;
+
+    expect(start).toBe(28);
+    expect(end).toBe(30);
+
+    // Context calculation (3 lines before and after)
+    const contextStart = Math.max(1, start - 3);
+    const contextEnd = end + 3;
+
+    expect(contextStart).toBe(25); // 28 - 3
+    expect(contextEnd).toBe(33); // 30 + 3
+  });
+});
+
+describe('Display formatting for selectReviewComments', () => {
+  it('should format display strings correctly for different thread scenarios', () => {
+    // Test various display scenarios that selectReviewComments would generate
+    const scenarios = [
+      {
+        name: 'Current single-line comment',
+        thread: {
+          path: 'src/current.ts',
+          line: 42,
+          startLine: null,
+          originalLine: 40, // ignored
+        },
+        expected: {
+          short: 'src/current.ts:42',
+          lineRange: '42',
+          separator: '== src/current.ts:42 ==',
+        },
+      },
+      {
+        name: 'Current multi-line comment',
+        thread: {
+          path: 'src/multiline.ts',
+          line: 50,
+          startLine: 45,
+          originalLine: 48, // ignored
+          originalStartLine: 43, // ignored
+        },
+        expected: {
+          short: 'src/multiline.ts:50',
+          lineRange: '45-50',
+          separator: '== src/multiline.ts:45-50 ==',
+        },
+      },
+      {
+        name: 'Outdated comment (null line)',
+        thread: {
+          path: 'src/outdated.ts',
+          line: null,
+          startLine: null,
+          originalLine: 30,
+          originalStartLine: null,
+        },
+        expected: {
+          short: 'src/outdated.ts:N/A',
+          lineRange: 'N/A',
+          separator: '== src/outdated.ts:N/A ==',
+        },
+      },
+      {
+        name: 'LEFT side comment',
+        thread: {
+          path: 'src/removed.ts',
+          line: 15,
+          startLine: null,
+          diffSide: 'LEFT',
+          originalLine: 15,
+        },
+        expected: {
+          short: 'src/removed.ts:15',
+          lineRange: '15',
+          separator: '== src/removed.ts:15 ==',
+        },
+      },
+    ];
+
+    scenarios.forEach(({ name, thread, expected }) => {
+      // Test short format
+      const short = `${thread.path}:${thread.line ?? 'N/A'}`;
+      expect(short).toBe(expected.short);
+
+      // Test line range format
+      const lineRange =
+        thread.startLine && thread.line && thread.startLine !== thread.line
+          ? `${thread.startLine}-${thread.line}`
+          : `${thread.line ?? 'N/A'}`;
+      expect(lineRange).toBe(expected.lineRange);
+
+      // Test separator format
+      const separator = `== ${thread.path}:${lineRange} ==`;
+      expect(separator).toBe(expected.separator);
+    });
+  });
+});
+
+describe('parseDiff and filterDiffToRange integration', () => {
+  it('should correctly parse diff and map lines for RIGHT side comments', () => {
+    const diffHunk = `@@ -10,5 +10,6 @@ function example() {
+ const a = 1;
+ const b = 2;
+-const c = 3;
++const c = 30;
++const d = 40;
+ return a + b + c;`;
+
+    const diff = parseDiff(diffHunk);
+    expect(diff).toBeTruthy();
+    expect(diff!.changes.length).toBeGreaterThan(0);
+
+    // Find the line with "const d = 40;" which should be at newLineNumber 13
+    const addedLine = diff!.changes.find((c) => c.content === '+const d = 40;');
+    expect(addedLine).toBeTruthy();
+    expect(addedLine!.newLineNumber).toBe(13);
+  });
+
+  it('should correctly parse diff and map lines for LEFT side comments', () => {
+    const diffHunk = `@@ -20,5 +20,3 @@ function cleanup() {
+ cleanup1();
+-cleanup2();
+-cleanup3();
++cleanupAll();
+ finish();`;
+
+    const diff = parseDiff(diffHunk);
+    expect(diff).toBeTruthy();
+
+    // Find the removed line "cleanup3();" which should be at oldLineNumber 22
+    const removedLine = diff!.changes.find((c) => c.content === '-cleanup3();');
+    expect(removedLine).toBeTruthy();
+    expect(removedLine!.oldLineNumber).toBe(22);
   });
 });

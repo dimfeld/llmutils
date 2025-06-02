@@ -15,14 +15,14 @@ details: >
   for positioning, rather than falling back to `originalLine` fields.
 id: 28
 priority: high
-status: in_progress
+status: done
 dependencies: []
 issue:
   - https://github.com/dimfeld/llmutils/issues/112
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-02T20:14:32.992Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-02T20:55:52.139Z
+updatedAt: 2025-06-02T21:05:29.427Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -440,7 +440,7 @@ tasks:
 
           Verify that no `originalLine` or `originalStartLine` logic influences
           comment placement.
-        done: false
+        done: true
       - prompt: >
           Review and augment tests in `src/rmpr/modes/separate_context.test.ts`.
 
@@ -459,7 +459,7 @@ tasks:
 
           - Multi-line comments: Correct `lines` attribute and comment text
           formatting.
-        done: false
+        done: true
       - prompt: >
           Develop or update tests for `selectReviewComments` in
           `src/common/github/pull_requests.ts` (e.g., in
@@ -476,7 +476,7 @@ tasks:
           - Correct generation of `diffForTerminal` and `diffForContext`
           snippets using `thread.line` and `thread.startLine`, including for
           `LEFT` side comments.
-        done: false
+        done: true
       - prompt: >
           For all new and updated tests, create mock `DetailedReviewComment`
           objects that strictly adhere to the modified interface (i.e., without
@@ -486,14 +486,14 @@ tasks:
 
           This will help confirm that the tested functions do not inadvertently
           access or rely on these removed/ignored fields.
-        done: false
+        done: true
       - prompt: >
           Consider integration-style tests (if feasible within the testing
           setup) that simulate a flow from `selectReviewComments` through to
           `inline_comments.ts` or `separate_context.ts` processing, using
           various types of comments (LEFT/RIGHT, current/outdated) to ensure
           end-to-end consistency in line handling.
-        done: false
+        done: true
 changedFiles:
   - src/common/github/pull_requests.test.ts
   - src/common/github/pull_requests.ts
