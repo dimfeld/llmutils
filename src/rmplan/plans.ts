@@ -1,12 +1,11 @@
 import { readdir, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
 import * as path from 'node:path';
+import { join, resolve } from 'node:path';
 import * as yaml from 'yaml';
-import { phaseSchema, type PlanSchema } from './planSchema.js';
-import { loadEffectiveConfig } from './configLoader.js';
-import { getGitRoot } from '../rmfilter/utils.js';
 import { debugLog } from '../logging.js';
-import { generateProjectId } from './id_utils.js';
+import { getGitRoot } from '../rmfilter/utils.js';
+import { loadEffectiveConfig } from './configLoader.js';
+import { phaseSchema, type PlanSchema } from './planSchema.js';
 
 export type PlanSummary = {
   id: string;
@@ -37,72 +36,54 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
   async function readFile(fullPath: string) {
     debugLog(`Reading plan file: ${fullPath}`);
     try {
-      const content = await Bun.file(fullPath).text();
-      const parsed = yaml.parse(content);
+      const plan = await readPlanFile(fullPath);
 
-      const result = phaseSchema.safeParse(parsed);
-      if (result.success) {
-        const plan = result.data;
-        // Only add plans that have an ID. Legacy plans are only created as they're executed so will rarely be in
-        // progress
-        if (!plan.id) {
-          return;
-        }
+      // Only add plans that have an ID. Legacy plan files would not.
+      if (!plan.id) {
+        return;
+      }
 
-        debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
+      debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
 
-        // Count tasks and steps, check for prompts
-        let taskCount = 0;
-        let stepCount = 0;
-        let hasPrompts = false;
+      // Count tasks and steps, check for prompts
+      let taskCount = 0;
+      let stepCount = 0;
+      let hasPrompts = false;
 
-        if (plan.tasks) {
-          taskCount = plan.tasks.length;
-          for (const task of plan.tasks) {
-            if (task.steps) {
-              stepCount += task.steps.length;
-              // Check if any step has a prompt
-              if (
-                !hasPrompts &&
-                task.steps.some((step) => step.prompt && step.prompt.trim() !== '')
-              ) {
-                hasPrompts = true;
-              }
+      if (plan.tasks) {
+        taskCount = plan.tasks.length;
+        for (const task of plan.tasks) {
+          if (task.steps) {
+            stepCount += task.steps.length;
+            // Check if any step has a prompt
+            if (
+              !hasPrompts &&
+              task.steps.some((step) => step.prompt && step.prompt.trim() !== '')
+            ) {
+              hasPrompts = true;
             }
           }
         }
-
-        plans.set(plan.id, {
-          id: plan.id,
-          title: plan.title,
-          status: plan.status,
-          priority: plan.priority,
-          dependencies: plan.dependencies,
-          goal: plan.goal,
-          filename: fullPath,
-          createdAt: plan.createdAt,
-          updatedAt: plan.updatedAt,
-          taskCount,
-          stepCount,
-          hasPrompts,
-          project: plan.project,
-        });
-      } else {
-        // Log validation errors
-        debugLog(`Schema validation failed for ${fullPath}:`);
-        result.error.issues.forEach((issue) => {
-          debugLog(`  - ${issue.path.join('.')}: ${issue.message}`);
-        });
       }
+
+      plans.set(plan.id, {
+        id: plan.id,
+        title: plan.title,
+        status: plan.status,
+        priority: plan.priority,
+        dependencies: plan.dependencies,
+        goal: plan.goal,
+        filename: fullPath,
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+        taskCount,
+        stepCount,
+        hasPrompts,
+        project: plan.project,
+      });
     } catch (error) {
       // Log detailed error information
       console.error(`Failed to read plan from ${fullPath}:`, error);
-      if (error instanceof Error) {
-        debugLog(`Error details: ${error.message}`);
-        if (error.stack) {
-          debugLog(`Stack trace: ${error.stack}`);
-        }
-      }
     }
   }
 
@@ -415,10 +396,7 @@ export async function writePlanFile(filePath: string, plan: PlanSchema): Promise
   }
 
   // Convert to YAML with proper formatting
-  const yamlContent = yaml.stringify(result.data, {
-    lineWidth: 0,
-    nullStr: '',
-  });
+  const yamlContent = yaml.stringify(result.data);
 
   // Add the yaml-language-server schema line at the top
   const schemaLine =
@@ -426,4 +404,24 @@ export async function writePlanFile(filePath: string, plan: PlanSchema): Promise
   const fullContent = schemaLine + yamlContent;
 
   await Bun.write(absolutePath, fullContent);
+}
+
+/**
+ * Updates the status and updatedAt fields of a plan file.
+ *
+ * @param planFilePath - The path to the plan YAML file
+ * @param newStatus - The new status to set
+ * @throws Error if the file cannot be read, parsed, or validated
+ */
+export async function setPlanStatus(
+  planFilePath: string,
+  newStatus: PlanSchema['status']
+): Promise<void> {
+  // Read the content of the plan file
+  const plan = await readPlanFile(planFilePath);
+  plan.status = newStatus;
+  plan.updatedAt = new Date().toISOString();
+  await writePlanFile(planFilePath, plan);
+
+  debugLog(`Updated plan status in ${planFilePath} to ${newStatus}`);
 }
