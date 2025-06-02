@@ -22,7 +22,7 @@ issue:
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-02T20:14:32.992Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-02T20:46:22.512Z
+updatedAt: 2025-06-02T20:51:48.007Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -288,7 +288,7 @@ tasks:
 
           4. Handling of outdated comments (where `thread.line` is null) - e.g.,
           `lines="outdated"` and comment appended to hunk.
-        done: false
+        done: true
       - prompt: >
           In `formatReviewCommentsForSeparateContext` within
           `src/rmpr/modes/separate_context.ts`, modify the derivation of the
@@ -299,7 +299,7 @@ tasks:
 
           If `comment.thread.line` is null (e.g., for an outdated comment),
           `lineInfo` should be a specific string like "outdated" or "unknown".
-        done: false
+        done: true
       - prompt: >
           Refactor the logic for determining `targetLine` and `diffKey` for
           comment injection within `formatReviewCommentsForSeparateContext`.
@@ -309,7 +309,7 @@ tasks:
 
           If `comment.thread.diffSide` is `'RIGHT'`, `targetLine` should be
           `comment.thread.line`, and `diffKey` should be `'newLineNumber'`.
-        done: false
+        done: true
       - prompt: >
           Adjust the comment injection logic in
           `formatReviewCommentsForSeparateContext` for cases where
@@ -320,7 +320,7 @@ tasks:
           `diffContentLines`.
 
           Ensure that the `diffForContext` (the hunk) is still included.
-        done: false
+        done: true
       - prompt: >
           Ensure that the `spliceBeforeIndex` calculation correctly uses the
           `targetLine` (derived from `thread.line`) and the appropriate
@@ -330,7 +330,7 @@ tasks:
 
           Verify that this works for comments on added, deleted, and context
           lines within the hunk.
-        done: false
+        done: true
   - title: Update `selectReviewComments` for accurate display and context
     description: >
       The `selectReviewComments` function in
@@ -496,9 +496,11 @@ tasks:
         done: false
 changedFiles:
   - src/common/github/pull_requests.ts
+  - src/rmplan/actions.ts
   - src/rmpr/main.ts
   - src/rmpr/modes/inline_comments.test.ts
   - src/rmpr/modes/inline_comments.ts
+  - src/rmpr/modes/separate_context.test.ts
   - src/rmpr/modes/separate_context.ts
   - src/rmpr/types.ts
 rmfilter:
