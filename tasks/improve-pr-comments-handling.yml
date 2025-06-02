@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Improve PR Comments Handling
+goal: |
+  AI comments are useful for giving context on where in the actual file a change is to be made. Separate context mode is useful because we can give the AI the "old" content to compare as well.
+  We want to combine them both into a single mode that includes both styles of comments.
+
+  Additionally, the diff line handling needs to be improved, as described in docs/github-diffs.md. We want to:
+  - Stop using originalLine and originalStartLine altogether.
+  - Proper handling of line numbers when diffSide is LEFT
+details: Details to be added.
+id: 1op1wrl
+status: pending
+createdAt: 2025-06-02T18:37:07.724Z
+updatedAt: 2025-06-02T18:37:07.724Z
+tasks: []
