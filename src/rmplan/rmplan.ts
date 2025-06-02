@@ -34,6 +34,7 @@ import {
   findNextPlan,
   readPlanFile,
   writePlanFile,
+  setPlanStatus,
 } from './plans.js';
 import { planPrompt, simplePlanPrompt, generateSplitPlanPrompt } from './prompt.js';
 import { multiPhasePlanSchema, planSchema, type PlanSchema } from './planSchema.js';
@@ -53,28 +54,6 @@ import { $ } from 'bun';
 import { runStreamingPrompt } from '../common/run_and_apply.ts';
 
 await loadEnv();
-
-/**
- * Updates the status of a plan file and saves it back to disk
- */
-export async function setPlanStatus(
-  planFile: string,
-  status: 'pending' | 'in_progress' | 'done'
-): Promise<void> {
-  const content = await Bun.file(planFile).text();
-  // Remove yaml-language-server schema comment if present
-  const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
-  const plan = yaml.parse(yamlContent) as PlanSchema;
-
-  plan.status = status;
-  plan.updatedAt = new Date().toISOString();
-
-  const updatedYamlContent = yaml.stringify(plan);
-  const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json`;
-  const fullContent = schemaLine + '\n' + updatedYamlContent;
-
-  await Bun.write(planFile, fullContent);
-}
 
 /**
  * Resolves the tasks directory path, handling both absolute and relative paths.
@@ -1741,10 +1720,7 @@ workspaceCommand
           resolvedPlanFilePath = await resolvePlanFile(planIdentifier, globalOpts.config);
 
           // Read and parse the plan file
-          const content = await Bun.file(resolvedPlanFilePath).text();
-          // Remove yaml-language-server schema comment if present
-          const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
-          planData = yaml.parse(yamlContent) as PlanSchema;
+          planData = await readPlanFile(resolvedPlanFilePath);
 
           // If no custom ID was provided, use the plan's ID if available
           if (!options.id && planData.id) {

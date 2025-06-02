@@ -438,20 +438,7 @@ export async function markStepDone(
   config?: RmplanConfig
 ): Promise<{ planComplete: boolean; message: string }> {
   // 1. Load and parse the plan file
-  const planText = await Bun.file(planFile).text();
-  let planData: PlanSchema;
-  try {
-    planData = yaml.parse(planText);
-  } catch (err) {
-    throw new Error(`Failed to parse YAML: ${err as Error}`);
-  }
-  // Validate
-  const valid = planSchema.safeParse(planData);
-  if (!valid.success) {
-    throw new Error(
-      'Plan file does not match schema: ' + JSON.stringify(valid.error.issues, null, 2)
-    );
-  }
+  let planData = await readPlanFile(planFile);
 
   // 2. Find the starting point
   let pending: PendingTaskResult | null = null;
