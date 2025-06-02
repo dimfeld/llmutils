@@ -1,0 +1,153 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Robust Line Number Handling and Removal of
+  `originalLine`/`originalStartLine` Usage
+goal: To refactor the existing PR comment processing logic to exclusively use
+  current line information (`thread.line`, `thread.startLine`) and correctly
+  handle `diffSide`, thereby eliminating all usage of `originalLine` and
+  `originalStartLine`.
+details: >
+  This phase focuses on updating the core data structures and logic that deal
+  with line numbers in PR review comments. The primary objective is to make the
+  system rely on the `line` and `startLine` fields provided by the GitHub API,
+  which reflect the comment's position in the *current* version of the diff. If
+  these fields are null (e.g., for outdated comments or file-level comments),
+  the system will need to use other information, such as the `diffHunk` content,
+  for positioning, rather than falling back to `originalLine` fields.
+id: 1op1wrl-1
+status: pending
+dependencies: []
+planGeneratedAt: 2025-06-02T19:27:55.318Z
+createdAt: 2025-06-02T18:37:07.724Z
+updatedAt: 2025-06-02T19:27:55.318Z
+project:
+  title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
+    Handling
+  goal: To improve the handling of Pull Request (PR) review comments by
+    introducing a new "hybrid context" mode that combines the benefits of inline
+    AI comments and separate diff contexts, and by refactoring the system to use
+    current diff line numbers consistently, eliminating reliance on
+    `originalLine` and `originalStartLine`.
+  details: >
+    This project aims to enhance the `rmpr` tool's capability to assist
+    developers in addressing PR feedback.
+
+    Currently, `rmpr` offers two main modes for presenting review comments to an
+    AI:
+
+    1.  **Inline Comments Mode**: Embeds AI-readable comments directly into the
+    full source code files. This is good for showing the AI *where* in the
+    current file a change is needed.
+
+    2.  **Separate Context Mode**: Presents each review comment alongside its
+    corresponding diff hunk. This gives the AI the "before" and "after" context
+    of the change being discussed.
+
+
+    The first major goal is to create a new **Hybrid Context Mode**. This mode
+    will:
+
+    *   Insert AI-style comments into the full file content, similar to the
+    inline mode.
+
+    *   Simultaneously provide the original diff hunk associated with each
+    comment, giving the AI both the precise location in the current file and the
+    specific diff context the reviewer was seeing.
+
+
+    The second major goal is to improve diff line handling as outlined in
+    `docs/github-diffs.md` and the project requirements:
+
+    *   **Eliminate `originalLine` and `originalStartLine`**: The system must
+    stop using `thread.originalLine` and `thread.originalStartLine` from
+    GitHub's review comment data. All line positioning must rely on
+    `thread.line` and `thread.startLine` (which refer to the current state of
+    the diff) or, if those are unavailable (e.g., for outdated comments), on
+    matching the `diffHunk` content against the current file.
+
+    *   **Proper `diffSide: 'LEFT'` Handling**: Ensure line numbers are
+    correctly interpreted when `thread.diffSide` is `LEFT` (i.e., the comment
+    refers to the "old" or "removed" side of the diff).
+
+
+    These changes will make the AI's understanding of review comments more
+    robust and accurate, leading to better-automated code modifications.
+tasks:
+  - title: Modify `DetailedReviewComment` processing to ignore `originalLine` and
+      `originalStartLine`
+    description: >
+      This task involves a thorough review and update of all code that consumes
+      `DetailedReviewComment` objects. The focus will be on ensuring that line
+      positioning logic within `src/rmpr/modes/inline_comments.ts`,
+      `src/rmpr/modes/separate_context.ts`, and the comment selection UI in
+      `src/common/github/pull_requests.ts` (`selectReviewComments`) exclusively
+      uses `thread.line` and `thread.startLine`. Any existing fallbacks or
+      direct usages of `thread.originalLine` or `thread.originalStartLine` must
+      be removed. For comments where `thread.line` and `thread.startLine` are
+      null (e.g., outdated or file-level comments), a new strategy for handling
+      or placing these comments, potentially relying on `diffHunk` content
+      matching or marking them as non-positionable for inline modes, will be
+      established.
+    files: []
+    steps: []
+  - title: Enhance `findBestMatchLine` for `inline_comments.ts` to operate without
+      `originalLine` references
+    description: >
+      The `findBestMatchLine` function in `src/rmpr/modes/inline_comments.ts`,
+      which is crucial for placing AI comments, will be refactored. It must use
+      `thread.line` (and `thread.startLine` if available) as the primary input
+      for determining the comment's location. When `thread.line` is null (e.g.,
+      for an outdated comment), the function's matching capability will rely
+      solely on the `diffForContext` (derived from the comment's `diffHunk`)
+      against the current file content, utilizing `findClosestMatches`. The
+      logic for selecting the "best" match among multiple fuzzy matches will be
+      updated to no longer use `originalLine` as a guiding heuristic or
+      tie-breaker, ensuring adherence to the project's constraint.
+    files: []
+    steps: []
+  - title: "Update `separate_context.ts` to use current line numbers and handle
+      `diffSide: 'LEFT'` correctly"
+    description: >
+      This task focuses on `formatReviewCommentsForSeparateContext` in
+      `src/rmpr/modes/separate_context.ts`. The `lines` attribute within the
+      generated `<review>` XML tag must be derived from `thread.line` and
+      `thread.startLine`. The logic for inserting the "Comment: ..." text into
+      the diff context display will also be updated to use `thread.line` to
+      determine the correct insertion point relative to the diff lines. Special
+      attention will be given to comments where `thread.diffSide` is `LEFT`; for
+      these, `thread.line` refers to a line number in the "old" (pre-change)
+      version of the file within that hunk. The implementation must ensure the
+      comment is correctly associated with the deleted (`-`) lines or
+      surrounding context lines.
+    files: []
+    steps: []
+  - title: Update `selectReviewComments` for accurate display and context
+    description: >
+      The `selectReviewComments` function in
+      `src/common/github/pull_requests.ts`, which provides the interactive
+      checklist for users to select comments, will be updated. All displayed
+      line numbers, the `short` path:line representation of a comment, and the
+      diff context snippets (`diffForTerminal` and `diffForContext`) shown to
+      the user must be based on `thread.line` and `thread.startLine`. Any
+      reliance on `originalLine` or `originalStartLine` for these calculations
+      or displays will be removed to ensure consistency with the new line
+      handling approach.
+    files: []
+    steps: []
+  - title: Implement comprehensive tests for the new line handling logic
+    description: >
+      New unit and integration tests will be developed, and existing ones
+      updated, for `inline_comments.ts`, `separate_context.ts`, and
+      `selectReviewComments`. These tests will rigorously verify the correctness
+      of the new line handling logic. Test scenarios will include comments with
+      `diffSide: 'RIGHT'`, `diffSide: 'LEFT'`, outdated comments (where
+      `thread.line` might be null, forcing reliance on `diffHunk` matching),
+      multi-line comments, and comments on context lines, added lines, and
+      deleted lines. The tests will ensure that the system behaves as expected
+      without any use of `originalLine` or `originalStartLine`.
+    files: []
+    steps: []
+rmfilter:
+  - src/rmpr
+  - src/common/github
+  - --with-imports
+  - docs/github-diffs.md
