@@ -177,7 +177,8 @@ program
 
     if (options.plan) {
       try {
-        const fileContent = await Bun.file(options.plan).text();
+        const filePath = await resolvePlanFile(options.plan, globalOpts.config);
+        const fileContent = await Bun.file(filePath).text();
         planFile = options.plan;
 
         // Check if the file is a YAML plan file by trying to parse it
