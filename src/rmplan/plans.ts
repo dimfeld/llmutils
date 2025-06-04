@@ -32,6 +32,13 @@ let cachedPlans = new Map<
   { plans: Map<string | number, PlanSummary>; maxNumericId: number }
 >();
 
+/**
+ * Clears the plan cache. This is primarily for testing purposes.
+ */
+export function clearPlanCache(): void {
+  cachedPlans.clear();
+}
+
 export async function readAllPlans(
   directory: string,
   readCache = true

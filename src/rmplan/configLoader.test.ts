@@ -7,6 +7,7 @@ import {
   loadConfig,
   findLocalConfigPath,
   loadEffectiveConfig,
+  clearConfigCache,
 } from './configLoader.ts';
 
 // Silence logs during tests
@@ -71,6 +72,9 @@ describe('configLoader', () => {
   let configDir: string;
 
   beforeEach(async () => {
+    // Clear the config cache before each test
+    clearConfigCache();
+
     // Create a unique temporary directory for each test
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-config-test-'));
     configDir = path.join(testDir, '.rmfilter', 'config');

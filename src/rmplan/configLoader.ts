@@ -171,6 +171,13 @@ export async function findLocalConfigPath(mainConfigPath: string | null): Promis
 let foundConfigs: Map<string, RmplanConfig> = new Map();
 
 /**
+ * Clears the configuration cache. This is primarily for testing purposes.
+ */
+export function clearConfigCache(): void {
+  foundConfigs.clear();
+}
+
+/**
  * Orchestrates finding, loading, parsing, and validating the rmplan configuration.
  * Handles errors gracefully and logs user-friendly messages.
  * If a rmplan.local.yml file exists in the same directory as the main config,
