@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
 import { findNextPlan, readAllPlans, resolvePlanFile, setPlanStatus } from './plans.js';
-import type { PlanSchema } from './planSchema.js';
+import { planSchema, type PlanSchema } from './planSchema.js';
 
 describe('resolvePlanFile', () => {
   let tempDir: string;
@@ -728,5 +728,110 @@ describe('setPlanStatus', () => {
     const finalContent = await readFile(planPath, 'utf-8');
     const finalPlan = yaml.parse(finalContent) as PlanSchema;
     expect(['pending', 'in_progress', 'done']).toContain(finalPlan.status);
+  });
+});
+
+describe('schema validation and YAML serialization', () => {
+  it('should serialize numeric IDs as numbers in YAML', () => {
+    const planWithNumericId: PlanSchema = {
+      id: 123,
+      title: 'Test Plan with Numeric ID',
+      goal: 'Test numeric ID serialization',
+      details: 'This plan has a numeric ID',
+      status: 'pending',
+      tasks: [],
+    };
+
+    const yamlString = yaml.stringify(planWithNumericId);
+
+    // Verify the YAML contains the number, not a string
+    expect(yamlString).toContain('id: 123');
+    expect(yamlString).not.toContain('id: "123"');
+    expect(yamlString).not.toContain("id: '123'");
+  });
+
+  it('should parse numeric IDs from YAML as numbers', () => {
+    const yamlWithNumericId = `
+id: 456
+title: Test Plan
+goal: Test parsing
+details: Test details
+tasks: []
+`;
+
+    const parsed = yaml.parse(yamlWithNumericId);
+    const validatedPlan = planSchema.parse(parsed);
+
+    expect(validatedPlan.id).toBe(456);
+    expect(typeof validatedPlan.id).toBe('number');
+  });
+
+  it('should still handle string IDs correctly', () => {
+    const planWithStringId: PlanSchema = {
+      id: 'string-id-123',
+      title: 'Test Plan with String ID',
+      goal: 'Test string ID handling',
+      details: 'This plan has a string ID',
+      status: 'pending',
+      tasks: [],
+    };
+
+    const yamlString = yaml.stringify(planWithStringId);
+
+    // Verify the YAML contains the string ID
+    expect(yamlString).toMatch(/id: ['"]?string-id-123['"]?/);
+
+    // Parse it back and verify
+    const parsed = yaml.parse(yamlString);
+    const validatedPlan = planSchema.parse(parsed);
+
+    expect(validatedPlan.id).toBe('string-id-123');
+    expect(typeof validatedPlan.id).toBe('string');
+  });
+
+  it('should accept plans without IDs', () => {
+    const planWithoutId: PlanSchema = {
+      title: 'Test Plan without ID',
+      goal: 'Test optional ID',
+      details: 'This plan has no ID',
+      status: 'pending',
+      tasks: [],
+    };
+
+    const yamlString = yaml.stringify(planWithoutId);
+
+    // Verify the YAML doesn't contain an ID field
+    expect(yamlString).not.toContain('id:');
+
+    // Parse it back and verify
+    const parsed = yaml.parse(yamlString);
+    const validatedPlan = planSchema.parse(parsed);
+
+    expect(validatedPlan.id).toBeUndefined();
+  });
+
+  it('should reject invalid numeric IDs', () => {
+    const invalidNumericIds = [
+      { id: 0, title: 'Zero ID', goal: 'Test', details: 'Test', tasks: [] },
+      { id: -5, title: 'Negative ID', goal: 'Test', details: 'Test', tasks: [] },
+      { id: 1.5, title: 'Float ID', goal: 'Test', details: 'Test', tasks: [] },
+    ];
+
+    for (const invalidPlan of invalidNumericIds) {
+      expect(() => planSchema.parse(invalidPlan)).toThrow();
+    }
+  });
+
+  it('should handle mixed ID types in a plan collection', () => {
+    const plans = [
+      { id: 100, title: 'Numeric ID Plan', goal: 'Test', details: 'Test', tasks: [] },
+      { id: 'alpha-id', title: 'String ID Plan', goal: 'Test', details: 'Test', tasks: [] },
+      { title: 'No ID Plan', goal: 'Test', details: 'Test', tasks: [] },
+    ];
+
+    // All should be valid
+    for (const plan of plans) {
+      expect(() => planSchema.parse(plan)).not.toThrow();
+    }
   });
 });
