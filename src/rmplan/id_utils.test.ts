@@ -238,4 +238,39 @@ describe('generateNumericPlanId', () => {
       await fs.rm(tempPath, { recursive: true, force: true });
     }
   });
+
+  test('should handle mixed ID types including plans without IDs', async () => {
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const tempPath = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-test-'));
+
+    try {
+      // Create plan files with mixed ID types
+      await Bun.write(
+        `${tempPath}/5.yml`,
+        '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: 5\ngoal: Numeric plan 5\ndetails: Details for plan 5\ntasks: []\n'
+      );
+      await Bun.write(
+        `${tempPath}/string-id.yml`,
+        '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: "string-id"\ngoal: String ID plan\ndetails: Details for string ID plan\ntasks: []\n'
+      );
+      await Bun.write(
+        `${tempPath}/no-id.yml`,
+        '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\ngoal: Plan without ID\ndetails: This plan has no ID field\ntasks: []\n'
+      );
+      await Bun.write(
+        `${tempPath}/20.yml`,
+        '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: 20\ngoal: Numeric plan 20\ndetails: Details for plan 20\ntasks: []\n'
+      );
+
+      const { generateNumericPlanId } = await import('./id_utils.js');
+      const nextId = await generateNumericPlanId(tempPath);
+
+      // Should return 21 (max numeric ID 20 + 1)
+      expect(nextId).toBe(21);
+    } finally {
+      await fs.rm(tempPath, { recursive: true, force: true });
+    }
+  });
 });
