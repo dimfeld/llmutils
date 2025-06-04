@@ -4,23 +4,65 @@ import type { PlanSchema, PlanSummary } from './planSchema.js';
 
 describe('getCombinedTitle', () => {
   test('returns title when no project', () => {
-    const result = getCombinedTitle('My Task Title', undefined);
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'My Task Title',
+      goal: 'Test goal',
+      details: 'Details',
+      tasks: [],
+    };
+
+    const result = getCombinedTitle(plan);
     expect(result).toBe('My Task Title');
   });
 
   test('combines project and title when project exists', () => {
-    const result = getCombinedTitle('My Task Title', 'project-123');
-    expect(result).toBe('[project-123] My Task Title');
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'My Task Title',
+      goal: 'Test goal',
+      details: 'Details',
+      project: {
+        title: 'project-123',
+        goal: 'Project goal',
+        details: 'Project details',
+      },
+      tasks: [],
+    };
+
+    const result = getCombinedTitle(plan);
+    expect(result).toBe('project-123 - My Task Title');
   });
 
-  test('handles empty title', () => {
-    const result = getCombinedTitle('', 'project-123');
-    expect(result).toBe('[project-123] ');
+  test('handles empty title with project', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: '',
+      goal: 'Test goal',
+      details: 'Details',
+      project: {
+        title: 'project-123',
+        goal: 'Project goal',
+        details: 'Project details',
+      },
+      tasks: [],
+    };
+
+    const result = getCombinedTitle(plan);
+    expect(result).toBe('project-123');
   });
 
-  test('handles empty project', () => {
-    const result = getCombinedTitle('My Task Title', '');
-    expect(result).toBe('My Task Title');
+  test('returns Untitled when no title or project', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: '',
+      goal: 'Test goal',
+      details: 'Details',
+      tasks: [],
+    };
+
+    const result = getCombinedTitle(plan);
+    expect(result).toBe('Untitled');
   });
 });
 
@@ -38,45 +80,68 @@ describe('getCombinedGoal', () => {
     expect(result).toBe('Achieve something great');
   });
 
-  test('combines project and goal when project exists', () => {
+  test('combines project and goal when project exists and goals differ', () => {
     const plan: PlanSchema = {
       id: '1',
       title: 'Test Plan',
-      goal: 'Achieve something great',
+      goal: 'Phase goal',
       details: 'Details',
-      project: 'project-456',
+      project: {
+        title: 'project-456',
+        goal: 'Project goal',
+        details: 'Project details',
+      },
       tasks: [],
     };
 
     const result = getCombinedGoal(plan);
-    expect(result).toBe('[project-456] Achieve something great');
+    expect(result).toBe('Project goal - Phase goal');
   });
 
-  test('handles empty goal', () => {
+  test('returns phase goal when project and phase goals are the same', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Test Plan',
+      goal: 'Same goal',
+      details: 'Details',
+      project: {
+        title: 'project-456',
+        goal: 'Same goal',
+        details: 'Project details',
+      },
+      tasks: [],
+    };
+
+    const result = getCombinedGoal(plan);
+    expect(result).toBe('Same goal');
+  });
+
+  test('returns project goal when phase goal is empty', () => {
     const plan: PlanSchema = {
       id: '1',
       title: 'Test Plan',
       goal: '',
       details: 'Details',
-      project: 'project-456',
+      project: {
+        title: 'project-456',
+        goal: 'Project goal only',
+        details: 'Project details',
+      },
       tasks: [],
     };
 
     const result = getCombinedGoal(plan);
-    expect(result).toBe('[project-456] ');
+    expect(result).toBe('Project goal only');
   });
 
-  test('handles missing goal', () => {
+  test('returns empty string when no goals exist', () => {
     const plan: PlanSchema = {
       id: '1',
       title: 'Test Plan',
-      goal: 'Default goal',
+      goal: '',
       details: 'Details',
       tasks: [],
     };
-
-    // Override goal to undefined
-    (plan as any).goal = undefined;
 
     const result = getCombinedGoal(plan);
     expect(result).toBe('');
@@ -85,14 +150,9 @@ describe('getCombinedGoal', () => {
 
 describe('getCombinedTitleFromSummary', () => {
   test('returns title when no project', () => {
-    const summary: PlanSummary = {
-      id: '1',
+    const summary = {
       title: 'Summary Title',
       goal: 'Summary goal',
-      filename: '/path/to/file.yml',
-      taskCount: 5,
-      stepCount: 10,
-      hasPrompts: true,
     };
 
     const result = getCombinedTitleFromSummary(summary);
@@ -100,70 +160,67 @@ describe('getCombinedTitleFromSummary', () => {
   });
 
   test('combines project and title when project exists', () => {
-    const summary: PlanSummary = {
-      id: '1',
+    const summary = {
       title: 'Summary Title',
       goal: 'Summary goal',
-      filename: '/path/to/file.yml',
-      project: 'project-789',
-      taskCount: 5,
-      stepCount: 10,
-      hasPrompts: true,
+      project: {
+        title: 'project-789',
+        goal: 'Project goal',
+        details: 'Project details',
+      },
     };
 
     const result = getCombinedTitleFromSummary(summary);
-    expect(result).toBe('[project-789] Summary Title');
+    expect(result).toBe('project-789 - Summary Title');
   });
 
-  test('handles numeric ID', () => {
-    const summary: PlanSummary = {
-      id: 123,
-      title: 'Numeric ID Title',
-      goal: 'Summary goal',
-      filename: '/path/to/file.yml',
-      project: 'project-num',
-      taskCount: 2,
-      stepCount: 4,
-      hasPrompts: false,
-    };
-
-    const result = getCombinedTitleFromSummary(summary);
-    expect(result).toBe('[project-num] Numeric ID Title');
-  });
-
-  test('handles empty title and project', () => {
-    const summary: PlanSummary = {
-      id: '1',
+  test('returns project title when summary title is empty', () => {
+    const summary = {
       title: '',
       goal: 'Summary goal',
-      filename: '/path/to/file.yml',
-      taskCount: 0,
-      stepCount: 0,
-      hasPrompts: false,
+      project: {
+        title: 'project-only',
+        goal: 'Project goal',
+        details: 'Project details',
+      },
     };
 
     const result = getCombinedTitleFromSummary(summary);
-    expect(result).toBe('');
+    expect(result).toBe('project-only');
   });
 
-  test('handles all optional fields', () => {
-    const summary: PlanSummary = {
-      id: '1',
-      title: 'Full Summary',
-      goal: 'Complete goal',
-      filename: '/path/to/file.yml',
-      project: 'full-project',
-      status: 'in_progress',
-      priority: 'high',
-      dependencies: ['dep1', 'dep2'],
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-02T00:00:00Z',
-      taskCount: 3,
-      stepCount: 9,
-      hasPrompts: true,
+  test('returns goal when no title exists', () => {
+    const summary = {
+      title: '',
+      goal: 'Summary goal',
     };
 
     const result = getCombinedTitleFromSummary(summary);
-    expect(result).toBe('[full-project] Full Summary');
+    expect(result).toBe('Summary goal');
+  });
+
+  test('returns Untitled when no title or goal', () => {
+    const summary = {
+      title: '',
+      goal: '',
+    };
+
+    const result = getCombinedTitleFromSummary(summary);
+    expect(result).toBe('Untitled');
+  });
+
+  test('handles full plan summary with project', () => {
+    const summary = {
+      title: 'Full Summary',
+      goal: 'Complete goal',
+      project: {
+        title: 'full-project',
+        goal: 'Project goal',
+        details: 'Project details',
+      },
+    };
+
+    const result = getCombinedTitleFromSummary(summary);
+    expect(result).toBe('full-project - Full Summary');
   });
 });

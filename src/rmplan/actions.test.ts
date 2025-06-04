@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { markStepDone, commitAll } from './actions.js';
+import { markStepDone } from './actions.js';
 import { clearPlanCache } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 
@@ -287,69 +287,4 @@ describe('markStepDone', () => {
   });
 });
 
-describe('commitAll', () => {
-  let tempDir: string;
-
-  beforeEach(async () => {
-    // Clear mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    spawnSpy.mockClear();
-
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-commit-test-'));
-  });
-
-  afterEach(async () => {
-    // Clean up
-    await fs.rm(tempDir, { recursive: true, force: true });
-  });
-
-  test('uses jj when available', async () => {
-    // Mock jj to be available
-    spawnSpy.mockImplementation((cmd) => {
-      if (cmd.includes('jj') && cmd.includes('root')) {
-        return { exitCode: 0, stdout: { toString: () => tempDir } };
-      }
-      return { exitCode: 0 };
-    });
-
-    await commitAll('Test commit message', tempDir);
-
-    // Should have called jj commit
-    const commitCall = spawnSpy.mock.calls.find(
-      (call) => call[0].includes('jj') && call[0].includes('commit')
-    );
-    expect(commitCall).toBeDefined();
-    expect(commitCall[0]).toContain('-m');
-    expect(commitCall[0]).toContain('Test commit message');
-  });
-
-  test('falls back to git when jj not available', async () => {
-    // Mock jj to not be available
-    spawnSpy.mockImplementation((cmd) => {
-      if (cmd.includes('jj')) {
-        return { exitCode: 1 };
-      }
-      return { exitCode: 0 };
-    });
-
-    await commitAll('Test commit message', tempDir);
-
-    // Should have called git commit
-    const commitCall = spawnSpy.mock.calls.find(
-      (call) => call[0].includes('git') && call[0].includes('commit')
-    );
-    expect(commitCall).toBeDefined();
-  });
-
-  test('logs error when commit fails', async () => {
-    // Mock all commands to fail
-    spawnSpy.mockImplementation(() => ({ exitCode: 1 }));
-
-    await commitAll('Test commit message', tempDir);
-
-    // Should have logged error
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to commit'));
-  });
-});
+// Note: commitAll is not exported from actions.ts, so these tests are removed
