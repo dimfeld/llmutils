@@ -8,7 +8,7 @@ import { loadEffectiveConfig } from './configLoader.js';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
 
 export type PlanSummary = {
-  id: string;
+  id: string | number;
   title?: string;
   status?: 'pending' | 'in_progress' | 'done';
   priority?: 'low' | 'medium' | 'high' | 'urgent';
@@ -27,9 +27,23 @@ export type PlanSummary = {
   };
 };
 
-export async function readAllPlans(directory: string): Promise<Map<string, PlanSummary>> {
-  const plans = new Map<string, PlanSummary>();
+let cachedPlans = new Map<
+  string,
+  { plans: Map<string | number, PlanSummary>; maxNumericId: number }
+>();
+
+export async function readAllPlans(
+  directory: string,
+  readCache = true
+): Promise<{ plans: Map<string | number, PlanSummary>; maxNumericId: number }> {
+  let existing = readCache ? cachedPlans.get(directory) : undefined;
+  if (existing) {
+    return existing;
+  }
+
+  const plans = new Map<string | number, PlanSummary>();
   const promises: Promise<void>[] = [];
+  let maxNumericId = 0;
 
   debugLog(`Starting to scan directory for plan files: ${directory}`);
 
@@ -44,6 +58,27 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
       }
 
       debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
+
+      // Determine if the ID is numeric
+      let idKey: string | number = plan.id;
+      let summaryId: string | number = plan.id;
+
+      if (typeof plan.id === 'number') {
+        // ID is already a number
+        idKey = plan.id;
+        summaryId = plan.id;
+        if (plan.id > maxNumericId) {
+          maxNumericId = plan.id;
+        }
+      } else if (typeof plan.id === 'string' && /^\d+$/.test(plan.id)) {
+        // ID is a string that represents a number
+        const numericId = parseInt(plan.id, 10);
+        idKey = numericId;
+        summaryId = numericId;
+        if (numericId > maxNumericId) {
+          maxNumericId = numericId;
+        }
+      }
 
       // Count tasks and steps, check for prompts
       let taskCount = 0;
@@ -66,8 +101,8 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
         }
       }
 
-      plans.set(plan.id, {
-        id: plan.id,
+      plans.set(idKey, {
+        id: summaryId,
         title: plan.title,
         status: plan.status,
         priority: plan.priority,
@@ -111,7 +146,19 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
   await scanDirectory(directory);
   await Promise.all(promises);
   debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
-  return plans;
+  const retVal = { plans, maxNumericId };
+  cachedPlans.set(directory, retVal);
+  return retVal;
+}
+
+/**
+ * Gets the maximum numeric plan ID from the tasks directory.
+ * @param tasksDir - The directory containing plan files
+ * @returns The maximum numeric ID found, or 0 if none exist
+ */
+export async function getMaxNumericPlanId(tasksDir: string): Promise<number> {
+  const { maxNumericId } = await readAllPlans(tasksDir);
+  return maxNumericId;
 }
 
 /**
@@ -134,13 +181,7 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
     // Not a valid file path, continue to check if it's a plan ID
   }
 
-  // If the argument contains path separators or file extensions, it's likely a file path
-  if (planArg.includes('/') || planArg.includes('\\') || planArg.includes('.')) {
-    // It was meant to be a file path but doesn't exist
-    throw new Error(`Plan file not found: ${planArg}`);
-  }
-
-  // Try to find by plan ID
+  // Get the tasks directory configuration
   const config = await loadEffectiveConfig(configPath);
   const gitRoot = (await getGitRoot()) || process.cwd();
 
@@ -153,9 +194,49 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
     tasksDir = gitRoot;
   }
 
-  const plans = await readAllPlans(tasksDir);
-  const matchingPlan = plans.get(planArg);
+  // If it's just a filename (no path separators), check in the tasks directory
+  if (!planArg.includes('/') && !planArg.includes('\\') && planArg.includes('.')) {
+    const potentialPath = path.join(tasksDir, planArg);
+    try {
+      await stat(potentialPath);
+      return potentialPath;
+    } catch {
+      // File doesn't exist in tasks directory
+    }
+  }
 
+  // If the argument contains path separators, it's likely a file path
+  if (planArg.includes('/') || planArg.includes('\\')) {
+    // It was meant to be a file path but doesn't exist
+    throw new Error(`Plan file not found: ${planArg}`);
+  }
+
+  // Try to parse planArg as a number
+  const numericPlanArg = parseInt(planArg, 10);
+  if (!isNaN(numericPlanArg)) {
+    // Construct potential path for numeric ID
+    const potentialPath = path.join(tasksDir, `${numericPlanArg}.yml`);
+    try {
+      await stat(potentialPath);
+      return potentialPath;
+    } catch {
+      // File doesn't exist, continue to search in plans
+    }
+  }
+
+  // Read all plans and search by ID
+  const { plans } = await readAllPlans(tasksDir);
+
+  // If we successfully parsed as a number, try numeric lookup first
+  if (!isNaN(numericPlanArg)) {
+    const matchingPlan = plans.get(numericPlanArg);
+    if (matchingPlan) {
+      return matchingPlan.filename;
+    }
+  }
+
+  // Try string lookup (for both string IDs and numeric string IDs that weren't found above)
+  const matchingPlan = plans.get(planArg);
   if (matchingPlan) {
     return matchingPlan.filename;
   }
@@ -189,7 +270,7 @@ export async function findNextPlan(
   directory: string,
   options: PlanFilterOptions = { includePending: true }
 ): Promise<PlanSummary | null> {
-  const plans = await readAllPlans(directory);
+  const { plans } = await readAllPlans(directory);
 
   // Convert to array and filter based on options
   let candidates = Array.from(plans.values()).filter((plan) => {
@@ -257,7 +338,17 @@ export async function findNextPlan(
     // If priorities are the same, sort by ID ascending
     const aId = a.id || '';
     const bId = b.id || '';
-    return aId.localeCompare(bId);
+
+    // Handle both string and numeric IDs
+    if (typeof aId === 'number' && typeof bId === 'number') {
+      return aId - bId;
+    } else if (typeof aId === 'number') {
+      return -1; // Numeric IDs come before string IDs
+    } else if (typeof bId === 'number') {
+      return 1; // Numeric IDs come before string IDs
+    } else {
+      return aId.localeCompare(bId);
+    }
   });
 
   return readyCandidates[0];
@@ -279,7 +370,10 @@ export async function findNextPlan(
  * - Its status is 'pending' (or not set)
  * - All its dependencies have status 'done'
  */
-export function isPlanReady(plan: PlanSummary, allPlans: Map<string, PlanSummary>): boolean {
+export function isPlanReady(
+  plan: PlanSummary,
+  allPlans: Map<string | number, PlanSummary>
+): boolean {
   const status = plan.status || 'pending';
 
   // Only pending plans can be "ready"
@@ -304,9 +398,9 @@ export function isPlanReady(plan: PlanSummary, allPlans: Map<string, PlanSummary
 }
 
 export async function collectDependenciesInOrder(
-  planId: string,
-  allPlans: Map<string, PlanSummary>,
-  visited: Set<string> = new Set()
+  planId: string | number,
+  allPlans: Map<string | number, PlanSummary>,
+  visited: Set<string | number> = new Set()
 ): Promise<PlanSummary[]> {
   // Check for circular dependencies
   if (visited.has(planId)) {

@@ -9,6 +9,7 @@ details: >
   prompts, are polished.
 id: 1op1wrl-3
 status: pending
+priority: low
 dependencies:
   - 1op1wrl-2
 planGeneratedAt: 2025-06-02T19:27:55.318Z

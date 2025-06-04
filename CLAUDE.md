@@ -209,3 +209,5 @@ See @.cursor/rules/testing.mdc for testing strategy
 ## Quick Tips
 
 - When printing an error message in a template string in a catch block, use `${err as Error}` to avoid eslint complaining
+
+- Don't use `await import('module')` for regular imports. Just put a normal import at the top of the file

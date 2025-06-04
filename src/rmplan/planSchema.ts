@@ -5,7 +5,7 @@ export const phaseSchema = z
     title: z.string().optional(),
     goal: z.string(),
     details: z.string(),
-    id: z.string().optional(),
+    id: z.union([z.number().int().positive(), z.string()]).optional(),
     status: z.enum(['pending', 'in_progress', 'done']).default('pending').optional(),
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     dependencies: z.array(z.string()).default([]).optional(),

@@ -6,7 +6,7 @@ import yaml from 'yaml';
 import { createModel } from '../common/model_factory.js';
 import { boldMarkdownHeaders, error, log, warn } from '../logging.js';
 import type { RmplanConfig } from './configSchema.js';
-import { generatePhaseId, generateProjectId, slugify } from './id_utils.js';
+import { generatePhaseId, generateAlphanumericPlanId, slugify } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
 import { writePlanFile } from './plans.js';
@@ -125,7 +125,7 @@ export interface ExtractMarkdownToYamlOptions {
   issueUrls?: string[];
   planRmfilterArgs?: string[];
   output: string;
-  projectId?: string;
+  projectId?: string | number;
   issueUrl?: string;
   stubPlanData?: PlanSchema;
   commit?: boolean;
@@ -191,7 +191,8 @@ export async function extractMarkdownToYaml(
     validatedPlan = result.data;
 
     // Set metadata fields, using stubPlanData if provided
-    validatedPlan.id = options.stubPlanData?.id || options.projectId || generateProjectId();
+    validatedPlan.id =
+      options.stubPlanData?.id || options.projectId || generateAlphanumericPlanId();
     const now = new Date().toISOString();
     // Use createdAt from stub plan if available, otherwise use current timestamp
     validatedPlan.createdAt = options.stubPlanData?.createdAt || now;
@@ -317,7 +318,7 @@ export async function saveMultiPhaseYaml(
   // Determine project ID, preferring stubPlanData.id
   let issueUrl: string | undefined;
 
-  const projectId = options.stubPlanData?.id || options.projectId || generateProjectId();
+  const projectId = options.stubPlanData?.id || options.projectId || generateAlphanumericPlanId();
 
   if (!quiet) {
     log(chalk.blue('Using Project ID:'), projectId);
@@ -337,14 +338,14 @@ export async function saveMultiPhaseYaml(
   };
 
   // Process phases
-  const phaseIndexToId = new Map<number, string>();
+  const phaseIndexToId = new Map<number, string | number>();
   let successfulWrites = 0;
   const failedPhases: number[] = [];
 
   // First pass: generate IDs and update dependencies
   for (let i = 0; i < parsedYaml.phases.length; i++) {
     const phase = parsedYaml.phases[i];
-    const phaseId = actuallyMultiphase ? generatePhaseId(projectId, i + 1) : projectId;
+    const phaseId = actuallyMultiphase ? generatePhaseId(String(projectId), i + 1) : projectId;
     phaseIndexToId.set(i + 1, phaseId);
     phase.id = phaseId;
 

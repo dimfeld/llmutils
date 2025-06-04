@@ -151,7 +151,12 @@ export interface PhaseGenerationContext {
   currentPhaseGoal: string;
   currentPhaseDetails: string;
   currentPhaseTasks: Array<{ title: string; description: string }>; // Tasks from the current phase YAML (before step generation)
-  previousPhasesInfo: Array<{ id: string; title: string; goal: string; description: string }>; // Info from dependent, completed phases
+  previousPhasesInfo: Array<{
+    id: string | number;
+    title: string;
+    goal: string;
+    description: string;
+  }>; // Info from dependent, completed phases
   changedFilesFromDependencies: string[]; // Concatenated list of changedFiles from completed dependencies
   rmfilterArgsFromPlan: string[]; // rmfilter args from the original plan/request
   // Potentially add baseBranch if needed
