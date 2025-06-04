@@ -13,7 +13,7 @@ dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-04T19:49:40.403Z
+updatedAt: 2025-06-04T19:54:32.920Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -408,7 +408,7 @@ tasks:
           `src/rmplan/workspace/`, and other utility files).
 
           For each file, review its `import` statements.
-        done: false
+        done: true
       - prompt: >
           Update import paths to correctly point to modules that have been moved
           or refactored.
@@ -419,13 +419,13 @@ tasks:
 
           Use relative paths for imports between files within the `src/rmplan`
           module.
-        done: false
+        done: true
       - prompt: >
           After updating imports, run `bunx tsc --noEmit -p tsconfig.json` (or
           use IDE checks) to verify that all imports resolve correctly and there
           are no TypeScript errors related to module resolution. Fix any
           reported issues.
-        done: false
+        done: true
   - title: Test `rmplan` Functionality
     description: Run all existing tests related to `rmplan`. Add new unit or
       integration tests as necessary to ensure the refactored command structure
