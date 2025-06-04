@@ -5,6 +5,7 @@ export const planExampleFormat = `
 title: A concise single-sentence title for the project plan
 goal: the goal of the project plan
 details: details and analysis about the plan
+priority: medium # Options: low, medium, high, urgent
 tasks:
   - title: the title of a task
     description: more information about the task
@@ -20,6 +21,7 @@ tasks:
 export const planExampleFormatGeneric = `title: [single-line string - a concise title for the plan]
 goal: [single-line string]
 details: [single-line or multi-line string]
+priority: [low|medium|high|urgent - based on importance and time sensitivity]
 tasks:
   - title: [single-line string]
     description: [single-line or multi-line string]
@@ -31,10 +33,12 @@ tasks:
 export const phaseExampleFormatGeneric = `title: [single-line string - a concise title for the project]
 goal: [single-line string]
 details: [single-line or multi-line string]
+priority: [low|medium|high|urgent - based on importance and time sensitivity]
 phases:
   - title: [phase title - a concise single-sentence title]
     goal: [phase goal]
     details: [phase details]
+    priority: [low|medium|high|urgent - based on importance and time sensitivity]
     dependencies: [list of phase IDs this phase depends on, or empty list]
     tasks:
       - title: [task title]
@@ -48,6 +52,9 @@ export const planMarkdownExampleFormat = `
 
 ## Goal
 [Project goal here]
+
+## Priority
+[low|medium|high|urgent]
 
 ### Details
 [Detailed description and analysis]
@@ -82,6 +89,9 @@ export const phaseBasedMarkdownExampleFormat = `
 ## Goal
 [Overall project goal]
 
+## Priority
+[low|medium|high|urgent]
+
 ## Details
 [Overall project details and analysis]
 
@@ -89,6 +99,9 @@ export const phaseBasedMarkdownExampleFormat = `
 
 ### Goal
 [Phase-specific goal]
+
+### Priority
+[low|medium|high|urgent]
 
 ### Dependencies
 [None or comma-separated list, e.g., Phase 2, Phase 3]
@@ -110,6 +123,9 @@ export const phaseBasedMarkdownExampleFormat = `
 
 ### Goal
 [Phase-specific goal]
+
+### Priority
+[low|medium|high|urgent]
 
 ### Dependencies
 [None or comma-separated list, e.g., Phase 1]
@@ -174,9 +190,15 @@ The goal is to output a high-level phase-based plan. Focus on the overall struct
 When generating the final output, create a phase-based plan with:
 - A title: A concise single-sentence title that captures the essence of the project
 - An overall goal and project details
+- A priority: Assign a priority level (low, medium, high, or urgent) based on:
+  - low: Nice-to-have features or improvements with no pressing timeline
+  - medium: Important features that should be done but aren't blocking critical functionality
+  - high: Critical features or fixes that are needed soon or blocking other work
+  - urgent: Must be done immediately, fixing production issues or critical blockers
 - Multiple phases (or a single phase for smaller features), each with:
   - A phase title: A concise single-sentence title for the phase
   - A phase-specific goal
+  - A phase priority: May differ from overall priority based on phase urgency
   - Dependencies on other phases (if any)
   - Phase details
   - A list of tasks with titles and descriptions
@@ -224,7 +246,13 @@ When testing, prefer to use real tests and not mock functions or modules. Prefer
 
 The goal is to output prompts, but context, etc is important as well. Include plenty of information about which files to edit, what to do and how to do it, but you do not need to output code samples.
 
-When generating the final output with the prompts, output a title (a concise single-sentence title for the project), an overall goal, project details, and then a list of tasks.
+When generating the final output with the prompts, output a title (a concise single-sentence title for the project), an overall goal, project details, a priority level, and then a list of tasks.
+
+For the priority level, choose one of the following based on importance and urgency:
+- low: Nice-to-have features or improvements with no pressing timeline
+- medium: Important features that should be done but aren't blocking critical functionality  
+- high: Critical features or fixes that are needed soon or blocking other work
+- urgent: Must be done immediately, fixing production issues or critical blockers
 
 Each task should have a list of relevant files and a list of steps, where each step is a prompt a few sentences long. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
 
@@ -400,6 +428,7 @@ Please perform the following actions:
    - A phase-specific title (concise single sentence)
    - A phase-specific goal
    - Phase details explaining what will be accomplished
+   - A priority level (low, medium, high, or urgent) based on phase importance
    - Assignment of the relevant original tasks to this phase
 
 4. **Identify and list dependencies**:
@@ -419,10 +448,12 @@ Output a YAML structure following this format:
 title: [Overarching project title]
 goal: [Overarching project goal]
 details: [Overarching project details]
+priority: [low|medium|high|urgent]
 phases:
   - title: [Phase 1 title - concise single sentence]
     goal: [Phase 1 specific goal]
     details: [Phase 1 details]
+    priority: [low|medium|high|urgent]
     dependencies: []  # Empty for first phase
     tasks:
       - title: [Original task title]
@@ -435,6 +466,7 @@ phases:
   - title: [Phase 2 title]
     goal: [Phase 2 goal]
     details: [Phase 2 details]
+    priority: [low|medium|high|urgent]
     dependencies: ["Phase 1"]  # Human-readable dependency reference
     tasks:
       - title: [Original task title]
@@ -448,8 +480,8 @@ phases:
 
 ## Important Notes
 
-- The overall structure should have a top-level object with title, goal, details, and a phases array
-- Each phase within the phases array should be structured like a plan with its own title, goal, details, and tasks
+- The overall structure should have a top-level object with title, goal, details, priority, and a phases array
+- Each phase within the phases array should be structured like a plan with its own title, goal, details, priority, and tasks
 - All original task details (description, files, steps) MUST be preserved exactly as provided
 - Dependencies should be expressed in human-readable format that can later be mapped to phase IDs
 - Output ONLY the raw YAML string without any surrounding text, explanations, or markdown code fences
