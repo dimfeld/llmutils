@@ -27,14 +27,18 @@ export type PlanSummary = {
   };
 };
 
-let cachedPlans: { plans: Map<string | number, PlanSummary>; maxNumericId: number } | undefined;
+let cachedPlans = new Map<
+  string,
+  { plans: Map<string | number, PlanSummary>; maxNumericId: number }
+>();
 
 export async function readAllPlans(
   directory: string,
   readCache = true
 ): Promise<{ plans: Map<string | number, PlanSummary>; maxNumericId: number }> {
-  if (cachedPlans && readCache) {
-    return cachedPlans;
+  let existing = readCache ? cachedPlans.get(directory) : undefined;
+  if (existing) {
+    return existing;
   }
 
   const plans = new Map<string | number, PlanSummary>();
@@ -143,7 +147,7 @@ export async function readAllPlans(
   await Promise.all(promises);
   debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
   const retVal = { plans, maxNumericId };
-  cachedPlans = retVal;
+  cachedPlans.set(directory, retVal);
   return retVal;
 }
 
