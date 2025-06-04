@@ -27,9 +27,16 @@ export type PlanSummary = {
   };
 };
 
+let cachedPlans: { plans: Map<string | number, PlanSummary>; maxNumericId: number } | undefined;
+
 export async function readAllPlans(
-  directory: string
+  directory: string,
+  readCache = true
 ): Promise<{ plans: Map<string | number, PlanSummary>; maxNumericId: number }> {
+  if (cachedPlans && readCache) {
+    return cachedPlans;
+  }
+
   const plans = new Map<string | number, PlanSummary>();
   const promises: Promise<void>[] = [];
   let maxNumericId = 0;
@@ -135,7 +142,9 @@ export async function readAllPlans(
   await scanDirectory(directory);
   await Promise.all(promises);
   debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
-  return { plans, maxNumericId };
+  const retVal = { plans, maxNumericId };
+  cachedPlans = retVal;
+  return retVal;
 }
 
 /**

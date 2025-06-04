@@ -646,8 +646,8 @@ program
       // Generate a unique numeric plan ID
       const planId = await generateNumericPlanId(targetDir);
 
-      // Create filename using numeric ID
-      const filename = `${planId}.yml`;
+      // Create a slugified filename from the plan title
+      const filename = `${slugify(planTitle)}.yml`;
 
       // Construct the full path to the new plan file
       const filePath = path.join(targetDir, filename);
@@ -1706,7 +1706,7 @@ workspaceCommand
         workspaceId = options.id;
       } else if (planIdentifier) {
         // Generate ID based on plan
-        workspaceId = generateAlphanumericPlanId();
+        workspaceId = `task-${planIdentifier}`;
       } else {
         // Generate a random ID for standalone workspace
         workspaceId = generateAlphanumericPlanId();
@@ -1725,7 +1725,7 @@ workspaceCommand
 
           // If no custom ID was provided, use the plan's ID if available
           if (!options.id && planData.id) {
-            workspaceId = String(planData.id);
+            workspaceId = `task-${planData.id}`;
           }
 
           log(`Using plan: ${planData.title || planData.goal || resolvedPlanFilePath}`);

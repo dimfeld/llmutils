@@ -1,3 +1,5 @@
+import { getMaxNumericPlanId } from './plans.js';
+
 const EPOCH = new Date('2025-05-01T00:00:00.000Z').getTime();
 
 export function timestamp(): string {
@@ -68,7 +70,6 @@ export function generatePhaseId(projectId: string, phaseIndex: number): string {
  * @returns The next available numeric ID (maxId + 1)
  */
 export async function generateNumericPlanId(tasksDir: string): Promise<number> {
-  const { getMaxNumericPlanId } = await import('./plans.js');
   const maxId = await getMaxNumericPlanId(tasksDir);
   return maxId + 1;
 }
