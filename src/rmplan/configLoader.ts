@@ -168,6 +168,8 @@ export async function findLocalConfigPath(mainConfigPath: string | null): Promis
   return null;
 }
 
+let foundConfigs: Map<string, RmplanConfig> = new Map();
+
 /**
  * Orchestrates finding, loading, parsing, and validating the rmplan configuration.
  * Handles errors gracefully and logs user-friendly messages.
@@ -179,6 +181,10 @@ export async function findLocalConfigPath(mainConfigPath: string | null): Promis
  * @throws {Error} If configuration loading fails due to file not found (for override) or validation errors.
  */
 export async function loadEffectiveConfig(overridePath?: string): Promise<RmplanConfig> {
+  if (foundConfigs.has(overridePath || '')) {
+    return foundConfigs.get(overridePath || '')!;
+  }
+
   let configPath: string | null = null;
   try {
     configPath = await findConfigPath(overridePath);
@@ -230,6 +236,7 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
       effectiveConfig = config;
     }
 
+    foundConfigs.set(overridePath || '', effectiveConfig);
     return effectiveConfig;
   } catch (err: any) {
     // loadConfig only throws on validation errors. Read/parse errors return default config.
