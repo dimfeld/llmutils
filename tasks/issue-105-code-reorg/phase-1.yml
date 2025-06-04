@@ -13,7 +13,7 @@ dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-04T19:12:23.230Z
+updatedAt: 2025-06-04T19:15:01.867Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -117,7 +117,7 @@ tasks:
     steps:
       - prompt: |
           Create a new directory `src/rmplan/commands/`.
-        done: false
+        done: true
       - prompt: >
           Based on the list of commands documented in Task 1, create a new
           TypeScript file for each top-level command in the
@@ -128,7 +128,7 @@ tasks:
 
           Each file should initially be empty or contain a placeholder for the
           command's handler function.
-        done: false
+        done: true
   - title: Relocate Command-Specific Logic
     description: Move the core logic, argument parsing, and helper functions
       specific to each `rmplan` command from their current locations (primarily
@@ -478,6 +478,21 @@ tasks:
         done: false
 changedFiles:
   - CLAUDE.md
+  - src/rmplan/commands/add.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/answer-pr.ts
+  - src/rmplan/commands/cleanup.ts
+  - src/rmplan/commands/done.ts
+  - src/rmplan/commands/edit.ts
+  - src/rmplan/commands/extract.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/list.ts
+  - src/rmplan/commands/next.ts
+  - src/rmplan/commands/prepare.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/commands/split.ts
+  - src/rmplan/commands/workspace.ts
+  - src/rmplan/prompt.ts
 rmfilter:
   - --
   - src/rmplan
