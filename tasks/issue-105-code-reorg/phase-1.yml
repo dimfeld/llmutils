@@ -13,7 +13,7 @@ dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-04T19:34:25.709Z
+updatedAt: 2025-06-04T19:49:40.403Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -372,7 +372,7 @@ tasks:
       - prompt: >
           In `src/rmplan/rmplan.ts`, remove the inline action handler logic for
           each command that was relocated in Task 3.
-        done: false
+        done: true
       - prompt: >
           For each `program.command(...)` definition in `src/rmplan/rmplan.ts`:
 
@@ -387,7 +387,7 @@ tasks:
 
           Example for `generate` command: `.action(async (options, command) => {
           await handleGenerateCommand(options, command); })`.
-        done: false
+        done: true
       - prompt: >
           Ensure that global options (like `--config`, `--debug`) parsed by
           `program.opts()` are correctly passed to command handlers if they need
@@ -395,7 +395,7 @@ tasks:
 
           The `rmplan.ts` file should now be significantly smaller, focusing on
           CLI definition and dispatch.
-        done: false
+        done: true
   - title: Update Internal Imports within `rmplan`
     description: Adjust all import statements within the `src/rmplan/` directory to
       reflect the new file structure and module organization.
