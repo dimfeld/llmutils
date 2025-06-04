@@ -8,7 +8,7 @@ import { loadEffectiveConfig } from './configLoader.js';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
 
 export type PlanSummary = {
-  id: string;
+  id: string | number;
   title?: string;
   status?: 'pending' | 'in_progress' | 'done';
   priority?: 'low' | 'medium' | 'high' | 'urgent';
@@ -27,9 +27,12 @@ export type PlanSummary = {
   };
 };
 
-export async function readAllPlans(directory: string): Promise<Map<string, PlanSummary>> {
-  const plans = new Map<string, PlanSummary>();
+export async function readAllPlans(
+  directory: string
+): Promise<{ plans: Map<string | number, PlanSummary>; maxNumericId: number }> {
+  const plans = new Map<string | number, PlanSummary>();
   const promises: Promise<void>[] = [];
+  let maxNumericId = 0;
 
   debugLog(`Starting to scan directory for plan files: ${directory}`);
 
@@ -44,6 +47,27 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
       }
 
       debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
+
+      // Determine if the ID is numeric
+      let idKey: string | number = plan.id;
+      let summaryId: string | number = plan.id;
+
+      if (typeof plan.id === 'number') {
+        // ID is already a number
+        idKey = plan.id;
+        summaryId = plan.id;
+        if (plan.id > maxNumericId) {
+          maxNumericId = plan.id;
+        }
+      } else if (typeof plan.id === 'string' && /^\d+$/.test(plan.id)) {
+        // ID is a string that represents a number
+        const numericId = parseInt(plan.id, 10);
+        idKey = numericId;
+        summaryId = numericId;
+        if (numericId > maxNumericId) {
+          maxNumericId = numericId;
+        }
+      }
 
       // Count tasks and steps, check for prompts
       let taskCount = 0;
@@ -66,8 +90,8 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
         }
       }
 
-      plans.set(plan.id, {
-        id: plan.id,
+      plans.set(idKey, {
+        id: summaryId,
         title: plan.title,
         status: plan.status,
         priority: plan.priority,
@@ -111,7 +135,7 @@ export async function readAllPlans(directory: string): Promise<Map<string, PlanS
   await scanDirectory(directory);
   await Promise.all(promises);
   debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
-  return plans;
+  return { plans, maxNumericId };
 }
 
 /**
@@ -153,7 +177,7 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
     tasksDir = gitRoot;
   }
 
-  const plans = await readAllPlans(tasksDir);
+  const { plans } = await readAllPlans(tasksDir);
   const matchingPlan = plans.get(planArg);
 
   if (matchingPlan) {
@@ -189,7 +213,7 @@ export async function findNextPlan(
   directory: string,
   options: PlanFilterOptions = { includePending: true }
 ): Promise<PlanSummary | null> {
-  const plans = await readAllPlans(directory);
+  const { plans } = await readAllPlans(directory);
 
   // Convert to array and filter based on options
   let candidates = Array.from(plans.values()).filter((plan) => {
@@ -279,7 +303,10 @@ export async function findNextPlan(
  * - Its status is 'pending' (or not set)
  * - All its dependencies have status 'done'
  */
-export function isPlanReady(plan: PlanSummary, allPlans: Map<string, PlanSummary>): boolean {
+export function isPlanReady(
+  plan: PlanSummary,
+  allPlans: Map<string | number, PlanSummary>
+): boolean {
   const status = plan.status || 'pending';
 
   // Only pending plans can be "ready"
@@ -305,7 +332,7 @@ export function isPlanReady(plan: PlanSummary, allPlans: Map<string, PlanSummary
 
 export async function collectDependenciesInOrder(
   planId: string,
-  allPlans: Map<string, PlanSummary>,
+  allPlans: Map<string | number, PlanSummary>,
   visited: Set<string> = new Set()
 ): Promise<PlanSummary[]> {
   // Check for circular dependencies
