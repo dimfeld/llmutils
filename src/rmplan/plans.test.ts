@@ -127,6 +127,88 @@ describe('resolvePlanFile', () => {
     const resolved = await resolvePlanFile('nested-plan');
     expect(resolved).toBe(join(nestedDir, 'nested-plan.yml'));
   });
+
+  it('should resolve by a numeric string ID that corresponds to an existing [ID].yml file', async () => {
+    // Create a numeric plan file with format [ID].yml
+    const numericPlan = {
+      id: 101,
+      title: 'Numeric Plan 101',
+      goal: 'Test numeric ID',
+      details: 'Details for numeric plan',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writeFile(join(tasksDir, '101.yml'), yaml.stringify(numericPlan));
+
+    const resolved = await resolvePlanFile('101');
+    expect(resolved).toBe(join(tasksDir, '101.yml'));
+  });
+
+  it('should resolve by a numeric string ID where [ID].yml does not exist but another file contains that ID', async () => {
+    // Create a plan with numeric ID 102 but in a different filename
+    const numericPlan = {
+      id: 102,
+      title: 'Numeric Plan 102',
+      goal: 'Test numeric ID in different file',
+      details: 'Details for numeric plan',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writeFile(join(tasksDir, 'my-plan.yml'), yaml.stringify(numericPlan));
+
+    const resolved = await resolvePlanFile('102');
+    expect(resolved).toBe(join(tasksDir, 'my-plan.yml'));
+  });
+
+  it('should resolve by providing the direct filename [ID].yml', async () => {
+    // Create a numeric plan file
+    const numericPlan = {
+      id: 103,
+      title: 'Numeric Plan 103',
+      goal: 'Test direct filename',
+      details: 'Details for numeric plan',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writeFile(join(tasksDir, '103.yml'), yaml.stringify(numericPlan));
+
+    const resolved = await resolvePlanFile('103.yml');
+    expect(resolved).toBe(join(tasksDir, '103.yml'));
+  });
+
+  it('should resolve older plans by their string ID contained within a file', async () => {
+    // Create a plan with a string ID in a file with a different name
+    const oldPlan = {
+      id: 'alpha-plan-id',
+      title: 'Old Plan with String ID',
+      goal: 'Test old string ID',
+      details: 'Details for old plan',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writeFile(join(tasksDir, 'old-plan.yml'), yaml.stringify(oldPlan));
+
+    const resolved = await resolvePlanFile('alpha-plan-id');
+    expect(resolved).toBe(join(tasksDir, 'old-plan.yml'));
+  });
+
+  it('should resolve older plans by their direct filename', async () => {
+    // This already exists as 'feature-auth.yml'
+    const resolved = await resolvePlanFile('feature-auth.yml');
+    expect(resolved).toBe(join(tasksDir, 'feature-auth.yml'));
+  });
+
+  it('should throw an error if the plan ID or filename cannot be resolved', async () => {
+    await expect(resolvePlanFile('999')).rejects.toThrow('No plan found with ID or file path: 999');
+
+    await expect(resolvePlanFile('non-existent-plan-id')).rejects.toThrow(
+      'No plan found with ID or file path: non-existent-plan-id'
+    );
+  });
 });
 
 describe('readAllPlans', () => {

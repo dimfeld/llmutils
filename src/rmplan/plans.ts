@@ -168,13 +168,7 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
     // Not a valid file path, continue to check if it's a plan ID
   }
 
-  // If the argument contains path separators or file extensions, it's likely a file path
-  if (planArg.includes('/') || planArg.includes('\\') || planArg.includes('.')) {
-    // It was meant to be a file path but doesn't exist
-    throw new Error(`Plan file not found: ${planArg}`);
-  }
-
-  // Try to find by plan ID
+  // Get the tasks directory configuration
   const config = await loadEffectiveConfig(configPath);
   const gitRoot = (await getGitRoot()) || process.cwd();
 
@@ -187,9 +181,49 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
     tasksDir = gitRoot;
   }
 
-  const { plans } = await readAllPlans(tasksDir);
-  const matchingPlan = plans.get(planArg);
+  // If it's just a filename (no path separators), check in the tasks directory
+  if (!planArg.includes('/') && !planArg.includes('\\') && planArg.includes('.')) {
+    const potentialPath = path.join(tasksDir, planArg);
+    try {
+      await stat(potentialPath);
+      return potentialPath;
+    } catch {
+      // File doesn't exist in tasks directory
+    }
+  }
 
+  // If the argument contains path separators, it's likely a file path
+  if (planArg.includes('/') || planArg.includes('\\')) {
+    // It was meant to be a file path but doesn't exist
+    throw new Error(`Plan file not found: ${planArg}`);
+  }
+
+  // Try to parse planArg as a number
+  const numericPlanArg = parseInt(planArg, 10);
+  if (!isNaN(numericPlanArg)) {
+    // Construct potential path for numeric ID
+    const potentialPath = path.join(tasksDir, `${numericPlanArg}.yml`);
+    try {
+      await stat(potentialPath);
+      return potentialPath;
+    } catch {
+      // File doesn't exist, continue to search in plans
+    }
+  }
+
+  // Read all plans and search by ID
+  const { plans } = await readAllPlans(tasksDir);
+
+  // If we successfully parsed as a number, try numeric lookup first
+  if (!isNaN(numericPlanArg)) {
+    const matchingPlan = plans.get(numericPlanArg);
+    if (matchingPlan) {
+      return matchingPlan.filename;
+    }
+  }
+
+  // Try string lookup (for both string IDs and numeric string IDs that weren't found above)
+  const matchingPlan = plans.get(planArg);
   if (matchingPlan) {
     return matchingPlan.filename;
   }
@@ -351,9 +385,9 @@ export function isPlanReady(
 }
 
 export async function collectDependenciesInOrder(
-  planId: string,
+  planId: string | number,
   allPlans: Map<string | number, PlanSummary>,
-  visited: Set<string> = new Set()
+  visited: Set<string | number> = new Set()
 ): Promise<PlanSummary[]> {
   // Check for circular dependencies
   if (visited.has(planId)) {

@@ -1725,7 +1725,7 @@ workspaceCommand
 
           // If no custom ID was provided, use the plan's ID if available
           if (!options.id && planData.id) {
-            workspaceId = planData.id;
+            workspaceId = String(planData.id);
           }
 
           log(`Using plan: ${planData.title || planData.goal || resolvedPlanFilePath}`);

@@ -899,7 +899,7 @@ export async function preparePhase(
 async function gatherPhaseGenerationContext(
   phaseFilePath: string,
   projectPlanDir: string,
-  allPlans: Map<string, PlanSummary>,
+  allPlans: Map<string | number, PlanSummary>,
   rmfilterArgs?: string[]
 ): Promise<PhaseGenerationContext> {
   try {
@@ -920,7 +920,7 @@ async function gatherPhaseGenerationContext(
 
     // 3. Initialize arrays for previous phases info and changed files
     const previousPhasesInfo: Array<{
-      id: string;
+      id: string | number;
       title: string;
       goal: string;
       description: string;

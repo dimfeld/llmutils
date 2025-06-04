@@ -125,7 +125,7 @@ export interface ExtractMarkdownToYamlOptions {
   issueUrls?: string[];
   planRmfilterArgs?: string[];
   output: string;
-  projectId?: string;
+  projectId?: string | number;
   issueUrl?: string;
   stubPlanData?: PlanSchema;
   commit?: boolean;
@@ -338,14 +338,14 @@ export async function saveMultiPhaseYaml(
   };
 
   // Process phases
-  const phaseIndexToId = new Map<number, string>();
+  const phaseIndexToId = new Map<number, string | number>();
   let successfulWrites = 0;
   const failedPhases: number[] = [];
 
   // First pass: generate IDs and update dependencies
   for (let i = 0; i < parsedYaml.phases.length; i++) {
     const phase = parsedYaml.phases[i];
-    const phaseId = actuallyMultiphase ? generatePhaseId(projectId, i + 1) : projectId;
+    const phaseId = actuallyMultiphase ? generatePhaseId(String(projectId), i + 1) : projectId;
     phaseIndexToId.set(i + 1, phaseId);
     phase.id = phaseId;
 
