@@ -7,12 +7,12 @@ import chalk from 'chalk';
 import { error, log } from '../../logging.js';
 import { getGitRoot } from '../../rmfilter/utils.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { generateNumericPlanId, slugify } from '../id_utils.js';
+import { generateNumericPlanId } from '../id_utils.js';
 import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
-export async function handleAddCommand(title: string[], options: any) {
-  const globalOpts = options.parent.opts();
+export async function handleAddCommand(title: string[], options: any, command: any) {
+  const globalOpts = command.parent.opts();
 
   try {
     // Join the title arguments to form the complete plan title
@@ -41,8 +41,8 @@ export async function handleAddCommand(title: string[], options: any) {
     // Generate a unique numeric plan ID
     const planId = await generateNumericPlanId(targetDir);
 
-    // Create a slugified filename from the plan title
-    const filename = `${slugify(planTitle)}.yml`;
+    // Use the numeric ID as the filename
+    const filename = `${planId}.yml`;
 
     // Construct the full path to the new plan file
     const filePath = path.join(targetDir, filename);

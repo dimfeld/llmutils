@@ -8,12 +8,12 @@ details: This phase focuses on refactoring the `src/rmplan` directory.
   work will involve identifying these commands and moving their respective logic
   into dedicated files. Shared utilities within `rmplan` will also be organized.
 id: 1rm0j7j-1
-status: in_progress
+status: done
 dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-04T19:54:32.920Z
+updatedAt: 2025-06-04T20:24:18.182Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -444,7 +444,7 @@ tasks:
           Address any test failures that arise due to the refactoring. This may
           involve updating import paths in test files or adjusting how tested
           functions are invoked.
-        done: false
+        done: true
       - prompt: >
           For each new command module created in `src/rmplan/commands/` (e.g.,
           `generate.ts`, `agent.ts`, `list.ts`):
@@ -460,13 +460,13 @@ tasks:
           temp dirs) where necessary, but prefer testing with real file
           operations in temporary directories for file-generating commands like
           `add`.
-        done: false
+        done: true
       - prompt: >
           Review and enhance tests for shared utility modules like
           `src/rmplan/actions.ts` and `src/rmplan/plans.ts` to ensure their
           functionality is robustly covered, especially if their usage patterns
           have changed due to the refactoring.
-        done: false
+        done: true
       - prompt: >
           Consider adding a few high-level integration tests that execute the
           `rmplan` CLI with common commands (e.g., `rmplan generate --plan ...`,
@@ -475,25 +475,36 @@ tasks:
 
           Use `$` from Bun for CLI invocation in these tests, similar to
           `src/rmplan/rmplan_add.test.ts`.
-        done: false
+        done: true
 changedFiles:
   - CLAUDE.md
+  - src/rmplan/actions.test.ts
   - src/rmplan/commands/add.ts
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/answer-pr.ts
   - src/rmplan/commands/answerPr.ts
   - src/rmplan/commands/cleanup.ts
+  - src/rmplan/commands/done.test.ts
   - src/rmplan/commands/done.ts
   - src/rmplan/commands/edit.ts
   - src/rmplan/commands/extract.ts
+  - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/list.test.ts
   - src/rmplan/commands/list.ts
   - src/rmplan/commands/next.ts
   - src/rmplan/commands/prepare.ts
+  - src/rmplan/commands/show.test.ts
   - src/rmplan/commands/show.ts
   - src/rmplan/commands/split.ts
   - src/rmplan/commands/workspace.ts
+  - src/rmplan/configLoader.test.ts
+  - src/rmplan/configLoader.ts
+  - src/rmplan/display_utils.test.ts
+  - src/rmplan/plans.test.ts
+  - src/rmplan/plans.ts
   - src/rmplan/prompt.ts
+  - src/rmplan/rmplan.integration.test.ts
   - src/rmplan/rmplan.ts
 rmfilter:
   - --

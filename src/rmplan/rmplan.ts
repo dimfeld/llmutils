@@ -68,9 +68,9 @@ program
   .option('--edit', 'Open the newly created plan file in your editor')
   .option('--depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('--priority <level>', 'Set the priority level (low, medium, high, urgent)')
-  .action(async (title, options) => {
+  .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
-    await handleAddCommand(title, options);
+    await handleAddCommand(title, options, command);
   });
 
 program
@@ -79,9 +79,9 @@ program
   .option('--steps <steps>', 'Number of steps to mark as done', '1')
   .option('--task', 'Mark all steps in the current task as done')
   .option('--commit', 'Commit changes to jj/git')
-  .action(async (planFile, options) => {
+  .action(async (planFile, options, command) => {
     const { handleDoneCommand } = await import('./commands/done.js');
-    await handleDoneCommand(planFile, options);
+    await handleDoneCommand(planFile, options, command);
   });
 
 program
@@ -188,9 +188,9 @@ program
     'Filter by status (can specify multiple). Valid values: pending, in_progress, done, ready'
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
-  .action(async (options) => {
+  .action(async (options, command) => {
     const { handleListCommand } = await import('./commands/list.js');
-    await handleListCommand(options);
+    await handleListCommand(options, command);
   });
 
 program
@@ -215,9 +215,9 @@ program
   .description('Display detailed information about a plan. Can be a file path or plan ID.')
   .option('--next', 'Show the next plan that is ready to be implemented')
   .option('--current', 'Show the current plan (in_progress or next ready plan)')
-  .action(async (planFile, options) => {
+  .action(async (planFile, options, command) => {
     const { handleShowCommand } = await import('./commands/show.js');
-    await handleShowCommand(planFile, options);
+    await handleShowCommand(planFile, options, command);
   });
 
 program

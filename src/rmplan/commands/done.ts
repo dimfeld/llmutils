@@ -8,8 +8,8 @@ import { markStepDone } from '../actions.js';
 import { resolvePlanFile } from '../plans.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 
-export async function handleDoneCommand(planFile: string, options: any) {
-  const globalOpts = options.parent.opts();
+export async function handleDoneCommand(planFile: string, options: any, command: any) {
+  const globalOpts = command.parent.opts();
   const gitRoot = (await getGitRoot()) || process.cwd();
 
   try {

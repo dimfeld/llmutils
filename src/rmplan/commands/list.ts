@@ -10,9 +10,9 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { readAllPlans, isPlanReady, type PlanSummary } from '../plans.js';
 import { getCombinedTitleFromSummary } from '../display_utils.js';
 
-export async function handleListCommand(options: any) {
+export async function handleListCommand(options: any, command: any) {
   try {
-    const globalOpts = options.parent.opts();
+    const globalOpts = command.parent.opts();
     const config = await loadEffectiveConfig(globalOpts.config);
 
     // Determine directory to search

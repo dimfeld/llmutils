@@ -19,8 +19,8 @@ import {
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
 
-export async function handleShowCommand(planFile: string | undefined, options: any) {
-  const globalOpts = options.parent.opts();
+export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
+  const globalOpts = command.parent.opts();
 
   try {
     const config = await loadEffectiveConfig(globalOpts.config);
