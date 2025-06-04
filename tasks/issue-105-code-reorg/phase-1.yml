@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Reorganize `rmplan` Directory by Command
+goal: Improve the internal structure of the `src/rmplan` module by organizing
+  its code based on individual command functionalities, making it easier to
+  navigate and maintain.
+details: This phase focuses on refactoring the `src/rmplan` directory.
+  Currently, `src/rmplan/rmplan.ts` likely handles multiple sub-commands. This
+  work will involve identifying these commands and moving their respective logic
+  into dedicated files. Shared utilities within `rmplan` will also be organized.
+id: 1rm0j7j-1
+status: pending
+dependencies: []
+planGeneratedAt: 2025-06-04T08:24:18.885Z
+createdAt: 2025-06-04T08:24:18.885Z
+updatedAt: 2025-06-04T08:24:18.885Z
+project:
+  title: Refactor codebase to improve modularity and reorganize `rmplan` by
+    command functionality
+  goal: The primary goal of this project is to reorganize the `dimfeld/llmutils`
+    codebase to enhance modularity and maintainability. This involves
+    refactoring code along functionality boundaries to reduce inter-directory
+    coupling and reorganizing the `rmplan` directory for better clarity by
+    structuring its code per command.
+  details: >-
+    The current codebase has dependencies and interactions between modules like
+    `rmfilter`, `rmplan`, and `rmpr` that have become unwieldy. This project
+    aims to:
+
+    1. Reorganize the `rmplan` module by creating separate files for each of its
+    sub-commands, improving its internal structure.
+
+    2. Analyze and refactor dependencies between `rmfilter`, `rmplan`, `rmpr`,
+    and `common` modules. This includes consolidating shared utilities into
+    `src/common/` or more specific common modules, and ensuring that
+    interactions between the main feature modules (`rmfilter`, `rmplan`, `rmpr`)
+    are clean and well-defined.
+
+    The project will be broken into phases to manage complexity and ensure
+    incremental progress with continuous testing.
+tasks:
+  - title: Identify `rmplan` Commands and Related Logic
+    description: Analyze `src/rmplan/rmplan.ts` and associated files (e.g.,
+      `src/rmplan/actions.ts`, `src/rmplan/agent.ts`) to list all distinct
+      sub-commands provided by `rmplan` (such as generate, agent/run, next,
+      done, list, prepare, show, edit, split, workspace commands). Document the
+      primary files and functions associated with each command.
+    files: []
+    steps: []
+  - title: Create New Files for Each `rmplan` Command
+    description: For each command identified in the previous task, create a new
+      TypeScript file within a new `src/rmplan/commands/` subdirectory (e.g.,
+      `src/rmplan/commands/generate.ts`, `src/rmplan/commands/agent.ts`).
+    files: []
+    steps: []
+  - title: Relocate Command-Specific Logic
+    description: Move the core logic, argument parsing, and helper functions
+      specific to each `rmplan` command from their current locations into the
+      newly created dedicated command files.
+    files: []
+    steps: []
+  - title: Organize Shared `rmplan` Utilities
+    description: Identify functions and types that are used by multiple `rmplan`
+      commands but are specific to the `rmplan` domain. Consolidate these into
+      existing or new shared utility files within `src/rmplan/` (e.g.,
+      `src/rmplan/planUtils.ts`, or ensure `src/rmplan/plans.ts` and
+      `src/rmplan/actions.ts` serve this purpose clearly).
+    files: []
+    steps: []
+  - title: Update `rmplan.ts` Entry Point
+    description: Refactor `src/rmplan/rmplan.ts` to primarily serve as a command
+      dispatcher. It should import and delegate execution to the functions in
+      the new command-specific files.
+    files: []
+    steps: []
+  - title: Update Internal Imports within `rmplan`
+    description: Adjust all import statements within the `src/rmplan/` directory to
+      reflect the new file structure and module organization.
+    files: []
+    steps: []
+  - title: Test `rmplan` Functionality
+    description: Run all existing tests related to `rmplan`. Add new unit or
+      integration tests as necessary to ensure the refactored command structure
+      works correctly and all `rmplan` commands remain functional.
+    files: []
+    steps: []
+rmfilter:
+  - --
+  - src/rmplan
+  - src/rmpr
+  - src/common
+  - src/rmfilter

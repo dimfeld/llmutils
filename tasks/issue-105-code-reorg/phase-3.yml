@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Documentation and Final Review
+goal: Ensure all project documentation is updated to reflect the new code
+  organization and perform a final review of the changes.
+details: This final phase focuses on updating documentation and performing a
+  holistic review of the refactoring work.
+id: 1rm0j7j-3
+status: pending
+dependencies:
+  - 1rm0j7j-2
+planGeneratedAt: 2025-06-04T08:24:18.886Z
+createdAt: 2025-06-04T08:24:18.886Z
+updatedAt: 2025-06-04T08:24:18.886Z
+project:
+  title: Refactor codebase to improve modularity and reorganize `rmplan` by
+    command functionality
+  goal: The primary goal of this project is to reorganize the `dimfeld/llmutils`
+    codebase to enhance modularity and maintainability. This involves
+    refactoring code along functionality boundaries to reduce inter-directory
+    coupling and reorganizing the `rmplan` directory for better clarity by
+    structuring its code per command.
+  details: >-
+    The current codebase has dependencies and interactions between modules like
+    `rmfilter`, `rmplan`, and `rmpr` that have become unwieldy. This project
+    aims to:
+
+    1. Reorganize the `rmplan` module by creating separate files for each of its
+    sub-commands, improving its internal structure.
+
+    2. Analyze and refactor dependencies between `rmfilter`, `rmplan`, `rmpr`,
+    and `common` modules. This includes consolidating shared utilities into
+    `src/common/` or more specific common modules, and ensuring that
+    interactions between the main feature modules (`rmfilter`, `rmplan`, `rmpr`)
+    are clean and well-defined.
+
+    The project will be broken into phases to manage complexity and ensure
+    incremental progress with continuous testing.
+tasks:
+  - title: Update README Files
+    description: Revise the main `README.md` and any module-specific READMEs (e.g.,
+      within `src/rmplan/`) to accurately describe the new directory structure,
+      module responsibilities, and key architectural changes.
+    files: []
+    steps: []
+  - title: Update Code Comments and JSDoc
+    description: Review and update code comments and JSDoc annotations, especially
+      for functions or modules that were moved or significantly refactored.
+      Ensure comments accurately reflect the current state of the code.
+    files: []
+    steps: []
+  - title: Final Code Review
+    description: Conduct a final review of the refactored codebase, focusing on
+      module boundaries, dependency clarity, and overall organization. Ensure
+      adherence to project coding standards.
+    files: []
+    steps: []
+  - title: Clean Up Unused Code
+    description: Identify and remove any old files, unused functions, or dead code
+      that may have resulted from the reorganization.
+    files: []
+    steps: []
+rmfilter:
+  - --
+  - src/rmplan
+  - src/rmpr
+  - src/common
+  - src/rmfilter
