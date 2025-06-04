@@ -699,7 +699,7 @@ export async function preparePhase(
     // Load the target phase YAML file
     const currentPhaseData = await readPlanFile(phaseYamlFile);
     const projectPlanDir = path.dirname(phaseYamlFile);
-    const allPlans = await readAllPlans(projectPlanDir);
+    const { plans: allPlans } = await readAllPlans(projectPlanDir);
 
     // Dependency Checking
     if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
@@ -930,7 +930,7 @@ async function gatherPhaseGenerationContext(
     // 4. Process each dependency
     if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
       // Read all plans in the directory to find dependencies by ID
-      const allPlans = await readAllPlans(projectPlanDir);
+      const { plans: allPlans } = await readAllPlans(projectPlanDir);
 
       for (const dependencyId of currentPhaseData.dependencies) {
         const dependencyPlan = allPlans.get(dependencyId);

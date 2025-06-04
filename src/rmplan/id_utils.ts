@@ -40,11 +40,10 @@ export function slugify(text: string, maxLength = 50): string {
 }
 
 /**
- * Generate a unique project ID from a title
- * @param title - The project title to slugify
- * @returns A unique project ID
+ * Generate a unique alphanumeric plan ID (legacy format)
+ * @returns A unique alphanumeric plan ID
  */
-export function generateProjectId(): string {
+export function generateAlphanumericPlanId(): string {
   const randomStr = Math.floor(Math.random() * 46656)
     .toString(36)
     .padStart(2, '0')
@@ -61,4 +60,15 @@ export function generateProjectId(): string {
  */
 export function generatePhaseId(projectId: string, phaseIndex: number): string {
   return `${projectId}-${phaseIndex}`;
+}
+
+/**
+ * Generate a sequential numeric plan ID
+ * @param tasksDir - The directory containing plan files
+ * @returns The next available numeric ID (maxId + 1)
+ */
+export async function generateNumericPlanId(tasksDir: string): Promise<number> {
+  const { getMaxNumericPlanId } = await import('./plans.js');
+  const maxId = await getMaxNumericPlanId(tasksDir);
+  return maxId + 1;
 }

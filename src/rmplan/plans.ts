@@ -139,6 +139,16 @@ export async function readAllPlans(
 }
 
 /**
+ * Gets the maximum numeric plan ID from the tasks directory.
+ * @param tasksDir - The directory containing plan files
+ * @returns The maximum numeric ID found, or 0 if none exist
+ */
+export async function getMaxNumericPlanId(tasksDir: string): Promise<number> {
+  const { maxNumericId } = await readAllPlans(tasksDir);
+  return maxNumericId;
+}
+
+/**
  * Resolves a plan argument which can be either a file path or a plan ID.
  * If the argument is a file path that exists, returns the absolute path.
  * If the argument looks like a plan ID, searches for a matching plan in the tasks directory.
@@ -281,7 +291,17 @@ export async function findNextPlan(
     // If priorities are the same, sort by ID ascending
     const aId = a.id || '';
     const bId = b.id || '';
-    return aId.localeCompare(bId);
+
+    // Handle both string and numeric IDs
+    if (typeof aId === 'number' && typeof bId === 'number') {
+      return aId - bId;
+    } else if (typeof aId === 'number') {
+      return -1; // Numeric IDs come before string IDs
+    } else if (typeof bId === 'number') {
+      return 1; // Numeric IDs come before string IDs
+    } else {
+      return aId.localeCompare(bId);
+    }
   });
 
   return readyCandidates[0];

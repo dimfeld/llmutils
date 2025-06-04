@@ -29,7 +29,7 @@ import { DEFAULT_EXECUTOR } from './constants.js';
 import { getCombinedGoal, getCombinedTitle, getCombinedTitleFromSummary } from './display_utils.js';
 import { executors } from './executors/index.js';
 import { fixYaml } from './fix_yaml.js';
-import { generateProjectId, slugify } from './id_utils.js';
+import { generateAlphanumericPlanId, slugify } from './id_utils.js';
 import {
   collectDependenciesInOrder,
   findNextPlan,
@@ -644,7 +644,7 @@ program
       await fs.mkdir(targetDir, { recursive: true });
 
       // Generate a unique plan ID
-      const planId = generateProjectId();
+      const planId = generateAlphanumericPlanId();
 
       // Create a slugified filename from the plan title
       const filename = slugify(planTitle) + '.yml';
@@ -915,7 +915,7 @@ function createAgentCommand(command: Command, description: string) {
         if (options.withDependencies) {
           const config = await loadEffectiveConfig(globalOpts.config);
           const tasksDir = await resolveTasksDir(config);
-          const allPlans = await readAllPlans(tasksDir);
+          const { plans: allPlans } = await readAllPlans(tasksDir);
 
           // Get the plan's ID
           const planData = await readPlanFile(resolvedPlanFile);
@@ -1020,7 +1020,7 @@ program
       let searchDir = options.dir || (await resolveTasksDir(config));
 
       // Read all plans
-      const plans = await readAllPlans(searchDir);
+      const { plans } = await readAllPlans(searchDir);
 
       if (plans.size === 0) {
         log('No plan files found in', searchDir);
@@ -1311,7 +1311,7 @@ program
 
       // Check if plan is ready (we'll need to load all plans to check dependencies)
       const tasksDir = await resolveTasksDir(config);
-      const allPlans = await readAllPlans(tasksDir);
+      const { plans: allPlans } = await readAllPlans(tasksDir);
 
       // Display basic information
       log(chalk.bold('\nPlan Information:'));
@@ -1706,10 +1706,10 @@ workspaceCommand
         workspaceId = options.id;
       } else if (planIdentifier) {
         // Generate ID based on plan
-        workspaceId = generateProjectId();
+        workspaceId = generateAlphanumericPlanId();
       } else {
         // Generate a random ID for standalone workspace
-        workspaceId = generateProjectId();
+        workspaceId = generateAlphanumericPlanId();
       }
 
       // Resolve plan file if provided

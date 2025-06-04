@@ -6,7 +6,7 @@ import yaml from 'yaml';
 import { createModel } from '../common/model_factory.js';
 import { boldMarkdownHeaders, error, log, warn } from '../logging.js';
 import type { RmplanConfig } from './configSchema.js';
-import { generatePhaseId, generateProjectId, slugify } from './id_utils.js';
+import { generatePhaseId, generateAlphanumericPlanId, slugify } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
 import { writePlanFile } from './plans.js';
@@ -191,7 +191,8 @@ export async function extractMarkdownToYaml(
     validatedPlan = result.data;
 
     // Set metadata fields, using stubPlanData if provided
-    validatedPlan.id = options.stubPlanData?.id || options.projectId || generateProjectId();
+    validatedPlan.id =
+      options.stubPlanData?.id || options.projectId || generateAlphanumericPlanId();
     const now = new Date().toISOString();
     // Use createdAt from stub plan if available, otherwise use current timestamp
     validatedPlan.createdAt = options.stubPlanData?.createdAt || now;
@@ -317,7 +318,7 @@ export async function saveMultiPhaseYaml(
   // Determine project ID, preferring stubPlanData.id
   let issueUrl: string | undefined;
 
-  const projectId = options.stubPlanData?.id || options.projectId || generateProjectId();
+  const projectId = options.stubPlanData?.id || options.projectId || generateAlphanumericPlanId();
 
   if (!quiet) {
     log(chalk.blue('Using Project ID:'), projectId);
