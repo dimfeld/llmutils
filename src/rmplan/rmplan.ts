@@ -22,7 +22,7 @@ import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../rmpr/comment_options.js';
 import { handleRmprCommand } from '../rmpr/main.js';
 import { markStepDone, prepareNextStep, preparePhase } from './actions.js';
-import { rmplanAgent } from './agent.js';
+import { rmplanAgent } from './commands/agent.js';
 import { cleanupEolComments } from './cleanup.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
