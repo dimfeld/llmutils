@@ -340,6 +340,9 @@ rmplan generate --issue https://github.com/dimfeld/llmutils/issues/28
 # Generate a plan from the GitHub issue for this repository with this number
 rmplan generate --issue 28
 
+# Generate a plan and commit the resulting YAML file
+rmplan generate --plan plan.txt --commit -- src/**/*.ts
+
 # Extract and validate a plan from a file
 rmplan extract output.txt --output plan.yml
 

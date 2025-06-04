@@ -143,6 +143,7 @@ program
     '--no-extract',
     'Do not automatically run the extract command after generating the prompt'
   )
+  .option('--commit', 'Commit changes to jj/git after successful plan generation')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (options, command) => {
@@ -482,6 +483,7 @@ program
           planRmfilterArgs: allRmfilterOptions,
           issueUrls: issueUrlsForExtract,
           stubPlanData: stubPlanData || undefined,
+          commit: options.commit,
         };
 
         const result = await extractMarkdownToYaml(

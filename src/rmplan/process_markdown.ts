@@ -12,6 +12,7 @@ import { phaseSchema, planSchema } from './planSchema.js';
 import { writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
 import { fixYaml } from './fix_yaml.js';
+import { commitAll, getGitRoot } from '../rmfilter/utils.js';
 
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
@@ -127,6 +128,7 @@ export interface ExtractMarkdownToYamlOptions {
   projectId?: string;
   issueUrl?: string;
   stubPlanData?: PlanSchema;
+  commit?: boolean;
 }
 
 export async function extractMarkdownToYaml(
@@ -291,6 +293,16 @@ export async function extractMarkdownToYaml(
 
   if (!quiet) {
     log(chalk.green('Success!'), `Wrote single-phase plan to ${outputPath}`);
+  }
+
+  // Commit if requested
+  if (options.commit) {
+    const gitRoot = await getGitRoot();
+    const commitMessage = `Add plan: ${orderedPlan.title || orderedPlan.goal}`;
+    await commitAll(commitMessage, gitRoot);
+    if (!quiet) {
+      log(chalk.green('✓ Committed changes'));
+    }
   }
 
   return `Successfully created plan file at ${outputPath}`;
@@ -504,6 +516,19 @@ export async function saveMultiPhaseYaml(
 
   if (failedPhases.length > 0) {
     warn(`Warning: Failed to write ${failedPhases.length} phase files: ${failedPhases.join(', ')}`);
+  }
+
+  // Commit if requested
+  if (options.commit) {
+    const gitRoot = await getGitRoot();
+    const projectTitle = parsedYaml.title || parsedYaml.goal || 'multi-phase plan';
+    const commitMessage = actuallyMultiphase
+      ? `Add multi-phase plan: ${projectTitle}`
+      : `Add plan: ${projectTitle}`;
+    await commitAll(commitMessage, gitRoot);
+    if (!quiet) {
+      log(chalk.green('✓ Committed changes'));
+    }
   }
 
   // Return a message about what was created
