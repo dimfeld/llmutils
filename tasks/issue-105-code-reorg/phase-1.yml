@@ -13,7 +13,7 @@ dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-04T19:15:01.867Z
+updatedAt: 2025-06-04T19:27:31.928Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -167,7 +167,7 @@ tasks:
 
           Define and export a handler function, e.g., `async function
           handleGenerateCommand(options: any, command: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `agent` (and `run` alias) command:
 
@@ -179,7 +179,7 @@ tasks:
           Export a handler function, e.g., `async function
           handleAgentCommand(planFile: string | undefined, options: any,
           globalCliOptions: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `next` command:
 
@@ -189,7 +189,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleNextCommand(planFile: string, options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `done` command:
 
@@ -199,7 +199,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleDoneCommand(planFile: string, options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `list` command:
 
@@ -209,7 +209,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleListCommand(options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `prepare` command:
 
@@ -219,7 +219,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handlePrepareCommand(yamlFile: string | undefined, options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `show` command:
 
@@ -229,7 +229,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleShowCommand(planFile: string | undefined, options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `edit` command:
 
@@ -238,7 +238,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleEditCommand(planArg: string, options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `split` command:
 
@@ -248,7 +248,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleSplitCommand(planArg: string, options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `add` command:
 
@@ -258,7 +258,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleAddCommand(title: string[], options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `extract` command:
 
@@ -268,7 +268,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleExtractCommand(inputFile: string | undefined, options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `answer-pr` command:
 
@@ -279,7 +279,7 @@ tasks:
           Export a handler function, e.g., `async function
           handleAnswerPrCommand(prIdentifier: string | undefined, options:
           any)`.
-        done: false
+        done: true
       - prompt: >
           For the `cleanup` command:
 
@@ -289,7 +289,7 @@ tasks:
 
           Export a handler function, e.g., `async function
           handleCleanupCommand(files: string[], options: any)`.
-        done: false
+        done: true
       - prompt: >
           For the `workspace` command and its subcommands (`list`, `add`):
 
@@ -305,7 +305,7 @@ tasks:
           `WorkspaceAutoSelector.listWorkspacesWithStatus`) and `workspace add`
           (using `createWorkspace`) from `src/rmplan/rmplan.ts` into these
           handlers.
-        done: false
+        done: true
   - title: Organize Shared `rmplan` Utilities
     description: Identify functions and types that are used by multiple `rmplan`
       commands but are specific to the `rmplan` domain. Consolidate these into
@@ -481,6 +481,7 @@ changedFiles:
   - src/rmplan/commands/add.ts
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/answer-pr.ts
+  - src/rmplan/commands/answerPr.ts
   - src/rmplan/commands/cleanup.ts
   - src/rmplan/commands/done.ts
   - src/rmplan/commands/edit.ts
