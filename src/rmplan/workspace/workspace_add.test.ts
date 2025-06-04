@@ -69,11 +69,11 @@ describe('workspace add command - integration', () => {
     expect(resolved).toBe(planPath);
   });
 
-  test('generateProjectId creates valid IDs', async () => {
-    const { generateProjectId } = await import('../id_utils.js');
+  test('generateAlphanumericPlanId creates valid IDs', async () => {
+    const { generateAlphanumericPlanId } = await import('../id_utils.js');
 
-    const id1 = generateProjectId();
-    const id2 = generateProjectId();
+    const id1 = generateAlphanumericPlanId();
+    const id2 = generateAlphanumericPlanId();
 
     // Should be different
     expect(id1).not.toBe(id2);

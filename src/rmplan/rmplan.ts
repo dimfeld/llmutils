@@ -29,7 +29,7 @@ import { DEFAULT_EXECUTOR } from './constants.js';
 import { getCombinedGoal, getCombinedTitle, getCombinedTitleFromSummary } from './display_utils.js';
 import { executors } from './executors/index.js';
 import { fixYaml } from './fix_yaml.js';
-import { generateAlphanumericPlanId, slugify } from './id_utils.js';
+import { generateAlphanumericPlanId, generateNumericPlanId, slugify } from './id_utils.js';
 import {
   collectDependenciesInOrder,
   findNextPlan,
@@ -643,11 +643,11 @@ program
       // Ensure the target directory exists
       await fs.mkdir(targetDir, { recursive: true });
 
-      // Generate a unique plan ID
-      const planId = generateAlphanumericPlanId();
+      // Generate a unique numeric plan ID
+      const planId = await generateNumericPlanId(targetDir);
 
-      // Create a slugified filename from the plan title
-      const filename = slugify(planTitle) + '.yml';
+      // Create filename using numeric ID
+      const filename = `${planId}.yml`;
 
       // Construct the full path to the new plan file
       const filePath = path.join(targetDir, filename);
@@ -665,7 +665,7 @@ program
 
       // Create the initial plan object adhering to PlanSchema
       const plan: PlanSchema = {
-        id: planId,
+        id: planId.toString(),
         title: planTitle,
         goal: 'Goal to be defined.',
         details: 'Details to be added.',
