@@ -10,6 +10,7 @@ details: This phase addresses the broader code organization. It involves
   dependencies for better separation of concerns.
 id: 1rm0j7j-2
 status: pending
+priority: urgent
 dependencies:
   - 1rm0j7j-1
 planGeneratedAt: 2025-06-04T08:24:18.885Z

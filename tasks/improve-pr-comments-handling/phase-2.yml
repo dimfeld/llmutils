@@ -15,6 +15,7 @@ details: >
   context from the diff.
 id: 1op1wrl-2
 status: pending
+priority: high
 dependencies:
   - 1op1wrl-1
 planGeneratedAt: 2025-06-02T19:27:55.318Z

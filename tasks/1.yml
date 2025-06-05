@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: The dependencies table cell in rmplan list should show which dependencies
+  are done or not
+goal: Goal to be defined.
+details: Details to be added.
+priority: low
+id: "1"
+status: pending
+createdAt: 2025-06-05T08:13:44.995Z
+updatedAt: 2025-06-05T08:13:44.995Z
+tasks: []

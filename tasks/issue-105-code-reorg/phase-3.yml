@@ -6,6 +6,7 @@ details: This final phase focuses on updating documentation and performing a
   holistic review of the refactoring work.
 id: 1rm0j7j-3
 status: pending
+priority: high
 dependencies:
   - 1rm0j7j-2
 planGeneratedAt: 2025-06-04T08:24:18.886Z

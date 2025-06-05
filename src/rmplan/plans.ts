@@ -219,22 +219,12 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
   }
 
   // Try to parse planArg as a number
-  const numericPlanArg = parseInt(planArg, 10);
-  if (!isNaN(numericPlanArg)) {
-    // Construct potential path for numeric ID
-    const potentialPath = path.join(tasksDir, `${numericPlanArg}.yml`);
-    try {
-      await stat(potentialPath);
-      return potentialPath;
-    } catch {
-      // File doesn't exist, continue to search in plans
-    }
-  }
 
   // Read all plans and search by ID
   const { plans } = await readAllPlans(tasksDir);
 
   // If we successfully parsed as a number, try numeric lookup first
+  const numericPlanArg = Number(planArg);
   if (!isNaN(numericPlanArg)) {
     const matchingPlan = plans.get(numericPlanArg);
     if (matchingPlan) {
@@ -311,12 +301,12 @@ export async function findNextPlan(
     return plan.dependencies.every((depId) => {
       // Try to get the dependency plan by string ID first
       let depPlan = plans.get(depId);
-      
+
       // If not found and the dependency ID is a numeric string, try as a number
       if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
         depPlan = plans.get(parseInt(depId, 10));
       }
-      
+
       return depPlan && depPlan.status === 'done';
     });
   });
@@ -408,12 +398,12 @@ export function isPlanReady(
   return plan.dependencies.every((depId) => {
     // Try to get the dependency plan by string ID first
     let depPlan = allPlans.get(depId);
-    
+
     // If not found and the dependency ID is a numeric string, try as a number
     if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
       depPlan = allPlans.get(parseInt(depId, 10));
     }
-    
+
     return depPlan && depPlan.status === 'done';
   });
 }
