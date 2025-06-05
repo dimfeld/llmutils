@@ -39,7 +39,7 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-import { buildExecutorAndLog } from '../rmplan/executors/index.ts';
+import { runPlanContextWithExecutor } from '../rmplan/agent_runner.js';
 import { DEFAULT_EXECUTOR } from '../rmplan/constants.ts';
 import type { RmplanConfig } from '../rmplan/configSchema.ts';
 import type { ExecutorCommonOptions } from '../rmplan/executors/types';
@@ -922,12 +922,12 @@ export async function fullRmfilterRun(options?: {
     };
 
     try {
-      const executor = buildExecutorAndLog(
+      await runPlanContextWithExecutor(
         globalValues.executor,
+        finalOutput,
         executorCommonOptions,
         rmplanConfig
       );
-      await executor.execute(finalOutput);
     } catch (err) {
       error(`Failed to execute with executor ${globalValues.executor}: ${(err as Error).message}`);
       process.exit(1);

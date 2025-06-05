@@ -16,7 +16,7 @@ dependencies:
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-05T08:01:01.004Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-05T08:41:27.071Z
+updatedAt: 2025-06-05T08:44:05.976Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -360,7 +360,7 @@ tasks:
           This function should encapsulate the logic currently in
           `rmfilter/rmfilter.ts` for building and running an executor (i.e.,
           calling `buildExecutorAndLog` and `executor.execute()`).
-        done: false
+        done: true
       - prompt: >
           Modify `src/rmfilter/rmfilter.ts`:
 
@@ -376,7 +376,7 @@ tasks:
 
           - You will still need to pass `RmplanConfig` and
           `ExecutorCommonOptions` to this new function.
-        done: false
+        done: true
       - prompt: >
           Review the usage of `RmplanConfig` and `ExecutorCommonOptions` in
           `rmfilter/rmfilter.ts`.
@@ -389,7 +389,7 @@ tasks:
 
           No changes to config schemas are required for this step, but note any
           observations for future refactoring.
-        done: false
+        done: true
       - prompt: >
           Create `src/rmplan/agent_runner.test.ts` and write unit tests for the
           `runPlanContextWithExecutor` function.
@@ -397,7 +397,7 @@ tasks:
           Mock dependencies like `buildExecutorAndLog` and the executor's
           `execute` method to test the orchestration logic within
           `runPlanContextWithExecutor`.
-        done: false
+        done: true
   - title: Update All Cross-Module Imports
     description: After reorganizing utilities and refactoring dependencies in tasks
       1-5, update all import statements across the `src/common/`,
@@ -541,6 +541,8 @@ changedFiles:
   - src/rmfix/rmfix.ts
   - src/rmplan/actions.test.ts
   - src/rmplan/actions.ts
+  - src/rmplan/agent_runner.test.ts
+  - src/rmplan/agent_runner.ts
   - src/rmplan/cleanup.ts
   - src/rmplan/commands/add.ts
   - src/rmplan/commands/agent.ts
