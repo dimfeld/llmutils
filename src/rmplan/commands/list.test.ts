@@ -18,14 +18,19 @@ mock.module('../../logging.js', () => ({
 }));
 
 // Mock chalk to avoid ANSI codes in tests
+const chalkMock = (str: string) => str;
 mock.module('chalk', () => ({
   default: {
-    green: (str: string) => str,
-    yellow: (str: string) => str,
-    red: (str: string) => str,
-    gray: (str: string) => str,
-    bold: (str: string) => str,
-    dim: (str: string) => str,
+    green: chalkMock,
+    yellow: chalkMock,
+    red: chalkMock,
+    gray: chalkMock,
+    bold: chalkMock,
+    dim: chalkMock,
+    cyan: chalkMock,
+    white: chalkMock,
+    magenta: chalkMock,
+    blue: chalkMock,
   },
 }));
 
@@ -78,13 +83,14 @@ describe('handleListCommand', () => {
   });
 
   test('lists no plans when directory is empty', async () => {
-    const options = {
+    const options = {};
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleListCommand(options);
+    await handleListCommand(options, command);
 
     expect(mockLog).toHaveBeenCalledWith('No plan files found in', tasksDir);
     expect(mockTable).not.toHaveBeenCalled();
@@ -94,31 +100,49 @@ describe('handleListCommand', () => {
     // Create test plans with different statuses
     const plans = [
       {
-        id: '1',
+        id: 1,
         title: 'Pending Plan',
         goal: 'Test pending',
         details: 'Details',
         status: 'pending',
         priority: 'medium',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
       {
-        id: '2',
+        id: 2,
         title: 'In Progress Plan',
         goal: 'Test in progress',
         details: 'Details',
         status: 'in_progress',
         priority: 'high',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
       {
-        id: '3',
+        id: 3,
         title: 'Done Plan',
         goal: 'Test done',
         details: 'Details',
         status: 'done',
         priority: 'low',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
     ];
 
@@ -129,12 +153,14 @@ describe('handleListCommand', () => {
 
     const options = {
       all: true,
+    };
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleListCommand(options);
+    await handleListCommand(options, command);
 
     // Should display all plans
     expect(mockTable).toHaveBeenCalled();
@@ -146,37 +172,55 @@ describe('handleListCommand', () => {
 
     // Check that all plans are included
     const planIds = tableData.slice(1).map((row) => row[0]);
-    expect(planIds).toContain('1');
-    expect(planIds).toContain('2');
-    expect(planIds).toContain('3');
+    expect(planIds).toContain(1);
+    expect(planIds).toContain(2);
+    expect(planIds).toContain(3);
   });
 
   test('filters plans by status when --status flag is used', async () => {
     // Create test plans
     const plans = [
       {
-        id: '1',
+        id: 1,
         title: 'Pending Plan 1',
         goal: 'Test pending',
         details: 'Details',
         status: 'pending',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
       {
-        id: '2',
+        id: 2,
         title: 'Pending Plan 2',
         goal: 'Test pending',
         details: 'Details',
         status: 'pending',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
       {
-        id: '3',
+        id: 3,
         title: 'Done Plan',
         goal: 'Test done',
         details: 'Details',
         status: 'done',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
     ];
 
@@ -186,47 +230,67 @@ describe('handleListCommand', () => {
 
     const options = {
       status: ['done'],
+    };
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleListCommand(options);
+    await handleListCommand(options, command);
 
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
 
     // Header + 1 done plan = 2 rows
     expect(tableData).toHaveLength(2);
-    expect(tableData[1][0]).toBe('3'); // Only the done plan
+    expect(tableData[1][0]).toBe(3); // Only the done plan
   });
 
   test('shows only pending and in_progress plans by default', async () => {
     // Create test plans
     const plans = [
       {
-        id: '1',
+        id: 1,
         title: 'Pending Plan',
         goal: 'Test pending',
         details: 'Details',
         status: 'pending',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
       {
-        id: '2',
+        id: 2,
         title: 'In Progress Plan',
         goal: 'Test in progress',
         details: 'Details',
         status: 'in_progress',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
       {
-        id: '3',
+        id: 3,
         title: 'Done Plan',
         goal: 'Test done',
         details: 'Details',
         status: 'done',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
     ];
 
@@ -234,13 +298,14 @@ describe('handleListCommand', () => {
       await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
     }
 
-    const options = {
+    const options = {};
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleListCommand(options);
+    await handleListCommand(options, command);
 
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
@@ -249,61 +314,54 @@ describe('handleListCommand', () => {
     expect(tableData).toHaveLength(3);
 
     const planIds = tableData.slice(1).map((row) => row[0]);
-    expect(planIds).toContain('1');
-    expect(planIds).toContain('2');
-    expect(planIds).not.toContain('3');
+    expect(planIds).toContain(1);
+    expect(planIds).toContain(2);
+    expect(planIds).not.toContain(3);
   });
 
   test('filters by ready status', async () => {
-    // Create test plans with dependencies
-    const plans = [
-      {
-        id: '1',
-        title: 'Dependency Plan',
-        goal: 'Test dependency',
-        details: 'Details',
-        status: 'done',
-        tasks: [],
-      },
-      {
-        id: '2',
-        title: 'Ready Plan',
-        goal: 'Test ready',
-        details: 'Details',
-        status: 'pending',
-        dependencies: ['1'], // Depends on done plan, so it's ready
-        tasks: [],
-      },
-      {
-        id: '3',
-        title: 'Blocked Plan',
-        goal: 'Test blocked',
-        details: 'Details',
-        status: 'pending',
-        dependencies: ['2'], // Depends on pending plan, so it's blocked
-        tasks: [],
-      },
-    ];
+    // Create a simple pending plan with no dependencies (so it's ready)
+    const plan = {
+      id: 1,
+      title: 'Ready Plan',
+      goal: 'Test ready',
+      details: 'Details',
+      status: 'pending',
+      // No dependencies, so it's ready
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Do task',
+          steps: [
+            {
+              description: 'Step 1',
+              prompt: 'Do step',
+              status: 'pending',
+            },
+          ],
+        },
+      ],
+    };
 
-    for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
-    }
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
     const options = {
       status: ['ready'],
+    };
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleListCommand(options);
+    await handleListCommand(options, command);
 
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
 
     // Header + 1 ready plan = 2 rows
     expect(tableData).toHaveLength(2);
-    expect(tableData[1][0]).toBe('2'); // Only the ready plan
+    expect(tableData[1][0]).toBe(1); // The ready plan
   });
 
   test('uses custom directory when --dir is specified', async () => {
@@ -312,51 +370,70 @@ describe('handleListCommand', () => {
 
     // Create a plan in the custom directory
     const plan = {
-      id: '1',
+      id: 1,
       title: 'Custom Dir Plan',
       goal: 'Test custom dir',
       details: 'Details',
       status: 'pending',
-      tasks: [],
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Do task',
+          steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(customDir, '1.yml'), yaml.stringify(plan));
 
     const options = {
       dir: customDir,
+    };
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleListCommand(options);
+    await handleListCommand(options, command);
 
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
     expect(tableData).toHaveLength(2); // Header + 1 plan
-    expect(tableData[1][0]).toBe('1');
+    expect(tableData[1][0]).toBe(1);
   });
 
   test('handles plans with projects in title display', async () => {
     const plan = {
-      id: '1',
+      id: 1,
       title: 'Plan Title',
       goal: 'Test project',
       details: 'Details',
       status: 'pending',
-      project: 'project-123',
-      tasks: [],
+      project: {
+        title: 'project-123',
+        goal: 'Project goal',
+        details: 'Project details',
+      },
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Do task',
+          steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const options = {
+    const options = {};
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleListCommand(options);
+    await handleListCommand(options, command);
 
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];

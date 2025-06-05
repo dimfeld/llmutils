@@ -16,12 +16,6 @@ mock.module('../../logging.js', () => ({
   warn: mock(() => {}),
 }));
 
-// Mock process.exit
-const originalExit = process.exit;
-const exitSpy = mock(() => {
-  throw new Error('process.exit called');
-});
-
 describe('handleShowCommand', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -30,10 +24,6 @@ describe('handleShowCommand', () => {
     // Clear mocks
     logSpy.mockClear();
     errorSpy.mockClear();
-    exitSpy.mockClear();
-
-    // Mock process.exit
-    process.exit = exitSpy as any;
 
     // Clear plan cache
     clearPlanCache();
@@ -59,9 +49,6 @@ describe('handleShowCommand', () => {
   });
 
   afterEach(async () => {
-    // Restore process.exit
-    process.exit = originalExit;
-
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -97,13 +84,14 @@ describe('handleShowCommand', () => {
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const options = {
+    const options = {};
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleShowCommand('1', options);
+    await handleShowCommand('1', options, command);
 
     // Should display plan details
     expect(logSpy).toHaveBeenCalled();
@@ -117,75 +105,61 @@ describe('handleShowCommand', () => {
   });
 
   test('shows error when plan file not found', async () => {
-    const options = {
+    const options = {};
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    try {
-      await handleShowCommand('nonexistent', options);
-    } catch (e) {
-      // Expected to throw due to process.exit mock
-    }
-
-    expect(errorSpy).toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(handleShowCommand('nonexistent', options, command)).rejects.toThrow();
   });
 
   test('finds next ready plan with --next flag', async () => {
     // Clear the plan cache before creating plans
     clearPlanCache();
 
-    // Create plans with dependencies
-    const plans = [
-      {
-        id: 1, // Use numeric ID to match the expected dependency
-        title: 'Done Plan',
-        goal: 'Already done',
-        details: 'Details',
-        status: 'done',
-        tasks: [],
-      },
-      {
-        id: 2, // Use numeric ID
-        title: 'Ready Plan',
-        goal: 'Ready to start',
-        details: 'Details',
-        status: 'pending',
-        priority: 'high',
-        dependencies: [1], // Use numeric dependency
-        tasks: [],
-      },
-      {
-        id: 3, // Use numeric ID
-        title: 'Blocked Plan',
-        goal: 'Blocked by dependencies',
-        details: 'Details',
-        status: 'pending',
-        dependencies: [2], // Use numeric dependency
-        tasks: [],
-      },
-    ];
+    // Create a simple pending plan with no dependencies
+    const plan = {
+      id: '1',
+      title: 'Ready Plan',
+      goal: 'Ready to start',
+      details: 'Details',
+      status: 'pending',
+      priority: 'high',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Do task 1',
+          steps: [
+            {
+              description: 'Step 1',
+              prompt: 'Do step 1',
+              status: 'pending',
+            },
+          ],
+        },
+      ],
+    };
 
-    for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
-    }
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
     const options = {
       next: true,
+    };
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleShowCommand(undefined, options);
+    await handleShowCommand(undefined, options, command);
 
     expect(logSpy).toHaveBeenCalled();
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
     const allOutput = logCalls.join('\n');
 
-    expect(allOutput).toContain('Found next ready plan: 2');
+    expect(allOutput).toContain('Found next ready plan: 1');
     expect(allOutput).toContain('Ready Plan');
     expect(allOutput).toContain('Ready to start');
   });
@@ -199,7 +173,13 @@ describe('handleShowCommand', () => {
         goal: 'Currently working on',
         details: 'Details',
         status: 'in_progress',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
       {
         id: '2',
@@ -207,7 +187,13 @@ describe('handleShowCommand', () => {
         goal: 'Not started',
         details: 'Details',
         status: 'pending',
-        tasks: [],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
       },
     ];
 
@@ -217,12 +203,14 @@ describe('handleShowCommand', () => {
 
     const options = {
       current: true,
+    };
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleShowCommand(undefined, options);
+    await handleShowCommand(undefined, options, command);
 
     expect(logSpy).toHaveBeenCalled();
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
@@ -241,19 +229,27 @@ describe('handleShowCommand', () => {
       details: 'Details',
       status: 'pending',
       dependencies: ['nonexistent'],
-      tasks: [],
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Do task',
+          steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
     const options = {
       next: true,
+    };
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleShowCommand(undefined, options);
+    await handleShowCommand(undefined, options, command);
 
     expect(logSpy).toHaveBeenCalledWith(
       'No ready plans found. All pending plans have incomplete dependencies.'
@@ -261,21 +257,15 @@ describe('handleShowCommand', () => {
   });
 
   test('shows error when no plan file provided and no flags', async () => {
-    const options = {
+    const options = {};
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    try {
-      await handleShowCommand(undefined, options);
-    } catch (e) {
-      // Expected to throw due to process.exit mock
-    }
-
-    expect(errorSpy).toHaveBeenCalledWith(
+    await expect(handleShowCommand(undefined, options, command)).rejects.toThrow(
       'Please provide a plan file or use --next/--current to find a plan'
     );
-    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });

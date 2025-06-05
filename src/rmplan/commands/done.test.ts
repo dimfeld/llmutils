@@ -34,12 +34,6 @@ mock.module('../workspace/workspace_lock.js', () => ({
   },
 }));
 
-// Mock process.exit
-const originalExit = process.exit;
-const exitSpy = mock(() => {
-  throw new Error('process.exit called');
-});
-
 describe('handleDoneCommand', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -48,12 +42,8 @@ describe('handleDoneCommand', () => {
     // Clear mocks
     logSpy.mockClear();
     errorSpy.mockClear();
-    exitSpy.mockClear();
     markStepDoneSpy.mockClear();
     releaseLockSpy.mockClear();
-
-    // Mock process.exit
-    process.exit = exitSpy as any;
 
     // Clear plan cache
     clearPlanCache();
@@ -79,9 +69,6 @@ describe('handleDoneCommand', () => {
   });
 
   afterEach(async () => {
-    // Restore process.exit
-    process.exit = originalExit;
-
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -101,12 +88,15 @@ describe('handleDoneCommand', () => {
 
     const options = {
       steps: '1',
+    };
+
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleDoneCommand('1', options);
+    await handleDoneCommand('1', options, command);
 
     // Check that markStepDone was called with correct parameters
     expect(markStepDoneSpy).toHaveBeenCalledWith(
@@ -136,12 +126,15 @@ describe('handleDoneCommand', () => {
 
     const options = {
       steps: '3',
+    };
+
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleDoneCommand('1', options);
+    await handleDoneCommand('1', options, command);
 
     expect(markStepDoneSpy).toHaveBeenCalledWith(
       expect.stringContaining('1.yml'),
@@ -170,12 +163,15 @@ describe('handleDoneCommand', () => {
 
     const options = {
       task: true,
+    };
+
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleDoneCommand('1', options);
+    await handleDoneCommand('1', options, command);
 
     expect(markStepDoneSpy).toHaveBeenCalledWith(
       expect.stringContaining('1.yml'),
@@ -205,12 +201,15 @@ describe('handleDoneCommand', () => {
     const options = {
       steps: '1',
       commit: true,
+    };
+
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleDoneCommand('1', options);
+    await handleDoneCommand('1', options, command);
 
     expect(markStepDoneSpy).toHaveBeenCalledWith(
       expect.stringContaining('1.yml'),
@@ -245,12 +244,15 @@ describe('handleDoneCommand', () => {
 
     const options = {
       steps: '1',
+    };
+
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    await handleDoneCommand('1', options);
+    await handleDoneCommand('1', options, command);
 
     expect(releaseLockSpy).toHaveBeenCalledWith(tempDir);
     expect(logSpy).toHaveBeenCalledWith('Released workspace lock');
@@ -269,40 +271,34 @@ describe('handleDoneCommand', () => {
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
     // Mock markStepDone to throw an error
-    markStepDoneSpy.mockRejectedValue(new Error('Test error'));
+    markStepDoneSpy.mockImplementation(async () => {
+      throw new Error('Test error');
+    });
 
     const options = {
       steps: '1',
+    };
+
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    try {
-      await handleDoneCommand('1', options);
-    } catch (e) {
-      // Expected due to process.exit mock
-    }
-
-    expect(errorSpy).toHaveBeenCalledWith('Failed to process plan: Error: Test error');
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(handleDoneCommand('1', options, command)).rejects.toThrow('Test error');
   });
 
   test('handles non-existent plan file', async () => {
     const options = {
       steps: '1',
+    };
+
+    const command = {
       parent: {
         opts: () => ({}),
       },
     };
 
-    try {
-      await handleDoneCommand('nonexistent', options);
-    } catch (e) {
-      // Expected due to process.exit mock
-    }
-
-    expect(errorSpy).toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    await expect(handleDoneCommand('nonexistent', options, command)).rejects.toThrow();
   });
 });

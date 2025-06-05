@@ -44,10 +44,9 @@ export async function handleGenerateCommand(options: any, command: any) {
 
   // Manual conflict check for --plan and --plan-editor
   if (planOptionsSet !== 1) {
-    error(
+    throw new Error(
       'You must provide one and only one of --plan <file>, --plan-editor, or --issue <url|number>'
     );
-    process.exit(1);
   }
 
   let planText: string | undefined;
@@ -117,8 +116,7 @@ export async function handleGenerateCommand(options: any, command: any) {
       try {
         planText = await Bun.file(tmpPlanPath).text();
       } catch (err) {
-        error('Failed to read plan from editor.');
-        process.exit(1);
+        throw new Error('Failed to read plan from editor.');
       } finally {
         // Clean up the temporary file
         try {
@@ -129,8 +127,7 @@ export async function handleGenerateCommand(options: any, command: any) {
       }
 
       if (!planText || !planText.trim()) {
-        error('No plan text was provided from the editor.');
-        process.exit(1);
+        throw new Error('No plan text was provided from the editor.');
       }
 
       // Copy the plan to clipboard
@@ -158,13 +155,11 @@ export async function handleGenerateCommand(options: any, command: any) {
           planFile = savePath;
           log('Plan saved to:', savePath);
         } catch (err) {
-          error('Failed to save plan to file:', err);
-          process.exit(1);
+          throw new Error(`Failed to save plan to file: ${err}`);
         }
       }
     } catch (err) {
-      error('Failed to get plan from editor:', err);
-      process.exit(1);
+      throw new Error(`Failed to get plan from editor: ${err}`);
     }
   } else if (options.issue) {
     issueResult = await getInstructionsFromGithubIssue(options.issue);
@@ -192,8 +187,7 @@ export async function handleGenerateCommand(options: any, command: any) {
         planFile = savePath;
         log('Plan saved to:', savePath);
       } catch (err) {
-        error('Failed to save plan to file:', err);
-        process.exit(1);
+        throw new Error(`Failed to save plan to file: ${err}`);
       }
     }
   }
@@ -211,8 +205,7 @@ export async function handleGenerateCommand(options: any, command: any) {
       const details = stubPlanData.details === 'Details to be added.' ? '' : stubPlanData.details;
 
       if (!goal && !details) {
-        error('Stub plan must have at least a goal or details to generate tasks.');
-        process.exit(1);
+        throw new Error('Stub plan must have at least a goal or details to generate tasks.');
       }
 
       // Construct planText from stub's title, goal, and details
@@ -231,14 +224,12 @@ export async function handleGenerateCommand(options: any, command: any) {
 
       log(chalk.blue('🔄 Detected stub plan. Generating detailed tasks for:'), planFile);
     } catch (err) {
-      error(`Failed to process stub plan: ${err as Error}`);
-      process.exit(1);
+      throw new Error(`Failed to process stub plan: ${err as Error}`);
     }
   }
 
   if (!planText) {
-    error('No plan text was provided.');
-    process.exit(1);
+    throw new Error('No plan text was provided.');
   }
 
   // planText now contains the loaded plan
@@ -333,7 +324,7 @@ export async function handleGenerateCommand(options: any, command: any) {
       exitRes = await proc.exited;
     }
 
-    if (exitRes === 0 && !options.noExtract) {
+    if (exitRes === 0 && options.extract !== false) {
       log(
         chalk.bold(
           `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
@@ -404,8 +395,7 @@ export async function handleGenerateCommand(options: any, command: any) {
   }
 
   if (exitRes !== 0) {
-    error(`rmfilter exited with code ${exitRes}`);
-    process.exit(exitRes ?? 1);
+    throw new Error(`rmfilter exited with code ${exitRes}`);
   }
 }
 
