@@ -60,8 +60,8 @@ export async function handleAddCommand(title: string[], options: any, command: a
   const plan: PlanSchema = {
     id: planId.toString(),
     title: planTitle,
-    goal: 'Goal to be defined.',
-    details: 'Details to be added.',
+    goal: '',
+    details: '',
     status: 'pending',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

@@ -202,9 +202,7 @@ export async function handleGenerateCommand(options: any, command: any) {
       const yamlContent = findYamlStart(fileContent);
       stubPlanData = yaml.parse(yamlContent) as PlanSchema;
 
-      const goal = stubPlanData.goal === 'Goal to be defined.' ? '' : stubPlanData.goal;
-      const details = stubPlanData.details === 'Details to be added.' ? '' : stubPlanData.details;
-
+      const { goal, details } = stubPlanData;
       if (!goal && !details) {
         throw new Error('Stub plan must have at least a goal or details to generate tasks.');
       }
