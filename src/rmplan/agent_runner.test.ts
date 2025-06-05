@@ -2,6 +2,9 @@ import { test, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { runPlanContextWithExecutor } from './agent_runner.ts';
 import type { RmplanConfig } from './configSchema.ts';
 import type { ExecutorCommonOptions } from './executors/types.ts';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock the dependencies
 const mockExecutor = {
@@ -10,15 +13,6 @@ const mockExecutor = {
 
 const mockBuildExecutorAndLog = mock(() => mockExecutor);
 const mockError = mock(() => {});
-
-// Mock modules
-mock.module('./executors/index.js', () => ({
-  buildExecutorAndLog: mockBuildExecutorAndLog,
-}));
-
-mock.module('../logging.js', () => ({
-  error: mockError,
-}));
 
 test('runPlanContextWithExecutor - successful execution', async () => {
   // Setup
@@ -127,7 +121,7 @@ test('runPlanContextWithExecutor - verifies parameter passing', async () => {
   expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent);
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   // Reset all mocks before each test
   mockBuildExecutorAndLog.mockClear();
   mockExecutor.execute.mockClear();
@@ -136,8 +130,18 @@ beforeEach(() => {
   // Reset mock implementations to default behavior
   mockBuildExecutorAndLog.mockImplementation(() => mockExecutor);
   mockExecutor.execute.mockImplementation(() => Promise.resolve());
+
+  // Mock modules
+  await moduleMocker.mock('./executors/index.js', () => ({
+    buildExecutorAndLog: mockBuildExecutorAndLog,
+  }));
+
+  await moduleMocker.mock('../logging.js', () => ({
+    error: mockError,
+  }));
 });
 
 afterEach(() => {
-  // Additional cleanup if needed
+  // Clean up mocks
+  moduleMocker.clear();
 });

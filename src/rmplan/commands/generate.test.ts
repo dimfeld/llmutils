@@ -6,16 +6,13 @@ import yaml from 'yaml';
 import { handleGenerateCommand } from './generate.js';
 import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock console functions
 const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
-
-mock.module('../../logging.js', () => ({
-  log: logSpy,
-  error: errorSpy,
-  warn: mock(() => {}),
-}));
 
 // Mock logSpawn for rmfilter and other commands
 const logSpawnSpy = mock(() => ({ exited: Promise.resolve(0) }));
@@ -23,29 +20,9 @@ const logSpawnSpy = mock(() => ({ exited: Promise.resolve(0) }));
 // Mock clipboard
 const clipboardWriteSpy = mock(async () => {});
 const clipboardReadSpy = mock(async () => 'clipboard content');
-mock.module('../../common/clipboard.js', () => ({
-  write: clipboardWriteSpy,
-  read: clipboardReadSpy,
-}));
 
 // Mock LLM prompt
 const runStreamingPromptSpy = mock(async () => ({ text: 'Generated plan content' }));
-mock.module('../../common/run_and_apply.js', () => ({
-  runStreamingPrompt: runStreamingPromptSpy,
-}));
-
-// Mock AI module
-mock.module('ai', () => ({
-  generateText: async () => ({ text: 'editor-test-plan' }),
-}));
-
-// Mock inquirer prompts
-mock.module('@inquirer/prompts', () => ({
-  input: async (config: any) => {
-    // Return the default value provided
-    return config.default || '';
-  },
-}));
 
 // Mock terminal functions
 const waitForEnterSpy = mock(
@@ -64,9 +41,6 @@ tasks:
     status: pending
 `
 );
-mock.module('../../common/terminal.js', () => ({
-  waitForEnter: waitForEnterSpy,
-}));
 
 describe.skip('handleGenerateCommand', () => {
   let tempDir: string;
@@ -90,8 +64,39 @@ describe.skip('handleGenerateCommand', () => {
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
+    // Mock modules
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/clipboard.js', () => ({
+      write: clipboardWriteSpy,
+      read: clipboardReadSpy,
+    }));
+
+    await moduleMocker.mock('../../common/run_and_apply.js', () => ({
+      runStreamingPrompt: runStreamingPromptSpy,
+    }));
+
+    await moduleMocker.mock('ai', () => ({
+      generateText: async () => ({ text: 'editor-test-plan' }),
+    }));
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      input: async (config: any) => {
+        // Return the default value provided
+        return config.default || '';
+      },
+    }));
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: waitForEnterSpy,
+    }));
+
     // Mock config loader
-    mock.module('../configLoader.js', () => ({
+    await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
           tasks: tasksDir,
@@ -103,14 +108,14 @@ describe.skip('handleGenerateCommand', () => {
     }));
 
     // Mock utils
-    mock.module('../../rmfilter/utils.js', () => ({
+    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
       getGitRoot: async () => tempDir,
       setDebug: () => {},
       logSpawn: logSpawnSpy,
     }));
 
     // Mock model factory
-    mock.module('../../common/model_factory.js', () => ({
+    await moduleMocker.mock('../../common/model_factory.js', () => ({
       getModel: () => 'test-model',
       createModel: () => ({
         // Mock model for generateText
@@ -119,6 +124,9 @@ describe.skip('handleGenerateCommand', () => {
   });
 
   afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -201,7 +209,7 @@ describe.skip('handleGenerateCommand', () => {
     const findFilesCoreSpyLocal = mock(async () => ({
       files: [path.join(tempDir, 'src/file1.ts'), path.join(tempDir, 'src/file2.ts')],
     }));
-    mock.module('../../rmfind/core.js', () => ({
+    await moduleMocker.mock('../../rmfind/core.js', () => ({
       findFilesCore: findFilesCoreSpyLocal,
     }));
 

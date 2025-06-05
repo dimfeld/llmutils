@@ -1,11 +1,23 @@
-import { describe, test, expect, mock, spyOn } from 'bun:test';
+import { describe, test, expect, mock, spyOn, beforeEach, afterEach } from 'bun:test';
 import { getInstructionsFromGithubIssue } from './issues.ts';
 import * as logging from '../../logging.ts';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 describe('getInstructionsFromGithubIssue', () => {
+  beforeEach(async () => {
+    // Nothing to do here, module mocking will be done per test
+  });
+
+  afterEach(() => {
+    // Clean up mocks
+    moduleMocker.clear();
+  });
+
   test('parses and combines RmprOptions from issue body and comments', async () => {
     // Mock the issues.ts module
-    await mock.module('./issues.ts', () => ({
+    await moduleMocker.mock('./issues.ts', () => ({
       getInstructionsFromGithubIssue,
       fetchIssueAndComments: async () => ({
         issue: {
@@ -45,7 +57,7 @@ describe('getInstructionsFromGithubIssue', () => {
 
   test('handles issue with no RmprOptions', async () => {
     // Mock the issues.ts module
-    await mock.module('./issues.ts', () => ({
+    await moduleMocker.mock('./issues.ts', () => ({
       getInstructionsFromGithubIssue,
       fetchIssueAndComments: async () => ({
         issue: {

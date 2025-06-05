@@ -6,33 +6,22 @@ import yaml from 'yaml';
 import { handleDoneCommand } from './done.js';
 import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock console functions
 const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
-
-mock.module('../../logging.js', () => ({
-  log: logSpy,
-  error: errorSpy,
-  warn: mock(() => {}),
-}));
 
 // Mock markStepDone from actions.js
 const markStepDoneSpy = mock(async () => ({
   planComplete: false,
   message: 'Marked 1 step done',
 }));
-mock.module('../actions.js', () => ({
-  markStepDone: markStepDoneSpy,
-}));
 
 // Mock WorkspaceLock
 const releaseLockSpy = mock(async () => {});
-mock.module('../workspace/workspace_lock.js', () => ({
-  WorkspaceLock: {
-    releaseLock: releaseLockSpy,
-  },
-}));
 
 describe('handleDoneCommand', () => {
   let tempDir: string;
@@ -53,8 +42,25 @@ describe('handleDoneCommand', () => {
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
+    // Mock modules
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../actions.js', () => ({
+      markStepDone: markStepDoneSpy,
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_lock.js', () => ({
+      WorkspaceLock: {
+        releaseLock: releaseLockSpy,
+      },
+    }));
+
     // Mock config loader
-    mock.module('../configLoader.js', () => ({
+    await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
           tasks: tasksDir,
@@ -63,12 +69,15 @@ describe('handleDoneCommand', () => {
     }));
 
     // Mock utils
-    mock.module('../../rmfilter/utils.js', () => ({
+    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
       getGitRoot: async () => tempDir,
     }));
   });
 
   afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });

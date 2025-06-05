@@ -15,3 +15,25 @@ type: rules
 - Never manually create mocks by just replacing and restoring functions yourself.
 - Prefer to use real code to test things, and if you need to emulate a filesystem or Git repository you can set up a temporary directory and clean it up after the test.
 
+
+Bun's module mocking does not work properly. If you need to mock a module, use the ModuleMocker class from src/testing.ts instead. For example:
+
+```
+const moduleMocker = new ModuleMocker()
+
+afterEach(() => {
+  moduleMocker.clear()
+})
+
+When a test mocks a module, it should do it this way:
+
+test('a test', async () => {
+  await moduleMocker.mock('./services/token.ts', () => ({
+    getBucketToken: mock(() => {
+      throw new Error('Unexpected error')
+    })
+  }))
+});
+```
+
+Or for a single mock defined across the entire test file, use `afterAll(() => moduleMocker.clear())` to clear the mocks.

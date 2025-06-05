@@ -11,6 +11,9 @@ import {
   clearPlanCache,
 } from './plans.js';
 import { planSchema, type PlanSchema } from './planSchema.js';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 describe('resolvePlanFile', () => {
   let tempDir: string;
@@ -26,7 +29,7 @@ describe('resolvePlanFile', () => {
     clearPlanCache();
 
     // Set up module mocks with a getter to ensure tasksDir is evaluated lazily
-    mock.module('./configLoader.js', () => ({
+    await moduleMocker.mock('./configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
           get tasks() {
@@ -74,6 +77,9 @@ describe('resolvePlanFile', () => {
   });
 
   afterAll(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     // Clean up temporary directory
     await rm(tempDir, { recursive: true, force: true });
   });

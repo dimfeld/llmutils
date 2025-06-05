@@ -15,6 +15,7 @@ export function createConfig() {
         '**/drizzle.config.ts',
         '**/eslint.config.js',
         'lint-staged.config.js',
+        'manual_test_rmfilter.ts',
         'postcss.config.js',
         'run-git-hooks.js',
         'src/db/migrate.js',

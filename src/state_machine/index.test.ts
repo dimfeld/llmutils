@@ -12,6 +12,9 @@ import {
   getMockTelemetryModule,
 } from './telemetry_test_utils.ts';
 import * as telemetryModule from './telemetry.ts';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Create a spy for initTelemetry
 const initTelemetrySpy = spyOn(telemetryModule, 'initTelemetry');
@@ -19,29 +22,7 @@ const initTelemetrySpy = spyOn(telemetryModule, 'initTelemetry');
 // Store for active mock spans
 const mockSpans: MockSpan[] = [];
 
-// Mock the trace API functions
-mock.module('@opentelemetry/api', () => {
-  const mockTracer = createMockTracer();
-
-  return {
-    trace: {
-      getTracer: () => mockTracer,
-      setSpan: () => ({}),
-      getActiveSpan: () => mockSpans[mockSpans.length - 1],
-    },
-    context: {
-      active: () => ({}),
-      with: (ctx: any, fn: () => any) => fn(),
-    },
-    diag: {
-      setLogger: () => {},
-    },
-    DiagConsoleLogger: class {},
-    DiagLogLevel: { DEBUG: 1 },
-    SpanStatusCode: { OK: 0, ERROR: 1, UNSET: 2 },
-    SpanKind: { INTERNAL: 1 },
-  };
-});
+// Mock functions will be set up in beforeEach
 
 // Define state machine types for testing
 type TestSMStateName = 'initial' | 'processing' | 'final' | 'error';
@@ -94,10 +75,34 @@ describe('StateMachine', () => {
   let stateMachineConfig: StateMachineConfig<TestSMStateName, TestSMContext, TestSMEvent>;
   let stateMachine: StateMachine<TestSMStateName, TestSMContext, TestSMEvent>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset telemetry and mocks
     resetSpans();
     setupTestTelemetry();
+
+    // Mock the trace API functions
+    await moduleMocker.mock('@opentelemetry/api', () => {
+      const mockTracer = createMockTracer();
+
+      return {
+        trace: {
+          getTracer: () => mockTracer,
+          setSpan: () => ({}),
+          getActiveSpan: () => mockSpans[mockSpans.length - 1],
+        },
+        context: {
+          active: () => ({}),
+          with: (ctx: any, fn: () => any) => fn(),
+        },
+        diag: {
+          setLogger: () => {},
+        },
+        DiagConsoleLogger: class {},
+        DiagLogLevel: { DEBUG: 1 },
+        SpanStatusCode: { OK: 0, ERROR: 1, UNSET: 2 },
+        SpanKind: { INTERNAL: 1 },
+      };
+    });
 
     // Create mock persistence adapter
     mockPersistenceAdapter = {
@@ -149,6 +154,9 @@ describe('StateMachine', () => {
   });
 
   afterEach(() => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     initTelemetrySpy.mockClear();
     resetSpans();
   });

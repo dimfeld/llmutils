@@ -8,11 +8,11 @@ import { WorkspaceLock } from './workspace_lock';
 import * as workspaceTracker from './workspace_tracker';
 import type { RmplanConfig } from '../configSchema';
 import type { WorkspaceInfo } from './workspace_tracker';
+import { ModuleMocker } from '../../testing.js';
 
-// Mock @inquirer/prompts for non-interactive tests
-mock.module('@inquirer/prompts', () => ({
-  confirm: mock(() => true),
-}));
+const moduleMocker = new ModuleMocker(import.meta);
+
+// Mock functions will be set up in beforeEach
 
 describe('WorkspaceAutoSelector', () => {
   let testDir: string;
@@ -26,6 +26,11 @@ describe('WorkspaceAutoSelector', () => {
 
   beforeEach(async () => {
     testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-auto-selector-test-'));
+
+    // Mock @inquirer/prompts for non-interactive tests
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      confirm: mock(() => true),
+    }));
 
     // Setup spies for workspace tracker functions
     findWorkspacesByRepoUrlSpy = spyOn(
@@ -61,6 +66,9 @@ describe('WorkspaceAutoSelector', () => {
   });
 
   afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     await fs.promises.rm(testDir, { recursive: true, force: true });
     mock.restore();
   });

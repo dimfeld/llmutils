@@ -6,24 +6,17 @@ import yaml from 'yaml';
 import { markStepDone } from './actions.js';
 import { clearPlanCache } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock logging
 const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
-mock.module('../logging.js', () => ({
-  log: logSpy,
-  error: errorSpy,
-  warn: mock(() => {}),
-}));
 
 // Mock commitAll for git/jj commands
 const commitAllSpy = mock(async () => 0);
 const getGitRootSpy = mock(async () => '');
-mock.module('../rmfilter/utils.js', () => ({
-  getGitRoot: getGitRootSpy,
-  commitAll: commitAllSpy,
-  quiet: false,
-}));
 
 describe('markStepDone', () => {
   let tempDir: string;
@@ -45,9 +38,25 @@ describe('markStepDone', () => {
 
     // Update getGitRoot mock to return tempDir
     getGitRootSpy.mockResolvedValue(tempDir);
+
+    // Mock modules
+    await moduleMocker.mock('../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../rmfilter/utils.js', () => ({
+      getGitRoot: getGitRootSpy,
+      commitAll: commitAllSpy,
+      quiet: false,
+    }));
   });
 
   afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });

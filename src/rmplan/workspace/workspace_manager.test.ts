@@ -2,32 +2,17 @@ import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Create mock functions
 const mockLog = mock((...args: any[]) => {});
 const mockDebugLog = mock((...args: any[]) => {});
 const mockSpawnAndLogOutput = mock(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
 
-// Set up module mocks
-await mock.module('../../logging.js', () => ({
-  log: mockLog,
-  debugLog: mockDebugLog,
-}));
-
-await mock.module('../../rmfilter/utils.js', () => {
-  const utils = require('../../rmfilter/utils.js');
-  return {
-    ...utils,
-    spawnAndLogOutput: mockSpawnAndLogOutput,
-  };
-});
-
 // Mock executePostApplyCommand function
 const mockExecutePostApplyCommand = mock(async () => true);
-
-await mock.module('../actions.js', () => ({
-  executePostApplyCommand: mockExecutePostApplyCommand,
-}));
 
 // Import the module under test after all mocks are set up
 import { createWorkspace } from './workspace_manager.js';
@@ -51,9 +36,30 @@ describe('createWorkspace', () => {
     mockDebugLog.mockReset();
     mockSpawnAndLogOutput.mockReset();
     mockExecutePostApplyCommand.mockReset();
+
+    // Set up module mocks
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: mockLog,
+      debugLog: mockDebugLog,
+    }));
+
+    await moduleMocker.mock('../../rmfilter/utils.js', () => {
+      const utils = require('../../rmfilter/utils.js');
+      return {
+        ...utils,
+        spawnAndLogOutput: mockSpawnAndLogOutput,
+      };
+    });
+
+    await moduleMocker.mock('../actions.js', () => ({
+      executePostApplyCommand: mockExecutePostApplyCommand,
+    }));
   });
 
   afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     // Clean up the temporary directory
     if (testTempDir) {
       await fs.rm(testTempDir, { recursive: true, force: true });

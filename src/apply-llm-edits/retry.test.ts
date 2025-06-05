@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import * as repomix from '../rmfilter/repomix';
 import { getOriginalRequestContext } from './retry.ts';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Helper function to create a temporary directory structure for testing
 async function createTempTestDir() {
@@ -17,19 +20,20 @@ describe('getOriginalRequestContext', () => {
   beforeEach(async () => {
     tempDir = await createTempTestDir();
     // Reset mocks for runRmfilterProgrammatically and inquirer
-    await mock.module('../rmfilter/rmfilter', () => ({
+    await moduleMocker.mock('../rmfilter/rmfilter.js', () => ({
       runRmfilterProgrammatically: mock(() => Promise.resolve('regenerated output')),
     }));
-    await mock.module('@inquirer/prompts', () => ({
+    await moduleMocker.mock('@inquirer/prompts', () => ({
       confirm: mock(() => Promise.resolve(true)),
     }));
-    await mock.module('../rmfilter/repomix', () => ({
+    await moduleMocker.mock('../rmfilter/repomix.js', () => ({
       ...repomix,
       getOutputPath: mock(() => Promise.resolve(path.join(tempDir, 'repomix-output.xml'))),
     }));
   });
 
   afterEach(async () => {
+    moduleMocker.clear();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -83,7 +87,7 @@ Cached content
   });
 
   test('throws when user declines command ID mismatch prompt', async () => {
-    await mock.module('@inquirer/prompts', () => ({
+    await moduleMocker.mock('@inquirer/prompts', () => ({
       confirm: mock(() => Promise.resolve(false)),
     }));
 

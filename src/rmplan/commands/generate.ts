@@ -156,11 +156,11 @@ export async function handleGenerateCommand(options: any, command: any) {
           planFile = savePath;
           log('Plan saved to:', savePath);
         } catch (err) {
-          throw new Error(`Failed to save plan to file: ${err}`);
+          throw new Error(`Failed to save plan to file: ${err as Error}`);
         }
       }
     } catch (err) {
-      throw new Error(`Failed to get plan from editor: ${err}`);
+      throw new Error(`Failed to get plan from editor: ${err as Error}`);
     }
   } else if (options.issue) {
     issueResult = await getInstructionsFromGithubIssue(options.issue);
@@ -188,7 +188,7 @@ export async function handleGenerateCommand(options: any, command: any) {
         planFile = savePath;
         log('Plan saved to:', savePath);
       } catch (err) {
-        throw new Error(`Failed to save plan to file: ${err}`);
+        throw new Error(`Failed to save plan to file: ${err as Error}`);
       }
     }
   }

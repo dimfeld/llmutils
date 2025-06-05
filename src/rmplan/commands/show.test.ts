@@ -5,16 +5,13 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleShowCommand } from './show.js';
 import { clearPlanCache } from '../plans.js';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock console functions
 const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
-
-mock.module('../../logging.js', () => ({
-  log: logSpy,
-  error: errorSpy,
-  warn: mock(() => {}),
-}));
 
 describe('handleShowCommand', () => {
   let tempDir: string;
@@ -33,8 +30,15 @@ describe('handleShowCommand', () => {
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
+    // Mock modules
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: mock(() => {}),
+    }));
+
     // Mock config loader
-    mock.module('../configLoader.js', () => ({
+    await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
           tasks: tasksDir,
@@ -43,12 +47,15 @@ describe('handleShowCommand', () => {
     }));
 
     // Mock utils
-    mock.module('../../rmfilter/utils.js', () => ({
+    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
       getGitRoot: async () => tempDir,
     }));
   });
 
   afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });

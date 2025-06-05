@@ -1,17 +1,19 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, afterAll, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { handleListCommand } from './list.js';
-import { clearPlanCache } from '../plans.js';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock logging functions
 const mockLog = mock(() => {});
 const mockError = mock(() => {});
 const mockWarn = mock(() => {});
 
-mock.module('../../logging.js', () => ({
+// Set up mocks immediately before imports
+moduleMocker.mockSync('../../logging.js', () => ({
   log: mockLog,
   error: mockError,
   warn: mockWarn,
@@ -19,7 +21,7 @@ mock.module('../../logging.js', () => ({
 
 // Mock chalk to avoid ANSI codes in tests
 const chalkMock = (str: string) => str;
-mock.module('chalk', () => ({
+moduleMocker.mockSync('chalk', () => ({
   default: {
     green: chalkMock,
     yellow: chalkMock,
@@ -38,10 +40,13 @@ mock.module('chalk', () => ({
 const mockTable = mock((data: any[]) => {
   return data.map((row) => row.join('\t')).join('\n');
 });
-
-mock.module('table', () => ({
+moduleMocker.mockSync('table', () => ({
   table: mockTable,
 }));
+
+// Now import the module being tested
+import { handleListCommand } from './list.js';
+import { clearPlanCache } from '../plans.js';
 
 describe('handleListCommand', () => {
   let tempDir: string;
@@ -63,7 +68,7 @@ describe('handleListCommand', () => {
     await fs.mkdir(tasksDir, { recursive: true });
 
     // Mock config loader
-    mock.module('../configLoader.js', () => ({
+    await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
           tasks: tasksDir,
@@ -72,13 +77,16 @@ describe('handleListCommand', () => {
     }));
 
     // Mock utils
-    mock.module('../../rmfilter/utils.js', () => ({
+    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
       getGitRoot: async () => tempDir,
     }));
   });
 
   afterEach(async () => {
-    // Clean up
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up filesystem
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -601,4 +609,9 @@ describe('handleListCommand', () => {
     const depsColumn = mainPlanRow[6];
     expect(depsColumn).toContain('10✓');
   });
+});
+
+// Clean up module-level mocks after all tests
+afterAll(() => {
+  moduleMocker.clear();
 });

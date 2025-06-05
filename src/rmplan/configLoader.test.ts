@@ -9,14 +9,11 @@ import {
   loadEffectiveConfig,
   clearConfigCache,
 } from './configLoader.ts';
+import { ModuleMocker } from '../testing.js';
 
-// Silence logs during tests
-void mock.module('../logging.js', () => ({
-  debugLog: () => {},
-  log: () => {},
-  error: () => {},
-  warn: () => {},
-}));
+const moduleMocker = new ModuleMocker(import.meta);
+
+// Silence logs during tests will be done in beforeEach
 import { type RmplanConfig, type WorkspaceCreationConfig } from './configSchema.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 
@@ -39,19 +36,20 @@ async function createTestFile(filePath: string, content: string) {
 
 beforeEach(async () => {
   // Mock js-yaml to use yaml package
-  await mock.module('js-yaml', () => ({
+  await moduleMocker.mock('js-yaml', () => ({
     load: (content: string) => yaml.parse(content),
   }));
 
   // Mock logging
-  await mock.module('../logging.js', () => ({
+  await moduleMocker.mock('../logging.js', () => ({
     debugLog: mock(() => {}),
     error: mock(() => {}),
     log: mock(() => {}),
+    warn: mock(() => {}),
   }));
 
   // Mock utils
-  await mock.module('../rmfilter/utils.js', () => ({
+  await moduleMocker.mock('../rmfilter/utils.js', () => ({
     getGitRoot: mock(() => Promise.resolve('/fake/git/root')),
     quiet: false,
   }));
@@ -61,6 +59,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Clean up mocks
+  moduleMocker.clear();
+
   // Clean up temporary directory
   if (tempDir) {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -80,7 +81,7 @@ describe('configLoader', () => {
     configDir = path.join(testDir, '.rmfilter', 'config');
 
     // Mock the getGitRoot function to return our test directory
-    void mock.module('../rmfilter/utils.js', () => ({
+    await moduleMocker.mock('../rmfilter/utils.js', () => ({
       getGitRoot: async () => testDir,
       quiet: false,
     }));

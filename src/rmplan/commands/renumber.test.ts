@@ -6,6 +6,9 @@ import yaml from 'yaml';
 import { handleRenumber } from './renumber.js';
 import { type PlanSchema } from '../planSchema.js';
 import { writePlanFile, readPlanFile } from '../plans.js';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 describe('rmplan renumber', () => {
   let tempDir: string;
@@ -18,7 +21,7 @@ describe('rmplan renumber', () => {
     await fs.promises.mkdir(tasksDir, { recursive: true });
 
     // Mock getGitRoot to return the temp directory
-    mock.module('../../common/git.js', () => ({
+    await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
     }));
 
@@ -35,6 +38,7 @@ describe('rmplan renumber', () => {
   });
 
   afterEach(async () => {
+    moduleMocker.clear();
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   });
 

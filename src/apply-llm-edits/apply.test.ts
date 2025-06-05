@@ -9,6 +9,9 @@ import * as path from 'node:path';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { setDebug } from '../rmfilter/utils.ts';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Helper function to create a temporary directory structure for testing
 async function createTempTestDir() {
@@ -450,6 +453,9 @@ describe('applyLlmEdits', () => {
   });
 
   afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -570,7 +576,7 @@ describe('applyLlmEdits', () => {
 
     // Mock stdin to simulate user input 'n'
     let calledConfirm = false;
-    await mock.module('@inquirer/prompts', () => ({
+    await moduleMocker.mock('@inquirer/prompts', () => ({
       confirm: () => {
         calledConfirm = true;
         return Promise.resolve(false);
