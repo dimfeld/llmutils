@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
 import { loadEnv } from '../common/env.js';
-import { setDebug } from '../rmfilter/utils.js';
+import { setDebug } from '../common/process.js';
 import { executors } from './executors/index.js';
 import { handleCommandError } from '../common/commands.js';
 

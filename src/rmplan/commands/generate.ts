@@ -12,7 +12,7 @@ import { getInstructionsFromGithubIssue } from '../../common/github/issues.js';
 import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 import { waitForEnter } from '../../common/terminal.js';
 import { error, log, warn } from '../../logging.js';
-import { logSpawn } from '../../rmfilter/utils.js';
+import { logSpawn } from '../../common/process.js';
 import { getGitRoot } from '../../common/git.js';
 import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../../rmpr/comment_options.js';

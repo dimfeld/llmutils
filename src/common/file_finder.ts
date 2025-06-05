@@ -2,7 +2,7 @@
 import * as changeCase from 'change-case';
 import { globby } from 'globby';
 import path from 'node:path';
-import { debug, logSpawn } from '../rmfilter/utils.ts';
+import { debug, logSpawn } from './process.ts';
 import { error } from '../logging.ts';
 
 /**

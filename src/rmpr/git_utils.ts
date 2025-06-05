@@ -1,4 +1,4 @@
-import { logSpawn, debug } from '../rmfilter/utils.js';
+import { logSpawn, debug } from '../common/process.js';
 import { getGitRoot } from '../common/git.js';
 import { debugLog } from '../logging.js';
 import * as path from 'node:path';

@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
-import { quiet } from '../rmfilter/utils.js';
+import { quiet } from '../common/process.js';
 import { getGitRoot } from '../common/git.js'; // Assuming logging exists
 import { debugLog, error, log, warn } from '../logging.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';

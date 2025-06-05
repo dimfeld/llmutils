@@ -1,6 +1,6 @@
 import micromatch from 'micromatch';
 import type { PullRequest } from '../common/github/pull_requests.ts';
-import { parseCliArgsFromString } from '../rmfilter/utils.ts';
+import { parseCliArgsFromString } from '../common/cli.ts';
 import { debugLog, warn } from '../logging.ts';
 
 /** Options parsed from --rmpr lines in a comment body */

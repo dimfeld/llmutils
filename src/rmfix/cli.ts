@@ -2,7 +2,7 @@
 import { program } from 'commander';
 import { runRmfix } from './rmfix';
 import type { RmfixCoreOptions, RmfixCliOptions } from './types';
-import { setDebug, setQuiet } from '../rmfilter/utils';
+import { setDebug, setQuiet } from '../common/process.ts';
 
 program
   .name('rmfix')

@@ -14,7 +14,7 @@ import { processUnifiedDiff } from '../editor/udiff-simple/parse.ts';
 import { processRawFiles } from '../editor/whole-file/parse_raw_edits.ts';
 import { processXmlContents } from '../editor/xml/parse_xml.ts';
 import { debugLog, error, log, warn } from '../logging.ts';
-import { parseCliArgsFromString } from '../rmfilter/utils.ts';
+import { parseCliArgsFromString } from '../common/cli.ts';
 import { secureWrite } from '../common/fs.ts';
 import { getGitRoot } from '../common/git.ts';
 import { printDetailedFailures } from './failures.ts';

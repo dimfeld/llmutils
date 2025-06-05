@@ -8,7 +8,7 @@ import { error, log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readPlanFile } from '../plans.js';
 import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from '../process_markdown.js';
-import { setQuiet } from '../../rmfilter/utils.js';
+import { setQuiet } from '../../common/process.ts';
 import type { PlanSchema } from '../planSchema.js';
 
 export async function handleExtractCommand(inputFile: string | undefined, options: any) {

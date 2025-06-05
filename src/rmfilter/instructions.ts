@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { logSpawn } from './utils.ts';
+import { logSpawn } from '../common/process.ts';
 import { getGitRoot } from '../common/git.ts';
 
 export async function getInstructionsFromEditor(filename = 'repomix-instructions.md') {

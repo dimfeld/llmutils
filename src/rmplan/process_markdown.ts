@@ -12,7 +12,7 @@ import { phaseSchema, planSchema } from './planSchema.js';
 import { writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
 import { fixYaml } from './fix_yaml.js';
-import { commitAll } from '../rmfilter/utils.js';
+import { commitAll } from '../common/process.js';
 import { getGitRoot } from '../common/git.js';
 
 // Define the prompt for Markdown to YAML conversion

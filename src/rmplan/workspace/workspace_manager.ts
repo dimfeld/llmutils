@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { debugLog, log } from '../../logging.js';
-import { spawnAndLogOutput } from '../../rmfilter/utils.js';
+import { spawnAndLogOutput } from '../../common/process.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, RmplanConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';

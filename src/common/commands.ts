@@ -1,4 +1,4 @@
-import { debug } from '../rmfilter/utils.js';
+import { debug } from './process.js';
 
 export function handleCommandError(error: any) {
   if (debug) {

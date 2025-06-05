@@ -2,7 +2,7 @@
 // Opens a plan file in your editor
 
 import type { Command } from 'commander';
-import { logSpawn } from '../../rmfilter/utils.js';
+import { logSpawn } from '../../common/process.js';
 import { resolvePlanFile } from '../plans.js';
 
 export async function handleEditCommand(planArg: string, options: any, command: Command) {
