@@ -16,7 +16,7 @@ dependencies:
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-05T08:01:01.004Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-05T08:23:25.907Z
+updatedAt: 2025-06-05T08:35:18.756Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -223,11 +223,11 @@ tasks:
       - prompt: >
           Create the new file `src/common/cli.ts` for CLI-related utilities and
           `src/common/cli.test.ts` for its tests.
-        done: false
+        done: true
       - prompt: >
           Create the new file `src/common/process.ts` for process management
           utilities and `src/common/process.test.ts` for its tests.
-        done: false
+        done: true
       - prompt: >
           Locate `parseCliArgsFromString` in `src/rmfilter/utils.ts`. Move its
           implementation to `src/common/cli.ts`.
@@ -236,14 +236,14 @@ tasks:
           `src/rmfilter/utils.test.ts` to `src/common/cli.test.ts`. Ensure
           comprehensive test coverage for various argument quoting and escaping
           scenarios.
-        done: false
+        done: true
       - prompt: >
           Locate `logSpawn` in `src/rmfilter/utils.ts`. Move its implementation
           to `src/common/process.ts`.
 
           Create or move tests for `logSpawn` to `src/common/process.test.ts`.
           Test its behavior with `debug` and `quiet` flags.
-        done: false
+        done: true
       - prompt: >
           Locate `spawnAndLogOutput` in `src/rmfilter/utils.ts`. Move its
           implementation to `src/common/process.ts`.
@@ -251,19 +251,19 @@ tasks:
           Create or move tests for `spawnAndLogOutput` to
           `src/common/process.test.ts`. Test output capturing, stdin piping, and
           exit code handling.
-        done: false
+        done: true
       - prompt: >
           Update all import statements for `parseCliArgsFromString`, `logSpawn`,
           and `spawnAndLogOutput` across the codebase to point to their new
           locations in `src/common/cli.ts` or `src/common/process.ts`.
-        done: false
+        done: true
       - prompt: >
           Remove the original implementations of these utilities from
           `src/rmfilter/utils.ts`.
 
           Clean up `src/rmfilter/utils.test.ts` by removing tests for these
           functions, ensuring coverage is maintained in the new test files.
-        done: false
+        done: true
   - title: Review and Relocate `src/common/` Utilities
     description: Examine each utility within `src/common/`. If a utility is
       exclusively used by a single module (`rmfilter`, `rmpr`, or `rmplan`),
@@ -509,24 +509,34 @@ tasks:
 changedFiles:
   - CLAUDE.md
   - src/apply-llm-edits/apply.ts
+  - src/apply-llm-edits/cmd.ts
   - src/apply-llm-edits/interactive.ts
+  - src/common/cli.test.ts
+  - src/common/cli.ts
   - src/common/commands.ts
+  - src/common/file_finder.ts
   - src/common/fs.test.ts
   - src/common/fs.ts
   - src/common/git.test.ts
   - src/common/git.ts
   - src/common/github/pull_requests.ts
+  - src/common/process.test.ts
+  - src/common/process.ts
+  - src/dependency_graph/resolve.ts
   - src/editor/diff-editor/parse.ts
   - src/editor/udiff-simple/parse.ts
   - src/editor/whole-file/parse_raw_edits.ts
   - src/editor/xml/apply.ts
+  - src/logging/console.ts
   - src/rmfilter/additional_docs.ts
   - src/rmfilter/config.ts
   - src/rmfilter/instructions.ts
+  - src/rmfilter/repomix.ts
   - src/rmfilter/rmfilter.ts
   - src/rmfilter/utils.test.ts
   - src/rmfilter/utils.ts
   - src/rmfind/rmfind.ts
+  - src/rmfix/cli.ts
   - src/rmfix/rmfix.ts
   - src/rmplan/actions.test.ts
   - src/rmplan/actions.ts
@@ -563,8 +573,11 @@ changedFiles:
   - src/rmplan/rmplan.integration.test.ts
   - src/rmplan/rmplan.ts
   - src/rmplan/workspace/workspace_auto_selector.ts
+  - src/rmplan/workspace/workspace_manager.ts
+  - src/rmpr/comment_options.ts
   - src/rmpr/git_utils.ts
   - src/rmpr/main.ts
+  - src/rmrun.ts
 rmfilter:
   - --
   - src/rmplan

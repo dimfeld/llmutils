@@ -1,6 +1,5 @@
 import { $ } from 'bun';
 
-
 let cachedGitRepository: string | undefined;
 export async function getGitRepository() {
   if (!cachedGitRepository) {
@@ -12,6 +11,3 @@ export async function getGitRepository() {
 
   return cachedGitRepository;
 }
-
-
-

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { parseCliArgsFromString } from './cli';
 
-
 describe('parseCliArgsFromString', () => {
   it('should parse simple arguments without quotes', () => {
     const input = 'arg1 arg2 arg3';

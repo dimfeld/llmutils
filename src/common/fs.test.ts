@@ -71,9 +71,9 @@ describe('secureWrite', () => {
   it('should write content to a valid path within base directory', async () => {
     const relativePath = 'test.txt';
     const content = 'Hello, world!';
-    
+
     await secureWrite(tempDir, relativePath, content);
-    
+
     const writtenContent = await fs.readFile(path.join(tempDir, relativePath), 'utf-8');
     expect(writtenContent).toBe(content);
   });
@@ -81,12 +81,12 @@ describe('secureWrite', () => {
   it('should write content to nested directories within base directory', async () => {
     const relativePath = 'nested/deep/test.txt';
     const content = 'Nested content';
-    
+
     // Create the nested directories first
     await fs.mkdir(path.join(tempDir, 'nested', 'deep'), { recursive: true });
-    
+
     await secureWrite(tempDir, relativePath, content);
-    
+
     const writtenContent = await fs.readFile(path.join(tempDir, relativePath), 'utf-8');
     expect(writtenContent).toBe(content);
   });
@@ -94,9 +94,9 @@ describe('secureWrite', () => {
   it('should write Buffer content correctly', async () => {
     const relativePath = 'binary.txt';
     const content = Buffer.from('Binary content', 'utf-8');
-    
+
     await secureWrite(tempDir, relativePath, content);
-    
+
     const writtenContent = await fs.readFile(path.join(tempDir, relativePath));
     expect(writtenContent.equals(content)).toBe(true);
   });
@@ -104,7 +104,7 @@ describe('secureWrite', () => {
   it('should throw error for path traversal attempts', async () => {
     const relativePath = '../outside.txt';
     const content = 'Malicious content';
-    
+
     await expect(secureWrite(tempDir, relativePath, content)).rejects.toThrow(
       'Security Error: Attempted file operation outside of the base directory'
     );
@@ -114,12 +114,12 @@ describe('secureWrite', () => {
     const relativePath = 'existing.txt';
     const originalContent = 'Original content';
     const newContent = 'New content';
-    
+
     // First write
     await secureWrite(tempDir, relativePath, originalContent);
     let writtenContent = await fs.readFile(path.join(tempDir, relativePath), 'utf-8');
     expect(writtenContent).toBe(originalContent);
-    
+
     // Overwrite
     await secureWrite(tempDir, relativePath, newContent);
     writtenContent = await fs.readFile(path.join(tempDir, relativePath), 'utf-8');
@@ -141,19 +141,29 @@ describe('secureRm', () => {
   it('should remove a file within base directory', async () => {
     const relativePath = 'test.txt';
     const content = 'Test content';
-    
+
     // Create the file first
     await secureWrite(tempDir, relativePath, content);
-    expect(await fs.access(path.join(tempDir, relativePath)).then(() => true).catch(() => false)).toBe(true);
-    
+    expect(
+      await fs
+        .access(path.join(tempDir, relativePath))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(true);
+
     // Remove it
     await secureRm(tempDir, relativePath);
-    expect(await fs.access(path.join(tempDir, relativePath)).then(() => true).catch(() => false)).toBe(false);
+    expect(
+      await fs
+        .access(path.join(tempDir, relativePath))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
   });
 
   it('should not throw error when removing non-existent file', async () => {
     const relativePath = 'nonexistent.txt';
-    
+
     // Should not throw an error (force: true behavior)
     await expect(secureRm(tempDir, relativePath)).resolves.toBeUndefined();
   });
@@ -161,20 +171,30 @@ describe('secureRm', () => {
   it('should remove nested files within base directory', async () => {
     const relativePath = 'nested/test.txt';
     const content = 'Nested content';
-    
+
     // Create nested directory and file
     await fs.mkdir(path.join(tempDir, 'nested'), { recursive: true });
     await secureWrite(tempDir, relativePath, content);
-    expect(await fs.access(path.join(tempDir, relativePath)).then(() => true).catch(() => false)).toBe(true);
-    
+    expect(
+      await fs
+        .access(path.join(tempDir, relativePath))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(true);
+
     // Remove the file
     await secureRm(tempDir, relativePath);
-    expect(await fs.access(path.join(tempDir, relativePath)).then(() => true).catch(() => false)).toBe(false);
+    expect(
+      await fs
+        .access(path.join(tempDir, relativePath))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
   });
 
   it('should throw error for path traversal attempts', async () => {
     const relativePath = '../outside.txt';
-    
+
     await expect(secureRm(tempDir, relativePath)).rejects.toThrow(
       'Security Error: Attempted file operation outside of the base directory'
     );
@@ -184,14 +204,24 @@ describe('secureRm', () => {
     const relativePath = 'src/./nested/../file.txt';
     const normalizedPath = 'src/file.txt';
     const content = 'Test content';
-    
+
     // Create the file using the normalized path
     await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
     await secureWrite(tempDir, normalizedPath, content);
-    expect(await fs.access(path.join(tempDir, normalizedPath)).then(() => true).catch(() => false)).toBe(true);
-    
+    expect(
+      await fs
+        .access(path.join(tempDir, normalizedPath))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(true);
+
     // Remove using the complex path that should resolve to the same file
     await secureRm(tempDir, relativePath);
-    expect(await fs.access(path.join(tempDir, normalizedPath)).then(() => true).catch(() => false)).toBe(false);
+    expect(
+      await fs
+        .access(path.join(tempDir, normalizedPath))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
   });
 });
