@@ -10,7 +10,7 @@ import {
   parseMdcFile,
   type MdcFile,
 } from './mdc.ts';
-import { getGitRoot, getUsingJj } from './utils.ts';
+import { getGitRoot, getUsingJj } from '../common/git.ts';
 
 // Helper function to escape XML attribute values (specifically quotes)
 function escapeXmlAttr(value: string): string {

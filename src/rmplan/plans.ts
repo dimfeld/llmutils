@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { join, resolve } from 'node:path';
 import * as yaml from 'yaml';
 import { debugLog } from '../logging.js';
-import { getGitRoot } from '../rmfilter/utils.js';
+import { getGitRoot } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
 

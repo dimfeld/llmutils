@@ -4,7 +4,7 @@
 import * as path from 'path';
 import chalk from 'chalk';
 import { log } from '../../logging.js';
-import { getGitRoot } from '../../rmfilter/utils.js';
+import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { preparePhase } from '../actions.js';
 import { resolvePlanFile, findNextPlan } from '../plans.js';

@@ -6,7 +6,8 @@ import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import yaml from 'yaml';
 import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
-import { getGitRoot, logSpawn } from '../../rmfilter/utils.js';
+import { logSpawn } from '../../rmfilter/utils.js';
+import { getGitRoot } from '../../common/git.js';
 import {
   executePostApplyCommand,
   findPendingTask,

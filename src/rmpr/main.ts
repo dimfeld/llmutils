@@ -14,11 +14,10 @@ import { debugLog, error, log, warn } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
 import {
   commitAll,
-  getGitRoot,
-  hasUncommittedChanges,
   parseCliArgsFromString,
   secureWrite,
 } from '../rmfilter/utils.js';
+import { getGitRoot, hasUncommittedChanges } from '../common/git.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {
   buildExecutorAndLog,
@@ -32,7 +31,8 @@ import {
   parseCommandOptionsFromComment,
   type RmprOptions,
 } from './comment_options.js';
-import { getCurrentBranchName, getCurrentCommitSha } from './git_utils.js';
+import { getCurrentCommitSha } from './git_utils.js';
+import { getCurrentBranchName } from '../common/git.js';
 import {
   createInlineCommentsPrompt,
   insertAiCommentsIntoFileContent,

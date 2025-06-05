@@ -3,7 +3,8 @@
 
 import * as clipboard from '../../common/clipboard.ts';
 import { log, warn } from '../../logging.js';
-import { getGitRoot, logSpawn } from '../../rmfilter/utils.js';
+import { logSpawn } from '../../rmfilter/utils.js';
+import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { prepareNextStep } from '../actions.js';
 import { resolvePlanFile } from '../plans.js';

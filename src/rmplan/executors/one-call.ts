@@ -5,7 +5,7 @@ import { applyLlmEdits, type ApplyLlmEditsOptions } from '../../apply-llm-edits/
 import { log } from '../../logging';
 import { createRetryRequester } from '../../apply-llm-edits/retry.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import { getGitRoot } from '../../rmfilter/utils.ts';
+import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
 
 /**

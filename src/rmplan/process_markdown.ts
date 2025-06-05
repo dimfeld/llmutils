@@ -12,7 +12,8 @@ import { phaseSchema, planSchema } from './planSchema.js';
 import { writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
 import { fixYaml } from './fix_yaml.js';
-import { commitAll, getGitRoot } from '../rmfilter/utils.js';
+import { commitAll } from '../rmfilter/utils.js';
+import { getGitRoot } from '../common/git.js';
 
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.

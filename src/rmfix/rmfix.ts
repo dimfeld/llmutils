@@ -7,7 +7,7 @@ import type { GlobalValues, CommandParsed } from '../rmfilter/config.ts';
 import { parseOutput } from './parsers.ts';
 import path from 'node:path';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.ts';
-import { getGitRoot } from '../rmfilter/utils.ts';
+import { getGitRoot } from '../common/git.ts';
 import { log, debugLog } from '../logging.ts';
 
 /**

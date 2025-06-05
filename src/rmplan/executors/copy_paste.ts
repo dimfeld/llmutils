@@ -5,7 +5,7 @@ import { applyLlmEdits } from '../../apply-llm-edits/apply';
 import { DEFAULT_RUN_MODEL } from '../../common/run_and_apply';
 import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';
-import { getGitRoot } from '../../rmfilter/utils.ts';
+import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../actions.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, Executor } from './types';

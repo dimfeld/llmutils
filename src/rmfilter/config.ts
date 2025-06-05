@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { debugLog, error, log } from '../logging.ts';
-import { getGitRoot } from './utils.ts';
+import { getGitRoot } from '../common/git.ts';
 
 export interface ModelPreset {
   noArtifacts?: boolean;

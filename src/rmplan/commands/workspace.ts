@@ -5,7 +5,7 @@ import * as path from 'path';
 import chalk from 'chalk';
 import { $ } from 'bun';
 import { log, warn } from '../../logging.js';
-import { getGitRoot } from '../../rmfilter/utils.js';
+import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFile, readPlanFile, setPlanStatus } from '../plans.js';
 import { generateAlphanumericPlanId } from '../id_utils.js';

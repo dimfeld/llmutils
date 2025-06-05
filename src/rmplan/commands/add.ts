@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { error, log } from '../../logging.js';
-import { getGitRoot } from '../../rmfilter/utils.js';
+import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { generateNumericPlanId } from '../id_utils.js';
 import { writePlanFile } from '../plans.js';

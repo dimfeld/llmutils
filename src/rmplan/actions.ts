@@ -13,7 +13,8 @@ import {
   type GetChangedFilesOptions,
 } from '../rmfilter/additional_docs.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
-import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
+import { commitAll, quiet } from '../rmfilter/utils.js';
+import { getGitRoot } from '../common/git.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { Extractor } from '../treesitter/extract.js';
 import type { PostApplyCommand, RmplanConfig } from './configSchema.js';

@@ -23,7 +23,8 @@ import {
   type AdditionalDocsOptions,
 } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
-import { debug, getGitRoot, quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { debug, quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { getGitRoot } from '../common/git.ts';
 import { Extractor } from '../treesitter/extract.ts';
 import {
   getCurrentConfig,

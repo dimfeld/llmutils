@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import { debugLog, log, writeStderr, writeStdout } from '../logging.js';
+import { getUsingJj } from '../common/git.js';
 import { findUp } from 'find-up';
 import { debuglog } from 'node:util';
 export let debug = false;
@@ -143,47 +144,7 @@ export async function cachePromise<T extends Promise<any>>(
 
 export type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
 
-let cachedGitRoot = new Map<string, string>();
-export async function getGitRoot(cwd = process.cwd()): Promise<string> {
-  const cachedValue = cachedGitRoot.get(cwd);
-  if (cachedValue) {
-    return cachedValue;
-  }
 
-  let value = (
-    await $`git rev-parse --show-toplevel`
-      .cwd(cwd || process.cwd())
-      .nothrow()
-      .text()
-  ).trim();
-
-  if (!value) {
-    // jj workspaces won't have a git root
-    let jjDir = await findUp('.jj', { type: 'directory', cwd: cwd || process.cwd() });
-    if (jjDir) {
-      const components = jjDir.split(path.sep);
-      components.pop();
-      value = components.join(path.sep);
-    }
-  }
-
-  cachedGitRoot.set(cwd, value || process.cwd());
-  return value;
-}
-
-let cachedUsingJj: boolean | undefined;
-export async function getUsingJj(): Promise<boolean> {
-  if (typeof cachedUsingJj === 'boolean') {
-    return cachedUsingJj;
-  }
-
-  const gitRoot = await getGitRoot();
-  cachedUsingJj = await Bun.file(path.join(gitRoot, '.jj'))
-    .stat()
-    .then((s) => s.isDirectory())
-    .catch(() => false);
-  return cachedUsingJj;
-}
 
 let cachedGitRepository: string | undefined;
 export async function getGitRepository() {
@@ -197,29 +158,6 @@ export async function getGitRepository() {
   return cachedGitRepository;
 }
 
-export async function hasUncommittedChanges(cwd?: string): Promise<boolean> {
-  // Check if jj exists in the provided directory
-  const workingDir = cwd || process.cwd();
-  const jjPath = path.join(workingDir, '.jj');
-  const hasJj = await Bun.file(jjPath)
-    .stat()
-    .then((s) => s.isDirectory())
-    .catch(() => false);
-
-  if (hasJj) {
-    const proc = $`jj diff`.cwd(workingDir).quiet().nothrow();
-    const result = await proc;
-
-    return result.exitCode === 0 && result.stdout.toString().trim().length > 0;
-  } else {
-    // Use git status --porcelain which is more reliable
-    const proc = $`git status --porcelain`.cwd(workingDir).quiet().nothrow();
-    const result = await proc;
-
-    // If there's any output from git status --porcelain, there are changes
-    return result.exitCode === 0 && result.stdout.toString().trim().length > 0;
-  }
-}
 
 export async function commitAll(message: string, cwd?: string): Promise<number> {
   const usingJj = await getUsingJj();
