@@ -309,7 +309,14 @@ export async function findNextPlan(
 
     // Check if all dependencies are done
     return plan.dependencies.every((depId) => {
-      const depPlan = plans.get(depId);
+      // Try to get the dependency plan by string ID first
+      let depPlan = plans.get(depId);
+      
+      // If not found and the dependency ID is a numeric string, try as a number
+      if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
+        depPlan = plans.get(parseInt(depId, 10));
+      }
+      
       return depPlan && depPlan.status === 'done';
     });
   });
@@ -399,7 +406,14 @@ export function isPlanReady(
 
   // Check if all dependencies are done
   return plan.dependencies.every((depId) => {
-    const depPlan = allPlans.get(depId);
+    // Try to get the dependency plan by string ID first
+    let depPlan = allPlans.get(depId);
+    
+    // If not found and the dependency ID is a numeric string, try as a number
+    if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
+      depPlan = allPlans.get(parseInt(depId, 10));
+    }
+    
     return depPlan && depPlan.status === 'done';
   });
 }

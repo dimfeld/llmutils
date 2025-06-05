@@ -20,7 +20,7 @@ mock.module('../../logging.js', () => ({
 // Mock markStepDone from actions.js
 const markStepDoneSpy = mock(async () => ({
   planComplete: false,
-  markedCount: 1,
+  message: 'Marked 1 step done',
 }));
 mock.module('../actions.js', () => ({
   markStepDone: markStepDoneSpy,
@@ -239,7 +239,7 @@ describe('handleDoneCommand', () => {
     // Mock markStepDone to return planComplete: true
     markStepDoneSpy.mockResolvedValue({
       planComplete: true,
-      markedCount: 1,
+      message: 'All steps complete',
     });
 
     const options = {

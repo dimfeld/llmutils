@@ -155,8 +155,8 @@ describe('rmplan CLI integration tests', () => {
     expect(updatedPlan.tasks[0].steps.length).toBeGreaterThan(0);
 
     // Check step status
-    expect(updatedPlan.tasks[0].steps[0].status).toBe('done');
-    expect(updatedPlan.tasks[0].steps[1].status).toBe('pending');
+    expect(updatedPlan.tasks[0].steps[0].done).toBe(true);
+    expect(updatedPlan.tasks[0].steps[1].done).toBe(false);
   });
 
   test('rmplan list --status filters by status', async () => {
@@ -209,7 +209,7 @@ describe('rmplan CLI integration tests', () => {
     // Create plans with dependencies
     const plans = [
       {
-        id: 1,
+        id: '1',
         title: 'Completed Dependency',
         goal: 'Already done',
         details: 'Details',
@@ -217,21 +217,21 @@ describe('rmplan CLI integration tests', () => {
         tasks: [],
       },
       {
-        id: 2,
+        id: '2',
         title: 'Ready Plan',
         goal: 'Ready to start',
         details: 'Details',
         status: 'pending',
-        dependencies: [1],
+        dependencies: ['1'],
         tasks: [],
       },
       {
-        id: 3,
+        id: '3',
         title: 'Blocked Plan',
         goal: 'Blocked by dependencies',
         details: 'Details',
         status: 'pending',
-        dependencies: [2],
+        dependencies: ['2'],
         tasks: [],
       },
     ];

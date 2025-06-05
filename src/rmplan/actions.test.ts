@@ -16,11 +16,13 @@ mock.module('../logging.js', () => ({
   warn: mock(() => {}),
 }));
 
-// Mock spawn for git/jj commands
-const spawnSpy = mock(() => ({ exitCode: 0 }));
-mock.module('bun', () => ({
-  spawn: spawnSpy,
-  $: {},
+// Mock commitAll for git/jj commands
+const commitAllSpy = mock(async () => 0);
+const getGitRootSpy = mock(async () => '');
+mock.module('../rmfilter/utils.js', () => ({
+  getGitRoot: getGitRootSpy,
+  commitAll: commitAllSpy,
+  quiet: false,
 }));
 
 describe('markStepDone', () => {
@@ -31,7 +33,7 @@ describe('markStepDone', () => {
     // Clear mocks
     logSpy.mockClear();
     errorSpy.mockClear();
-    spawnSpy.mockClear();
+    commitAllSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -40,6 +42,9 @@ describe('markStepDone', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-actions-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    
+    // Update getGitRoot mock to return tempDir
+    getGitRootSpy.mockResolvedValue(tempDir);
   });
 
   afterEach(async () => {
@@ -62,17 +67,17 @@ describe('markStepDone', () => {
             {
               description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'done',
+              done: true,
             },
             {
               description: 'Step 2',
               prompt: 'Do step 2',
-              status: 'pending',
+              done: false,
             },
             {
               description: 'Step 3',
               prompt: 'Do step 3',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -84,16 +89,16 @@ describe('markStepDone', () => {
 
     const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
 
-    expect(result.markedCount).toBe(1);
     expect(result.planComplete).toBe(false);
+    expect(result.message).toContain('Task 1 step 2');
 
     // Read the updated plan
     const updatedContent = await fs.readFile(planPath, 'utf-8');
     const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
 
     // Check that step 2 is now done
-    expect(updatedPlan.tasks[0].steps![1].status).toBe('done');
-    expect(updatedPlan.tasks[0].steps![2].status).toBe('pending');
+    expect(updatedPlan.tasks[0].steps![1].done).toBe(true);
+    expect(updatedPlan.tasks[0].steps![2].done).toBe(false);
   });
 
   test('marks multiple steps as done', async () => {
@@ -111,17 +116,17 @@ describe('markStepDone', () => {
             {
               description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'pending',
+              done: false,
             },
             {
               description: 'Step 2',
               prompt: 'Do step 2',
-              status: 'pending',
+              done: false,
             },
             {
               description: 'Step 3',
               prompt: 'Do step 3',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -133,16 +138,17 @@ describe('markStepDone', () => {
 
     const result = await markStepDone(planPath, { steps: 2 }, undefined, tempDir, {});
 
-    expect(result.markedCount).toBe(2);
+    expect(result.planComplete).toBe(false);
+    expect(result.message).toContain('Task 1 steps 1-2');
 
     // Read the updated plan
     const updatedContent = await fs.readFile(planPath, 'utf-8');
     const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
 
     // Check that steps 1 and 2 are now done
-    expect(updatedPlan.tasks[0].steps![0].status).toBe('done');
-    expect(updatedPlan.tasks[0].steps![1].status).toBe('done');
-    expect(updatedPlan.tasks[0].steps![2].status).toBe('pending');
+    expect(updatedPlan.tasks[0].steps![0].done).toBe(true);
+    expect(updatedPlan.tasks[0].steps![1].done).toBe(true);
+    expect(updatedPlan.tasks[0].steps![2].done).toBe(false);
   });
 
   test('marks all steps in task as done with task flag', async () => {
@@ -160,17 +166,17 @@ describe('markStepDone', () => {
             {
               description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'done',
+              done: true,
             },
             {
               description: 'Step 2',
               prompt: 'Do step 2',
-              status: 'pending',
+              done: false,
             },
             {
               description: 'Step 3',
               prompt: 'Do step 3',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -182,14 +188,14 @@ describe('markStepDone', () => {
 
     const result = await markStepDone(planPath, { task: true }, undefined, tempDir, {});
 
-    expect(result.markedCount).toBe(2); // Only pending steps in the task
+    expect(result.planComplete).toBe(true);
 
     // Read the updated plan
     const updatedContent = await fs.readFile(planPath, 'utf-8');
     const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
 
     // Check that all steps in task 1 are done
-    expect(updatedPlan.tasks[0].steps!.every((step) => step.status === 'done')).toBe(true);
+    expect(updatedPlan.tasks[0].steps!.every((step) => step.done)).toBe(true);
   });
 
   test('updates plan status to done when all steps complete', async () => {
@@ -207,12 +213,12 @@ describe('markStepDone', () => {
             {
               description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'done',
+              done: true,
             },
             {
               description: 'Step 2',
               prompt: 'Do step 2',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -249,8 +255,8 @@ describe('markStepDone', () => {
 
     const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
 
-    expect(result.markedCount).toBe(0);
-    expect(logSpy).toHaveBeenCalledWith('No steps found in the plan.');
+    expect(result.planComplete).toBe(true);
+    expect(result.message).toBe('All steps in the plan are already done.');
   });
 
   test('commits changes when commit flag is true', async () => {
@@ -268,7 +274,7 @@ describe('markStepDone', () => {
             {
               description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -281,9 +287,8 @@ describe('markStepDone', () => {
     await markStepDone(planPath, { steps: 1, commit: true }, undefined, tempDir, {});
 
     // Should have called commitAll
-    expect(spawnSpy).toHaveBeenCalled();
-    const spawnCall = spawnSpy.mock.calls[0];
-    expect(spawnCall[0]).toContain('commit');
+    expect(commitAllSpy).toHaveBeenCalled();
+    expect(commitAllSpy).toHaveBeenCalledWith(expect.stringContaining('Task 1'), tempDir);
   });
 });
 
