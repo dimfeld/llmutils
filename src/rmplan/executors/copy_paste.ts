@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { z } from 'zod';
 import * as clipboard from '../../common/clipboard.ts';
 import { applyLlmEdits } from '../../apply-llm-edits/apply';
-import { DEFAULT_RUN_MODEL } from '../../common/run_and_apply';
+import { DEFAULT_RUN_MODEL } from '../llm_utils/run_and_apply.js';
 import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';
 import { getGitRoot } from '../../common/git.ts';

@@ -1,4 +1,4 @@
-import { debug } from './process.js';
+import { debug } from '../../common/process.js';
 
 export function handleCommandError(error: any) {
   if (debug) {

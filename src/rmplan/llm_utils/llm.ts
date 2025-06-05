@@ -1,5 +1,5 @@
 import type { StreamTextResult, ToolSet } from 'ai';
-import { error, writeToLogFile } from '../logging.ts';
+import { error, writeToLogFile } from '../../logging.ts';
 
 /** Use `bat` to format Markdown text as it streams through. We use bat instead of a JS-native solution
  * since it works better for streaming markdown. */

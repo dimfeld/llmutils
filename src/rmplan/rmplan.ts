@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
-import { loadEnv } from '../common/env.js';
+import { loadEnv } from './utils/env.js';
 import { setDebug } from '../common/process.js';
 import { executors } from './executors/index.js';
-import { handleCommandError } from '../common/commands.js';
+import { handleCommandError } from './utils/commands.js';
 
 await loadEnv();
 

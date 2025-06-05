@@ -25,7 +25,7 @@ import type { PhaseGenerationContext } from './prompt.js';
 import { generatePhaseStepsPrompt } from './prompt.js';
 import { convertMarkdownToYaml, findYamlStart } from './process_markdown.js';
 import { createModel } from '../common/model_factory.js';
-import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './llm_utils/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 import { readAllPlans, readPlanFile, writePlanFile, type PlanSummary } from './plans.js';
 import * as clipboard from '../common/clipboard.js';

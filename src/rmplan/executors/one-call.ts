@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
-import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../../common/run_and_apply';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { applyLlmEdits, type ApplyLlmEditsOptions } from '../../apply-llm-edits/apply';
 import { log } from '../../logging';
 import { createRetryRequester } from '../../apply-llm-edits/retry.ts';

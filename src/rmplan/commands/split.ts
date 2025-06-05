@@ -6,7 +6,7 @@ import chalk from 'chalk';
 import yaml from 'yaml';
 import { error, log } from '../../logging.js';
 import { createModel } from '../../common/model_factory.js';
-import { runStreamingPrompt } from '../../common/run_and_apply.js';
+import { runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readPlanFile, resolvePlanFile } from '../plans.js';
 import { generateSplitPlanPrompt } from '../prompt.js';
