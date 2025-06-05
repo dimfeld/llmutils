@@ -58,53 +58,48 @@ export async function handleGenerateCommand(options: any, command: any) {
   let planFile: string | undefined = options.plan;
 
   if (options.plan) {
+    const filePath = await resolvePlanFile(options.plan, globalOpts.config);
+    const fileContent = await Bun.file(filePath).text();
+    planFile = filePath;
+
+    // Check if the file is a YAML plan file by trying to parse it
+    let isYamlPlan = false;
+    let parsedPlan: PlanSchema | null = null;
+
     try {
-      const filePath = await resolvePlanFile(options.plan, globalOpts.config);
-      const fileContent = await Bun.file(filePath).text();
-      planFile = filePath;
+      // Try to parse as YAML
+      const yamlContent = findYamlStart(fileContent);
+      parsedPlan = yaml.parse(yamlContent) as PlanSchema;
 
-      // Check if the file is a YAML plan file by trying to parse it
-      let isYamlPlan = false;
-      let parsedPlan: PlanSchema | null = null;
-
-      try {
-        // Try to parse as YAML
-        const yamlContent = findYamlStart(fileContent);
-        parsedPlan = yaml.parse(yamlContent) as PlanSchema;
-
-        // Validate that it has plan structure (at least id or goal)
-        if (parsedPlan && (parsedPlan.id || parsedPlan.goal)) {
-          isYamlPlan = true;
-        }
-      } catch {
-        // Not a valid YAML plan, treat as markdown
-        isYamlPlan = false;
+      // Validate that it has plan structure (at least id or goal)
+      if (parsedPlan && (parsedPlan.id || parsedPlan.goal)) {
+        isYamlPlan = true;
       }
+    } catch {
+      // Not a valid YAML plan, treat as markdown
+      isYamlPlan = false;
+    }
 
-      if (isYamlPlan && parsedPlan) {
-        // Check if it's a stub plan (no tasks or empty tasks array)
-        const isStubPlan = !parsedPlan.tasks || parsedPlan.tasks.length === 0;
+    if (isYamlPlan && parsedPlan) {
+      // Check if it's a stub plan (no tasks or empty tasks array)
+      const isStubPlan = !parsedPlan.tasks || parsedPlan.tasks.length === 0;
 
-        if (!isStubPlan) {
-          // Plan already has tasks - log a message and continue with normal flow
-          log(
-            chalk.yellow(
-              'Plan already contains tasks. To regenerate, remove the tasks array from the YAML file.'
-            )
-          );
-          planText = fileContent;
-        } else {
-          // It's a stub plan - we'll handle task generation below
-          // For now, set planText to null to trigger special handling
-          planText = null as any;
-        }
-      } else {
-        // Regular markdown file
+      if (!isStubPlan) {
+        // Plan already has tasks - log a message and continue with normal flow
+        log(
+          chalk.yellow(
+            'Plan already contains tasks. To regenerate, remove the tasks array from the YAML file.'
+          )
+        );
         planText = fileContent;
+      } else {
+        // It's a stub plan - we'll handle task generation below
+        // For now, set planText to null to trigger special handling
+        planText = null as any;
       }
-    } catch (err) {
-      error(`Failed to read plan file: ${options.plan}`);
-      process.exit(1);
+    } else {
+      // Regular markdown file
+      planText = fileContent;
     }
   } else if (options.planEditor) {
     try {

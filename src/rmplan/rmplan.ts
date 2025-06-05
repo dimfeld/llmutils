@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { loadEnv } from '../common/env.js';
 import { setDebug } from '../rmfilter/utils.js';
 import { executors } from './executors/index.js';
+import { handleCommandError } from '../common/commands.js';
 
 await loadEnv();
 
@@ -36,7 +37,7 @@ program
   .allowUnknownOption(true)
   .action(async (options, command) => {
     const { handleGenerateCommand } = await import('./commands/generate.js');
-    await handleGenerateCommand(options, command);
+    await handleGenerateCommand(options, command).catch(handleCommandError);
   });
 
 program
@@ -59,7 +60,7 @@ program
   .allowExcessArguments(true)
   .action(async (inputFile, options) => {
     const { handleExtractCommand } = await import('./commands/extract.js');
-    await handleExtractCommand(inputFile, options);
+    await handleExtractCommand(inputFile, options).catch(handleCommandError);
   });
 
 program
@@ -70,7 +71,7 @@ program
   .option('--priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
-    await handleAddCommand(title, options, command);
+    await handleAddCommand(title, options, command).catch(handleCommandError);
   });
 
 program
@@ -81,7 +82,7 @@ program
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options, command) => {
     const { handleDoneCommand } = await import('./commands/done.js');
-    await handleDoneCommand(planFile, options, command);
+    await handleDoneCommand(planFile, options, command).catch(handleCommandError);
   });
 
 program
@@ -102,7 +103,7 @@ program
   .allowUnknownOption(true)
   .action(async (planFile, options) => {
     const { handleNextCommand } = await import('./commands/next.js');
-    await handleNextCommand(planFile, options);
+    await handleNextCommand(planFile, options).catch(handleCommandError);
   });
 
 program
@@ -114,7 +115,7 @@ program
   )
   .action(async (files, options) => {
     const { handleCleanupCommand } = await import('./commands/cleanup.js');
-    await handleCleanupCommand(files, options);
+    await handleCleanupCommand(files, options).catch(handleCommandError);
   });
 
 const executorNames = executors
@@ -154,7 +155,7 @@ function createAgentCommand(command: Command, description: string) {
     .allowUnknownOption(true)
     .action(async (planFile, options, command) => {
       const { handleAgentCommand } = await import('./commands/agent.js');
-      await handleAgentCommand(planFile, options, command.parent.opts());
+      await handleAgentCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
     });
 }
 
@@ -190,7 +191,7 @@ program
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
   .action(async (options, command) => {
     const { handleListCommand } = await import('./commands/list.js');
-    await handleListCommand(options, command);
+    await handleListCommand(options, command).catch(handleCommandError);
   });
 
 program
@@ -207,7 +208,7 @@ program
   .allowUnknownOption(true)
   .action(async (yamlFile, options) => {
     const { handlePrepareCommand } = await import('./commands/prepare.js');
-    await handlePrepareCommand(yamlFile, options);
+    await handlePrepareCommand(yamlFile, options).catch(handleCommandError);
   });
 
 program
@@ -217,7 +218,7 @@ program
   .option('--current', 'Show the current plan (in_progress or next ready plan)')
   .action(async (planFile, options, command) => {
     const { handleShowCommand } = await import('./commands/show.js');
-    await handleShowCommand(planFile, options, command);
+    await handleShowCommand(planFile, options, command).catch(handleCommandError);
   });
 
 program
@@ -226,7 +227,7 @@ program
   .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')
   .action(async (planArg, options) => {
     const { handleEditCommand } = await import('./commands/edit.js');
-    await handleEditCommand(planArg, options);
+    await handleEditCommand(planArg, options).catch(handleCommandError);
   });
 
 program
@@ -236,7 +237,7 @@ program
   )
   .action(async (planArg, options) => {
     const { handleSplitCommand } = await import('./commands/split.js');
-    await handleSplitCommand(planArg, options);
+    await handleSplitCommand(planArg, options).catch(handleCommandError);
   });
 
 program
@@ -269,7 +270,7 @@ program
   .option('--comment', 'Post replies to review threads after committing changes', false)
   .action(async (prIdentifier, options) => {
     const { handleAnswerPrCommand } = await import('./commands/answerPr.js');
-    await handleAnswerPrCommand(prIdentifier, options);
+    await handleAnswerPrCommand(prIdentifier, options).catch(handleCommandError);
   });
 
 // Create the workspace command
@@ -282,7 +283,7 @@ workspaceCommand
   .option('--repo <url>', 'Filter by repository URL (defaults to current repo)')
   .action(async (options) => {
     const { handleWorkspaceListCommand } = await import('./commands/workspace.js');
-    await handleWorkspaceListCommand(options);
+    await handleWorkspaceListCommand(options).catch(handleCommandError);
   });
 
 // Add the 'add' subcommand to workspace
@@ -292,7 +293,7 @@ workspaceCommand
   .option('--id <workspaceId>', 'Specify a custom workspace ID')
   .action(async (planIdentifier, options) => {
     const { handleWorkspaceAddCommand } = await import('./commands/workspace.js');
-    await handleWorkspaceAddCommand(planIdentifier, options);
+    await handleWorkspaceAddCommand(planIdentifier, options).catch(handleCommandError);
   });
 
 await program.parseAsync(process.argv);

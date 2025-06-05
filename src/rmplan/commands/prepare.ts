@@ -3,7 +3,7 @@
 
 import * as path from 'path';
 import chalk from 'chalk';
-import { error, log } from '../../logging.js';
+import { log } from '../../logging.js';
 import { getGitRoot } from '../../rmfilter/utils.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { preparePhase } from '../actions.js';
@@ -17,53 +17,47 @@ export async function handlePrepareCommand(yamlFile: string | undefined, options
   const doubleDashIdx = process.argv.indexOf('--');
   const rmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
 
-  try {
-    // Load RmplanConfig using loadEffectiveConfig
-    const config = await loadEffectiveConfig(globalOpts.config);
+  // Load RmplanConfig using loadEffectiveConfig
+  const config = await loadEffectiveConfig(globalOpts.config);
 
-    let phaseYamlFile: string;
+  let phaseYamlFile: string;
 
-    if (options.next || options.current) {
-      // Find the next ready plan or current plan
-      const tasksDir = await resolveTasksDir(config);
-      const plan = await findNextPlan(tasksDir, {
-        includePending: true,
-        includeInProgress: options.current,
-      });
+  if (options.next || options.current) {
+    // Find the next ready plan or current plan
+    const tasksDir = await resolveTasksDir(config);
+    const plan = await findNextPlan(tasksDir, {
+      includePending: true,
+      includeInProgress: options.current,
+    });
 
-      if (!plan) {
-        if (options.current) {
-          log('No current plans found. No plans are in progress or ready to be implemented.');
-        } else {
-          log('No ready plans found. All pending plans have incomplete dependencies.');
-        }
-        return;
+    if (!plan) {
+      if (options.current) {
+        log('No current plans found. No plans are in progress or ready to be implemented.');
+      } else {
+        log('No ready plans found. All pending plans have incomplete dependencies.');
       }
-
-      const message = options.current
-        ? `Found current plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
-        : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
-      log(chalk.green(message));
-      phaseYamlFile = plan.filename;
-    } else {
-      if (!yamlFile) {
-        error('Please provide a plan file or use --next/--current to find a plan');
-        process.exit(1);
-      }
-      // Resolve plan file (ID or path)
-      phaseYamlFile = await resolvePlanFile(yamlFile, globalOpts.config);
+      return;
     }
 
-    await preparePhase(phaseYamlFile, config, {
-      force: options.force,
-      model: options.model,
-      rmfilterArgs: rmfilterArgs,
-      direct: options.direct,
-    });
-  } catch (err) {
-    error('Failed to generate phase details:', err);
-    process.exit(1);
+    const message = options.current
+      ? `Found current plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
+      : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
+    log(chalk.green(message));
+    phaseYamlFile = plan.filename;
+  } else {
+    if (!yamlFile) {
+      throw new Error('Please provide a plan file or use --next/--current to find a plan');
+    }
+    // Resolve plan file (ID or path)
+    phaseYamlFile = await resolvePlanFile(yamlFile, globalOpts.config);
   }
+
+  await preparePhase(phaseYamlFile, config, {
+    force: options.force,
+    model: options.model,
+    rmfilterArgs: rmfilterArgs,
+    direct: options.direct,
+  });
 }
 
 /**

@@ -57,12 +57,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     try {
       await Bun.file(currentPlanFile).text();
     } catch {
-      error(`Plan file ${currentPlanFile} does not exist or is empty.`);
-      process.exit(1);
+      throw new Error(`Plan file ${currentPlanFile} does not exist or is empty.`);
     }
   } catch (err) {
-    error(`Error checking plan file: ${String(err)}`);
-    process.exit(1);
+    throw new Error(`Error checking plan file: ${String(err)}`);
   }
 
   if (!options['no-log']) {
@@ -131,10 +129,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             taskId: availableWorkspace.taskId,
           };
         } else {
-          error(
+          throw new Error(
             `Workspace with task ID '${options.workspace}' exists but is locked, and --new-workspace was not specified. Cannot proceed.`
           );
-          process.exit(1);
         }
       } else if (options.newWorkspace) {
         // No existing workspace, create a new one
@@ -146,10 +143,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           config
         );
       } else {
-        error(
+        throw new Error(
           `No workspace found for task ID '${options.workspace}' and --new-workspace was not specified. Cannot proceed.`
         );
-        process.exit(1);
       }
     }
 
@@ -211,8 +207,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       error('Failed to create workspace. Continuing in the current directory.');
       // If workspace creation is explicitly required, exit
       if (options.requireWorkspace) {
-        error('Workspace creation was required but failed. Exiting.');
-        process.exit(1);
+        throw new Error('Workspace creation was required but failed. Exiting.');
       }
     }
   }
@@ -235,8 +230,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         });
         log('Successfully prepared the plan with detailed steps.');
       } catch (err) {
-        error('Failed to automatically prepare the plan:', err);
-        process.exit(1);
+        throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
       }
     }
   } catch (err) {
@@ -408,13 +402,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
 
     if (hasError) {
-      error('Agent stopped due to error.');
-      process.exit(1);
+      throw new Error('Agent stopped due to error.');
     }
-  } catch (err) {
-    error('Unexpected error during agent execution:', err);
-    error('Agent stopped due to error.');
-    process.exit(1);
   } finally {
     await closeLogFile();
   }
