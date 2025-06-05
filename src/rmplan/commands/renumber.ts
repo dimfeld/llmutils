@@ -4,6 +4,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getGitRoot } from '../../common/git.js';
+import { log } from '../../logging.js';
 
 interface PlanToRenumber {
   filePath: string;
@@ -27,7 +28,7 @@ export async function handleRenumber(options: any, command: any) {
     tasksDirectory = gitRoot;
   }
 
-  console.log('Scanning for plans that need renumbering...');
+  log('Scanning for plans that need renumbering...');
 
   // Read all plans and detect issues
   const { plans: allPlans, maxNumericId } = await readAllPlans(tasksDirectory);
@@ -105,7 +106,7 @@ export async function handleRenumber(options: any, command: any) {
   }
 
   if (plansToRenumber.length === 0) {
-    console.log('No plans need renumbering.');
+    log('No plans need renumbering.');
     return;
   }
 
@@ -130,15 +131,15 @@ export async function handleRenumber(options: any, command: any) {
     return aId.localeCompare(bId);
   });
 
-  console.log(`\nFound ${plansToRenumber.length} plans to renumber:`);
+  log(`\nFound ${plansToRenumber.length} plans to renumber:`);
   for (const plan of plansToRenumber) {
     const reason =
       plan.reason === 'alphanumeric' ? 'alphanumeric ID' : `conflicts with ${plan.conflictsWith}`;
-    console.log(`  - ${plan.currentId} (${reason}): ${path.basename(plan.filePath)}`);
+    log(`  - ${plan.currentId} (${reason}): ${path.basename(plan.filePath)}`);
   }
 
   if (!options.dryRun) {
-    console.log('\nRenumbering plans...');
+    log('\nRenumbering plans...');
 
     // Use the current max numeric ID to avoid conflicts during renumbering
     let nextId = maxNumericId;
@@ -164,13 +165,13 @@ export async function handleRenumber(options: any, command: any) {
       // Write the updated plan back to the same file
       await writePlanFile(planToRenumber.filePath, updatedPlan);
 
-      console.log(
+      log(
         `  ✓ Renumbered ${planToRenumber.currentId} → ${newId} in ${path.basename(planToRenumber.filePath)}`
       );
     }
 
     // Second pass: Update dependencies in ALL plans
-    console.log('\nUpdating dependencies...');
+    log('\nUpdating dependencies...');
     let dependencyUpdates = 0;
 
     // Re-read all plan files to update dependencies
@@ -207,7 +208,7 @@ export async function handleRenumber(options: any, command: any) {
               dependencies: updatedDependencies,
             };
             await writePlanFile(filePath, updatedPlan);
-            console.log(`  ✓ Updated dependencies in ${path.basename(filePath)}`);
+            log(`  ✓ Updated dependencies in ${path.basename(filePath)}`);
           }
         }
       } catch (e) {
@@ -216,11 +217,11 @@ export async function handleRenumber(options: any, command: any) {
     }
 
     if (dependencyUpdates > 0) {
-      console.log(`\nUpdated ${dependencyUpdates} dependency references.`);
+      log(`\nUpdated ${dependencyUpdates} dependency references.`);
     }
 
-    console.log('\nRenumbering complete!');
+    log('\nRenumbering complete!');
   } else {
-    console.log('\n(Dry run - no changes made)');
+    log('\n(Dry run - no changes made)');
   }
 }

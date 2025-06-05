@@ -64,7 +64,7 @@ describe('process utilities', () => {
         const stdout = await new Response(proc.stdout as ReadableStream).text();
 
         expect(exitCode).toBe(0);
-        expect(stdout.trim()).toBe(tempDir);
+        expect(await fs.realpath(stdout.trim())).toBe(await fs.realpath(tempDir));
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
@@ -110,7 +110,7 @@ describe('process utilities', () => {
         });
 
         expect(result.exitCode).toBe(0);
-        expect(result.stdout.trim()).toBe(tempDir);
+        expect(await fs.realpath(result.stdout.trim())).toBe(await fs.realpath(tempDir));
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }

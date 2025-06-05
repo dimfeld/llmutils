@@ -81,9 +81,8 @@ describe('configLoader', () => {
     configDir = path.join(testDir, '.rmfilter', 'config');
 
     // Mock the getGitRoot function to return our test directory
-    await moduleMocker.mock('../rmfilter/utils.js', () => ({
+    await moduleMocker.mock('../common/git.js', () => ({
       getGitRoot: async () => testDir,
-      quiet: false,
     }));
 
     // Create test directories
@@ -93,6 +92,10 @@ describe('configLoader', () => {
   afterEach(async () => {
     // Cleanup test directory
     await fs.rm(testDir, { recursive: true, force: true });
+    // Clear mocks after each test
+    moduleMocker.clear();
+    // Clear the config cache again
+    clearConfigCache();
   });
 
   test('findConfigPath returns default path when it exists', async () => {

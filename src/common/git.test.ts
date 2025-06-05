@@ -32,7 +32,7 @@ describe('Git Utilities', () => {
       await proc.exited;
 
       const gitRoot = await getGitRoot(tempDir);
-      expect(gitRoot).toBe(tempDir);
+      expect(await fs.realpath(gitRoot!)).toBe(await fs.realpath(tempDir));
     });
 
     it('should handle jj workspaces', async () => {

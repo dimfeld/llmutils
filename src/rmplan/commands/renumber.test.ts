@@ -25,6 +25,12 @@ describe('rmplan renumber', () => {
       getGitRoot: async () => tempDir,
     }));
 
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: mock(() => {}),
+      error: mock(() => {}),
+      warn: mock(() => {}),
+    }));
+
     // Create a config file
     configPath = path.join(tempDir, '.rmplan.yml');
     await fs.promises.writeFile(

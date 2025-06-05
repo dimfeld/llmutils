@@ -69,7 +69,7 @@ describe('handleDoneCommand', () => {
     }));
 
     // Mock utils
-    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
+    await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
     }));
   });
@@ -116,7 +116,7 @@ describe('handleDoneCommand', () => {
         commit: undefined,
       },
       undefined,
-      expect.stringContaining('/home/dimfeld/projects/llmutils3'),
+      tempDir,
       expect.any(Object)
     );
   });
@@ -153,7 +153,7 @@ describe('handleDoneCommand', () => {
         commit: undefined,
       },
       undefined,
-      expect.stringContaining('/home/dimfeld/projects/llmutils3'),
+      tempDir,
       expect.any(Object)
     );
   });
@@ -190,7 +190,7 @@ describe('handleDoneCommand', () => {
         commit: undefined,
       },
       undefined,
-      expect.stringContaining('/home/dimfeld/projects/llmutils3'),
+      tempDir,
       expect.any(Object)
     );
   });
@@ -228,7 +228,7 @@ describe('handleDoneCommand', () => {
         commit: true,
       },
       undefined,
-      expect.stringContaining('/home/dimfeld/projects/llmutils3'),
+      tempDir,
       expect.any(Object)
     );
   });
@@ -263,9 +263,7 @@ describe('handleDoneCommand', () => {
 
     await handleDoneCommand('1', options, command);
 
-    expect(releaseLockSpy).toHaveBeenCalledWith(
-      expect.stringContaining('/home/dimfeld/projects/llmutils3')
-    );
+    expect(releaseLockSpy).toHaveBeenCalledWith(tempDir);
     expect(logSpy).toHaveBeenCalledWith('Released workspace lock');
   });
 

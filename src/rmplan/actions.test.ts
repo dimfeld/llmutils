@@ -46,8 +46,11 @@ describe('markStepDone', () => {
       warn: mock(() => {}),
     }));
 
-    await moduleMocker.mock('../rmfilter/utils.js', () => ({
+    await moduleMocker.mock('../common/git.js', () => ({
       getGitRoot: getGitRootSpy,
+    }));
+
+    await moduleMocker.mock('../common/process.js', () => ({
       commitAll: commitAllSpy,
       quiet: false,
     }));

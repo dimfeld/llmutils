@@ -43,10 +43,10 @@ describe('createWorkspace', () => {
       debugLog: mockDebugLog,
     }));
 
-    await moduleMocker.mock('../../rmfilter/utils.js', () => {
-      const utils = require('../../rmfilter/utils.js');
+    await moduleMocker.mock('../../common/process.js', () => {
+      const process = require('../../common/process.js');
       return {
-        ...utils,
+        ...process,
         spawnAndLogOutput: mockSpawnAndLogOutput,
       };
     });
