@@ -161,6 +161,35 @@ export async function handleListCommand(options: any, command: any) {
 
     const priorityDisplay = plan.priority || '';
 
+    // Format dependencies with their status
+    let dependenciesDisplay = '-';
+    if (plan.dependencies && plan.dependencies.length > 0) {
+      dependenciesDisplay = plan.dependencies
+        .map((depId) => {
+          // Try to get the dependency plan
+          let depPlan = plans.get(depId);
+
+          // If not found and the dependency ID is a numeric string, try as a number
+          if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
+            depPlan = plans.get(parseInt(depId, 10));
+          }
+
+          if (!depPlan) {
+            return `${depId}(?)`;
+          }
+
+          const depStatus = depPlan.status || 'pending';
+          if (depStatus === 'done') {
+            return chalk.green(`${depId}✓`);
+          } else if (depStatus === 'in_progress') {
+            return chalk.yellow(`${depId}…`);
+          } else {
+            return `${depId}`;
+          }
+        })
+        .join(', ');
+    }
+
     tableData.push([
       chalk.cyan(plan.id || 'no-id'),
       getCombinedTitleFromSummary(plan),
@@ -168,7 +197,7 @@ export async function handleListCommand(options: any, command: any) {
       priorityColor(priorityDisplay),
       (plan.taskCount || 0).toString(),
       plan.stepCount === 0 || !plan.stepCount ? '-' : plan.stepCount.toString(),
-      plan.dependencies?.join(', ') || '-',
+      dependenciesDisplay,
       chalk.gray(path.relative(searchDir, plan.filename)),
     ]);
   }

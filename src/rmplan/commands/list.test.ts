@@ -442,4 +442,163 @@ describe('handleListCommand', () => {
     expect(tableData[1][1]).toContain('project-123');
     expect(tableData[1][1]).toContain('Plan Title');
   });
+
+  test('displays dependency status indicators', async () => {
+    // Create plans with dependencies
+    const plans = [
+      {
+        id: 1,
+        title: 'Dependency 1',
+        goal: 'First dependency',
+        details: 'Details',
+        status: 'done',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
+      },
+      {
+        id: 2,
+        title: 'Dependency 2',
+        goal: 'Second dependency',
+        details: 'Details',
+        status: 'in_progress',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
+      },
+      {
+        id: 3,
+        title: 'Dependency 3',
+        goal: 'Third dependency',
+        details: 'Details',
+        status: 'pending',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
+      },
+      {
+        id: 4,
+        title: 'Main Plan',
+        goal: 'Test dependencies',
+        details: 'Details',
+        status: 'pending',
+        dependencies: ['1', '2', '3', 'non-existent'],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
+      },
+    ];
+
+    // Write plan files
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+
+    // Find the main plan row (id=4)
+    const mainPlanRow = tableData.find((row) => row[0] === 4);
+    expect(mainPlanRow).toBeTruthy();
+
+    // Check dependencies column (index 6)
+    const depsColumn = mainPlanRow[6];
+
+    // Should show status indicators:
+    // - 1✓ (done)
+    // - 2… (in_progress)
+    // - 3 (pending)
+    // - non-existent(?) (not found)
+    expect(depsColumn).toContain('1✓');
+    expect(depsColumn).toContain('2…');
+    expect(depsColumn).toContain('3');
+    expect(depsColumn).toContain('non-existent(?)');
+  });
+
+  test('handles numeric string dependencies', async () => {
+    // Create plans where one uses numeric IDs and another uses string dependencies
+    const plans = [
+      {
+        id: 10,
+        title: 'Numeric ID Plan',
+        goal: 'Has numeric ID',
+        details: 'Details',
+        status: 'done',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
+      },
+      {
+        id: 'main',
+        title: 'Main Plan',
+        goal: 'Test numeric string dependencies',
+        details: 'Details',
+        status: 'pending',
+        dependencies: ['10'], // String reference to numeric ID
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          },
+        ],
+      },
+    ];
+
+    // Write plan files
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    const options = {
+      all: true,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+
+    // Find the main plan row
+    const mainPlanRow = tableData.find((row) => row[0] === 'main');
+    expect(mainPlanRow).toBeTruthy();
+
+    // Check that the dependency is found and shows as done
+    const depsColumn = mainPlanRow[6];
+    expect(depsColumn).toContain('10✓');
+  });
 });
