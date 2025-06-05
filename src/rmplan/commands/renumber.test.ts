@@ -205,4 +205,119 @@ describe('rmplan renumber', () => {
     expect(updatedPlan.id).toBe(1);
     expect(updatedPlan.title).toBe('Plan without date');
   });
+
+  test('updates dependencies when renumbering', async () => {
+    // Create plans with dependencies
+    await createPlan('feature-a', 'Feature A');
+    await createPlan('feature-b', 'Feature B');
+    await createPlan('feature-c', 'Feature C');
+
+    // Create a plan that depends on the above plans
+    const dependentPlan: PlanSchema = {
+      id: 1,
+      title: 'Dependent Plan',
+      goal: 'Goal for dependent plan',
+      details: 'Details for dependent plan',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: ['feature-a', 'feature-b', 'feature-c'],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await writePlanFile(path.join(tasksDir, 'dependent.yml'), dependentPlan);
+
+    await handleRenumber({}, createMockCommand());
+
+    // Check that the alphanumeric IDs were renumbered
+    const planA = await readPlanFile(path.join(tasksDir, 'feature-a.yml'));
+    expect(planA.id).toBe(2); // feature-a -> 2
+
+    const planB = await readPlanFile(path.join(tasksDir, 'feature-b.yml'));
+    expect(planB.id).toBe(3); // feature-b -> 3
+
+    const planC = await readPlanFile(path.join(tasksDir, 'feature-c.yml'));
+    expect(planC.id).toBe(4); // feature-c -> 4
+
+    // Check that the dependencies were updated
+    const dependent = await readPlanFile(path.join(tasksDir, 'dependent.yml'));
+    expect(dependent.dependencies).toEqual(['2', '3', '4']);
+  });
+
+  test('updates mixed numeric and string dependencies', async () => {
+    // Create plans with various IDs
+    await createPlan('old-feature', 'Old Feature');
+    await createPlan(10, 'Numeric Plan 10');
+    await createPlan('another-feature', 'Another Feature');
+
+    // Create plans with dependencies on the above
+    const plan1: PlanSchema = {
+      id: 5,
+      title: 'Plan with mixed deps',
+      goal: 'Goal',
+      details: 'Details',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: ['old-feature', '10', 'another-feature', '999'], // 999 doesn't exist
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await writePlanFile(path.join(tasksDir, 'plan-with-deps.yml'), plan1);
+
+    await handleRenumber({}, createMockCommand());
+
+    // Check that dependencies were correctly updated
+    const updatedPlan = await readPlanFile(path.join(tasksDir, 'plan-with-deps.yml'));
+    expect(updatedPlan.dependencies).toEqual([
+      '12', // old-feature -> 12 (alphabetically second)
+      '10', // 10 stays as is (not renumbered)
+      '11', // another-feature -> 11 (alphabetically first)
+      '999', // 999 stays as is (doesn't exist)
+    ]);
+  });
+
+  test('handles circular dependencies during renumbering', async () => {
+    // Create plans with circular dependencies
+    const planA: PlanSchema = {
+      id: 'plan-a',
+      title: 'Plan A',
+      goal: 'Goal A',
+      details: 'Details A',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: ['plan-b'],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+
+    const planB: PlanSchema = {
+      id: 'plan-b',
+      title: 'Plan B',
+      goal: 'Goal B',
+      details: 'Details B',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: ['plan-a'],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+
+    await writePlanFile(path.join(tasksDir, 'plan-a.yml'), planA);
+    await writePlanFile(path.join(tasksDir, 'plan-b.yml'), planB);
+
+    await handleRenumber({}, createMockCommand());
+
+    // Both should be renumbered and dependencies updated
+    const updatedPlanA = await readPlanFile(path.join(tasksDir, 'plan-a.yml'));
+    const updatedPlanB = await readPlanFile(path.join(tasksDir, 'plan-b.yml'));
+
+    expect(updatedPlanA.id).toBe(1);
+    expect(updatedPlanB.id).toBe(2);
+
+    expect(updatedPlanA.dependencies).toEqual(['2']); // plan-b -> 2
+    expect(updatedPlanB.dependencies).toEqual(['1']); // plan-a -> 1
+  });
 });

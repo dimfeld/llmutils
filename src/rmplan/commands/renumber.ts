@@ -115,8 +115,8 @@ export async function handleRenumber(options: any, command: any) {
     const bId = String(b.currentId);
 
     // Try to parse as numbers first
-    const aNum = parseInt(aId, 10);
-    const bNum = parseInt(bId, 10);
+    const aNum = Number(aId);
+    const bNum = Number(bId);
 
     if (!isNaN(aNum) && !isNaN(bNum)) {
       return aNum - bNum;
@@ -143,11 +143,17 @@ export async function handleRenumber(options: any, command: any) {
     // Use the current max numeric ID to avoid conflicts during renumbering
     let nextId = maxNumericId;
 
-    // Process each plan
+    // Track ID mappings for updating dependencies
+    const idMappings = new Map<string | number, number>();
+
+    // First pass: Renumber plans and build ID mappings
     for (const planToRenumber of plansToRenumber) {
       // Generate new numeric ID
       nextId++;
       const newId = nextId;
+
+      // Track the mapping
+      idMappings.set(planToRenumber.currentId, newId);
 
       // Update the plan content with new ID
       const updatedPlan = {
@@ -161,6 +167,56 @@ export async function handleRenumber(options: any, command: any) {
       console.log(
         `  ✓ Renumbered ${planToRenumber.currentId} → ${newId} in ${path.basename(planToRenumber.filePath)}`
       );
+    }
+
+    // Second pass: Update dependencies in ALL plans
+    console.log('\nUpdating dependencies...');
+    let dependencyUpdates = 0;
+
+    // Re-read all plan files to update dependencies
+    for (const file of planFiles) {
+      const filePath = path.join(tasksDirectory, file);
+      try {
+        const plan = await readPlanFile(filePath);
+
+        // Check if this plan has dependencies that need updating
+        if (plan.dependencies && plan.dependencies.length > 0) {
+          let hasUpdates = false;
+          const updatedDependencies = plan.dependencies.map((dep) => {
+            // Dependencies can be strings or numbers, convert to string for lookup
+            const depStr = String(dep);
+
+            // Check if this dependency was renumbered
+            for (const [oldId, newId] of idMappings) {
+              if (String(oldId) === depStr) {
+                hasUpdates = true;
+                dependencyUpdates++;
+                // Return the new ID as a string to match the format
+                return String(newId);
+              }
+            }
+
+            // If not renumbered, keep original
+            return dep;
+          });
+
+          // If dependencies were updated, write the plan back
+          if (hasUpdates) {
+            const updatedPlan = {
+              ...plan,
+              dependencies: updatedDependencies,
+            };
+            await writePlanFile(filePath, updatedPlan);
+            console.log(`  ✓ Updated dependencies in ${path.basename(filePath)}`);
+          }
+        }
+      } catch (e) {
+        // Skip invalid plan files
+      }
+    }
+
+    if (dependencyUpdates > 0) {
+      console.log(`\nUpdated ${dependencyUpdates} dependency references.`);
     }
 
     console.log('\nRenumbering complete!');
