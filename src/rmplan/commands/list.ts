@@ -84,10 +84,26 @@ export async function handleListCommand(options: any, command: any) {
         bVal = b.updatedAt || '';
         break;
       case 'id':
-      default:
-        aVal = a.id || '';
-        bVal = b.id || '';
+      default: {
+        let aNum = Number(a.id || 0);
+        let bNum = Number(b.id || 0);
+
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          aVal = aNum;
+          bVal = bNum;
+        } else if (!isNaN(aNum) && isNaN(bNum)) {
+          aVal = aNum;
+          bVal = 0;
+        } else if (isNaN(aNum) && !isNaN(bNum)) {
+          aVal = 0;
+          bVal = bNum;
+        } else {
+          aVal = a.id || '';
+          bVal = b.id || '';
+        }
+
         break;
+      }
     }
 
     if (aVal < bVal) return options.reverse ? 1 : -1;
