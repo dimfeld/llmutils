@@ -12,7 +12,8 @@ import { askForModelId } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import { commitAll, parseCliArgsFromString, secureWrite } from '../rmfilter/utils.js';
+import { commitAll, parseCliArgsFromString } from '../rmfilter/utils.js';
+import { secureWrite } from '../common/fs.js';
 import { getGitRoot, hasUncommittedChanges } from '../common/git.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {

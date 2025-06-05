@@ -1,6 +1,6 @@
 import { debugLog, error, log } from '../../logging.ts';
 import type { ProcessFileOptions } from '../types.ts';
-import { secureWrite } from '../../rmfilter/utils.ts'; // Import secureWrite
+import { secureWrite } from '../../common/fs.ts'; // Import secureWrite
 
 function processLastNonEmptyLine(line: string) {
   // Check for markdown header (e.g., **`filename`**)
