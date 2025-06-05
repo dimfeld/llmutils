@@ -10,13 +10,13 @@ details: This phase addresses the broader code organization. It involves
   dependencies for better separation of concerns.
 id: 1rm0j7j-2
 priority: urgent
-status: in_progress
+status: done
 dependencies:
   - 1rm0j7j-1
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-05T08:01:01.004Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-05T08:50:32.967Z
+updatedAt: 2025-06-05T08:58:44.322Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -446,7 +446,7 @@ tasks:
 
           Investigate and fix any failing tests. Ensure all tests pass before
           proceeding.
-        done: false
+        done: true
       - prompt: >
           Perform manual verification of `rmfilter`'s main functionalities. Test
           with various command-line options, including different file/glob
@@ -455,7 +455,7 @@ tasks:
 
           Verify that the output context is correctly generated and matches
           expectations for the given inputs.
-        done: false
+        done: true
       - prompt: >
           Perform manual verification of `rmplan`'s core subcommands:
 
@@ -483,12 +483,12 @@ tasks:
 
           Verify that each command behaves as expected and interacts correctly
           with plan files.
-        done: false
+        done: true
       - prompt: >
           If `rmpr` has distinct CLI functionality beyond what's tested via
           `rmplan answer-pr`, manually verify its main features, particularly
           focusing on PR comment processing and interaction with Git.
-        done: false
+        done: true
       - prompt: >
           Verify that modules consuming the newly centralized utilities from
           `src/common/git.ts`, `src/common/fs.ts`, `src/common/cli.ts`, and
@@ -497,7 +497,7 @@ tasks:
           For example, check that Git operations in `rmpr` and `rmfilter` still
           work, file operations are secure, and CLI/process utilities behave as
           expected.
-        done: false
+        done: true
       - prompt: >
           Document any regressions, bugs, or unexpected behavior encountered
           during manual testing.
@@ -505,9 +505,11 @@ tasks:
           If significant issues are found, create new tasks or issues for them.
           For minor discrepancies, attempt to fix them as part of this step if
           feasible.
-        done: false
+        done: true
 changedFiles:
   - CLAUDE.md
+  - TESTING_RESULTS.md
+  - manual_test_rmfilter.ts
   - src/apply-llm-edits/apply.ts
   - src/apply-llm-edits/cmd.ts
   - src/apply-llm-edits/interactive.ts

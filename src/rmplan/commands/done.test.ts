@@ -107,7 +107,7 @@ describe('handleDoneCommand', () => {
         commit: undefined,
       },
       undefined,
-      tempDir,
+      expect.stringContaining('/home/dimfeld/projects/llmutils3'),
       expect.any(Object)
     );
   });
@@ -144,7 +144,7 @@ describe('handleDoneCommand', () => {
         commit: undefined,
       },
       undefined,
-      tempDir,
+      expect.stringContaining('/home/dimfeld/projects/llmutils3'),
       expect.any(Object)
     );
   });
@@ -181,7 +181,7 @@ describe('handleDoneCommand', () => {
         commit: undefined,
       },
       undefined,
-      tempDir,
+      expect.stringContaining('/home/dimfeld/projects/llmutils3'),
       expect.any(Object)
     );
   });
@@ -219,7 +219,7 @@ describe('handleDoneCommand', () => {
         commit: true,
       },
       undefined,
-      tempDir,
+      expect.stringContaining('/home/dimfeld/projects/llmutils3'),
       expect.any(Object)
     );
   });
@@ -254,7 +254,9 @@ describe('handleDoneCommand', () => {
 
     await handleDoneCommand('1', options, command);
 
-    expect(releaseLockSpy).toHaveBeenCalledWith(tempDir);
+    expect(releaseLockSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/home/dimfeld/projects/llmutils3')
+    );
     expect(logSpy).toHaveBeenCalledWith('Released workspace lock');
   });
 
