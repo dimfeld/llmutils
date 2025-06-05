@@ -2,12 +2,12 @@ import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
-import { 
-  getGitRoot, 
-  hasUncommittedChanges, 
-  getCurrentGitBranch, 
+import {
+  getGitRoot,
+  hasUncommittedChanges,
+  getCurrentGitBranch,
   getCurrentBranchName,
-  getCurrentJujutsuBranch 
+  getCurrentJujutsuBranch,
 } from './git';
 
 describe('Git Utilities', () => {
@@ -55,20 +55,24 @@ describe('Git Utilities', () => {
       // Initialize a git repo
       const initProc = Bun.spawn(['git', 'init'], { cwd: tempDir });
       await initProc.exited;
-      
-      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], { cwd: tempDir });
+
+      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], {
+        cwd: tempDir,
+      });
       await configEmailProc.exited;
-      
-      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], { cwd: tempDir });
+
+      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], {
+        cwd: tempDir,
+      });
       await configNameProc.exited;
 
       // Create a file and commit it
       const testFile = path.join(tempDir, 'test.txt');
       await fs.writeFile(testFile, 'initial content');
-      
+
       const addProc = Bun.spawn(['git', 'add', '.'], { cwd: tempDir });
       await addProc.exited;
-      
+
       const commitProc = Bun.spawn(['git', 'commit', '-m', 'Initial commit'], { cwd: tempDir });
       await commitProc.exited;
 
@@ -80,20 +84,24 @@ describe('Git Utilities', () => {
       // Initialize a git repo
       const initProc = Bun.spawn(['git', 'init'], { cwd: tempDir });
       await initProc.exited;
-      
-      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], { cwd: tempDir });
+
+      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], {
+        cwd: tempDir,
+      });
       await configEmailProc.exited;
-      
-      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], { cwd: tempDir });
+
+      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], {
+        cwd: tempDir,
+      });
       await configNameProc.exited;
 
       // Create and commit initial file
       const testFile = path.join(tempDir, 'test.txt');
       await fs.writeFile(testFile, 'initial content');
-      
+
       const addProc = Bun.spawn(['git', 'add', '.'], { cwd: tempDir });
       await addProc.exited;
-      
+
       const commitProc = Bun.spawn(['git', 'commit', '-m', 'Initial commit'], { cwd: tempDir });
       await commitProc.exited;
 
@@ -108,27 +116,31 @@ describe('Git Utilities', () => {
       // Initialize a git repo
       const initProc = Bun.spawn(['git', 'init'], { cwd: tempDir });
       await initProc.exited;
-      
-      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], { cwd: tempDir });
+
+      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], {
+        cwd: tempDir,
+      });
       await configEmailProc.exited;
-      
-      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], { cwd: tempDir });
+
+      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], {
+        cwd: tempDir,
+      });
       await configNameProc.exited;
 
       // Create and commit initial file
       const testFile = path.join(tempDir, 'test.txt');
       await fs.writeFile(testFile, 'initial content');
-      
+
       const addProc = Bun.spawn(['git', 'add', '.'], { cwd: tempDir });
       await addProc.exited;
-      
+
       const commitProc = Bun.spawn(['git', 'commit', '-m', 'Initial commit'], { cwd: tempDir });
       await commitProc.exited;
 
       // Stage a new file
       const newFile = path.join(tempDir, 'new.txt');
       await fs.writeFile(newFile, 'new content');
-      
+
       const addNewProc = Bun.spawn(['git', 'add', newFile], { cwd: tempDir });
       await addNewProc.exited;
 
@@ -142,20 +154,24 @@ describe('Git Utilities', () => {
       // Initialize a git repo and create a branch
       const initProc = Bun.spawn(['git', 'init', '-b', 'main'], { cwd: tempDir });
       await initProc.exited;
-      
-      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], { cwd: tempDir });
+
+      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], {
+        cwd: tempDir,
+      });
       await configEmailProc.exited;
-      
-      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], { cwd: tempDir });
+
+      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], {
+        cwd: tempDir,
+      });
       await configNameProc.exited;
 
       // Create initial commit
       const testFile = path.join(tempDir, 'test.txt');
       await fs.writeFile(testFile, 'initial content');
-      
+
       const addProc = Bun.spawn(['git', 'add', '.'], { cwd: tempDir });
       await addProc.exited;
-      
+
       const commitProc = Bun.spawn(['git', 'commit', '-m', 'Initial commit'], { cwd: tempDir });
       await commitProc.exited;
 
@@ -185,20 +201,24 @@ describe('Git Utilities', () => {
       // Initialize a git repo
       const initProc = Bun.spawn(['git', 'init', '-b', 'main'], { cwd: tempDir });
       await initProc.exited;
-      
-      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], { cwd: tempDir });
+
+      const configEmailProc = Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], {
+        cwd: tempDir,
+      });
       await configEmailProc.exited;
-      
-      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], { cwd: tempDir });
+
+      const configNameProc = Bun.spawn(['git', 'config', 'user.name', 'Test User'], {
+        cwd: tempDir,
+      });
       await configNameProc.exited;
 
       // Create initial commit
       const testFile = path.join(tempDir, 'test.txt');
       await fs.writeFile(testFile, 'initial content');
-      
+
       const addProc = Bun.spawn(['git', 'add', '.'], { cwd: tempDir });
       await addProc.exited;
-      
+
       const commitProc = Bun.spawn(['git', 'commit', '-m', 'Initial commit'], { cwd: tempDir });
       await commitProc.exited;
 

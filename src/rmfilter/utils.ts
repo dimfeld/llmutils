@@ -144,8 +144,6 @@ export async function cachePromise<T extends Promise<any>>(
 
 export type FnCache<T extends (...args: any[]) => any> = Map<string, MaybeAwaited<ReturnType<T>>>;
 
-
-
 let cachedGitRepository: string | undefined;
 export async function getGitRepository() {
   if (!cachedGitRepository) {
@@ -157,7 +155,6 @@ export async function getGitRepository() {
 
   return cachedGitRepository;
 }
-
 
 export async function commitAll(message: string, cwd?: string): Promise<number> {
   const usingJj = await getUsingJj();

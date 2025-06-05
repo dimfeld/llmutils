@@ -3,7 +3,6 @@ import { getGitRoot } from '../common/git.js';
 import { debugLog } from '../logging.js';
 import * as path from 'node:path';
 
-
 /**
  * Fetches the content of a file at a specific Git reference (branch, commit hash, etc.).
  * @param filePath The path to the file, relative to the Git repository root.
@@ -41,7 +40,6 @@ export async function getFileContentAtRef(
   }
   return stdout;
 }
-
 
 /**
  * Gets the diff of a specific file between two Git references.
@@ -86,7 +84,6 @@ export async function getDiff(
   }
   return stdout;
 }
-
 
 /**
  * Gets the SHA of the current commit (HEAD for git, @- for jj).

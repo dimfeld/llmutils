@@ -16,7 +16,7 @@ dependencies:
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-05T08:01:01.004Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-05T08:03:34.438Z
+updatedAt: 2025-06-05T08:15:15.196Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -84,10 +84,10 @@ tasks:
       - prompt: >
           Create the new file `src/common/git.ts` for housing common Git
           utilities.
-        done: false
+        done: true
       - prompt: |
           Create a corresponding test file `src/common/git.test.ts`.
-        done: false
+        done: true
       - prompt: >
           Locate the `getGitRoot` function in `src/rmfilter/utils.ts`. Move its
           implementation and any related helper functions or cached variables
@@ -98,7 +98,7 @@ tasks:
           `src/common/git.test.ts` to cover its functionality thoroughly.
           Consider edge cases like being outside a Git repository or in a `jj`
           workspace.
-        done: false
+        done: true
       - prompt: >
           Locate the `getCurrentBranchName` function in `src/rmpr/git_utils.ts`
           (which itself calls `getCurrentGitBranch` and
@@ -110,7 +110,7 @@ tasks:
           `src/rmpr/git_utils.test.ts` are moved or rewritten in
           `src/common/git.test.ts`. Test scenarios should include standard Git
           branches, detached HEAD state, and Jujutsu branches.
-        done: false
+        done: true
       - prompt: >
           Locate the `hasUncommittedChanges` function in
           `src/rmfilter/utils.ts`. Move its implementation to
@@ -121,14 +121,14 @@ tasks:
           `src/common/git.test.ts`. Test with both Git and Jujutsu repositories,
           covering clean states, uncommitted working directory changes, and
           staged changes.
-        done: false
+        done: true
       - prompt: >
           Update all import statements for `getGitRoot`, `getCurrentBranchName`
           (and its constituents if they were exported), and
           `hasUncommittedChanges` across the entire codebase (including
           `src/rmfilter`, `src/rmpr`, `src/rmplan`, and other `src/common`
           files) to point to `src/common/git.ts`.
-        done: false
+        done: true
       - prompt: >
           Remove the original implementations of the moved Git utility functions
           from `src/rmfilter/utils.ts` and `src/rmpr/git_utils.ts`.
@@ -136,7 +136,7 @@ tasks:
           Clean up `src/rmfilter/utils.test.ts` and `src/rmpr/git_utils.test.ts`
           by removing tests for the moved functions, ensuring test coverage is
           maintained in `src/common/git.test.ts`.
-        done: false
+        done: true
   - title: Consolidate File System Utilities
     description: Review `src/rmfilter/utils.ts` and other modules for
       general-purpose file system utilities (e.g., `validatePath`,
@@ -506,6 +506,57 @@ tasks:
           For minor discrepancies, attempt to fix them as part of this step if
           feasible.
         done: false
+changedFiles:
+  - CLAUDE.md
+  - src/apply-llm-edits/apply.ts
+  - src/common/commands.ts
+  - src/common/git.test.ts
+  - src/common/git.ts
+  - src/common/github/pull_requests.ts
+  - src/rmfilter/additional_docs.ts
+  - src/rmfilter/config.ts
+  - src/rmfilter/instructions.ts
+  - src/rmfilter/rmfilter.ts
+  - src/rmfilter/utils.ts
+  - src/rmfind/rmfind.ts
+  - src/rmfix/rmfix.ts
+  - src/rmplan/actions.test.ts
+  - src/rmplan/actions.ts
+  - src/rmplan/cleanup.ts
+  - src/rmplan/commands/add.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/answer-pr.ts
+  - src/rmplan/commands/answerPr.ts
+  - src/rmplan/commands/cleanup.ts
+  - src/rmplan/commands/done.test.ts
+  - src/rmplan/commands/done.ts
+  - src/rmplan/commands/edit.ts
+  - src/rmplan/commands/extract.ts
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/list.test.ts
+  - src/rmplan/commands/list.ts
+  - src/rmplan/commands/next.ts
+  - src/rmplan/commands/prepare.ts
+  - src/rmplan/commands/show.test.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/commands/split.ts
+  - src/rmplan/commands/workspace.ts
+  - src/rmplan/configLoader.test.ts
+  - src/rmplan/configLoader.ts
+  - src/rmplan/display_utils.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/copy_paste.ts
+  - src/rmplan/executors/one-call.ts
+  - src/rmplan/plans.test.ts
+  - src/rmplan/plans.ts
+  - src/rmplan/process_markdown.ts
+  - src/rmplan/prompt.ts
+  - src/rmplan/rmplan.integration.test.ts
+  - src/rmplan/rmplan.ts
+  - src/rmplan/workspace/workspace_auto_selector.ts
+  - src/rmpr/git_utils.ts
+  - src/rmpr/main.ts
 rmfilter:
   - --
   - src/rmplan

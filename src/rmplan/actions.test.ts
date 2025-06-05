@@ -42,7 +42,7 @@ describe('markStepDone', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-actions-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
-    
+
     // Update getGitRoot mock to return tempDir
     getGitRootSpy.mockResolvedValue(tempDir);
   });
