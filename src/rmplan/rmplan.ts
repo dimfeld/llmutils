@@ -231,6 +231,15 @@ program
   });
 
 program
+  .command('renumber')
+  .description('Renumber plans with alphanumeric IDs or ID conflicts to sequential numeric IDs')
+  .option('--dry-run', 'Show what would be renumbered without making changes')
+  .action(async (options, command) => {
+    const { handleRenumber } = await import('./commands/renumber.js');
+    await handleRenumber(options, command).catch(handleCommandError);
+  });
+
+program
   .command('split <planArg>')
   .description(
     'Use LLM to intelligently split a large plan into smaller, phase-based plans with dependencies'

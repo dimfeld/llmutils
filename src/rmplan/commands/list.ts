@@ -150,9 +150,9 @@ export async function handleListCommand(options: any, command: any) {
 
     const priorityColor =
       plan.priority === 'urgent'
-        ? chalk.magenta
+        ? chalk.red
         : plan.priority === 'high'
-          ? chalk.red
+          ? chalk.magenta
           : plan.priority === 'medium'
             ? chalk.yellow
             : plan.priority === 'low'
