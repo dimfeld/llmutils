@@ -90,23 +90,7 @@ export async function handleRenumber(options: any, command: any) {
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
-      // Check if the oldest file (keeper) is at the wrong filename
-      const keeper = plansWithTimestamps[0];
-      const expectedPath = path.join(path.dirname(keeper.filePath), `${keeper.plan.id}.yml`);
-
-      if (keeper.filePath !== expectedPath) {
-        // The keeper needs to be moved to the correct filename
-        // We'll handle this by writing it to the correct location when processing
-        plansToRenumber.push({
-          filePath: keeper.filePath,
-          currentId: keeper.plan.id!,
-          plan: keeper.plan,
-          reason: 'conflict',
-          conflictsWith: keeper.plan.id!, // It keeps its own ID but moves files
-        });
-      }
-
-      // All others need renumbering
+      // All except the first need renumbering
       for (let i = 1; i < plansWithTimestamps.length; i++) {
         const { filePath, plan } = plansWithTimestamps[i];
         plansToRenumber.push({
@@ -159,79 +143,24 @@ export async function handleRenumber(options: any, command: any) {
     // Use the current max numeric ID to avoid conflicts during renumbering
     let nextId = maxNumericId;
 
-    // Process in two phases to avoid overwriting files
-    // Phase 1: Move files that need renumbering to temporary names
-    const tempMoves: Array<{ from: string; temp: string; final: string; plan: PlanSchema }> = [];
-
+    // Process each plan
     for (const planToRenumber of plansToRenumber) {
-      let newId: number;
+      // Generate new numeric ID
+      nextId++;
+      const newId = nextId;
 
-      // Check if this is a keeper that just needs to move files
-      if (
-        planToRenumber.reason === 'conflict' &&
-        planToRenumber.currentId === planToRenumber.conflictsWith &&
-        typeof planToRenumber.currentId === 'number'
-      ) {
-        // This plan keeps its ID, just moves to the correct filename
-        newId = planToRenumber.currentId;
-      } else {
-        // This plan needs a new ID
-        nextId++;
-        newId = nextId;
-      }
-
-      const oldPath = planToRenumber.filePath;
-      const dir = path.dirname(oldPath);
-      const finalPath = path.join(dir, `${newId}.yml`);
-
-      // Update the plan content
+      // Update the plan content with new ID
       const updatedPlan = {
         ...planToRenumber.plan,
         id: newId,
       };
 
-      // If the target file already exists and it's not the same file, we need to use a temp file
-      if (
-        oldPath !== finalPath &&
-        (await fs.promises
-          .access(finalPath)
-          .then(() => true)
-          .catch(() => false))
-      ) {
-        const tempPath = path.join(dir, `.tmp-${newId}-${Date.now()}.yml`);
-        tempMoves.push({ from: oldPath, temp: tempPath, final: finalPath, plan: updatedPlan });
-      } else {
-        // Direct move is safe
-        await writePlanFile(finalPath, updatedPlan);
-        if (oldPath !== finalPath) {
-          await fs.promises.unlink(oldPath);
-        }
+      // Write the updated plan back to the same file
+      await writePlanFile(planToRenumber.filePath, updatedPlan);
 
-        if (planToRenumber.currentId === newId) {
-          console.log(`  ✓ Moved ${path.basename(oldPath)} → ${path.basename(finalPath)}`);
-        } else {
-          console.log(`  ✓ Renamed ${planToRenumber.currentId} → ${newId}`);
-        }
-      }
-    }
-
-    // Phase 2: Move temp files to final locations
-    for (const move of tempMoves) {
-      await writePlanFile(move.temp, move.plan);
-      await fs.promises.unlink(move.from);
-    }
-
-    // Phase 3: Move all temp files to their final locations
-    for (const move of tempMoves) {
-      await fs.promises.rename(move.temp, move.final);
-      const originalId = path.basename(move.from, '.yml');
-      const newId = path.basename(move.final, '.yml');
-
-      if (originalId === newId) {
-        console.log(`  ✓ Moved ${path.basename(move.from)} → ${path.basename(move.final)}`);
-      } else {
-        console.log(`  ✓ Renamed ${originalId} → ${newId}`);
-      }
+      console.log(
+        `  ✓ Renumbered ${planToRenumber.currentId} → ${newId} in ${path.basename(planToRenumber.filePath)}`
+      );
     }
 
     console.log('\nRenumbering complete!');

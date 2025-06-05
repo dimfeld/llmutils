@@ -5,7 +5,7 @@ import os from 'node:os';
 import yaml from 'yaml';
 import { handleRenumber } from './renumber.js';
 import { type PlanSchema } from '../planSchema.js';
-import { writePlanFile } from '../plans.js';
+import { writePlanFile, readPlanFile } from '../plans.js';
 
 describe('rmplan renumber', () => {
   let tempDir: string;
@@ -47,6 +47,7 @@ describe('rmplan renumber', () => {
   const createPlan = async (
     id: string | number,
     title: string,
+    filename?: string,
     createdAt?: string
   ): Promise<void> => {
     const plan: PlanSchema = {
@@ -61,34 +62,37 @@ describe('rmplan renumber', () => {
       tasks: [],
     };
 
-    const filename = `${id}.yml`;
-    await writePlanFile(path.join(tasksDir, filename), plan);
+    // Use provided filename or default to id-based filename
+    const file = filename || `${id}.yml`;
+    await writePlanFile(path.join(tasksDir, file), plan);
   };
 
   test('renumbers alphanumeric IDs to numeric IDs', async () => {
     // Create plans with alphanumeric IDs
-    await createPlan('abc123', 'First plan');
-    await createPlan('def456', 'Second plan');
-    await createPlan(1, 'Existing numeric plan');
+    await createPlan('abc123', 'First plan', 'abc123.yml');
+    await createPlan('def456', 'Second plan', 'def456.yml');
+    await createPlan(1, 'Existing numeric plan', '1.yml');
 
     await handleRenumber({}, createMockCommand());
 
-    // Check that alphanumeric IDs were renumbered
+    // Check that files still exist with same names
     const files = await fs.promises.readdir(tasksDir);
-    expect(files).toContain('1.yml'); // Existing numeric plan
-    expect(files).toContain('2.yml'); // abc123 -> 2
-    expect(files).toContain('3.yml'); // def456 -> 3
-    expect(files).not.toContain('abc123.yml');
-    expect(files).not.toContain('def456.yml');
+    expect(files).toContain('1.yml');
+    expect(files).toContain('abc123.yml');
+    expect(files).toContain('def456.yml');
 
-    // Verify plan contents were updated
-    const plan2 = yaml.parse(await fs.promises.readFile(path.join(tasksDir, '2.yml'), 'utf-8'));
-    expect(plan2.id).toBe(2);
-    expect(plan2.title).toBe('First plan');
+    // Check that IDs were updated in file content
+    const plan1 = await readPlanFile(path.join(tasksDir, '1.yml'));
+    expect(plan1.id).toBe(1);
+    expect(plan1.title).toBe('Existing numeric plan');
 
-    const plan3 = yaml.parse(await fs.promises.readFile(path.join(tasksDir, '3.yml'), 'utf-8'));
-    expect(plan3.id).toBe(3);
-    expect(plan3.title).toBe('Second plan');
+    const planAbc = await readPlanFile(path.join(tasksDir, 'abc123.yml'));
+    expect(planAbc.id).toBe(2);
+    expect(planAbc.title).toBe('First plan');
+
+    const planDef = await readPlanFile(path.join(tasksDir, 'def456.yml'));
+    expect(planDef.id).toBe(3);
+    expect(planDef.title).toBe('Second plan');
   });
 
   test('resolves ID conflicts based on createdAt timestamp', async () => {
@@ -96,41 +100,25 @@ describe('rmplan renumber', () => {
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
 
-    // Create first plan with ID 1
-    await createPlan(1, 'Older plan', oldTime);
-
-    // Create second plan also with ID 1 (simulating a merge conflict)
-    // We need to rename the first file temporarily to create the conflict
-    await fs.promises.rename(path.join(tasksDir, '1.yml'), path.join(tasksDir, '1-old.yml'));
-    await createPlan(1, 'Newer plan', newTime);
-    await fs.promises.rename(
-      path.join(tasksDir, '1-old.yml'),
-      path.join(tasksDir, '1-conflict.yml')
-    );
-
-    // Update the plan in the conflict file to have the same ID
-    const conflictPlan = yaml.parse(
-      await fs.promises.readFile(path.join(tasksDir, '1-conflict.yml'), 'utf-8')
-    );
-    await fs.promises.writeFile(
-      path.join(tasksDir, '1-conflict.yml'),
-      yaml.stringify(conflictPlan)
-    );
+    // Create two plans with the same ID 1 but different filenames
+    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
 
     await handleRenumber({}, createMockCommand());
 
-    // Check results
+    // Check that files still exist
     const files = await fs.promises.readdir(tasksDir);
-    expect(files).toContain('1.yml'); // Older plan keeps ID 1
-    expect(files).toContain('2.yml'); // Newer plan gets ID 2
+    expect(files).toContain('1-old.yml');
+    expect(files).toContain('1-new.yml');
 
-    // Verify the correct plan kept ID 1
-    const plan1 = yaml.parse(await fs.promises.readFile(path.join(tasksDir, '1.yml'), 'utf-8'));
-    expect(plan1.title).toBe('Older plan');
+    // Check that IDs were updated correctly
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    expect(oldPlan.id).toBe(1); // Older plan keeps ID 1
+    expect(oldPlan.title).toBe('Older plan');
 
-    const plan2 = yaml.parse(await fs.promises.readFile(path.join(tasksDir, '2.yml'), 'utf-8'));
-    expect(plan2.title).toBe('Newer plan');
-    expect(plan2.id).toBe(2);
+    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
+    expect(newPlan.id).toBe(2); // Newer plan gets ID 2
+    expect(newPlan.title).toBe('Newer plan');
   });
 
   test('preserves relative order when renumbering', async () => {
@@ -143,42 +131,53 @@ describe('rmplan renumber', () => {
 
     await handleRenumber({}, createMockCommand());
 
-    // Check that numeric IDs come first, then alphabetic
+    // Check that all files are preserved
     const files = await fs.promises.readdir(tasksDir);
+    expect(files.length).toBe(5);
+
+    // Read all plans and check their new IDs
     const plans = await Promise.all(
       files.map(async (file) => {
-        const content = yaml.parse(await fs.promises.readFile(path.join(tasksDir, file), 'utf-8'));
-        return { id: content.id, title: content.title };
+        const plan = await readPlanFile(path.join(tasksDir, file));
+        return { id: plan.id, title: plan.title, filename: file };
       })
     );
 
-    // Sort by ID to check order
-    plans.sort((a, b) => a.id - b.id);
+    // Find the plans by their titles to verify correct ID assignment
+    const planA = plans.find((p) => p.title === 'A plan');
+    const planB = plans.find((p) => p.title === 'B plan');
+    const planC = plans.find((p) => p.title === 'C plan');
+    const plan3 = plans.find((p) => p.title === 'Numeric 3');
+    const plan5 = plans.find((p) => p.title === 'Numeric 5');
 
     // Original numeric IDs should be preserved (3, 5)
+    expect(plan3?.id).toBe(3);
+    expect(plan5?.id).toBe(5);
+
     // Alphanumeric IDs should be renumbered starting from 6 in alphabetical order
-    expect(plans[0]).toEqual({ id: 3, title: 'Numeric 3' });
-    expect(plans[1]).toEqual({ id: 5, title: 'Numeric 5' });
-    expect(plans[2]).toEqual({ id: 6, title: 'A plan' }); // a-first
-    expect(plans[3]).toEqual({ id: 7, title: 'B plan' }); // b-second
-    expect(plans[4]).toEqual({ id: 8, title: 'C plan' }); // c-third
+    expect(planA?.id).toBe(6); // a-first
+    expect(planB?.id).toBe(7); // b-second
+    expect(planC?.id).toBe(8); // c-third
+
+    // Filenames should be preserved
+    expect(planA?.filename).toBe('a-first.yml');
+    expect(planB?.filename).toBe('b-second.yml');
+    expect(planC?.filename).toBe('c-third.yml');
   });
 
   test('dry run does not make changes', async () => {
     await createPlan('test123', 'Test plan');
 
-    const originalFiles = await fs.promises.readdir(tasksDir);
+    // Read original content
+    const originalPlan = await readPlanFile(path.join(tasksDir, 'test123.yml'));
+    expect(originalPlan.id).toBe('test123');
 
     await handleRenumber({ dryRun: true }, createMockCommand());
 
-    const filesAfter = await fs.promises.readdir(tasksDir);
-    expect(filesAfter).toEqual(originalFiles);
-
-    // Verify the original file still exists with original content
-    const plan = yaml.parse(
-      await fs.promises.readFile(path.join(tasksDir, 'test123.yml'), 'utf-8')
-    );
-    expect(plan.id).toBe('test123');
+    // Verify the file still has original content
+    const planAfter = await readPlanFile(path.join(tasksDir, 'test123.yml'));
+    expect(planAfter.id).toBe('test123');
+    expect(planAfter).toEqual(originalPlan);
   });
 
   test('handles empty tasks directory', async () => {
@@ -202,8 +201,8 @@ describe('rmplan renumber', () => {
     await handleRenumber({}, createMockCommand());
 
     // Should renumber successfully
-    const files = await fs.promises.readdir(tasksDir);
-    expect(files).toContain('1.yml');
-    expect(files).not.toContain('nodate.yml');
+    const updatedPlan = await readPlanFile(path.join(tasksDir, 'nodate.yml'));
+    expect(updatedPlan.id).toBe(1);
+    expect(updatedPlan.title).toBe('Plan without date');
   });
 });
