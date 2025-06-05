@@ -11,7 +11,7 @@ import {
   prepareNextStep,
   preparePhase,
 } from './actions.ts';
-import { readPlanFile, writePlanFile } from './plans.ts';
+import { readPlanFile, resolvePlanFile, writePlanFile } from './plans.ts';
 import { loadEffectiveConfig } from './configLoader.ts';
 import {
   buildExecutorAndLog,
@@ -25,33 +25,11 @@ import { WorkspaceLock } from './workspace/workspace_lock.ts';
 import { findWorkspacesByTaskId } from './workspace/workspace_tracker.ts';
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
-  // Initialize currentPlanFile (absolute path)
-  let currentPlanFile = path.resolve(planFile);
-
+  let currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
   const config = await loadEffectiveConfig(globalCliOptions.config);
 
-  let parsed = path.parse(currentPlanFile);
-  if (parsed.ext === '.md' || parsed.ext === '.' || !parsed.ext) {
-    parsed.base = parsed.name + '.yml';
-    parsed.ext = 'yml';
-    currentPlanFile = path.join(parsed.dir, parsed.base);
-  }
-
-  // Verify the original plan file exists
-  try {
-    // Use stat to check if file exists
-    try {
-      await Bun.file(currentPlanFile).text();
-    } catch {
-      error(`Plan file ${currentPlanFile} does not exist or is empty.`);
-      process.exit(1);
-    }
-  } catch (err) {
-    error(`Error checking plan file: ${String(err)}`);
-    process.exit(1);
-  }
-
   if (!options['no-log']) {
+    const parsed = path.parse(currentPlanFile);
     let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
     openLogFile(logFilePath);
   }

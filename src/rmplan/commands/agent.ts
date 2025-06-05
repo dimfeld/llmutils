@@ -14,7 +14,7 @@ import {
   prepareNextStep,
   preparePhase,
 } from '../actions.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import {
   buildExecutorAndLog,
@@ -39,31 +39,11 @@ export async function handleAgentCommand(
 }
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
-  // Initialize currentPlanFile (absolute path)
-  let currentPlanFile = path.resolve(planFile);
-
+  let currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
   const config = await loadEffectiveConfig(globalCliOptions.config);
 
-  let parsed = path.parse(currentPlanFile);
-  if (parsed.ext === '.md' || parsed.ext === '.' || !parsed.ext) {
-    parsed.base = parsed.name + '.yml';
-    parsed.ext = 'yml';
-    currentPlanFile = path.join(parsed.dir, parsed.base);
-  }
-
-  // Verify the original plan file exists
-  try {
-    // Use stat to check if file exists
-    try {
-      await Bun.file(currentPlanFile).text();
-    } catch {
-      throw new Error(`Plan file ${currentPlanFile} does not exist or is empty.`);
-    }
-  } catch (err) {
-    throw new Error(`Error checking plan file: ${String(err)}`);
-  }
-
   if (!options['no-log']) {
+    const parsed = path.parse(currentPlanFile);
     let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
     openLogFile(logFilePath);
   }
