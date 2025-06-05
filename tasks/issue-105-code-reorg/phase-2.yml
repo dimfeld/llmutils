@@ -16,7 +16,7 @@ dependencies:
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-05T08:01:01.004Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-05T08:44:05.976Z
+updatedAt: 2025-06-05T08:50:32.967Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -421,20 +421,20 @@ tasks:
 
           Verify relative paths (`../`, `./`) and module aliases if any are
           used.
-        done: false
+        done: true
       - prompt: >
           After updating imports, run `bun run check` to perform a type check
           across the project.
 
           Resolve any type errors that arise, which are often indicative of
           incorrect import paths or API changes from refactoring.
-        done: false
+        done: true
       - prompt: >
           Run the full test suite using `bun test`.
 
           Address any test failures, as these can also indicate issues with
           module resolution or incorrect imports at runtime.
-        done: false
+        done: true
   - title: Comprehensive Testing
     description: Execute the entire test suite for the project. Perform manual
       verification of the main functionalities of `rmfilter`, `rmplan`, and
