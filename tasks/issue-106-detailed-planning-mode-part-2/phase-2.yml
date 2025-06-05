@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement `split` Command for Plan Decomposition
 goal: To provide users with a `split` command that can take a large, detailed
   plan file and, using an LLM, break it down into multiple, smaller,
@@ -7,10 +8,10 @@ details: This phase introduces the `split` command. This command is designed for
   to be divided into more manageable phases. The core of this command will
   involve prompting an LLM to reorganize the existing tasks into a multi-phase
   structure and then saving these phases as individual plan files.
-id: 1l52aj2-2
+id: 25
 status: done
 dependencies:
-  - 1l52aj2-1
+  - "24"
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:43:49.796Z
 createdAt: 2025-05-31T20:32:33.555Z
@@ -468,8 +469,6 @@ tasks:
           the existing `tempDir` and `afterEach` or `afterAll` hooks in
           `rmplan.test.ts` for cleanup.
         done: false
-rmfilter:
-  - src/rmplan
 changedFiles:
   - CLAUDE.md
   - src/rmplan/actions.ts
@@ -479,3 +478,5 @@ changedFiles:
   - src/rmplan/prompt.ts
   - src/rmplan/rmplan.test.ts
   - src/rmplan/rmplan.ts
+rmfilter:
+  - src/rmplan

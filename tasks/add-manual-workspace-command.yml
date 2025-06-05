@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement `rmplan workspace add` Command and Plan Association
 goal: To deliver a fully functional `rmplan workspace add` command that allows
   manual creation of workspaces, with optional linking to a plan file and
@@ -7,7 +8,7 @@ details: This phase focuses on adding the new command to the CLI, implementing
   with a plan. This includes updating the plan's status in both the source
   location and the new workspace. Existing workspace management and plan
   utilities will be leveraged and extended.
-id: 1m3whpf-1
+id: 27
 status: done
 dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
@@ -451,9 +452,6 @@ tasks:
           If there are other documentation files detailing CLI commands (e.g., a
           dedicated `docs/cli.md`), update them similarly.
         done: true
-rmfilter:
-  - src/rmplan
-  - src/common
 changedFiles:
   - README.md
   - src/rmplan/plans.test.ts
@@ -465,3 +463,6 @@ changedFiles:
   - src/rmplan/workspace/workspace_manager.ts
   - src/rmplan/workspace/workspace_tracker.ts
   - src/rmplan/workspace_add_command.test.ts
+rmfilter:
+  - src/rmplan
+  - src/common

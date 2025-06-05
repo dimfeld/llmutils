@@ -48,6 +48,8 @@ details: >
 
   -   Additional `rmfilter` arguments provided via the new 'r' option will be
   appended to the arguments passed to `fullRmfilterRun`.
+id: 10
+status: done
 tasks:
   - title: 1. Introduce Interactive Settings Loop Framework
     description: >
@@ -220,5 +222,3 @@ tasks:
           This ensures that user's choices for model and rmfilter arguments are
           respected in the subsequent processing steps.
         done: true
-id: 1j9md7y
-status: done

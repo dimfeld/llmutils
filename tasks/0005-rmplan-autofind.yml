@@ -12,6 +12,8 @@ details: >
   current plan task's details as a query. The files found by `rmfind` will then
   be automatically included in the list of relevant files, particularly when
   generating context for `rmfilter`.
+id: 6
+status: done
 tasks:
   - title: Define rmfind Core Interface and Initial File Structure
     description: Create the new core file for rmfind and define the basic function
@@ -309,5 +311,3 @@ tasks:
           prompt later in the `prepareNextStep` function (the part that runs if
           `rmfilter` is false).
         done: true
-id: 1j9md4g
-status: done

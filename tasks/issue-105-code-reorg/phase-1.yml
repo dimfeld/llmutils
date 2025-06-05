@@ -7,7 +7,7 @@ details: This phase focuses on refactoring the `src/rmplan` directory.
   Currently, `src/rmplan/rmplan.ts` likely handles multiple sub-commands. This
   work will involve identifying these commands and moving their respective logic
   into dedicated files. Shared utilities within `rmplan` will also be organized.
-id: 1rm0j7j-1
+id: 35
 status: done
 dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z

@@ -21,6 +21,8 @@ details: >
   `next` command. Existing utilities from `llmutils` like argument parsing, file
   handling, and subprocess execution (`logSpawn`) should be reused where
   possible.
+id: 20
+status: done
 tasks:
   - title: Setup Basic CLI Structure and Update Schema
     description: Initialize the `rmplan` command structure using `commander`, define
@@ -555,5 +557,3 @@ tasks:
           correct arguments: the task's files, `--bare`, and `--instructions
           @<tempfile>`.
         done: false
-id: 1j9mdrq
-status: done

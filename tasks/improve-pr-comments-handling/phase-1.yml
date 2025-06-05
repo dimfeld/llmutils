@@ -13,7 +13,7 @@ details: >
   these fields are null (e.g., for outdated comments or file-level comments),
   the system will need to use other information, such as the `diffHunk` content,
   for positioning, rather than falling back to `originalLine` fields.
-id: 1op1wrl-1
+id: 28
 status: pending
 dependencies: []
 planGeneratedAt: 2025-06-02T19:27:55.318Z

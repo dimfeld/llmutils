@@ -63,6 +63,8 @@ details: >
   The implementation will be broken down into tasks focusing on schema updates,
   ID generation, metadata initialization, and runtime state management, with
   tests for each new piece of functionality.
+id: 19
+status: done
 tasks:
   - title: 1. Schema and ID Generation
     description: Update `planSchema.ts` with all new metadata fields and create a
@@ -763,5 +765,3 @@ tasks:
           including those that use the `rmfilter` flag *within* an `rmpr` line
           (e.g., `--rmpr include-all rmfilter --grep foo`).
         done: true
-id: 1j9mdri
-status: done

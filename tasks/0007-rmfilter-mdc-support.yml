@@ -35,6 +35,8 @@ details: >
 
   We will use libraries like `fast-glob` for finding files, `gray-matter` for
   parsing frontmatter, and `micromatch` for glob matching.
+id: 4
+status: done
 tasks:
   - title: 1. Setup MDC Parsing and Discovery Utilities
     description: Create utility functions to find .mdc files in the specified
@@ -358,5 +360,3 @@ tasks:
           potentially updated `docsTag` and `rulesTag` content when assembling
           `finalOutput`.
         done: true
-id: 1j9md25
-status: done

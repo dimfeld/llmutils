@@ -55,6 +55,8 @@ details: >-
   maintaining existing functionality in local environments. The OSC52 read
   operation is the most complex and will be implemented with a fallback
   mechanism.
+id: 17
+status: done
 tasks:
   - title: 1. SSH Detection Utility
     description: Create a utility function to detect if the current session is an
@@ -683,5 +685,3 @@ tasks:
           tool's section if applicable (e.g., `rmfilter` or `apply-llm-edits`
           often involve clipboard).
         done: true
-id: 1j9mdp0
-status: done

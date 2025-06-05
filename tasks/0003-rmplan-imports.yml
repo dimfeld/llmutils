@@ -23,6 +23,8 @@ details: >
   4. If `--rmfilter` is *not* used, `rmplan` will perform the import analysis
   itself using `ImportWalker`, expand the file list, deduplicate it, and include
   the full list in the generated prompt context.
+id: 7
+status: done
 tasks:
   - title: Add CLI Options and Basic Logic Structure
     description: Add the new command-line options to `rmplan next` and set up the
@@ -291,5 +293,3 @@ tasks:
           standalone analysis) is reasonable (e.g., prints a warning and
           continues).
         done: true
-id: 1j9md73
-status: done

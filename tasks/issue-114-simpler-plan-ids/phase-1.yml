@@ -8,7 +8,7 @@ details: This phase focuses on establishing the foundation for numeric IDs. We
   with numeric IDs, and adapt the `add` command. Existing alphanumeric IDs will
   need to be handled gracefully during the transition, though new plans will
   exclusively use numeric IDs.
-id: 1rkuwy1-1
+id: 31
 status: done
 dependencies: []
 planGeneratedAt: 2025-06-04T07:59:19.941Z

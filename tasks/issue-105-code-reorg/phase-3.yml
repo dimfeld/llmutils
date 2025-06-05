@@ -4,11 +4,11 @@ goal: Ensure all project documentation is updated to reflect the new code
   organization and perform a final review of the changes.
 details: This final phase focuses on updating documentation and performing a
   holistic review of the refactoring work.
-id: 1rm0j7j-3
+id: 37
 status: pending
 priority: high
 dependencies:
-  - 1rm0j7j-2
+  - "36"
 planGeneratedAt: 2025-06-04T08:24:18.886Z
 createdAt: 2025-06-04T08:24:18.886Z
 updatedAt: 2025-06-04T08:24:18.886Z

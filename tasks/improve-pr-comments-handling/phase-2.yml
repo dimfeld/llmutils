@@ -13,11 +13,11 @@ details: >
   "before/after" context similar to `separate_context`). This dual approach aims
   to give the AI precise local context within the current file and historical
   context from the diff.
-id: 1op1wrl-2
+id: 29
 status: pending
 priority: high
 dependencies:
-  - 1op1wrl-1
+  - "28"
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 createdAt: 2025-06-02T18:37:07.724Z
 updatedAt: 2025-06-02T19:27:55.318Z

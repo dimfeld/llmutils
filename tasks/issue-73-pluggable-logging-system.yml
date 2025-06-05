@@ -36,6 +36,8 @@ details: >
   providing flexibility for future adapter implementations. The changes are
   broken down into iterative tasks to manage complexity and allow for testing at
   each stage.
+id: 16
+status: done
 tasks:
   - title: 1. Define LoggerAdapter Interface and AsyncLocalStorage Utilities
     description: Create the `LoggerAdapter` interface that all loggers will
@@ -312,5 +314,3 @@ tasks:
           public API are preserved, either through direct implementation,
           re-exporting from common modules, or by using the adapter pattern.
         done: true
-id: 1j9mdio
-status: done

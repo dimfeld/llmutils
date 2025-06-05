@@ -7,11 +7,11 @@ details: >
   With the core functionality implemented, this phase focuses on ensuring the
   changes are well-documented and the user-facing aspects, particularly LLM
   prompts, are polished.
-id: 1op1wrl-3
+id: 30
 status: pending
 priority: low
 dependencies:
-  - 1op1wrl-2
+  - "29"
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 createdAt: 2025-06-02T18:37:07.724Z
 updatedAt: 2025-06-02T19:27:55.318Z

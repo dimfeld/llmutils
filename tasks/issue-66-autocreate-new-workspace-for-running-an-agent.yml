@@ -29,6 +29,8 @@ details: >
   The implementation will be broken down into iterative tasks, focusing on
   building the core components first (configuration, workspace manager basics)
   and then integrating them into the existing `rmplan agent` workflow.
+id: 2
+status: done
 tasks:
   - title: 1. Define and Load Workspace Creation Configuration
     description: Update the `rmplan.yml` configuration schema to include options for
@@ -515,5 +517,3 @@ tasks:
 
           5.  Provide examples of how to configure and use this feature.
         done: true
-id: 1j9md1a
-status: done

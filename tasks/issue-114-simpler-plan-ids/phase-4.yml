@@ -5,11 +5,11 @@ goal: Ensure all `rmplan` functionalities are compatible with the new numeric ID
 details: This final phase focuses on ensuring the stability and correctness of
   the entire system after the preceding changes, and on providing clear
   documentation for users.
-id: 1rkuwy1-4
+id: 34
 status: pending
 dependencies:
-  - 1rkuwy1-2
-  - 1rkuwy1-3
+  - "32"
+  - "33"
 planGeneratedAt: 2025-06-04T07:59:19.941Z
 createdAt: 2025-06-04T07:59:19.941Z
 updatedAt: 2025-06-04T07:59:19.941Z

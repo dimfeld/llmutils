@@ -28,6 +28,8 @@ details: >
 
   The changes will primarily affect `src/rmpr/main.ts`,
   `src/common/github/pull_requests.ts`, and `src/rmpr/git_utils.ts`.
+id: 12
+status: done
 tasks:
   - title: 1. Add GitHub API Function to Reply to Review Thread
     description: >
@@ -298,5 +300,3 @@ tasks:
           if `options.commit` is true AND the commit operation itself was
           successful.
         done: true
-id: 1j9mdaq
-status: done

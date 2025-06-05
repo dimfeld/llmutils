@@ -24,6 +24,8 @@ details: >
   This will improve the usability of `answer-pr` by reducing the need to
   manually look up PR numbers when working on a feature branch corresponding to
   a PR.
+id: 15
+status: done
 tasks:
   - title: 1. Implement SCM Current Branch Detection Utilities
     description: Create utility functions to get the current branch name from Git
@@ -317,5 +319,3 @@ tasks:
           *   Test 5: Explicit PR ID, `getCurrentBranchName` returns `null` ->
           No warning, no prompt.
         done: true
-id: 1j9mdfn
-status: done

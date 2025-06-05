@@ -43,6 +43,8 @@ details: >-
   The implementation will be primarily in Node.js using Bun as the runtime. It
   will involve creating a new set of files under `src/rmfix/` and leveraging
   existing utilities from `src/common/` and `src/rmfilter/`.
+id: 21
+status: done
 tasks:
   - title: 1. Basic CLI Structure and Command Execution
     description: Set up the basic command-line interface for `rmfix` using
@@ -1550,5 +1552,3 @@ tasks:
             This means the `effectiveScriptArgs` in `prepareCommand` (which combines `scriptBaseArgs` and `initialCommandArgs` from user) should be what `npm run` passes after `--`.
             The current logic for `argsToExecute = ['run', initialCommand]; if (argsForNpmScript.length > 0) { argsToExecute.push('--', ...argsForNpmScript); }` where `argsForNpmScript` has been modified by injection seems correct.
         done: true
-id: 1j9mdvx
-status: done
