@@ -7,9 +7,10 @@ import { getGitRoot, logSpawn } from '../../rmfilter/utils.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { prepareNextStep } from '../actions.js';
 import { resolvePlanFile } from '../plans.js';
+import type { Command } from 'commander';
 
-export async function handleNextCommand(planFile: string, options: any) {
-  const globalOpts = options.parent.opts();
+export async function handleNextCommand(planFile: string, options: any, command: Command) {
+  const globalOpts = command.parent!.opts();
   // Find '--' in process.argv to get extra args for rmfilter
   const doubleDashIdx = process.argv.indexOf('--');
   const cmdLineRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];

@@ -101,9 +101,9 @@ program
   .option('--autofind', 'Automatically run rmfind to find relevant files based on the plan task')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
-  .action(async (planFile, options) => {
+  .action(async (planFile, options, command) => {
     const { handleNextCommand } = await import('./commands/next.js');
-    await handleNextCommand(planFile, options).catch(handleCommandError);
+    await handleNextCommand(planFile, options, command).catch(handleCommandError);
   });
 
 program
@@ -206,9 +206,9 @@ program
   .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
-  .action(async (yamlFile, options) => {
+  .action(async (yamlFile, options, command) => {
     const { handlePrepareCommand } = await import('./commands/prepare.js');
-    await handlePrepareCommand(yamlFile, options).catch(handleCommandError);
+    await handlePrepareCommand(yamlFile, options, command).catch(handleCommandError);
   });
 
 program
@@ -225,9 +225,9 @@ program
   .command('edit <planArg>')
   .description('Open a plan file in your editor. Can be a file path or plan ID.')
   .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')
-  .action(async (planArg, options) => {
+  .action(async (planArg, options, command) => {
     const { handleEditCommand } = await import('./commands/edit.js');
-    await handleEditCommand(planArg, options).catch(handleCommandError);
+    await handleEditCommand(planArg, options, command).catch(handleCommandError);
   });
 
 program
@@ -235,9 +235,9 @@ program
   .description(
     'Use LLM to intelligently split a large plan into smaller, phase-based plans with dependencies'
   )
-  .action(async (planArg, options) => {
+  .action(async (planArg, options, command) => {
     const { handleSplitCommand } = await import('./commands/split.js');
-    await handleSplitCommand(planArg, options).catch(handleCommandError);
+    await handleSplitCommand(planArg, options, command).catch(handleCommandError);
   });
 
 program
@@ -268,9 +268,9 @@ program
   )
   .option('--commit', 'Commit changes to jj/git', false)
   .option('--comment', 'Post replies to review threads after committing changes', false)
-  .action(async (prIdentifier, options) => {
+  .action(async (prIdentifier, options, command) => {
     const { handleAnswerPrCommand } = await import('./commands/answerPr.js');
-    await handleAnswerPrCommand(prIdentifier, options).catch(handleCommandError);
+    await handleAnswerPrCommand(prIdentifier, options, command).catch(handleCommandError);
   });
 
 // Create the workspace command
@@ -281,9 +281,9 @@ workspaceCommand
   .command('list')
   .description('List all workspaces and their lock status')
   .option('--repo <url>', 'Filter by repository URL (defaults to current repo)')
-  .action(async (options) => {
+  .action(async (options, command) => {
     const { handleWorkspaceListCommand } = await import('./commands/workspace.js');
-    await handleWorkspaceListCommand(options).catch(handleCommandError);
+    await handleWorkspaceListCommand(options, command).catch(handleCommandError);
   });
 
 // Add the 'add' subcommand to workspace
@@ -291,9 +291,9 @@ workspaceCommand
   .command('add [planIdentifier]')
   .description('Create a new workspace, optionally linked to a plan')
   .option('--id <workspaceId>', 'Specify a custom workspace ID')
-  .action(async (planIdentifier, options) => {
+  .action(async (planIdentifier, options, command) => {
     const { handleWorkspaceAddCommand } = await import('./commands/workspace.js');
-    await handleWorkspaceAddCommand(planIdentifier, options).catch(handleCommandError);
+    await handleWorkspaceAddCommand(planIdentifier, options, command).catch(handleCommandError);
   });
 
 await program.parseAsync(process.argv);

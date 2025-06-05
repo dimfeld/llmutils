@@ -12,14 +12,15 @@ import { generateAlphanumericPlanId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { createWorkspace } from '../workspace/workspace_manager.js';
 import type { PlanSchema } from '../planSchema.js';
+import type { Command } from 'commander';
 
 export async function handleWorkspaceCommand(args: any, options: any) {
   // This is the main workspace command handler that delegates to subcommands
   // The actual delegation logic will be handled in rmplan.ts when setting up the command
 }
 
-export async function handleWorkspaceListCommand(options: any) {
-  const globalOpts = options.parent.parent.opts();
+export async function handleWorkspaceListCommand(options: any, command: Command) {
+  const globalOpts = command.parent!.parent!.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const trackingFilePath = config.paths?.trackingFile;
 
@@ -38,8 +39,12 @@ export async function handleWorkspaceListCommand(options: any) {
   await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
 }
 
-export async function handleWorkspaceAddCommand(planIdentifier: string | undefined, options: any) {
-  const globalOpts = options.parent.parent.opts();
+export async function handleWorkspaceAddCommand(
+  planIdentifier: string | undefined,
+  options: any,
+  command: Command
+) {
+  const globalOpts = command.parent!.parent!.opts();
 
   // Load configuration
   const config = await loadEffectiveConfig(globalOpts.config);

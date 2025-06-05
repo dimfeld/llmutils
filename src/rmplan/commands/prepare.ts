@@ -9,9 +9,14 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { preparePhase } from '../actions.js';
 import { resolvePlanFile, findNextPlan } from '../plans.js';
 import { getCombinedTitleFromSummary } from '../display_utils.js';
+import type { Command } from 'commander';
 
-export async function handlePrepareCommand(yamlFile: string | undefined, options: any) {
-  const globalOpts = options.parent.opts();
+export async function handlePrepareCommand(
+  yamlFile: string | undefined,
+  options: any,
+  command: Command
+) {
+  const globalOpts = command.parent!.opts();
 
   // Find '--' in process.argv to get extra args for rmfilter
   const doubleDashIdx = process.argv.indexOf('--');

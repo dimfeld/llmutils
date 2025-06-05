@@ -17,9 +17,10 @@ import {
   type ExtractMarkdownToYamlOptions,
 } from '../process_markdown.js';
 import { fixYaml } from '../fix_yaml.js';
+import type { Command } from 'commander';
 
-export async function handleSplitCommand(planArg: string, options: any) {
-  const globalOpts = options.parent.opts();
+export async function handleSplitCommand(planArg: string, options: any, command: Command) {
+  const globalOpts = command.parent!.opts();
 
   // Step 1: Resolve the input plan file path
   const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);

@@ -4,10 +4,15 @@
 import { loadEffectiveConfig } from '../configLoader.js';
 import { handleRmprCommand } from '../../rmpr/main.js';
 import { DEFAULT_EXECUTOR } from '../constants.js';
+import type { Command } from 'commander';
 
-export async function handleAnswerPrCommand(prIdentifier: string | undefined, options: any) {
+export async function handleAnswerPrCommand(
+  prIdentifier: string | undefined,
+  options: any,
+  command: Command
+) {
   // Pass global options (like --debug) along with command-specific options
-  const globalOpts = options.parent.opts();
+  const globalOpts = command.parent!.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
   // Use executor from CLI options, fallback to config defaultExecutor, or fallback to the default executor
