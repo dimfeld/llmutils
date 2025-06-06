@@ -993,7 +993,7 @@ export async function preparePhase(
 async function gatherPhaseGenerationContext(
   phaseFilePath: string,
   projectPlanDir: string,
-  allPlans: Map<string | number, PlanSummary>,
+  allPlans: Map<string | number, PlanSchema & { filename: string }>,
   rmfilterArgs?: string[]
 ): Promise<PhaseGenerationContext> {
   try {

@@ -72,10 +72,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   const isReady = plan.id
     ? isPlanReady(
         {
-          id: plan.id,
-          status: actualStatus,
-          dependencies: plan.dependencies,
-          goal: plan.goal,
+          ...plan,
           filename: resolvedPlanFile,
         },
         allPlans

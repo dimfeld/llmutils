@@ -32,7 +32,7 @@ export type PlanSummary = {
 let cachedPlans = new Map<
   string,
   {
-    plans: Map<string | number, PlanSummary>;
+    plans: Map<string | number, PlanSchema & { filename: string }>;
     maxNumericId: number;
     duplicates: (string | number)[];
   }
@@ -49,7 +49,7 @@ export async function readAllPlans(
   directory: string,
   readCache = true
 ): Promise<{
-  plans: Map<string | number, PlanSummary>;
+  plans: Map<string | number, PlanSchema & { filename: string }>;
   maxNumericId: number;
   duplicates: (string | number)[];
 }> {
@@ -58,7 +58,7 @@ export async function readAllPlans(
     return existing;
   }
 
-  const plans = new Map<string | number, PlanSummary>();
+  const plans = new Map<string | number, PlanSchema & { filename: string }>();
   const promises: Promise<void>[] = [];
   let maxNumericId = 0;
   const duplicates: (string | number)[] = [];
@@ -99,27 +99,6 @@ export async function readAllPlans(
         }
       }
 
-      // Count tasks and steps, check for prompts
-      let taskCount = 0;
-      let stepCount = 0;
-      let hasPrompts = false;
-
-      if (plan.tasks) {
-        taskCount = plan.tasks.length;
-        for (const task of plan.tasks) {
-          if (task.steps) {
-            stepCount += task.steps.length;
-            // Check if any step has a prompt
-            if (
-              !hasPrompts &&
-              task.steps.some((step) => step.prompt && step.prompt.trim() !== '')
-            ) {
-              hasPrompts = true;
-            }
-          }
-        }
-      }
-
       // Check for duplicate IDs
       if (seenIds.has(idKey)) {
         if (!duplicates.includes(idKey)) {
@@ -130,19 +109,9 @@ export async function readAllPlans(
       }
 
       plans.set(idKey, {
-        id: summaryId,
-        title: plan.title,
-        status: plan.status,
-        priority: plan.priority,
-        dependencies: plan.dependencies,
-        goal: plan.goal,
+        ...plan,
+        id: summaryId, // Use the converted ID (numeric if it was a numeric string)
         filename: fullPath,
-        createdAt: plan.createdAt,
-        updatedAt: plan.updatedAt,
-        taskCount,
-        stepCount,
-        hasPrompts,
-        project: plan.project,
       });
     } catch (error) {
       if ((error as Error).name !== 'PlanFileError') {
@@ -324,7 +293,7 @@ export type PlanFilterOptions = {
 export async function findNextPlan(
   directory: string,
   options: PlanFilterOptions = { includePending: true }
-): Promise<PlanSummary | null> {
+): Promise<(PlanSchema & { filename: string }) | null> {
   const { plans } = await readAllPlans(directory);
 
   // Convert to array and filter based on options
@@ -433,8 +402,8 @@ export async function findNextPlan(
  * - All its dependencies have status 'done'
  */
 export function isPlanReady(
-  plan: PlanSummary,
-  allPlans: Map<string | number, PlanSummary>
+  plan: PlanSchema & { filename: string },
+  allPlans: Map<string | number, PlanSchema & { filename: string }>
 ): boolean {
   const status = plan.status || 'pending';
 
@@ -443,7 +412,7 @@ export function isPlanReady(
     return false;
   }
 
-  if (!plan.taskCount) {
+  if (!plan.tasks || plan.tasks.length === 0) {
     return false;
   }
 
@@ -468,9 +437,9 @@ export function isPlanReady(
 
 export async function collectDependenciesInOrder(
   planId: string | number,
-  allPlans: Map<string | number, PlanSummary>,
+  allPlans: Map<string | number, PlanSchema & { filename: string }>,
   visited: Set<string | number> = new Set()
-): Promise<PlanSummary[]> {
+): Promise<(PlanSchema & { filename: string })[]> {
   // Check for circular dependencies
   if (visited.has(planId)) {
     throw new Error(
@@ -486,7 +455,7 @@ export async function collectDependenciesInOrder(
   // Mark this plan as visited
   visited.add(planId);
 
-  const result: PlanSummary[] = [];
+  const result: (PlanSchema & { filename: string })[] = [];
 
   // First, collect all dependencies
   if (plan.dependencies && plan.dependencies.length > 0) {
