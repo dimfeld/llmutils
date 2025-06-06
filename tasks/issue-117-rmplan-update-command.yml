@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: rmplan update command
+goal: "Implement: rmplan update command"
+details: >-
+  This should take a plan and a description of the update to do (from the
+  command line or from the editor) and submit the existing plan and related
+  files along with the description to a model.
+
+
+  This is very similar to the generate  command except that it's including the
+  already generated tasks and asking the model to update them. 
+
+
+
+  Then go through the same yaml extract process and write the updated file back.
+id: 44
+status: pending
+issue:
+  - https://github.com/dimfeld/llmutils/issues/117
+createdAt: 2025-06-06T16:55:35.032Z
+updatedAt: 2025-06-06T16:55:35.032Z
+tasks: []
