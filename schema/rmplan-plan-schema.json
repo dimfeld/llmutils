@@ -30,7 +30,8 @@
           "enum": [
             "pending",
             "in_progress",
-            "done"
+            "done",
+            "cancelled"
           ],
           "default": "pending"
         },
