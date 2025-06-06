@@ -1,19 +1,18 @@
 import { streamText } from 'ai';
 import chalk from 'chalk';
-import * as fs from 'fs/promises';
 import path from 'path';
 import yaml from 'yaml';
+import { getGitRoot } from '../common/git.js';
 import { createModel } from '../common/model_factory.js';
+import { commitAll } from '../common/process.js';
 import { boldMarkdownHeaders, error, log, warn } from '../logging.js';
-import type { RmplanConfig } from './configSchema.js';
-import { generatePhaseId, generateAlphanumericPlanId, slugify } from './id_utils.js';
+import { resolveTasksDir, type RmplanConfig } from './configSchema.js';
+import { fixYaml } from './fix_yaml.js';
+import { generateAlphanumericId, generateNumericPlanId } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
 import { writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
-import { fixYaml } from './fix_yaml.js';
-import { commitAll } from '../common/process.js';
-import { getGitRoot } from '../common/git.js';
 
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
@@ -193,7 +192,9 @@ export async function extractMarkdownToYaml(
 
     // Set metadata fields, using stubPlanData if provided
     validatedPlan.id =
-      options.stubPlanData?.id || options.projectId || generateAlphanumericPlanId();
+      options.stubPlanData?.id ||
+      options.projectId ||
+      (await generateNumericPlanId(await resolveTasksDir(config)));
     const now = new Date().toISOString();
     // Use createdAt from stub plan if available, otherwise use current timestamp
     validatedPlan.createdAt = options.stubPlanData?.createdAt || now;
@@ -319,12 +320,6 @@ export async function saveMultiPhaseYaml(
   // Determine project ID, preferring stubPlanData.id
   let issueUrl: string | undefined;
 
-  const projectId = options.stubPlanData?.id || options.projectId || generateAlphanumericPlanId();
-
-  if (!quiet) {
-    log(chalk.blue('Using Project ID:'), projectId);
-  }
-
   // Check if there's actually just one phase. In this case we still do the multi-phase
   // code since it will bring in the goal and details from both the global and phase,
   // but we end up saving to a single file instead of a subdirectory.
@@ -343,10 +338,23 @@ export async function saveMultiPhaseYaml(
   let successfulWrites = 0;
   const failedPhases: number[] = [];
 
+  const tasksDir = await resolveTasksDir(config);
+  let nextId =
+    options.stubPlanData?.id || options.projectId || (await generateNumericPlanId(tasksDir));
+  if (typeof nextId !== 'number') {
+    // Force it to be a number
+    // TODO we can remove this later once the last vestiges of string IDs are gone
+    nextId = await generateNumericPlanId(tasksDir);
+  }
+
+  if (!quiet) {
+    log(chalk.blue('Using Project ID:'), nextId);
+  }
+
   // First pass: generate IDs and update dependencies
   for (let i = 0; i < parsedYaml.phases.length; i++) {
     const phase = parsedYaml.phases[i];
-    const phaseId = actuallyMultiphase ? generatePhaseId(String(projectId), i + 1) : projectId;
+    const phaseId = nextId + i;
     phaseIndexToId.set(i + 1, phaseId);
     phase.id = phaseId;
 
@@ -398,7 +406,9 @@ export async function saveMultiPhaseYaml(
 
         if (match) {
           const depIndex = parseInt(match[1], 10);
-          return phaseIndexToId.get(depIndex) || dep;
+          const mappedId = phaseIndexToId.get(depIndex);
+          // Convert numeric IDs to strings for dependencies
+          return mappedId !== undefined ? String(mappedId) : dep;
         }
         return dep;
       });

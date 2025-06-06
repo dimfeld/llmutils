@@ -1,14 +1,14 @@
 // Command handler for 'rmplan list'
 // Lists all plan files in the tasks directory
 
-import * as path from 'path';
 import chalk from 'chalk';
+import * as path from 'path';
 import { table } from 'table';
 import { log } from '../../logging.js';
-import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readAllPlans, isPlanReady, type PlanSummary } from '../plans.js';
+import { resolveTasksDir } from '../configSchema.js';
 import { getCombinedTitleFromSummary } from '../display_utils.js';
+import { isPlanReady, readAllPlans } from '../plans.js';
 
 export async function handleListCommand(options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -243,20 +243,4 @@ export async function handleListCommand(options: any, command: any) {
     log('');
     log(chalk.cyan('Run'), chalk.bold('rmplan renumber'), chalk.cyan('to fix duplicate IDs.'));
   }
-}
-
-/**
- * Resolves the tasks directory path, handling both absolute and relative paths.
- * If tasks path is relative, it's resolved relative to the git root.
- */
-async function resolveTasksDir(config: any): Promise<string> {
-  const gitRoot = (await getGitRoot()) || process.cwd();
-
-  if (config.paths?.tasks) {
-    return path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  }
-
-  return gitRoot;
 }

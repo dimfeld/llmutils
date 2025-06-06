@@ -1,5 +1,7 @@
+import * as path from 'path';
 import { z } from 'zod';
 import { DEFAULT_EXECUTOR } from './constants.js';
+import { getGitRoot } from '../common/git.js';
 
 /**
  * Schema for a single command to be executed after applying changes.
@@ -110,6 +112,22 @@ export const rmplanConfigSchema = z
 
 export type RmplanConfig = z.infer<typeof rmplanConfigSchema>;
 export type PostApplyCommand = z.infer<typeof postApplyCommandSchema>;
+
+/**
+ * Resolves the tasks directory path, handling both absolute and relative paths.
+ * If tasks path is relative, it's resolved relative to the git root.
+ */
+export async function resolveTasksDir(config: any): Promise<string> {
+  const gitRoot = (await getGitRoot()) || process.cwd();
+
+  if (config.paths?.tasks) {
+    return path.isAbsolute(config.paths.tasks)
+      ? config.paths.tasks
+      : path.join(gitRoot, config.paths.tasks);
+  }
+
+  return gitRoot;
+}
 
 /**
  * Returns a default configuration object.

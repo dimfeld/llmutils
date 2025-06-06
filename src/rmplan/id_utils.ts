@@ -42,10 +42,10 @@ export function slugify(text: string, maxLength = 50): string {
 }
 
 /**
- * Generate a unique alphanumeric plan ID (legacy format)
- * @returns A unique alphanumeric plan ID
+ * Generate a unique alphanumeric ID (legacy format)
+ * @returns A unique alphanumeric ID
  */
-export function generateAlphanumericPlanId(): string {
+export function generateAlphanumericId(): string {
   const randomStr = Math.floor(Math.random() * 46656)
     .toString(36)
     .padStart(2, '0')

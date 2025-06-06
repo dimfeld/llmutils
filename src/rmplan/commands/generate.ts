@@ -2,32 +2,32 @@
 // Generates planning prompt and context for a task
 
 import { input } from '@inquirer/prompts';
-import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'node:fs/promises';
+import { generateText } from 'ai';
 import chalk from 'chalk';
+import * as fs from 'node:fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import yaml from 'yaml';
 import * as clipboard from '../../common/clipboard.ts';
+import { getGitRoot } from '../../common/git.js';
 import { getInstructionsFromGithubIssue } from '../../common/github/issues.js';
+import { createModel } from '../../common/model_factory.ts';
+import { logSpawn } from '../../common/process.js';
 import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 import { waitForEnter } from '../../common/terminal.js';
-import { error, log, warn } from '../../logging.js';
-import { logSpawn } from '../../common/process.js';
-import { getGitRoot } from '../../common/git.js';
+import { log, warn } from '../../logging.js';
 import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../../rmpr/comment_options.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { planPrompt, simplePlanPrompt } from '../prompt.js';
-import { generateAlphanumericPlanId, generateNumericPlanId, slugify } from '../id_utils.js';
-import { readPlanFile, resolvePlanFile } from '../plans.js';
+import { resolveTasksDir } from '../configSchema.ts';
+import { resolvePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   extractMarkdownToYaml,
   findYamlStart,
   type ExtractMarkdownToYamlOptions,
 } from '../process_markdown.ts';
-import { createModel } from '../../common/model_factory.ts';
-import { generateText } from 'ai';
+import { planPrompt, simplePlanPrompt } from '../prompt.js';
 
 export async function handleGenerateCommand(options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -396,22 +396,6 @@ export async function handleGenerateCommand(options: any, command: any) {
   if (exitRes !== 0) {
     throw new Error(`rmfilter exited with code ${exitRes}`);
   }
-}
-
-/**
- * Resolves the tasks directory path, handling both absolute and relative paths.
- * If tasks path is relative, it's resolved relative to the git root.
- */
-async function resolveTasksDir(config: any): Promise<string> {
-  const gitRoot = (await getGitRoot()) || process.cwd();
-
-  if (config.paths?.tasks) {
-    return path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  }
-
-  return gitRoot;
 }
 
 async function generateSuggestedFilename(planText: string, config: any): Promise<string> {

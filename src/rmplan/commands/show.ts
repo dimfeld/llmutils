@@ -1,23 +1,22 @@
 // Command handler for 'rmplan show'
 // Displays detailed information about a plan
 
-import * as path from 'path';
 import chalk from 'chalk';
 import { log } from '../../logging.js';
-import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { resolveTasksDir } from '../configSchema.js';
 import {
-  resolvePlanFile,
-  readPlanFile,
-  readAllPlans,
-  findNextPlan,
-  isPlanReady,
-} from '../plans.js';
-import {
-  getCombinedTitle,
   getCombinedGoal,
+  getCombinedTitle,
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
+import {
+  findNextPlan,
+  isPlanReady,
+  readAllPlans,
+  readPlanFile,
+  resolvePlanFile,
+} from '../plans.js';
 
 export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -201,20 +200,4 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   }
 
   log('');
-}
-
-/**
- * Resolves the tasks directory path, handling both absolute and relative paths.
- * If tasks path is relative, it's resolved relative to the git root.
- */
-async function resolveTasksDir(config: any): Promise<string> {
-  const gitRoot = (await getGitRoot()) || process.cwd();
-
-  if (config.paths?.tasks) {
-    return path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  }
-
-  return gitRoot;
 }

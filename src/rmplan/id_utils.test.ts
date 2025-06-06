@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { generateAlphanumericPlanId, generatePhaseId, slugify, timestamp } from './id_utils.js';
+import { generateAlphanumericId, generatePhaseId, slugify, timestamp } from './id_utils.js';
 
 describe('slugify', () => {
   test('converts text to lowercase', () => {

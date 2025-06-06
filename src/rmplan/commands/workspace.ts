@@ -8,7 +8,7 @@ import { log, warn } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFile, readPlanFile, setPlanStatus } from '../plans.js';
-import { generateAlphanumericPlanId } from '../id_utils.js';
+import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { createWorkspace } from '../workspace/workspace_manager.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -66,7 +66,7 @@ export async function handleWorkspaceAddCommand(
     workspaceId = `task-${planIdentifier}`;
   } else {
     // Generate a random ID for standalone workspace
-    workspaceId = generateAlphanumericPlanId();
+    workspaceId = generateAlphanumericId();
   }
 
   // Resolve plan file if provided

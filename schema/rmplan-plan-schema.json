@@ -14,6 +14,94 @@
         "details": {
           "type": "string"
         },
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "in_progress",
+            "done"
+          ],
+          "default": "pending"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "urgent"
+          ]
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "issue": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "default": []
+        },
+        "pullRequest": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "default": []
+        },
+        "planGeneratedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "promptsGeneratedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "project": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "goal": {
+              "type": "string"
+            },
+            "details": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "goal",
+            "details"
+          ],
+          "additionalProperties": false
+        },
         "tasks": {
           "type": "array",
           "items": {
@@ -72,36 +160,6 @@
             "additionalProperties": false
           }
         },
-        "id": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "pending",
-            "in_progress",
-            "done"
-          ],
-          "default": "pending"
-        },
-        "priority": {
-          "type": "string",
-          "enum": [
-            "unknown",
-            "low",
-            "medium",
-            "high",
-            "urgent"
-          ],
-          "default": "unknown"
-        },
-        "dependencies": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
         "baseBranch": {
           "type": "string"
         },
@@ -118,58 +176,6 @@
             "type": "string"
           },
           "default": []
-        },
-        "issue": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "format": "uri"
-          },
-          "default": []
-        },
-        "pullRequest": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "format": "uri"
-          },
-          "default": []
-        },
-        "planGeneratedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "promptsGeneratedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "project": {
-          "type": "object",
-          "properties": {
-            "goal": {
-              "type": "string"
-            },
-            "title": {
-              "type": "string"
-            },
-            "details": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "goal",
-            "title",
-            "details"
-          ],
-          "additionalProperties": false
         }
       },
       "required": [

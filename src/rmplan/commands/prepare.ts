@@ -1,15 +1,14 @@
 // Command handler for 'rmplan prepare'
 // Generates detailed steps and prompts for a specific phase
 
-import * as path from 'path';
 import chalk from 'chalk';
-import { log } from '../../logging.js';
-import { getGitRoot } from '../../common/git.js';
-import { loadEffectiveConfig } from '../configLoader.js';
-import { preparePhase } from '../actions.js';
-import { resolvePlanFile, findNextPlan } from '../plans.js';
-import { getCombinedTitleFromSummary } from '../display_utils.js';
 import type { Command } from 'commander';
+import { log } from '../../logging.js';
+import { preparePhase } from '../actions.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { resolveTasksDir } from '../configSchema.js';
+import { getCombinedTitleFromSummary } from '../display_utils.js';
+import { findNextPlan, resolvePlanFile } from '../plans.js';
 
 export async function handlePrepareCommand(
   yamlFile: string | undefined,
@@ -63,20 +62,4 @@ export async function handlePrepareCommand(
     rmfilterArgs: rmfilterArgs,
     direct: options.direct,
   });
-}
-
-/**
- * Resolves the tasks directory path, handling both absolute and relative paths.
- * If tasks path is relative, it's resolved relative to the git root.
- */
-async function resolveTasksDir(config: any): Promise<string> {
-  const gitRoot = (await getGitRoot()) || process.cwd();
-
-  if (config.paths?.tasks) {
-    return path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  }
-
-  return gitRoot;
 }

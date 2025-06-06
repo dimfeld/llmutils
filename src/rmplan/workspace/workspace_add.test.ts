@@ -70,10 +70,10 @@ describe('workspace add command - integration', () => {
   });
 
   test('generateAlphanumericPlanId creates valid IDs', async () => {
-    const { generateAlphanumericPlanId } = await import('../id_utils.js');
+    const { generateAlphanumericId } = await import('../id_utils.js');
 
-    const id1 = generateAlphanumericPlanId();
-    const id2 = generateAlphanumericPlanId();
+    const id1 = generateAlphanumericId();
+    const id2 = generateAlphanumericId();
 
     // Should be different
     expect(id1).not.toBe(id2);
