@@ -5,14 +5,14 @@ goal: Ensure all project documentation is updated to reflect the new code
 details: This final phase focuses on updating documentation and performing a
   holistic review of the refactoring work.
 id: 37
-status: in_progress
+status: done
 priority: high
 dependencies:
   - "36"
 planGeneratedAt: 2025-06-04T08:24:18.886Z
 promptsGeneratedAt: 2025-06-06T06:16:05.626Z
 createdAt: 2025-06-04T08:24:18.886Z
-updatedAt: 2025-06-06T06:36:09.025Z
+updatedAt: 2025-06-06T06:39:51.043Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -144,19 +144,19 @@ tasks:
           re-exported by `src/common/env.ts`. Move the implementation of
           `loadEnv` from `src/rmplan/utils/env.ts` into `src/common/env.ts` to
           centralize it properly.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/rmplan.ts` and any other files that use `loadEnv`
           to import it directly from `src/common/env.ts`.
-        done: false
+        done: true
       - prompt: |
           Delete the now-redundant `src/rmplan/utils/env.ts` file.
-        done: false
+        done: true
       - prompt: >
           Perform a codebase-wide search for any other unused files, functions,
           or exports that are remnants of the refactoring. A tool like `knip` or
           `ts-prune` can be helpful here. Remove any identified dead code.
-        done: false
+        done: true
 changedFiles:
   - .cursor/rules/testing.mdc
   - CLAUDE.md
@@ -172,7 +172,6 @@ changedFiles:
   - src/common/cli.test.ts
   - src/common/cli.ts
   - src/common/clipboard.test.ts
-  - src/common/env.ts
   - src/common/file_finder.ts
   - src/common/fs.test.ts
   - src/common/fs.ts

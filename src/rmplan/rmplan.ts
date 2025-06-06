@@ -34,7 +34,7 @@
  */
 
 import { Command } from 'commander';
-import { loadEnv } from './utils/env.js';
+import { loadEnv } from '../common/env.js';
 import { setDebug } from '../common/process.js';
 import { executors } from './executors/index.js';
 import { handleCommandError } from './utils/commands.js';
