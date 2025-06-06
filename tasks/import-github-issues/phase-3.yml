@@ -8,13 +8,14 @@ details: This final phase is dedicated to quality assurance and usability. We
   create predictable test scenarios. Finally, we will update the project's
   documentation to include instructions and examples for the new command.
 id: 42
-status: pending
+status: in_progress
 priority: medium
 dependencies:
   - "41"
 planGeneratedAt: 2025-06-06T08:55:25.742Z
+promptsGeneratedAt: 2025-06-06T16:57:53.170Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T08:55:25.742Z
+updatedAt: 2025-06-06T16:58:15.987Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -46,22 +47,116 @@ tasks:
       path, the issue filtering logic, and the correctness of the generated stub
       plan files. Use a temporary directory for filesystem operations to ensure
       tests are isolated and repeatable.
-    files: []
-    steps: []
+    files:
+      - src/rmplan/commands/import.test.ts
+    steps:
+      - prompt: >
+          Create the test file `src/rmplan/commands/import.test.ts`. Set up the
+          basic structure with `describe`, `beforeEach`, and `afterEach` blocks.
+          Use the `ModuleMocker` from `src/testing.js` to manage mocks. In
+          `beforeEach`, mock the core dependencies: `common/github/issues.js`,
+          `rmplan/plans.js`, `rmplan/configLoader.js`, `common/git.js`,
+          `logging.js`, and `@inquirer/prompts`.
+        done: true
+      - prompt: >
+          Write a test case for importing a single issue using a positional
+          argument (e.g., `rmplan import 123`). Mock
+          `getInstructionsFromGithubIssue` to return predictable data. Assert
+          that `writePlanFile` is called with a correctly structured stub
+          `PlanSchema` object, verifying fields like `id`, `title`, `goal`,
+          `issue`, and `rmfilter`.
+        done: true
+      - prompt: >
+          Write a test case for the interactive mode that is triggered when
+          `rmplan import` is run without arguments. Mock `fetchAllOpenIssues` to
+          return a list of issues. Mock the `checkbox` prompt from
+          `@inquirer/prompts` to return an empty array, simulating no selection.
+          Assert that `fetchAllOpenIssues` was called and that the `checkbox`
+          prompt was displayed with the correct list of issues as choices.
+        done: true
+      - prompt: >
+          Implement a test to verify that already-imported issues are correctly
+          filtered out in interactive mode. Mock `readAllPlans` and
+          `readPlanFile` to simulate an existing plan that is linked to one of
+          the issue URLs. Mock `fetchAllOpenIssues` to return a list containing
+          both new and already-imported issues. Assert that the `checkbox`
+          prompt is called with a list of choices that only includes the new,
+          un-imported issues.
+        done: true
+      - prompt: >
+          Write a test for successfully importing multiple issues selected from
+          the interactive prompt. Mock the `checkbox` to return an array of
+          selected issue numbers. Assert that `getInstructionsFromGithubIssue`
+          is called for each selected issue. Verify that `writePlanFile` is
+          called the correct number of times with the appropriate data for each
+          new plan file.
+        done: true
+      - prompt: >
+          Add a test case to ensure the command prevents the creation of
+          duplicate plans. In a single-issue import scenario, mock the
+          plan-reading functions to indicate that the specified issue has
+          already been imported. Assert that `writePlanFile` is *not* called and
+          that a warning message is logged to the console.
+        done: true
   - title: Refactor Shared Logic Between `generate` and `import`
     description: Review the code in `generate.ts` and the new `import.ts`. Identify
       any duplicated logic related to processing GitHub issues or creating plan
       files and extract it into shared helper functions. This will improve
       maintainability and ensure consistency between the two commands.
-    files: []
-    steps: []
+    files:
+      - src/rmplan/plans.ts
+      - src/rmplan/issue_utils.ts
+      - src/rmplan/commands/import.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/plans.ts`, create and export a new function
+          `getImportedIssueUrls(tasksDir: string): Promise<Set<string>>`. Move
+          the implementation of the local function with the same name from
+          `src/rmplan/commands/import.ts` into this new shared function. This
+          will centralize the logic for identifying which issues have already
+          been turned into plans.
+        done: false
+      - prompt: >
+          Create a new file `src/rmplan/issue_utils.ts`. In this file, define
+          and export a new function `createStubPlanFromIssue`. This function
+          should accept the data returned from `getInstructionsFromGithubIssue`
+          and a new plan ID, and return a complete `PlanSchema` object for a
+          stub plan. Encapsulate all the logic for mapping issue fields to plan
+          fields, including title, goal, details, issue URL, and rmfilter
+          options.
+        done: false
+      - prompt: >
+          Refactor `src/rmplan/commands/import.ts`. Update the
+          `importSingleIssue` function to use the new `createStubPlanFromIssue`
+          helper from `issue_utils.ts`. Also, update the interactive mode logic
+          to import and use `getImportedIssueUrls` from `plans.ts` instead of
+          its local version.
+        done: false
   - title: Update Project Documentation
     description: Update the `README.md` or other relevant documentation files with a
       new section for the `rmplan import` command. The documentation should
       clearly explain its purpose, the two modes of operation (`--issue` flag
       vs. interactive), and provide practical usage examples.
-    files: []
-    steps: []
+    files:
+      - doc/import_command.md
+      - README.md
+    steps:
+      - prompt: >
+          Create a new documentation file at `doc/import_command.md`. In this
+          file, write a comprehensive section for the `rmplan import` command.
+          Explain its purpose of creating stub plans from GitHub issues. Detail
+          the two modes of operation: single-issue import (e.g., `rmplan import
+          123`) and interactive multi-issue import (`rmplan import`). Provide
+          clear usage examples for both modes and mention key features like
+          duplicate prevention.
+        done: false
+      - prompt: >
+          Open the main `README.md` file. Locate the section where CLI commands
+          are documented. Integrate the content from `doc/import_command.md`
+          into the `README.md` to ensure the new command is documented alongside
+          the existing ones. After integration, you can delete the temporary
+          `doc/import_command.md` file.
+        done: false
 rmfilter:
   - src/rmplan/commands/generate.ts
   - --with-imports
