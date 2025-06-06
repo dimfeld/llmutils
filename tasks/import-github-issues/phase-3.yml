@@ -8,14 +8,14 @@ details: This final phase is dedicated to quality assurance and usability. We
   create predictable test scenarios. Finally, we will update the project's
   documentation to include instructions and examples for the new command.
 id: 42
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - "41"
 planGeneratedAt: 2025-06-06T08:55:25.742Z
 promptsGeneratedAt: 2025-06-06T16:57:53.170Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T17:02:47.160Z
+updatedAt: 2025-06-06T17:06:29.620Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -149,15 +149,17 @@ tasks:
           123`) and interactive multi-issue import (`rmplan import`). Provide
           clear usage examples for both modes and mention key features like
           duplicate prevention.
-        done: false
+        done: true
       - prompt: >
           Open the main `README.md` file. Locate the section where CLI commands
           are documented. Integrate the content from `doc/import_command.md`
           into the `README.md` to ensure the new command is documented alongside
           the existing ones. After integration, you can delete the temporary
           `doc/import_command.md` file.
-        done: false
+        done: true
 changedFiles:
+  - README.md
+  - docs/import_command.md
   - src/rmplan/commands/import.ts
   - src/rmplan/issue_utils.ts
   - src/rmplan/plans.ts

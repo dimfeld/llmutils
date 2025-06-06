@@ -8,7 +8,7 @@ The scripts are:
 - `apply-llm-edits` - Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
 - `rmrun` - Send the rmfilter output to a language model and apply the edits back.
 - `rmfind` - Find relevant files to use with rmfilter
-- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, validating, splitting, and executing tasks. Includes multi-phase planning for breaking large features into incremental deliverables.
+- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, importing from GitHub issues, validating, splitting, and executing tasks. Includes multi-phase planning for breaking large features into incremental deliverables.
 - `rmpr` - Handle pull request comments and reviews with AI assistance
 
 All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
@@ -288,6 +288,7 @@ You can find the task plans for this repository under the "tasks" directory.
 
 - **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
 - **Plan Creation**: Use the `add` command to quickly create new plan stub files with metadata like dependencies and priority.
+- **Issue Import**: Use the `import` command to convert GitHub issues into structured plan files, with support for both single-issue and interactive multi-issue import modes, automatic duplicate prevention, and selective content inclusion.
 - **Plan Splitting**: Use the `split` command to intelligently break down large, complex plans into multiple phase-based plans using an LLM.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
@@ -342,6 +343,17 @@ rmplan generate --issue 28
 
 # Generate a plan and commit the resulting YAML file
 rmplan generate --plan plan.txt --commit -- src/**/*.ts
+
+# Import GitHub issues as stub plan files
+# Import a specific issue by number or URL
+rmplan import --issue 123
+rmplan import --issue https://github.com/owner/repo/issues/456
+
+# Interactive mode to select and import multiple issues
+rmplan import
+
+# Import with custom output location
+rmplan import --issue 123 --output custom-tasks/feature-123.yml
 
 # Extract and validate a plan from a file
 rmplan extract output.txt --output plan.yml
@@ -970,6 +982,10 @@ rmplan generate --plan tasks/0002-refactor-it.md -- src/api/**/*.ts
 
 # Or read the plan from a Github issue
 rmplan generate --issue 28 -- src/api/**/*.ts
+
+# Import GitHub issues as stub plans for later detailed planning
+rmplan import --issue 123
+rmplan import  # Interactive mode to select multiple issues
 
 # Read the plan from the clipboard, convert to YAML, and write to a file
 # Note: The `generate` command will do this automatically if you want.
