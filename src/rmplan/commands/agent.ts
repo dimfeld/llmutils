@@ -23,11 +23,13 @@ import {
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
 } from '../executors/index.js';
-import type { ExecutorCommonOptions } from '../executors/types.js';
+import type { Executor, ExecutorCommonOptions } from '../executors/types.js';
 import { createWorkspace } from '../workspace/workspace_manager.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
+import type { PlanSchema } from '../planSchema.js';
+import type { RmplanConfig } from '../configSchema.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -255,70 +257,14 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
         // Direct execution branch - bypass step-by-step loop
         try {
-          // Update plan status to in_progress
-          planData.status = 'in_progress';
-          planData.updatedAt = new Date().toISOString();
-          await writePlanFile(currentPlanFile, planData);
-
-          // Construct single prompt from goal and details
-          let directPrompt = '';
-          if (planData.goal) {
-            directPrompt += `# Goal\n\n${planData.goal}\n\n`;
-          }
-          if (planData.details) {
-            directPrompt += `## Details\n\n${planData.details}\n\n`;
-          }
-
-          if (!directPrompt.trim()) {
-            throw new Error('Plan has no goal or details to execute directly');
-          }
-
-          log(boldMarkdownHeaders('\n## Direct Execution\n'));
-          log('Using combined goal and details as prompt:');
-          log(directPrompt);
-
-          let hasError = false;
-
-          // Execute the consolidated prompt
-          try {
-            await executor.execute(directPrompt);
-          } catch (err) {
-            error('Execution step failed:', err);
-            hasError = true;
-          }
-
-          // Execute post-apply commands if configured and no error occurred
-          if (!hasError && config.postApplyCommands && config.postApplyCommands.length > 0) {
-            log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
-            for (const commandConfig of config.postApplyCommands) {
-              const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
-              if (!commandSucceeded) {
-                throw new Error(`Required command "${commandConfig.title}" failed`);
-              }
-            }
-          }
-
-          // Mark plan as complete only if no error occurred
-          if (!hasError) {
-            await setPlanStatus(currentPlanFile, 'done');
-            log('Plan executed directly and marked as complete!');
-
-            // Check if commit was requested
-            if (options.commit) {
-              const updatedPlanData = await readPlanFile(currentPlanFile);
-              const commitMessage = `feat(plan): Complete '${updatedPlanData.title || 'Untitled plan'}'`;
-              log(`Creating commit: ${commitMessage}`);
-              const exitCode = await commitAll(commitMessage, currentBaseDir);
-              if (exitCode === 0) {
-                log('Changes committed successfully');
-              } else {
-                throw new Error('Commit failed');
-              }
-            }
-          } else {
-            throw new Error('Direct execution failed');
-          }
-          return; // Exit early, bypassing the step-by-step loop
+          await executeStubPlan({
+            config,
+            baseDir: currentBaseDir,
+            planFilePath: currentPlanFile,
+            planData,
+            executor,
+            commit: options.commit,
+          });
         } catch (err) {
           error('Direct execution failed:', err);
           throw err;
@@ -433,7 +379,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         break;
       }
 
-      // ---> NEW: Execute Post-Apply Commands <---
       if (config.postApplyCommands && config.postApplyCommands.length > 0) {
         log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
         for (const commandConfig of config.postApplyCommands) {
@@ -449,7 +394,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           break;
         }
       }
-      // ---> END NEW SECTION <---
+
       let markResult;
       try {
         log(boldMarkdownHeaders('\n## Marking done\n'));
@@ -487,4 +432,86 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   } finally {
     await closeLogFile();
   }
+}
+
+async function executeStubPlan({
+  config,
+  baseDir,
+  planFilePath,
+  planData,
+  executor,
+  commit,
+}: {
+  config: RmplanConfig;
+  baseDir: string;
+  planFilePath: string;
+  planData: PlanSchema;
+  executor: Executor;
+  commit: boolean;
+}) {
+  // Update plan status to in_progress
+  planData.status = 'in_progress';
+  planData.updatedAt = new Date().toISOString();
+  await writePlanFile(planFilePath, planData);
+
+  // Construct single prompt from goal and details
+  let directPrompt = '';
+  if (planData.goal) {
+    directPrompt += `# Goal\n\n${planData.goal}\n\n`;
+  }
+  if (planData.details) {
+    directPrompt += `## Details\n\n${planData.details}\n\n`;
+  }
+
+  if (!directPrompt.trim()) {
+    throw new Error('Plan has no goal or details to execute directly');
+  }
+
+  log(boldMarkdownHeaders('\n## Execution\n'));
+  log('Using combined goal and details as prompt:');
+  log(directPrompt);
+
+  let hasError = false;
+
+  // Execute the consolidated prompt
+  try {
+    await executor.execute(directPrompt);
+  } catch (err) {
+    error('Execution step failed:', err);
+    hasError = true;
+  }
+
+  // Execute post-apply commands if configured and no error occurred
+  if (!hasError && config.postApplyCommands && config.postApplyCommands.length > 0) {
+    log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
+    for (const commandConfig of config.postApplyCommands) {
+      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
+      if (!commandSucceeded) {
+        throw new Error(`Required command "${commandConfig.title}" failed`);
+      }
+    }
+  }
+
+  // Mark plan as complete only if no error occurred
+  if (!hasError) {
+    await setPlanStatus(planFilePath, 'done');
+    log('Plan executed directly and marked as complete!');
+
+    // Check if commit was requested
+    if (commit) {
+      const commitMessage = [planData.title, planData.goal, planData.details]
+        .filter(Boolean)
+        .join('\n\n');
+      log(`Creating commit: ${commitMessage}`);
+      const exitCode = await commitAll(commitMessage, baseDir);
+      if (exitCode === 0) {
+        log('Changes committed successfully');
+      } else {
+        throw new Error('Commit failed');
+      }
+    }
+  } else {
+    throw new Error('Direct execution failed');
+  }
+  return; // Exit early, bypassing the step-by-step loop
 }
