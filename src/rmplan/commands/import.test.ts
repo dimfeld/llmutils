@@ -58,6 +58,10 @@ describe('handleImportCommand', () => {
       warn: mock(),
       error: mock(),
     }));
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(() => Promise.resolve([100, 101])),
+    }));
   });
 
   afterEach(async () => {
@@ -96,14 +100,28 @@ describe('handleImportCommand', () => {
       ),
     }));
 
+    // Mock the checkbox to return no selections to avoid actual import
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(() => Promise.resolve([])),
+    }));
+
     await handleImportCommand();
 
     const { fetchAllOpenIssues } = await import('../../common/github/issues.js');
     const { log } = await import('../../logging.js');
+    const { checkbox } = await import('@inquirer/prompts');
 
     expect(fetchAllOpenIssues).toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('Fetching all open issues...');
     expect(log).toHaveBeenCalledWith('Found 2 issues available for import (0 already imported).');
+    expect(checkbox).toHaveBeenCalledWith({
+      message: 'Select issues to import:',
+      choices: [
+        { name: '#100: Issue 100', value: 100 },
+        { name: '#101: Issue 101', value: 101 },
+      ],
+    });
+    expect(log).toHaveBeenCalledWith('No issues selected for import.');
   });
 
   test('should filter out already imported issues in interactive mode', async () => {
@@ -140,14 +158,70 @@ describe('handleImportCommand', () => {
       readPlanFile: mock(() => Promise.resolve(mockImportedPlan)),
     }));
 
+    // Mock the checkbox to return no selections to avoid actual import
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(() => Promise.resolve([])),
+    }));
+
     await handleImportCommand();
 
     const { fetchAllOpenIssues } = await import('../../common/github/issues.js');
     const { log } = await import('../../logging.js');
+    const { checkbox } = await import('@inquirer/prompts');
 
     expect(fetchAllOpenIssues).toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('Fetching all open issues...');
     expect(log).toHaveBeenCalledWith('Found 2 issues available for import (1 already imported).');
+
+    // Verify that only the non-imported issues are presented as choices
+    expect(checkbox).toHaveBeenCalledWith({
+      message: 'Select issues to import:',
+      choices: [
+        { name: '#101: Issue 101', value: 101 },
+        { name: '#102: Issue 102', value: 102 },
+      ],
+    });
+  });
+
+  test('should import selected issues in interactive mode', async () => {
+    // Mock fetchAllOpenIssues to return available issues
+    await moduleMocker.mock('../../common/github/issues.js', () => ({
+      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+      fetchAllOpenIssues: mock(() =>
+        Promise.resolve([
+          { html_url: 'https://github.com/owner/repo/issues/100', title: 'Issue 100', number: 100 },
+          { html_url: 'https://github.com/owner/repo/issues/101', title: 'Issue 101', number: 101 },
+        ])
+      ),
+    }));
+
+    // Mock the checkbox to return selected issues
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(() => Promise.resolve([100, 101])),
+    }));
+
+    await handleImportCommand();
+
+    const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
+    const { writePlanFile } = await import('../plans.js');
+    const { log } = await import('../../logging.js');
+    const { checkbox } = await import('@inquirer/prompts');
+
+    // Verify checkbox was called with correct choices
+    expect(checkbox).toHaveBeenCalledWith({
+      message: 'Select issues to import:',
+      choices: [
+        { name: '#100: Issue 100', value: 100 },
+        { name: '#101: Issue 101', value: 101 },
+      ],
+    });
+
+    // Verify each selected issue was imported
+    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('100', false);
+    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('101', false);
+    expect(writePlanFile).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalledWith('Importing 2 selected issues...');
+    expect(log).toHaveBeenCalledWith('Successfully imported 2 of 2 selected issues.');
   });
 
   test('should create stub plan file with correct metadata', async () => {

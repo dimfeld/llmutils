@@ -17,7 +17,7 @@ dependencies:
 planGeneratedAt: 2025-06-06T08:55:25.742Z
 promptsGeneratedAt: 2025-06-06T09:39:15.402Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T09:44:32.107Z
+updatedAt: 2025-06-06T09:47:39.838Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -120,23 +120,23 @@ tasks:
           In `src/rmplan/commands/import.ts`, within the interactive flow, check
           if the filtered list of issues is empty. If it is, log a message
           stating there are no new issues to import and exit gracefully.
-        done: false
+        done: true
       - prompt: >
           Use the `checkbox` prompt from `@inquirer/prompts` to display the list
           of importable issues. Format the `choices` for the prompt, where each
           choice's `name` is the issue number and title (e.g., `#123: A new
           feature`), and its `value` is the issue's `number`.
-        done: false
+        done: true
       - prompt: >
           Await the user's selection from the `checkbox` prompt. The result will
           be an array of issue numbers that the user has chosen to import.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/import.test.ts`, mock the `@inquirer/prompts`
           module. Configure the mocked `checkbox` function to resolve with a
           predefined array of issue numbers to simulate user interaction for
           your tests.
-        done: false
+        done: true
   - title: Orchestrate Multi-Issue Import Loop
     description: Modify the `import` command handler to loop through the issues
       selected by the user. For each selected issue, it will call the

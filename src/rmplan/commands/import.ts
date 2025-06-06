@@ -2,6 +2,7 @@
 // Import GitHub issues and create corresponding local plan files
 
 import * as path from 'node:path';
+import { checkbox } from '@inquirer/prompts';
 import { error, log, warn } from '../../logging.js';
 import { getInstructionsFromGithubIssue, fetchAllOpenIssues } from '../../common/github/issues.js';
 import { readAllPlans, writePlanFile, getMaxNumericPlanId, readPlanFile } from '../plans.js';
@@ -37,6 +38,72 @@ async function getImportedIssueUrls(tasksDir: string): Promise<Set<string>> {
   }
 
   return importedUrls;
+}
+
+/**
+ * Import a single issue and create a stub plan file
+ *
+ * @param issueSpecifier - The issue number or URL
+ * @param tasksDir - Directory where plan files are stored
+ * @returns True if import was successful, false if already imported
+ */
+async function importSingleIssue(issueSpecifier: string, tasksDir: string): Promise<boolean> {
+  log(`Importing issue: ${issueSpecifier}`);
+
+  // Get issue data using the existing helper function
+  const issueData = await getInstructionsFromGithubIssue(issueSpecifier, false);
+
+  // Check for duplicate plans by looking at existing plans
+  const { plans } = await readAllPlans(tasksDir);
+  const issueUrl = issueData.issue.html_url;
+
+  for (const planSummary of plans.values()) {
+    try {
+      // Read the full plan file to check the issue field
+      const planFile = await readPlanFile(planSummary.filename);
+      if (planFile.issue && planFile.issue.includes(issueUrl)) {
+        warn(`Issue ${issueUrl} has already been imported in plan: ${planSummary.filename}`);
+        return false;
+      }
+    } catch (err) {
+      // Skip files that can't be read
+      continue;
+    }
+  }
+
+  // Get the next available numeric ID
+  const maxId = await getMaxNumericPlanId(tasksDir);
+  const newId = maxId + 1;
+
+  // Create stub plan with metadata but empty tasks
+  const stubPlan: PlanSchema = {
+    id: newId,
+    title: issueData.issue.title,
+    goal: `Implement: ${issueData.issue.title}`,
+    details: issueData.plan,
+    status: 'pending',
+    issue: [issueUrl],
+    tasks: [], // Empty tasks array - this is the "stub" part
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Add rmfilter arguments if they were parsed from the issue
+  if (issueData.rmprOptions?.rmfilter) {
+    stubPlan.rmfilter = issueData.rmprOptions.rmfilter;
+  }
+
+  // Generate filename from the suggested name but with .yml extension
+  const filename = issueData.suggestedFileName.replace(/\.md$/, '.yml');
+  const fullPath = path.join(tasksDir, filename);
+
+  // Write the stub plan file
+  await writePlanFile(fullPath, stubPlan);
+
+  log(`Created stub plan file: ${fullPath}`);
+  log(`Plan ID: ${newId}`);
+
+  return true;
 }
 
 /**
@@ -82,63 +149,45 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     log(
       `Found ${availableIssues.length} issues available for import (${allIssues.length - availableIssues.length} already imported).`
     );
-    // TODO: Add interactive selection logic in next phase
+
+    // Create choices for the checkbox prompt
+    const choices = availableIssues.map((issue) => ({
+      name: `#${issue.number}: ${issue.title}`,
+      value: issue.number,
+    }));
+
+    // Show interactive checkbox prompt
+    const selectedIssueNumbers = await checkbox({
+      message: 'Select issues to import:',
+      choices,
+    });
+
+    if (selectedIssueNumbers.length === 0) {
+      log('No issues selected for import.');
+      return;
+    }
+
+    log(`Importing ${selectedIssueNumbers.length} selected issues...`);
+
+    // Import each selected issue
+    let successCount = 0;
+    for (const issueNumber of selectedIssueNumbers) {
+      const success = await importSingleIssue(issueNumber.toString(), tasksDir);
+      if (success) {
+        successCount++;
+      }
+    }
+
+    log(`Successfully imported ${successCount} of ${selectedIssueNumbers.length} selected issues.`);
+    if (successCount > 0) {
+      log('Use "rmplan generate" to add tasks to these plans.');
+    }
     return;
   }
 
-  log(`Importing issue: ${issueSpecifier}`);
-
-  // Get issue data using the existing helper function
-  const issueData = await getInstructionsFromGithubIssue(issueSpecifier, false);
-
-  // Check for duplicate plans by looking at existing plans
-  const { plans } = await readAllPlans(tasksDir);
-  const issueUrl = issueData.issue.html_url;
-
-  for (const planSummary of plans.values()) {
-    try {
-      // Read the full plan file to check the issue field
-      const planFile = await readPlanFile(planSummary.filename);
-      if (planFile.issue && planFile.issue.includes(issueUrl)) {
-        warn(`Issue ${issueUrl} has already been imported in plan: ${planSummary.filename}`);
-        return;
-      }
-    } catch (err) {
-      // Skip files that can't be read
-      continue;
-    }
+  // Single issue import mode
+  const success = await importSingleIssue(issueSpecifier, tasksDir);
+  if (success) {
+    log('Use "rmplan generate" to add tasks to this plan.');
   }
-
-  // Get the next available numeric ID
-  const maxId = await getMaxNumericPlanId(tasksDir);
-  const newId = maxId + 1;
-
-  // Create stub plan with metadata but empty tasks
-  const stubPlan: PlanSchema = {
-    id: newId,
-    title: issueData.issue.title,
-    goal: `Implement: ${issueData.issue.title}`,
-    details: issueData.plan,
-    status: 'pending',
-    issue: [issueUrl],
-    tasks: [], // Empty tasks array - this is the "stub" part
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  // Add rmfilter arguments if they were parsed from the issue
-  if (issueData.rmprOptions?.rmfilter) {
-    stubPlan.rmfilter = issueData.rmprOptions.rmfilter;
-  }
-
-  // Generate filename from the suggested name but with .yml extension
-  const filename = issueData.suggestedFileName.replace(/\.md$/, '.yml');
-  const fullPath = path.join(tasksDir, filename);
-
-  // Write the stub plan file
-  await writePlanFile(fullPath, stubPlan);
-
-  log(`Created stub plan file: ${fullPath}`);
-  log(`Plan ID: ${newId}`);
-  log('Use "rmplan generate" to add tasks to this plan.');
 }
