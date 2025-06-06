@@ -5,8 +5,9 @@ import * as path from 'path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import yaml from 'yaml';
+import { select } from '@inquirer/prompts';
 import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
-import { logSpawn } from '../../common/process.js';
+import { commitAll, logSpawn } from '../../common/process.js';
 import { getGitRoot } from '../../common/git.js';
 import {
   executePostApplyCommand,
@@ -15,18 +16,20 @@ import {
   prepareNextStep,
   preparePhase,
 } from '../actions.js';
-import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFile, setPlanStatus, writePlanFile } from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
 } from '../executors/index.js';
-import type { ExecutorCommonOptions } from '../executors/types.js';
+import type { Executor, ExecutorCommonOptions } from '../executors/types.js';
 import { createWorkspace } from '../workspace/workspace_manager.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
+import type { PlanSchema } from '../planSchema.js';
+import type { RmplanConfig } from '../configSchema.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -193,32 +196,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   }
 
-  // Check if the plan needs preparation
-  try {
-    const planData = await readPlanFile(currentPlanFile);
-
-    // Check if prompts have been generated
-    const needsPreparation =
-      !planData.promptsGeneratedAt ||
-      planData.tasks.some((task) => !task.steps || task.steps.length === 0);
-
-    if (needsPreparation) {
-      log('Plan needs preparation. Generating detailed steps and prompts...');
-      try {
-        await preparePhase(currentPlanFile, config, {
-          model: options.model,
-          direct: options.direct,
-        });
-        log('Successfully prepared the plan with detailed steps.');
-      } catch (err) {
-        throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
-      }
-    }
-  } catch (err) {
-    warn('Could not check if plan needs preparation:', err);
-    // Continue anyway - the main loop will catch any issues
-  }
-
   // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
   const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
   const agentExecutionModel =
@@ -230,6 +207,75 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+
+  // Check if the plan needs preparation
+  try {
+    const planData = await readPlanFile(currentPlanFile);
+
+    // Check if prompts have been generated
+    const needsPreparation =
+      !planData.promptsGeneratedAt ||
+      planData.tasks.some((task) => !task.steps || task.steps.length === 0);
+
+    if (needsPreparation) {
+      let shouldGenerateSteps = true; // Default behavior
+
+      if (!options.nonInteractive) {
+        // Interactive mode - ask user what to do
+        const choice = await select({
+          message: 'This plan lacks detailed steps. How would you like to proceed?',
+          choices: [
+            {
+              name: 'Generate detailed steps first',
+              value: 'generate',
+              description: 'Create step-by-step instructions before execution',
+            },
+            {
+              name: 'Run the simple plan directly',
+              value: 'direct',
+              description: 'Execute using just the high-level goal and details',
+            },
+          ],
+        });
+
+        shouldGenerateSteps = choice === 'generate';
+      }
+
+      if (shouldGenerateSteps) {
+        log('Plan needs preparation. Generating detailed steps and prompts...');
+        try {
+          await preparePhase(currentPlanFile, config, {
+            model: options.model,
+            direct: options.direct,
+          });
+          log('Successfully prepared the plan with detailed steps.');
+        } catch (err) {
+          throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
+        }
+      } else {
+        log('Proceeding to execute plan directly using high-level description.');
+
+        // Direct execution branch - bypass step-by-step loop
+        try {
+          await executeStubPlan({
+            config,
+            baseDir: currentBaseDir,
+            planFilePath: currentPlanFile,
+            planData,
+            executor,
+            commit: options.commit,
+          });
+          return;
+        } catch (err) {
+          error('Direct execution failed:', err);
+          throw err;
+        }
+      }
+    }
+  } catch (err) {
+    warn('Could not check if plan needs preparation:', err);
+    // Continue anyway - the main loop will catch any issues
+  }
 
   log('Starting agent to execute plan:', currentPlanFile);
   try {
@@ -334,7 +380,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         break;
       }
 
-      // ---> NEW: Execute Post-Apply Commands <---
       if (config.postApplyCommands && config.postApplyCommands.length > 0) {
         log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
         for (const commandConfig of config.postApplyCommands) {
@@ -350,7 +395,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           break;
         }
       }
-      // ---> END NEW SECTION <---
+
       let markResult;
       try {
         log(boldMarkdownHeaders('\n## Marking done\n'));
@@ -387,5 +432,74 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   } finally {
     await closeLogFile();
+  }
+}
+
+async function executeStubPlan({
+  config,
+  baseDir,
+  planFilePath,
+  planData,
+  executor,
+  commit,
+}: {
+  config: RmplanConfig;
+  baseDir: string;
+  planFilePath: string;
+  planData: PlanSchema;
+  executor: Executor;
+  commit: boolean;
+}) {
+  // Update plan status to in_progress
+  planData.status = 'in_progress';
+  planData.updatedAt = new Date().toISOString();
+  await writePlanFile(planFilePath, planData);
+
+  // Construct single prompt from goal and details
+  let directPrompt = '';
+  if (planData.goal) {
+    directPrompt += `# Goal\n\n${planData.goal}\n\n`;
+  }
+  if (planData.details) {
+    directPrompt += `## Details\n\n${planData.details}\n\n`;
+  }
+
+  if (!directPrompt.trim()) {
+    throw new Error('Plan has no goal or details to execute directly');
+  }
+
+  log(boldMarkdownHeaders('\n## Execution\n'));
+  log('Using combined goal and details as prompt:');
+  log(directPrompt);
+
+  // Execute the consolidated prompt
+  await executor.execute(directPrompt);
+
+  // Execute post-apply commands if configured and no error occurred
+  if (config.postApplyCommands && config.postApplyCommands.length > 0) {
+    log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
+    for (const commandConfig of config.postApplyCommands) {
+      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
+      if (!commandSucceeded) {
+        throw new Error(`Required command "${commandConfig.title}" failed`);
+      }
+    }
+  }
+
+  // Mark plan as complete only if no error occurred
+  await setPlanStatus(planFilePath, 'done');
+  log('Plan executed directly and marked as complete!');
+
+  // Check if commit was requested
+  if (commit) {
+    const commitMessage = [planData.title, planData.goal, planData.details]
+      .filter(Boolean)
+      .join('\n\n');
+    const exitCode = await commitAll(commitMessage, baseDir);
+    if (exitCode === 0) {
+      log('Changes committed successfully');
+    } else {
+      throw new Error('Commit failed');
+    }
   }
 }
