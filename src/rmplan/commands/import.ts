@@ -32,7 +32,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   // Get configuration and tasks directory
   const config = await loadEffectiveConfig();
   const gitRoot = (await getGitRoot()) || process.cwd();
-  
+
   let tasksDir: string;
   if (config.paths?.tasks) {
     tasksDir = path.isAbsolute(config.paths.tasks)
@@ -44,11 +44,11 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
 
   // Get issue data using the existing helper function
   const issueData = await getInstructionsFromGithubIssue(issueSpecifier);
-  
+
   // Check for duplicate plans by looking at existing plans
   const { plans } = await readAllPlans(tasksDir);
   const issueUrl = issueData.issue.html_url;
-  
+
   for (const planSummary of plans.values()) {
     try {
       // Read the full plan file to check the issue field
@@ -62,11 +62,11 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
       continue;
     }
   }
-  
+
   // Get the next available numeric ID
   const maxId = await getMaxNumericPlanId(tasksDir);
   const newId = maxId + 1;
-  
+
   // Create stub plan with metadata but empty tasks
   const stubPlan: PlanSchema = {
     id: newId,
@@ -79,19 +79,19 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  
+
   // Add rmfilter arguments if they were parsed from the issue
   if (issueData.rmprOptions?.rmfilter) {
     stubPlan.rmfilter = issueData.rmprOptions.rmfilter;
   }
-  
+
   // Generate filename from the suggested name but with .yml extension
   const filename = issueData.suggestedFileName.replace(/\.md$/, '.yml');
   const fullPath = path.join(tasksDir, filename);
-  
+
   // Write the stub plan file
   await writePlanFile(fullPath, stubPlan);
-  
+
   log(`Created stub plan file: ${fullPath}`);
   log(`Plan ID: ${newId}`);
   log('Use "rmplan generate" to add tasks to this plan.');

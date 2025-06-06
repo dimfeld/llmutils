@@ -66,20 +66,20 @@ describe('handleImportCommand', () => {
 
   test('should import a single issue when --issue flag is provided', async () => {
     await handleImportCommand(undefined, { issue: '123' });
-    
+
     const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
     const { writePlanFile } = await import('../plans.js');
-    
+
     expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('123');
     expect(writePlanFile).toHaveBeenCalled();
   });
 
   test('should import a single issue when issue argument is provided', async () => {
     await handleImportCommand('456');
-    
+
     const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
     const { writePlanFile } = await import('../plans.js');
-    
+
     expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('456');
     expect(writePlanFile).toHaveBeenCalled();
   });
@@ -92,12 +92,12 @@ describe('handleImportCommand', () => {
 
   test('should create stub plan file with correct metadata', async () => {
     await handleImportCommand('123');
-    
+
     const { writePlanFile } = await import('../plans.js');
-    
+
     expect(writePlanFile).toHaveBeenCalled();
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-    
+
     expect(filePath).toContain('issue-123-test-issue.yml');
     expect(planData).toMatchObject({
       id: 6, // maxId + 1
@@ -116,13 +116,11 @@ describe('handleImportCommand', () => {
   test('should avoid creating duplicate plans for existing issues', async () => {
     // Setup mock to return a plan with the same issue URL
     const mockPlansWithDuplicate = {
-      plans: new Map([
-        [1, { filename: '/test/existing-plan.yml' }],
-      ]),
+      plans: new Map([[1, { filename: '/test/existing-plan.yml' }]]),
       maxNumericId: 5,
       duplicates: [],
     };
-    
+
     const mockExistingPlan: PlanSchema = {
       id: 1,
       goal: 'Existing plan',
@@ -139,13 +137,15 @@ describe('handleImportCommand', () => {
     }));
 
     await handleImportCommand('123');
-    
+
     const { writePlanFile } = await import('../plans.js');
     const { warn } = await import('../../logging.js');
-    
+
     expect(writePlanFile).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('Issue https://github.com/owner/repo/issues/123 has already been imported')
+      expect.stringContaining(
+        'Issue https://github.com/owner/repo/issues/123 has already been imported'
+      )
     );
   });
 });

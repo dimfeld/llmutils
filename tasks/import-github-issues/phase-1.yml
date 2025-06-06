@@ -16,7 +16,7 @@ dependencies: []
 planGeneratedAt: 2025-06-06T08:55:25.742Z
 promptsGeneratedAt: 2025-06-06T08:59:58.038Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T09:02:44.299Z
+updatedAt: 2025-06-06T09:06:50.224Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -93,7 +93,7 @@ tasks:
           `src/common/github/issues.ts`. Pass the resolved issue specifier to
           it. This function will handle fetching the issue, prompting for
           content selection, and parsing `rmpr` options.
-        done: false
+        done: true
       - prompt: >
           Implement a check to prevent creating duplicate plans. Before
           proceeding with an import, use `readAllPlans` from
@@ -101,7 +101,7 @@ tasks:
           and check if any plan's `issue` field contains the URL of the issue
           being imported. If a match is found, log a warning and exit gracefully
           without creating a new file.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/import.test.ts`, write a test for the
           single-issue import logic. Use the `ModuleMocker` to mock
@@ -109,7 +109,7 @@ tasks:
           that the handler correctly receives and processes this data. Also, add
           a test case to ensure the duplicate check works by mocking
           `readAllPlans` to return a plan that contains the target issue URL.
-        done: false
+        done: true
   - title: Implement Stub Plan File Creation
     description: Create a function that takes the processed issue data and generates
       a valid, minimal "stub" plan file. This plan will include the issue's
@@ -150,9 +150,13 @@ tasks:
           including the correct ID, metadata, and empty task list.
         done: false
 changedFiles:
+  - src/common/model_factory.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/import.test.ts
   - src/rmplan/commands/import.ts
+  - src/rmplan/executors/copy_paste.ts
+  - src/rmplan/executors/one-call.ts
+  - src/rmplan/llm_utils/run_and_apply.ts
   - src/rmplan/plans.ts
   - src/rmplan/process_markdown.ts
   - src/rmplan/rmplan.ts
