@@ -18,7 +18,7 @@ issue:
 planGeneratedAt: 2025-06-06T19:11:15.312Z
 promptsGeneratedAt: 2025-06-06T19:15:37.741Z
 createdAt: 2025-06-06T19:09:23.437Z
-updatedAt: 2025-06-06T19:17:57.619Z
+updatedAt: 2025-06-06T19:20:38.312Z
 project:
   title: Implement the ability to run stub plans directly without prior step
     generation
@@ -76,12 +76,12 @@ tasks:
           In `rmplanAgent`, create a new logic branch to handle the "run
           directly" choice from the user prompt. This branch should bypass the
           main `while` loop for step-by-step execution.
-        done: false
+        done: true
       - prompt: >
           Inside this new branch, construct a single prompt string. Combine the
           `planData.goal` and `planData.details` into a clear, well-structured
           prompt using markdown headers (e.g., `# Goal`, `## Details`).
-        done: false
+        done: true
   - title: Integrate direct execution with the executor system
     description: Ensure the prompt constructed from the stub plan is correctly
       passed to the configured executor's `execute` method. The existing logic

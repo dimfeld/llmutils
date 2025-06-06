@@ -194,6 +194,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   }
 
+  // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
+  const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
+  const agentExecutionModel =
+    options.model || config.models?.execution || defaultModelForExecutor(executorName, 'execution');
+
+  const sharedExecutorOptions: ExecutorCommonOptions = {
+    baseDir: currentBaseDir,
+    model: agentExecutionModel,
+  };
+
+  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+
   // Check if the plan needs preparation
   try {
     const planData = await readPlanFile(currentPlanFile);
@@ -240,24 +252,62 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         }
       } else {
         log('Proceeding to execute plan directly using high-level description.');
+
+        // Direct execution branch - bypass step-by-step loop
+        try {
+          // Update plan status to in_progress
+          planData.status = 'in_progress';
+          planData.updatedAt = new Date().toISOString();
+          await writePlanFile(currentPlanFile, planData);
+
+          // Construct single prompt from goal and details
+          let directPrompt = '';
+          if (planData.goal) {
+            directPrompt += `# Goal\n\n${planData.goal}\n\n`;
+          }
+          if (planData.details) {
+            directPrompt += `## Details\n\n${planData.details}\n\n`;
+          }
+
+          if (!directPrompt.trim()) {
+            throw new Error('Plan has no goal or details to execute directly');
+          }
+
+          log(boldMarkdownHeaders('\n## Direct Execution\n'));
+          log('Using combined goal and details as prompt:');
+          log(directPrompt);
+
+          // Execute the consolidated prompt
+          await executor.execute(directPrompt);
+
+          // Execute post-apply commands if configured
+          if (config.postApplyCommands && config.postApplyCommands.length > 0) {
+            log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
+            for (const commandConfig of config.postApplyCommands) {
+              const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
+              if (!commandSucceeded) {
+                throw new Error(`Required command "${commandConfig.title}" failed`);
+              }
+            }
+          }
+
+          // Mark plan as complete
+          planData.status = 'done';
+          planData.updatedAt = new Date().toISOString();
+          await writePlanFile(currentPlanFile, planData);
+
+          log('Plan executed directly and marked as complete!');
+          return; // Exit early, bypassing the step-by-step loop
+        } catch (err) {
+          error('Direct execution failed:', err);
+          throw err;
+        }
       }
     }
   } catch (err) {
     warn('Could not check if plan needs preparation:', err);
     // Continue anyway - the main loop will catch any issues
   }
-
-  // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
-  const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
-  const agentExecutionModel =
-    options.model || config.models?.execution || defaultModelForExecutor(executorName, 'execution');
-
-  const sharedExecutorOptions: ExecutorCommonOptions = {
-    baseDir: currentBaseDir,
-    model: agentExecutionModel,
-  };
-
-  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
   log('Starting agent to execute plan:', currentPlanFile);
   try {
