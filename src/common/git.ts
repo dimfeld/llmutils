@@ -20,6 +20,7 @@ import * as path from 'node:path';
 import { debugLog } from '../logging.js';
 
 let cachedGitRoot = new Map<string, string>();
+let cachedGitRepository: string | undefined;
 
 /**
  * Gets the root directory of the current Git or Jujutsu repository with caching.
@@ -237,4 +238,21 @@ export async function getCurrentBranchName(cwd?: string): Promise<string | null>
     return gitBranch;
   }
   return await getCurrentJujutsuBranch(cwd);
+}
+
+/**
+ * Gets the repository name from the Git remote URL with caching.
+ * Extracts the owner/repo format from the remote origin URL.
+ *
+ * @returns Promise resolving to the repository name in owner/repo format
+ */
+export async function getGitRepository(): Promise<string> {
+  if (!cachedGitRepository) {
+    let remote = (await $`git remote get-url origin`.nothrow().text()).trim();
+    // Parse out the repository from the remote URL
+    let lastColonIndex = remote.lastIndexOf(':');
+    cachedGitRepository = remote.slice(lastColonIndex + 1).replace(/\.git$/, '');
+  }
+
+  return cachedGitRepository;
 }

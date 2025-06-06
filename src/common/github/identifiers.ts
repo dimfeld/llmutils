@@ -1,4 +1,4 @@
-import { getGitRepository } from '../../rmfilter/utils.ts';
+import { getGitRepository } from '../git.js';
 
 async function parsePrOrIssueNumberInternal(identifier: string): Promise<{
   owner: string;

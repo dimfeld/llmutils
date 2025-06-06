@@ -8,7 +8,6 @@ import {
 import * as path from 'node:path';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { setDebug } from '../rmfilter/utils.ts';
 import { ModuleMocker } from '../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);

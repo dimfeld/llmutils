@@ -7,7 +7,6 @@ import { packageUp } from 'package-up';
 import { ImportWalker } from './walk_imports';
 import { Extractor } from '../treesitter/extract.ts';
 import { Resolver } from './resolve.ts';
-import { setDebug } from '../rmfilter/utils.ts';
 
 describe('getDefiningFiles', () => {
   test('walk imports from walk_imports.ts', async () => {
