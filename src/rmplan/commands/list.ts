@@ -18,7 +18,7 @@ export async function handleListCommand(options: any, command: any) {
   let searchDir = options.dir || (await resolveTasksDir(config));
 
   // Read all plans
-  const { plans } = await readAllPlans(searchDir);
+  const { plans, duplicates } = await readAllPlans(searchDir);
 
   if (plans.size === 0) {
     log('No plan files found in', searchDir);
@@ -232,6 +232,17 @@ export async function handleListCommand(options: any, command: any) {
   log(output);
 
   log(`Showing: ${planArray.length} of ${plans.size} plan(s)`);
+
+  // Display duplicate IDs if any exist
+  if (duplicates.length > 0) {
+    log('');
+    log(chalk.yellow.bold('⚠️  Duplicate plan IDs found:'));
+    for (const duplicateId of duplicates) {
+      log(chalk.yellow(`   - ID ${duplicateId}`));
+    }
+    log('');
+    log(chalk.cyan('Run'), chalk.bold('rmplan renumber'), chalk.cyan('to fix duplicate IDs.'));
+  }
 }
 
 /**
