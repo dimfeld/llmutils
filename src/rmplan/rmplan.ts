@@ -1,4 +1,38 @@
 #!/usr/bin/env bun
+
+/**
+ * @fileoverview Main CLI entry point for rmplan - a command-line tool for generating and managing
+ * step-by-step project plans using LLMs. This module implements a command delegation architecture
+ * where each subcommand is handled by a dedicated module in src/rmplan/commands/, improving
+ * modularity and maintainability.
+ *
+ * The CLI supports commands for:
+ * - Generating plans from natural language descriptions
+ * - Converting markdown plans to YAML format
+ * - Managing plan execution lifecycle (next, done, list, show)
+ * - Automated plan execution with various executor strategies
+ * - Workspace management for plan isolation
+ * - Plan dependencies and multi-phase projects
+ *
+ * Architecture:
+ * - Each command uses dynamic imports to load its handler from src/rmplan/commands/
+ * - Common functionality is abstracted into shared utilities in src/common/
+ * - Error handling is centralized through handleCommandError utility
+ * - Configuration is managed through the configLoader system
+ *
+ * @example
+ * ```bash
+ * # Generate a new plan
+ * rmplan generate --plan "Add user authentication" src/auth
+ *
+ * # Execute next steps
+ * rmplan next my-plan.yml --rmfilter
+ *
+ * # Mark steps as completed
+ * rmplan done my-plan.yml --commit
+ * ```
+ */
+
 import { Command } from 'commander';
 import { loadEnv } from './utils/env.js';
 import { setDebug } from '../common/process.js';
@@ -124,7 +158,15 @@ const executorNames = executors
   .toArray()
   .join(', ');
 
-// Shared function to create the agent/run command configuration
+/**
+ * Creates a shared command configuration for agent and run commands with common options.
+ * This function encapsulates the complex option setup needed for automated plan execution,
+ * including workspace management, executor selection, and execution control.
+ *
+ * @param command - The Commander.js command instance to configure
+ * @param description - Human-readable description for the command
+ * @returns The configured command with all agent/run options applied
+ */
 function createAgentCommand(command: Command, description: string) {
   return command
     .description(description)

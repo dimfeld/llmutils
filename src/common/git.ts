@@ -1,3 +1,19 @@
+/**
+ * @fileoverview Git and Jujutsu (jj) repository utilities for the llmutils codebase.
+ * This module provides a unified interface for working with both Git and Jujutsu repositories,
+ * including repository root detection, branch operations, and change detection.
+ *
+ * The module handles the dual-repository nature of the project where some operations
+ * may use either Git or Jujutsu depending on repository configuration. It provides
+ * caching for expensive operations and graceful fallbacks between the two systems.
+ *
+ * Key capabilities:
+ * - Repository root detection with caching
+ * - Branch name resolution for both Git and Jujutsu
+ * - Uncommitted change detection
+ * - Automatic detection of repository type (Git vs Jujutsu)
+ */
+
 import { $ } from 'bun';
 import { findUp } from 'find-up';
 import * as path from 'node:path';
@@ -5,6 +21,15 @@ import { debugLog } from '../logging.js';
 
 let cachedGitRoot = new Map<string, string>();
 
+/**
+ * Gets the root directory of the current Git or Jujutsu repository with caching.
+ * This function first attempts to find a Git repository root, and if that fails,
+ * falls back to looking for a Jujutsu (.jj) directory. Results are cached to
+ * improve performance on repeated calls.
+ *
+ * @param cwd - Working directory to start the search from. Defaults to process.cwd()
+ * @returns Promise resolving to the absolute path of the repository root
+ */
 export async function getGitRoot(cwd = process.cwd()): Promise<string> {
   const cachedValue = cachedGitRoot.get(cwd);
   if (cachedValue) {
@@ -34,6 +59,14 @@ export async function getGitRoot(cwd = process.cwd()): Promise<string> {
 }
 
 let cachedUsingJj: boolean | undefined;
+
+/**
+ * Determines if the current repository is using Jujutsu (jj) version control.
+ * This function checks for the presence of a .jj directory in the repository root
+ * and caches the result for subsequent calls.
+ *
+ * @returns Promise resolving to true if using Jujutsu, false if using Git
+ */
 export async function getUsingJj(): Promise<boolean> {
   if (typeof cachedUsingJj === 'boolean') {
     return cachedUsingJj;
@@ -47,6 +80,14 @@ export async function getUsingJj(): Promise<boolean> {
   return cachedUsingJj;
 }
 
+/**
+ * Checks if there are uncommitted changes in the repository.
+ * This function works with both Git and Jujutsu repositories, automatically
+ * detecting which system is in use and using the appropriate commands.
+ *
+ * @param cwd - Working directory to check. Defaults to process.cwd()
+ * @returns Promise resolving to true if there are uncommitted changes, false otherwise
+ */
 export async function hasUncommittedChanges(cwd?: string): Promise<boolean> {
   // Check if jj exists in the provided directory
   const workingDir = cwd || process.cwd();

@@ -12,7 +12,7 @@ dependencies:
 planGeneratedAt: 2025-06-04T08:24:18.886Z
 promptsGeneratedAt: 2025-06-06T06:16:05.626Z
 createdAt: 2025-06-04T08:24:18.886Z
-updatedAt: 2025-06-06T06:20:21.553Z
+updatedAt: 2025-06-06T06:32:13.278Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -79,24 +79,24 @@ tasks:
           `src/rmplan/commands/`. Add or update JSDoc comments to explain the
           new command-delegation architecture. Ensure each command handler file
           has a module-level comment describing its purpose.
-        done: false
+        done: true
       - prompt: >
           Review `src/rmpr/main.ts` and `src/rmfilter/rmfilter.ts`. Update
           module-level comments and JSDoc for key functions to clarify their
           responsibilities and their interactions with the `src/common` modules.
-        done: false
+        done: true
       - prompt: >
           Review the utility modules in `src/common/`, such as `git.ts`,
           `fs.ts`, and `process.ts`. Add clear JSDoc comments to all exported
           functions, explaining their purpose, parameters, and return values.
           Add module-level comments to describe the scope of each utility file.
-        done: false
+        done: true
       - prompt: >
           Review `src/rmplan/actions.ts`. This file contains core logic that was
           likely impacted by the refactoring. Update comments and JSDoc to
           reflect any changes in function responsibilities or interactions with
           other modules.
-        done: false
+        done: true
   - title: Final Code Review
     description: Conduct a final review of the refactored codebase, focusing on
       module boundaries and dependency clarity. Identify and fix any remaining
