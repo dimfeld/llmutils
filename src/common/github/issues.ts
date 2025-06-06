@@ -55,16 +55,21 @@ export async function fetchIssueAndComments({
   return result;
 }
 
-export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchIssueAndComments>>) {
+export async function selectIssueComments(
+  data: Awaited<ReturnType<typeof fetchIssueAndComments>>,
+  includeTitle = true
+) {
   const LINE_PADDING = 4;
   const MAX_HEIGHT = process.stdout.rows - data.comments.length - 10;
   const items = [
-    {
-      name: singleLineWithPrefix('Title: ', data.issue.title, LINE_PADDING),
-      descriptiopn: `Title: ${data.issue.title}`,
-      checked: true,
-      value: `This project is designed to implement the feature: ${data.issue.title}`,
-    },
+    includeTitle
+      ? {
+          name: singleLineWithPrefix('Title: ', data.issue.title, LINE_PADDING),
+          descriptiopn: `Title: ${data.issue.title}`,
+          checked: true,
+          value: `This project is designed to implement the feature: ${data.issue.title}`,
+        }
+      : undefined,
     {
       name: singleLineWithPrefix(
         'Body: ',
@@ -88,7 +93,7 @@ export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchI
         value: comment.body,
       };
     }),
-  ];
+  ].filter((i) => i != undefined);
 
   const withValue = items.map((item, i) => ({ ...item, value: i }));
 
@@ -110,7 +115,10 @@ export async function selectIssueComments(data: Awaited<ReturnType<typeof fetchI
 
 /** Based on a Github issue number or URL, fetches the issue and its comments, parses RmprOptions,
  * and allows selecting which parts of the issue to include in the prompt. */
-export async function getInstructionsFromGithubIssue(issueSpec: string) {
+export async function getInstructionsFromGithubIssue(
+  issueSpec: string,
+  includeTitleInDetails = true
+) {
   const issue = await parsePrOrIssueNumber(issueSpec);
   if (!issue) {
     throw new Error(`Invalid issue spec: ${issueSpec}`);
@@ -135,7 +143,7 @@ export async function getInstructionsFromGithubIssue(issueSpec: string) {
     }
   }
 
-  const selected = await selectIssueComments(data);
+  const selected = await selectIssueComments(data, includeTitleInDetails);
 
   const plan = selected.join('\n\n');
 

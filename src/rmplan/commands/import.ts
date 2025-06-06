@@ -43,7 +43,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   }
 
   // Get issue data using the existing helper function
-  const issueData = await getInstructionsFromGithubIssue(issueSpecifier);
+  const issueData = await getInstructionsFromGithubIssue(issueSpecifier, false);
 
   // Check for duplicate plans by looking at existing plans
   const { plans } = await readAllPlans(tasksDir);
