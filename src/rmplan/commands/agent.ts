@@ -265,6 +265,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             executor,
             commit: options.commit,
           });
+          return;
         } catch (err) {
           error('Direct execution failed:', err);
           throw err;
@@ -471,18 +472,11 @@ async function executeStubPlan({
   log('Using combined goal and details as prompt:');
   log(directPrompt);
 
-  let hasError = false;
-
   // Execute the consolidated prompt
-  try {
-    await executor.execute(directPrompt);
-  } catch (err) {
-    error('Execution step failed:', err);
-    hasError = true;
-  }
+  await executor.execute(directPrompt);
 
   // Execute post-apply commands if configured and no error occurred
-  if (!hasError && config.postApplyCommands && config.postApplyCommands.length > 0) {
+  if (config.postApplyCommands && config.postApplyCommands.length > 0) {
     log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
     for (const commandConfig of config.postApplyCommands) {
       const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
@@ -493,25 +487,19 @@ async function executeStubPlan({
   }
 
   // Mark plan as complete only if no error occurred
-  if (!hasError) {
-    await setPlanStatus(planFilePath, 'done');
-    log('Plan executed directly and marked as complete!');
+  await setPlanStatus(planFilePath, 'done');
+  log('Plan executed directly and marked as complete!');
 
-    // Check if commit was requested
-    if (commit) {
-      const commitMessage = [planData.title, planData.goal, planData.details]
-        .filter(Boolean)
-        .join('\n\n');
-      log(`Creating commit: ${commitMessage}`);
-      const exitCode = await commitAll(commitMessage, baseDir);
-      if (exitCode === 0) {
-        log('Changes committed successfully');
-      } else {
-        throw new Error('Commit failed');
-      }
+  // Check if commit was requested
+  if (commit) {
+    const commitMessage = [planData.title, planData.goal, planData.details]
+      .filter(Boolean)
+      .join('\n\n');
+    const exitCode = await commitAll(commitMessage, baseDir);
+    if (exitCode === 0) {
+      log('Changes committed successfully');
+    } else {
+      throw new Error('Commit failed');
     }
-  } else {
-    throw new Error('Direct execution failed');
   }
-  return; // Exit early, bypassing the step-by-step loop
 }
