@@ -10,13 +10,14 @@ details: This phase builds upon the single-issue import functionality to create
   remaining issues, allowing them to select multiple issues to import in a
   single operation.
 id: 41
-status: pending
+status: in_progress
 priority: medium
 dependencies:
   - "39"
 planGeneratedAt: 2025-06-06T08:55:25.742Z
+promptsGeneratedAt: 2025-06-06T09:39:15.402Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T08:55:25.742Z
+updatedAt: 2025-06-06T09:42:05.957Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -47,28 +48,132 @@ tasks:
       repository associated with the current working directory. This will
       involve using the `getGitRepository` utility to identify the repository
       and the Octokit library to make the API request.
-    files: []
-    steps: []
+    files:
+      - src/common/github/issues.ts
+      - src/common/github/issues.test.ts
+    steps:
+      - prompt: >
+          In `src/common/github/issues.ts`, create a new exported async function
+          named `fetchAllOpenIssues`. This function will be responsible for
+          retrieving all open issues for the current repository.
+        done: true
+      - prompt: >
+          Inside `fetchAllOpenIssues`, use the `getGitRepository` function from
+          `src/common/git.ts` to get the repository identifier string (e.g.,
+          "owner/repo"). Parse this string to extract the owner and repo names.
+        done: true
+      - prompt: >
+          Initialize the Octokit client. Use `octokit.paginate` with the
+          `issues.listForRepo` endpoint to fetch all open issues, ensuring you
+          handle pagination correctly by setting `state: 'open'`. The function
+          should return the resulting array of issue objects.
+        done: true
+      - prompt: >
+          In `src/common/github/issues.test.ts`, add a new test suite for
+          `fetchAllOpenIssues`. Use the `ModuleMocker` to mock
+          `getGitRepository` and the `Octokit` client's `paginate` method.
+          Verify that the function correctly calls the API and returns the
+          mocked list of issues.
+        done: true
   - title: Filter Out Already-Imported Issues
     description: Before displaying the list of open issues, filter it to exclude any
       issues that are already linked in existing local plan files. This will be
       achieved by reading all plans using `readAllPlans` and checking the
       `issue` field of each plan against the URLs of the fetched issues.
-    files: []
-    steps: []
+    files:
+      - src/rmplan/commands/import.ts
+      - src/rmplan/commands/import.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/commands/import.ts`, create an async helper function
+          `getImportedIssueUrls(tasksDir: string)`. This function will use
+          `readAllPlans` and `readPlanFile` to iterate through all local plans
+          and compile a `Set<string>` of all issue URLs found in their `issue`
+          fields.
+        done: false
+      - prompt: >
+          Modify the `handleImportCommand` function. Add a new logic block for
+          when `issueSpecifier` is not provided. In this block, call the new
+          `fetchAllOpenIssues` function.
+        done: false
+      - prompt: >
+          After fetching all open issues, call your new `getImportedIssueUrls`
+          helper function. Use the returned Set of URLs to filter the array of
+          open issues, removing any that have already been imported.
+        done: false
+      - prompt: >
+          In `src/rmplan/commands/import.test.ts`, add a test case for the
+          interactive flow. Mock `fetchAllOpenIssues` to return a sample list of
+          issues. Also, mock `readAllPlans` and `readPlanFile` to simulate that
+          some of those issues have already been imported. Assert that the list
+          of issues is correctly filtered.
+        done: false
   - title: Implement Interactive Issue Selection Prompt
     description: Use the `@inquirer/prompts` library to create an interactive
       checklist prompt. This prompt will display the filtered list of importable
       issues, allowing the user to select one or more to import.
-    files: []
-    steps: []
+    files:
+      - src/rmplan/commands/import.ts
+      - src/rmplan/commands/import.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/commands/import.ts`, within the interactive flow, check
+          if the filtered list of issues is empty. If it is, log a message
+          stating there are no new issues to import and exit gracefully.
+        done: false
+      - prompt: >
+          Use the `checkbox` prompt from `@inquirer/prompts` to display the list
+          of importable issues. Format the `choices` for the prompt, where each
+          choice's `name` is the issue number and title (e.g., `#123: A new
+          feature`), and its `value` is the issue's `number`.
+        done: false
+      - prompt: >
+          Await the user's selection from the `checkbox` prompt. The result will
+          be an array of issue numbers that the user has chosen to import.
+        done: false
+      - prompt: >
+          In `src/rmplan/commands/import.test.ts`, mock the `@inquirer/prompts`
+          module. Configure the mocked `checkbox` function to resolve with a
+          predefined array of issue numbers to simulate user interaction for
+          your tests.
+        done: false
   - title: Orchestrate Multi-Issue Import Loop
     description: Modify the `import` command handler to loop through the issues
       selected by the user. For each selected issue, it will call the
       single-issue import and file creation logic developed in Phase 1,
       effectively importing all chosen issues in one batch.
-    files: []
-    steps: []
+    files:
+      - src/rmplan/commands/import.ts
+      - src/rmplan/commands/import.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/commands/import.ts`, refactor the single-issue import
+          logic into a new, non-exported async function,
+          `importSingleIssue(issueSpecifier: string, tasksDir: string)`. This
+          function will encapsulate fetching, duplicate checking, and plan file
+          creation for one issue. It should return a boolean indicating success.
+        done: false
+      - prompt: >
+          Update `handleImportCommand` to have two main paths. If an
+          `issueSpecifier` is provided, call `importSingleIssue` directly.
+          Otherwise, proceed with the interactive flow developed in the previous
+          tasks.
+        done: false
+      - prompt: >
+          In the interactive flow, after the user selects issues from the
+          checklist, iterate through the returned array of issue numbers. In the
+          loop, call `importSingleIssue` for each number, converting it to a
+          string. Add logging to show the progress and result of each import.
+        done: false
+      - prompt: >
+          Update `src/rmplan/commands/import.test.ts` to test the multi-issue
+          import scenario. Use your mock of the interactive prompt to return
+          multiple issue numbers. Verify that the underlying import logic is
+          called for each selected issue.
+        done: false
+changedFiles:
+  - src/common/github/issues.test.ts
+  - src/common/github/issues.ts
 rmfilter:
   - src/rmplan/commands/generate.ts
   - --with-imports

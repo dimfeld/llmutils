@@ -1,5 +1,5 @@
 import { describe, test, expect, mock, spyOn, beforeEach, afterEach } from 'bun:test';
-import { getInstructionsFromGithubIssue } from './issues.ts';
+import { getInstructionsFromGithubIssue, fetchAllOpenIssues } from './issues.ts';
 import * as logging from '../../logging.ts';
 import { ModuleMocker } from '../../testing.js';
 
@@ -79,5 +79,69 @@ describe('getInstructionsFromGithubIssue', () => {
     } finally {
       logSpy.mockRestore();
     }
+  });
+});
+
+describe('fetchAllOpenIssues', () => {
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  test('fetches all open issues for current repository', async () => {
+    const mockIssues = [
+      { number: 1, title: 'First Issue', body: 'First issue body' },
+      { number: 2, title: 'Second Issue', body: 'Second issue body' },
+    ];
+
+    // Mock the git module
+    await moduleMocker.mock('../git.ts', () => ({
+      getGitRepository: async () => 'testowner/testrepo',
+    }));
+
+    // Mock the Octokit paginate method
+    const mockPaginate = mock(async () => mockIssues);
+
+    // Mock the issues.ts module
+    await moduleMocker.mock('./issues.ts', () => ({
+      fetchAllOpenIssues,
+      fetchIssueAndComments: async () => ({}),
+    }));
+
+    // Mock Octokit
+    await moduleMocker.mock('octokit', () => ({
+      Octokit: mock(function () {
+        return {
+          paginate: mockPaginate,
+          rest: {
+            issues: {
+              listForRepo: mock(),
+            },
+          },
+        };
+      }),
+    }));
+
+    const result = await fetchAllOpenIssues();
+
+    expect(result).toEqual(mockIssues);
+    expect(mockPaginate).toHaveBeenCalledWith(expect.any(Function), {
+      owner: 'testowner',
+      repo: 'testrepo',
+      state: 'open',
+    });
+  });
+
+  test('throws error for invalid repository format', async () => {
+    // Mock the git module to return invalid format
+    await moduleMocker.mock('../git.ts', () => ({
+      getGitRepository: async () => 'invalid-format',
+    }));
+
+    // Mock the issues.ts module
+    await moduleMocker.mock('./issues.ts', () => ({
+      fetchAllOpenIssues,
+    }));
+
+    await expect(fetchAllOpenIssues()).rejects.toThrow('Invalid repository format: invalid-format');
   });
 });

@@ -2,6 +2,7 @@ import { Octokit } from 'octokit';
 import { checkbox } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import { parsePrOrIssueNumber } from './identifiers.ts';
+import { getGitRepository } from '../git.ts';
 import {
   parseCommandOptionsFromComment,
   combineRmprOptions,
@@ -53,6 +54,30 @@ export async function fetchIssueAndComments({
   };
 
   return result;
+}
+
+export async function fetchAllOpenIssues() {
+  // Get the repository identifier from git (e.g., "owner/repo")
+  const repoString = await getGitRepository();
+  const [owner, repo] = repoString.split('/');
+
+  if (!owner || !repo) {
+    throw new Error(`Invalid repository format: ${repoString}`);
+  }
+
+  // Initialize Octokit with GitHub token
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN,
+  });
+
+  // Use paginate to fetch all open issues
+  const issues = await octokit.paginate(octokit.rest.issues.listForRepo, {
+    owner,
+    repo,
+    state: 'open',
+  });
+
+  return issues;
 }
 
 export async function selectIssueComments(
