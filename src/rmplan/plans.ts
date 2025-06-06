@@ -169,6 +169,22 @@ export async function readAllPlans(
     }
   }
 
+  const originalPlanGet = plans.get.bind(plans);
+
+  // This is a temporary hack until we can fully convert plan IDs to numbers
+  const getPlanById = (id: string | number) => {
+    let numId = Number(id);
+    if (!Number.isNaN(numId)) {
+      let byNum = originalPlanGet(numId);
+      if (byNum) {
+        return byNum;
+      }
+    }
+    return originalPlanGet(id.toString());
+  };
+
+  plans.get = getPlanById;
+
   await scanDirectory(directory);
   await Promise.all(promises);
   debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
