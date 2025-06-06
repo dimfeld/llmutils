@@ -70,7 +70,7 @@ describe('handleImportCommand', () => {
     const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
     const { writePlanFile } = await import('../plans.js');
 
-    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('123');
+    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('123', false);
     expect(writePlanFile).toHaveBeenCalled();
   });
 
@@ -80,14 +80,74 @@ describe('handleImportCommand', () => {
     const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
     const { writePlanFile } = await import('../plans.js');
 
-    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('456');
+    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('456', false);
     expect(writePlanFile).toHaveBeenCalled();
   });
 
-  test('should throw error when no issue is specified', async () => {
-    await expect(handleImportCommand()).rejects.toThrow(
-      'An issue must be specified. Use either "rmplan import <issue>" or "rmplan import --issue <url|number>"'
-    );
+  test('should enter interactive mode when no issue is specified', async () => {
+    // Mock fetchAllOpenIssues
+    await moduleMocker.mock('../../common/github/issues.js', () => ({
+      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+      fetchAllOpenIssues: mock(() =>
+        Promise.resolve([
+          { html_url: 'https://github.com/owner/repo/issues/100', title: 'Issue 100', number: 100 },
+          { html_url: 'https://github.com/owner/repo/issues/101', title: 'Issue 101', number: 101 },
+        ])
+      ),
+    }));
+
+    await handleImportCommand();
+
+    const { fetchAllOpenIssues } = await import('../../common/github/issues.js');
+    const { log } = await import('../../logging.js');
+
+    expect(fetchAllOpenIssues).toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith('Fetching all open issues...');
+    expect(log).toHaveBeenCalledWith('Found 2 issues available for import (0 already imported).');
+  });
+
+  test('should filter out already imported issues in interactive mode', async () => {
+    // Mock data where one issue is already imported
+    const mockPlansWithImported = {
+      plans: new Map([[1, { filename: '/test/imported-plan.yml' }]]),
+      maxNumericId: 5,
+      duplicates: [],
+    };
+
+    const mockImportedPlan: PlanSchema = {
+      id: 1,
+      goal: 'Imported plan',
+      details: 'Already imported',
+      issue: ['https://github.com/owner/repo/issues/100'], // This one is already imported
+      tasks: [],
+    };
+
+    await moduleMocker.mock('../../common/github/issues.js', () => ({
+      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+      fetchAllOpenIssues: mock(() =>
+        Promise.resolve([
+          { html_url: 'https://github.com/owner/repo/issues/100', title: 'Issue 100', number: 100 },
+          { html_url: 'https://github.com/owner/repo/issues/101', title: 'Issue 101', number: 101 },
+          { html_url: 'https://github.com/owner/repo/issues/102', title: 'Issue 102', number: 102 },
+        ])
+      ),
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      readAllPlans: mock(() => Promise.resolve(mockPlansWithImported)),
+      writePlanFile: mock(() => Promise.resolve()),
+      getMaxNumericPlanId: mock(() => Promise.resolve(5)),
+      readPlanFile: mock(() => Promise.resolve(mockImportedPlan)),
+    }));
+
+    await handleImportCommand();
+
+    const { fetchAllOpenIssues } = await import('../../common/github/issues.js');
+    const { log } = await import('../../logging.js');
+
+    expect(fetchAllOpenIssues).toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith('Fetching all open issues...');
+    expect(log).toHaveBeenCalledWith('Found 2 issues available for import (1 already imported).');
   });
 
   test('should create stub plan file with correct metadata', async () => {

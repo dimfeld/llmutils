@@ -3,11 +3,41 @@
 
 import * as path from 'node:path';
 import { error, log, warn } from '../../logging.js';
-import { getInstructionsFromGithubIssue } from '../../common/github/issues.js';
+import { getInstructionsFromGithubIssue, fetchAllOpenIssues } from '../../common/github/issues.js';
 import { readAllPlans, writePlanFile, getMaxNumericPlanId, readPlanFile } from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getGitRoot } from '../../common/git.js';
 import type { PlanSchema } from '../planSchema.js';
+
+/**
+ * Get all issue URLs that have already been imported by reading existing plan files
+ *
+ * @param tasksDir - Directory containing plan files
+ * @returns Set of issue URLs that are already imported
+ */
+async function getImportedIssueUrls(tasksDir: string): Promise<Set<string>> {
+  const importedUrls = new Set<string>();
+
+  try {
+    const { plans } = await readAllPlans(tasksDir);
+
+    for (const planSummary of plans.values()) {
+      try {
+        const planFile = await readPlanFile(planSummary.filename);
+        if (planFile.issue && Array.isArray(planFile.issue)) {
+          planFile.issue.forEach((url) => importedUrls.add(url));
+        }
+      } catch (err) {
+        // Skip files that can't be read
+        continue;
+      }
+    }
+  } catch (err) {
+    // If we can't read plans, just return empty set
+  }
+
+  return importedUrls;
+}
 
 /**
  * Handle the import command that imports GitHub issues and creates stub plan files
@@ -19,15 +49,6 @@ import type { PlanSchema } from '../planSchema.js';
 export async function handleImportCommand(issue?: string, options: any = {}, command?: any) {
   // Determine the issue specifier from either positional argument or --issue flag
   const issueSpecifier = issue || options.issue;
-
-  // For this initial phase, require an issue to be specified
-  if (!issueSpecifier) {
-    throw new Error(
-      'An issue must be specified. Use either "rmplan import <issue>" or "rmplan import --issue <url|number>"'
-    );
-  }
-
-  log(`Importing issue: ${issueSpecifier}`);
 
   // Get configuration and tasks directory
   const config = await loadEffectiveConfig();
@@ -41,6 +62,31 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   } else {
     tasksDir = gitRoot;
   }
+
+  if (!issueSpecifier) {
+    // Interactive mode: fetch all open issues and let user select multiple
+    log('Fetching all open issues...');
+    const allIssues = await fetchAllOpenIssues();
+
+    // Get already imported issue URLs to filter them out
+    const importedUrls = await getImportedIssueUrls(tasksDir);
+
+    // Filter out already imported issues
+    const availableIssues = allIssues.filter((issue) => !importedUrls.has(issue.html_url));
+
+    if (availableIssues.length === 0) {
+      log('No new issues available to import. All open issues have already been imported.');
+      return;
+    }
+
+    log(
+      `Found ${availableIssues.length} issues available for import (${allIssues.length - availableIssues.length} already imported).`
+    );
+    // TODO: Add interactive selection logic in next phase
+    return;
+  }
+
+  log(`Importing issue: ${issueSpecifier}`);
 
   // Get issue data using the existing helper function
   const issueData = await getInstructionsFromGithubIssue(issueSpecifier, false);

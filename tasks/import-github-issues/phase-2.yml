@@ -17,7 +17,7 @@ dependencies:
 planGeneratedAt: 2025-06-06T08:55:25.742Z
 promptsGeneratedAt: 2025-06-06T09:39:15.402Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T09:42:05.957Z
+updatedAt: 2025-06-06T09:44:32.107Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -90,24 +90,24 @@ tasks:
           `readAllPlans` and `readPlanFile` to iterate through all local plans
           and compile a `Set<string>` of all issue URLs found in their `issue`
           fields.
-        done: false
+        done: true
       - prompt: >
           Modify the `handleImportCommand` function. Add a new logic block for
           when `issueSpecifier` is not provided. In this block, call the new
           `fetchAllOpenIssues` function.
-        done: false
+        done: true
       - prompt: >
           After fetching all open issues, call your new `getImportedIssueUrls`
           helper function. Use the returned Set of URLs to filter the array of
           open issues, removing any that have already been imported.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/import.test.ts`, add a test case for the
           interactive flow. Mock `fetchAllOpenIssues` to return a sample list of
           issues. Also, mock `readAllPlans` and `readPlanFile` to simulate that
           some of those issues have already been imported. Assert that the list
           of issues is correctly filtered.
-        done: false
+        done: true
   - title: Implement Interactive Issue Selection Prompt
     description: Use the `@inquirer/prompts` library to create an interactive
       checklist prompt. This prompt will display the filtered list of importable
@@ -174,6 +174,8 @@ tasks:
 changedFiles:
   - src/common/github/issues.test.ts
   - src/common/github/issues.ts
+  - src/rmplan/commands/import.test.ts
+  - src/rmplan/commands/import.ts
 rmfilter:
   - src/rmplan/commands/generate.ts
   - --with-imports
