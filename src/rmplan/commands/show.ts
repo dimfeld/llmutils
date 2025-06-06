@@ -82,7 +82,15 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       )
     : false;
   const statusDisplay = isReady ? 'ready' : actualStatus;
-  const statusColor = isReady ? chalk.cyan : chalk.white;
+  const statusColor = isReady
+    ? chalk.cyan
+    : actualStatus === 'done'
+      ? chalk.green
+      : actualStatus === 'cancelled'
+        ? chalk.strikethrough.gray
+        : actualStatus === 'in_progress'
+          ? chalk.yellow
+          : chalk.white;
   log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
 
   log(`${chalk.cyan('Priority:')} ${plan.priority || ''}`);

@@ -8,7 +8,7 @@ details: When `rmplan extract` (or other commands processing LLM output that
   save phase-level files. Instead, it will iterate through all tasks across all
   phases and create a distinct plan file for each task.
 id: 33
-status: done
+status: cancelled
 dependencies:
   - "31"
 planGeneratedAt: 2025-06-04T07:59:19.941Z
