@@ -16,7 +16,7 @@ priority: medium
 createdAt: 2025-06-06T05:40:44.136Z
 updatedAt: 2025-06-06T05:40:44.136Z
 rmfilter:
-  - src/rmplan/generate.ts
+  - src/rmplan/commands/generate.ts
   - --with-imports
   - --
   - src/rmplan/rmplan.ts

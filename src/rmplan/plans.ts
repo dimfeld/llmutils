@@ -2,10 +2,12 @@ import { readdir, stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { join, resolve } from 'node:path';
 import * as yaml from 'yaml';
-import { debugLog } from '../logging.js';
+import { debugLog, warn } from '../logging.js';
 import { getGitRoot } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
+import { createModel } from '../common/model_factory.js';
+import { generateText } from 'ai';
 
 export type PlanSummary = {
   id: string | number;
@@ -170,6 +172,7 @@ export async function readAllPlans(
   }
 
   const originalPlanGet = plans.get.bind(plans);
+  const originalPlanHas = plans.has.bind(plans);
 
   // This is a temporary hack until we can fully convert plan IDs to numbers
   const getPlanById = (id: string | number) => {
@@ -183,7 +186,19 @@ export async function readAllPlans(
     return originalPlanGet(id.toString());
   };
 
+  const hasPlanById = (id: string | number) => {
+    let numId = Number(id);
+    if (!Number.isNaN(numId)) {
+      let byNum = originalPlanHas(numId);
+      if (byNum) {
+        return byNum;
+      }
+    }
+    return originalPlanHas(id.toString());
+  };
+
   plans.get = getPlanById;
+  plans.has = hasPlanById;
 
   await scanDirectory(directory);
   await Promise.all(promises);
@@ -576,4 +591,50 @@ export async function setPlanStatus(
   await writePlanFile(planFilePath, plan);
 
   debugLog(`Updated plan status in ${planFilePath} to ${newStatus}`);
+}
+
+export async function generateSuggestedFilename(
+  planText: string,
+  suffix?: string
+): Promise<string> {
+  try {
+    // Extract first 500 characters of the plan for context
+    const planSummary = planText.slice(0, 500);
+
+    const prompt = `Given this plan text, suggest a concise and descriptive filename (without extension).
+The filename should:
+- Be lowercase with hyphens between words
+- Be descriptive of the main task or feature
+- Be 3-8 words maximum
+- Not include dates or version numbers
+
+Plan text:
+${planSummary}
+
+Respond with ONLY the filename, nothing else.`;
+
+    const model = createModel('google/gemini-2.0-flash');
+    const result = await generateText({
+      model,
+      prompt,
+      maxTokens: 50,
+      temperature: 0.3,
+    });
+
+    let filename = result.text
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (filename && suffix) {
+      filename += suffix;
+    }
+
+    return filename;
+  } catch (err) {
+    // Fallback to default if model fails
+    warn('Failed to generate filename suggestion:', err);
+    return '';
+  }
 }

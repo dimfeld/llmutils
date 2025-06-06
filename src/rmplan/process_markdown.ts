@@ -11,8 +11,9 @@ import { fixYaml } from './fix_yaml.js';
 import { generateAlphanumericId, generateNumericPlanId } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
-import { writePlanFile } from './plans.js';
+import { generateSuggestedFilename, readAllPlans, writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
+import { input } from '@inquirer/prompts';
 
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
@@ -126,7 +127,6 @@ export interface ExtractMarkdownToYamlOptions {
   planRmfilterArgs?: string[];
   output: string;
   projectId?: string | number;
-  issueUrl?: string;
   stubPlanData?: PlanSchema;
   commit?: boolean;
 }
@@ -321,7 +321,23 @@ export async function saveMultiPhaseYaml(
   // code since it will bring in the goal and details from both the global and phase,
   // but we end up saving to a single file instead of a subdirectory.
   const actuallyMultiphase = parsedYaml.phases.length > 1;
-  const outputDir = options.output.endsWith('.yml') ? options.output.slice(0, -4) : options.output;
+  let outputDir = options.output.endsWith('.yml') ? options.output.slice(0, -4) : options.output;
+  const outputDirComponents = outputDir.split(path.sep);
+  if (actuallyMultiphase && !Number.isNaN(Number(outputDirComponents.at(-1)))) {
+    const defaultName = await generateSuggestedFilename(
+      [parsedYaml.title, parsedYaml.goal].join('\n\n')
+    );
+
+    let newName = await input({
+      message: 'Enter a directory name for the multi-phase plan',
+      default: defaultName,
+    });
+
+    if (newName) {
+      outputDirComponents[outputDirComponents.length - 1] = defaultName;
+      outputDir = outputDirComponents.join(path.sep);
+    }
+  }
 
   // Extract overall project information from the parsed YAML
   const projectInfo = {
@@ -336,12 +352,16 @@ export async function saveMultiPhaseYaml(
   const failedPhases: number[] = [];
 
   const tasksDir = await resolveTasksDir(config);
-  let nextId =
-    options.stubPlanData?.id || options.projectId || (await generateNumericPlanId(tasksDir));
+  const { plans } = await readAllPlans(tasksDir);
+  let nextId = options.stubPlanData?.id || options.projectId;
+  // Force it to be a number
+  // TODO we can remove this later once the last vestiges of string IDs are gone
   if (typeof nextId !== 'number') {
-    // Force it to be a number
-    // TODO we can remove this later once the last vestiges of string IDs are gone
-    nextId = await generateNumericPlanId(tasksDir);
+    nextId = Number(nextId);
+
+    if (Number.isNaN(nextId)) {
+      nextId = await generateNumericPlanId(tasksDir);
+    }
   }
 
   if (!quiet) {
@@ -351,7 +371,14 @@ export async function saveMultiPhaseYaml(
   // First pass: generate IDs and update dependencies
   for (let i = 0; i < parsedYaml.phases.length; i++) {
     const phase = parsedYaml.phases[i];
-    const phaseId = nextId + i;
+
+    while (nextId != options.stubPlanData?.id && plans.has(nextId)) {
+      nextId++;
+    }
+
+    const phaseId = nextId;
+    nextId++;
+
     phaseIndexToId.set(i + 1, phaseId);
     phase.id = phaseId;
 
@@ -362,7 +389,7 @@ export async function saveMultiPhaseYaml(
     phase.createdAt = options.stubPlanData?.createdAt || now;
     phase.updatedAt = now;
 
-    phase.issue = options.issueUrls ?? (options.issueUrl ? [options.issueUrl] : undefined);
+    phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;
 
     // Add overall project information to each phase
     if (projectInfo.goal || projectInfo.title || projectInfo.details) {

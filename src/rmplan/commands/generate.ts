@@ -2,7 +2,6 @@
 // Generates planning prompt and context for a task
 
 import { input } from '@inquirer/prompts';
-import { generateText } from 'ai';
 import chalk from 'chalk';
 import * as fs from 'node:fs/promises';
 import * as os from 'os';
@@ -11,7 +10,6 @@ import yaml from 'yaml';
 import * as clipboard from '../../common/clipboard.ts';
 import { getGitRoot } from '../../common/git.js';
 import { getInstructionsFromGithubIssue } from '../../common/github/issues.js';
-import { createModel } from '../../common/model_factory.ts';
 import { logSpawn } from '../../common/process.js';
 import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 import { waitForEnter } from '../../common/terminal.js';
@@ -20,7 +18,7 @@ import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../../rmpr/comment_options.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.ts';
-import { resolvePlanFile } from '../plans.js';
+import { generateSuggestedFilename, resolvePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   extractMarkdownToYaml,
@@ -136,7 +134,7 @@ export async function handleGenerateCommand(options: any, command: any) {
       log(chalk.green('✓ Plan copied to clipboard'));
 
       // Generate suggested filename using Gemini Flash 2.0
-      let suggestedFilename = await generateSuggestedFilename(planText);
+      let suggestedFilename = await generateSuggestedFilename(planText, '.md');
 
       // Prompt for save location
       let savePath = await input({
@@ -387,49 +385,5 @@ export async function handleGenerateCommand(options: any, command: any) {
 
   if (exitRes !== 0) {
     throw new Error(`rmfilter exited with code ${exitRes}`);
-  }
-}
-
-async function generateSuggestedFilename(planText: string): Promise<string> {
-  try {
-    // Extract first 500 characters of the plan for context
-    const planSummary = planText.slice(0, 500);
-
-    const prompt = `Given this plan text, suggest a concise and descriptive filename (without extension).
-The filename should:
-- Be lowercase with hyphens between words
-- Be descriptive of the main task or feature
-- Be 3-8 words maximum
-- Not include dates or version numbers
-
-Plan text:
-${planSummary}
-
-Respond with ONLY the filename, nothing else.`;
-
-    const model = createModel('google/gemini-2.0-flash');
-    const result = await generateText({
-      model,
-      prompt,
-      maxTokens: 50,
-      temperature: 0.3,
-    });
-
-    let filename = result.text
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-    // Ensure it's not empty and has reasonable length
-    if (!filename || filename.length < 3) {
-      filename = 'rmplan-task';
-    }
-
-    return `${filename}.md`;
-  } catch (err) {
-    // Fallback to default if model fails
-    warn('Failed to generate filename suggestion:', err);
-    return '';
   }
 }
