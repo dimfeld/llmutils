@@ -7,7 +7,7 @@ import * as fs from 'node:fs/promises';
 import yaml from 'yaml';
 import { select } from '@inquirer/prompts';
 import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
-import { logSpawn } from '../../common/process.js';
+import { commitAll, logSpawn } from '../../common/process.js';
 import { getGitRoot } from '../../common/git.js';
 import {
   executePostApplyCommand,
@@ -16,7 +16,7 @@ import {
   prepareNextStep,
   preparePhase,
 } from '../actions.js';
-import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFile, setPlanStatus, writePlanFile } from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import {
   buildExecutorAndLog,
@@ -300,10 +300,21 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
           // Mark plan as complete only if no error occurred
           if (!hasError) {
-            planData.status = 'done';
-            planData.updatedAt = new Date().toISOString();
-            await writePlanFile(currentPlanFile, planData);
+            await setPlanStatus(currentPlanFile, 'done');
             log('Plan executed directly and marked as complete!');
+
+            // Check if commit was requested
+            if (options.commit) {
+              const updatedPlanData = await readPlanFile(currentPlanFile);
+              const commitMessage = `feat(plan): Complete '${updatedPlanData.title || 'Untitled plan'}'`;
+              log(`Creating commit: ${commitMessage}`);
+              const exitCode = await commitAll(commitMessage, currentBaseDir);
+              if (exitCode === 0) {
+                log('Changes committed successfully');
+              } else {
+                throw new Error('Commit failed');
+              }
+            }
           } else {
             throw new Error('Direct execution failed');
           }
