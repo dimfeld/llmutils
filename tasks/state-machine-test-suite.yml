@@ -28,6 +28,8 @@ details: >
   leverage the `@opentelemetry/sdk-trace-base` with an `InMemorySpanExporter` to
   capture and verify emitted telemetry data. The tests will be broken down into
   small, incremental tasks, building upon each other to achieve full coverage.
+id: 13
+status: done
 tasks:
   - title: 1. Setup Test Environment and `SharedStore` Context/Scratchpad Tests
     description: >
@@ -1097,5 +1099,3 @@ tasks:
 
           6.  Ensure the overall README remains coherent and well-formatted.
         done: true
-id: 1j9mdef
-status: done

@@ -4,13 +4,15 @@ goal: Ensure all project documentation is updated to reflect the new code
   organization and perform a final review of the changes.
 details: This final phase focuses on updating documentation and performing a
   holistic review of the refactoring work.
-id: 1rm0j7j-3
-status: pending
+id: 37
+status: done
+priority: high
 dependencies:
-  - 1rm0j7j-2
+  - "36"
 planGeneratedAt: 2025-06-04T08:24:18.886Z
+promptsGeneratedAt: 2025-06-06T06:16:05.626Z
 createdAt: 2025-06-04T08:24:18.886Z
-updatedAt: 2025-06-04T08:24:18.886Z
+updatedAt: 2025-06-06T06:39:51.043Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -37,28 +39,224 @@ project:
     incremental progress with continuous testing.
 tasks:
   - title: Update README Files
-    description: Revise the main `README.md` and any module-specific READMEs (e.g.,
-      within `src/rmplan/`) to accurately describe the new directory structure,
-      module responsibilities, and key architectural changes.
-    files: []
-    steps: []
+    description: Revise the main `README.md` and `CLAUDE.md` to accurately describe
+      the new directory structure, module responsibilities, and key
+      architectural changes resulting from the refactoring.
+    files:
+      - README.md
+      - CLAUDE.md
+    steps:
+      - prompt: >
+          Review and update `CLAUDE.md`. Pay close attention to the "Repository
+          Structure" and "Core Architecture" sections. Ensure they reflect the
+          new modular organization, particularly the separation of `rmplan` into
+          sub-command files and the consolidation of utilities into
+          `src/common`. Update any workflow examples that might be affected by
+          these changes.
+        done: true
+      - prompt: >
+          Review and update the root `README.md` file. Update the project's
+          description and architecture sections to reflect the refactoring.
+          Ensure that usage examples for `rmplan`, `rmfilter`, and `rmpr` are
+          accurate and demonstrate the new modular approach.
+        done: true
   - title: Update Code Comments and JSDoc
     description: Review and update code comments and JSDoc annotations, especially
       for functions or modules that were moved or significantly refactored.
-      Ensure comments accurately reflect the current state of the code.
-    files: []
-    steps: []
+      Ensure comments accurately reflect the current state of the code and its
+      new responsibilities.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmpr/main.ts
+      - src/rmfilter/rmfilter.ts
+      - src/common/git.ts
+      - src/common/fs.ts
+      - src/common/process.ts
+      - src/rmplan/actions.ts
+    steps:
+      - prompt: >
+          Review `src/rmplan/rmplan.ts` and the command handlers in
+          `src/rmplan/commands/`. Add or update JSDoc comments to explain the
+          new command-delegation architecture. Ensure each command handler file
+          has a module-level comment describing its purpose.
+        done: true
+      - prompt: >
+          Review `src/rmpr/main.ts` and `src/rmfilter/rmfilter.ts`. Update
+          module-level comments and JSDoc for key functions to clarify their
+          responsibilities and their interactions with the `src/common` modules.
+        done: true
+      - prompt: >
+          Review the utility modules in `src/common/`, such as `git.ts`,
+          `fs.ts`, and `process.ts`. Add clear JSDoc comments to all exported
+          functions, explaining their purpose, parameters, and return values.
+          Add module-level comments to describe the scope of each utility file.
+        done: true
+      - prompt: >
+          Review `src/rmplan/actions.ts`. This file contains core logic that was
+          likely impacted by the refactoring. Update comments and JSDoc to
+          reflect any changes in function responsibilities or interactions with
+          other modules.
+        done: true
   - title: Final Code Review
     description: Conduct a final review of the refactored codebase, focusing on
-      module boundaries, dependency clarity, and overall organization. Ensure
-      adherence to project coding standards.
-    files: []
-    steps: []
+      module boundaries and dependency clarity. Identify and fix any remaining
+      dependency issues, such as `common` modules importing from feature modules
+      (`rmfilter`, `rmplan`, `rmpr`).
+    files:
+      - src/common/github/identifiers.ts
+      - src/rmfilter/utils.ts
+      - src/common/git.ts
+      - src/rmpr/main.ts
+    steps:
+      - prompt: >
+          Analyze the dependency graph and identify that
+          `src/common/github/identifiers.ts` incorrectly imports
+          `getGitRepository` from `src/rmfilter/utils.ts`. This violates the
+          principle that common utilities should not depend on feature-specific
+          modules.
+        done: true
+      - prompt: >
+          Move the `getGitRepository` function from `src/rmfilter/utils.ts` to
+          `src/common/git.ts` to make it a truly common utility, available to
+          all modules without creating improper dependencies.
+        done: true
+      - prompt: >
+          Update the import statement in `src/common/github/identifiers.ts` to
+          import `getGitRepository` from its new location in
+          `src/common/git.ts`.
+        done: true
+      - prompt: >
+          Search the codebase for any other usages of `getGitRepository` (e.g.,
+          in `rmpr/main.ts` or its dependencies) and update their imports to
+          point to `src/common/git.ts` as well.
+        done: true
   - title: Clean Up Unused Code
     description: Identify and remove any old files, unused functions, or dead code
-      that may have resulted from the reorganization.
-    files: []
-    steps: []
+      that may have resulted from the reorganization. This includes
+      consolidating misplaced utilities.
+    files:
+      - src/rmplan/utils/env.ts
+      - src/common/env.ts
+      - src/rmplan/rmplan.ts
+    steps:
+      - prompt: >
+          The `loadEnv` function is currently in `src/rmplan/utils/env.ts` and
+          re-exported by `src/common/env.ts`. Move the implementation of
+          `loadEnv` from `src/rmplan/utils/env.ts` into `src/common/env.ts` to
+          centralize it properly.
+        done: true
+      - prompt: >
+          Update `src/rmplan/rmplan.ts` and any other files that use `loadEnv`
+          to import it directly from `src/common/env.ts`.
+        done: true
+      - prompt: |
+          Delete the now-redundant `src/rmplan/utils/env.ts` file.
+        done: true
+      - prompt: >
+          Perform a codebase-wide search for any other unused files, functions,
+          or exports that are remnants of the refactoring. A tool like `knip` or
+          `ts-prune` can be helpful here. Remove any identified dead code.
+        done: true
+changedFiles:
+  - .cursor/rules/testing.mdc
+  - CLAUDE.md
+  - README.md
+  - TESTING_RESULTS.md
+  - eslint.config.js
+  - manual_test_rmfilter.ts
+  - src/apply-llm-edits/apply.test.ts
+  - src/apply-llm-edits/apply.ts
+  - src/apply-llm-edits/cmd.ts
+  - src/apply-llm-edits/interactive.ts
+  - src/apply-llm-edits/retry.test.ts
+  - src/common/cli.test.ts
+  - src/common/cli.ts
+  - src/common/clipboard.test.ts
+  - src/common/file_finder.ts
+  - src/common/fs.test.ts
+  - src/common/fs.ts
+  - src/common/git.test.ts
+  - src/common/git.ts
+  - src/common/github/identifiers.ts
+  - src/common/github/issues.test.ts
+  - src/common/github/pull_requests.ts
+  - src/common/process.test.ts
+  - src/common/process.ts
+  - src/common/run_and_apply.ts
+  - src/dependency_graph/__snapshots__/walk_imports.test.ts.snap
+  - src/dependency_graph/resolve.ts
+  - src/dependency_graph/walk_imports.test.ts
+  - src/editor/diff-editor/parse.ts
+  - src/editor/udiff-simple/parse.ts
+  - src/editor/whole-file/parse_raw_edits.ts
+  - src/editor/xml/apply.ts
+  - src/logging/console.ts
+  - src/rmfilter/additional_docs.ts
+  - src/rmfilter/config.ts
+  - src/rmfilter/instructions.ts
+  - src/rmfilter/repomix.ts
+  - src/rmfilter/rmfilter.ts
+  - src/rmfilter/utils.test.ts
+  - src/rmfilter/utils.ts
+  - src/rmfind/rmfind.ts
+  - src/rmfix/cli.ts
+  - src/rmfix/rmfix.ts
+  - src/rmplan/actions.test.ts
+  - src/rmplan/actions.ts
+  - src/rmplan/agent_runner.test.ts
+  - src/rmplan/agent_runner.ts
+  - src/rmplan/cleanup.ts
+  - src/rmplan/commands/add.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/answer-pr.ts
+  - src/rmplan/commands/answerPr.ts
+  - src/rmplan/commands/cleanup.ts
+  - src/rmplan/commands/done.test.ts
+  - src/rmplan/commands/done.ts
+  - src/rmplan/commands/edit.ts
+  - src/rmplan/commands/extract.ts
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/list.test.ts
+  - src/rmplan/commands/list.ts
+  - src/rmplan/commands/next.ts
+  - src/rmplan/commands/prepare.ts
+  - src/rmplan/commands/renumber.test.ts
+  - src/rmplan/commands/renumber.ts
+  - src/rmplan/commands/show.test.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/commands/split.ts
+  - src/rmplan/commands/workspace.ts
+  - src/rmplan/configLoader.test.ts
+  - src/rmplan/configLoader.ts
+  - src/rmplan/display_utils.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/copy_paste.ts
+  - src/rmplan/executors/index.ts
+  - src/rmplan/executors/one-call.ts
+  - src/rmplan/llm_utils/llm.ts
+  - src/rmplan/llm_utils/run_and_apply.ts
+  - src/rmplan/plans.test.ts
+  - src/rmplan/plans.ts
+  - src/rmplan/process_markdown.ts
+  - src/rmplan/prompt.ts
+  - src/rmplan/rmplan.integration.test.ts
+  - src/rmplan/rmplan.ts
+  - src/rmplan/rmplan_add.test.ts
+  - src/rmplan/utils/commands.ts
+  - src/rmplan/utils/env.ts
+  - src/rmplan/workspace/workspace_auto_selector.test.ts
+  - src/rmplan/workspace/workspace_auto_selector.ts
+  - src/rmplan/workspace/workspace_manager.test.ts
+  - src/rmplan/workspace/workspace_manager.ts
+  - src/rmpr/comment_options.ts
+  - src/rmpr/git_utils.test.ts
+  - src/rmpr/git_utils.ts
+  - src/rmpr/main.ts
+  - src/rmrun.ts
+  - src/state_machine/index.test.ts
+  - src/state_machine/nodes.test.ts
+  - src/testing.ts
 rmfilter:
   - --
   - src/rmplan

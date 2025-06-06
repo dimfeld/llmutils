@@ -40,6 +40,8 @@ details: >
 
   6.  **Fallback:** Ensure the system falls back gracefully to interactive mode
   or error handling if the retry attempt also fails.
+id: 3
+status: done
 tasks:
   - title: 1 - Refactor Core Edit Application Logic
     description: >
@@ -630,5 +632,3 @@ tasks:
               *   Pass `originalPromptContent` (or `undefined`) as the `originalPrompt` option.
               *   Pass `undefined` for the `llmRequester` option for now. The `--retry` flag currently serves only to indicate intent, but doesn't activate the LLM call from the CLI itself. Add a comment explaining this limitation.
         done: true
-id: 1j9md21
-status: done

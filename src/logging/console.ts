@@ -1,6 +1,6 @@
 import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
-import { debug } from '../rmfilter/utils.js';
+import { debug } from '../common/process.js';
 import { inspect } from 'node:util';
 
 /**

@@ -1,57 +1,50 @@
+// Command handler for 'rmplan agent' and 'rmplan run'
+// Automatically executes steps in a plan YAML file
+
 import * as path from 'path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import yaml from 'yaml';
-import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../logging.ts';
-import { getGitRoot, logSpawn } from '../rmfilter/utils.ts';
+import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
+import { logSpawn } from '../../common/process.js';
+import { getGitRoot } from '../../common/git.js';
 import {
   executePostApplyCommand,
   findPendingTask,
   markStepDone,
   prepareNextStep,
   preparePhase,
-} from './actions.ts';
-import { readPlanFile, writePlanFile } from './plans.ts';
-import { loadEffectiveConfig } from './configLoader.ts';
+} from '../actions.js';
+import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
+import { loadEffectiveConfig } from '../configLoader.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
-} from './executors/index.ts';
-import type { ExecutorCommonOptions } from './executors/types.ts';
-import { createWorkspace } from './workspace/workspace_manager.ts';
-import { WorkspaceAutoSelector } from './workspace/workspace_auto_selector.ts';
-import { WorkspaceLock } from './workspace/workspace_lock.ts';
-import { findWorkspacesByTaskId } from './workspace/workspace_tracker.ts';
+} from '../executors/index.js';
+import type { ExecutorCommonOptions } from '../executors/types.js';
+import { createWorkspace } from '../workspace/workspace_manager.js';
+import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
+import { WorkspaceLock } from '../workspace/workspace_lock.js';
+import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
+
+export async function handleAgentCommand(
+  planFile: string | undefined,
+  options: any,
+  globalCliOptions: any
+) {
+  if (!planFile) {
+    throw new Error('Plan file is required');
+  }
+  await rmplanAgent(planFile, options, globalCliOptions);
+}
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
-  // Initialize currentPlanFile (absolute path)
-  let currentPlanFile = path.resolve(planFile);
-
+  let currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
   const config = await loadEffectiveConfig(globalCliOptions.config);
 
-  let parsed = path.parse(currentPlanFile);
-  if (parsed.ext === '.md' || parsed.ext === '.' || !parsed.ext) {
-    parsed.base = parsed.name + '.yml';
-    parsed.ext = 'yml';
-    currentPlanFile = path.join(parsed.dir, parsed.base);
-  }
-
-  // Verify the original plan file exists
-  try {
-    // Use stat to check if file exists
-    try {
-      await Bun.file(currentPlanFile).text();
-    } catch {
-      error(`Plan file ${currentPlanFile} does not exist or is empty.`);
-      process.exit(1);
-    }
-  } catch (err) {
-    error(`Error checking plan file: ${String(err)}`);
-    process.exit(1);
-  }
-
   if (!options['no-log']) {
+    const parsed = path.parse(currentPlanFile);
     let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
     openLogFile(logFilePath);
   }
@@ -117,10 +110,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             taskId: availableWorkspace.taskId,
           };
         } else {
-          error(
+          throw new Error(
             `Workspace with task ID '${options.workspace}' exists but is locked, and --new-workspace was not specified. Cannot proceed.`
           );
-          process.exit(1);
         }
       } else if (options.newWorkspace) {
         // No existing workspace, create a new one
@@ -132,10 +124,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           config
         );
       } else {
-        error(
+        throw new Error(
           `No workspace found for task ID '${options.workspace}' and --new-workspace was not specified. Cannot proceed.`
         );
-        process.exit(1);
       }
     }
 
@@ -197,8 +188,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       error('Failed to create workspace. Continuing in the current directory.');
       // If workspace creation is explicitly required, exit
       if (options.requireWorkspace) {
-        error('Workspace creation was required but failed. Exiting.');
-        process.exit(1);
+        throw new Error('Workspace creation was required but failed. Exiting.');
       }
     }
   }
@@ -221,8 +211,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         });
         log('Successfully prepared the plan with detailed steps.');
       } catch (err) {
-        error('Failed to automatically prepare the plan:', err);
-        process.exit(1);
+        throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
       }
     }
   } catch (err) {
@@ -394,13 +383,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
 
     if (hasError) {
-      error('Agent stopped due to error.');
-      process.exit(1);
+      throw new Error('Agent stopped due to error.');
     }
-  } catch (err) {
-    error('Unexpected error during agent execution:', err);
-    error('Agent stopped due to error.');
-    process.exit(1);
   } finally {
     await closeLogFile();
   }

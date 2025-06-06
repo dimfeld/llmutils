@@ -6,6 +6,9 @@ import { createMockSpan } from './test_utils';
 import { resetSpans } from './telemetry_test_utils';
 import * as telemetryModule from './telemetry';
 import { StateMachineConfig } from './index';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Track spans manually for testing
 const mockSpans: Record<string, any> = {};
@@ -50,13 +53,7 @@ const mockWithSpan = jest.fn(
   }
 );
 
-// Mock the telemetry module
-mock.module('./telemetry', () => {
-  return {
-    ...telemetryModule,
-    withSpan: mockWithSpan,
-  };
-});
+// Module mocking will be done in beforeEach
 
 // Import after mocking
 import { withSpan, getActiveSpan } from './telemetry';
@@ -156,7 +153,14 @@ describe('Node', () => {
     return span;
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Mock the telemetry module
+    await moduleMocker.mock('./telemetry', () => {
+      return {
+        ...telemetryModule,
+        withSpan: mockWithSpan,
+      };
+    });
     // Clear any existing mock spans
     Object.keys(mockSpans).forEach((key) => delete mockSpans[key]);
 
@@ -180,6 +184,10 @@ describe('Node', () => {
 
     // Create a test node
     testNode = new TestNode('STATE_A');
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
   });
 
   test('should execute lifecycle methods in order: prep, exec, post', async () => {
@@ -1310,7 +1318,14 @@ describe('FlowNode', () => {
   let testFlowNode: TestFlowNode;
   let subMachineConfig: StateMachineConfig<SubState, SubContext, SubEvent>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Mock the telemetry module
+    await moduleMocker.mock('./telemetry', () => {
+      return {
+        ...telemetryModule,
+        withSpan: mockWithSpan,
+      };
+    });
     // Clear any existing mock spans
     Object.keys(mockSpans).forEach((key) => delete mockSpans[key]);
 
@@ -1352,6 +1367,10 @@ describe('FlowNode', () => {
 
     // Reset telemetry for this test
     resetSpans();
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
   });
 
   test('should create FlowNode with submachine', () => {

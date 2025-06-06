@@ -363,6 +363,7 @@ For each task listed above, you need to generate:
    - Each step should be at most a few sentences long and related to the information in the task's description.
    - The agent implementing the code is smart and has access to the entire codebase, so you should be clear on what to do, but not overly prescriptive.
    - No need to supply sample code in your prompts unless it illustrates a specific code pattern.
+   - If a task is designed to create documentation, make sure to save the documentation in a file so that the later tasks can reference it.
 
 ### Output Format
 

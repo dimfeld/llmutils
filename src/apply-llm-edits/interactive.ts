@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { findClosestMatches } from '../editor/closest_match.js';
 import type { EditResult, NoMatchFailure, NotUniqueFailure } from '../editor/types.js';
 import { debugLog, error, log } from '../logging.js';
-import { secureWrite, validatePath } from '../rmfilter/utils.js';
+import { secureWrite, validatePath } from '../common/fs.js';
 import { findAllMatches } from '../editor/udiff-simple/parse.js';
 
 // Helper function to split lines while preserving line endings

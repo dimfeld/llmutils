@@ -12,7 +12,7 @@ import {
   type WorkspaceInfo,
 } from './workspace_tracker.js';
 import type { RmplanConfig } from '../configSchema.js';
-import { getGitRoot } from '../../rmfilter/utils.js';
+import { getGitRoot } from '../../common/git.js';
 import { $ } from 'bun';
 
 export interface AutoSelectOptions {

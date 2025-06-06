@@ -2,7 +2,7 @@
 import * as path from 'path';
 import stringComparison from 'string-comparison';
 import { log } from '../../logging.ts';
-import { secureWrite } from '../../rmfilter/utils.js';
+import { secureWrite } from '../../common/fs.js';
 import { findClosestMatches } from '../closest_match.ts';
 import type { EditResult, NoMatchFailure, ProcessFileOptions, SuccessResult } from '../types.ts';
 

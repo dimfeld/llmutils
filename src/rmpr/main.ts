@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Main handler for the rmpr command - addresses GitHub Pull Request review comments
+ * using Large Language Models. This module integrates with GitHub's API to fetch PR comments,
+ * processes them using various LLM execution strategies, and applies the resulting changes.
+ *
+ * Key responsibilities:
+ * - Fetching and parsing GitHub PR review comments
+ * - Supporting multiple comment processing modes (inline vs separate context)
+ * - Integrating with common utilities for Git operations, file handling, and process management
+ * - Managing the end-to-end workflow from comment selection to code changes and PR replies
+ *
+ * The module leverages the refactored architecture with:
+ * - Common GitHub utilities in src/common/github/ for PR operations
+ * - Common Git utilities in src/common/git.ts for branch detection and operations
+ * - Common process utilities in src/common/process.ts for commits and spawning
+ * - Shared file system utilities in src/common/fs.ts for secure file operations
+ * - Centralized executor system from src/rmplan/executors/ for LLM integration
+ */
+
 import { confirm, input, select } from '@inquirer/prompts';
 import * as path from 'node:path';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
@@ -12,13 +31,10 @@ import { askForModelId } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import {
-  commitAll,
-  getGitRoot,
-  hasUncommittedChanges,
-  parseCliArgsFromString,
-  secureWrite,
-} from '../rmfilter/utils.js';
+import { commitAll } from '../common/process.js';
+import { parseCliArgsFromString } from '../common/cli.js';
+import { secureWrite } from '../common/fs.js';
+import { getGitRoot, hasUncommittedChanges } from '../common/git.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {
   buildExecutorAndLog,
@@ -32,7 +48,8 @@ import {
   parseCommandOptionsFromComment,
   type RmprOptions,
 } from './comment_options.js';
-import { getCurrentBranchName, getCurrentCommitSha } from './git_utils.js';
+import { getCurrentCommitSha } from './git_utils.js';
+import { getCurrentBranchName } from '../common/git.js';
 import {
   createInlineCommentsPrompt,
   insertAiCommentsIntoFileContent,
@@ -44,6 +61,30 @@ import {
 } from './modes/separate_context.js';
 import type { DetailedReviewComment } from './types.js';
 
+/**
+ * Main handler for the rmpr command that processes GitHub Pull Request review comments using LLMs.
+ *
+ * This function orchestrates the complete workflow of:
+ * 1. Detecting and validating the target PR (from argument or current branch)
+ * 2. Fetching unresolved review comments from GitHub API
+ * 3. Allowing user selection of comments to address
+ * 4. Processing comments in either inline or separate context mode
+ * 5. Executing LLM-generated responses using the configured executor
+ * 6. Committing changes and optionally posting replies to review threads
+ *
+ * The function integrates extensively with the refactored common utilities:
+ * - Uses src/common/github/ for PR detection and comment fetching
+ * - Uses src/common/git.ts for branch operations and change detection
+ * - Uses src/common/process.ts for commit operations
+ * - Uses src/common/fs.ts for secure file writing
+ * - Uses src/rmplan/executors/ for LLM execution strategies
+ *
+ * @param prIdentifierArg - Optional PR identifier (URL, number, or undefined for auto-detection)
+ * @param options - Configuration options for execution mode, model, etc.
+ * @param globalCliOptions - Global CLI options like debug flags
+ * @param config - RmplanConfig instance with user preferences and settings
+ * @throws {Error} When PR cannot be identified, GitHub token is missing, or execution fails
+ */
 export async function handleRmprCommand(
   prIdentifierArg: string | undefined,
   options: {

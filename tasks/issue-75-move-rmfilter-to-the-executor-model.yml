@@ -29,6 +29,8 @@ details: >-
   `src/rmfilter/config.ts` and the main execution logic in
   `src/rmfilter/rmfilter.ts` to integrate with the executor system defined in
   `src/rmplan/executors/`.
+id: 18
+status: done
 tasks:
   - title: 1. Update CLI Options and Configuration
     description: Modify the command-line argument parsing and configuration handling
@@ -200,5 +202,3 @@ tasks:
           No code changes are expected from this prompt, only verification. If
           discrepancies are found, point them out.
         done: true
-id: 1j9mdqt
-status: done

@@ -3,29 +3,41 @@ import { mkdtemp, rm, mkdir, writeFile, realpath, readFile } from 'node:fs/promi
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
-import { findNextPlan, readAllPlans, resolvePlanFile, setPlanStatus } from './plans.js';
+import {
+  findNextPlan,
+  readAllPlans,
+  resolvePlanFile,
+  setPlanStatus,
+  clearPlanCache,
+} from './plans.js';
 import { planSchema, type PlanSchema } from './planSchema.js';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 describe('resolvePlanFile', () => {
   let tempDir: string;
   let tasksDir: string;
-
-  // Set up module mocks before all tests
-  beforeAll(() => {
-    mock.module('./configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-      }),
-    }));
-  });
 
   beforeAll(async () => {
     // Create a temporary directory for test files
     tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-test-')));
     tasksDir = join(tempDir, 'tasks');
     await mkdir(tasksDir, { recursive: true });
+
+    // Clear the plan cache before tests
+    clearPlanCache();
+
+    // Set up module mocks with a getter to ensure tasksDir is evaluated lazily
+    await moduleMocker.mock('./configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          get tasks() {
+            return tasksDir;
+          },
+        },
+      }),
+    }));
 
     // Create test plan files
     const plan1 = {
@@ -65,6 +77,9 @@ describe('resolvePlanFile', () => {
   });
 
   afterAll(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
     // Clean up temporary directory
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -124,6 +139,9 @@ describe('resolvePlanFile', () => {
 
     await writeFile(join(nestedDir, 'nested-plan.yml'), yaml.stringify(nestedPlan));
 
+    // Clear cache to ensure the new file is found
+    clearPlanCache();
+
     const resolved = await resolvePlanFile('nested-plan');
     expect(resolved).toBe(join(nestedDir, 'nested-plan.yml'));
   });
@@ -140,6 +158,9 @@ describe('resolvePlanFile', () => {
     };
 
     await writeFile(join(tasksDir, '101.yml'), yaml.stringify(numericPlan));
+
+    // Clear cache to ensure the new file is found
+    clearPlanCache();
 
     const resolved = await resolvePlanFile('101');
     expect(resolved).toBe(join(tasksDir, '101.yml'));
@@ -158,6 +179,9 @@ describe('resolvePlanFile', () => {
 
     await writeFile(join(tasksDir, 'my-plan.yml'), yaml.stringify(numericPlan));
 
+    // Clear cache to ensure the new file is found
+    clearPlanCache();
+
     const resolved = await resolvePlanFile('102');
     expect(resolved).toBe(join(tasksDir, 'my-plan.yml'));
   });
@@ -175,6 +199,9 @@ describe('resolvePlanFile', () => {
 
     await writeFile(join(tasksDir, '103.yml'), yaml.stringify(numericPlan));
 
+    // Clear cache to ensure the new file is found
+    clearPlanCache();
+
     const resolved = await resolvePlanFile('103.yml');
     expect(resolved).toBe(join(tasksDir, '103.yml'));
   });
@@ -191,6 +218,9 @@ describe('resolvePlanFile', () => {
     };
 
     await writeFile(join(tasksDir, 'old-plan.yml'), yaml.stringify(oldPlan));
+
+    // Clear cache to ensure the new file is found
+    clearPlanCache();
 
     const resolved = await resolvePlanFile('alpha-plan-id');
     expect(resolved).toBe(join(tasksDir, 'old-plan.yml'));
@@ -215,6 +245,9 @@ describe('readAllPlans', () => {
   let tempDir: string;
 
   beforeAll(async () => {
+    // Clear the plan cache before tests
+    clearPlanCache();
+
     tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-readall-test-')));
 
     // Create test structure
@@ -488,6 +521,9 @@ describe('findNextReadyPlan', () => {
   let tempDir: string;
 
   beforeAll(async () => {
+    // Clear the plan cache before tests
+    clearPlanCache();
+
     tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-findnext-test-')));
 
     // Create test plans with various priorities and dependencies
@@ -622,6 +658,9 @@ describe('findNextReadyPlan', () => {
     // Remove the urgent plan to test high priority sorting
     await rm(join(tempDir, 'urgent-priority.yml'));
 
+    // Clear cache after file removal to ensure fresh read
+    clearPlanCache();
+
     const nextPlan = await findNextPlan(tempDir, { includePending: true });
     expect(nextPlan).toBeDefined();
     expect(nextPlan!.id).toBe('high-1'); // high-1 comes before high-2 alphabetically
@@ -748,6 +787,9 @@ describe('setPlanStatus', () => {
   let tempDir: string;
 
   beforeAll(async () => {
+    // Clear the plan cache before tests
+    clearPlanCache();
+
     tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-setstatus-test-')));
   });
 

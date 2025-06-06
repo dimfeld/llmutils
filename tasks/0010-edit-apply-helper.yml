@@ -26,6 +26,8 @@ details: >
 
   6.  Integrate Neovim diff mode (`nvim -d`) as a resolution option for "no
   exact match" errors.
+id: 23
+status: done
 tasks:
   - title: 1. Define Common Result Structure & Closest Match Foundation
     description: Create the necessary TypeScript types for representing edit results
@@ -691,5 +693,3 @@ tasks:
           reads, temporary file operations, nvim execution) and user feedback
           clarity. Ensure `dryRun` is respected when writing files.
         done: false
-id: 1j9mdx8
-status: done

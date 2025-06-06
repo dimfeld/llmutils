@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement `add` Command and Enhance `generate` Command
 goal: To enable users to create basic plan files using a new `add` command and
   then populate these files with detailed tasks and steps using an enhanced
@@ -6,7 +7,7 @@ details: This phase focuses on introducing the `add` command for scaffolding new
   plan files. It also involves modifying the existing `generate` command to work
   with these pre-existing (but empty) plan files, populating them with
   LLM-generated content in place, rather than always creating a new file.
-id: 1l52aj2-1
+id: 24
 status: done
 dependencies: []
 planGeneratedAt: 2025-05-31T20:32:33.555Z
@@ -401,11 +402,11 @@ tasks:
           should fall back to existing `generate` behavior for non-stubs or
           error if that's the design).
         done: true
-rmfilter:
-  - src/rmplan
 changedFiles:
   - CLAUDE.md
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/rmplan.test.ts
   - src/rmplan/rmplan.ts
   - test-stub-plan.yml
+rmfilter:
+  - src/rmplan

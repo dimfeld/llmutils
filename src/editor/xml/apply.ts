@@ -1,6 +1,6 @@
 // originally from github.com/mckaywrigley/o1-xml-parser
 import * as path from 'path';
-import { secureWrite, secureRm } from '../../rmfilter/utils.js';
+import { secureWrite, secureRm } from '../../common/fs.js';
 import { log, warn } from '../../logging.js';
 
 export interface FileChange {

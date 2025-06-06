@@ -55,8 +55,8 @@ describe('rmplan add command', () => {
 
     expect(plan.id).toBe('1');
     expect(plan.title).toBe('Test Title');
-    expect(plan.goal).toBe('Goal to be defined.');
-    expect(plan.details).toBe('Details to be added.');
+    expect(plan.goal).toBe('');
+    expect(plan.details).toBe('');
     expect(plan.status).toBe('pending');
     expect(plan.tasks).toEqual([]);
   });

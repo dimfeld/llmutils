@@ -57,6 +57,8 @@ details: >
 
   6. Ensure robust error handling (e.g., invalid YAML, schema validation errors,
   command execution failures based on `allowFailure`).
+id: 11
+status: done
 tasks:
   - title: Define Configuration Schema
     description: Define the structure and validation rules for the `rmplan.yml`
@@ -457,5 +459,3 @@ tasks:
              // ... rest of the loop ...
           ```
         done: true
-id: 1j9md80
-status: done

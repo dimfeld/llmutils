@@ -2,15 +2,10 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import {
-  getFileContentAtRef,
-  getDiff,
-  getCurrentGitBranch,
-  getCurrentBranchName,
-  getCurrentJujutsuBranch,
-} from './git_utils';
+import { getFileContentAtRef, getDiff } from './git_utils';
 import * as gitUtils from './git_utils';
 import { $ } from 'bun';
+import { getCurrentGitBranch } from '../common/git.ts';
 
 describe('Git Utilities', () => {
   let tmpRepoPath: string;

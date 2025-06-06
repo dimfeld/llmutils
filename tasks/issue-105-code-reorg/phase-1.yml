@@ -7,12 +7,13 @@ details: This phase focuses on refactoring the `src/rmplan` directory.
   Currently, `src/rmplan/rmplan.ts` likely handles multiple sub-commands. This
   work will involve identifying these commands and moving their respective logic
   into dedicated files. Shared utilities within `rmplan` will also be organized.
-id: 1rm0j7j-1
-status: pending
+id: 35
+status: done
 dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z
+promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-04T08:24:18.885Z
+updatedAt: 2025-06-04T20:24:18.182Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -43,46 +44,468 @@ tasks:
       `src/rmplan/actions.ts`, `src/rmplan/agent.ts`) to list all distinct
       sub-commands provided by `rmplan` (such as generate, agent/run, next,
       done, list, prepare, show, edit, split, workspace commands). Document the
-      primary files and functions associated with each command.
-    files: []
-    steps: []
+      primary files and functions associated with each command. This task is
+      primarily analysis and documentation to inform subsequent refactoring
+      tasks.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+      - src/rmplan/agent.ts
+      - src/rmplan/process_markdown.ts
+      - src/rmplan/cleanup.ts
+      - src/rmplan/workspace/workspace_manager.ts
+      - src/rmplan/workspace/workspace_auto_selector.ts
+      - src/rmpr/main.ts
+    steps:
+      - prompt: >
+          Review `src/rmplan/rmplan.ts` and identify all commands defined using
+          `program.command()`.
+
+          For each command, list its name and any specified aliases.
+        done: true
+      - prompt: >
+          For each identified command in `src/rmplan/rmplan.ts`, examine its
+          `.action()` handler.
+
+          Trace the primary function calls made within each action handler to
+          determine where the core logic for that command resides.
+
+          Note the source file (e.g., `actions.ts`, `agent.ts`,
+          `process_markdown.ts`, or inline within `rmplan.ts`) for this core
+          logic.
+        done: true
+      - prompt: >
+          Specifically analyze the `workspace` command and its subcommands
+          (`list`, `add`). Document how these subcommands are dispatched and
+          which functions/modules handle their logic (e.g.,
+          `WorkspaceAutoSelector.listWorkspacesWithStatus`, `createWorkspace`).
+        done: true
+      - prompt: >
+          Compile a list of all `rmplan` sub-commands. For each command,
+          document:
+
+          1. The command name (and aliases).
+
+          2. The primary function(s) responsible for its execution.
+
+          3. The source file(s) where these functions are currently located.
+
+          4. Key helper functions or modules it depends on within `src/rmplan/`.
+
+          This documentation will serve as a map for relocating logic in
+          subsequent tasks.
+        done: true
   - title: Create New Files for Each `rmplan` Command
     description: For each command identified in the previous task, create a new
       TypeScript file within a new `src/rmplan/commands/` subdirectory (e.g.,
       `src/rmplan/commands/generate.ts`, `src/rmplan/commands/agent.ts`).
-    files: []
-    steps: []
+    files:
+      - src/rmplan/commands/generate.ts
+      - src/rmplan/commands/agent.ts
+      - src/rmplan/commands/next.ts
+      - src/rmplan/commands/done.ts
+      - src/rmplan/commands/list.ts
+      - src/rmplan/commands/prepare.ts
+      - src/rmplan/commands/show.ts
+      - src/rmplan/commands/edit.ts
+      - src/rmplan/commands/split.ts
+      - src/rmplan/commands/add.ts
+      - src/rmplan/commands/extract.ts
+      - src/rmplan/commands/answerPr.ts
+      - src/rmplan/commands/cleanup.ts
+      - src/rmplan/commands/workspace.ts
+    steps:
+      - prompt: |
+          Create a new directory `src/rmplan/commands/`.
+        done: true
+      - prompt: >
+          Based on the list of commands documented in Task 1, create a new
+          TypeScript file for each top-level command in the
+          `src/rmplan/commands/` directory.
+
+          Name the files descriptively, e.g., `generate.ts`, `agent.ts`,
+          `list.ts`, `workspace.ts`.
+
+          Each file should initially be empty or contain a placeholder for the
+          command's handler function.
+        done: true
   - title: Relocate Command-Specific Logic
     description: Move the core logic, argument parsing, and helper functions
-      specific to each `rmplan` command from their current locations into the
-      newly created dedicated command files.
-    files: []
-    steps: []
+      specific to each `rmplan` command from their current locations (primarily
+      `src/rmplan/rmplan.ts`, `src/rmplan/actions.ts`, `src/rmplan/agent.ts`)
+      into the newly created dedicated command files. Each new command file
+      should export a primary handler function.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/actions.ts
+      - src/rmplan/agent.ts
+      - src/rmplan/process_markdown.ts
+      - src/rmplan/cleanup.ts
+      - src/rmplan/commands/generate.ts
+      - src/rmplan/commands/agent.ts
+      - src/rmplan/commands/next.ts
+      - src/rmplan/commands/done.ts
+      - src/rmplan/commands/list.ts
+      - src/rmplan/commands/prepare.ts
+      - src/rmplan/commands/show.ts
+      - src/rmplan/commands/edit.ts
+      - src/rmplan/commands/split.ts
+      - src/rmplan/commands/add.ts
+      - src/rmplan/commands/extract.ts
+      - src/rmplan/commands/answerPr.ts
+      - src/rmplan/commands/cleanup.ts
+      - src/rmplan/commands/workspace.ts
+    steps:
+      - prompt: >
+          For the `generate` command:
+
+          Identify its action handler in `src/rmplan/rmplan.ts`.
+
+          Move the core logic (likely involving `simplePlanPrompt`/`planPrompt`
+          and `extractMarkdownToYaml` from `src/rmplan/process_markdown.ts`)
+          into `src/rmplan/commands/generate.ts`.
+
+          Define and export a handler function, e.g., `async function
+          handleGenerateCommand(options: any, command: any)`.
+        done: true
+      - prompt: >
+          For the `agent` (and `run` alias) command:
+
+          The primary logic is `rmplanAgent` in `src/rmplan/agent.ts`.
+
+          Move `rmplanAgent` and its direct helper functions (if any that are
+          not broadly shared) into `src/rmplan/commands/agent.ts`.
+
+          Export a handler function, e.g., `async function
+          handleAgentCommand(planFile: string | undefined, options: any,
+          globalCliOptions: any)`.
+        done: true
+      - prompt: >
+          For the `next` command:
+
+          Relocate its logic (likely involving `prepareNextStep` from
+          `src/rmplan/actions.ts`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/next.ts`.
+
+          Export a handler function, e.g., `async function
+          handleNextCommand(planFile: string, options: any)`.
+        done: true
+      - prompt: >
+          For the `done` command:
+
+          Relocate its logic (likely involving `markStepDone` from
+          `src/rmplan/actions.ts`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/done.ts`.
+
+          Export a handler function, e.g., `async function
+          handleDoneCommand(planFile: string, options: any)`.
+        done: true
+      - prompt: >
+          For the `list` command:
+
+          Relocate its logic (displaying plans, likely using `readAllPlans` from
+          `src/rmplan/plans.ts`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/list.ts`.
+
+          Export a handler function, e.g., `async function
+          handleListCommand(options: any)`.
+        done: true
+      - prompt: >
+          For the `prepare` command:
+
+          Relocate its logic (likely involving `preparePhase` from
+          `src/rmplan/actions.ts`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/prepare.ts`.
+
+          Export a handler function, e.g., `async function
+          handlePrepareCommand(yamlFile: string | undefined, options: any)`.
+        done: true
+      - prompt: >
+          For the `show` command:
+
+          Relocate its logic (displaying plan details, using `readPlanFile` and
+          `readAllPlans`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/show.ts`.
+
+          Export a handler function, e.g., `async function
+          handleShowCommand(planFile: string | undefined, options: any)`.
+        done: true
+      - prompt: >
+          For the `edit` command:
+
+          Relocate its logic (opening a plan file in an editor) from
+          `src/rmplan/rmplan.ts` to `src/rmplan/commands/edit.ts`.
+
+          Export a handler function, e.g., `async function
+          handleEditCommand(planArg: string, options: any)`.
+        done: true
+      - prompt: >
+          For the `split` command:
+
+          Relocate its logic (likely involving `generateSplitPlanPrompt` and
+          `saveMultiPhaseYaml`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/split.ts`.
+
+          Export a handler function, e.g., `async function
+          handleSplitCommand(planArg: string, options: any)`.
+        done: true
+      - prompt: >
+          For the `add` command:
+
+          Relocate its logic (creating new plan stubs, using
+          `generateNumericPlanId`, `writePlanFile`) from `src/rmplan/rmplan.ts`
+          to `src/rmplan/commands/add.ts`.
+
+          Export a handler function, e.g., `async function
+          handleAddCommand(title: string[], options: any)`.
+        done: true
+      - prompt: >
+          For the `extract` command:
+
+          Relocate its logic (using `extractMarkdownToYaml` from
+          `src/rmplan/process_markdown.ts`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/extract.ts`.
+
+          Export a handler function, e.g., `async function
+          handleExtractCommand(inputFile: string | undefined, options: any)`.
+        done: true
+      - prompt: >
+          For the `answer-pr` command:
+
+          Relocate its logic (calling `handleRmprCommand` from
+          `src/rmpr/main.ts`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/answerPr.ts`.
+
+          Export a handler function, e.g., `async function
+          handleAnswerPrCommand(prIdentifier: string | undefined, options:
+          any)`.
+        done: true
+      - prompt: >
+          For the `cleanup` command:
+
+          Relocate its logic (calling `cleanupEolComments` from
+          `src/rmplan/cleanup.ts`) from `src/rmplan/rmplan.ts` to
+          `src/rmplan/commands/cleanup.ts`.
+
+          Export a handler function, e.g., `async function
+          handleCleanupCommand(files: string[], options: any)`.
+        done: true
+      - prompt: >
+          For the `workspace` command and its subcommands (`list`, `add`):
+
+          In `src/rmplan/commands/workspace.ts`, create and export handler
+          functions for each subcommand (e.g., `handleWorkspaceListCommand`,
+          `handleWorkspaceAddCommand`).
+
+          The main `handleWorkspaceCommand` function (to be called by
+          `rmplan.ts`) will parse the subcommand and delegate to the appropriate
+          internal handler.
+
+          Relocate logic for `workspace list` (using
+          `WorkspaceAutoSelector.listWorkspacesWithStatus`) and `workspace add`
+          (using `createWorkspace`) from `src/rmplan/rmplan.ts` into these
+          handlers.
+        done: true
   - title: Organize Shared `rmplan` Utilities
     description: Identify functions and types that are used by multiple `rmplan`
       commands but are specific to the `rmplan` domain. Consolidate these into
       existing or new shared utility files within `src/rmplan/` (e.g.,
       `src/rmplan/planUtils.ts`, or ensure `src/rmplan/plans.ts` and
       `src/rmplan/actions.ts` serve this purpose clearly).
-    files: []
-    steps: []
+    files:
+      - src/rmplan/actions.ts
+      - src/rmplan/plans.ts
+      - src/rmplan/id_utils.ts
+      - src/rmplan/process_markdown.ts
+      - src/rmplan/display_utils.ts
+      - src/rmplan/planSchema.ts
+      - src/rmplan/configLoader.ts
+      - src/rmplan/agent.ts
+    steps:
+      - prompt: >
+          Review `src/rmplan/actions.ts`. Functions like `findPendingTask`,
+          `prepareNextStep`, `markStepDone`, `executePostApplyCommand`, and
+          `preparePhase` are likely used by multiple new command modules.
+
+          Ensure these functions are general plan operations and decide if
+          `actions.ts` is still the best location or if a new shared utility
+          file (e.g., `planOperations.ts`) is more appropriate. For now, assume
+          they remain in `actions.ts` if they represent high-level actions on
+          plans.
+        done: true
+      - prompt: >
+          Verify that `src/rmplan/plans.ts` (containing `readAllPlans`,
+          `resolvePlanFile`, etc.) and `src/rmplan/id_utils.ts` serve as
+          effective shared utility modules for their respective domains.
+
+          Confirm that functions in `src/rmplan/process_markdown.ts` (like
+          `extractMarkdownToYaml`) are appropriately placed or if they should be
+          moved to a more general utility if their use expands beyond `generate`
+          and `extract`.
+        done: true
+      - prompt: >
+          Ensure `src/rmplan/display_utils.ts`, `src/rmplan/planSchema.ts`, and
+          `src/rmplan/configLoader.ts` continue to serve as shared resources.
+        done: true
+      - prompt: >
+          Review the new command-specific files in `src/rmplan/commands/`. If
+          any helper functions were moved into them during Task 3 that are
+          actually used by *more than one* command module, relocate these to an
+          appropriate shared file (e.g., `actions.ts`, `plans.ts`, or a new
+          `planUtils.ts`).
+        done: true
+      - prompt: >
+          Refactor `src/rmplan/agent.ts`. The `rmplanAgent` function itself
+          should now be part of `src/rmplan/commands/agent.ts`. If `agent.ts`
+          still contains other functions, determine if they are specific to the
+          agent command (and should be co-located or moved to
+          `commands/agent.ts`) or if they are general utilities that need to be
+          moved to a shared module.
+        done: true
   - title: Update `rmplan.ts` Entry Point
     description: Refactor `src/rmplan/rmplan.ts` to primarily serve as a command
       dispatcher. It should import and delegate execution to the functions in
       the new command-specific files.
-    files: []
-    steps: []
+    files:
+      - src/rmplan/rmplan.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.ts`, remove the inline action handler logic for
+          each command that was relocated in Task 3.
+        done: true
+      - prompt: >
+          For each `program.command(...)` definition in `src/rmplan/rmplan.ts`:
+
+          Update its `.action((...args) => { ... })` callback.
+
+          Inside the callback, import the corresponding handler function from
+          the `src/rmplan/commands/` directory (e.g., `import {
+          handleGenerateCommand } from './commands/generate.js';`).
+
+          Call the imported handler, passing the necessary options and arguments
+          received by the action callback.
+
+          Example for `generate` command: `.action(async (options, command) => {
+          await handleGenerateCommand(options, command); })`.
+        done: true
+      - prompt: >
+          Ensure that global options (like `--config`, `--debug`) parsed by
+          `program.opts()` are correctly passed to command handlers if they need
+          them, or handled appropriately at the top level.
+
+          The `rmplan.ts` file should now be significantly smaller, focusing on
+          CLI definition and dispatch.
+        done: true
   - title: Update Internal Imports within `rmplan`
     description: Adjust all import statements within the `src/rmplan/` directory to
       reflect the new file structure and module organization.
-    files: []
-    steps: []
+    files:
+      - src/rmplan/**/*.ts
+    steps:
+      - prompt: >
+          Iterate through all TypeScript files within `src/rmplan/` (including
+          `src/rmplan/commands/`, `src/rmplan/executors/`,
+          `src/rmplan/workspace/`, and other utility files).
+
+          For each file, review its `import` statements.
+        done: true
+      - prompt: >
+          Update import paths to correctly point to modules that have been moved
+          or refactored.
+
+          For example, if a function previously imported from
+          `src/rmplan/actions.ts` is now in `src/rmplan/commands/agent.ts`,
+          update the import path.
+
+          Use relative paths for imports between files within the `src/rmplan`
+          module.
+        done: true
+      - prompt: >
+          After updating imports, run `bunx tsc --noEmit -p tsconfig.json` (or
+          use IDE checks) to verify that all imports resolve correctly and there
+          are no TypeScript errors related to module resolution. Fix any
+          reported issues.
+        done: true
   - title: Test `rmplan` Functionality
     description: Run all existing tests related to `rmplan`. Add new unit or
       integration tests as necessary to ensure the refactored command structure
       works correctly and all `rmplan` commands remain functional.
-    files: []
-    steps: []
+    files:
+      - src/rmplan/**/*.test.ts
+      - src/rmplan/commands/generate.test.ts
+      - src/rmplan/commands/agent.test.ts
+    steps:
+      - prompt: >
+          Execute all existing tests related to `rmplan` functionality (e.g.,
+          `src/rmplan/rmplan_add.test.ts`,
+          `src/rmplan/workspace/workspace_add.test.ts`,
+          `src/rmplan/cleanup.test.ts`).
+
+          Address any test failures that arise due to the refactoring. This may
+          involve updating import paths in test files or adjusting how tested
+          functions are invoked.
+        done: true
+      - prompt: >
+          For each new command module created in `src/rmplan/commands/` (e.g.,
+          `generate.ts`, `agent.ts`, `list.ts`):
+
+          Create a corresponding unit test file (e.g.,
+          `src/rmplan/commands/generate.test.ts`) if one does not already exist.
+
+          Write unit tests for the main exported handler function in each
+          command module. Focus on testing the command's specific logic and its
+          interaction with shared utilities.
+
+          Mock external dependencies (LLMs, file system for reads if not using
+          temp dirs) where necessary, but prefer testing with real file
+          operations in temporary directories for file-generating commands like
+          `add`.
+        done: true
+      - prompt: >
+          Review and enhance tests for shared utility modules like
+          `src/rmplan/actions.ts` and `src/rmplan/plans.ts` to ensure their
+          functionality is robustly covered, especially if their usage patterns
+          have changed due to the refactoring.
+        done: true
+      - prompt: >
+          Consider adding a few high-level integration tests that execute the
+          `rmplan` CLI with common commands (e.g., `rmplan generate --plan ...`,
+          `rmplan agent ...`, `rmplan list`) to verify the command dispatching
+          in `rmplan.ts` and the end-to-end flow for these commands.
+
+          Use `$` from Bun for CLI invocation in these tests, similar to
+          `src/rmplan/rmplan_add.test.ts`.
+        done: true
+changedFiles:
+  - CLAUDE.md
+  - src/rmplan/actions.test.ts
+  - src/rmplan/commands/add.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/answer-pr.ts
+  - src/rmplan/commands/answerPr.ts
+  - src/rmplan/commands/cleanup.ts
+  - src/rmplan/commands/done.test.ts
+  - src/rmplan/commands/done.ts
+  - src/rmplan/commands/edit.ts
+  - src/rmplan/commands/extract.ts
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/list.test.ts
+  - src/rmplan/commands/list.ts
+  - src/rmplan/commands/next.ts
+  - src/rmplan/commands/prepare.ts
+  - src/rmplan/commands/show.test.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/commands/split.ts
+  - src/rmplan/commands/workspace.ts
+  - src/rmplan/configLoader.test.ts
+  - src/rmplan/configLoader.ts
+  - src/rmplan/display_utils.test.ts
+  - src/rmplan/plans.test.ts
+  - src/rmplan/plans.ts
+  - src/rmplan/prompt.ts
+  - src/rmplan/rmplan.integration.test.ts
+  - src/rmplan/rmplan.ts
 rmfilter:
   - --
   - src/rmplan

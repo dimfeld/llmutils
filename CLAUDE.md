@@ -27,50 +27,60 @@ bun test path/to/specific/test.ts
 
 ## Repository Structure
 
-This repository contains command-line utilities for managing context with chat-oriented programming and applying edits from language models. The key commands are:
+This repository contains command-line utilities for managing context with chat-oriented programming and applying edits from language models. The codebase has been organized for enhanced modularity and maintainability, with shared utilities consolidated into `src/common/` and feature modules structured for minimal inter-dependency coupling. The key commands are:
 
 - `rmfilter`: Analyzes import trees to gather related files, adds instructions, and prepares context for LLMs
 - `rmfind`: Finds relevant files to use with rmfilter
-- `rmplan`: Generates and manages step-by-step project plans using LLMs
+- `rmplan`: Generates and manages step-by-step project plans using LLMs (organized with separate sub-command modules)
 - `apply-llm-edits`: Applies LLM-generated edits back to the codebase
 - `rmrun`: Sends rmfilter output to an LLM and applies edits
 - `rmfix`: Toolkit for fixing LLM-generated code when it doesn't apply cleanly
 
 ## Core Architecture
 
-The codebase is organized into several main modules:
+The codebase is organized into several main modules with improved modularity and clear separation of concerns:
 
-1. **rmfilter**: Prepares code context for LLMs with support for different edit formats (diff, whole-file, XML)
+1. **common**: Centralized shared utilities and infrastructure
+
+   - CLI utilities (`cli.ts`), file system operations (`fs.ts`), Git integration (`git.ts`)
+   - Process management (`process.ts`), terminal interaction (`terminal.ts`)
+   - Clipboard support with OSC52 (`clipboard.ts`, `osc52.ts`)
+   - SSH detection (`ssh_detection.ts`) and model factory (`model_factory.ts`)
+   - GitHub integration utilities in `github/` subdirectory
+
+2. **rmfilter**: Prepares code context for LLMs with support for different edit formats (diff, whole-file, XML)
 
    - Uses repomix for context preparation
    - Supports dependency analysis to include related files
    - Handles configuration via YAML files with preset support
 
-2. **rmplan**: Manages step-by-step project plans with LLM integration
+3. **rmplan**: Manages step-by-step project plans with LLM integration, organized by sub-commands
 
-   - Generates planning prompts
-   - Extracts Markdown plans into YAML format
-   - Tracks progress and executes steps with potential Git integration
+   - Modular command structure in `commands/` directory with separate files per sub-command
+   - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
+   - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `prepare.ts`, `split.ts`
+   - Workspace management: `workspace.ts` with automated isolation support
+   - Executor system in `executors/` for different LLM integration approaches
 
-3. **apply-llm-edits**: Processes LLM-generated edits and applies them to the codebase
+4. **apply-llm-edits**: Processes LLM-generated edits and applies them to the codebase
 
    - Supports different edit formats (unified diff, search/replace, XML, whole-file)
    - Handles interactive retry mechanisms for failed edits
    - Offers options for dry-runs and partial application
 
-4. **dependency_graph**: Analyzes file import relationships
+5. **dependency_graph**: Analyzes file import relationships
 
    - Resolves import paths and walks import trees
    - Essential for the `--with-imports` and `--with-all-imports` options
 
-5. **editor**: Contains parsing and prompting logic for different edit formats
+6. **editor**: Contains parsing and prompting logic for different edit formats
 
    - diff-editor: For classic diff-style edits
    - udiff-simple: For unified diff format
    - whole-file: For complete file replacements
    - xml: For XML-formatted edits
 
-6. **state_machine**: Provides an event-driven state machine implementation
+7. **state_machine**: Provides an event-driven state machine implementation
 
    - Manages state transitions with explicit type safety
    - Supports hierarchical state machines with sub-machines

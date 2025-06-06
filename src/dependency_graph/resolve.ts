@@ -8,7 +8,7 @@ import {
 } from 'resolve.exports';
 import { packageUp } from 'package-up';
 import { findUp } from 'find-up';
-import { cachePromise, type FnCache } from '../rmfilter/utils.ts';
+import { cachePromise, type FnCache } from '../common/process.ts';
 import { importCandidates, jsExtensions } from './filenames.ts';
 
 export interface Package {

@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { join, resolve } from 'node:path';
 import * as yaml from 'yaml';
 import { debugLog } from '../logging.js';
-import { getGitRoot } from '../rmfilter/utils.js';
+import { getGitRoot } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { phaseSchema, type PlanSchema } from './planSchema.js';
 
@@ -29,13 +29,28 @@ export type PlanSummary = {
 
 let cachedPlans = new Map<
   string,
-  { plans: Map<string | number, PlanSummary>; maxNumericId: number }
+  {
+    plans: Map<string | number, PlanSummary>;
+    maxNumericId: number;
+    duplicates: (string | number)[];
+  }
 >();
+
+/**
+ * Clears the plan cache. This is primarily for testing purposes.
+ */
+export function clearPlanCache(): void {
+  cachedPlans.clear();
+}
 
 export async function readAllPlans(
   directory: string,
   readCache = true
-): Promise<{ plans: Map<string | number, PlanSummary>; maxNumericId: number }> {
+): Promise<{
+  plans: Map<string | number, PlanSummary>;
+  maxNumericId: number;
+  duplicates: (string | number)[];
+}> {
   let existing = readCache ? cachedPlans.get(directory) : undefined;
   if (existing) {
     return existing;
@@ -44,6 +59,8 @@ export async function readAllPlans(
   const plans = new Map<string | number, PlanSummary>();
   const promises: Promise<void>[] = [];
   let maxNumericId = 0;
+  const duplicates: (string | number)[] = [];
+  const seenIds = new Set<string | number>();
 
   debugLog(`Starting to scan directory for plan files: ${directory}`);
 
@@ -101,6 +118,15 @@ export async function readAllPlans(
         }
       }
 
+      // Check for duplicate IDs
+      if (seenIds.has(idKey)) {
+        if (!duplicates.includes(idKey)) {
+          duplicates.push(idKey);
+        }
+      } else {
+        seenIds.add(idKey);
+      }
+
       plans.set(idKey, {
         id: summaryId,
         title: plan.title,
@@ -146,7 +172,7 @@ export async function readAllPlans(
   await scanDirectory(directory);
   await Promise.all(promises);
   debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
-  const retVal = { plans, maxNumericId };
+  const retVal = { plans, maxNumericId, duplicates };
   cachedPlans.set(directory, retVal);
   return retVal;
 }
@@ -212,20 +238,18 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
   }
 
   // Try to parse planArg as a number
-  const numericPlanArg = parseInt(planArg, 10);
-  if (!isNaN(numericPlanArg)) {
-    // Construct potential path for numeric ID
-    const potentialPath = path.join(tasksDir, `${numericPlanArg}.yml`);
-    try {
-      await stat(potentialPath);
-      return potentialPath;
-    } catch {
-      // File doesn't exist, continue to search in plans
-    }
-  }
+  const numericPlanArg = Number(planArg);
 
   // Read all plans and search by ID
-  const { plans } = await readAllPlans(tasksDir);
+  const { plans, duplicates } = await readAllPlans(tasksDir);
+
+  // Check if the requested plan ID is a duplicate
+  const planId = !isNaN(numericPlanArg) ? numericPlanArg : planArg;
+  if (duplicates.includes(planId)) {
+    throw new Error(
+      `Plan ID ${planId} is duplicated in multiple files. Please run 'rmplan renumber' to fix this issue.`
+    );
+  }
 
   // If we successfully parsed as a number, try numeric lookup first
   if (!isNaN(numericPlanArg)) {
@@ -302,7 +326,14 @@ export async function findNextPlan(
 
     // Check if all dependencies are done
     return plan.dependencies.every((depId) => {
-      const depPlan = plans.get(depId);
+      // Try to get the dependency plan by string ID first
+      let depPlan = plans.get(depId);
+
+      // If not found and the dependency ID is a numeric string, try as a number
+      if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
+        depPlan = plans.get(parseInt(depId, 10));
+      }
+
       return depPlan && depPlan.status === 'done';
     });
   });
@@ -392,7 +423,14 @@ export function isPlanReady(
 
   // Check if all dependencies are done
   return plan.dependencies.every((depId) => {
-    const depPlan = allPlans.get(depId);
+    // Try to get the dependency plan by string ID first
+    let depPlan = allPlans.get(depId);
+
+    // If not found and the dependency ID is a numeric string, try as a number
+    if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
+      depPlan = allPlans.get(parseInt(depId, 10));
+    }
+
     return depPlan && depPlan.status === 'done';
   });
 }

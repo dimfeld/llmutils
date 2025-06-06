@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import { parseArgs } from 'util';
 import * as clipboard from '../common/clipboard.ts';
 import { error, log } from '../logging.ts';
-import { setDebug } from '../rmfilter/utils.ts';
+import { setDebug } from '../common/process.ts';
 import { applyLlmEdits, getWriteRoot } from './apply.js';
 import { createRetryRequester, type RetryRequester } from './retry.ts';
 import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.ts';

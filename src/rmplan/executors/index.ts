@@ -1,4 +1,4 @@
-import { DEFAULT_RUN_MODEL } from '../../common/run_and_apply.ts';
+import { DEFAULT_RUN_MODEL } from '../llm_utils/run_and_apply.js';
 import { executors } from './build.ts';
 import { ClaudeCodeExecutor, ClaudeCodeExecutorName } from './claude_code.ts';
 import { CopyOnlyExecutor, CopyOnlyExecutorName } from './copy_only.ts';

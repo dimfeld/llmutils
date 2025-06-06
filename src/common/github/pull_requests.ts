@@ -4,8 +4,8 @@ import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import type { DetailedReviewComment } from '../../rmpr/types.ts';
 import { debugLog, error, log, warn } from '../../logging.ts';
 import { parsePrOrIssueNumber } from './identifiers.ts';
-import { getCurrentBranchName } from '../../rmpr/git_utils.ts';
-import { getGitRepository } from '../../rmfilter/utils.ts';
+import { getCurrentBranchName } from '../git.ts';
+import { getGitRepository } from '../git.js';
 
 export interface CommentAuthor {
   login: string;

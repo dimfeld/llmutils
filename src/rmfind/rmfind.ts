@@ -4,7 +4,8 @@ import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { debugLog, error, log, warn } from '../logging.ts';
 import * as clipboard from '../common/clipboard.ts';
-import { getGitRoot, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { setDebug, setQuiet } from '../common/process.ts';
+import { getGitRoot } from '../common/git.ts';
 import { findFilesCore, type RmfindOptions, type RmfindResult } from './core.ts';
 
 const DEFAULT_MODEL = 'google/gemini-2.0-flash';

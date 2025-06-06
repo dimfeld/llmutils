@@ -1,4 +1,39 @@
 #!/usr/bin/env bun
+
+/**
+ * @fileoverview Main implementation of rmfilter - a context preparation tool that analyzes
+ * import trees, gathers related files, and prepares optimized LLM prompts for code editing tasks.
+ * This module serves as both a CLI tool and a programmatic API for other tools in the suite.
+ *
+ * Key responsibilities:
+ * - Analyzing file import relationships using dependency graph utilities
+ * - Gathering files based on glob patterns, grep searches, and dependency analysis
+ * - Integrating with repomix for context preparation
+ * - Supporting multiple LLM prompt formats (XML, diff, whole-file, etc.)
+ * - Managing configuration through presets and YAML files
+ * - Providing both CLI and programmatic interfaces
+ *
+ * The module leverages the refactored architecture with:
+ * - Common Git utilities in src/common/git.ts for repository operations
+ * - Common process utilities in src/common/process.ts for spawning and logging
+ * - Common clipboard utilities in src/common/clipboard.ts for output handling
+ * - Dependency graph analysis in src/dependency_graph/ for import resolution
+ * - Editor-specific prompt generation in src/editor/ for different LLM formats
+ * - Integration with rmplan executors for automated execution workflows
+ *
+ * @example
+ * ```bash
+ * # Basic usage with files
+ * rmfilter src/auth/*.ts --with-imports
+ *
+ * # Using grep to find relevant files
+ * rmfilter --grep "authentication" src/
+ *
+ * # Programmatic usage
+ * const output = await runRmfilterProgrammatically(args, gitRoot, baseDir);
+ * ```
+ */
+
 import { globby } from 'globby';
 import { encode } from 'gpt-tokenizer';
 import micromatch from 'micromatch';
@@ -23,7 +58,8 @@ import {
   type AdditionalDocsOptions,
 } from '../rmfilter/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
-import { debug, getGitRoot, quiet, setDebug, setQuiet } from '../rmfilter/utils.ts';
+import { debug, quiet, setDebug, setQuiet } from '../common/process.ts';
+import { getGitRoot } from '../common/git.ts';
 import { Extractor } from '../treesitter/extract.ts';
 import {
   getCurrentConfig,
@@ -38,7 +74,7 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-import { buildExecutorAndLog } from '../rmplan/executors/index.ts';
+import { runPlanContextWithExecutor } from '../rmplan/agent_runner.js';
 import { DEFAULT_EXECUTOR } from '../rmplan/constants.ts';
 import type { RmplanConfig } from '../rmplan/configSchema.ts';
 import type { ExecutorCommonOptions } from '../rmplan/executors/types';
@@ -538,6 +574,22 @@ const getGuidelinesTag = (
   return `<guidelines>\n${guidelines.join('\n')}\n</guidelines>`;
 };
 
+/**
+ * Core function that generates rmfilter output for LLM prompts. This function processes
+ * configuration, analyzes files and their dependencies, and produces formatted output
+ * suitable for various LLM editing formats.
+ *
+ * This is the main programmatic entry point used by both the CLI interface and other
+ * tools that need to generate context programmatically. It coordinates file discovery,
+ * dependency analysis, documentation gathering, and prompt formatting.
+ *
+ * @param config - RmfilterConfig containing global values and parsed commands
+ * @param baseDir - Base directory for resolving relative paths
+ * @param gitRoot - Git repository root directory
+ * @param editorInstructions - Optional additional instructions from editor integration
+ * @returns Promise resolving to formatted output with metadata about processed files
+ * @throws {Error} When no files are found or configuration is invalid
+ */
 export async function generateRmfilterOutput(
   config: RmfilterConfig,
   baseDir: string,
@@ -802,6 +854,22 @@ function reconstructCliArgs(globalValues: GlobalValues, commandsParsed: CommandP
   return args.join(' ');
 }
 
+/**
+ * Programmatic interface for running rmfilter with string arguments. This function
+ * is used by other tools (like rmplan and rmpr) that need to invoke rmfilter
+ * functionality without going through the CLI interface.
+ *
+ * This function parses the provided arguments, builds the configuration, and
+ * generates the final output using the core generateRmfilterOutput function.
+ * It's particularly useful for integration with other components that need
+ * context preparation capabilities.
+ *
+ * @param args - Array of command-line style arguments to parse
+ * @param gitRoot - Git repository root directory for file resolution
+ * @param baseDir - Base directory for relative path resolution
+ * @returns Promise resolving to the final formatted output string
+ * @throws {Error} When argument parsing fails or file processing encounters errors
+ */
 export async function runRmfilterProgrammatically(
   args: string[],
   gitRoot: string,
@@ -821,7 +889,26 @@ export async function runRmfilterProgrammatically(
   return finalOutput;
 }
 
-// CLI entry point
+/**
+ * Main CLI entry point for rmfilter that handles the complete end-to-end workflow.
+ * This function processes command-line arguments, generates output, handles file writing,
+ * clipboard operations, and optional executor integration.
+ *
+ * This is the function called when rmfilter runs as a standalone CLI tool. It provides
+ * the full user experience including output to files, clipboard copying, token counting,
+ * and integration with LLM executors for automated workflows.
+ *
+ * The function also handles special CLI-only operations like creating new config files
+ * and listing available presets.
+ *
+ * @param options - Optional configuration for args, directories, and output control
+ * @param options.args - Command line arguments to process (defaults to process.argv)
+ * @param options.gitRoot - Git root directory override
+ * @param options.baseDir - Base directory override
+ * @param options.skipWrite - Skip writing output files (for programmatic usage)
+ * @returns Promise resolving to the final output string
+ * @throws {Error} When configuration is invalid, files cannot be processed, or execution fails
+ */
 export async function fullRmfilterRun(options?: {
   args?: string[];
   gitRoot?: string;
@@ -921,12 +1008,12 @@ export async function fullRmfilterRun(options?: {
     };
 
     try {
-      const executor = buildExecutorAndLog(
+      await runPlanContextWithExecutor(
         globalValues.executor,
+        finalOutput,
         executorCommonOptions,
         rmplanConfig
       );
-      await executor.execute(finalOutput);
     } catch (err) {
       error(`Failed to execute with executor ${globalValues.executor}: ${(err as Error).message}`);
       process.exit(1);

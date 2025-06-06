@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Core action implementations for rmplan operations. This module contains
+ * the business logic for plan management including step preparation, task completion,
+ * phase generation, and post-apply command execution.
+ *
+ * This module has been refactored to leverage the new common utilities architecture:
+ * - Uses src/common/git.ts for repository operations and branch detection
+ * - Uses src/common/process.ts for commit operations and process spawning
+ * - Uses src/common/clipboard.ts for clipboard operations
+ * - Integrates with dependency graph utilities for import analysis
+ * - Leverages rmfilter programmatic interface for context preparation
+ *
+ * Key responsibilities:
+ * - Preparing execution prompts for plan steps with context gathering
+ * - Managing plan lifecycle (marking steps done, updating metadata)
+ * - Generating detailed phase implementations from high-level descriptions
+ * - Executing post-apply commands with proper error handling
+ * - Coordinating with LLM execution through the executor system
+ * - Handling workspace isolation and file path management
+ *
+ * The module supports both interactive and automated workflows, with extensive
+ * integration capabilities for file discovery, import analysis, and context preparation.
+ */
+
 import { select } from '@inquirer/prompts';
 import { generateText } from 'ai';
 import chalk from 'chalk';
@@ -13,7 +37,8 @@ import {
   type GetChangedFilesOptions,
 } from '../rmfilter/additional_docs.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
-import { commitAll, getGitRoot, quiet } from '../rmfilter/utils.js';
+import { commitAll, quiet } from '../common/process.js';
+import { getGitRoot } from '../common/git.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { Extractor } from '../treesitter/extract.js';
 import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
@@ -24,7 +49,7 @@ import type { PhaseGenerationContext } from './prompt.js';
 import { generatePhaseStepsPrompt } from './prompt.js';
 import { convertMarkdownToYaml, findYamlStart } from './process_markdown.js';
 import { createModel } from '../common/model_factory.js';
-import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../common/run_and_apply.js';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './llm_utils/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 import { readAllPlans, readPlanFile, writePlanFile, type PlanSummary } from './plans.js';
 import * as clipboard from '../common/clipboard.js';
@@ -52,7 +77,14 @@ export interface PendingTaskResult {
   step: PlanSchema['tasks'][number]['steps'][number];
 }
 
-// Finds the next pending task and step in the plan
+/**
+ * Finds the next pending (not completed) task and step in a plan.
+ * This function performs a linear search through tasks and steps to find
+ * the first step that has not been marked as done.
+ *
+ * @param plan - The plan schema to search through
+ * @returns PendingTaskResult with task/step indices and objects, or null if all steps are done
+ */
 export function findPendingTask(plan: PlanSchema): PendingTaskResult | null {
   for (let taskIndex = 0; taskIndex < plan.tasks.length; taskIndex++) {
     const task = plan.tasks[taskIndex];
@@ -66,7 +98,26 @@ export function findPendingTask(plan: PlanSchema): PendingTaskResult | null {
   return null;
 }
 
-// Prepares the next step(s) from a plan YAML for execution
+/**
+ * Prepares the next step(s) from a plan for LLM execution by gathering context and building prompts.
+ * This function is a core part of the refactored architecture, integrating multiple common utilities:
+ *
+ * - Uses src/common/git.ts for repository root detection and operations
+ * - Leverages dependency graph analysis for import resolution when requested
+ * - Integrates with rmfilter programmatically for context preparation
+ * - Uses rmfind for automatic file discovery based on plan content
+ * - Handles both single-step and multi-step execution scenarios
+ *
+ * The function supports extensive customization through options including import analysis,
+ * automatic file discovery, and different context preparation strategies.
+ *
+ * @param config - RmplanConfig with user preferences and settings
+ * @param planFile - Path or ID of the plan file to process
+ * @param options - Options controlling import analysis, file discovery, and context preparation
+ * @param baseDir - Optional base directory override for file operations
+ * @returns Promise resolving to execution prompt and metadata for the selected steps
+ * @throws {Error} When plan cannot be loaded, no pending steps exist, or context preparation fails
+ */
 export async function prepareNextStep(
   config: RmplanConfig,
   planFile: string,
@@ -429,7 +480,26 @@ export async function prepareNextStep(
   };
 }
 
-// Asynchronously marks steps as done in the plan file
+/**
+ * Marks one or more steps as completed in a plan file and updates plan metadata.
+ * This function integrates with the refactored common utilities for Git operations
+ * and uses src/common/process.ts for commit operations when requested.
+ *
+ * The function handles:
+ * - Updating step completion status in the plan file
+ * - Refreshing plan metadata including timestamps and changed files
+ * - Determining if the entire plan is now complete
+ * - Optionally committing changes using the appropriate VCS (Git/Jujutsu)
+ * - Providing formatted output for user feedback
+ *
+ * @param planFile - Path or ID of the plan file to update
+ * @param options - Configuration for which steps to mark and whether to commit
+ * @param currentTask - Optional specific task/step indices to mark (overrides automatic detection)
+ * @param baseDir - Optional base directory for Git operations
+ * @param config - Optional RmplanConfig for path configuration
+ * @returns Promise resolving to completion status and user-facing message
+ * @throws {Error} When plan file cannot be loaded/written or Git operations fail
+ */
 export async function markStepDone(
   planFile: string,
   options: { task?: boolean; steps?: number; commit?: boolean },
@@ -576,10 +646,19 @@ export async function markStepDone(
 
 /**
  * Executes a single post-apply command as defined in the configuration.
- * @param commandConfig The configuration object for the command.
- * @param overrideGitRoot Optional parameter to override the Git root directory.
- * @returns A promise resolving to `true` if the command succeeded or if failure was allowed,
- *          and `false` if the command failed and failure was not allowed.
+ * This function integrates with the refactored common utilities, using src/common/git.ts
+ * for repository root detection and src/common/process.ts patterns for command execution.
+ *
+ * The function handles:
+ * - Working directory resolution relative to Git root
+ * - Environment variable configuration
+ * - Output buffering and conditional display based on success/failure
+ * - Cross-platform shell command execution (Windows vs Unix)
+ * - Graceful error handling with optional failure tolerance
+ *
+ * @param commandConfig - The configuration object for the command to execute
+ * @param overrideGitRoot - Optional override for Git root directory detection
+ * @returns Promise resolving to true if command succeeded or failure was allowed, false otherwise
  */
 export async function executePostApplyCommand(
   commandConfig: PostApplyCommand,
@@ -684,11 +763,25 @@ export async function executePostApplyCommand(
 }
 
 /**
- * Prepares a phase by generating detailed steps and prompts for all tasks.
- * @param phaseYamlFile Path to the phase YAML file to prepare
- * @param config RmplanConfig instance
- * @param options Options including force flag and model override
- * @returns Promise that resolves when preparation is complete
+ * Prepares a phase by generating detailed implementation steps and prompts for all tasks.
+ * This function represents a key integration point in the refactored architecture, combining:
+ *
+ * - Plan file management through the centralized plans.js utilities
+ * - Dependency analysis and validation across phase relationships
+ * - Context gathering using rmfilter programmatic interface
+ * - LLM integration through the executor system or direct API calls
+ * - Git operations through src/common/git.ts for repository management
+ * - Clipboard operations through src/common/clipboard.ts for workflow management
+ *
+ * The function orchestrates the complex workflow of converting high-level phase descriptions
+ * into detailed, executable implementation steps by gathering context about previous phases,
+ * changed files, and project structure.
+ *
+ * @param phaseYamlFile - Path to the phase YAML file to prepare with detailed steps
+ * @param config - RmplanConfig instance with user preferences and model settings
+ * @param options - Configuration options for forcing preparation, model selection, and execution mode
+ * @returns Promise that resolves when phase preparation is complete
+ * @throws {Error} When dependencies are incomplete, context gathering fails, or LLM execution errors
  */
 export async function preparePhase(
   phaseYamlFile: string,

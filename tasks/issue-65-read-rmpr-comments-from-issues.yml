@@ -33,6 +33,8 @@ details: >
 
   This will provide more fine-grained control over the context generation
   process when starting a plan from a GitHub issue.
+id: 5
+status: done
 tasks:
   - title: 1. Implement generic `rmfilter` argument generation from `RmprOptions`
     description: >
@@ -196,5 +198,3 @@ tasks:
           Ensure `chalk` is imported at the top if it's used for logging:
           `import chalk from 'chalk';`.
         done: true
-id: 1j9md2t
-status: done

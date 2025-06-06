@@ -7,7 +7,7 @@ import { loadEnv } from './common/env.ts';
 import { askForModelId } from './common/model_factory.ts';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './common/run_and_apply.ts';
 import { log, error } from './logging.ts';
-import { setDebug } from './rmfilter/utils.ts';
+import { setDebug } from './common/process.ts';
 
 await loadEnv();
 

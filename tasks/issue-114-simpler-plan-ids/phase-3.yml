@@ -7,10 +7,10 @@ details: When `rmplan extract` (or other commands processing LLM output that
   resembles a multiphase plan) encounters such a structure, it will no longer
   save phase-level files. Instead, it will iterate through all tasks across all
   phases and create a distinct plan file for each task.
-id: 1rkuwy1-3
+id: 33
 status: pending
 dependencies:
-  - 1rkuwy1-1
+  - "31"
 planGeneratedAt: 2025-06-04T07:59:19.941Z
 createdAt: 2025-06-04T07:59:19.941Z
 updatedAt: 2025-06-04T07:59:19.941Z

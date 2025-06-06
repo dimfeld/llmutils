@@ -16,6 +16,8 @@ details: >
 
   This makes the initial plan generation more user-friendly while automating the
   conversion to the structured YAML needed by downstream commands.
+id: 9
+status: done
 tasks:
   - title: Define Markdown Format and Update Generation Prompt
     description: Modify the generation prompt to request Markdown output according
@@ -157,5 +159,3 @@ tasks:
           uses the `validatedPlan` obtained after successful conversion and
           validation.
         done: true
-id: 1j9md7d
-status: done

@@ -1,13 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Documentation and Refinement
 goal: To ensure the new `add` and `split` commands are well-documented,
   user-friendly, and seamlessly integrated into the `rmplan` tool.
 details: This final phase focuses on polishing the newly implemented features.
   It includes updating all relevant documentation, refining command-line help
   messages, and ensuring a smooth user experience.
-id: 1l52aj2-3
+id: 26
 status: done
 dependencies:
-  - 1l52aj2-2
+  - "25"
 planGeneratedAt: 2025-05-31T20:32:33.556Z
 promptsGeneratedAt: 2025-06-01T08:09:33.849Z
 createdAt: 2025-05-31T20:32:33.556Z
@@ -101,9 +102,6 @@ tasks:
           resolution. Check that success messages and progress indicators
           provide clear feedback about what's happening.
         done: true
-rmfilter:
-  - src/rmplan
-  - src/common
 changedFiles:
   - .rmfilter/config/rmplan.yml
   - CLAUDE.md
@@ -113,3 +111,6 @@ changedFiles:
   - src/rmplan/id_utils.ts
   - src/rmplan/plans.ts
   - src/rmplan/rmplan.ts
+rmfilter:
+  - src/rmplan
+  - src/common

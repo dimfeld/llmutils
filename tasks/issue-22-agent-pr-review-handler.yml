@@ -63,6 +63,8 @@ details: >
 
   The implementation will involve creating new modules under `src/rmpr/` and
   modifying `src/common/github/pull_requests.ts` and `src/rmplan/rmplan.ts`.
+id: 22
+status: done
 tasks:
   - title: 1. Basic CLI Structure and PR Identifier Parsing
     description: >
@@ -681,5 +683,3 @@ tasks:
           (No code output needed for this step, it's a guide for the developer
           implementing the plan).
         done: true
-id: 1j9mdwj
-status: done

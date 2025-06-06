@@ -1,4 +1,7 @@
-import { expect, test, mock, beforeEach } from 'bun:test';
+import { expect, test, mock, beforeEach, afterEach, afterAll } from 'bun:test';
+import { ModuleMocker } from '../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock the modules before importing the functions that use them
 const mockIsSshSession = mock(() => false);
@@ -9,17 +12,17 @@ const mockClipboardWrite = mock(async () => {});
 const mockDebugLog = mock((...args: any[]) => {});
 
 // Setup mock modules
-await mock.module('./ssh_detection.js', () => ({
+await moduleMocker.mock('./ssh_detection.js', () => ({
   isSshSession: mockIsSshSession,
 }));
 
-await mock.module('./osc52.js', () => ({
+await moduleMocker.mock('./osc52.js', () => ({
   osc52Copy: mockOsc52Copy,
   osc52Read: mockOsc52Read,
 }));
 
 // Mock clipboardy module
-await mock.module('clipboardy', () => ({
+await moduleMocker.mock('clipboardy', () => ({
   default: {
     read: mockClipboardRead,
     write: mockClipboardWrite,
@@ -28,7 +31,7 @@ await mock.module('clipboardy', () => ({
   write: mockClipboardWrite,
 }));
 
-await mock.module('../logging.js', () => ({
+await moduleMocker.mock('../logging.js', () => ({
   debugLog: mockDebugLog,
 }));
 
@@ -43,6 +46,10 @@ beforeEach(() => {
   mockClipboardRead.mockReset().mockImplementation(async () => 'clipboardy_text');
   mockClipboardWrite.mockReset();
   mockDebugLog.mockReset();
+});
+
+afterAll(() => {
+  moduleMocker.clear();
 });
 
 // Tests for the write function

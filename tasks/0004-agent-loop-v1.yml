@@ -19,6 +19,8 @@ details: >-
 
   This requires refactoring the `next` and `done` command logic into reusable
   functions placed in a new `actions.ts` file.
+id: 14
+status: done
 tasks:
   - title: Refactor 'done' command logic into a reusable function
     description: Create actions.ts and move the core logic of finding the next
@@ -448,5 +450,3 @@ tasks:
           5. Add a final log message outside the loop if it exited due to an
           error, e.g., "Agent stopped due to error.".
         done: true
-id: 1j9mdfb
-status: done

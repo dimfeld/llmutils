@@ -1,7 +1,7 @@
 import { $ } from 'bun';
 import path from 'node:path';
 import os from 'node:os';
-import { logSpawn } from './utils.ts';
+import { logSpawn } from '../common/process.ts';
 import { error } from '../logging.ts';
 import type { GlobalValues } from './config.ts';
 
