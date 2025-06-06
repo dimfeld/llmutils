@@ -9,7 +9,6 @@ import {
   readAllPlans,
   writePlanFile,
   getMaxNumericPlanId,
-  readPlanFile,
   getImportedIssueUrls,
 } from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -34,17 +33,10 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
   const { plans } = await readAllPlans(tasksDir);
   const issueUrl = issueData.issue.html_url;
 
-  for (const planSummary of plans.values()) {
-    try {
-      // Read the full plan file to check the issue field
-      const planFile = await readPlanFile(planSummary.filename);
-      if (planFile.issue && planFile.issue.includes(issueUrl)) {
-        warn(`Issue ${issueUrl} has already been imported in plan: ${planSummary.filename}`);
-        return false;
-      }
-    } catch (err) {
-      // Skip files that can't be read
-      continue;
+  for (const plan of plans.values()) {
+    if (plan.issue && plan.issue.includes(issueUrl)) {
+      warn(`Issue ${issueUrl} has already been imported in plan: ${plan.filename}`);
+      return false;
     }
   }
 

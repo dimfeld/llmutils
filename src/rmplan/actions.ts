@@ -1035,37 +1035,26 @@ async function gatherPhaseGenerationContext(
           );
         }
 
-        const dependencyPath = dependencyPlan.filename;
+        // Check if dependency is done
+        if (dependencyPlan.status !== 'done') {
+          throw new Error(
+            `Dependency ${dependencyId} is not completed (status: ${dependencyPlan.status}). All dependencies must be completed before generating phase steps.`
+          );
+        }
 
-        try {
-          const dependencyData = await readPlanFile(dependencyPath);
+        // Extract title from details or use ID as fallback
+        const title = dependencyPlan.details.split('\n')[0] || `Phase ${dependencyId}`;
 
-          // Check if dependency is done
-          if (dependencyData.status !== 'done') {
-            throw new Error(
-              `Dependency ${dependencyId} is not completed (status: ${dependencyData.status}). All dependencies must be completed before generating phase steps.`
-            );
-          }
+        previousPhasesInfo.push({
+          id: dependencyPlan.id || dependencyId,
+          title: title,
+          goal: dependencyPlan.goal,
+          description: dependencyPlan.details,
+        });
 
-          // Extract title from details or use ID as fallback
-          const title = dependencyData.details.split('\n')[0] || `Phase ${dependencyId}`;
-
-          previousPhasesInfo.push({
-            id: dependencyData.id || dependencyId,
-            title: title,
-            goal: dependencyData.goal,
-            description: dependencyData.details,
-          });
-
-          // Add changed files from this dependency
-          if (dependencyData.changedFiles && dependencyData.changedFiles.length > 0) {
-            changedFilesFromDependencies.push(...dependencyData.changedFiles);
-          }
-        } catch (e) {
-          if (e instanceof Error && e.message.includes('ENOENT')) {
-            throw new Error(`Dependency phase file not found: ${dependencyPath}`);
-          }
-          throw e;
+        // Add changed files from this dependency
+        if (dependencyPlan.changedFiles && dependencyPlan.changedFiles.length > 0) {
+          changedFilesFromDependencies.push(...dependencyPlan.changedFiles);
         }
       }
     }

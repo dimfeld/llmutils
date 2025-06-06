@@ -42,6 +42,8 @@ export async function handleRenumber(options: any, command: any) {
     (f) => typeof f === 'string' && (f.endsWith('.yml') || f.endsWith('.yaml'))
   );
 
+  // Build ID to files mapping by scanning files directly
+  // We can't use allPlans here because it already deduplicates IDs
   for (const file of planFiles) {
     const filePath = path.join(tasksDirectory, file);
     try {
@@ -59,11 +61,10 @@ export async function handleRenumber(options: any, command: any) {
   }
 
   // Find plans with alphanumeric IDs
-  for (const [id, summary] of allPlans) {
+  for (const [id, plan] of allPlans) {
     if (typeof id === 'string' && !/^\d+$/.test(id)) {
-      const plan = await readPlanFile(summary.filename);
       plansToRenumber.push({
-        filePath: summary.filename,
+        filePath: plan.filename,
         currentId: id,
         plan,
         reason: 'alphanumeric',

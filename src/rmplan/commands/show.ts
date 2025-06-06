@@ -17,6 +17,7 @@ import {
   readPlanFile,
   resolvePlanFile,
 } from '../plans.js';
+import type { PlanSchema } from '../planSchema.js';
 
 export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -54,12 +55,23 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
   }
 
-  // Read the plan file
-  const plan = await readPlanFile(resolvedPlanFile);
-
-  // Check if plan is ready (we'll need to load all plans to check dependencies)
+  // Get all plans first to check dependencies
   const tasksDir = await resolveTasksDir(config);
   const { plans: allPlans } = await readAllPlans(tasksDir);
+
+  // Find the specific plan from the collection
+  let plan: PlanSchema | undefined;
+  for (const p of allPlans.values()) {
+    if (p.filename === resolvedPlanFile) {
+      plan = p;
+      break;
+    }
+  }
+
+  if (!plan) {
+    // Fallback to reading the file directly if not found in collection
+    plan = await readPlanFile(resolvedPlanFile);
+  }
 
   // Display basic information
   log(chalk.bold('\nPlan Information:'));

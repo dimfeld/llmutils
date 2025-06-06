@@ -249,25 +249,25 @@ describe('handleImportCommand', () => {
 
   test('should avoid creating duplicate plans for existing issues', async () => {
     // Setup mock to return a plan with the same issue URL
-    const mockPlansWithDuplicate = {
-      plans: new Map([[1, { filename: '/test/existing-plan.yml' }]]),
-      maxNumericId: 5,
-      duplicates: [],
-    };
-
-    const mockExistingPlan: PlanSchema = {
+    const mockExistingPlan: PlanSchema & { filename: string } = {
       id: 1,
       goal: 'Existing plan',
       details: 'Existing details',
       issue: ['https://github.com/owner/repo/issues/123'], // Same URL as mockIssueData
       tasks: [],
+      filename: '/test/existing-plan.yml',
+    };
+
+    const mockPlansWithDuplicate = {
+      plans: new Map([[1, mockExistingPlan]]),
+      maxNumericId: 5,
+      duplicates: [],
     };
 
     await moduleMocker.mock('../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansWithDuplicate)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
-      readPlanFile: mock(() => Promise.resolve(mockExistingPlan)),
     }));
 
     await handleImportCommand('123');
