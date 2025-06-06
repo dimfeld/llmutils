@@ -228,12 +228,12 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             {
               name: 'Generate detailed steps first',
               value: 'generate',
-              description: 'Create step-by-step instructions before execution (safer)',
+              description: 'Create step-by-step instructions before execution',
             },
             {
-              name: 'Run the plan directly',
+              name: 'Run the simple plan directly',
               value: 'direct',
-              description: 'Execute using the high-level goal and details',
+              description: 'Execute using just the high-level goal and details',
             },
           ],
         });
