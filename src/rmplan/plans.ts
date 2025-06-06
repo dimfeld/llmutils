@@ -10,7 +10,7 @@ import { phaseSchema, type PlanSchema } from './planSchema.js';
 export type PlanSummary = {
   id: string | number;
   title?: string;
-  status?: 'pending' | 'in_progress' | 'done';
+  status?: 'pending' | 'in_progress' | 'done' | 'cancelled';
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   dependencies?: string[];
   goal: string;

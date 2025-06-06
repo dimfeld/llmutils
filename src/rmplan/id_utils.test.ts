@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { generateAlphanumericId, generatePhaseId, slugify, timestamp } from './id_utils.js';
+import { slugify, timestamp } from './id_utils.js';
 
 describe('slugify', () => {
   test('converts text to lowercase', () => {
@@ -73,32 +73,6 @@ describe('slugify', () => {
     expect(result.length).toBeLessThanOrEqual(15);
     expect(result).toBe('this-is-a-test');
     expect(result).not.toEndWith('-');
-  });
-});
-
-describe('generatePhaseId', () => {
-  test('generates phase ID with correct format', () => {
-    const projectId = 'my-project-abc123';
-    const phaseIndex = 1;
-    const phaseId = generatePhaseId(projectId, phaseIndex);
-
-    expect(phaseId).toBe('my-project-abc123-1');
-  });
-
-  test('handles different phase indices', () => {
-    const projectId = 'test-project-xyz789';
-
-    expect(generatePhaseId(projectId, 1)).toBe('test-project-xyz789-1');
-    expect(generatePhaseId(projectId, 2)).toBe('test-project-xyz789-2');
-    expect(generatePhaseId(projectId, 10)).toBe('test-project-xyz789-10');
-  });
-
-  test('preserves complex project IDs', () => {
-    const projectId = 'complex-project-name-with-many-parts-123abc';
-    const phaseIndex = 3;
-    const phaseId = generatePhaseId(projectId, phaseIndex);
-
-    expect(phaseId).toBe('complex-project-name-with-many-parts-123abc-3');
   });
 });
 

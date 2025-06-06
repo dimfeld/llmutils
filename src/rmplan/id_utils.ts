@@ -55,16 +55,6 @@ export function generateAlphanumericId(): string {
 }
 
 /**
- * Generate a phase ID from project ID and phase index
- * @param projectId - The project ID
- * @param phaseIndex - The phase index (1-based)
- * @returns A phase ID in format ${projectId}-${phaseIndex}
- */
-export function generatePhaseId(projectId: string, phaseIndex: number): string {
-  return `${projectId}-${phaseIndex}`;
-}
-
-/**
  * Generate a sequential numeric plan ID
  * @param tasksDir - The directory containing plan files
  * @returns The next available numeric ID (maxId + 1)
