@@ -7,7 +7,7 @@ details: This phase introduces robustness to the ID system. When `rmplan` loads
   resolved by re-assigning new numeric IDs to some of the conflicting plans,
   prioritizing the one with the earliest timestamp.
 id: 32
-status: pending
+status: done
 dependencies:
   - "31"
 planGeneratedAt: 2025-06-04T07:59:19.941Z
