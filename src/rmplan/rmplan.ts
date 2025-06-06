@@ -109,6 +109,15 @@ program
   });
 
 program
+  .command('import [issue]')
+  .description('Import GitHub issues and create corresponding local plan files')
+  .option('--issue <url|number>', 'Issue URL or number to import')
+  .action(async (issue, options, command) => {
+    const { handleImportCommand } = await import('./commands/import.js');
+    await handleImportCommand(issue, options, command).catch(handleCommandError);
+  });
+
+program
   .command('done <planFile>')
   .description('Mark the next step/task in a plan YAML as done. Can be a file path or plan ID.')
   .option('--steps <steps>', 'Number of steps to mark as done', '1')
@@ -237,7 +246,7 @@ program
   });
 
 program
-  .command('prepare [yamlFile]')
+  .command('prepare [plan]')
   .description(
     'Generate detailed steps and prompts for a specific phase. Can be a file path or plan ID.'
   )

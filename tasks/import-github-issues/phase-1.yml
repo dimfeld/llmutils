@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: "Core: Import a Single GitHub Issue"
+goal: Implement the core functionality of the `rmplan import` command to import
+  a single, specified GitHub issue and create a local stub plan file for it.
+details: This phase focuses on establishing the `rmplan import` command and its
+  single-issue import capability using the `--issue` flag. We will heavily
+  leverage existing functions from the `generate` command's workflow,
+  particularly for fetching issue data, prompting the user for content
+  selection, and parsing `rmfilter` arguments. The outcome will be a fully
+  functional, non-interactive import that lays the foundation for the
+  multi-issue interactive mode.
+id: 39
+status: in_progress
+priority: high
+dependencies: []
+planGeneratedAt: 2025-06-06T08:55:25.742Z
+promptsGeneratedAt: 2025-06-06T08:59:58.038Z
+createdAt: 2025-06-06T05:40:44.136Z
+updatedAt: 2025-06-06T09:02:44.299Z
+project:
+  title: Add `rmplan import` Command to Import GitHub Issues
+  goal: The project aims to add a new `rmplan import` command that allows users to
+    import GitHub issues and create corresponding local plan files. This will
+    streamline the process of turning feature requests and bug reports from
+    GitHub into actionable development plans within the `rmplan` ecosystem.
+  details: The new command will support two primary modes of operation. When a
+    specific issue is provided via a flag, it will import that single issue.
+    Otherwise, it will enter an interactive mode, listing all open issues for
+    the current repository, allowing the user to select multiple issues to
+    import. A key requirement is to avoid creating duplicate plans. The command
+    will check existing plan files and filter out any issues that have already
+    been imported by looking for the issue's URL in the `issue` field of the
+    plan files. For each issue being imported, the command will prompt the user
+    to select which parts of the issue (the main body and any comments) should
+    be included as the `details` for the new plan. It will also parse any
+    `rmfilter` arguments embedded in the issue's text, similar to the `generate`
+    command. The final output for each imported issue will be a "stub" plan
+    file, containing metadata like the title, goal, details, and issue link, but
+    with an empty task list, ready for further planning with `rmplan generate`.
+    This feature shares significant functionality with the existing `rmplan
+    generate` command, particularly around GitHub issue processing. A major goal
+    is to reuse existing code from `generate` and its helper modules to ensure
+    consistency and reduce implementation effort.
+tasks:
+  - title: Create the `rmplan import` Command Structure
+    description: Create the new `rmplan import` command in the main CLI file and set
+      up its handler. This involves adding the command definition, defining the
+      `--issue` option, and creating the `import.ts` command handler file to
+      which the action will be delegated.
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/commands/import.ts
+      - src/rmplan/commands/import.test.ts
+    steps:
+      - prompt: >
+          Create a new test file `src/rmplan/commands/import.test.ts`. Set up a
+          basic test suite for the `handleImportCommand` function, but leave the
+          tests as placeholders for now. This establishes the testing foundation
+          for the new command.
+        done: true
+      - prompt: >
+          In `src/rmplan/rmplan.ts`, add a new command definition for `import`.
+          It should accept an optional `[issue]` positional argument. This
+          structure should mirror existing commands like `generate`. The action
+          should dynamically import `handleImportCommand` from the new
+          `src/rmplan/commands/import.ts` file.
+        done: true
+      - prompt: >
+          In `src/rmplan/rmplan.ts`, add an `--issue <url|number>` option to the
+          `import` command as an alternative way to specify the target issue.
+        done: true
+      - prompt: >
+          Create the new command handler file `src/rmplan/commands/import.ts`.
+          Implement the `handleImportCommand` function that accepts an optional
+          issue string and the command options. The function should determine
+          the issue specifier from either the positional argument or the
+          `--issue` flag. For this initial phase, if no issue is provided, it
+          should throw an error stating that an issue must be specified.
+        done: true
+  - title: Implement Single-Issue Import Logic
+    description: Develop the primary logic for importing a single issue. This
+      function will be called when the `--issue` flag is used. It will use the
+      existing `getInstructionsFromGithubIssue` helper to fetch the issue data,
+      prompt the user to select which body and comments to include, and parse
+      any embedded `rmfilter` arguments from the text.
+    files:
+      - src/rmplan/commands/import.ts
+      - src/rmplan/commands/import.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/commands/import.ts`, modify `handleImportCommand` to
+          call the `getInstructionsFromGithubIssue` function from
+          `src/common/github/issues.ts`. Pass the resolved issue specifier to
+          it. This function will handle fetching the issue, prompting for
+          content selection, and parsing `rmpr` options.
+        done: false
+      - prompt: >
+          Implement a check to prevent creating duplicate plans. Before
+          proceeding with an import, use `readAllPlans` from
+          `src/rmplan/plans.ts` to get all existing plans. Iterate through them
+          and check if any plan's `issue` field contains the URL of the issue
+          being imported. If a match is found, log a warning and exit gracefully
+          without creating a new file.
+        done: false
+      - prompt: >
+          In `src/rmplan/commands/import.test.ts`, write a test for the
+          single-issue import logic. Use the `ModuleMocker` to mock
+          `getInstructionsFromGithubIssue` to return predictable data. Verify
+          that the handler correctly receives and processes this data. Also, add
+          a test case to ensure the duplicate check works by mocking
+          `readAllPlans` to return a plan that contains the target issue URL.
+        done: false
+  - title: Implement Stub Plan File Creation
+    description: Create a function that takes the processed issue data and generates
+      a valid, minimal "stub" plan file. This plan will include the issue's
+      title, the user-selected details, the associated GitHub issue URL, and any
+      parsed `rmfilter` arguments. It will be assigned a new, unique plan ID and
+      will not contain any tasks, making it ready for the `rmplan generate`
+      command.
+    files:
+      - src/rmplan/commands/import.ts
+      - src/rmplan/commands/import.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/commands/import.ts`, create a helper function that
+          takes the data from `getInstructionsFromGithubIssue` and constructs a
+          `PlanSchema` object. Map the issue's title to the plan's `title` and
+          `goal`, the selected text to `details`, the issue URL to the `issue`
+          array, and any parsed `rmprOptions` to the `rmfilter` field. Ensure
+          the `tasks` array is empty.
+        done: false
+      - prompt: >
+          In the new helper function, assign a unique numeric ID to the plan.
+          Use `getMaxNumericPlanId` from `src/rmplan/plans.ts` to get the next
+          available ID. Also, set the `createdAt` and `updatedAt` timestamps,
+          and default the `status` to `pending`.
+        done: false
+      - prompt: >
+          In `handleImportCommand`, after generating the stub plan object,
+          determine the output file path. Use the `suggestedFileName` from the
+          issue data and resolve it against the configured `tasks` directory.
+          Use the `writePlanFile` function from `src/rmplan/plans.ts` to save
+          the new stub plan file to disk and log a success message.
+        done: false
+      - prompt: >
+          Update the tests in `src/rmplan/commands/import.test.ts` to verify the
+          file creation process. Mock `getMaxNumericPlanId` and `writePlanFile`.
+          Assert that `writePlanFile` is called with the correct file path and a
+          valid `PlanSchema` object that matches the expected stub structure,
+          including the correct ID, metadata, and empty task list.
+        done: false
+changedFiles:
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/import.test.ts
+  - src/rmplan/commands/import.ts
+  - src/rmplan/plans.ts
+  - src/rmplan/process_markdown.ts
+  - src/rmplan/rmplan.ts
+rmfilter:
+  - src/rmplan/commands/generate.ts
+  - --with-imports
+  - --
+  - src/rmplan/rmplan.ts

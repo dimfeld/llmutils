@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: "Interactive Mode: List and Import Multiple Issues"
+goal: Enhance the `rmplan import` command to support an interactive mode for
+  selecting and importing multiple issues when no specific issue is provided.
+details: This phase builds upon the single-issue import functionality to create
+  a user-friendly, interactive workflow. When `rmplan import` is run without the
+  `--issue` flag, it will fetch all open issues for the current repository. It
+  will then filter out any issues that have already been imported by checking
+  existing plan files. Finally, it will present the user with a checklist of
+  remaining issues, allowing them to select multiple issues to import in a
+  single operation.
+id: 41
+status: pending
+priority: medium
+dependencies:
+  - "39"
+planGeneratedAt: 2025-06-06T08:55:25.742Z
+createdAt: 2025-06-06T05:40:44.136Z
+updatedAt: 2025-06-06T08:55:25.742Z
+project:
+  title: Add `rmplan import` Command to Import GitHub Issues
+  goal: The project aims to add a new `rmplan import` command that allows users to
+    import GitHub issues and create corresponding local plan files. This will
+    streamline the process of turning feature requests and bug reports from
+    GitHub into actionable development plans within the `rmplan` ecosystem.
+  details: The new command will support two primary modes of operation. When a
+    specific issue is provided via a flag, it will import that single issue.
+    Otherwise, it will enter an interactive mode, listing all open issues for
+    the current repository, allowing the user to select multiple issues to
+    import. A key requirement is to avoid creating duplicate plans. The command
+    will check existing plan files and filter out any issues that have already
+    been imported by looking for the issue's URL in the `issue` field of the
+    plan files. For each issue being imported, the command will prompt the user
+    to select which parts of the issue (the main body and any comments) should
+    be included as the `details` for the new plan. It will also parse any
+    `rmfilter` arguments embedded in the issue's text, similar to the `generate`
+    command. The final output for each imported issue will be a "stub" plan
+    file, containing metadata like the title, goal, details, and issue link, but
+    with an empty task list, ready for further planning with `rmplan generate`.
+    This feature shares significant functionality with the existing `rmplan
+    generate` command, particularly around GitHub issue processing. A major goal
+    is to reuse existing code from `generate` and its helper modules to ensure
+    consistency and reduce implementation effort.
+tasks:
+  - title: Fetch Open Issues for the Current Repository
+    description: Implement a new function to fetch all open issues from the GitHub
+      repository associated with the current working directory. This will
+      involve using the `getGitRepository` utility to identify the repository
+      and the Octokit library to make the API request.
+    files: []
+    steps: []
+  - title: Filter Out Already-Imported Issues
+    description: Before displaying the list of open issues, filter it to exclude any
+      issues that are already linked in existing local plan files. This will be
+      achieved by reading all plans using `readAllPlans` and checking the
+      `issue` field of each plan against the URLs of the fetched issues.
+    files: []
+    steps: []
+  - title: Implement Interactive Issue Selection Prompt
+    description: Use the `@inquirer/prompts` library to create an interactive
+      checklist prompt. This prompt will display the filtered list of importable
+      issues, allowing the user to select one or more to import.
+    files: []
+    steps: []
+  - title: Orchestrate Multi-Issue Import Loop
+    description: Modify the `import` command handler to loop through the issues
+      selected by the user. For each selected issue, it will call the
+      single-issue import and file creation logic developed in Phase 1,
+      effectively importing all chosen issues in one batch.
+    files: []
+    steps: []
+rmfilter:
+  - src/rmplan/commands/generate.ts
+  - --with-imports
+  - --
+  - src/rmplan/rmplan.ts

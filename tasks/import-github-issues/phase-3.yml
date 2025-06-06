@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Testing and Documentation
+goal: Ensure the new `rmplan import` feature is robust, well-tested, and clearly
+  documented for end-users.
+details: This final phase is dedicated to quality assurance and usability. We
+  will write comprehensive unit and integration tests covering both single-issue
+  and interactive import modes. This includes mocking GitHub API responses to
+  create predictable test scenarios. Finally, we will update the project's
+  documentation to include instructions and examples for the new command.
+id: 42
+status: pending
+priority: medium
+dependencies:
+  - "41"
+planGeneratedAt: 2025-06-06T08:55:25.742Z
+createdAt: 2025-06-06T05:40:44.136Z
+updatedAt: 2025-06-06T08:55:25.742Z
+project:
+  title: Add `rmplan import` Command to Import GitHub Issues
+  goal: The project aims to add a new `rmplan import` command that allows users to
+    import GitHub issues and create corresponding local plan files. This will
+    streamline the process of turning feature requests and bug reports from
+    GitHub into actionable development plans within the `rmplan` ecosystem.
+  details: The new command will support two primary modes of operation. When a
+    specific issue is provided via a flag, it will import that single issue.
+    Otherwise, it will enter an interactive mode, listing all open issues for
+    the current repository, allowing the user to select multiple issues to
+    import. A key requirement is to avoid creating duplicate plans. The command
+    will check existing plan files and filter out any issues that have already
+    been imported by looking for the issue's URL in the `issue` field of the
+    plan files. For each issue being imported, the command will prompt the user
+    to select which parts of the issue (the main body and any comments) should
+    be included as the `details` for the new plan. It will also parse any
+    `rmfilter` arguments embedded in the issue's text, similar to the `generate`
+    command. The final output for each imported issue will be a "stub" plan
+    file, containing metadata like the title, goal, details, and issue link, but
+    with an empty task list, ready for further planning with `rmplan generate`.
+    This feature shares significant functionality with the existing `rmplan
+    generate` command, particularly around GitHub issue processing. A major goal
+    is to reuse existing code from `generate` and its helper modules to ensure
+    consistency and reduce implementation effort.
+tasks:
+  - title: Add Comprehensive Tests for the Import Command
+    description: Create a new test file for the `import` command. Write tests that
+      cover the single-issue import path, the interactive multi-issue import
+      path, the issue filtering logic, and the correctness of the generated stub
+      plan files. Use a temporary directory for filesystem operations to ensure
+      tests are isolated and repeatable.
+    files: []
+    steps: []
+  - title: Refactor Shared Logic Between `generate` and `import`
+    description: Review the code in `generate.ts` and the new `import.ts`. Identify
+      any duplicated logic related to processing GitHub issues or creating plan
+      files and extract it into shared helper functions. This will improve
+      maintainability and ensure consistency between the two commands.
+    files: []
+    steps: []
+  - title: Update Project Documentation
+    description: Update the `README.md` or other relevant documentation files with a
+      new section for the `rmplan import` command. The documentation should
+      clearly explain its purpose, the two modes of operation (`--issue` flag
+      vs. interactive), and provide practical usage examples.
+    files: []
+    steps: []
+rmfilter:
+  - src/rmplan/commands/generate.ts
+  - --with-imports
+  - --
+  - src/rmplan/rmplan.ts
