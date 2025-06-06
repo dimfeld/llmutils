@@ -317,9 +317,6 @@ export async function saveMultiPhaseYaml(
   config: RmplanConfig,
   quiet: boolean
 ): Promise<string> {
-  // Determine project ID, preferring stubPlanData.id
-  let issueUrl: string | undefined;
-
   // Check if there's actually just one phase. In this case we still do the multi-phase
   // code since it will bring in the goal and details from both the global and phase,
   // but we end up saving to a single file instead of a subdirectory.
@@ -365,6 +362,8 @@ export async function saveMultiPhaseYaml(
     phase.createdAt = options.stubPlanData?.createdAt || now;
     phase.updatedAt = now;
 
+    phase.issue = options.issueUrls ?? (options.issueUrl ? [options.issueUrl] : undefined);
+
     // Add overall project information to each phase
     if (projectInfo.goal || projectInfo.title || projectInfo.details) {
       phase.project = projectInfo;
@@ -373,9 +372,6 @@ export async function saveMultiPhaseYaml(
     // Add rmfilter and issue from options
     if (options.planRmfilterArgs?.length) {
       phase.rmfilter = options.planRmfilterArgs;
-    }
-    if (issueUrl) {
-      phase.issue = [issueUrl];
     }
 
     // Inherit fields from stub plan if provided

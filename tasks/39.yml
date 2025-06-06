@@ -1,8 +1,9 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Add an `rmplan import-issues` command
+title: Add an `rmplan import` command
 goal: We want to be able to import issues from Github into local plan files.
 details: |
-  - List the open Github issues for the current repository.
+  - If a --issue flag is provided, import that issue.
+  - Otherwise list the open Github issues for the current repository.
   - Filter out the issuse that already have a plan file for that issue (looking by URL in the issue field)
   - Prompt the user to select which issues to import.
   - For each issue, ask which of the body/comments the user wants to import and use that as the details.

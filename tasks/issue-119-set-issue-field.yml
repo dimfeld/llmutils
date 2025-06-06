@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Implement and Test Issue Field Population
+goal: To fix the bug preventing issue URLs from being added to multi-phase plans
+  and to add robust testing for this feature.
+details: This phase will address the core bug in `saveMultiPhaseYaml` and then
+  build out the necessary tests to verify the functionality for both single and
+  multi-phase plans. This ensures that any plan generated from a GitHub issue,
+  regardless of its structure, will contain the correct reference back to the
+  issue.
+id: 40
+status: done
+priority: high
+dependencies: []
+planGeneratedAt: 2025-06-06T07:53:25.470Z
+promptsGeneratedAt: 2025-06-06T07:58:27.245Z
+createdAt: 2025-06-06T07:53:25.470Z
+updatedAt: 2025-06-06T07:58:27.251Z
+project:
+  title: Set issue field in plan files when generating from a GitHub issue
+  goal: The goal of this project is to ensure that when a plan is generated using
+    the `rmplan generate --issue` command, the resulting YAML plan file(s)
+    correctly include the URL of the source GitHub issue in their `issue` field.
+  details: When a user generates a plan from a GitHub issue, it's important to
+    maintain a link back to that issue for context and traceability. The
+    `PlanSchema` already supports an `issue` field for this purpose. Currently,
+    the logic to pass the issue URL from the `generate` command to the plan
+    creation functions is partially implemented. It works correctly for
+    single-phase plans but is broken for multi-phase plans. The `rmplan
+    generate` command correctly fetches the issue URL and passes it in the
+    `ExtractMarkdownToYamlOptions`. The `extractMarkdownToYaml` function in
+    `src/rmplan/process_markdown.ts` correctly handles this for single-phase
+    plans. However, the `saveMultiPhaseYaml` function in the same file has a bug
+    where it ignores the passed-in issue URLs, leaving the `issue` field empty
+    in multi-phase plan files. This project will fix the bug in the multi-phase
+    generation logic and add comprehensive tests to ensure both single and
+    multi-phase plan generation scenarios correctly populate the `issue` field.
+tasks:
+  - title: Correctly propagate issue URLs in multi-phase plan generation
+    description: The `saveMultiPhaseYaml` function in
+      `src/rmplan/process_markdown.ts` currently ignores the issue URLs passed
+      to it. This task involves modifying the function to correctly use the
+      `options.issueUrls` and populate the `issue` field for each generated
+      phase file.
+    files:
+      - src/rmplan/process_markdown.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/process_markdown.ts`, modify the `saveMultiPhaseYaml`
+          function to correctly handle `options.issueUrls`. Remove the unused
+          `issueUrl` variable declaration. Inside the first `for` loop that
+          iterates over `parsedYaml.phases`, add logic to assign
+          `options.issueUrls` to `phase.issue` if `options.issueUrls` is
+          provided and has content. This will ensure the issue URL from the
+          command is propagated to each generated phase file, making its
+          behavior consistent with the single-phase logic.
+        done: false
+  - title: Add tests for setting the issue field in generated plans
+    description: Create tests to verify that the `issue` field is correctly
+      populated when generating a plan from a GitHub issue. This should cover
+      both the single-phase and multi-phase plan generation scenarios. The tests
+      will need to mock the GitHub API and LLM responses to provide predictable
+      data and assert that the generated YAML files contain the expected issue
+      URL.
+    files:
+      - src/rmplan/process_markdown.test.ts
+    steps:
+      - prompt: >
+          Create a new test file at `src/rmplan/process_markdown.test.ts`. Set
+          up the test suite with `beforeEach` and `afterEach` hooks to manage a
+          temporary directory for output files using `fs.mkdtemp`. Use the
+          `ModuleMocker` from `src/testing.js` to mock dependencies,
+          specifically `id_utils.generateNumericPlanId` to return a predictable
+          ID (e.g., 101) and `common/process.commitAll` to prevent actual git
+          operations during tests.
+        done: false
+      - prompt: >
+          Add a test case to verify that `extractMarkdownToYaml` correctly adds
+          an issue URL to a single-phase plan. Provide a valid single-phase YAML
+          string as the input text to bypass the LLM conversion step. In the
+          options object passed to the function, include an `issueUrls` array
+          with a sample GitHub issue URL. After calling the function, read the
+          generated YAML file from the temporary directory and assert that its
+          `issue` field contains the provided URL.
+        done: false
+      - prompt: >
+          Add a test case to verify that `extractMarkdownToYaml` correctly adds
+          an issue URL to all files of a multi-phase plan. Provide a valid
+          multi-phase YAML string as input. In the options, include an
+          `issueUrls` array with a sample URL. After the function runs, verify
+          that a subdirectory for the plan was created, then read each of the
+          generated phase YAML files. Assert that every file contains the
+          correct `issue` field with the provided URL.
+        done: false
+      - prompt: >
+          Enhance the previous tests or add new ones to confirm that the `issue`
+          field is correctly omitted when `options.issueUrls` is not provided.
+          Run both single-phase and multi-phase scenarios without the
+          `issueUrls` option and assert that the generated YAML files do not
+          contain an `issue` field.
+        done: false
+rmfilter:
+  - src/rmplan/commands/generate.ts
+  - --with-imports
