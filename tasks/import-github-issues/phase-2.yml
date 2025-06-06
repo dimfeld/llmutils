@@ -10,14 +10,14 @@ details: This phase builds upon the single-issue import functionality to create
   remaining issues, allowing them to select multiple issues to import in a
   single operation.
 id: 41
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - "39"
 planGeneratedAt: 2025-06-06T08:55:25.742Z
 promptsGeneratedAt: 2025-06-06T09:39:15.402Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T09:47:39.838Z
+updatedAt: 2025-06-06T09:48:17.196Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -152,25 +152,25 @@ tasks:
           `importSingleIssue(issueSpecifier: string, tasksDir: string)`. This
           function will encapsulate fetching, duplicate checking, and plan file
           creation for one issue. It should return a boolean indicating success.
-        done: false
+        done: true
       - prompt: >
           Update `handleImportCommand` to have two main paths. If an
           `issueSpecifier` is provided, call `importSingleIssue` directly.
           Otherwise, proceed with the interactive flow developed in the previous
           tasks.
-        done: false
+        done: true
       - prompt: >
           In the interactive flow, after the user selects issues from the
           checklist, iterate through the returned array of issue numbers. In the
           loop, call `importSingleIssue` for each number, converting it to a
           string. Add logging to show the progress and result of each import.
-        done: false
+        done: true
       - prompt: >
           Update `src/rmplan/commands/import.test.ts` to test the multi-issue
           import scenario. Use your mock of the interactive prompt to return
           multiple issue numbers. Verify that the underlying import logic is
           called for each selected issue.
-        done: false
+        done: true
 changedFiles:
   - src/common/github/issues.test.ts
   - src/common/github/issues.ts
