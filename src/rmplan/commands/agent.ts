@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import yaml from 'yaml';
+import { select } from '@inquirer/prompts';
 import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
 import { logSpawn } from '../../common/process.js';
 import { getGitRoot } from '../../common/git.js';
@@ -203,15 +204,42 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       planData.tasks.some((task) => !task.steps || task.steps.length === 0);
 
     if (needsPreparation) {
-      log('Plan needs preparation. Generating detailed steps and prompts...');
-      try {
-        await preparePhase(currentPlanFile, config, {
-          model: options.model,
-          direct: options.direct,
+      let shouldGenerateSteps = true; // Default behavior
+
+      if (!options.nonInteractive) {
+        // Interactive mode - ask user what to do
+        const choice = await select({
+          message: 'This plan lacks detailed steps. How would you like to proceed?',
+          choices: [
+            {
+              name: 'Generate detailed steps first',
+              value: 'generate',
+              description: 'Create step-by-step instructions before execution (safer)',
+            },
+            {
+              name: 'Run the plan directly',
+              value: 'direct',
+              description: 'Execute using the high-level goal and details',
+            },
+          ],
         });
-        log('Successfully prepared the plan with detailed steps.');
-      } catch (err) {
-        throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
+
+        shouldGenerateSteps = choice === 'generate';
+      }
+
+      if (shouldGenerateSteps) {
+        log('Plan needs preparation. Generating detailed steps and prompts...');
+        try {
+          await preparePhase(currentPlanFile, config, {
+            model: options.model,
+            direct: options.direct,
+          });
+          log('Successfully prepared the plan with detailed steps.');
+        } catch (err) {
+          throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
+        }
+      } else {
+        log('Proceeding to execute plan directly using high-level description.');
       }
     }
   } catch (err) {
