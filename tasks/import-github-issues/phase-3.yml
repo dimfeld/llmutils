@@ -15,7 +15,7 @@ dependencies:
 planGeneratedAt: 2025-06-06T08:55:25.742Z
 promptsGeneratedAt: 2025-06-06T16:57:53.170Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T16:58:15.987Z
+updatedAt: 2025-06-06T17:02:47.160Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -115,7 +115,7 @@ tasks:
           `src/rmplan/commands/import.ts` into this new shared function. This
           will centralize the logic for identifying which issues have already
           been turned into plans.
-        done: false
+        done: true
       - prompt: >
           Create a new file `src/rmplan/issue_utils.ts`. In this file, define
           and export a new function `createStubPlanFromIssue`. This function
@@ -124,14 +124,14 @@ tasks:
           stub plan. Encapsulate all the logic for mapping issue fields to plan
           fields, including title, goal, details, issue URL, and rmfilter
           options.
-        done: false
+        done: true
       - prompt: >
           Refactor `src/rmplan/commands/import.ts`. Update the
           `importSingleIssue` function to use the new `createStubPlanFromIssue`
           helper from `issue_utils.ts`. Also, update the interactive mode logic
           to import and use `getImportedIssueUrls` from `plans.ts` instead of
           its local version.
-        done: false
+        done: true
   - title: Update Project Documentation
     description: Update the `README.md` or other relevant documentation files with a
       new section for the `rmplan import` command. The documentation should
@@ -157,6 +157,10 @@ tasks:
           the existing ones. After integration, you can delete the temporary
           `doc/import_command.md` file.
         done: false
+changedFiles:
+  - src/rmplan/commands/import.ts
+  - src/rmplan/issue_utils.ts
+  - src/rmplan/plans.ts
 rmfilter:
   - src/rmplan/commands/generate.ts
   - --with-imports

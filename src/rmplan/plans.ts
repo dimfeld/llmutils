@@ -638,3 +638,33 @@ Respond with ONLY the filename, nothing else.`;
     return '';
   }
 }
+
+/**
+ * Get all issue URLs that have already been imported by reading existing plan files
+ *
+ * @param tasksDir - Directory containing plan files
+ * @returns Set of issue URLs that are already imported
+ */
+export async function getImportedIssueUrls(tasksDir: string): Promise<Set<string>> {
+  const importedUrls = new Set<string>();
+
+  try {
+    const { plans } = await readAllPlans(tasksDir);
+
+    for (const planSummary of plans.values()) {
+      try {
+        const planFile = await readPlanFile(planSummary.filename);
+        if (planFile.issue && Array.isArray(planFile.issue)) {
+          planFile.issue.forEach((url) => importedUrls.add(url));
+        }
+      } catch (err) {
+        // Skip files that can't be read
+        continue;
+      }
+    }
+  } catch (err) {
+    // If we can't read plans, just return empty set
+  }
+
+  return importedUrls;
+}

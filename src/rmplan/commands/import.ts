@@ -5,40 +5,17 @@ import * as path from 'node:path';
 import { checkbox } from '@inquirer/prompts';
 import { error, log, warn } from '../../logging.js';
 import { getInstructionsFromGithubIssue, fetchAllOpenIssues } from '../../common/github/issues.js';
-import { readAllPlans, writePlanFile, getMaxNumericPlanId, readPlanFile } from '../plans.js';
+import {
+  readAllPlans,
+  writePlanFile,
+  getMaxNumericPlanId,
+  readPlanFile,
+  getImportedIssueUrls,
+} from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getGitRoot } from '../../common/git.js';
+import { createStubPlanFromIssue } from '../issue_utils.js';
 import type { PlanSchema } from '../planSchema.js';
-
-/**
- * Get all issue URLs that have already been imported by reading existing plan files
- *
- * @param tasksDir - Directory containing plan files
- * @returns Set of issue URLs that are already imported
- */
-async function getImportedIssueUrls(tasksDir: string): Promise<Set<string>> {
-  const importedUrls = new Set<string>();
-
-  try {
-    const { plans } = await readAllPlans(tasksDir);
-
-    for (const planSummary of plans.values()) {
-      try {
-        const planFile = await readPlanFile(planSummary.filename);
-        if (planFile.issue && Array.isArray(planFile.issue)) {
-          planFile.issue.forEach((url) => importedUrls.add(url));
-        }
-      } catch (err) {
-        // Skip files that can't be read
-        continue;
-      }
-    }
-  } catch (err) {
-    // If we can't read plans, just return empty set
-  }
-
-  return importedUrls;
-}
 
 /**
  * Import a single issue and create a stub plan file
@@ -75,23 +52,8 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
   const maxId = await getMaxNumericPlanId(tasksDir);
   const newId = maxId + 1;
 
-  // Create stub plan with metadata but empty tasks
-  const stubPlan: PlanSchema = {
-    id: newId,
-    title: issueData.issue.title,
-    goal: `Implement: ${issueData.issue.title}`,
-    details: issueData.plan,
-    status: 'pending',
-    issue: [issueUrl],
-    tasks: [], // Empty tasks array - this is the "stub" part
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  // Add rmfilter arguments if they were parsed from the issue
-  if (issueData.rmprOptions?.rmfilter) {
-    stubPlan.rmfilter = issueData.rmprOptions.rmfilter;
-  }
+  // Create stub plan using the shared utility function
+  const stubPlan = createStubPlanFromIssue(issueData, newId);
 
   // Generate filename from the suggested name but with .yml extension
   const filename = issueData.suggestedFileName.replace(/\.md$/, '.yml');
