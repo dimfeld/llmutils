@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Implement Direct Stub Plan Execution
+goal: Allow `rmplan run` to execute plans without detailed steps directly after
+  a user prompt.
+details: >
+  This phase will modify the `rmplan run` command's logic. When a plan is
+  identified as a "stub" (lacking detailed steps), the user will be prompted to
+  either generate the steps first (current behavior) or execute the plan
+  directly. Direct execution will involve creating a single prompt from the
+  plan's high-level goal and details, running it through the selected executor,
+  and then marking the plan as complete.
+id: 45
+status: pending
+priority: high
+dependencies: []
+issue:
+  - https://github.com/dimfeld/llmutils/issues/111
+planGeneratedAt: 2025-06-06T19:11:15.312Z
+createdAt: 2025-06-06T19:09:23.437Z
+updatedAt: 2025-06-06T19:11:15.312Z
+project:
+  title: Implement the ability to run stub plans directly without prior step
+    generation
+  goal: "Implement: Ability to run stub plans directly"
+  details: >
+    Some issues are simple enough that an LLM can generate the code directly
+    from a high-level description. This feature will enhance `rmplan run` to
+    handle such cases. When the command detects a plan that lacks detailed steps
+    (a "stub" plan), it will present the user with a choice: either generate the
+    detailed steps as it does now, or execute the plan immediately. If immediate
+    execution is chosen, the plan's high-level `title`, `goal`, and `details`
+    will be consolidated into a single prompt for the executor. This provides a
+    faster workflow for simpler tasks.
+tasks:
+  - title: Detect stub plans and prompt the user for action
+    description: >
+      In the `rmplan run` command logic, when a plan is identified as needing
+      preparation (i.e., it lacks detailed steps), present an interactive prompt
+      to the user. The prompt will offer the choice to either generate detailed
+      steps first (the current behavior) or to run the plan directly using its
+      high-level description. In non-interactive mode, the process should
+      default to the safer, existing behavior of generating steps.
+    steps: []
+  - title: Implement the direct execution logic for stub plans
+    description: >
+      Create a new logic path for when a user opts for direct execution. This
+      path will be responsible for constructing a single, comprehensive prompt
+      from the plan's `goal` and `details` fields. This flow will bypass the
+      standard step-by-step execution loop and prepare for a one-shot execution
+      of the entire plan.
+    steps: []
+  - title: Integrate direct execution with the executor system
+    description: >
+      Ensure the prompt constructed from the stub plan is correctly passed to
+      the configured executor's `execute` method. The existing logic for
+      building and configuring executors should be leveraged to ensure that any
+      executor can handle this new, single-prompt execution model.
+    steps: []
+  - title: Update plan status to 'done' after direct execution
+    description: >
+      After the executor successfully completes its task, the plan's status must
+      be updated to 'done'. This will involve using existing utility functions
+      to modify the plan file. If the run was initiated with a commit flag, the
+      changes, including the updated plan file, should be committed to version
+      control with a message derived from the plan's title.
+    steps: []
+  - title: Add tests for the new direct execution flow
+    description: >
+      Develop a suite of tests to validate the new functionality. These tests
+      should confirm that the user is prompted correctly for stub plans, that
+      the direct execution prompt is constructed as expected, that the executor
+      is invoked properly, and that the plan status is correctly updated to
+      'done' upon completion. The tests should also verify that non-interactive
+      mode correctly defaults to the step-generation flow.
+    steps: []
+rmfilter:
+  - src/rmplan/rmplan.ts
+  - --
+  - src/rmplan/commands/agent.ts
+  - --with-imports

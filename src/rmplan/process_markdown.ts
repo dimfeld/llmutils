@@ -524,7 +524,7 @@ export async function saveMultiPhaseYaml(
 
     const phaseFilePath = actuallyMultiphase
       ? path.join(outputDir, `phase-${phaseIndex}.yml`)
-      : `${options.output}.yml`;
+      : `${outputDir}.yml`;
 
     try {
       await writePlanFile(phaseFilePath, orderedContent as PlanSchema);
