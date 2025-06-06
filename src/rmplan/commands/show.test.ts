@@ -75,14 +75,12 @@ describe('handleShowCommand', () => {
           description: 'Do something',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'done',
+              done: true,
             },
             {
-              description: 'Step 2',
               prompt: 'Do step 2',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -140,9 +138,8 @@ describe('handleShowCommand', () => {
           description: 'Do task 1',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -184,7 +181,7 @@ describe('handleShowCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -198,7 +195,7 @@ describe('handleShowCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -240,7 +237,7 @@ describe('handleShowCommand', () => {
         {
           title: 'Task 1',
           description: 'Do task',
-          steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          steps: [{ prompt: 'Do step', done: false }],
         },
       ],
     };

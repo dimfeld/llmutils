@@ -61,7 +61,7 @@ describe('handleImportCommand', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    return moduleMocker.clear();
   });
 
   test('should import a single issue when --issue flag is provided', async () => {

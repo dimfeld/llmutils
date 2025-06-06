@@ -157,7 +157,8 @@ export async function prepareNextStep(
   const performImportAnalysis = withImports || withAllImports || withImporters;
 
   // Strip parenthetical comments from filenames (e.g., "file.ts (New File)" -> "file.ts")
-  const cleanFiles = activeTask.files.map((file) => file.replace(/\s*\([^)]*\)\s*$/, '').trim());
+  const cleanFiles =
+    activeTask.files?.map((file) => file.replace(/\s*\([^)]*\)\s*$/, '').trim()) ?? [];
 
   const gitRoot = await getGitRoot(baseDir);
   let files = (

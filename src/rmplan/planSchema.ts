@@ -26,7 +26,7 @@ export const phaseSchema = z
       z.object({
         title: z.string(),
         description: z.string(),
-        files: z.array(z.string()).default([]),
+        files: z.array(z.string()).default([]).optional(),
         examples: z.array(z.string()).optional(),
         steps: z
           .array(

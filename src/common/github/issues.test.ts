@@ -6,10 +6,6 @@ import { ModuleMocker } from '../../testing.js';
 const moduleMocker = new ModuleMocker(import.meta);
 
 describe('getInstructionsFromGithubIssue', () => {
-  beforeEach(async () => {
-    // Nothing to do here, module mocking will be done per test
-  });
-
   afterEach(() => {
     // Clean up mocks
     moduleMocker.clear();

@@ -12,37 +12,10 @@ const mockLog = mock(() => {});
 const mockError = mock(() => {});
 const mockWarn = mock(() => {});
 
-// Set up mocks immediately before imports
-moduleMocker.mockSync('../../logging.js', () => ({
-  log: mockLog,
-  error: mockError,
-  warn: mockWarn,
-}));
-
-// Mock chalk to avoid ANSI codes in tests
-const chalkMock = (str: string) => str;
-moduleMocker.mockSync('chalk', () => ({
-  default: {
-    green: chalkMock,
-    yellow: chalkMock,
-    red: chalkMock,
-    gray: chalkMock,
-    bold: chalkMock,
-    dim: chalkMock,
-    cyan: chalkMock,
-    white: chalkMock,
-    magenta: chalkMock,
-    blue: chalkMock,
-  },
-}));
-
 // Mock table to capture output
 const mockTable = mock((data: any[]) => {
   return data.map((row) => row.join('\t')).join('\n');
 });
-moduleMocker.mockSync('table', () => ({
-  table: mockTable,
-}));
 
 // Now import the module being tested
 import { handleListCommand } from './list.js';
@@ -66,6 +39,33 @@ describe('handleListCommand', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-list-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    // Set up mocks immediately before imports
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: mockLog,
+      error: mockError,
+      warn: mockWarn,
+    }));
+
+    // Mock chalk to avoid ANSI codes in tests
+    const chalkMock = (str: string) => str;
+    await moduleMocker.mock('chalk', () => ({
+      default: {
+        green: chalkMock,
+        yellow: chalkMock,
+        red: chalkMock,
+        gray: chalkMock,
+        bold: chalkMock,
+        dim: chalkMock,
+        cyan: chalkMock,
+        white: chalkMock,
+        magenta: chalkMock,
+        blue: chalkMock,
+      },
+    }));
+
+    await moduleMocker.mock('table', () => ({
+      table: mockTable,
+    }));
 
     // Mock config loader
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -83,9 +83,6 @@ describe('handleListCommand', () => {
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-
     // Clean up filesystem
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -118,7 +115,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -133,7 +130,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -148,7 +145,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -198,7 +195,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -212,7 +209,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -226,7 +223,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -268,7 +265,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -282,7 +279,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -296,7 +293,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -387,7 +384,7 @@ describe('handleListCommand', () => {
         {
           title: 'Task 1',
           description: 'Do task',
-          steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          steps: [{ prompt: 'Do step', done: false }],
         },
       ],
     };
@@ -427,7 +424,7 @@ describe('handleListCommand', () => {
         {
           title: 'Task 1',
           description: 'Do task',
-          steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+          steps: [{ prompt: 'Do step', done: false }],
         },
       ],
     };
@@ -464,7 +461,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -478,7 +475,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -492,7 +489,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -507,7 +504,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -561,7 +558,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },
@@ -576,7 +573,7 @@ describe('handleListCommand', () => {
           {
             title: 'Task 1',
             description: 'Do task',
-            steps: [{ description: 'Step 1', prompt: 'Do step', status: 'pending' }],
+            steps: [{ prompt: 'Do step', done: false }],
           },
         ],
       },

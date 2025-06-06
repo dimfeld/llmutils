@@ -28,6 +28,8 @@ export class ModuleMocker {
   private mocks: MockResult[] = [];
   private importMeta: ImportMeta;
 
+  mocked = new Set<string>();
+
   constructor(importMeta: ImportMeta) {
     this.importMeta = importMeta;
   }
@@ -55,11 +57,15 @@ export class ModuleMocker {
     };
     void mock.module(resolvedPath, () => result);
 
-    this.mocks.push({
-      clear: () => {
-        void mock.module(resolvedPath, () => original);
-      },
-    });
+    if (!this.mocked.has(resolvedPath)) {
+      this.mocks.push({
+        clear: () => {
+          void mock.module(resolvedPath, () => original);
+        },
+      });
+    }
+
+    this.mocked.add(resolvedPath);
   }
 
   // Synchronous version for immediate mocking
@@ -81,5 +87,6 @@ export class ModuleMocker {
   clear() {
     this.mocks.forEach((mockResult) => mockResult.clear());
     this.mocks = [];
+    this.mocked.clear();
   }
 }

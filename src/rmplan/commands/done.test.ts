@@ -90,7 +90,14 @@ describe('handleDoneCommand', () => {
       goal: 'Test goal',
       details: 'Test details',
       status: 'in_progress',
-      tasks: [],
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          files: [],
+          steps: [{ prompt: 'Test step prompt', done: false }],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
@@ -128,7 +135,14 @@ describe('handleDoneCommand', () => {
       goal: 'Test goal',
       details: 'Test details',
       status: 'in_progress',
-      tasks: [],
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          steps: [{ prompt: 'Test step prompt', done: false }],
+          files: [],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
@@ -165,7 +179,13 @@ describe('handleDoneCommand', () => {
       goal: 'Test goal',
       details: 'Test details',
       status: 'in_progress',
-      tasks: [],
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          steps: [{ prompt: 'Test step prompt', done: false }],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
@@ -202,7 +222,13 @@ describe('handleDoneCommand', () => {
       goal: 'Test goal',
       details: 'Test details',
       status: 'in_progress',
-      tasks: [],
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          steps: [{ prompt: 'Test step prompt', done: false }],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
@@ -240,7 +266,13 @@ describe('handleDoneCommand', () => {
       goal: 'Test goal',
       details: 'Test details',
       status: 'in_progress',
-      tasks: [],
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          steps: [{ prompt: 'Test step prompt', done: false }],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
@@ -274,7 +306,13 @@ describe('handleDoneCommand', () => {
       goal: 'Test goal',
       details: 'Test details',
       status: 'in_progress',
-      tasks: [],
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          steps: [{ prompt: 'Test step prompt', done: false }],
+        },
+      ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
