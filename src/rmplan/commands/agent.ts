@@ -277,11 +277,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           log('Using combined goal and details as prompt:');
           log(directPrompt);
 
-          // Execute the consolidated prompt
-          await executor.execute(directPrompt);
+          let hasError = false;
 
-          // Execute post-apply commands if configured
-          if (config.postApplyCommands && config.postApplyCommands.length > 0) {
+          // Execute the consolidated prompt
+          try {
+            await executor.execute(directPrompt);
+          } catch (err) {
+            error('Execution step failed:', err);
+            hasError = true;
+          }
+
+          // Execute post-apply commands if configured and no error occurred
+          if (!hasError && config.postApplyCommands && config.postApplyCommands.length > 0) {
             log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
             for (const commandConfig of config.postApplyCommands) {
               const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
@@ -291,12 +298,15 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             }
           }
 
-          // Mark plan as complete
-          planData.status = 'done';
-          planData.updatedAt = new Date().toISOString();
-          await writePlanFile(currentPlanFile, planData);
-
-          log('Plan executed directly and marked as complete!');
+          // Mark plan as complete only if no error occurred
+          if (!hasError) {
+            planData.status = 'done';
+            planData.updatedAt = new Date().toISOString();
+            await writePlanFile(currentPlanFile, planData);
+            log('Plan executed directly and marked as complete!');
+          } else {
+            throw new Error('Direct execution failed');
+          }
           return; // Exit early, bypassing the step-by-step loop
         } catch (err) {
           error('Direct execution failed:', err);
