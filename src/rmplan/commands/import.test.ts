@@ -43,6 +43,7 @@ describe('handleImportCommand', () => {
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
       readPlanFile: mock(() => Promise.resolve({ issue: [] })),
+      getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -113,7 +114,7 @@ describe('handleImportCommand', () => {
 
     expect(fetchAllOpenIssues).toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('Fetching all open issues...');
-    expect(log).toHaveBeenCalledWith('Found 2 issues available for import (0 already imported).');
+    expect(log).toHaveBeenCalledWith('Found 2 open issues.');
     expect(checkbox).toHaveBeenCalledWith({
       message: 'Select issues to import:',
       choices: [
@@ -124,7 +125,7 @@ describe('handleImportCommand', () => {
     expect(log).toHaveBeenCalledWith('No issues selected for import.');
   });
 
-  test('should filter out already imported issues in interactive mode', async () => {
+  test('should mark already imported issues in interactive mode', async () => {
     // Mock data where one issue is already imported
     const mockPlansWithImported = {
       plans: new Map([[1, { filename: '/test/imported-plan.yml' }]]),
@@ -156,6 +157,9 @@ describe('handleImportCommand', () => {
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
       readPlanFile: mock(() => Promise.resolve(mockImportedPlan)),
+      getImportedIssueUrls: mock(() =>
+        Promise.resolve(new Set(['https://github.com/owner/repo/issues/100']))
+      ),
     }));
 
     // Mock the checkbox to return no selections to avoid actual import
@@ -171,12 +175,15 @@ describe('handleImportCommand', () => {
 
     expect(fetchAllOpenIssues).toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('Fetching all open issues...');
-    expect(log).toHaveBeenCalledWith('Found 2 issues available for import (1 already imported).');
+    expect(log).toHaveBeenCalledWith(
+      'Found 3 open issues (1 already imported). Re-importing will update existing plans.'
+    );
 
-    // Verify that only the non-imported issues are presented as choices
+    // Verify that all issues are presented, with already imported ones marked
     expect(checkbox).toHaveBeenCalledWith({
       message: 'Select issues to import:',
       choices: [
+        { name: '#100: Issue 100 [ALREADY IMPORTED]', value: 100 },
         { name: '#101: Issue 101', value: 101 },
         { name: '#102: Issue 102', value: 102 },
       ],
@@ -221,7 +228,64 @@ describe('handleImportCommand', () => {
     expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('101', false);
     expect(writePlanFile).toHaveBeenCalledTimes(2);
     expect(log).toHaveBeenCalledWith('Importing 2 selected issues...');
-    expect(log).toHaveBeenCalledWith('Successfully imported 2 of 2 selected issues.');
+    expect(log).toHaveBeenCalledWith('Successfully imported 2 new issues.');
+  });
+
+  test('should update existing plan when re-importing an issue', async () => {
+    // Mock data where the issue is already imported
+    const existingPlan: PlanSchema = {
+      id: 3,
+      title: 'Old Title',
+      goal: 'Implement: Old Title',
+      details: 'Old description',
+      status: 'in_progress',
+      issue: ['https://github.com/owner/repo/issues/123'],
+      tasks: [{ id: 1, description: 'Existing task' }],
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    };
+
+    const mockPlansWithExisting = {
+      plans: new Map([[3, { ...existingPlan, filename: 'issue-123-test-issue.yml' }]]),
+      maxNumericId: 5,
+      duplicates: [],
+    };
+
+    await moduleMocker.mock('../plans.js', () => ({
+      readAllPlans: mock(() => Promise.resolve(mockPlansWithExisting)),
+      writePlanFile: mock(() => Promise.resolve()),
+      getMaxNumericPlanId: mock(() => Promise.resolve(5)),
+      readPlanFile: mock(() => Promise.resolve(existingPlan)),
+      getImportedIssueUrls: mock(() =>
+        Promise.resolve(new Set(['https://github.com/owner/repo/issues/123']))
+      ),
+    }));
+
+    await handleImportCommand('123');
+
+    const { writePlanFile } = await import('../plans.js');
+    const { log } = await import('../../logging.js');
+
+    expect(log).toHaveBeenCalledWith(
+      'Updating existing plan for issue: https://github.com/owner/repo/issues/123'
+    );
+    expect(writePlanFile).toHaveBeenCalled();
+
+    const [filePath, planData] = (writePlanFile as any).mock.calls[0];
+
+    expect(filePath).toContain('issue-123-test-issue.yml');
+    expect(planData).toMatchObject({
+      id: 3, // Preserves existing ID
+      title: 'Test Issue', // Updated from issue
+      goal: 'Implement: Old Title', // Preserved
+      details: 'This is a test issue description', // Updated from issue
+      status: 'in_progress', // Preserved
+      issue: ['https://github.com/owner/repo/issues/123'], // Preserved
+      tasks: [{ id: 1, description: 'Existing task' }], // Preserved
+      rmfilter: ['--include', '*.ts'], // Updated from issue
+      createdAt: '2024-01-01T00:00:00Z', // Preserved
+    });
+    expect(planData.updatedAt).not.toBe('2024-01-01T00:00:00Z'); // Should be updated
   });
 
   test('should create stub plan file with correct metadata', async () => {
@@ -247,7 +311,7 @@ describe('handleImportCommand', () => {
     expect(planData.updatedAt).toBeDefined();
   });
 
-  test('should avoid creating duplicate plans for existing issues', async () => {
+  test('should update existing plan when importing duplicate issue', async () => {
     // Setup mock to return a plan with the same issue URL
     const mockExistingPlan: PlanSchema & { filename: string } = {
       id: 1,
@@ -255,7 +319,9 @@ describe('handleImportCommand', () => {
       details: 'Existing details',
       issue: ['https://github.com/owner/repo/issues/123'], // Same URL as mockIssueData
       tasks: [],
-      filename: '/test/existing-plan.yml',
+      filename: 'existing-plan.yml',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
     };
 
     const mockPlansWithDuplicate = {
@@ -268,18 +334,17 @@ describe('handleImportCommand', () => {
       readAllPlans: mock(() => Promise.resolve(mockPlansWithDuplicate)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
+      readPlanFile: mock(() => Promise.resolve(mockExistingPlan)),
     }));
 
     await handleImportCommand('123');
 
     const { writePlanFile } = await import('../plans.js');
-    const { warn } = await import('../../logging.js');
+    const { log } = await import('../../logging.js');
 
-    expect(writePlanFile).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'Issue https://github.com/owner/repo/issues/123 has already been imported'
-      )
+    expect(writePlanFile).toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      'Updating existing plan for issue: https://github.com/owner/repo/issues/123'
     );
   });
 });

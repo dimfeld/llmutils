@@ -8,6 +8,7 @@ import { getInstructionsFromGithubIssue, fetchAllOpenIssues } from '../../common
 import {
   readAllPlans,
   writePlanFile,
+  readPlanFile,
   getMaxNumericPlanId,
   getImportedIssueUrls,
 } from '../plans.js';
@@ -29,18 +30,49 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
   // Get issue data using the existing helper function
   const issueData = await getInstructionsFromGithubIssue(issueSpecifier, false);
 
-  // Check for duplicate plans by looking at existing plans
+  // Check for existing plans
   const { plans } = await readAllPlans(tasksDir);
   const issueUrl = issueData.issue.html_url;
 
+  let existingPlan: (PlanSchema & { filename: string }) | undefined;
   for (const plan of plans.values()) {
     if (plan.issue && plan.issue.includes(issueUrl)) {
-      warn(`Issue ${issueUrl} has already been imported in plan: ${plan.filename}`);
-      return false;
+      existingPlan = plan;
+      break;
     }
   }
 
-  // Get the next available numeric ID
+  if (existingPlan) {
+    // Update existing plan
+    log(`Updating existing plan for issue: ${issueUrl}`);
+    const fullPath = path.join(tasksDir, existingPlan.filename);
+
+    // Read the current plan to preserve existing data
+    const currentPlan = await readPlanFile(fullPath);
+
+    // Update the plan with new data from the issue while preserving important fields
+    const updatedPlan: PlanSchema = {
+      ...currentPlan,
+      title: issueData.issue.title, // Update title in case it changed
+      details: issueData.plan, // Update details with latest issue content
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Update rmfilter if present in the new issue data
+    if (issueData.rmprOptions && issueData.rmprOptions.rmfilter) {
+      updatedPlan.rmfilter = issueData.rmprOptions.rmfilter;
+    }
+
+    // Write the updated plan
+    await writePlanFile(fullPath, updatedPlan);
+
+    log(`Updated plan file: ${fullPath}`);
+    log(`Plan ID: ${currentPlan.id}`);
+
+    return true;
+  }
+
+  // Get the next available numeric ID for new plans
   const maxId = await getMaxNumericPlanId(tasksDir);
   const newId = maxId + 1;
 
@@ -89,26 +121,34 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     log('Fetching all open issues...');
     const allIssues = await fetchAllOpenIssues();
 
-    // Get already imported issue URLs to filter them out
+    // Get already imported issue URLs to mark them
     const importedUrls = await getImportedIssueUrls(tasksDir);
 
-    // Filter out already imported issues
-    const availableIssues = allIssues.filter((issue) => !importedUrls.has(issue.html_url));
+    // Create choices for the checkbox prompt, marking already imported issues
+    const choices = allIssues.map((issue) => {
+      const isImported = importedUrls.has(issue.html_url);
+      const name = isImported
+        ? `#${issue.number}: ${issue.title} [ALREADY IMPORTED]`
+        : `#${issue.number}: ${issue.title}`;
+      return {
+        name,
+        value: issue.number,
+      };
+    });
 
-    if (availableIssues.length === 0) {
-      log('No new issues available to import. All open issues have already been imported.');
+    if (choices.length === 0) {
+      log('No open issues found in the repository.');
       return;
     }
 
-    log(
-      `Found ${availableIssues.length} issues available for import (${allIssues.length - availableIssues.length} already imported).`
-    );
-
-    // Create choices for the checkbox prompt
-    const choices = availableIssues.map((issue) => ({
-      name: `#${issue.number}: ${issue.title}`,
-      value: issue.number,
-    }));
+    const importedCount = Array.from(importedUrls).length;
+    if (importedCount > 0) {
+      log(
+        `Found ${allIssues.length} open issues (${importedCount} already imported). Re-importing will update existing plans.`
+      );
+    } else {
+      log(`Found ${allIssues.length} open issues.`);
+    }
 
     // Show interactive checkbox prompt
     const selectedIssueNumbers = await checkbox({
@@ -125,16 +165,34 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
 
     // Import each selected issue
     let successCount = 0;
+    let updateCount = 0;
     for (const issueNumber of selectedIssueNumbers) {
+      const issueUrl = allIssues.find((i) => i.number === issueNumber)?.html_url;
+      const wasAlreadyImported = issueUrl ? importedUrls.has(issueUrl) : false;
+
       const success = await importSingleIssue(issueNumber.toString(), tasksDir);
       if (success) {
         successCount++;
+        if (wasAlreadyImported) {
+          updateCount++;
+        }
       }
     }
 
-    log(`Successfully imported ${successCount} of ${selectedIssueNumbers.length} selected issues.`);
+    const newImports = successCount - updateCount;
     if (successCount > 0) {
+      if (updateCount > 0 && newImports > 0) {
+        log(
+          `Successfully processed ${successCount} issues: ${newImports} new imports, ${updateCount} updates.`
+        );
+      } else if (updateCount > 0) {
+        log(`Successfully updated ${updateCount} existing plans.`);
+      } else {
+        log(`Successfully imported ${newImports} new issues.`);
+      }
       log('Use "rmplan generate" to add tasks to these plans.');
+    } else {
+      log('No issues were imported or updated.');
     }
     return;
   }
