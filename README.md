@@ -1,6 +1,6 @@
 # llmutils
 
-Command-line utilities for managing context with chat-oriented programming, and applying edits back.
+Command-line utilities for managing context with chat-oriented programming, and applying edits back. The codebase is designed with a modular architecture for enhanced maintainability and clear separation of concerns.
 
 The scripts are:
 

@@ -29,7 +29,11 @@ export type PlanSummary = {
 
 let cachedPlans = new Map<
   string,
-  { plans: Map<string | number, PlanSummary>; maxNumericId: number; duplicates: (string | number)[] }
+  {
+    plans: Map<string | number, PlanSummary>;
+    maxNumericId: number;
+    duplicates: (string | number)[];
+  }
 >();
 
 /**
@@ -42,7 +46,11 @@ export function clearPlanCache(): void {
 export async function readAllPlans(
   directory: string,
   readCache = true
-): Promise<{ plans: Map<string | number, PlanSummary>; maxNumericId: number; duplicates: (string | number)[] }> {
+): Promise<{
+  plans: Map<string | number, PlanSummary>;
+  maxNumericId: number;
+  duplicates: (string | number)[];
+}> {
   let existing = readCache ? cachedPlans.get(directory) : undefined;
   if (existing) {
     return existing;
@@ -238,7 +246,9 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
   // Check if the requested plan ID is a duplicate
   const planId = !isNaN(numericPlanArg) ? numericPlanArg : planArg;
   if (duplicates.includes(planId)) {
-    throw new Error(`Plan ID ${planId} is duplicated in multiple files. Please run 'rmplan renumber' to fix this issue.`);
+    throw new Error(
+      `Plan ID ${planId} is duplicated in multiple files. Please run 'rmplan renumber' to fix this issue.`
+    );
   }
 
   // If we successfully parsed as a number, try numeric lookup first
