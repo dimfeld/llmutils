@@ -1,9 +1,13 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Split command should work on single tasks in a plan as well
 goal: "Implement: Split command should work on single tasks in a plan as well"
-details: rmplan split should be able to split tasks in a plan into multiple
-  subtasks by taking a fully qualfied task ID like "1.3". When this happens
+details: >
+  rmplan split should be able to split tasks in a plan into multiple
+  subtasks by taking a fully qualified task ID like "1.3". When this happens
   insert the new tasks where the old task was.
+
+  This should be a new prompt similar to the existing split prompt, but
+  optimized for splitting a single task in a plan into multiple tasks.
 id: 43
 status: pending
 issue:

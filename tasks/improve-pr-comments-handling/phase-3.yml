@@ -10,6 +10,8 @@ details: >
 id: 30
 status: pending
 priority: low
+issue:
+  - https://github.com/dimfeld/llmutils/issues/112
 dependencies:
   - "29"
 planGeneratedAt: 2025-06-02T19:27:55.318Z

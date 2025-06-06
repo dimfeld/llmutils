@@ -16,6 +16,8 @@ details: >
 id: 29
 status: pending
 priority: high
+issue:
+  - https://github.com/dimfeld/llmutils/issues/112
 dependencies:
   - "28"
 planGeneratedAt: 2025-06-02T19:27:55.318Z
