@@ -136,7 +136,7 @@ export async function handleGenerateCommand(options: any, command: any) {
       log(chalk.green('✓ Plan copied to clipboard'));
 
       // Generate suggested filename using Gemini Flash 2.0
-      let suggestedFilename = await generateSuggestedFilename(planText, config);
+      let suggestedFilename = await generateSuggestedFilename(planText);
 
       // Prompt for save location
       let savePath = await input({
@@ -146,14 +146,10 @@ export async function handleGenerateCommand(options: any, command: any) {
       });
 
       if (savePath) {
-        // If the path is relative resolve it against the git root
-        if (!path.isAbsolute(savePath) && config.paths?.tasks) {
-          savePath = path.resolve(gitRoot, suggestedFilename);
-        }
-
         try {
-          await Bun.write(savePath, planText);
-          planFile = savePath;
+          const tasksDir = await resolveTasksDir(config);
+          planFile = path.resolve(tasksDir, savePath);
+          await Bun.write(planFile, planText);
           log('Plan saved to:', savePath);
         } catch (err) {
           throw new Error(`Failed to save plan to file: ${err as Error}`);
@@ -172,20 +168,16 @@ export async function handleGenerateCommand(options: any, command: any) {
     issueUrlsForExtract.push(issueResult.issue.url);
 
     let tasksDir = await resolveTasksDir(config);
-    let suggestedFilename = config.paths?.tasks
-      ? path.join(tasksDir, issueResult.suggestedFileName)
-      : issueResult.suggestedFileName;
-
     let savePath = await input({
       message: 'Save plan to this file (or clear the line to skip): ',
       required: false,
-      default: suggestedFilename,
+      default: issueResult.suggestedFileName,
     });
 
     if (savePath) {
       try {
-        await Bun.write(savePath, planText);
-        planFile = savePath;
+        planFile = path.resolve(tasksDir, savePath);
+        await Bun.write(planFile, planText);
         log('Plan saved to:', savePath);
       } catch (err) {
         throw new Error(`Failed to save plan to file: ${err as Error}`);
@@ -398,7 +390,7 @@ export async function handleGenerateCommand(options: any, command: any) {
   }
 }
 
-async function generateSuggestedFilename(planText: string, config: any): Promise<string> {
+async function generateSuggestedFilename(planText: string): Promise<string> {
   try {
     // Extract first 500 characters of the plan for context
     const planSummary = planText.slice(0, 500);
@@ -434,11 +426,7 @@ Respond with ONLY the filename, nothing else.`;
       filename = 'rmplan-task';
     }
 
-    // Add to tasks directory if configured
-    const tasksDir = config.paths?.tasks;
-    const fullPath = tasksDir ? path.join(tasksDir, `${filename}.md`) : `${filename}.md`;
-
-    return fullPath;
+    return `${filename}.md`;
   } catch (err) {
     // Fallback to default if model fails
     warn('Failed to generate filename suggestion:', err);
