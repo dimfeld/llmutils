@@ -12,7 +12,7 @@ dependencies:
 planGeneratedAt: 2025-06-04T08:24:18.886Z
 promptsGeneratedAt: 2025-06-06T06:16:05.626Z
 createdAt: 2025-06-04T08:24:18.886Z
-updatedAt: 2025-06-06T06:32:13.278Z
+updatedAt: 2025-06-06T06:36:09.025Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -114,22 +114,22 @@ tasks:
           `getGitRepository` from `src/rmfilter/utils.ts`. This violates the
           principle that common utilities should not depend on feature-specific
           modules.
-        done: false
+        done: true
       - prompt: >
           Move the `getGitRepository` function from `src/rmfilter/utils.ts` to
           `src/common/git.ts` to make it a truly common utility, available to
           all modules without creating improper dependencies.
-        done: false
+        done: true
       - prompt: >
           Update the import statement in `src/common/github/identifiers.ts` to
           import `getGitRepository` from its new location in
           `src/common/git.ts`.
-        done: false
+        done: true
       - prompt: >
           Search the codebase for any other usages of `getGitRepository` (e.g.,
           in `rmpr/main.ts` or its dependencies) and update their imports to
           point to `src/common/git.ts` as well.
-        done: false
+        done: true
   - title: Clean Up Unused Code
     description: Identify and remove any old files, unused functions, or dead code
       that may have resulted from the reorganization. This includes
@@ -178,6 +178,7 @@ changedFiles:
   - src/common/fs.ts
   - src/common/git.test.ts
   - src/common/git.ts
+  - src/common/github/identifiers.ts
   - src/common/github/issues.test.ts
   - src/common/github/pull_requests.ts
   - src/common/process.test.ts
@@ -185,6 +186,7 @@ changedFiles:
   - src/common/run_and_apply.ts
   - src/dependency_graph/__snapshots__/walk_imports.test.ts.snap
   - src/dependency_graph/resolve.ts
+  - src/dependency_graph/walk_imports.test.ts
   - src/editor/diff-editor/parse.ts
   - src/editor/udiff-simple/parse.ts
   - src/editor/whole-file/parse_raw_edits.ts
