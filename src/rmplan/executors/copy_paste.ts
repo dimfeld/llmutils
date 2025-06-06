@@ -14,7 +14,7 @@ import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 const copyPasteOptionsSchema = z.object({
   executionModel: z
     .string()
-    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro-preview-05-23'.")
+    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro-preview-06-05'.")
     .optional(),
 });
 

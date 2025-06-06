@@ -1,13 +1,12 @@
 import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
-import type { OpenRouterProviderOptions } from '@openrouter/ai-sdk-provider';
 import { streamText, type LanguageModel, type StreamTextResult, type ToolSet } from 'ai';
-import { streamResultToConsole } from './llm.js';
-import { askForModelId, createModel } from '../../common/model_factory.ts';
-import { log } from '../../logging.ts';
 import { applyLlmEdits } from '../../apply-llm-edits/apply.ts';
 import { createRetryRequester } from '../../apply-llm-edits/retry.ts';
+import { askForModelId, createModel } from '../../common/model_factory.ts';
+import { log } from '../../logging.ts';
+import { streamResultToConsole } from './llm.js';
 
-export const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro-preview-05-06';
+export const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro-preview-06-05';
 
 /** Represents a single message in a structured LLM prompt. */
 export interface LlmPromptMessage {

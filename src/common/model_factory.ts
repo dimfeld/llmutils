@@ -66,7 +66,7 @@ export async function askForModelId(options?: {
   onlyDirectCall?: boolean;
 }): Promise<{ value: string; executor: string } | null> {
   let availableModels = [
-    'google/gemini-2.5-pro-preview-05-06',
+    'google/gemini-2.5-pro-preview-06-05',
     'google/gemini-2.5-flash-preview-05-20',
     'google/gemini-2.0-flash',
     'openai/o4-mini',
