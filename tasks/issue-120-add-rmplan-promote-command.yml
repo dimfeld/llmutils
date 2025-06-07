@@ -15,12 +15,12 @@ details: >-
   promote it. `35.2-6` will get tasks two through six (one-based) in the plan
   with ID `35` and promote them.
 id: 47
-status: in_progress
+status: done
 issue:
   - https://github.com/dimfeld/llmutils/issues/120
 promptsGeneratedAt: 2025-06-07T02:34:55.340Z
 createdAt: 2025-06-07T02:04:24.921Z
-updatedAt: 2025-06-07T02:47:59.890Z
+updatedAt: 2025-06-07T02:51:56.777Z
 tasks:
   - title: Add `promote` command and Task ID parser
     description: Add the `promote` command to the `rmplan` CLI and create the
@@ -167,25 +167,25 @@ tasks:
           promoted. The original plan should now have an empty `tasks` array and
           dependencies on all the new plans. Its status should not change
           automatically.
-        done: false
+        done: true
       - prompt: >
           Add a test for promoting tasks from two different plans in a single
           command invocation (e.g., `rmplan promote 1.2 2.1`). Verify that both
           original plans are updated correctly and the correct new plans are
           created with sequential IDs.
-        done: false
+        done: true
       - prompt: >
           Refine the logic in `handlePromoteCommand` to correctly handle these
           scenarios. Ensure that `generateNumericPlanId` is called before each
           new plan creation to guarantee unique, sequential IDs across the
           entire operation, even when promoting from multiple source plans.
-        done: false
+        done: true
       - prompt: >
           Review and improve the logging output to be clear and informative,
           especially for complex promotions involving multiple new plans and
           modified original plans. The user should understand exactly what was
           created and what was changed.
-        done: false
+        done: true
 changedFiles:
   - debug_promote.js
   - src/common/github/issues.ts

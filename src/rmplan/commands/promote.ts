@@ -32,6 +32,13 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     tasksByPlan.get(planId)!.push({ taskIndex, planId });
   }
 
+  // Log summary of what will be promoted
+  const affectedPlans = Array.from(tasksByPlan.keys());
+  if (affectedPlans.length > 1) {
+    log(`This will affect ${affectedPlans.length} different plans: ${affectedPlans.join(', ')}`);
+  }
+  log(`Will create ${parsedTaskIds.length} new plan(s) from the promoted tasks`);
+
   // Get the tasks directory for generating new plan IDs
   const config = await loadEffectiveConfig(options.config);
   const gitRoot = (await getGitRoot()) || process.cwd();
@@ -46,6 +53,8 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
 
   // Process each plan group
   for (const [planId, taskInfo] of tasksByPlan) {
+    log(`Processing plan ${planId}...`);
+
     // Sort task indices in ascending order to maintain proper indexing during removal
     const sortedTaskInfo = taskInfo.sort((a, b) => a.taskIndex - b.taskIndex);
 
@@ -66,6 +75,18 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
           `Task index ${taskIndex + 1} is out of range. Plan ${planId} has ${originalPlan.tasks.length} tasks`
         );
       }
+    }
+
+    // Check if all tasks are being promoted
+    const allTasksPromoted = sortedTaskInfo.length === originalPlan.tasks.length;
+    if (allTasksPromoted) {
+      log(
+        `Promoting ALL ${sortedTaskInfo.length} tasks from plan ${planId} (original plan will have empty tasks)`
+      );
+    } else {
+      log(
+        `Promoting ${sortedTaskInfo.length} of ${originalPlan.tasks.length} tasks from plan ${planId}`
+      );
     }
 
     // Create all new plans with chained dependencies, generating IDs sequentially
@@ -102,8 +123,10 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       // Clear cache so next generateNumericPlanId call gets updated max ID
       clearPlanCache();
 
-      log(`Created new plan file: ${newPlanPath}`);
-      log(`Successfully promoted task "${taskToPromote.title}" to new plan ${newPlanId}`);
+      log(
+        `Created new plan ${newPlanId}: "${taskToPromote.title}"${dependencies.length > 0 ? ` (depends on ${dependencies.join(', ')})` : ''}`
+      );
+      log(`Plan file saved: ${newPlanPath}`);
     }
 
     // Update the original plan: remove all promoted tasks and add dependencies
@@ -130,6 +153,19 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     // Write the updated original plan back
     await writePlanFile(originalPlanPath, updatedOriginalPlan);
 
-    log(`Updated original plan ${planId} to depend on plans ${newPlanIds.join(', ')}`);
+    if (allTasksPromoted) {
+      log(
+        `Updated plan ${planId}: now has 0 tasks remaining and depends on new plans ${newPlanIds.join(', ')}`
+      );
+    } else {
+      log(
+        `Updated plan ${planId}: ${updatedTasks.length} tasks remaining, added dependencies on plans ${newPlanIds.join(', ')}`
+      );
+    }
   }
+
+  // Final summary
+  log(
+    `✓ Promotion complete: Created ${parsedTaskIds.length} new plan(s), updated ${affectedPlans.length} original plan(s)`
+  );
 }

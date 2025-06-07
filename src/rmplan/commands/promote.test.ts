@@ -226,4 +226,196 @@ describe('handlePromoteCommand', () => {
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
   });
+
+  test('should promote all tasks from a plan leaving empty tasks array', async () => {
+    // Create a sample plan with multiple tasks
+    const originalPlan: PlanSchema = {
+      id: 1,
+      goal: 'Small feature implementation',
+      details: 'A small feature with just a few tasks',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task one',
+          description: 'First task description',
+          steps: [],
+        },
+        {
+          title: 'Task two',
+          description: 'Second task description',
+          steps: [],
+        },
+        {
+          title: 'Task three',
+          description: 'Third task description',
+          steps: [],
+        },
+      ],
+      dependencies: [],
+    };
+
+    await createPlanFile('1', originalPlan);
+
+    // Promote all tasks (1.1-3)
+    await handlePromoteCommand(['1.1-3'], {});
+
+    // Check that three new plan files were created (2.yml, 3.yml, 4.yml)
+    const plan2Path = path.join(tasksDir, '2.yml');
+    const plan3Path = path.join(tasksDir, '3.yml');
+    const plan4Path = path.join(tasksDir, '4.yml');
+
+    const plan2Exists = await fs
+      .access(plan2Path)
+      .then(() => true)
+      .catch(() => false);
+    const plan3Exists = await fs
+      .access(plan3Path)
+      .then(() => true)
+      .catch(() => false);
+    const plan4Exists = await fs
+      .access(plan4Path)
+      .then(() => true)
+      .catch(() => false);
+
+    expect(plan2Exists).toBe(true);
+    expect(plan3Exists).toBe(true);
+    expect(plan4Exists).toBe(true);
+
+    // Read and verify the new plans
+    const newPlan2 = await readPlanFile(plan2Path);
+    const newPlan3 = await readPlanFile(plan3Path);
+    const newPlan4 = await readPlanFile(plan4Path);
+
+    // Verify plan 2 (from task 1.1)
+    expect(newPlan2.id).toBe(2);
+    expect(newPlan2.goal).toBe('Task one');
+    expect(newPlan2.details).toBe('First task description');
+    expect(newPlan2.dependencies).toEqual([]);
+
+    // Verify plan 3 (from task 1.2) depends on plan 2
+    expect(newPlan3.id).toBe(3);
+    expect(newPlan3.goal).toBe('Task two');
+    expect(newPlan3.details).toBe('Second task description');
+    expect(newPlan3.dependencies).toContain('2');
+
+    // Verify plan 4 (from task 1.3) depends on plan 3
+    expect(newPlan4.id).toBe(4);
+    expect(newPlan4.goal).toBe('Task three');
+    expect(newPlan4.details).toBe('Third task description');
+    expect(newPlan4.dependencies).toContain('3');
+
+    // Read and verify the original plan was updated
+    const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
+    // Original plan should now have empty tasks array
+    expect(updatedOriginalPlan.tasks).toEqual([]);
+
+    // Original plan should depend on all new plans
+    expect(updatedOriginalPlan.dependencies).toContain('2');
+    expect(updatedOriginalPlan.dependencies).toContain('3');
+    expect(updatedOriginalPlan.dependencies).toContain('4');
+
+    // Status should remain unchanged
+    expect(updatedOriginalPlan.status).toBe('pending');
+
+    // Verify logging was called
+    expect(logSpy).toHaveBeenCalled();
+  });
+
+  test('should promote tasks from multiple different plans in single command', async () => {
+    // Create two sample plans
+    const plan1: PlanSchema = {
+      id: 1,
+      goal: 'First plan',
+      details: 'First plan details',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Plan 1 Task 1',
+          description: 'First task in plan 1',
+          steps: [],
+        },
+        {
+          title: 'Plan 1 Task 2',
+          description: 'Second task in plan 1',
+          steps: [],
+        },
+      ],
+      dependencies: [],
+    };
+
+    const plan2: PlanSchema = {
+      id: 2,
+      goal: 'Second plan',
+      details: 'Second plan details',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Plan 2 Task 1',
+          description: 'First task in plan 2',
+          steps: [],
+        },
+        {
+          title: 'Plan 2 Task 2',
+          description: 'Second task in plan 2',
+          steps: [],
+        },
+      ],
+      dependencies: [],
+    };
+
+    await createPlanFile('1', plan1);
+    await createPlanFile('2', plan2);
+
+    // Promote task 2 from plan 1 and task 1 from plan 2 (1.2 2.1)
+    await handlePromoteCommand(['1.2', '2.1'], {});
+
+    // Check that two new plan files were created (3.yml, 4.yml)
+    const plan3Path = path.join(tasksDir, '3.yml');
+    const plan4Path = path.join(tasksDir, '4.yml');
+
+    const plan3Exists = await fs
+      .access(plan3Path)
+      .then(() => true)
+      .catch(() => false);
+    const plan4Exists = await fs
+      .access(plan4Path)
+      .then(() => true)
+      .catch(() => false);
+
+    expect(plan3Exists).toBe(true);
+    expect(plan4Exists).toBe(true);
+
+    // Read and verify the new plans
+    const newPlan3 = await readPlanFile(plan3Path);
+    const newPlan4 = await readPlanFile(plan4Path);
+
+    // Verify plan 3 (from task 1.2)
+    expect(newPlan3.id).toBe(3);
+    expect(newPlan3.goal).toBe('Plan 1 Task 2');
+    expect(newPlan3.details).toBe('Second task in plan 1');
+    expect(newPlan3.dependencies).toEqual([]);
+
+    // Verify plan 4 (from task 2.1)
+    expect(newPlan4.id).toBe(4);
+    expect(newPlan4.goal).toBe('Plan 2 Task 1');
+    expect(newPlan4.details).toBe('First task in plan 2');
+    expect(newPlan4.dependencies).toEqual([]);
+
+    // Read and verify both original plans were updated
+    const updatedPlan1 = await readPlanFile(path.join(tasksDir, '1.yml'));
+    const updatedPlan2 = await readPlanFile(path.join(tasksDir, '2.yml'));
+
+    // Plan 1 should have only the first task remaining
+    expect(updatedPlan1.tasks).toHaveLength(1);
+    expect(updatedPlan1.tasks![0].title).toBe('Plan 1 Task 1');
+    expect(updatedPlan1.dependencies).toContain('3');
+
+    // Plan 2 should have only the second task remaining
+    expect(updatedPlan2.tasks).toHaveLength(1);
+    expect(updatedPlan2.tasks![0].title).toBe('Plan 2 Task 2');
+    expect(updatedPlan2.dependencies).toContain('4');
+
+    // Verify logging was called
+    expect(logSpy).toHaveBeenCalled();
+  });
 });
