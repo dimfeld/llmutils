@@ -157,7 +157,10 @@ export class ClaudeCodeExecutor implements Executor {
       args.push('--disallowedTools', disallowedTools.join(','));
     }
 
-    if (mcpConfigFile) {
+    if (isPermissionsMcpEnabled && dynamicMcpConfigFile) {
+      args.push('--mcp-config', dynamicMcpConfigFile);
+      args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
+    } else if (mcpConfigFile) {
       args.push('--mcp-config', mcpConfigFile);
     }
 

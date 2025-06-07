@@ -18,7 +18,7 @@ docs:
 planGeneratedAt: 2025-06-07T09:18:47.448Z
 promptsGeneratedAt: 2025-06-07T20:36:58.810Z
 createdAt: 2025-06-07T02:05:26.354Z
-updatedAt: 2025-06-07T20:40:30.361Z
+updatedAt: 2025-06-07T20:41:24.363Z
 project:
   title: Implement Interactive Permissions for Claude Code Executor
   goal: Allow the user to respond to tool permissions requests when using the
@@ -128,7 +128,7 @@ tasks:
           path to the `args` array. Also, push the `--permission-prompt-tool`
 
           flag with the value `mcp__permissions__approval_prompt`.
-        done: false
+        done: true
       - prompt: >
           Adjust the existing logic that handles the `mcpConfigFile` option. It
 
@@ -138,7 +138,7 @@ tasks:
           is false, preventing conflicts between the dynamic configuration and
 
           a user-provided one.
-        done: false
+        done: true
   - title: Ensure Cleanup of Temporary Resources
     description: Wrap the `claude` process execution in a `try...finally` block to
       ensure that the temporary MCP configuration file and its containing
