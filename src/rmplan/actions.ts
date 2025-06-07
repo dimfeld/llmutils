@@ -369,7 +369,6 @@ export async function prepareNextStep(
     // Get additional docs using findAdditionalDocs when rmfilter is false
     const { filteredMdcFiles } = await findAdditionalDocs(gitRoot, new Set(files), {
       'no-autodocs': false,
-      docsPaths: Array.from(docsSet),
     });
 
     // Add relevant files section
@@ -382,7 +381,7 @@ export async function prepareNextStep(
     files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
 
     // Add MDC files with their descriptions if available
-    if (filteredMdcFiles.length > 0) {
+    if (filteredMdcFiles.length > 0 || docsSet.size > 0) {
       promptParts.push('\n## Additional Documentation\n');
       for (const mdcFile of filteredMdcFiles) {
         const relativePath = path.relative(gitRoot, mdcFile.filePath);
@@ -391,6 +390,10 @@ export async function prepareNextStep(
         } else {
           promptParts.push(`- ${filePrefix}${relativePath}`);
         }
+      }
+
+      for (const doc of docsSet) {
+        promptParts.push(`- ${filePrefix}${doc}`);
       }
     }
   }

@@ -9,7 +9,7 @@ details: "This phase focuses on creating the core component: the permissions
   parsing the request, presenting it clearly to the user, and returning a
   formatted response based on the user's input."
 id: 55
-status: pending
+status: in_progress
 priority: high
 dependencies: []
 issue:
@@ -17,8 +17,9 @@ issue:
 docs:
   - docs/tutorials/claude-permissions-mcp.md
 planGeneratedAt: 2025-06-07T09:18:47.447Z
+promptsGeneratedAt: 2025-06-07T09:28:02.535Z
 createdAt: 2025-06-07T02:05:26.354Z
-updatedAt: 2025-06-07T09:18:47.447Z
+updatedAt: 2025-06-07T09:28:02.545Z
 project:
   title: Implement Interactive Permissions for Claude Code Executor
   goal: Allow the user to respond to tool permissions requests when using the
@@ -31,35 +32,102 @@ project:
     the necessary MCP configuration and launch the Claude Code CLI with the
     appropriate settings to enable interactive tool-use permissions.
 tasks:
-  - title: Add Project Dependencies for Interactivity and Formatting
-    description: Update the project's `package.json` to include the `inquirer` and
-      `yaml` libraries. These are necessary for creating the interactive
-      command-line prompt and for formatting the tool data for the user,
-      respectively.
-    steps: []
   - title: Create the Permissions MCP Server File
     description: Create a new file at
       `src/rmplan/executors/claude_code/permissions_mcp.ts` to house the logic
       for the permissions server.
-    steps: []
+    files:
+      - src/rmplan/executors/claude_code/permissions_mcp.ts
+    steps:
+      - prompt: >
+          Create the new file
+          `src/rmplan/executors/claude_code/permissions_mcp.ts`. Add a brief
+          comment at the top explaining that this file implements a standalone
+          MCP server for handling interactive tool-use permissions for the
+          Claude Code executor.
+        done: false
   - title: Implement the MCP Server and Input Schema
     description: In the new `permissions_mcp.ts` file, set up the basic structure
       for an MCP server using the `@modelcontextprotocol/server` package. Define
       a `zod` schema to validate the incoming permission request data, which
       includes `tool_name` and `input`.
-    steps: []
+    files:
+      - src/rmplan/executors/claude_code/permissions_mcp.ts
+    steps:
+      - prompt: >
+          Import `McpServer` from `@modelcontextprotocol/server` and `z` from
+          `zod`.
+        done: false
+      - prompt: >
+          Define and export a Zod schema named `PermissionInputSchema`. This
+          schema should validate an object containing a `tool_name` (string) and
+          an `input` (a passthrough object, `z.object({}).passthrough()`), which
+          will represent the arguments for the tool requiring approval.
+        done: false
+      - prompt: >
+          Instantiate a new `McpServer` with the name 'permissions-server' and
+          version '0.0.1'.
+        done: false
+      - prompt: >
+          Add a startup block at the end of the file using `if
+          (import.meta.main)` that calls `server.start()`. This will make the
+          script executable by `bun`.
+        done: false
   - title: Implement the Interactive Approval Prompt Tool
     description: Define an `approval_prompt` tool within the MCP server. This tool's
       handler will receive the permission request, format the `tool_name` and
       `input` as a human-readable YAML string, and display it to the user. It
-      will then use `inquirer` to present a confirmation prompt asking for
+      will then use `@inquirer/prompts` to present a confirmation prompt asking for
       permission to proceed.
-    steps: []
+    files:
+      - src/rmplan/executors/claude_code/permissions_mcp.ts
+    steps:
+      - prompt: |
+          Import `confirm` from '@inquirer/prompts' and `stringify` from 'yaml'.
+        done: false
+      - prompt: >
+          Define a new tool on the server instance named `approval_prompt`. It
+          should have a clear description, use the `PermissionInputSchema` for
+          input validation, and be an async function.
+        done: false
+      - prompt: >
+          Inside the `approval_prompt` tool handler, destructure the `tool_name`
+          and `input` from the validated arguments.
+        done: false
+      - prompt: >
+          Format the `input` object into a human-readable string using
+          `yaml.stringify`.
+        done: false
+      - prompt: >
+          Use `inquirer.prompt` to ask the user for confirmation. The prompt
+          should be of type `confirm`, and the message should clearly state that
+          Claude wants to run a tool, showing the `tool_name` and the
+          YAML-formatted `input`. Await the result of the prompt.
+        done: false
   - title: Implement MCP Response Logic
     description: 'Based on the boolean result from the `inquirer` prompt, construct
       the appropriate response payload. The response must be a JSON string
       containing either `{ "behavior": "allow", "updatedInput": ... }` or `{
       "behavior": "deny", "message": ... }` as required by the Claude Code SDK.'
-    steps: []
+    files:
+      - src/rmplan/executors/claude_code/permissions_mcp.ts
+    steps:
+      - prompt: >
+          Based on the boolean result from the `inquirer` prompt, create a
+          response payload object. If the user approved, the object should be `{
+          behavior: 'allow', updatedInput: input }`. If denied, it should be `{
+          behavior: 'deny', message: 'User denied permission for tool
+          execution.' }`.
+        done: false
+      - prompt: >
+          Convert the response payload object into a JSON string using
+          `JSON.stringify`.
+        done: false
+      - prompt: >
+          Return the final response from the tool handler, formatted as required
+          by the MCP protocol: `{ content: [{ type: 'text', text:
+          <your_json_string> }] }`. Refer to the provided tutorial document for
+          the exact response structure.
+        done: false
 rmfilter:
   - src/rmplan/executors/claude_code.ts
