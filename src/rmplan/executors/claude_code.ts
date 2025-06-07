@@ -137,78 +137,85 @@ export class ClaudeCodeExecutor implements Executor {
       await fs.writeFile(dynamicMcpConfigFile, JSON.stringify(mcpConfig, null, 2));
     }
 
-    const args = ['claude'];
+    try {
+      const args = ['claude'];
 
-    if (!interactive) {
-      args.push('--verbose', '--output-format', 'stream-json');
-    }
-
-    if (debug && !interactive) {
-      args.push('--debug');
-    }
-
-    args.push('--allowedTools', allowedTools.join(','));
-
-    if (allowAllTools) {
-      args.push('--dangerously-skip-permissions');
-    }
-
-    if (disallowedTools) {
-      args.push('--disallowedTools', disallowedTools.join(','));
-    }
-
-    if (isPermissionsMcpEnabled && dynamicMcpConfigFile) {
-      args.push('--mcp-config', dynamicMcpConfigFile);
-      args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
-    } else if (mcpConfigFile) {
-      args.push('--mcp-config', mcpConfigFile);
-    }
-
-    if (
-      this.sharedOptions.model?.includes('haiku') ||
-      this.sharedOptions.model?.includes('sonnet') ||
-      this.sharedOptions.model?.includes('opus')
-    ) {
-      log(`Using model: ${this.sharedOptions.model}\n`);
-      args.push('--model', this.sharedOptions.model);
-    }
-
-    if (!interactive) {
-      args.push('-p');
-    }
-
-    args.push(contextContent);
-
-    if (interactive) {
-      // In interactive mode, use Bun.spawn directly with inherited stdio
-      debugLog(args);
-      const proc = Bun.spawn(args, {
-        cwd: await getGitRoot(),
-        stdio: ['inherit', 'inherit', 'inherit'],
-      });
-
-      const exitCode = await proc.exited;
-
-      if (exitCode !== 0) {
-        throw new Error(`Claude exited with non-zero exit code: ${exitCode}`);
+      if (!interactive) {
+        args.push('--verbose', '--output-format', 'stream-json');
       }
-    } else {
-      let splitter = createLineSplitter();
 
-      const result = await spawnAndLogOutput(args, {
-        env: {
-          ...process.env,
-          ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
-        },
-        cwd: await getGitRoot(),
-        formatStdout: (output) => {
-          let lines = splitter(output);
-          return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
-        },
-      });
+      if (debug && !interactive) {
+        args.push('--debug');
+      }
 
-      if (result.exitCode !== 0) {
-        throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
+      args.push('--allowedTools', allowedTools.join(','));
+
+      if (allowAllTools) {
+        args.push('--dangerously-skip-permissions');
+      }
+
+      if (disallowedTools) {
+        args.push('--disallowedTools', disallowedTools.join(','));
+      }
+
+      if (isPermissionsMcpEnabled && dynamicMcpConfigFile) {
+        args.push('--mcp-config', dynamicMcpConfigFile);
+        args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
+      } else if (mcpConfigFile) {
+        args.push('--mcp-config', mcpConfigFile);
+      }
+
+      if (
+        this.sharedOptions.model?.includes('haiku') ||
+        this.sharedOptions.model?.includes('sonnet') ||
+        this.sharedOptions.model?.includes('opus')
+      ) {
+        log(`Using model: ${this.sharedOptions.model}\n`);
+        args.push('--model', this.sharedOptions.model);
+      }
+
+      if (!interactive) {
+        args.push('-p');
+      }
+
+      args.push(contextContent);
+
+      if (interactive) {
+        // In interactive mode, use Bun.spawn directly with inherited stdio
+        debugLog(args);
+        const proc = Bun.spawn(args, {
+          cwd: await getGitRoot(),
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+
+        const exitCode = await proc.exited;
+
+        if (exitCode !== 0) {
+          throw new Error(`Claude exited with non-zero exit code: ${exitCode}`);
+        }
+      } else {
+        let splitter = createLineSplitter();
+
+        const result = await spawnAndLogOutput(args, {
+          env: {
+            ...process.env,
+            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+          },
+          cwd: await getGitRoot(),
+          formatStdout: (output) => {
+            let lines = splitter(output);
+            return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
+          },
+        });
+
+        if (result.exitCode !== 0) {
+          throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
+        }
+      }
+    } finally {
+      // Clean up temporary MCP configuration directory if it was created
+      if (tempMcpConfigDir) {
+        await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
       }
     }
   }
