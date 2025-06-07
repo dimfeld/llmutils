@@ -7,7 +7,7 @@ This tutorial guides you through implementing a Model Context Protocol (MCP) per
 - Node.js and npm installed
 - Anthropic API key
 - Basic familiarity with TypeScript and the Claude Code SDK
-- The `@modelcontextprotocol/server` package installed
+- The `@modelcontextprotocol/sdk` package installed
 
 ## Step 1: Set Up Your Project
 
@@ -41,14 +41,15 @@ Update `tsconfig.json` to include:
 Create a `src/permissions-server.ts` file with the following code to define a permissions MCP server that checks tool invocation permissions:
 
 ```typescript
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
 // Define the schema for the permission prompt input
-const PermissionInputSchema = z.object({
+const PermissionInputSchema = {
   tool_name: z.string().describe('The tool requesting permission'),
   input: z.object({}).passthrough().describe('The input for the tool'),
-});
+};
 
 // Create the MCP server
 const server = new McpServer({
@@ -87,8 +88,11 @@ server.tool(
   }
 );
 
-// Start the server
-server.start().catch(console.error);
+// Start the server if this file is run directly
+if (import.meta.main) {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
 ```
 
 This code:

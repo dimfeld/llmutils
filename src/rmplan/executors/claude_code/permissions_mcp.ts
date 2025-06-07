@@ -4,16 +4,17 @@
  * allowing or denying tool invocations based on user input.
  */
 
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { confirm } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 
 // Define the schema for the permission prompt input
-export const PermissionInputSchema = z.object({
+export const PermissionInputSchema = {
   tool_name: z.string(),
   input: z.object({}).passthrough(),
-});
+};
 
 // Create the MCP server
 const server = new McpServer({
@@ -59,5 +60,6 @@ server.tool(
 
 // Start the server if this file is run directly
 if (import.meta.main) {
-  server.start();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 }
