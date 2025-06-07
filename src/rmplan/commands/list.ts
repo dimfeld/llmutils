@@ -70,7 +70,13 @@ export async function handleListCommand(options: any, command: any) {
         break;
       case 'priority': {
         // Sort priority in reverse (high first)
-        const priorityOrder: Record<string, number> = { urgent: 5, high: 4, medium: 3, low: 2 };
+        const priorityOrder: Record<string, number> = {
+          urgent: 5,
+          high: 4,
+          medium: 3,
+          low: 2,
+          maybe: 1,
+        };
         aVal = a.priority ? priorityOrder[a.priority] || 0 : 0;
         bVal = b.priority ? priorityOrder[b.priority] || 0 : 0;
         break;
@@ -159,7 +165,9 @@ export async function handleListCommand(options: any, command: any) {
             ? chalk.yellow
             : plan.priority === 'low'
               ? chalk.blue
-              : chalk.white;
+              : plan.priority === 'maybe'
+                ? chalk.gray
+                : chalk.white;
 
     const priorityDisplay = plan.priority || '';
 

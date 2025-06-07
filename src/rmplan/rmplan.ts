@@ -38,6 +38,7 @@ import { loadEnv } from '../common/env.js';
 import { setDebug } from '../common/process.js';
 import { executors } from './executors/index.js';
 import { handleCommandError } from './utils/commands.js';
+import { prioritySchema } from './planSchema.js';
 
 await loadEnv();
 
@@ -314,8 +315,8 @@ program
     'Update plan properties like priority, status, dependencies, and rmfilter. Can be a file path or plan ID.'
   )
   .option('-p, --priority <level>', 'Set the priority level', (value) => {
-    if (!['low', 'medium', 'high', 'urgent'].includes(value)) {
-      throw new Error('Priority must be one of: low, medium, high, urgent');
+    if (!prioritySchema.options.includes(value as any)) {
+      throw new Error(`Priority must be one of: ${prioritySchema.options.join(', ')}`);
     }
     return value;
   })
