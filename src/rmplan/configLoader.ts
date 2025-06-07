@@ -223,7 +223,7 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
           log(
             'Loaded configuration files',
             configPath ? `Main: ${configPath}` : 'Default config',
-            `Local override: ${localConfigPath}`
+            `\nLocal override: ${localConfigPath}`
           );
         }
       } catch (localErr: any) {

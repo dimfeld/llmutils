@@ -101,10 +101,7 @@ export const rmplanConfigSchema = z
       })
       .optional(),
     /** Default executor to use when not specified via --executor option */
-    defaultExecutor: z
-      .string()
-      .default(DEFAULT_EXECUTOR)
-      .describe('Default executor to use for plan execution'),
+    defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
   })
