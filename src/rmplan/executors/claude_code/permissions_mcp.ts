@@ -8,6 +8,7 @@ import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { confirm } from '@inquirer/prompts';
 import { stringify } from 'yaml';
+import chalk from 'chalk';
 
 // Define the schema for the permission prompt input
 export const PermissionInputSchema = z.object({
@@ -28,11 +29,14 @@ server.addTool({
   parameters: PermissionInputSchema,
   execute: async ({ tool_name, input }) => {
     // Format the input as human-readable YAML
-    const formattedInput = stringify(input);
+    let formattedInput = stringify(input);
+    if (formattedInput.length > 500) {
+      formattedInput = formattedInput.substring(0, 500) + '...';
+    }
 
     // Prompt the user for confirmation
     const approved = await confirm({
-      message: `Claude wants to run a tool:\n\nTool: ${tool_name}\nInput:\n${formattedInput}\nAllow this tool to run?`,
+      message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
     });
 
     // Return the response based on user's decision
@@ -60,14 +64,15 @@ server.addTool({
 // Start the server if this file is run directly
 if (import.meta.main) {
   const port = await server.start({
-    transportType: 'sse',
-    sse: {
+    transportType: 'httpStream',
+    httpStream: {
       port: 0, // Let the OS assign an available port
     },
   });
 
   // Send the port number back to the parent process via IPC
   if (process.send) {
+    console.log('MCP Permissions Servier Listening on port', port);
     process.send({ port });
   }
 }
