@@ -8,12 +8,12 @@ details: >-
   it.
 
 
-  The arguments and expected response format for the MCP don't seem to be
-  documented yet (cf https://github.com/anthropics/claude-code/issues/1175)
+  Documented here: https://docs.anthropic.com/en/docs/claude-code/sdk#custom-permission-prompt-tool
 
 
   See https://github.com/mmarcen/test_permission-prompt-tool for an unofficial
   example that is supposed to work.
+
 id: 50
 status: pending
 issue:
