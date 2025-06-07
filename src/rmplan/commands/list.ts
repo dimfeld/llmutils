@@ -160,7 +160,8 @@ export async function handleListCommand(options: any, command: any) {
       plan.priority === 'urgent'
         ? chalk.red
         : plan.priority === 'high'
-          ? chalk.magenta
+          ? // orange
+            chalk.rgb(255, 165, 0)
           : plan.priority === 'medium'
             ? chalk.yellow
             : plan.priority === 'low'
