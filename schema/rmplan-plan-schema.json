@@ -70,6 +70,13 @@
         "format": "uri"
       }
     },
+    "docs": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "planGeneratedAt": {
       "type": "string",
       "format": "date-time",
@@ -129,6 +136,13 @@
             }
           },
           "examples": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "docs": {
+            "default": [],
             "type": "array",
             "items": {
               "type": "string"

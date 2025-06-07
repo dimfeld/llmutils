@@ -12,6 +12,7 @@ export const phaseSchema = z
     dependencies: z.array(z.string()).default([]).optional(),
     issue: z.array(z.url()).default([]).optional(),
     pullRequest: z.array(z.url()).default([]).optional(),
+    docs: z.array(z.string()).default([]).optional(),
     planGeneratedAt: z.string().datetime().optional(),
     promptsGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),
@@ -29,6 +30,7 @@ export const phaseSchema = z
         description: z.string(),
         files: z.array(z.string()).default([]).optional(),
         examples: z.array(z.string()).optional(),
+        docs: z.array(z.string()).default([]).optional(),
         steps: z
           .array(
             z.object({
