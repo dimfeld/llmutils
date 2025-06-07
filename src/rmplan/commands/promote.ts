@@ -105,10 +105,25 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
 
       const newPlan: PlanSchema = {
         id: newPlanId,
-        goal: taskToPromote.title,
+        title: taskToPromote.title,
+        goal: '',
         details: taskToPromote.description,
+        project: {
+          title: originalPlan.title || '',
+          goal: originalPlan.goal,
+          details: originalPlan.details,
+        },
         status: 'pending',
-        tasks: [],
+        rmfilter: taskToPromote.files,
+        // usually won't be any steps, but promote them to tasks if there are
+        tasks: taskToPromote.steps.map((step) => ({
+          title: '',
+          description: step.prompt,
+          steps: [],
+          done: step.done,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })),
         dependencies,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -147,6 +162,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       ...originalPlan,
       tasks: updatedTasks,
       dependencies: updatedDependencies,
+      container: !updatedTasks.length,
       updatedAt: new Date().toISOString(),
     };
 

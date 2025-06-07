@@ -164,7 +164,11 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   }
 
   // Display tasks with completion status
-  if (plan.tasks && plan.tasks.length > 0) {
+  if (plan.container) {
+    log('\n' + chalk.bold('Tasks:'));
+    log('─'.repeat(60));
+    log(chalk.gray('This is a parent-only plan that serves as a container for other plans.'));
+  } else if (plan.tasks && plan.tasks.length > 0) {
     log('\n' + chalk.bold('Tasks:'));
     log('─'.repeat(60));
 

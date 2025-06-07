@@ -109,7 +109,7 @@ describe('handlePromoteCommand', () => {
     // Read and verify the new plan content
     const newPlan = await readPlanFile(newPlanPath);
     expect(newPlan.id).toBe(2);
-    expect(newPlan.goal).toBe('Implement login endpoint');
+    expect(newPlan.title).toBe('Implement login endpoint');
     expect(newPlan.details).toBe('Create API endpoint for user authentication');
     expect(newPlan.tasks).toEqual([]);
     expect(newPlan.status).toBe('pending');
@@ -196,19 +196,19 @@ describe('handlePromoteCommand', () => {
 
     // Verify plan 2 (from task 1.2)
     expect(newPlan2.id).toBe(2);
-    expect(newPlan2.goal).toBe('Implement login endpoint');
+    expect(newPlan2.title).toBe('Implement login endpoint');
     expect(newPlan2.details).toBe('Create API endpoint for user authentication');
     expect(newPlan2.dependencies).toEqual([]);
 
     // Verify plan 3 (from task 1.3) depends on plan 2
     expect(newPlan3.id).toBe(3);
-    expect(newPlan3.goal).toBe('Add password hashing');
+    expect(newPlan3.title).toBe('Add password hashing');
     expect(newPlan3.details).toBe('Implement secure password storage');
     expect(newPlan3.dependencies).toContain('2');
 
     // Verify plan 4 (from task 1.4) depends on plan 3
     expect(newPlan4.id).toBe(4);
-    expect(newPlan4.goal).toBe('Create registration endpoint');
+    expect(newPlan4.title).toBe('Create registration endpoint');
     expect(newPlan4.details).toBe('API endpoint for user registration');
     expect(newPlan4.dependencies).toContain('3');
 
@@ -288,19 +288,19 @@ describe('handlePromoteCommand', () => {
 
     // Verify plan 2 (from task 1.1)
     expect(newPlan2.id).toBe(2);
-    expect(newPlan2.goal).toBe('Task one');
+    expect(newPlan2.title).toBe('Task one');
     expect(newPlan2.details).toBe('First task description');
     expect(newPlan2.dependencies).toEqual([]);
 
     // Verify plan 3 (from task 1.2) depends on plan 2
     expect(newPlan3.id).toBe(3);
-    expect(newPlan3.goal).toBe('Task two');
+    expect(newPlan3.title).toBe('Task two');
     expect(newPlan3.details).toBe('Second task description');
     expect(newPlan3.dependencies).toContain('2');
 
     // Verify plan 4 (from task 1.3) depends on plan 3
     expect(newPlan4.id).toBe(4);
-    expect(newPlan4.goal).toBe('Task three');
+    expect(newPlan4.title).toBe('Task three');
     expect(newPlan4.details).toBe('Third task description');
     expect(newPlan4.dependencies).toContain('3');
 
@@ -391,13 +391,13 @@ describe('handlePromoteCommand', () => {
 
     // Verify plan 3 (from task 1.2)
     expect(newPlan3.id).toBe(3);
-    expect(newPlan3.goal).toBe('Plan 1 Task 2');
+    expect(newPlan3.title).toBe('Plan 1 Task 2');
     expect(newPlan3.details).toBe('Second task in plan 1');
     expect(newPlan3.dependencies).toEqual([]);
 
     // Verify plan 4 (from task 2.1)
     expect(newPlan4.id).toBe(4);
-    expect(newPlan4.goal).toBe('Plan 2 Task 1');
+    expect(newPlan4.title).toBe('Plan 2 Task 1');
     expect(newPlan4.details).toBe('First task in plan 2');
     expect(newPlan4.dependencies).toEqual([]);
 

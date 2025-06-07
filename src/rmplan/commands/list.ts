@@ -197,7 +197,10 @@ export async function handleListCommand(options: any, command: any) {
       getCombinedTitleFromSummary(plan),
       statusColor(statusDisplay),
       priorityColor(priorityDisplay),
-      (plan.tasks?.length || 0).toString(),
+      (() => {
+        const taskCount = plan.tasks?.length || 0;
+        return plan.container && taskCount === 0 ? '-' : taskCount.toString();
+      })(),
       (() => {
         const stepCount =
           plan.tasks?.reduce((sum, task) => sum + (task.steps?.length || 0), 0) || 0;
