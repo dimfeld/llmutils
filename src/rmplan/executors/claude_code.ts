@@ -101,6 +101,8 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     // Create temporary MCP configuration if permissions MCP is enabled
+    let mcpServerProcess: ReturnType<typeof Bun.spawn> | undefined;
+
     if (isPermissionsMcpEnabled) {
       // Create a temporary directory
       tempMcpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-code-mcp-'));
@@ -111,12 +113,33 @@ export class ClaudeCodeExecutor implements Executor {
         import.meta.dir
       );
 
-      // Construct the MCP configuration object
+      // Create a promise to wait for the port number from the MCP server
+      const portPromise = Promise.withResolvers<number>();
+
+      // Spawn the MCP server process
+      mcpServerProcess = Bun.spawn(['bun', permissionsMcpPath], {
+        stdio: 'inherit',
+        ipc(message) {
+          if (message && typeof message === 'object' && 'port' in message) {
+            portPromise.resolve(message.port);
+          }
+        },
+      });
+
+      // Wait for the port with a timeout
+      const port = await Promise.race([
+        portPromise.promise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('MCP server startup timeout')), 5000)
+        ),
+      ]);
+
+      // Construct the MCP configuration object with SSE transport
       const mcpConfig = {
         mcpServers: {
           permissions: {
-            command: 'bun',
-            args: [permissionsMcpPath],
+            type: 'sse',
+            url: `http://localhost:${port}/sse`,
           },
         },
       };
@@ -204,6 +227,11 @@ export class ClaudeCodeExecutor implements Executor {
         }
       }
     } finally {
+      // Kill the spawned MCP server process if it exists
+      if (mcpServerProcess) {
+        mcpServerProcess.kill();
+      }
+
       // Clean up temporary MCP configuration directory if it was created
       if (tempMcpConfigDir) {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
