@@ -137,7 +137,9 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--debug');
       }
 
-      args.push('--allowedTools', allowedTools.join(','));
+      if (allowedTools.length) {
+        args.push('--allowedTools', allowedTools.join(','));
+      }
 
       if (allowAllTools) {
         args.push('--dangerously-skip-permissions');

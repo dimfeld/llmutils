@@ -65,8 +65,12 @@ export function formatJsonMessage(input: string) {
   // - When reading and writing files, just show number of lines read and written
   // - Add timestamps at each header
 
-  const message = JSON.parse(input) as Message;
   debugLog(input);
+
+  if (input.startsWith('[DEBUG]')) {
+    return;
+  }
+  const message = JSON.parse(input) as Message;
 
   // Get the current timestamp in HH:MM:SS format
   const timestamp = new Date().toTimeString().split(' ')[0];
