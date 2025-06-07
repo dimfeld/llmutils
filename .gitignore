@@ -37,3 +37,4 @@ task.yml
 **/*-agent-output.md
 **/.claude/settings.local.json
 rmplan-*
+.rmfilter/config/*.local.yml
