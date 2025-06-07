@@ -44,8 +44,10 @@ export class ClaudeCodeExecutor implements Executor {
   async execute(contextContent: string) {
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive, enablePermissionsMcp } =
       this.options;
-    const isPermissionsMcpEnabled =
-      enablePermissionsMcp === true || process.env.CLAUDE_CODE_MCP === 'true';
+    let isPermissionsMcpEnabled = enablePermissionsMcp === true;
+    if (process.env.CLAUDE_CODE_MCP) {
+      isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
+    }
 
     let tempMcpConfigDir: string | undefined = undefined;
     let dynamicMcpConfigFile: string | undefined;
