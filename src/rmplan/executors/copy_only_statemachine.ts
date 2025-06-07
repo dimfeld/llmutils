@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import * as clipboard from '../../common/clipboard.ts';
 import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';

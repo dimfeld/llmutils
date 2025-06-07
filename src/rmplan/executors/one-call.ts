@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { applyLlmEdits, type ApplyLlmEditsOptions } from '../../apply-llm-edits/apply';

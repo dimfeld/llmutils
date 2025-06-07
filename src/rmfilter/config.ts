@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse, stringify } from 'yaml';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { debugLog, error, log } from '../logging.ts';
 import { getGitRoot } from '../common/git.ts';
 

@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import chalk from 'chalk';
 import yaml from 'yaml';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { debugLog, log } from '../../logging.ts';
 import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';

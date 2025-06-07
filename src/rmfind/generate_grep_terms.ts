@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { createModel } from '../common/model_factory.js';
 import { debugLog } from '../logging.js';
-import { expandPattern } from '../common/file_finder.js';
 import { generateObject } from 'ai';
 
 /**

@@ -1,3 +1,4 @@
+import { z } from 'zod/v4';
 import { error, log } from '../../logging.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import { ClaudeCodeExecutor } from './claude_code.ts';
@@ -10,7 +11,7 @@ import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
 /**
  * A map of available executors, keyed by their names.
  */
-export const executors = new Map<string, ExecutorFactory<any>>([
+export const executors = new Map<string, ExecutorFactory<any, z.ZodType<any, any>>>([
   [OneCallExecutor.name, OneCallExecutor],
   [ClaudeCodeExecutor.name, ClaudeCodeExecutor],
   [CopyPasteExecutor.name, CopyPasteExecutor],

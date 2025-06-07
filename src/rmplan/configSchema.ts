@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { getGitRoot } from '../common/git.js';
 
@@ -14,7 +14,7 @@ export const postApplyCommandSchema = z.object({
   /** Optional working directory for the command. Defaults to the repository root. */
   workingDirectory: z.string().optional(),
   /** Optional environment variables for the command. */
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
   /** Whether to allow the command to fail without stopping the process. Defaults to false. */
   allowFailure: z.boolean().optional().default(false),
   /** Whether to hide command output only the command succeeds. Defaults to false. */

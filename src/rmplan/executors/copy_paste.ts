@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import * as clipboard from '../../common/clipboard.ts';
 import { applyLlmEdits } from '../../apply-llm-edits/apply';
 import { DEFAULT_RUN_MODEL } from '../llm_utils/run_and_apply.js';
