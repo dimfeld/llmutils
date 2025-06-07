@@ -1,4 +1,7 @@
 import { z } from 'zod/v4';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { debugLog, log } from '../../logging.ts';
 import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';
@@ -55,6 +58,9 @@ export class ClaudeCodeExecutor implements Executor {
     const isPermissionsMcpEnabled =
       enablePermissionsMcp === true || process.env.CLAUDE_CODE_MCP === 'true';
 
+    let tempMcpConfigDir: string | undefined = undefined;
+    let dynamicMcpConfigFile: string | undefined;
+
     allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
     // TODO Interactive mode needs some work. It's not taking the prompt right away
     // Also it isn't integrated with the logging
@@ -103,6 +109,32 @@ export class ClaudeCodeExecutor implements Executor {
     let allowedTools = [...defaultAllowedTools, ...(this.options.allowedTools ?? [])];
     if (disallowedTools) {
       allowedTools = allowedTools.filter((t) => !disallowedTools?.includes(t));
+    }
+
+    // Create temporary MCP configuration if permissions MCP is enabled
+    if (isPermissionsMcpEnabled) {
+      // Create a temporary directory
+      tempMcpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-code-mcp-'));
+
+      // Resolve the absolute path to the permissions MCP script
+      const permissionsMcpPath = Bun.resolveSync(
+        './claude_code/permissions_mcp.ts',
+        import.meta.dir
+      );
+
+      // Construct the MCP configuration object
+      const mcpConfig = {
+        mcpServers: {
+          permissions: {
+            command: 'bun',
+            args: [permissionsMcpPath],
+          },
+        },
+      };
+
+      // Write the configuration to a file
+      dynamicMcpConfigFile = path.join(tempMcpConfigDir, 'mcp-config.json');
+      await fs.writeFile(dynamicMcpConfigFile, JSON.stringify(mcpConfig, null, 2));
     }
 
     const args = ['claude'];
