@@ -107,12 +107,15 @@ Create a `mcp-config.json` file to define the MCP server:
 {
   "mcpServers": {
     "permissions": {
-      "command": "node",
-      "args": ["dist/permissions-server.js"]
+      "command": "bun",
+      "args": ["/permissions-mcp.ts"]
     }
   }
 }
 ```
+
+Calculate the actual path to the file using `Bun.resolveSync('./claude_code/permissions-mcp.ts', __dirname)`
+
 
 This configuration tells Claude Code to run the permissions server using Node.js.
 

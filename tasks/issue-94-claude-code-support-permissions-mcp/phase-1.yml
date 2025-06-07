@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Create the Interactive Permissions MCP Server
+goal: Implement a standalone MCP server script that prompts the user for tool
+  execution permission.
+details: "This phase focuses on creating the core component: the permissions
+  server. This script will run as a separate process managed by the Claude Code
+  SDK. It will define a specific tool (`approval_prompt`) that the SDK calls
+  when a tool needs permission to run. The script will be responsible for
+  parsing the request, presenting it clearly to the user, and returning a
+  formatted response based on the user's input."
+id: 55
+status: pending
+priority: high
+dependencies: []
+issue:
+  - https://github.com/dimfeld/llmutils/issues/94
+docs:
+  - docs/tutorials/claude-permissions-mcp.md
+planGeneratedAt: 2025-06-07T09:18:47.447Z
+createdAt: 2025-06-07T02:05:26.354Z
+updatedAt: 2025-06-07T09:18:47.447Z
+project:
+  title: Implement Interactive Permissions for Claude Code Executor
+  goal: Allow the user to respond to tool permissions requests when using the
+    Claude Code executor.
+  details: This project will add support for the Claude Code SDK's permissions MCP
+    (Model Context Protocol). A new MCP server will be implemented to handle
+    permission requests by prompting the user for confirmation. This feature
+    will be configurable via a new flag in `claudeCodeOptionsSchema` and an
+    environment variable. When enabled, the executor will dynamically generate
+    the necessary MCP configuration and launch the Claude Code CLI with the
+    appropriate settings to enable interactive tool-use permissions.
+tasks:
+  - title: Add Project Dependencies for Interactivity and Formatting
+    description: Update the project's `package.json` to include the `inquirer` and
+      `yaml` libraries. These are necessary for creating the interactive
+      command-line prompt and for formatting the tool data for the user,
+      respectively.
+    steps: []
+  - title: Create the Permissions MCP Server File
+    description: Create a new file at
+      `src/rmplan/executors/claude_code/permissions_mcp.ts` to house the logic
+      for the permissions server.
+    steps: []
+  - title: Implement the MCP Server and Input Schema
+    description: In the new `permissions_mcp.ts` file, set up the basic structure
+      for an MCP server using the `@modelcontextprotocol/server` package. Define
+      a `zod` schema to validate the incoming permission request data, which
+      includes `tool_name` and `input`.
+    steps: []
+  - title: Implement the Interactive Approval Prompt Tool
+    description: Define an `approval_prompt` tool within the MCP server. This tool's
+      handler will receive the permission request, format the `tool_name` and
+      `input` as a human-readable YAML string, and display it to the user. It
+      will then use `inquirer` to present a confirmation prompt asking for
+      permission to proceed.
+    steps: []
+  - title: Implement MCP Response Logic
+    description: 'Based on the boolean result from the `inquirer` prompt, construct
+      the appropriate response payload. The response must be a JSON string
+      containing either `{ "behavior": "allow", "updatedInput": ... }` or `{
+      "behavior": "deny", "message": ... }` as required by the Claude Code SDK.'
+    steps: []
+rmfilter:
+  - src/rmplan/executors/claude_code.ts
