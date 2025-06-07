@@ -353,10 +353,23 @@ export async function prepareNextStep(
   }
 
   if (!rmfilter) {
+    // Collect docs from phase and task only (config paths are handled elsewhere)
+    const docsSet = new Set<string>();
+
+    // Add docs from the current phase
+    if (planData.docs) {
+      planData.docs.forEach((doc: string) => docsSet.add(doc));
+    }
+
+    // Add docs from the active task
+    if (activeTask.docs) {
+      activeTask.docs.forEach((doc: string) => docsSet.add(doc));
+    }
+
     // Get additional docs using findAdditionalDocs when rmfilter is false
     const { filteredMdcFiles } = await findAdditionalDocs(gitRoot, new Set(files), {
       'no-autodocs': false,
-      docsPaths: config.paths?.docs || [],
+      docsPaths: Array.from(docsSet),
     });
 
     // Add relevant files section
@@ -437,6 +450,23 @@ export async function prepareNextStep(
         ? ['--', '.', ...examples.flatMap((example) => ['--example', example])]
         : [];
 
+    // Collect docs from phase and task only (config paths are handled elsewhere)
+    const docsSet = new Set<string>();
+
+    // Add docs from the current phase
+    if (planData.docs) {
+      planData.docs.forEach((doc: string) => docsSet.add(doc));
+    }
+
+    // Add docs from the active task
+    if (activeTask.docs) {
+      activeTask.docs.forEach((doc: string) => docsSet.add(doc));
+    }
+
+    // Convert to array and create --docs arguments
+    const docs = Array.from(docsSet);
+    const docsArgs = docs.flatMap((doc) => ['--docs', doc]);
+
     if (performImportAnalysis) {
       // If import analysis is needed, construct the import command block
       const relativeCandidateFiles = candidateFilesForImports.map((f) => path.relative(gitRoot, f));
@@ -451,18 +481,20 @@ export async function prepareNextStep(
         importCommandBlockArgs.push('--with-importers');
       }
 
-      // Pass base args, files (task+autofound), import block, example args, separator, user args
+      // Pass base args, docs, files (task+autofound), import block, example args, separator, user args
       finalRmfilterArgs = [
         ...baseRmfilterArgs,
+        ...docsArgs,
         ...relativeFiles,
         ...importCommandBlockArgs,
         ...exampleArgs,
         ...(initialRmfilterArgs.length > 0 ? ['--', ...initialRmfilterArgs] : []),
       ];
     } else {
-      // Pass base args, files (task+autofound), example args, separator, user args
+      // Pass base args, docs, files (task+autofound), example args, separator, user args
       finalRmfilterArgs = [
         ...baseRmfilterArgs,
+        ...docsArgs,
         ...relativeFiles,
         ...exampleArgs,
         ...(initialRmfilterArgs.length > 0 ? ['--', ...initialRmfilterArgs] : []),
@@ -843,6 +875,25 @@ export async function preparePhase(
       }
     }
 
+    // Collect docs from phase and tasks only (config paths are handled elsewhere)
+    const docsSet = new Set<string>();
+
+    // Add docs from the current phase
+    if (currentPhaseData.docs) {
+      currentPhaseData.docs.forEach((doc: string) => docsSet.add(doc));
+    }
+
+    // Add docs from tasks
+    for (const task of currentPhaseData.tasks) {
+      if (task.docs) {
+        task.docs.forEach((doc: string) => docsSet.add(doc));
+      }
+    }
+
+    // Convert to array and create --docs arguments
+    const docs = Array.from(docsSet);
+    const docsArgs = docs.flatMap((doc) => ['--docs', doc]);
+
     const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
 
     // 6. Invoke rmfilter programmatically
@@ -850,7 +901,7 @@ export async function preparePhase(
     try {
       const gitRoot = (await getGitRoot()) || process.cwd();
       prompt = await runRmfilterProgrammatically(
-        [...rmfilterArgs, '--bare', '--instructions', phaseStepsPrompt],
+        [...rmfilterArgs, ...docsArgs, '--bare', '--instructions', phaseStepsPrompt],
         gitRoot,
         gitRoot
       );

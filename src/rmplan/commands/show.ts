@@ -143,6 +143,13 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     }
   }
 
+  // Display docs
+  if (plan.docs && plan.docs.length > 0) {
+    log('\n' + chalk.bold('Documentation Paths:'));
+    log('─'.repeat(60));
+    plan.docs.forEach((doc) => log(`  • ${doc}`));
+  }
+
   // Display issues and PRs
   if (plan.issue && plan.issue.length > 0) {
     log('\n' + chalk.bold('Issues:'));
@@ -191,6 +198,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
       if (task.files && task.files.length > 0) {
         log(`  Files: ${task.files.join(', ')}`);
+      }
+
+      if (task.docs && task.docs.length > 0) {
+        log(`  Docs: ${task.docs.join(', ')}`);
       }
 
       if (task.steps && task.steps.length > 0) {

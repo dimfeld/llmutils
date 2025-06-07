@@ -16,6 +16,8 @@ details: >-
 
 id: 50
 status: pending
+docs:
+  - docs/tutorials/claude-permissions-mcp.md
 issue:
   - https://github.com/dimfeld/llmutils/issues/94
 createdAt: 2025-06-07T02:05:26.354Z

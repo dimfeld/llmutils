@@ -295,10 +295,19 @@ export async function handleGenerateCommand(options: any, command: any) {
       log('Prompt copied to clipboard');
       exitRes = 0;
     } else {
+      // Collect docs from stub plan
+      const docsArgs: string[] = [];
+      if (stubPlanData?.docs) {
+        stubPlanData.docs.forEach((doc) => {
+          docsArgs.push('--docs', doc);
+        });
+      }
+
       // Append autofound files to rmfilter args
       const rmfilterFullArgs = [
         'rmfilter',
         ...allRmfilterOptions,
+        ...docsArgs,
         '--',
         ...additionalFiles,
         '--bare',
