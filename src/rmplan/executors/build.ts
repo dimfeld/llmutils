@@ -31,7 +31,8 @@ export function createExecutor(
   }
 
   // Retrieve executor-specific options from config if available
-  const configExecutorOptions = rmplanConfig.executors?.[name] ?? {};
+  // Using type assertion to handle dynamic key access
+  const configExecutorOptions = (rmplanConfig.executors as Record<string, any>)?.[name] ?? {};
   // Merge provided options with config options (provided options take precedence)
   const mergedOptions = { ...configExecutorOptions, ...options };
 

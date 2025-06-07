@@ -6,9 +6,7 @@ import { log } from '../../logging';
 import type { PrepareNextStepOptions } from '../actions.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, Executor } from './types';
-
-const copyOnlyOptionsSchema = z.object({});
-export const CopyOnlyExecutorName = 'copy-only';
+import { copyOnlyOptionsSchema, CopyOnlyExecutorName } from './schemas.js';
 
 export type CopyOnlyExecutorOptions = z.infer<typeof copyOnlyOptionsSchema>;
 

@@ -320,12 +320,10 @@ autoexamples:
 defaultExecutor: direct-call
 executors:
   "claude-code":
-    apiKey: "main-key"
-    model: "claude-3-sonnet"
-    maxTokens: 4000
-  "copy-only":
-    includeHeaders: true
-    outputFormat: "markdown"
+    allowedTools: ["tool1", "tool2"]
+    includeDefaultTools: false
+    enablePermissionsMcp: true
+  "copy-only": {}
 `
       );
 
@@ -334,11 +332,10 @@ executors:
         `
 executors:
   "claude-code":
-    model: "claude-3-opus"
-    temperature: 0.7
-  "one-shot":
-    attempts: 3
-    timeout: 30000
+    includeDefaultTools: true
+    mcpConfigFile: "/path/to/config"
+  "direct-call":
+    executionModel: "gpt-4"
 `
       );
 
@@ -349,22 +346,18 @@ executors:
 
       // claude-code should have merged options from both configs
       expect(config.executors?.['claude-code']).toEqual({
-        apiKey: 'main-key', // from main
-        model: 'claude-3-opus', // from local (overrides main)
-        maxTokens: 4000, // from main
-        temperature: 0.7, // from local
+        allowedTools: ['tool1', 'tool2'], // from main
+        includeDefaultTools: true, // from local (overrides main)
+        enablePermissionsMcp: true, // from main
+        mcpConfigFile: '/path/to/config', // from local
       });
 
       // copy-only should only have options from main
-      expect(config.executors?.['copy-only']).toEqual({
-        includeHeaders: true,
-        outputFormat: 'markdown',
-      });
+      expect(config.executors?.['copy-only']).toEqual({});
 
-      // one-shot should only have options from local
-      expect(config.executors?.['one-shot']).toEqual({
-        attempts: 3,
-        timeout: 30000,
+      // direct-call should only have options from local
+      expect(config.executors?.['direct-call']).toEqual({
+        executionModel: 'gpt-4',
       });
     });
   });

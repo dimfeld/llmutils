@@ -2,6 +2,16 @@ import * as path from 'path';
 import { z } from 'zod/v4';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { getGitRoot } from '../common/git.js';
+import {
+  ClaudeCodeExecutorName,
+  CopyOnlyExecutorName,
+  CopyPasteExecutorName,
+  OneCallExecutorName,
+  claudeCodeOptionsSchema,
+  copyOnlyOptionsSchema,
+  copyPasteOptionsSchema,
+  directCallOptionsSchema,
+} from './executors/schemas.js';
 
 /**
  * Schema for a single command to be executed after applying changes.
@@ -104,8 +114,24 @@ export const rmplanConfigSchema = z
     defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
-    /** Executor-specific options mapped by executor name */
-    executors: z.record(z.string(), z.any()).optional(),
+    /**
+     * Executor-specific options mapped by executor name.
+     * Each executor has its own schema:
+     * - claude-code: claudeCodeOptionsSchema (tools configuration, MCP settings)
+     * - copy-only: copyOnlyOptionsSchema (no options)
+     * - copy-paste: copyPasteOptionsSchema (executionModel)
+     * - direct-call: directCallOptionsSchema (executionModel)
+     */
+    executors: z
+      .object({
+        [ClaudeCodeExecutorName]: claudeCodeOptionsSchema.optional(),
+        [CopyOnlyExecutorName]: copyOnlyOptionsSchema.optional(),
+        [CopyPasteExecutorName]: copyPasteOptionsSchema.optional(),
+        [OneCallExecutorName]: directCallOptionsSchema.optional(),
+      })
+      .partial()
+      .optional()
+      .describe('Options for each executor'),
   })
   .describe('Repository-level configuration for rmplan');
 

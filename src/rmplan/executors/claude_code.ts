@@ -9,20 +9,9 @@ import type { PrepareNextStepOptions } from '../actions.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions } from './types.ts';
 import { formatJsonMessage } from './claude_code/format.ts';
-
-const claudeCodeOptionsSchema = z.object({
-  allowedTools: z.array(z.string()).optional(),
-  allowAllTools: z.boolean().optional(),
-  includeDefaultTools: z.boolean().default(true),
-  disallowedTools: z.array(z.string()).optional(),
-  mcpConfigFile: z.string().optional(),
-  interactive: z.boolean().optional(),
-  enablePermissionsMcp: z.boolean().optional(),
-});
+import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
-
-export const ClaudeCodeExecutorName = 'claude-code';
 
 export class ClaudeCodeExecutor implements Executor {
   static name = ClaudeCodeExecutorName;

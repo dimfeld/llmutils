@@ -172,6 +172,75 @@
         }
       },
       "additionalProperties": false
+    },
+    "executors": {
+      "description": "Options for each executor",
+      "type": "object",
+      "properties": {
+        "claude-code": {
+          "type": "object",
+          "properties": {
+            "allowedTools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowAllTools": {
+              "type": "boolean"
+            },
+            "includeDefaultTools": {
+              "default": true,
+              "type": "boolean"
+            },
+            "disallowedTools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "mcpConfigFile": {
+              "type": "string"
+            },
+            "interactive": {
+              "type": "boolean"
+            },
+            "enablePermissionsMcp": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "includeDefaultTools"
+          ],
+          "additionalProperties": false
+        },
+        "copy-only": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "copy-paste": {
+          "type": "object",
+          "properties": {
+            "executionModel": {
+              "description": "The model string for LLM execution, e.g., 'google/gemini-2.5-pro-preview-06-05'.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "direct-call": {
+          "type": "object",
+          "properties": {
+            "executionModel": {
+              "description": "The model string for LLM execution, e.g., 'google/gemini-2.5-pro-preview-06-05'.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

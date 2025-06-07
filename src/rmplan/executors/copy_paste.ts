@@ -10,17 +10,9 @@ import type { PrepareNextStepOptions } from '../actions.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, Executor } from './types';
 import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
-
-const copyPasteOptionsSchema = z.object({
-  executionModel: z
-    .string()
-    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro-preview-06-05'.")
-    .optional(),
-});
+import { copyPasteOptionsSchema, CopyPasteExecutorName } from './schemas.js';
 
 export type CopyPasteExecutorOptions = z.infer<typeof copyPasteOptionsSchema>;
-
-export const CopyPasteExecutorName = 'copy-paste';
 
 /**
  * The 'direct-call' executor.
