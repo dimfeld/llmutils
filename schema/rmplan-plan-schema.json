@@ -1,8 +1,96 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$ref": "#/definitions/RmplanPlan",
-  "definitions": {
-    "RmplanPlan": {
+  "description": "rmplan phase file schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "details": {
+      "type": "string"
+    },
+    "id": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "status": {
+      "default": "pending",
+      "type": "string",
+      "enum": [
+        "pending",
+        "in_progress",
+        "done",
+        "cancelled"
+      ]
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "urgent"
+      ]
+    },
+    "container": {
+      "default": false,
+      "type": "boolean"
+    },
+    "dependencies": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "issue": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "pullRequest": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "planGeneratedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^((\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])|(0[469]|11)-(0[1-9]|[12]\\d|30)|(02)-(0[1-9]|1\\d|2[0-8])))T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?(Z)$"
+    },
+    "promptsGeneratedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^((\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])|(0[469]|11)-(0[1-9]|[12]\\d|30)|(02)-(0[1-9]|1\\d|2[0-8])))T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?(Z)$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^((\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])|(0[469]|11)-(0[1-9]|[12]\\d|30)|(02)-(0[1-9]|1\\d|2[0-8])))T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?(Z)$"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^((\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])|(0[469]|11)-(0[1-9]|[12]\\d|30)|(02)-(0[1-9]|1\\d|2[0-8])))T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?(Z)$"
+    },
+    "project": {
       "type": "object",
       "properties": {
         "title": {
@@ -13,183 +101,97 @@
         },
         "details": {
           "type": "string"
-        },
-        "id": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "exclusiveMinimum": 0
-            },
-            {
-              "type": "string"
-            }
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "pending",
-            "in_progress",
-            "done",
-            "cancelled"
-          ],
-          "default": "pending"
-        },
-        "priority": {
-          "type": "string",
-          "enum": [
-            "low",
-            "medium",
-            "high",
-            "urgent"
-          ]
-        },
-        "parentOnly": {
-          "type": "boolean",
-          "default": false
-        },
-        "dependencies": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "issue": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "format": "uri"
-          },
-          "default": []
-        },
-        "pullRequest": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "format": "uri"
-          },
-          "default": []
-        },
-        "planGeneratedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "promptsGeneratedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "project": {
-          "type": "object",
-          "properties": {
-            "title": {
-              "type": "string"
-            },
-            "goal": {
-              "type": "string"
-            },
-            "details": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "title",
-            "goal",
-            "details"
-          ],
-          "additionalProperties": false
-        },
-        "tasks": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "files": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "default": []
-              },
-              "examples": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "steps": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "prompt": {
-                      "type": "string"
-                    },
-                    "examples": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "done": {
-                      "type": "boolean",
-                      "default": false
-                    }
-                  },
-                  "required": [
-                    "prompt"
-                  ],
-                  "additionalProperties": false
-                },
-                "default": []
-              }
-            },
-            "required": [
-              "title",
-              "description"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "baseBranch": {
-          "type": "string"
-        },
-        "changedFiles": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "rmfilter": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
         }
       },
       "required": [
+        "title",
         "goal",
-        "details",
-        "tasks"
+        "details"
       ],
-      "additionalProperties": false,
-      "description": "rmplan phase file schema"
+      "additionalProperties": false
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "files": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "steps": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "prompt": {
+                  "type": "string"
+                },
+                "examples": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "done": {
+                  "default": false,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "prompt",
+                "done"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "steps"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "baseBranch": {
+      "type": "string"
+    },
+    "changedFiles": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rmfilter": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
-  }
+  },
+  "required": [
+    "goal",
+    "details",
+    "tasks"
+  ],
+  "additionalProperties": false
 }

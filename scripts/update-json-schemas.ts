@@ -1,14 +1,14 @@
 #!/usr/bin/env bun
 
+import { z } from 'zod/v4';
 import { writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { rmplanConfigSchema } from '../src/rmplan/configSchema.js';
 import { planSchema } from '../src/rmplan/planSchema.js';
 import { ConfigSchema } from '../src/rmfilter/config.js';
 
 interface SchemaMapping {
-  zodSchema: any;
+  zodSchema: z.ZodType<any, any>;
   outputPath: string;
   schemaName: string;
 }
@@ -37,15 +37,18 @@ async function updateSchemas() {
   for (const { zodSchema, outputPath, schemaName } of schemaMappings) {
     try {
       // Convert Zod schema to JSON Schema
-      const jsonSchema = zodToJsonSchema(zodSchema, {
-        name: schemaName,
-        // Use draft-07 for better compatibility
-        $refStrategy: 'none',
+      const jsonSchema = z.toJSONSchema(zodSchema, {
+        target: 'draft-7',
       });
+      // const jsonSchema = zodToJsonSchema(zodSchema, {
+      //   name: schemaName,
+      //   // Use draft-07 for better compatibility
+      //   $refStrategy: 'none',
+      // });
 
       // Add the $schema property
       const schemaWithMeta = {
-        $schema: 'http://json-schema.org/draft-07/schema#',
+        // $schema: 'http://json-schema.org/draft-07/schema#',
         ...jsonSchema,
       };
 

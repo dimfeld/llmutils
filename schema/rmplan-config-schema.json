@@ -1,11 +1,135 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$ref": "#/definitions/RmplanConfig",
-  "definitions": {
-    "RmplanConfig": {
+  "description": "Repository-level configuration for rmplan",
+  "type": "object",
+  "properties": {
+    "postApplyCommands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "workingDirectory": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "allowFailure": {
+            "default": false,
+            "type": "boolean"
+          },
+          "hideOutputOnSuccess": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "title",
+          "command",
+          "allowFailure",
+          "hideOutputOnSuccess"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "paths": {
       "type": "object",
       "properties": {
-        "postApplyCommands": {
+        "tasks": {
+          "description": "Path to directory containing task definitions",
+          "type": "string"
+        },
+        "docs": {
+          "description": "Paths to directories to search for .md and .mdc documentation files to auto-include",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "trackingFile": {
+          "description": "Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "autoexamples": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "find": {
+                "description": "String to search for in the prompt to trigger this example.",
+                "type": "string"
+              },
+              "example": {
+                "description": "Example string to pass as --example argument when find matches.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "find",
+              "example"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "models": {
+      "type": "object",
+      "properties": {
+        "execution": {
+          "description": "Model spec for rmplan run model",
+          "type": "string"
+        },
+        "answerPr": {
+          "description": "Model spec for rmplan answer-pr model",
+          "type": "string"
+        },
+        "convert_yaml": {
+          "description": "Model spec for rmplan markdown-to-yaml extraction",
+          "type": "string"
+        },
+        "stepGeneration": {
+          "description": "Model spec for rmplan prepare phase generation",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaultExecutor": {
+      "description": "Default executor to use for plan execution",
+      "default": "copy-only",
+      "type": "string"
+    },
+    "workspaceCreation": {
+      "type": "object",
+      "properties": {
+        "repositoryUrl": {
+          "type": "string"
+        },
+        "cloneLocation": {
+          "type": "string"
+        },
+        "postCloneCommands": {
           "type": "array",
           "items": {
             "type": "object",
@@ -21,153 +145,37 @@
               },
               "env": {
                 "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
                 "additionalProperties": {
                   "type": "string"
                 }
               },
               "allowFailure": {
-                "type": "boolean",
-                "default": false
+                "default": false,
+                "type": "boolean"
               },
               "hideOutputOnSuccess": {
-                "type": "boolean",
-                "default": false
+                "default": false,
+                "type": "boolean"
               }
             },
             "required": [
               "title",
-              "command"
+              "command",
+              "allowFailure",
+              "hideOutputOnSuccess"
             ],
             "additionalProperties": false
           }
-        },
-        "paths": {
-          "type": "object",
-          "properties": {
-            "tasks": {
-              "type": "string",
-              "description": "Path to directory containing task definitions"
-            },
-            "docs": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Paths to directories to search for .md and .mdc documentation files to auto-include"
-            },
-            "trackingFile": {
-              "type": "string",
-              "description": "Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)"
-            }
-          },
-          "additionalProperties": false
-        },
-        "autoexamples": {
-          "type": "array",
-          "items": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "find": {
-                    "type": "string",
-                    "description": "String to search for in the prompt to trigger this example."
-                  },
-                  "example": {
-                    "type": "string",
-                    "description": "Example string to pass as --example argument when find matches."
-                  }
-                },
-                "required": [
-                  "find",
-                  "example"
-                ],
-                "additionalProperties": false
-              }
-            ]
-          }
-        },
-        "models": {
-          "type": "object",
-          "properties": {
-            "execution": {
-              "type": "string",
-              "description": "Model spec for rmplan run model"
-            },
-            "answerPr": {
-              "type": "string",
-              "description": "Model spec for rmplan answer-pr model"
-            },
-            "convert_yaml": {
-              "type": "string",
-              "description": "Model spec for rmplan markdown-to-yaml extraction"
-            },
-            "stepGeneration": {
-              "type": "string",
-              "description": "Model spec for rmplan prepare phase generation"
-            }
-          },
-          "additionalProperties": false
-        },
-        "defaultExecutor": {
-          "type": "string",
-          "default": "copy-only",
-          "description": "Default executor to use for plan execution"
-        },
-        "workspaceCreation": {
-          "type": "object",
-          "properties": {
-            "repositoryUrl": {
-              "type": "string"
-            },
-            "cloneLocation": {
-              "type": "string"
-            },
-            "postCloneCommands": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "title": {
-                    "type": "string"
-                  },
-                  "command": {
-                    "type": "string"
-                  },
-                  "workingDirectory": {
-                    "type": "string"
-                  },
-                  "env": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  },
-                  "allowFailure": {
-                    "type": "boolean",
-                    "default": false
-                  },
-                  "hideOutputOnSuccess": {
-                    "type": "boolean",
-                    "default": false
-                  }
-                },
-                "required": [
-                  "title",
-                  "command"
-                ],
-                "additionalProperties": false
-              }
-            }
-          },
-          "additionalProperties": false
         }
       },
-      "additionalProperties": false,
-      "description": "Repository-level configuration for rmplan"
+      "additionalProperties": false
     }
-  }
+  },
+  "required": [
+    "defaultExecutor"
+  ],
+  "additionalProperties": false
 }
