@@ -79,7 +79,7 @@ export async function fetchAllOpenIssues() {
     state: 'open',
   });
 
-  return issues;
+  return issues.filter((i) => !i.pull_request);
 }
 
 export async function selectIssueComments(

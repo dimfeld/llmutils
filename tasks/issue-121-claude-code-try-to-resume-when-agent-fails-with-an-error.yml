@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: "Claude Code: try to resume when agent fails with an error"
+goal: "Implement: Claude Code: try to resume when agent fails with an error"
+details: >-
+  If claude ends with a nonzero exit code, and it doesn't look like a 429 error,
+  then restart claude with `-r <session id>` and try to continue. If it exits
+  with a nonzero code more than 3 times in a short amount of time (2 minutes?)
+  then quit with an error.
+
+
+  rmfilter: src/executors/claude_code.ts --with-imports
+id: 46
+status: pending
+issue:
+  - https://github.com/dimfeld/llmutils/issues/121
+createdAt: 2025-06-07T02:04:23.538Z
+updatedAt: 2025-06-07T02:04:23.538Z
+tasks: []
+rmfilter:
+  - --
+  - src/executors/claude_code.ts
+  - --with-imports

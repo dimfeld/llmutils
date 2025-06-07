@@ -118,6 +118,14 @@ program
   });
 
 program
+  .command('promote <taskIds...>')
+  .description('Promote tasks from a plan to new top-level plans')
+  .action(async (taskIds, options, command) => {
+    const { handlePromoteCommand } = await import('./commands/promote.js');
+    await handlePromoteCommand(taskIds, options).catch(handleCommandError);
+  });
+
+program
   .command('done <planFile>')
   .description('Mark the next step/task in a plan YAML as done. Can be a file path or plan ID.')
   .option('--steps <steps>', 'Number of steps to mark as done', '1')

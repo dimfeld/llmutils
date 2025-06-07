@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: research command
+goal: ""
+details: |
+  The `rmplan` command should support a `research [planArg]` option that creates a prompt encouraging the model to do research related
+  to the goal and details in the plan, and copies it to the clipboard.
+
+  This command should have an --rmfilter option which, if there are any rmfilter arguments in the plan, use rmfilter to generate the prompt and include these files. Also allow adding
+  them on the command line with the `--` CLI argument separator that other commands use.
+
+  When the user pastes their content back in, append it to the end of the plan details.
+id: "51"
+priority: medium
+status: pending
+createdAt: 2025-06-07T02:07:53.027Z
+updatedAt: 2025-06-07T02:07:53.027Z
+tasks: []

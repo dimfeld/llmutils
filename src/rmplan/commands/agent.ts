@@ -209,72 +209,65 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
   // Check if the plan needs preparation
-  try {
-    const planData = await readPlanFile(currentPlanFile);
+  const planData = await readPlanFile(currentPlanFile);
 
-    // Check if prompts have been generated
-    const needsPreparation =
-      !planData.promptsGeneratedAt ||
-      planData.tasks.some((task) => !task.steps || task.steps.length === 0);
+  // Check if prompts have been generated
+  const needsPreparation = planData.tasks.every((task) => task.steps?.length);
 
-    if (needsPreparation) {
-      let shouldGenerateSteps = true; // Default behavior
+  if (needsPreparation) {
+    let shouldGenerateSteps = true; // Default behavior
 
-      if (!options.nonInteractive) {
-        // Interactive mode - ask user what to do
-        const choice = await select({
-          message: 'This plan lacks detailed steps. How would you like to proceed?',
-          choices: [
-            {
-              name: 'Generate detailed steps first',
-              value: 'generate',
-              description: 'Create step-by-step instructions before execution',
-            },
-            {
-              name: 'Run the simple plan directly',
-              value: 'direct',
-              description: 'Execute using just the high-level goal and details',
-            },
-          ],
+    if (!options.nonInteractive) {
+      // Interactive mode - ask user what to do
+      const choice = await select({
+        message: 'This plan lacks detailed steps. How would you like to proceed?',
+        choices: [
+          {
+            name: 'Generate detailed steps first',
+            value: 'generate',
+            description: 'Create step-by-step instructions before execution',
+          },
+          {
+            name: 'Run the simple plan directly',
+            value: 'direct',
+            description: 'Execute using just the high-level goal and details',
+          },
+        ],
+      });
+
+      shouldGenerateSteps = choice === 'generate';
+    }
+
+    if (shouldGenerateSteps) {
+      log('Plan needs preparation. Generating detailed steps and prompts...');
+      try {
+        await preparePhase(currentPlanFile, config, {
+          model: options.model,
+          direct: options.direct,
         });
-
-        shouldGenerateSteps = choice === 'generate';
+        log('Successfully prepared the plan with detailed steps.');
+      } catch (err) {
+        throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
       }
+    } else {
+      log('Proceeding to execute plan directly using high-level description.');
 
-      if (shouldGenerateSteps) {
-        log('Plan needs preparation. Generating detailed steps and prompts...');
-        try {
-          await preparePhase(currentPlanFile, config, {
-            model: options.model,
-            direct: options.direct,
-          });
-          log('Successfully prepared the plan with detailed steps.');
-        } catch (err) {
-          throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
-        }
-      } else {
-        log('Proceeding to execute plan directly using high-level description.');
-
-        // Direct execution branch - bypass step-by-step loop
-        try {
-          await executeStubPlan({
-            config,
-            baseDir: currentBaseDir,
-            planFilePath: currentPlanFile,
-            planData,
-            executor,
-            commit: options.commit,
-          });
-          return;
-        } catch (err) {
-          error('Direct execution failed:', err);
-          throw err;
-        }
+      // Direct execution branch - bypass step-by-step loop
+      try {
+        await executeStubPlan({
+          config,
+          baseDir: currentBaseDir,
+          planFilePath: currentPlanFile,
+          planData,
+          executor,
+          commit: options.commit,
+        });
+        return;
+      } catch (err) {
+        error('Direct execution failed:', err);
+        throw err;
       }
     }
-  } catch (err) {
-    warn('Could not check if plan needs preparation:', err);
-    // Continue anyway - the main loop will catch any issues
   }
 
   log('Starting agent to execute plan:', currentPlanFile);

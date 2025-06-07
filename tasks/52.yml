@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: "MCP Mode: Support repository exploration for planning/research"
+goal: ""
+details: |
+  Add MCP tools for repository exploration such as list/grep/read. Update the generate, prepare, and research commands
+  to take an --mcp flag which will add info to the prompt about appropriate MCP tools to use.
+id: "52"
+status: pending
+priority: low
+dependencies:
+  - "49"
+createdAt: 2025-06-07T02:13:21.632Z
+updatedAt: 2025-06-07T02:13:21.632Z
+tasks: []

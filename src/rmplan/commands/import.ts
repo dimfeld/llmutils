@@ -119,7 +119,7 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
   const issueUrl = data.issue.html_url;
 
   // Check for existing plans
-  const { plans } = await readAllPlans(tasksDir);
+  const { plans } = await readAllPlans(tasksDir, false);
 
   let existingPlan: (PlanSchema & { filename: string }) | undefined;
   for (const plan of plans.values()) {
@@ -270,16 +270,15 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     const importedUrls = await getImportedIssueUrls(tasksDir);
 
     // Create choices for the checkbox prompt, marking already imported issues
-    const choices = allIssues.map((issue) => {
-      const isImported = importedUrls.has(issue.html_url);
-      const name = isImported
-        ? `#${issue.number}: ${issue.title} [ALREADY IMPORTED]`
-        : `#${issue.number}: ${issue.title}`;
-      return {
-        name,
-        value: issue.number,
-      };
-    });
+    const choices = allIssues
+      .filter((issue) => !importedUrls.has(issue.html_url))
+      .map((issue) => {
+        const name = `#${issue.number}: ${issue.title}`;
+        return {
+          name,
+          value: issue.number,
+        };
+      });
 
     if (choices.length === 0) {
       log('No open issues found in the repository.');

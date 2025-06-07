@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Add and generate commands should look at existing tasks and try to
+  autoadd dependencies
+goal: "Implement: Add and generate commands should look at existing tasks and
+  try to autoadd dependencies"
+details: ""
+id: 48
+status: pending
+issue:
+  - https://github.com/dimfeld/llmutils/issues/115
+createdAt: 2025-06-07T02:05:21.825Z
+updatedAt: 2025-06-07T02:05:21.825Z
+tasks: []

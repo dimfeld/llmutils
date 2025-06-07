@@ -826,31 +826,12 @@ export async function preparePhase(
     }
 
     // Call gatherPhaseGenerationContext
-    let phaseGenCtx;
-    try {
-      phaseGenCtx = await gatherPhaseGenerationContext(
-        phaseYamlFile,
-        projectPlanDir,
-        allPlans,
-        options.rmfilterArgs
-      );
-    } catch (err) {
-      error('Failed to gather phase generation context:', err);
-
-      // Save context gathering error
-      try {
-        const errorLogPath = phaseYamlFile.replace('.yaml', '.context_error.log');
-        await Bun.write(
-          errorLogPath,
-          `Context gathering error at ${new Date().toISOString()}\n\nError: ${err as Error}\n\nStack trace:\n${err instanceof Error ? err.stack : 'No stack trace available'}`
-        );
-        error('Error log saved to:', errorLogPath);
-      } catch (saveErr) {
-        warn('Failed to save error log:', saveErr);
-      }
-
-      throw err;
-    }
+    let phaseGenCtx = await gatherPhaseGenerationContext(
+      phaseYamlFile,
+      projectPlanDir,
+      allPlans,
+      options.rmfilterArgs
+    );
 
     // Prepare rmfilter arguments for codebase context
     const rmfilterArgs = [...phaseGenCtx.rmfilterArgsFromPlan];
@@ -951,20 +932,25 @@ export async function preparePhase(
     }
 
     // 10. Update Phase YAML
-    // Merge LLM-generated task details into currentPhaseData.tasks
-    for (let i = 0; i < currentPhaseData.tasks.length; i++) {
-      const existingTask = currentPhaseData.tasks[i];
-      const llmTask = parsedTasks[i];
+    if (currentPhaseData.tasks?.length) {
+      // Merge LLM-generated task details into currentPhaseData.tasks
+      for (let i = 0; i < currentPhaseData.tasks.length; i++) {
+        const existingTask = currentPhaseData.tasks[i];
+        const llmTask = parsedTasks[i];
 
-      if (!llmTask) {
-        warn(`Warning: LLM did not generate details for task ${i + 1}: ${existingTask.title}`);
-        continue;
+        if (!llmTask) {
+          warn(`Warning: LLM did not generate details for task ${i + 1}: ${existingTask.title}`);
+          continue;
+        }
+
+        // Update task with LLM-generated details
+        existingTask.description = llmTask.description || existingTask.description;
+        existingTask.files = llmTask.files || [];
+        existingTask.steps = llmTask.steps || [];
       }
-
-      // Update task with LLM-generated details
-      existingTask.description = llmTask.description || existingTask.description;
-      existingTask.files = llmTask.files || [];
-      existingTask.steps = llmTask.steps || [];
+    } else {
+      // If currentPhaseData.tasks is empty, assign parsedTasks directly
+      currentPhaseData.tasks = parsedTasks;
     }
 
     // Update timestamps
