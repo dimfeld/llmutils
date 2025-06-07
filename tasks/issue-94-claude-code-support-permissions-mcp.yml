@@ -5,17 +5,15 @@ priority: medium
 details: >-
   Claude Code SDK is able to use an MCP server to request permissions. Implement
   this and then ask the user to respond to permissions when Claude Code needs
-  it.
+  it. Follow the tutorial for instructions on how to do so.
 
-
-  Documented here: https://docs.anthropic.com/en/docs/claude-code/sdk#custom-permission-prompt-tool
-
-
-  See https://github.com/mmarcen/test_permission-prompt-tool for an unofficial
-  example that is supposed to work.
+  The permissions prompt should print the tool_name and input as YAML, and then
+  use an inquirer confirm prompt to ask the user if they want to allow the tool.
 
 id: 50
 status: pending
+rmfilter:
+  - src/rmplan/executors/claude_code.ts
 docs:
   - docs/tutorials/claude-permissions-mcp.md
 issue:
