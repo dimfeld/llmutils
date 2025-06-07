@@ -23,7 +23,6 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     throw new Error('No valid task identifiers found');
   }
 
-
   // Group parsed task identifiers by planId
   const tasksByPlan = new Map<string, Array<{ taskIndex: number; planId: string }>>();
   for (const { planId, taskIndex } of parsedTaskIds) {
@@ -49,7 +48,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
   for (const [planId, taskInfo] of tasksByPlan) {
     // Sort task indices in ascending order to maintain proper indexing during removal
     const sortedTaskInfo = taskInfo.sort((a, b) => a.taskIndex - b.taskIndex);
-    
+
     // Resolve the plan file path
     const originalPlanPath = await resolvePlanFile(planId, options.config);
 
@@ -75,11 +74,11 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     for (let i = 0; i < sortedTaskInfo.length; i++) {
       const { taskIndex } = sortedTaskInfo[i];
       const taskToPromote = originalPlan.tasks[taskIndex];
-      
+
       // Generate new plan ID
       const newPlanId = await generateNumericPlanId(tasksDir);
       newPlanIds.push(newPlanId);
-      
+
       // Add dependency on the previously created plan (except for the first one)
       const dependencies = i > 0 ? [newPlanIds[i - 1].toString()] : [];
 
@@ -99,10 +98,10 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       // Save the new plan
       const newPlanPath = path.join(tasksDir, `${newPlanId}.yml`);
       await writePlanFile(newPlanPath, newPlan);
-      
+
       // Clear cache so next generateNumericPlanId call gets updated max ID
       clearPlanCache();
-      
+
       log(`Created new plan file: ${newPlanPath}`);
       log(`Successfully promoted task "${taskToPromote.title}" to new plan ${newPlanId}`);
     }
@@ -130,7 +129,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
 
     // Write the updated original plan back
     await writePlanFile(originalPlanPath, updatedOriginalPlan);
-    
+
     log(`Updated original plan ${planId} to depend on plans ${newPlanIds.join(', ')}`);
   }
 }

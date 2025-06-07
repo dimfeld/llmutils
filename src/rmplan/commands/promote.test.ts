@@ -172,9 +172,18 @@ describe('handlePromoteCommand', () => {
     const plan3Path = path.join(tasksDir, '3.yml');
     const plan4Path = path.join(tasksDir, '4.yml');
 
-    const plan2Exists = await fs.access(plan2Path).then(() => true).catch(() => false);
-    const plan3Exists = await fs.access(plan3Path).then(() => true).catch(() => false);
-    const plan4Exists = await fs.access(plan4Path).then(() => true).catch(() => false);
+    const plan2Exists = await fs
+      .access(plan2Path)
+      .then(() => true)
+      .catch(() => false);
+    const plan3Exists = await fs
+      .access(plan3Path)
+      .then(() => true)
+      .catch(() => false);
+    const plan4Exists = await fs
+      .access(plan4Path)
+      .then(() => true)
+      .catch(() => false);
 
     expect(plan2Exists).toBe(true);
     expect(plan3Exists).toBe(true);
@@ -208,7 +217,7 @@ describe('handlePromoteCommand', () => {
     expect(updatedOriginalPlan.tasks).toHaveLength(2);
     expect(updatedOriginalPlan.tasks![0].title).toBe('Set up database schema');
     expect(updatedOriginalPlan.tasks![1].title).toBe('Add email verification');
-    
+
     // Original plan should depend on all new plans
     expect(updatedOriginalPlan.dependencies).toContain('2');
     expect(updatedOriginalPlan.dependencies).toContain('3');

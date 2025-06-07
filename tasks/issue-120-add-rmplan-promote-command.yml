@@ -20,7 +20,7 @@ issue:
   - https://github.com/dimfeld/llmutils/issues/120
 promptsGeneratedAt: 2025-06-07T02:34:55.340Z
 createdAt: 2025-06-07T02:04:24.921Z
-updatedAt: 2025-06-07T02:42:51.413Z
+updatedAt: 2025-06-07T02:47:59.890Z
 tasks:
   - title: Add `promote` command and Task ID parser
     description: Add the `promote` command to the `rmplan` CLI and create the
@@ -135,25 +135,25 @@ tasks:
           they have the correct chained dependencies (e.g., the plan for task 3
           depends on the plan for task 2, and the plan for task 4 depends on the
           plan for task 3).
-        done: false
+        done: true
       - prompt: >
           In `handlePromoteCommand`, refactor the logic to handle an array of
           task identifiers from `parseTaskIds`. Group the parsed task
           identifiers by their `planId` so that all promotions from a single
           original plan can be processed as a single transaction.
-        done: false
+        done: true
       - prompt: >
           Within the loop for each `planId` group, first generate all necessary
           new plan IDs sequentially. Then, as you create each new plan object,
           add a dependency on the ID of the previously created plan in the
           sequence. The first promoted task will have no new dependencies.
-        done: false
+        done: true
       - prompt: >
           Update the original plan by removing all promoted tasks at once. Be
           careful with array indices as you remove items. After removing the
           tasks, add the IDs of all the newly created plans to the original
           plan's `dependencies` array.
-        done: false
+        done: true
   - title: Handle edge cases and finalize
     description: Finalize the implementation by handling edge cases, such as
       promoting all tasks from a plan and promoting tasks from different plans
@@ -187,6 +187,7 @@ tasks:
           created and what was changed.
         done: false
 changedFiles:
+  - debug_promote.js
   - src/common/github/issues.ts
   - src/rmplan/actions.ts
   - src/rmplan/commands/agent.ts
