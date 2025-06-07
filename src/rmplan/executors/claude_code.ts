@@ -14,6 +14,7 @@ const claudeCodeOptionsSchema = z.object({
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
   interactive: z.boolean().optional(),
+  enablePermissionsMcp: z.boolean().optional(),
 });
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
