@@ -63,6 +63,22 @@ describe('handleImportCommand', () => {
     await moduleMocker.mock('@inquirer/prompts', () => ({
       checkbox: mock(() => Promise.resolve([100, 101])),
     }));
+
+    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
+      parsePrOrIssueNumber: mock(() =>
+        Promise.resolve({ owner: 'owner', repo: 'repo', number: 123 })
+      ),
+    }));
+
+    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+      parseCommandOptionsFromComment: mock(() => ({ options: null })),
+      combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
+    }));
+
+    await moduleMocker.mock('../../common/formatting.js', () => ({
+      singleLineWithPrefix: mock((prefix, text) => prefix + text),
+      limitLines: mock((text) => text),
+    }));
   });
 
   afterEach(async () => {
@@ -251,6 +267,25 @@ describe('handleImportCommand', () => {
       duplicates: [],
     };
 
+    // Mock the new dependencies
+    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
+      parsePrOrIssueNumber: mock(() =>
+        Promise.resolve({ owner: 'owner', repo: 'repo', number: 123 })
+      ),
+    }));
+
+    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+      parseCommandOptionsFromComment: mock(() => ({
+        options: { rmfilter: ['--include', '*.ts'] },
+      })),
+      combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
+    }));
+
+    await moduleMocker.mock('../../common/formatting.js', () => ({
+      singleLineWithPrefix: mock((prefix, text) => prefix + text),
+      limitLines: mock((text) => text),
+    }));
+
     await moduleMocker.mock('../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansWithExisting)),
       writePlanFile: mock(() => Promise.resolve()),
@@ -259,6 +294,25 @@ describe('handleImportCommand', () => {
       getImportedIssueUrls: mock(() =>
         Promise.resolve(new Set(['https://github.com/owner/repo/issues/123']))
       ),
+    }));
+
+    // Mock fetchIssueAndComments with a new comment
+    await moduleMocker.mock('../../common/github/issues.js', () => ({
+      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+      fetchIssueAndComments: mock(() =>
+        Promise.resolve({
+          issue: mockIssueData.issue,
+          comments: [
+            { body: 'This is a new comment', user: { login: 'user1' } },
+            { body: 'Old description', user: { login: 'user2' } }, // This one is already in details
+          ],
+        })
+      ),
+    }));
+
+    // Mock checkbox to select the new comment
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(() => Promise.resolve([0])), // Select the first (new) comment
     }));
 
     await handleImportCommand('123');
@@ -278,7 +332,7 @@ describe('handleImportCommand', () => {
       id: 3, // Preserves existing ID
       title: 'Test Issue', // Updated from issue
       goal: 'Implement: Old Title', // Preserved
-      details: 'This is a test issue description', // Updated from issue
+      details: 'Old description\n\nThis is a new comment', // Old details + new comment
       status: 'in_progress', // Preserved
       issue: ['https://github.com/owner/repo/issues/123'], // Preserved
       tasks: [{ id: 1, description: 'Existing task' }], // Preserved
@@ -286,6 +340,7 @@ describe('handleImportCommand', () => {
       createdAt: '2024-01-01T00:00:00Z', // Preserved
     });
     expect(planData.updatedAt).not.toBe('2024-01-01T00:00:00Z'); // Should be updated
+    expect(log).toHaveBeenCalledWith('Added 1 new comment(s) to the plan.');
   });
 
   test('should create stub plan file with correct metadata', async () => {
@@ -330,11 +385,41 @@ describe('handleImportCommand', () => {
       duplicates: [],
     };
 
+    // Mock the new dependencies
+    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
+      parsePrOrIssueNumber: mock(() =>
+        Promise.resolve({ owner: 'owner', repo: 'repo', number: 123 })
+      ),
+    }));
+
+    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+      parseCommandOptionsFromComment: mock(() => ({
+        options: { rmfilter: ['--include', '*.ts'] },
+      })),
+      combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
+    }));
+
+    await moduleMocker.mock('../../common/formatting.js', () => ({
+      singleLineWithPrefix: mock((prefix, text) => prefix + text),
+      limitLines: mock((text) => text),
+    }));
+
     await moduleMocker.mock('../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansWithDuplicate)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
       readPlanFile: mock(() => Promise.resolve(mockExistingPlan)),
+    }));
+
+    // Mock fetchIssueAndComments with no new comments
+    await moduleMocker.mock('../../common/github/issues.js', () => ({
+      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+      fetchIssueAndComments: mock(() =>
+        Promise.resolve({
+          issue: mockIssueData.issue,
+          comments: [], // No comments
+        })
+      ),
     }));
 
     await handleImportCommand('123');
@@ -346,5 +431,6 @@ describe('handleImportCommand', () => {
     expect(log).toHaveBeenCalledWith(
       'Updating existing plan for issue: https://github.com/owner/repo/issues/123'
     );
+    expect(log).toHaveBeenCalledWith("No new comments found that aren't already in the plan.");
   });
 });

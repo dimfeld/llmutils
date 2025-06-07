@@ -4,7 +4,13 @@
 import * as path from 'node:path';
 import { checkbox } from '@inquirer/prompts';
 import { error, log, warn } from '../../logging.js';
-import { getInstructionsFromGithubIssue, fetchAllOpenIssues } from '../../common/github/issues.js';
+import {
+  getInstructionsFromGithubIssue,
+  fetchAllOpenIssues,
+  fetchIssueAndComments,
+  selectIssueComments,
+} from '../../common/github/issues.js';
+import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
 import {
   readAllPlans,
   writePlanFile,
@@ -16,6 +22,77 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { getGitRoot } from '../../common/git.js';
 import { createStubPlanFromIssue } from '../issue_utils.js';
 import type { PlanSchema } from '../planSchema.js';
+import {
+  parseCommandOptionsFromComment,
+  combineRmprOptions,
+  type RmprOptions,
+} from '../../rmpr/comment_options.js';
+import { singleLineWithPrefix, limitLines } from '../../common/formatting.js';
+
+/**
+ * Select comments from an issue that aren't already in the existing plan details
+ *
+ * @param data - The issue and comments data
+ * @param existingDetails - The existing plan details to check against
+ * @returns Selected comments that aren't already in the details
+ */
+async function selectNewComments(
+  data: Awaited<ReturnType<typeof fetchIssueAndComments>>,
+  existingDetails: string
+): Promise<string[]> {
+  const LINE_PADDING = 4;
+  const MAX_HEIGHT = process.stdout.rows - data.comments.length - 10;
+
+  // Filter out comments that already appear verbatim in the existing details
+  const newComments: Array<{
+    name: string;
+    checked: boolean;
+    description: string;
+    value: string;
+  }> = [];
+
+  // Check if the issue body is already in the details
+  if (data.issue.body && !existingDetails.includes(data.issue.body.trim())) {
+    newComments.push({
+      name: singleLineWithPrefix('Body: ', data.issue.body.replaceAll(/\n+/g, '  '), LINE_PADDING),
+      checked: false,
+      description: limitLines(data.issue.body, MAX_HEIGHT),
+      value: data.issue.body.trim(),
+    });
+  }
+
+  // Check each comment
+  for (const comment of data.comments) {
+    if (comment.body && !existingDetails.includes(comment.body.trim())) {
+      const name = `${comment.user?.name ?? comment.user?.login}: `;
+      newComments.push({
+        name: singleLineWithPrefix(name, comment.body.replaceAll(/\n+/g, '  '), LINE_PADDING),
+        checked: false,
+        description: limitLines(comment.body, MAX_HEIGHT),
+        value: comment.body.trim(),
+      });
+    }
+  }
+
+  if (newComments.length === 0) {
+    log("No new comments found that aren't already in the plan.");
+    return [];
+  }
+
+  const withIndex = newComments.map((item, i) => ({ ...item, value: i }));
+
+  const chosen = await checkbox({
+    message: `Select new comments to append to the existing plan:`,
+    required: false,
+    shortcuts: {
+      all: 'a',
+    },
+    pageSize: 10,
+    choices: withIndex,
+  });
+
+  return chosen.sort((a, b) => a - b).map((a) => newComments[a].value);
+}
 
 /**
  * Import a single issue and create a stub plan file
@@ -50,17 +127,59 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
     // Read the current plan to preserve existing data
     const currentPlan = await readPlanFile(fullPath);
 
+    // Fetch issue and comments directly to handle selective comment import
+    const issue = await parsePrOrIssueNumber(issueSpecifier);
+    if (!issue) {
+      throw new Error(`Invalid issue spec: ${issueSpecifier}`);
+    }
+
+    const data = await fetchIssueAndComments(issue);
+
+    // Parse RmprOptions from issue body and comments
+    let rmprOptions: RmprOptions | null = null;
+    if (data.issue.body) {
+      const issueOptions = parseCommandOptionsFromComment(data.issue.body);
+      rmprOptions = issueOptions.options;
+    }
+    for (const comment of data.comments) {
+      if (comment.body) {
+        const commentOptions = parseCommandOptionsFromComment(comment.body);
+        if (commentOptions.options) {
+          rmprOptions = rmprOptions
+            ? combineRmprOptions(rmprOptions, commentOptions.options)
+            : commentOptions.options;
+        }
+      }
+    }
+
+    // Get new comments that aren't already in the plan
+    const newComments = await selectNewComments(data, currentPlan.details || '');
+
+    // Build updated details
+    let updatedDetails = currentPlan.details || '';
+    if (newComments.length > 0) {
+      // Append new comments to existing details
+      updatedDetails = updatedDetails.trim();
+      if (updatedDetails && !updatedDetails.endsWith('\n')) {
+        updatedDetails += '\n';
+      }
+      if (updatedDetails) {
+        updatedDetails += '\n';
+      }
+      updatedDetails += newComments.join('\n\n');
+    }
+
     // Update the plan with new data from the issue while preserving important fields
     const updatedPlan: PlanSchema = {
       ...currentPlan,
-      title: issueData.issue.title, // Update title in case it changed
-      details: issueData.plan, // Update details with latest issue content
+      title: data.issue.title, // Update title in case it changed
+      details: updatedDetails,
       updatedAt: new Date().toISOString(),
     };
 
     // Update rmfilter if present in the new issue data
-    if (issueData.rmprOptions && issueData.rmprOptions.rmfilter) {
-      updatedPlan.rmfilter = issueData.rmprOptions.rmfilter;
+    if (rmprOptions && rmprOptions.rmfilter) {
+      updatedPlan.rmfilter = rmprOptions.rmfilter;
     }
 
     // Write the updated plan
@@ -68,6 +187,9 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
 
     log(`Updated plan file: ${fullPath}`);
     log(`Plan ID: ${currentPlan.id}`);
+    if (newComments.length > 0) {
+      log(`Added ${newComments.length} new comment(s) to the plan.`);
+    }
 
     return true;
   }
