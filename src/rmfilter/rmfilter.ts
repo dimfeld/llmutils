@@ -875,6 +875,7 @@ export async function runRmfilterProgrammatically(
   gitRoot: string,
   baseDir: string
 ): Promise<string> {
+  debugLog('runRmfilterProgrammatically', args, gitRoot, baseDir);
   const { globalValues, commandsParsed } = await getCurrentConfig({ args, gitRoot });
 
   // Construct the config object
