@@ -20,7 +20,7 @@ issue:
   - https://github.com/dimfeld/llmutils/issues/120
 promptsGeneratedAt: 2025-06-07T02:34:55.340Z
 createdAt: 2025-06-07T02:04:24.921Z
-updatedAt: 2025-06-07T02:39:54.089Z
+updatedAt: 2025-06-07T02:42:51.413Z
 tasks:
   - title: Add `promote` command and Task ID parser
     description: Add the `promote` command to the `rmplan` CLI and create the
@@ -82,7 +82,7 @@ tasks:
           test environment with a temporary directory and a sample plan file
           containing multiple tasks. Use real filesystem operations as per our
           testing guidelines.
-        done: false
+        done: true
       - prompt: >
           In `promote.test.ts`, write a test case for promoting a single task
           (e.g., from a plan with ID '1', promote task '1.2'). The test should
@@ -90,37 +90,37 @@ tasks:
           correctly reflects the promoted task (task title becomes plan goal),
           and the original plan ('1.yml') is updated to remove the task and add
           a dependency on the new plan's ID ('2').
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/promote.ts`, begin implementing the
           `handlePromoteCommand`. Use the `parseTaskIds` utility created in the
           previous task. For now, you can assume only one task ID is passed.
-        done: false
+        done: true
       - prompt: >
           Use `resolvePlanFile` to get the full path to the original plan file
           and `readPlanFile` to load its content.
-        done: false
+        done: true
       - prompt: >
           Extract the specified task from the original plan. Create a new
           `PlanSchema` object for the new plan. The task's `title` should become
           the new plan's `goal`, and the task's `description` should become the
           `details`. The new plan will have an empty `tasks` array, making it a
           stub plan.
-        done: false
+        done: true
       - prompt: >
           Use `generateNumericPlanId` to get a new, unique ID for the new plan.
           Then, use `writePlanFile` to save the new plan to disk.
-        done: false
+        done: true
       - prompt: >
           Modify the original plan object in memory: remove the promoted task
           from its `tasks` array and add the new plan's ID to its `dependencies`
           array.
-        done: false
+        done: true
       - prompt: >
           Write the updated original plan back to its file using
           `writePlanFile`. Add logging to inform the user about the promotion
           and the new file created.
-        done: false
+        done: true
   - title: Implement multi-task and range promotion
     description: Extend the promotion logic to handle multiple task IDs and ranges
       (e.g., `1.2-4`). This includes creating chained dependencies between the
@@ -191,6 +191,7 @@ changedFiles:
   - src/rmplan/actions.ts
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/import.ts
+  - src/rmplan/commands/promote.test.ts
   - src/rmplan/commands/promote.ts
   - src/rmplan/rmplan.ts
   - src/rmplan/utils/id_parser.test.ts
