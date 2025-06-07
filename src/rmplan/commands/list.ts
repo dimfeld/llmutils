@@ -10,7 +10,7 @@ import { resolveTasksDir } from '../configSchema.js';
 import { getCombinedTitleFromSummary } from '../display_utils.js';
 import { isPlanReady, readAllPlans } from '../plans.js';
 
-export async function handleListCommand(options: any, command: any) {
+export async function handleListCommand(options: any, command: any, searchTerms?: string[]) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -27,6 +27,14 @@ export async function handleListCommand(options: any, command: any) {
 
   // Filter plans based on status
   let planArray = Array.from(plans.values());
+
+  // Filter by search terms if provided
+  if (searchTerms && searchTerms.length > 0) {
+    planArray = planArray.filter((plan) => {
+      const title = getCombinedTitleFromSummary(plan).toLowerCase();
+      return searchTerms.some((term: string) => title.includes(term.toLowerCase()));
+    });
+  }
 
   if (!options.all) {
     // Determine which statuses to show
@@ -205,7 +213,7 @@ export async function handleListCommand(options: any, command: any) {
       chalk.cyan(plan.id || 'no-id'),
       getCombinedTitleFromSummary(plan),
       statusColor(statusDisplay),
-      priorityColor(priorityDisplay),
+      priorityDisplay ? priorityColor(priorityDisplay) : '-',
       (() => {
         const taskCount = plan.tasks?.length || 0;
         return plan.container && taskCount === 0 ? '-' : taskCount.toString();

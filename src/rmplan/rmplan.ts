@@ -232,8 +232,10 @@ createAgentCommand(
 );
 
 program
-  .command('list')
-  .description('List all plan files in the tasks directory')
+  .command('list [searchTerms...]')
+  .description(
+    'List all plan files in the tasks directory. Optionally filter by title search terms.'
+  )
   .option(
     '--dir <directory>',
     'Directory to search for plan files (defaults to configured tasks directory)'
@@ -249,9 +251,9 @@ program
     'Filter by status (can specify multiple). Valid values: pending, in_progress, done, ready'
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
-  .action(async (options, command) => {
+  .action(async (searchTerms, options, command) => {
     const { handleListCommand } = await import('./commands/list.js');
-    await handleListCommand(options, command).catch(handleCommandError);
+    await handleListCommand(options, command, searchTerms).catch(handleCommandError);
   });
 
 program

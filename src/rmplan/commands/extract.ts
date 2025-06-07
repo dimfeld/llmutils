@@ -59,7 +59,7 @@ export async function handleExtractCommand(inputFile: string | undefined, option
     output: outputPath,
     projectId: options.projectId,
     issueUrls: options.issue ? [options.issue] : [],
-    stubPlanData,
+    stubPlan: stubPlanData ? { data: stubPlanData, path: outputYmlPath } : undefined,
   };
 
   await extractMarkdownToYaml(inputText, config, options.quiet ?? false, extractOptions);

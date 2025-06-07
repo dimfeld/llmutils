@@ -53,6 +53,7 @@ describe('handleListCommand', () => {
         green: chalkMock,
         yellow: chalkMock,
         red: chalkMock,
+        redBright: chalkMock,
         gray: chalkMock,
         bold: chalkMock,
         dim: chalkMock,
@@ -60,6 +61,10 @@ describe('handleListCommand', () => {
         white: chalkMock,
         magenta: chalkMock,
         blue: chalkMock,
+        rgb: () => chalkMock,
+        strikethrough: {
+          gray: chalkMock,
+        },
       },
     }));
 
@@ -85,6 +90,10 @@ describe('handleListCommand', () => {
   afterEach(async () => {
     // Clean up filesystem
     await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  afterAll(() => {
+    moduleMocker.clear();
   });
 
   test('lists no plans when directory is empty', async () => {
@@ -543,6 +552,189 @@ describe('handleListCommand', () => {
     expect(depsColumn).toContain('2…');
     expect(depsColumn).toContain('3');
     expect(depsColumn).toContain('non-existent(?)');
+  });
+
+  test('filters plans by search terms', async () => {
+    // Clear cache and mocks
+    clearPlanCache();
+    mockTable.mockClear();
+
+    // Create test plans with various titles
+    const plan1 = {
+      id: '1',
+      title: 'Implement user authentication',
+      goal: 'Add user authentication',
+      details: 'Implement basic authentication system',
+      status: 'pending',
+      tasks: [],
+    };
+    const plan2 = {
+      id: '2',
+      title: 'Add OAuth integration',
+      goal: 'Integrate OAuth providers',
+      details: 'Add support for OAuth authentication',
+      status: 'pending',
+      tasks: [],
+    };
+    const plan3 = {
+      id: '3',
+      title: 'Fix authentication bug',
+      goal: 'Fix auth bug',
+      details: 'Resolve authentication-related issues',
+      status: 'pending',
+      tasks: [],
+    };
+    const plan4 = {
+      id: '4',
+      title: 'Update database schema',
+      goal: 'Update DB schema',
+      details: 'Modify database schema for new features',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, 'plan1.yml'), yaml.stringify(plan1));
+    await fs.writeFile(path.join(tasksDir, 'plan2.yml'), yaml.stringify(plan2));
+    await fs.writeFile(path.join(tasksDir, 'plan3.yml'), yaml.stringify(plan3));
+    await fs.writeFile(path.join(tasksDir, 'plan4.yml'), yaml.stringify(plan4));
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Search for 'auth'
+    await handleListCommand(options, command, ['auth']);
+
+    // Check that log was called with the right output
+    expect(mockLog).toHaveBeenCalled();
+
+    // Debug: print all log calls to understand what's happening
+    const logCalls = mockLog.mock.calls;
+    console.log('Log calls:', logCalls);
+
+    // Find the log call that contains "Showing:"
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing:'));
+
+    expect(showingCall).toBeTruthy();
+    expect(showingCall[0]).toBe('Showing: 3 of 4 plan(s)');
+
+    // Check that table was called and verify contents
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(4); // Header + 3 plans with 'auth'
+    expect(tableData[1][1]).toBe('Implement user authentication');
+    expect(tableData[2][1]).toBe('Add OAuth integration');
+    expect(tableData[3][1]).toBe('Fix authentication bug');
+  });
+
+  test('search is case insensitive', async () => {
+    // Clear cache and mocks
+    clearPlanCache();
+    mockTable.mockClear();
+
+    const plan1 = {
+      id: '1',
+      title: 'Implement USER Authentication',
+      goal: 'Add user authentication',
+      details: 'Implement authentication system',
+      status: 'pending',
+      tasks: [],
+    };
+    const plan2 = {
+      id: '2',
+      title: 'Add user profile',
+      goal: 'User profile feature',
+      details: 'Add user profile functionality',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, 'plan1.yml'), yaml.stringify(plan1));
+    await fs.writeFile(path.join(tasksDir, 'plan2.yml'), yaml.stringify(plan2));
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Search for 'USER' in uppercase
+    await handleListCommand(options, command, ['USER']);
+
+    // Check that log was called with the right output
+    expect(mockLog).toHaveBeenCalled();
+    const logCalls = mockLog.mock.calls;
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing:'));
+    expect(showingCall).toBeTruthy();
+    expect(showingCall[0]).toBe('Showing: 2 of 2 plan(s)');
+
+    // Should find both plans
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(3); // Header + 2 plans
+  });
+
+  test('multiple search terms match any term', async () => {
+    // Clear cache and mocks
+    clearPlanCache();
+    mockTable.mockClear();
+
+    const plan1 = {
+      id: '1',
+      title: 'Implement database migration',
+      goal: 'Database migration',
+      details: 'Implement database migration system',
+      status: 'pending',
+      tasks: [],
+    };
+    const plan2 = {
+      id: '2',
+      title: 'Add user authentication',
+      goal: 'User authentication',
+      details: 'Add authentication functionality',
+      status: 'pending',
+      tasks: [],
+    };
+    const plan3 = {
+      id: '3',
+      title: 'Fix CSS bug',
+      goal: 'CSS bug fix',
+      details: 'Fix styling issues',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, 'plan1.yml'), yaml.stringify(plan1));
+    await fs.writeFile(path.join(tasksDir, 'plan2.yml'), yaml.stringify(plan2));
+    await fs.writeFile(path.join(tasksDir, 'plan3.yml'), yaml.stringify(plan3));
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Search for 'database' OR 'user'
+    await handleListCommand(options, command, ['database', 'user']);
+
+    // Check that log was called with the right output
+    expect(mockLog).toHaveBeenCalled();
+    const logCalls = mockLog.mock.calls;
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing:'));
+    expect(showingCall).toBeTruthy();
+    expect(showingCall[0]).toBe('Showing: 2 of 3 plan(s)');
+
+    // Should find plans 1 and 2
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(3); // Header + 2 plans
+    expect(tableData[1][1]).toBe('Implement database migration');
+    expect(tableData[2][1]).toBe('Add user authentication');
   });
 
   test('handles numeric string dependencies', async () => {
