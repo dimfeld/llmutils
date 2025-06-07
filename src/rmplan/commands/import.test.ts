@@ -262,7 +262,7 @@ describe('handleImportCommand', () => {
     };
 
     const mockPlansWithExisting = {
-      plans: new Map([[3, { ...existingPlan, filename: 'issue-123-test-issue.yml' }]]),
+      plans: new Map([[3, { ...existingPlan, filename: '/test/git/root/tasks/issue-123-test-issue.yml' }]]),
       maxNumericId: 5,
       duplicates: [],
     };
@@ -327,7 +327,7 @@ describe('handleImportCommand', () => {
 
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
 
-    expect(filePath).toContain('issue-123-test-issue.yml');
+    expect(filePath).toBe('/test/git/root/tasks/issue-123-test-issue.yml');
     expect(planData).toMatchObject({
       id: 3, // Preserves existing ID
       title: 'Test Issue', // Updated from issue
@@ -351,7 +351,7 @@ describe('handleImportCommand', () => {
     expect(writePlanFile).toHaveBeenCalled();
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
 
-    expect(filePath).toContain('issue-123-test-issue.yml');
+    expect(filePath).toBe('/test/git/root/tasks/issue-123-test-issue.yml');
     expect(planData).toMatchObject({
       id: 6, // maxId + 1
       title: 'Test Issue',
@@ -374,7 +374,7 @@ describe('handleImportCommand', () => {
       details: 'Existing details',
       issue: ['https://github.com/owner/repo/issues/123'], // Same URL as mockIssueData
       tasks: [],
-      filename: 'existing-plan.yml',
+      filename: '/test/git/root/tasks/existing-plan.yml',
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     };

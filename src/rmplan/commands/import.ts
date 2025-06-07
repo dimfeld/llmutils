@@ -122,7 +122,7 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
   if (existingPlan) {
     // Update existing plan
     log(`Updating existing plan for issue: ${issueUrl}`);
-    const fullPath = path.join(tasksDir, existingPlan.filename);
+    const fullPath = existingPlan.filename; // filename already contains the full path
 
     // Read the current plan to preserve existing data
     const currentPlan = await readPlanFile(fullPath);
@@ -155,9 +155,20 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
     // Get new comments that aren't already in the plan
     const newComments = await selectNewComments(data, currentPlan.details || '');
 
+    // Check if anything needs to be updated
+    const titleChanged = currentPlan.title !== data.issue.title;
+    const rmfilterChanged = rmprOptions && rmprOptions.rmfilter && 
+      JSON.stringify(currentPlan.rmfilter) !== JSON.stringify(rmprOptions.rmfilter);
+    const hasNewComments = newComments.length > 0;
+    
+    if (!titleChanged && !rmfilterChanged && !hasNewComments) {
+      log(`No updates needed for plan ${currentPlan.id} - all content is already up to date.`);
+      return true;
+    }
+    
     // Build updated details
     let updatedDetails = currentPlan.details || '';
-    if (newComments.length > 0) {
+    if (hasNewComments) {
       // Append new comments to existing details
       updatedDetails = updatedDetails.trim();
       if (updatedDetails && !updatedDetails.endsWith('\n')) {
@@ -187,7 +198,13 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
 
     log(`Updated plan file: ${fullPath}`);
     log(`Plan ID: ${currentPlan.id}`);
-    if (newComments.length > 0) {
+    if (titleChanged) {
+      log(`Updated title from "${currentPlan.title}" to "${data.issue.title}"`);
+    }
+    if (rmfilterChanged) {
+      log(`Updated rmfilter options`);
+    }
+    if (hasNewComments) {
       log(`Added ${newComments.length} new comment(s) to the plan.`);
     }
 
