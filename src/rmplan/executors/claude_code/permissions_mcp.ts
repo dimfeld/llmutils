@@ -4,30 +4,29 @@
  * allowing or denying tool invocations based on user input.
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { confirm } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 
 // Define the schema for the permission prompt input
-export const PermissionInputSchema = {
-  tool_name: z.string(),
-  input: z.object({}).passthrough(),
-};
+export const PermissionInputSchema = z.object({
+  tool_name: z.string().describe('The tool requesting permission'),
+  input: z.object({}).passthrough().describe('The input for the tool'),
+});
 
-// Create the MCP server
-const server = new McpServer({
+// Create the FastMCP server
+const server = new FastMCP({
   name: 'permissions-server',
   version: '0.0.1',
 });
 
 // Define the approval prompt tool
-server.tool(
-  'approval_prompt',
-  'Prompts the user for permission to execute a tool',
-  PermissionInputSchema,
-  async ({ tool_name, input }) => {
+server.addTool({
+  name: 'approval_prompt',
+  description: 'Prompts the user for permission to execute a tool',
+  parameters: PermissionInputSchema,
+  execute: async ({ tool_name, input }) => {
     // Format the input as human-readable YAML
     const formattedInput = stringify(input);
 
@@ -55,11 +54,20 @@ server.tool(
         },
       ],
     };
-  }
-);
+  },
+});
 
 // Start the server if this file is run directly
 if (import.meta.main) {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const port = await server.start({
+    transportType: 'sse',
+    sse: {
+      port: 0, // Let the OS assign an available port
+    },
+  });
+
+  // Send the port number back to the parent process via IPC
+  if (process.send) {
+    process.send({ port });
+  }
 }
