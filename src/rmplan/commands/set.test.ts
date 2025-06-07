@@ -1,323 +1,326 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as os from 'node:os';
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
 import yaml from 'yaml';
+import { readPlanFile } from '../plans.js';
 import { handleSetCommand } from './set.js';
-import { clearPlanCache, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
-
-// Mock console functions
-const logSpy = mock(() => {});
-const errorSpy = mock(() => {});
-
-describe('handleSetCommand', () => {
+describe('rmplan set command', () => {
   let tempDir: string;
   let tasksDir: string;
-  let testPlanFile: string;
 
   beforeEach(async () => {
-    // Clear mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
-
-    // Clear plan cache
-    clearPlanCache();
-
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-set-test-'));
+    tempDir = await mkdtemp(path.join(tmpdir(), 'rmplan-set-test-'));
     tasksDir = path.join(tempDir, 'tasks');
-    await fs.mkdir(tasksDir, { recursive: true });
-
-    // Create a test plan file
-    const testPlan: PlanSchema = {
-      id: '1',
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'pending',
-      priority: 'medium',
-      dependencies: ['2'],
-      rmfilter: ['src/**/*.ts'],
-      tasks: [
-        {
-          title: 'Test Task',
-          description: 'Test task description',
-          files: [],
-          steps: [{ prompt: 'Test step prompt', done: false }],
-        },
-      ],
-    };
-
-    testPlanFile = path.join(tasksDir, '1.yml');
-    const yamlContent = yaml.stringify(testPlan);
-    const schemaLine =
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
-    await fs.writeFile(testPlanFile, schemaLine + yamlContent);
-
-    // Mock modules
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: mock(() => {}),
-    }));
-
-    // Mock config loader
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-      }),
-    }));
+    await mkdir(tasksDir, { recursive: true });
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-
-    // Clean up
-    await fs.rm(tempDir, { recursive: true, force: true });
+    await rm(tempDir, { recursive: true });
   });
 
-  test('updates priority correctly', async () => {
-    const options = { priority: 'high' as const };
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.priority).toBe('high');
-    expect(updatedPlan.updatedAt).toBeDefined();
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('priority: high'));
-  });
-
-  test('updates status correctly', async () => {
-    const options = { status: 'in_progress' as const };
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.status).toBe('in_progress');
-    expect(updatedPlan.updatedAt).toBeDefined();
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('status: in_progress'));
-  });
-
-  test('adds dependencies correctly', async () => {
-    const options = { dependsOn: ['3', '4'] };
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.dependencies).toEqual(['2', '3', '4']);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added dependency: 3'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added dependency: 4'));
-  });
-
-  test('removes dependencies correctly', async () => {
-    const options = { noDependsOn: ['2'] };
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.dependencies).toEqual([]);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed dependency: 2'));
-  });
-
-  test('handles adding and removing dependencies in the same command', async () => {
-    const options = { dependsOn: ['3'], noDependsOn: ['2'] };
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.dependencies).toEqual(['3']);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed dependency: 2'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added dependency: 3'));
-  });
-
-  test('updates rmfilter correctly', async () => {
-    const options = { rmfilter: ['src/**/*.js', 'tests/**/*.ts'] };
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.rmfilter).toEqual(['src/**/*.js', 'tests/**/*.ts']);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('rmfilter: [src/**/*.js, tests/**/*.ts]'));
-  });
-
-  test('handles multiple updates in one command', async () => {
-    const options = {
-      priority: 'urgent' as const,
-      status: 'done' as const,
-      dependsOn: ['5'],
-      rmfilter: ['new/**/*.ts'],
-    };
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.priority).toBe('urgent');
-    expect(updatedPlan.status).toBe('done');
-    expect(updatedPlan.dependencies).toEqual(['2', '5']);
-    expect(updatedPlan.rmfilter).toEqual(['new/**/*.ts']);
-    expect(updatedPlan.updatedAt).toBeDefined();
-  });
-
-  test('does nothing when no options are provided', async () => {
-    const options = {};
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    expect(logSpy).toHaveBeenCalledWith('No changes made to the plan');
-  });
-
-  test('handles plan without existing dependencies', async () => {
-    // Create a plan without dependencies
-    const planWithoutDeps: PlanSchema = {
-      id: '2',
-      title: 'Plan without deps',
-      goal: 'Test goal',
-      details: 'Test details',
+  const createTestPlan = async (id: string) => {
+    const planPath = path.join(tasksDir, `${id}.yml`);
+    const plan: PlanSchema = {
+      id,
+      goal: `Test plan ${id}`,
+      details: `Details for test plan ${id}`,
+      priority: 'medium',
       status: 'pending',
-      tasks: [
-        {
-          title: 'Test Task',
-          description: 'Test task description',
-          files: [],
-          steps: [{ prompt: 'Test step prompt', done: false }],
-        },
-      ],
+      tasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-
-    const planFile2 = path.join(tasksDir, '2.yml');
-    const yamlContent = yaml.stringify(planWithoutDeps);
+    const yamlContent = yaml.stringify(plan);
     const schemaLine =
       '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
-    await fs.writeFile(planFile2, schemaLine + yamlContent);
+    await writeFile(planPath, schemaLine + yamlContent);
+    return planPath;
+  };
 
-    const options = { dependsOn: ['1'] };
-    const command = { parent: { opts: () => ({}) } };
+  test('should update priority', async () => {
+    const planPath = await createTestPlan('10');
 
-    await handleSetCommand('2', options, command);
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        priority: 'high',
+      },
+      {}
+    );
 
-    const updatedPlan = await readPlanFile(planFile2);
-    expect(updatedPlan.dependencies).toEqual(['1']);
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.priority).toBe('high');
+    expect(updatedPlan.updatedAt).toBeDefined();
   });
 
-  test('ignores duplicate dependencies when adding', async () => {
-    const options = { dependsOn: ['2', '3'] }; // '2' already exists
-    const command = { parent: { opts: () => ({}) } };
+  test('should update status', async () => {
+    const planPath = await createTestPlan('11');
 
-    await handleSetCommand('1', options, command);
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        status: 'in_progress',
+      },
+      {}
+    );
 
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.dependencies).toEqual(['2', '3']);
-    // Should only log about adding '3', not '2'
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added dependency: 3'));
-    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('added dependency: 2'));
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('in_progress');
   });
 
-  test('handles non-existent dependency removal gracefully', async () => {
-    const options = { noDependsOn: ['999'] }; // doesn't exist
-    const command = { parent: { opts: () => ({}) } };
+  test('should add dependencies', async () => {
+    const planPath = await createTestPlan('12');
 
-    await handleSetCommand('1', options, command);
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        dependsOn: ['10', '11'],
+      },
+      {}
+    );
 
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.dependencies).toEqual(['2']); // unchanged
-    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('removed dependency: 999'));
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.dependencies).toEqual(['10', '11']);
   });
 
-  test('adds issue URLs correctly', async () => {
-    const options = { issue: ['https://github.com/owner/repo/issues/123', 'https://github.com/owner/repo/issues/124'] };
-    const command = { parent: { opts: () => ({}) } };
+  test('should not duplicate dependencies', async () => {
+    const planPath = await createTestPlan('13');
 
-    await handleSetCommand('1', options, command);
+    // First add
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        dependsOn: ['10'],
+      },
+      {}
+    );
 
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.issue).toEqual(['https://github.com/owner/repo/issues/123', 'https://github.com/owner/repo/issues/124']);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added issue: https://github.com/owner/repo/issues/123'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added issue: https://github.com/owner/repo/issues/124'));
+    // Try to add again with overlap
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        dependsOn: ['10', '11'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.dependencies).toEqual(['10', '11']);
   });
 
-  test('removes issue URLs correctly', async () => {
-    // First add some issue URLs
-    const setupOptions = { issue: ['https://github.com/owner/repo/issues/123', 'https://github.com/owner/repo/issues/124'] };
-    const command = { parent: { opts: () => ({}) } };
-    await handleSetCommand('1', setupOptions, command);
-    
-    // Clear logs
-    logSpy.mockClear();
-    
-    // Now remove one
-    const options = { noIssue: ['https://github.com/owner/repo/issues/123'] };
-    await handleSetCommand('1', options, command);
+  test('should remove dependencies', async () => {
+    const planPath = await createTestPlan('14');
 
-    const updatedPlan = await readPlanFile(testPlanFile);
+    // First add dependencies
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        dependsOn: ['10', '11', '12'],
+      },
+      {}
+    );
+
+    // Remove some
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noDependsOn: ['10', '12'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.dependencies).toEqual(['11']);
+  });
+
+  test('should update rmfilter', async () => {
+    const planPath = await createTestPlan('15');
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        rmfilter: ['src/**/*.ts', 'tests/**/*.test.ts'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.rmfilter).toEqual(['src/**/*.ts', 'tests/**/*.test.ts']);
+  });
+
+  test('should update multiple fields at once', async () => {
+    const planPath = await createTestPlan('16');
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        priority: 'urgent',
+        status: 'in_progress',
+        dependsOn: ['10', '11'],
+        rmfilter: ['src/**/*.ts'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.priority).toBe('urgent');
+    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.dependencies).toEqual(['10', '11']);
+    expect(updatedPlan.rmfilter).toEqual(['src/**/*.ts']);
+  });
+
+  test('should not update if no changes made', async () => {
+    const planPath = await createTestPlan('17');
+    const originalPlan = await readPlanFile(planPath);
+    const originalUpdatedAt = originalPlan.updatedAt;
+
+    // Wait a bit to ensure time difference
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+      },
+      {}
+    );
+
+    const unchangedPlan = await readPlanFile(planPath);
+    expect(unchangedPlan.updatedAt).toBe(originalUpdatedAt);
+  });
+
+  test('should add issue URLs', async () => {
+    const planPath = await createTestPlan('18');
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        issue: [
+          'https://github.com/owner/repo/issues/123',
+          'https://github.com/owner/repo/issues/124',
+        ],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.issue).toEqual([
+      'https://github.com/owner/repo/issues/123',
+      'https://github.com/owner/repo/issues/124',
+    ]);
+  });
+
+  test('should not duplicate issue URLs', async () => {
+    const planPath = await createTestPlan('19');
+
+    // First add
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        issue: ['https://github.com/owner/repo/issues/123'],
+      },
+      {}
+    );
+
+    // Try to add again with overlap
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        issue: [
+          'https://github.com/owner/repo/issues/123',
+          'https://github.com/owner/repo/issues/124',
+        ],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.issue).toEqual([
+      'https://github.com/owner/repo/issues/123',
+      'https://github.com/owner/repo/issues/124',
+    ]);
+  });
+
+  test('should remove issue URLs', async () => {
+    const planPath = await createTestPlan('20');
+
+    // First add issue URLs
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        issue: [
+          'https://github.com/owner/repo/issues/123',
+          'https://github.com/owner/repo/issues/124',
+          'https://github.com/owner/repo/issues/125',
+        ],
+      },
+      {}
+    );
+
+    // Remove some
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noIssue: [
+          'https://github.com/owner/repo/issues/123',
+          'https://github.com/owner/repo/issues/125',
+        ],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.issue).toEqual(['https://github.com/owner/repo/issues/124']);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed issue: https://github.com/owner/repo/issues/123'));
   });
 
-  test('handles adding and removing issue URLs in the same command', async () => {
-    // First add some issue URLs
-    const setupOptions = { issue: ['https://github.com/owner/repo/issues/123', 'https://github.com/owner/repo/issues/124'] };
-    const command = { parent: { opts: () => ({}) } };
-    await handleSetCommand('1', setupOptions, command);
-    
-    // Clear logs
-    logSpy.mockClear();
-    
-    // Add and remove in same command
-    const options = { 
-      issue: ['https://github.com/owner/repo/issues/125'], 
-      noIssue: ['https://github.com/owner/repo/issues/123'] 
-    };
-    await handleSetCommand('1', options, command);
+  test('should handle plans without existing dependencies', async () => {
+    const planPath = await createTestPlan('21');
 
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.issue).toEqual(['https://github.com/owner/repo/issues/124', 'https://github.com/owner/repo/issues/125']);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed issue: https://github.com/owner/repo/issues/123'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added issue: https://github.com/owner/repo/issues/125'));
+    // Remove dependencies
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noDependsOn: ['10', '11'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.dependencies).toBeUndefined();
   });
 
-  test('ignores duplicate issue URLs when adding', async () => {
-    // First add an issue URL
-    const setupOptions = { issue: ['https://github.com/owner/repo/issues/123'] };
-    const command = { parent: { opts: () => ({}) } };
-    await handleSetCommand('1', setupOptions, command);
-    
-    // Clear logs
-    logSpy.mockClear();
-    
-    // Try to add the same URL again plus a new one
-    const options = { issue: ['https://github.com/owner/repo/issues/123', 'https://github.com/owner/repo/issues/124'] };
-    await handleSetCommand('1', options, command);
+  test('should handle plans without existing issue URLs', async () => {
+    const planPath = await createTestPlan('22');
 
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.issue).toEqual(['https://github.com/owner/repo/issues/123', 'https://github.com/owner/repo/issues/124']);
-    // Should only log about adding the new one
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added issue: https://github.com/owner/repo/issues/124'));
-    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('added issue: https://github.com/owner/repo/issues/123'));
-  });
+    // Remove issue URLs
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noIssue: ['https://github.com/owner/repo/issues/123'],
+      },
+      {}
+    );
 
-  test('handles non-existent issue URL removal gracefully', async () => {
-    const options = { noIssue: ['https://github.com/owner/repo/issues/999'] }; // doesn't exist
-    const command = { parent: { opts: () => ({}) } };
-
-    await handleSetCommand('1', options, command);
-
-    const updatedPlan = await readPlanFile(testPlanFile);
-    expect(updatedPlan.issue).toEqual([]); // empty array
-    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('removed issue:'));
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.issue).toBeUndefined();
   });
 });

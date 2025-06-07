@@ -101,8 +101,8 @@ program
   .command('add <title...>')
   .description('Create a new plan stub file that can be filled with tasks using generate')
   .option('--edit', 'Open the newly created plan file in your editor')
-  .option('--depends-on <ids...>', 'Specify plan IDs that this plan depends on')
-  .option('--priority <level>', 'Set the priority level (low, medium, high, urgent)')
+  .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
+  .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
     await handleAddCommand(title, options, command).catch(handleCommandError);
@@ -310,27 +310,32 @@ program
 
 program
   .command('set <planFile>')
-  .description('Update plan properties like priority, status, dependencies, and rmfilter. Can be a file path or plan ID.')
-  .option('--priority <level>', 'Set the priority level', (value) => {
+  .description(
+    'Update plan properties like priority, status, dependencies, and rmfilter. Can be a file path or plan ID.'
+  )
+  .option('-p, --priority <level>', 'Set the priority level', (value) => {
     if (!['low', 'medium', 'high', 'urgent'].includes(value)) {
       throw new Error('Priority must be one of: low, medium, high, urgent');
     }
     return value;
   })
-  .option('--status <status>', 'Set the status', (value) => {
+  .option('-s, --status <status>', 'Set the status', (value) => {
     if (!['pending', 'in_progress', 'done', 'cancelled'].includes(value)) {
       throw new Error('Status must be one of: pending, in_progress, done, cancelled');
     }
     return value;
   })
-  .option('--depends-on <planIds...>', 'Add plan IDs as dependencies')
-  .option('--no-depends-on <planIds...>', 'Remove plan IDs from dependencies')
-  .option('--rmfilter <files...>', 'Set rmfilter files (comma-separated list or multiple arguments)')
-  .option('--issue <urls...>', 'Add GitHub issue URLs to the plan')
-  .option('--no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
+  .option('-d, --depends-on <planIds...>', 'Add plan IDs as dependencies')
+  .option('--no-d, --no-depends-on <planIds...>', 'Remove plan IDs from dependencies')
+  .option(
+    '--rmfilter <files...>',
+    'Set rmfilter files (comma-separated list or multiple arguments)'
+  )
+  .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
+  .option('--no-i, --no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
-    await handleSetCommand(planFile, options, command).catch(handleCommandError);
+    await handleSetCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
   });
 
 program
