@@ -73,17 +73,14 @@ export async function handleAddCommand(title: string[], options: any, command: a
     plan.dependencies = options.dependsOn;
   }
 
-  // Add priority if provided
-  if (options.priority) {
-    plan.priority = options.priority as 'low' | 'medium' | 'high' | 'urgent';
-  }
+  plan.priority = (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium';
 
   // Write the plan to the new file
   await writePlanFile(filePath, plan);
 
   // Log success message
-  log(chalk.green('\u2713 Created plan stub:'), filePath);
-  log(chalk.gray('  Next step: Use "rmplan generate" to add detailed tasks to this plan'));
+  log(chalk.green('\u2713 Created plan stub:'), filePath, 'for ID', chalk.green(planId));
+  log(chalk.gray(`  Next step: Use "rmplan generate --plan ${planId}" or "rmplan run ${planId}"`));
 
   // Open in editor if requested
   if (options.edit) {
