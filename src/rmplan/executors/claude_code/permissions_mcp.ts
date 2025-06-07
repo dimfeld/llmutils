@@ -61,18 +61,32 @@ server.addTool({
   },
 });
 
-// Start the server if this file is run directly
-if (import.meta.main) {
-  const port = await server.start({
-    transportType: 'httpStream',
-    httpStream: {
-      port: 0, // Let the OS assign an available port
-    },
+/** FastMCP has no way to listen on port "0" and get the actual port number back,
+ * so we do this instead which is prone to race conditions but should almost always work.
+ *
+ * A better solution would be nice but this is ok for now. */
+async function findFreePort(): Promise<number> {
+  const server = Bun.serve({
+    port: 0,
+    fetch: () => new Response('OK'),
   });
 
+  let port = server.port!;
+  await server.stop();
+  return port;
+}
+
+// Start the server if this file is run directly
+if (import.meta.main) {
+  const port = await findFreePort();
+  await server.start({
+    transportType: 'httpStream',
+    httpStream: {
+      port,
+    },
+  });
   // Send the port number back to the parent process via IPC
   if (process.send) {
-    console.log('MCP Permissions Servier Listening on port', port);
     process.send({ port });
   }
 }

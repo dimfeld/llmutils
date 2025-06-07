@@ -117,8 +117,8 @@ export class ClaudeCodeExecutor implements Executor {
       const portPromise = Promise.withResolvers<number>();
 
       // Spawn the MCP server process
-      mcpServerProcess = Bun.spawn(['bun', permissionsMcpPath], {
-        stdio: 'inherit',
+      mcpServerProcess = Bun.spawn([process.execPath, permissionsMcpPath], {
+        stdio: ['inherit', 'inherit', 'inherit'],
         ipc(message) {
           if (message && typeof message === 'object' && 'port' in message) {
             portPromise.resolve(message.port);
