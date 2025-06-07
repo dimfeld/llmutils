@@ -27,15 +27,16 @@ export function createExecutor(
 ) {
   const executor = executors.get(name);
   if (!executor) {
-    throw new Error(`Unknown executor: ${name}`);
-  }
-
-  if (!executor) {
     return { error: `Executor "${name}" not found.` };
   }
 
-  // This part needs enhancement to allow specifying executor options on the CLI.
-  const validationResult = executor.optionsSchema.safeParse(options);
+  // Retrieve executor-specific options from config if available
+  const configExecutorOptions = rmplanConfig.executors?.[name] ?? {};
+  // Merge provided options with config options (provided options take precedence)
+  const mergedOptions = { ...configExecutorOptions, ...options };
+
+  // Validate the merged options with the executor's schema
+  const validationResult = executor.optionsSchema.safeParse(mergedOptions);
   if (!validationResult.success) {
     return {
       error: `Executor "${executor.name}" has an options schema that could not be satisfied with default values. Complex options may need a dedicated --executor-options flag. Schema error:`,
@@ -57,7 +58,7 @@ export function buildExecutorAndLog(
 ) {
   const buildExecutorResult = createExecutor(
     executorName,
-    // TODO load options from the various config files and CLI
+    // TODO: Add support for CLI-provided executor options
     {},
     sharedOptions,
     config

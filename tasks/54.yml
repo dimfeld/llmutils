@@ -8,11 +8,11 @@ details: >
   Then whenever we run an executor we should use the options from the config
   file, if present.
 id: "54"
-status: pending
+status: done
 priority: high
 promptsGeneratedAt: 2025-06-07T20:54:53.686Z
 createdAt: 2025-06-07T08:57:54.404Z
-updatedAt: 2025-06-07T20:57:20.940Z
+updatedAt: 2025-06-07T20:59:47.716Z
 tasks:
   - title: Update Config Schema and Loader for Executor Options
     description: Add an `executors` key to the `rmplanConfigSchema` to hold
@@ -60,10 +60,10 @@ tasks:
           `name` from the `rmplanConfig.executors` object. These retrieved
           options should then be passed to `executor.optionsSchema.safeParse`
           for validation and used when instantiating the new executor.
-        done: false
+        done: true
       - prompt: |
           Create a new test file at `src/rmplan/executors/build.test.ts`.
-        done: false
+        done: true
       - prompt: >
           In the new `src/rmplan/executors/build.test.ts` file, write a test for
           the `createExecutor` function. In your test, mock an executor factory
@@ -72,10 +72,12 @@ tasks:
           options for your mocked executor. Call `createExecutor` and assert
           that the executor's constructor was called with the correctly parsed
           options from your mock config.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configLoader.ts
   - src/rmplan/configSchema.ts
+  - src/rmplan/executors/build.test.ts
+  - src/rmplan/executors/build.ts
 rmfilter:
   - src/rmplan
