@@ -159,6 +159,10 @@ export class ClaudeCodeExecutor implements Executor {
       let splitter = createLineSplitter();
 
       const result = await spawnAndLogOutput(args, {
+        env: {
+          ...process.env,
+          ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+        },
         cwd: await getGitRoot(),
         formatStdout: (output) => {
           let lines = splitter(output);
