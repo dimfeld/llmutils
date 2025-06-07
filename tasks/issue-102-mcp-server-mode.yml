@@ -19,8 +19,9 @@ details: |-
   Consider https://www.npmjs.com/package/fastmcp for the MCP server framework.
 id: 49
 status: pending
+priority: low
 issue:
   - https://github.com/dimfeld/llmutils/issues/102
 createdAt: 2025-06-07T02:05:24.730Z
-updatedAt: 2025-06-07T02:05:24.730Z
+updatedAt: 2025-06-07T07:26:21.250Z
 tasks: []

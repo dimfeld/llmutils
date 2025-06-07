@@ -15,8 +15,9 @@ details: >-
   Then go through the same yaml extract process and write the updated file back.
 id: 44
 status: pending
+priority: medium
 issue:
   - https://github.com/dimfeld/llmutils/issues/117
 createdAt: 2025-06-06T16:55:35.032Z
-updatedAt: 2025-06-06T16:55:35.032Z
+updatedAt: 2025-06-07T07:26:16.454Z
 tasks: []

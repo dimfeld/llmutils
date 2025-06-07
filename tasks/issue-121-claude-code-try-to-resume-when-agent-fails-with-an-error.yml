@@ -11,10 +11,11 @@ details: >-
   rmfilter: src/executors/claude_code.ts --with-imports
 id: 46
 status: pending
+priority: medium
 issue:
   - https://github.com/dimfeld/llmutils/issues/121
 createdAt: 2025-06-07T02:04:23.538Z
-updatedAt: 2025-06-07T02:04:23.538Z
+updatedAt: 2025-06-07T07:26:54.479Z
 tasks: []
 rmfilter:
   - --

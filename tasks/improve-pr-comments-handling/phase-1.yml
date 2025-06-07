@@ -14,13 +14,14 @@ details: >
   the system will need to use other information, such as the `diffHunk` content,
   for positioning, rather than falling back to `originalLine` fields.
 id: 28
+status: pending
+priority: high
+dependencies: []
 issue:
   - https://github.com/dimfeld/llmutils/issues/112
-status: pending
-dependencies: []
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-02T19:27:55.318Z
+updatedAt: 2025-06-07T07:26:41.495Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
