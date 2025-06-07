@@ -86,6 +86,17 @@ describe('handleImportCommand', () => {
   });
 
   test('should import a single issue when --issue flag is provided', async () => {
+    // Mock fetchIssueAndComments for single issue import
+    await moduleMocker.mock('../../common/github/issues.js', () => ({
+      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+      fetchIssueAndComments: mock(() =>
+        Promise.resolve({
+          issue: mockIssueData.issue,
+          comments: [],
+        })
+      ),
+    }));
+
     await handleImportCommand(undefined, { issue: '123' });
 
     const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
@@ -96,6 +107,24 @@ describe('handleImportCommand', () => {
   });
 
   test('should import a single issue when issue argument is provided', async () => {
+    // Mock fetchIssueAndComments for single issue import
+    await moduleMocker.mock('../../common/github/issues.js', () => ({
+      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+      fetchIssueAndComments: mock(() =>
+        Promise.resolve({
+          issue: mockIssueData.issue,
+          comments: [],
+        })
+      ),
+    }));
+
+    // Mock parsePrOrIssueNumber to return proper issue data
+    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
+      parsePrOrIssueNumber: mock(() =>
+        Promise.resolve({ owner: 'owner', repo: 'repo', number: 456 })
+      ),
+    }));
+
     await handleImportCommand('456');
 
     const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
@@ -141,7 +170,7 @@ describe('handleImportCommand', () => {
     expect(log).toHaveBeenCalledWith('No issues selected for import.');
   });
 
-  test('should mark already imported issues in interactive mode', async () => {
+  test('should exclude already imported issues in interactive mode', async () => {
     // Mock data where one issue is already imported
     const mockPlansWithImported = {
       plans: new Map([[1, { filename: '/test/imported-plan.yml' }]]),
@@ -195,11 +224,10 @@ describe('handleImportCommand', () => {
       'Found 3 open issues (1 already imported). Re-importing will update existing plans.'
     );
 
-    // Verify that all issues are presented, with already imported ones marked
+    // Verify that only non-imported issues are presented as choices
     expect(checkbox).toHaveBeenCalledWith({
       message: 'Select issues to import:',
       choices: [
-        { name: '#100: Issue 100 [ALREADY IMPORTED]', value: 100 },
         { name: '#101: Issue 101', value: 101 },
         { name: '#102: Issue 102', value: 102 },
       ],
@@ -216,6 +244,31 @@ describe('handleImportCommand', () => {
           { html_url: 'https://github.com/owner/repo/issues/101', title: 'Issue 101', number: 101 },
         ])
       ),
+      fetchIssueAndComments: mock(() =>
+        Promise.resolve({
+          issue: mockIssueData.issue,
+          comments: [],
+        })
+      ),
+    }));
+
+    // Mock parsePrOrIssueNumber to return proper issue data for both issues
+    let callCount = 0;
+    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
+      parsePrOrIssueNumber: mock(() => {
+        const issueNumbers = ['100', '101'];
+        const number = parseInt(issueNumbers[callCount++ % 2]);
+        return Promise.resolve({ owner: 'owner', repo: 'repo', number });
+      }),
+    }));
+
+    // Override the plans mock to include getImportedIssueUrls for this test
+    await moduleMocker.mock('../plans.js', () => ({
+      readAllPlans: mock(() => Promise.resolve(mockPlansResult)),
+      writePlanFile: mock(() => Promise.resolve()),
+      getMaxNumericPlanId: mock(() => Promise.resolve(5)),
+      readPlanFile: mock(() => Promise.resolve({ issue: [] })),
+      getImportedIssueUrls: mock(() => Promise.resolve(new Set())), // No imported issues
     }));
 
     // Mock the checkbox to return selected issues
@@ -245,6 +298,7 @@ describe('handleImportCommand', () => {
     expect(writePlanFile).toHaveBeenCalledTimes(2);
     expect(log).toHaveBeenCalledWith('Importing 2 selected issues...');
     expect(log).toHaveBeenCalledWith('Successfully imported 2 new issues.');
+    expect(log).toHaveBeenCalledWith('Use "rmplan generate" to add tasks to these plans.');
   });
 
   test('should update existing plan when re-importing an issue', async () => {
@@ -346,6 +400,17 @@ describe('handleImportCommand', () => {
   });
 
   test('should create stub plan file with correct metadata', async () => {
+    // Mock fetchIssueAndComments for single issue import
+    await moduleMocker.mock('../../common/github/issues.js', () => ({
+      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+      fetchIssueAndComments: mock(() =>
+        Promise.resolve({
+          issue: mockIssueData.issue,
+          comments: [],
+        })
+      ),
+    }));
+
     await handleImportCommand('123');
 
     const { writePlanFile } = await import('../plans.js');
