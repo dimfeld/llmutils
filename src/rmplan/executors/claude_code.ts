@@ -50,7 +50,10 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
-    let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
+    let { disallowedTools, allowAllTools, mcpConfigFile, interactive, enablePermissionsMcp } =
+      this.options;
+    const isPermissionsMcpEnabled =
+      enablePermissionsMcp === true || process.env.CLAUDE_CODE_MCP === 'true';
 
     allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
     // TODO Interactive mode needs some work. It's not taking the prompt right away
