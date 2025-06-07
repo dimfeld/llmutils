@@ -9,6 +9,8 @@ import {
   type RmprOptions,
 } from '../../rmpr/comment_options.ts';
 
+export type FetchedIssueAndComments = Awaited<ReturnType<typeof fetchIssueAndComments>>;
+
 export async function fetchIssueAndComments({
   owner,
   repo,
@@ -141,15 +143,20 @@ export async function selectIssueComments(
 /** Based on a Github issue number or URL, fetches the issue and its comments, parses RmprOptions,
  * and allows selecting which parts of the issue to include in the prompt. */
 export async function getInstructionsFromGithubIssue(
-  issueSpec: string,
+  issueSpec: string | FetchedIssueAndComments,
   includeTitleInDetails = true
 ) {
-  const issue = await parsePrOrIssueNumber(issueSpec);
-  if (!issue) {
-    throw new Error(`Invalid issue spec: ${issueSpec}`);
-  }
+  let data: FetchedIssueAndComments;
+  if (typeof issueSpec === 'string') {
+    const issue = await parsePrOrIssueNumber(issueSpec);
+    if (!issue) {
+      throw new Error(`Invalid issue spec: ${issueSpec}`);
+    }
 
-  const data = await fetchIssueAndComments(issue);
+    data = await fetchIssueAndComments(issue);
+  } else {
+    data = issueSpec;
+  }
 
   // Parse RmprOptions from issue body and comments
   let rmprOptions: RmprOptions | null = null;
@@ -173,7 +180,7 @@ export async function getInstructionsFromGithubIssue(
   const plan = selected.join('\n\n');
 
   const suggestedFileName =
-    `issue-${issue.number}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase();
+    `issue-${data.issue.number}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase();
 
   return {
     suggestedFileName,

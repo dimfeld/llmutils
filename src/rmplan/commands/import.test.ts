@@ -262,7 +262,9 @@ describe('handleImportCommand', () => {
     };
 
     const mockPlansWithExisting = {
-      plans: new Map([[3, { ...existingPlan, filename: '/test/git/root/tasks/issue-123-test-issue.yml' }]]),
+      plans: new Map([
+        [3, { ...existingPlan, filename: '/test/git/root/tasks/issue-123-test-issue.yml' }],
+      ]),
       maxNumericId: 5,
       duplicates: [],
     };
@@ -370,6 +372,7 @@ describe('handleImportCommand', () => {
     // Setup mock to return a plan with the same issue URL
     const mockExistingPlan: PlanSchema & { filename: string } = {
       id: 1,
+      title: 'Test Issue', // Same as mockIssueData so no title change
       goal: 'Existing plan',
       details: 'Existing details',
       issue: ['https://github.com/owner/repo/issues/123'], // Same URL as mockIssueData
@@ -427,10 +430,12 @@ describe('handleImportCommand', () => {
     const { writePlanFile } = await import('../plans.js');
     const { log } = await import('../../logging.js');
 
-    expect(writePlanFile).toHaveBeenCalled();
+    expect(writePlanFile).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(
       'Updating existing plan for issue: https://github.com/owner/repo/issues/123'
     );
-    expect(log).toHaveBeenCalledWith("No new comments found that aren't already in the plan.");
+    expect(log).toHaveBeenCalledWith(
+      'No updates needed for plan 1 - all content is already up to date.'
+    );
   });
 });

@@ -20,7 +20,7 @@ import {
 } from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getGitRoot } from '../../common/git.js';
-import { createStubPlanFromIssue } from '../issue_utils.js';
+import { createStubPlanFromIssue, type IssueInstructionData } from '../issue_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   parseCommandOptionsFromComment,
@@ -51,17 +51,21 @@ async function selectNewComments(
     value: string;
   }> = [];
 
-  // Check if the issue body is already in the details
+  // Check if the issue body is NOT already in the details
   if (data.issue.body && !existingDetails.includes(data.issue.body.trim())) {
     newComments.push({
-      name: singleLineWithPrefix('Body: ', data.issue.body.replaceAll(/\n+/g, '  '), LINE_PADDING),
-      checked: false,
+      name: singleLineWithPrefix(
+        'Issue Body: ',
+        data.issue.body.replaceAll(/\n+/g, '  '),
+        LINE_PADDING
+      ),
+      checked: true, // Default to checked since it's the main issue body
       description: limitLines(data.issue.body, MAX_HEIGHT),
       value: data.issue.body.trim(),
     });
   }
 
-  // Check each comment
+  // Only include comments that are NOT already in the details
   for (const comment of data.comments) {
     if (comment.body && !existingDetails.includes(comment.body.trim())) {
       const name = `${comment.user?.name ?? comment.user?.login}: `;
@@ -75,9 +79,10 @@ async function selectNewComments(
   }
 
   if (newComments.length === 0) {
-    log("No new comments found that aren't already in the plan.");
     return [];
   }
+
+  log(`Found ${newComments.length} new comment(s) not in the existing plan.`);
 
   const withIndex = newComments.map((item, i) => ({ ...item, value: i }));
 
@@ -104,12 +109,17 @@ async function selectNewComments(
 async function importSingleIssue(issueSpecifier: string, tasksDir: string): Promise<boolean> {
   log(`Importing issue: ${issueSpecifier}`);
 
-  // Get issue data using the existing helper function
-  const issueData = await getInstructionsFromGithubIssue(issueSpecifier, false);
+  // Fetch issue and comments directly to handle selective comment import
+  const issue = await parsePrOrIssueNumber(issueSpecifier);
+  if (!issue) {
+    throw new Error(`Invalid issue spec: ${issueSpecifier}`);
+  }
+
+  const data = await fetchIssueAndComments(issue);
+  const issueUrl = data.issue.html_url;
 
   // Check for existing plans
   const { plans } = await readAllPlans(tasksDir);
-  const issueUrl = issueData.issue.html_url;
 
   let existingPlan: (PlanSchema & { filename: string }) | undefined;
   for (const plan of plans.values()) {
@@ -126,14 +136,6 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
 
     // Read the current plan to preserve existing data
     const currentPlan = await readPlanFile(fullPath);
-
-    // Fetch issue and comments directly to handle selective comment import
-    const issue = await parsePrOrIssueNumber(issueSpecifier);
-    if (!issue) {
-      throw new Error(`Invalid issue spec: ${issueSpecifier}`);
-    }
-
-    const data = await fetchIssueAndComments(issue);
 
     // Parse RmprOptions from issue body and comments
     let rmprOptions: RmprOptions | null = null;
@@ -157,15 +159,17 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
 
     // Check if anything needs to be updated
     const titleChanged = currentPlan.title !== data.issue.title;
-    const rmfilterChanged = rmprOptions && rmprOptions.rmfilter && 
+    const rmfilterChanged =
+      rmprOptions &&
+      rmprOptions.rmfilter &&
       JSON.stringify(currentPlan.rmfilter) !== JSON.stringify(rmprOptions.rmfilter);
     const hasNewComments = newComments.length > 0;
-    
+
     if (!titleChanged && !rmfilterChanged && !hasNewComments) {
       log(`No updates needed for plan ${currentPlan.id} - all content is already up to date.`);
       return true;
     }
-    
+
     // Build updated details
     let updatedDetails = currentPlan.details || '';
     if (hasNewComments) {
@@ -210,6 +214,8 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
 
     return true;
   }
+
+  let issueData = await getInstructionsFromGithubIssue(issueSpecifier, false);
 
   // Get the next available numeric ID for new plans
   const maxId = await getMaxNumericPlanId(tasksDir);
