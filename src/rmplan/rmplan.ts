@@ -309,6 +309,31 @@ program
   });
 
 program
+  .command('set <planFile>')
+  .description('Update plan properties like priority, status, dependencies, and rmfilter. Can be a file path or plan ID.')
+  .option('--priority <level>', 'Set the priority level', (value) => {
+    if (!['low', 'medium', 'high', 'urgent'].includes(value)) {
+      throw new Error('Priority must be one of: low, medium, high, urgent');
+    }
+    return value;
+  })
+  .option('--status <status>', 'Set the status', (value) => {
+    if (!['pending', 'in_progress', 'done', 'cancelled'].includes(value)) {
+      throw new Error('Status must be one of: pending, in_progress, done, cancelled');
+    }
+    return value;
+  })
+  .option('--depends-on <planIds...>', 'Add plan IDs as dependencies')
+  .option('--no-depends-on <planIds...>', 'Remove plan IDs from dependencies')
+  .option('--rmfilter <files...>', 'Set rmfilter files (comma-separated list or multiple arguments)')
+  .option('--issue <urls...>', 'Add GitHub issue URLs to the plan')
+  .option('--no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
+  .action(async (planFile, options, command) => {
+    const { handleSetCommand } = await import('./commands/set.js');
+    await handleSetCommand(planFile, options, command).catch(handleCommandError);
+  });
+
+program
   .command('answer-pr [prIdentifier]')
   .description(
     'Address Pull Request (PR) review comments using an LLM. If no PR identifier is provided, it will try to detect the PR from the current branch.'
