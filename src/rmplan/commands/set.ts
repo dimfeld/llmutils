@@ -1,8 +1,7 @@
 import { log } from '../../logging.js';
 import { readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
+import type { Priority } from '../planSchema.js';
 
-type Priority = 'low' | 'medium' | 'high' | 'urgent' | 'maybe';
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled';
 
 export interface SetOptions {

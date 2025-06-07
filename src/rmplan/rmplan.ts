@@ -52,9 +52,9 @@ program.option(
 program.option('--debug', 'Enable debug logging', () => setDebug(true));
 
 program
-  .command('generate')
+  .command('generate [plan]')
   .description('Generate planning prompt and context for a task')
-  .option('--plan <file>', 'Plan text file to use')
+  .option('--plan <plan>', 'Plan to use')
   .option('--plan-editor', 'Open plan in editor')
   .option('--issue <url|number>', 'Issue URL or number to use for the plan text')
   .option(
@@ -70,9 +70,9 @@ program
   .option('--commit', 'Commit changes to jj/git after successful plan generation')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
-  .action(async (options, command) => {
+  .action(async (planArg, options, command) => {
     const { handleGenerateCommand } = await import('./commands/generate.js');
-    await handleGenerateCommand(options, command).catch(handleCommandError);
+    await handleGenerateCommand(planArg, options, command).catch(handleCommandError);
   });
 
 program

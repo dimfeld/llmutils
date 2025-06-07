@@ -27,7 +27,11 @@ import {
 } from '../process_markdown.ts';
 import { planPrompt, simplePlanPrompt } from '../prompt.js';
 
-export async function handleGenerateCommand(options: any, command: any) {
+export async function handleGenerateCommand(
+  planArg: string | undefined,
+  options: any,
+  command: any
+) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const gitRoot = (await getGitRoot()) || process.cwd();
@@ -36,7 +40,7 @@ export async function handleGenerateCommand(options: any, command: any) {
   const doubleDashIdx = process.argv.indexOf('--');
   const userCliRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
 
-  let planOptionsSet = [options.plan, options.planEditor, options.issue].reduce(
+  let planOptionsSet = [planArg, options.plan, options.planEditor, options.issue].reduce(
     (acc, val) => acc + (val ? 1 : 0),
     0
   );
@@ -44,8 +48,12 @@ export async function handleGenerateCommand(options: any, command: any) {
   // Manual conflict check for --plan and --plan-editor
   if (planOptionsSet !== 1) {
     throw new Error(
-      'You must provide one and only one of --plan <file>, --plan-editor, or --issue <url|number>'
+      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, or --issue <url|number>'
     );
+  }
+
+  if (planArg) {
+    options.plan = planArg;
   }
 
   let planText: string | undefined;
@@ -184,23 +192,23 @@ export async function handleGenerateCommand(options: any, command: any) {
   }
 
   // Special handling for stub YAML plans
-  let stubPlanData: PlanSchema | null = null;
+  let stubPlan: { data: PlanSchema; path: string } | undefined;
   if (options.plan && planFile && planText === null) {
     // We detected a stub plan earlier, now we need to load it properly
     try {
       const fileContent = await Bun.file(planFile).text();
       const yamlContent = findYamlStart(fileContent);
-      stubPlanData = yaml.parse(yamlContent) as PlanSchema;
+      stubPlan = { data: yaml.parse(yamlContent) as PlanSchema, path: planFile };
 
-      const { goal, details } = stubPlanData;
+      const { goal, details } = stubPlan.data;
       if (!goal && !details) {
         throw new Error('Stub plan must have at least a goal or details to generate tasks.');
       }
 
       // Construct planText from stub's title, goal, and details
       const planParts: string[] = [];
-      if (stubPlanData.title) {
-        planParts.push(`# ${stubPlanData.title}`);
+      if (stubPlan.data.title) {
+        planParts.push(`# ${stubPlan.data.title}`);
       }
       if (goal) {
         planParts.push(`\n## Goal\n${goal}`);
@@ -273,7 +281,7 @@ export async function handleGenerateCommand(options: any, command: any) {
 
     // Combine user CLI args and issue rmpr options
     const allRmfilterOptions: string[] = [];
-    for (const argList of [userCliRmfilterArgs, issueRmfilterOptions, stubPlanData?.rmfilter]) {
+    for (const argList of [userCliRmfilterArgs, issueRmfilterOptions, stubPlan?.data?.rmfilter]) {
       if (!argList?.length) continue;
       // Add a separator if some options already exist
       if (allRmfilterOptions.length) allRmfilterOptions.push('--');
@@ -297,8 +305,8 @@ export async function handleGenerateCommand(options: any, command: any) {
     } else {
       // Collect docs from stub plan
       const docsArgs: string[] = [];
-      if (stubPlanData?.docs) {
-        stubPlanData.docs.forEach((doc) => {
+      if (stubPlan?.data?.docs) {
+        stubPlan?.data.docs.forEach((doc) => {
           docsArgs.push('--docs', doc);
         });
       }
@@ -348,39 +356,11 @@ export async function handleGenerateCommand(options: any, command: any) {
         output: outputPath,
         planRmfilterArgs: allRmfilterOptions,
         issueUrls: issueUrlsForExtract,
-        stubPlanData: stubPlanData || undefined,
+        stubPlan,
         commit: options.commit,
       };
 
-      const result = await extractMarkdownToYaml(
-        input,
-        config,
-        options.quiet ?? false,
-        extractOptions
-      );
-
-      // If we generated from a stub plan, handle file cleanup
-      if (stubPlanData && planFile) {
-        // Check if the result indicates multiple files were created
-        const isMultiPhase = result.includes('phase files');
-
-        if (isMultiPhase) {
-          // Multiple phase files were created in a subdirectory, remove the original stub
-          try {
-            await fs.unlink(planFile);
-            if (!options.quiet) {
-              log(chalk.blue('✓ Removed original stub plan file:', planFile));
-            }
-          } catch (err) {
-            warn(`Failed to remove original stub plan: ${err as Error}`);
-          }
-        } else {
-          // Single file was created, it should have overwritten the original
-          if (!options.quiet) {
-            log(chalk.blue('✓ Updated plan file in place:', outputPath));
-          }
-        }
-      }
+      await extractMarkdownToYaml(input, config, options.quiet ?? false, extractOptions);
     }
   } finally {
     if (wrotePrompt) {

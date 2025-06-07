@@ -964,15 +964,10 @@ export async function preparePhase(
     } catch (err) {
       // Save raw LLM output for debugging
       const errorFilePath = phaseYamlFile.replace('.yaml', '.llm_error.txt');
-      const partialErrorPath = phaseYamlFile.replace('.yaml', '.partial_error.yaml');
 
       try {
         await Bun.write(errorFilePath, text);
         error('Failed to parse LLM output. Raw output saved to:', errorFilePath);
-
-        // Save the current phase YAML state before any modifications
-        await writePlanFile(partialErrorPath, currentPhaseData);
-        error('Current phase state saved to:', partialErrorPath);
       } catch (saveErr) {
         error('Failed to save error files:', saveErr);
       }
