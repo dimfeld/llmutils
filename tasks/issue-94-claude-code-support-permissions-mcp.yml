@@ -9,7 +9,7 @@ details: >-
   The permissions prompt should print the tool_name and input as YAML, and then
   use an inquirer confirm prompt to ask the user if they want to allow the tool.
 id: 50
-status: pending
+status: done
 priority: medium
 container: true
 dependencies:
@@ -20,7 +20,7 @@ issue:
 docs:
   - docs/tutorials/claude-permissions-mcp.md
 createdAt: 2025-06-07T02:05:26.354Z
-updatedAt: 2025-06-07T02:05:26.354Z
+updatedAt: 2025-06-07T22:31:30.272Z
 tasks: []
 rmfilter:
   - src/rmplan/executors/claude_code.ts
