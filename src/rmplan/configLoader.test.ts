@@ -309,6 +309,64 @@ autoexamples:
       expect(config.models?.execution).toBe('claude-3-sonnet'); // from main
       expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
     });
+
+    test('loadEffectiveConfig merges executors field correctly', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+defaultExecutor: direct-call
+executors:
+  "claude-code":
+    apiKey: "main-key"
+    model: "claude-3-sonnet"
+    maxTokens: 4000
+  "copy-only":
+    includeHeaders: true
+    outputFormat: "markdown"
+`
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        `
+executors:
+  "claude-code":
+    model: "claude-3-opus"
+    temperature: 0.7
+  "one-shot":
+    attempts: 3
+    timeout: 30000
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Check that executors are properly merged
+      expect(config.executors).toBeDefined();
+
+      // claude-code should have merged options from both configs
+      expect(config.executors?.['claude-code']).toEqual({
+        apiKey: 'main-key', // from main
+        model: 'claude-3-opus', // from local (overrides main)
+        maxTokens: 4000, // from main
+        temperature: 0.7, // from local
+      });
+
+      // copy-only should only have options from main
+      expect(config.executors?.['copy-only']).toEqual({
+        includeHeaders: true,
+        outputFormat: 'markdown',
+      });
+
+      // one-shot should only have options from local
+      expect(config.executors?.['one-shot']).toEqual({
+        attempts: 3,
+        timeout: 30000,
+      });
+    });
   });
 
   describe('config with workspaceCreation configurations', () => {

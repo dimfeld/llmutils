@@ -104,6 +104,8 @@ export const rmplanConfigSchema = z
     defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
+    /** Executor-specific options mapped by executor name */
+    executors: z.record(z.string(), z.any()).optional(),
   })
   .describe('Repository-level configuration for rmplan');
 

@@ -51,6 +51,35 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
     };
   }
 
+  // Handle executors: deep merge objects
+  if (localConfig.executors !== undefined) {
+    if (mainConfig.executors && localConfig.executors) {
+      // Deep merge executor options
+      const mergedExecutors: Record<string, any> = { ...mainConfig.executors };
+
+      for (const [executorName, localOptions] of Object.entries(localConfig.executors)) {
+        if (
+          mergedExecutors[executorName] &&
+          typeof localOptions === 'object' &&
+          !Array.isArray(localOptions)
+        ) {
+          // If the executor exists in main config and local options is an object, merge them
+          mergedExecutors[executorName] = {
+            ...mergedExecutors[executorName],
+            ...localOptions,
+          };
+        } else {
+          // Otherwise, use the local config value directly
+          mergedExecutors[executorName] = localOptions;
+        }
+      }
+
+      merged.executors = mergedExecutors;
+    } else {
+      merged.executors = localConfig.executors;
+    }
+  }
+
   return merged;
 }
 

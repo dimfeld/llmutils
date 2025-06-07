@@ -148,6 +148,7 @@ export interface PhaseGenerationContext {
   overallProjectGoal: string;
   overallProjectDetails: string;
   overallProjectTitle?: string; // Optional project title
+  currentPhaseTitle?: string;
   currentPhaseGoal: string;
   currentPhaseDetails: string;
   currentPhaseTasks: Array<{ title: string; description: string }>; // Tasks from the current phase YAML (before step generation)
@@ -330,7 +331,7 @@ ${projectContextSection}${previousPhasesSection}
 
 ## Current Phase Details
 
-**Phase Goal:** ${context.currentPhaseGoal}
+**Phase Goal:** ${context.currentPhaseGoal || context.currentPhaseTitle}
 
 **Phase Details:** ${context.currentPhaseDetails}
 
@@ -342,7 +343,7 @@ ${tasksSection}
 
 For each task listed above, you need to generate:
 1. **files**: The specific files that need to be created or modified for this task
-4. **steps**: Implementation steps -- each step should be a prompt a few sentences long
+2. **steps**: Implementation steps -- each step should be a prompt a few sentences long
 
 ### Guidelines:
 

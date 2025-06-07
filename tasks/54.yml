@@ -1,10 +1,81 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Support executor options in rmplan config file
 goal: ""
-details: ""
+details: >
+  Add an `executors` key ot the plan schema and allow placing each executor's
+  options under that.
+
+  Then whenever we run an executor we should use the options from the config
+  file, if present.
 id: "54"
 status: pending
 priority: high
+promptsGeneratedAt: 2025-06-07T20:54:53.686Z
 createdAt: 2025-06-07T08:57:54.404Z
-updatedAt: 2025-06-07T08:57:54.404Z
-tasks: []
+updatedAt: 2025-06-07T20:57:20.940Z
+tasks:
+  - title: Update Config Schema and Loader for Executor Options
+    description: Add an `executors` key to the `rmplanConfigSchema` to hold
+      executor-specific options. Then, update the config loader to correctly
+      merge these options from main and local config files.
+    files:
+      - src/rmplan/configSchema.ts
+      - src/rmplan/configLoader.ts
+      - src/rmplan/configLoader.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/configSchema.ts`, modify the `rmplanConfigSchema`
+          object. Add a new optional field named `executors`. This field should
+          be a Zod record that maps string keys (executor names) to any value,
+          using `z.record(z.string(), z.any())`. This will allow storing
+          arbitrary option objects for each executor.
+        done: true
+      - prompt: >
+          In `src/rmplan/configLoader.ts`, update the `mergeConfigs` function to
+          handle the new `executors` field. It should perform a deep merge where
+          options for the same executor from the local config are merged on top
+          of those from the main config. For each executor key, the properties
+          from the local options object should overwrite the properties from the
+          main options object.
+        done: true
+      - prompt: >
+          In `src/rmplan/configLoader.test.ts`, add a new test case for
+          `loadEffectiveConfig` to verify the merging of the `executors` key.
+          The test should create a main and a local config file, each defining
+          options for the same and different executors. Assert that the final
+          loaded config contains the correctly merged options, demonstrating
+          that local options override main options for the same executor and
+          that options for different executors are combined.
+        done: true
+  - title: Pass Executor-Specific Options During Instantiation
+    description: Update the executor creation logic to retrieve and use the options
+      defined in the `executors` section of the `rmplan.yml` configuration file.
+    files:
+      - src/rmplan/executors/build.ts
+      - src/rmplan/executors/build.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/executors/build.ts`, modify the `createExecutor`
+          function. It should retrieve the options for the specified executor
+          `name` from the `rmplanConfig.executors` object. These retrieved
+          options should then be passed to `executor.optionsSchema.safeParse`
+          for validation and used when instantiating the new executor.
+        done: false
+      - prompt: |
+          Create a new test file at `src/rmplan/executors/build.test.ts`.
+        done: false
+      - prompt: >
+          In the new `src/rmplan/executors/build.test.ts` file, write a test for
+          the `createExecutor` function. In your test, mock an executor factory
+          (e.g., `CopyPasteExecutor`) and its constructor. Provide a mock
+          `RmplanConfig` object that includes an `executors` section with
+          options for your mocked executor. Call `createExecutor` and assert
+          that the executor's constructor was called with the correctly parsed
+          options from your mock config.
+        done: false
+changedFiles:
+  - src/rmplan/configLoader.test.ts
+  - src/rmplan/configLoader.ts
+  - src/rmplan/configSchema.ts
+rmfilter:
+  - src/rmplan

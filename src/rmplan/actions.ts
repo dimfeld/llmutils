@@ -1123,6 +1123,7 @@ async function gatherPhaseGenerationContext(
       overallProjectGoal,
       overallProjectDetails,
       overallProjectTitle: overallProjectTitle || undefined,
+      currentPhaseTitle: currentPhaseData.title,
       currentPhaseGoal: currentPhaseData.goal,
       currentPhaseDetails: currentPhaseData.details,
       currentPhaseTasks: currentPhaseData.tasks.map((task) => ({
