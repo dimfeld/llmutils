@@ -212,7 +212,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const planData = await readPlanFile(currentPlanFile);
 
   // Check if prompts have been generated
-  const needsPreparation = planData.tasks.every((task) => task.steps?.length);
+  const needsPreparation =
+    !planData.tasks.length || planData.tasks.some((task) => !task.steps?.length);
 
   if (needsPreparation) {
     let shouldGenerateSteps = true; // Default behavior
