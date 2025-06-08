@@ -978,7 +978,7 @@ And more content here.`;
     expect(plan.dependencies).toEqual([1, 2]);
     expect(plan.tasks).toHaveLength(1);
     expect(plan.tasks![0].title).toBe('Task 1');
-    
+
     // The markdown body should be placed in the details field
     expect(plan.details).toContain('# Implementation Details');
     expect(plan.details).toContain('This is the markdown body');
@@ -1002,10 +1002,10 @@ And more content here.`;
           files: ['src/legacy.ts'],
           steps: [
             { prompt: 'Legacy step 1', done: true },
-            { prompt: 'Legacy step 2', done: false }
-          ]
-        }
-      ]
+            { prompt: 'Legacy step 2', done: false },
+          ],
+        },
+      ],
     };
 
     // Write as pure YAML (old format)

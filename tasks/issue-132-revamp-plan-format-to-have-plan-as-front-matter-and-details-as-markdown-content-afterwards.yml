@@ -19,7 +19,7 @@ issue:
 planGeneratedAt: 2025-06-08T22:44:30.655Z
 promptsGeneratedAt: 2025-06-08T22:49:16.234Z
 createdAt: 2025-06-08T22:37:44.631Z
-updatedAt: 2025-06-08T22:49:16.242Z
+updatedAt: 2025-06-08T22:58:57.848Z
 project:
   title: Revamp plan format to have plan as front matter and details as markdown
     content afterwards
@@ -74,7 +74,7 @@ tasks:
           `PlanSchema` object contains the front matter data and that the
           Markdown body is correctly placed in the `details` field. This test
           will initially fail.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/plans.ts`, modify the `readPlanFile` function to handle
           YAML front matter. The function should check if the file content
@@ -84,7 +84,7 @@ tasks:
           the resulting plan object. If the file does not contain front matter,
           it should be parsed as a single YAML document to maintain backward
           compatibility.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/plans.test.ts`, add another test within the new
           `describe` block to ensure backward compatibility. This test should
@@ -92,7 +92,7 @@ tasks:
           including a `details` key. Verify that `readPlanFile` still parses
           this file correctly and that the `details` field is populated from the
           YAML.
-        done: false
+        done: true
   - title: Update `writePlanFile` to save plans in the new front matter format
     description: Modify the `writePlanFile` function in `src/rmplan/plans.ts`. This
       function will now take a `PlanSchema` object, extract the `details` string
@@ -179,6 +179,9 @@ tasks:
           format and that its body contains the combined details from the
           original file.
         done: false
+changedFiles:
+  - src/rmplan/plans.test.ts
+  - src/rmplan/plans.ts
 rmfilter:
   - src/rmplan/plans.ts
   - --with-imports

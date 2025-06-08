@@ -464,7 +464,7 @@ export async function collectDependenciesInOrder(
 export async function readPlanFile(filePath: string): Promise<PlanSchema> {
   const absolutePath = resolve(filePath);
   const content = await Bun.file(absolutePath).text();
-  
+
   let parsed: any;
   let markdownBody: string | undefined;
 
@@ -472,12 +472,12 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
   if (content.startsWith('---\n')) {
     // Find the closing delimiter for front matter
     const endDelimiterIndex = content.indexOf('\n---\n', 4);
-    
+
     if (endDelimiterIndex !== -1) {
       // Extract front matter and body
       const frontMatter = content.substring(4, endDelimiterIndex);
       markdownBody = content.substring(endDelimiterIndex + 5).trim();
-      
+
       // Parse the front matter as YAML
       parsed = yaml.parse(frontMatter);
     } else {
