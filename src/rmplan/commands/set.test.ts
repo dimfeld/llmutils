@@ -86,7 +86,7 @@ describe('rmplan set command', () => {
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.dependencies).toEqual(['10', '11']);
+    expect(updatedPlan.dependencies).toEqual([10, 11]);
   });
 
   test('should not duplicate dependencies', async () => {
@@ -113,7 +113,7 @@ describe('rmplan set command', () => {
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.dependencies).toEqual(['10', '11']);
+    expect(updatedPlan.dependencies).toEqual([10, 11]);
   });
 
   test('should remove dependencies', async () => {
@@ -140,7 +140,7 @@ describe('rmplan set command', () => {
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.dependencies).toEqual(['11']);
+    expect(updatedPlan.dependencies).toEqual([11]);
   });
 
   test('should update rmfilter', async () => {
@@ -177,7 +177,7 @@ describe('rmplan set command', () => {
     const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.priority).toBe('urgent');
     expect(updatedPlan.status).toBe('in_progress');
-    expect(updatedPlan.dependencies).toEqual(['10', '11']);
+    expect(updatedPlan.dependencies).toEqual([10, 11]);
     expect(updatedPlan.rmfilter).toEqual(['src/**/*.ts']);
   });
 

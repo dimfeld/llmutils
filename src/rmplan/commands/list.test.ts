@@ -508,7 +508,7 @@ describe('handleListCommand', () => {
         goal: 'Test dependencies',
         details: 'Details',
         status: 'pending',
-        dependencies: ['1', '2', '3', 'non-existent'],
+        dependencies: [1, 2, 3, 999], // 999 is non-existent
         tasks: [
           {
             title: 'Task 1',
@@ -547,11 +547,11 @@ describe('handleListCommand', () => {
     // - 1✓ (done)
     // - 2… (in_progress)
     // - 3 (pending)
-    // - non-existent(?) (not found)
+    // - 999(?) (not found)
     expect(depsColumn).toContain('1✓');
     expect(depsColumn).toContain('2…');
     expect(depsColumn).toContain('3');
-    expect(depsColumn).toContain('non-existent(?)');
+    expect(depsColumn).toContain('999(?)');
   });
 
   test('filters plans by search terms', async () => {
@@ -561,7 +561,7 @@ describe('handleListCommand', () => {
 
     // Create test plans with various titles
     const plan1 = {
-      id: '1',
+      id: 1,
       title: 'Implement user authentication',
       goal: 'Add user authentication',
       details: 'Implement basic authentication system',
@@ -569,7 +569,7 @@ describe('handleListCommand', () => {
       tasks: [],
     };
     const plan2 = {
-      id: '2',
+      id: 2,
       title: 'Add OAuth integration',
       goal: 'Integrate OAuth providers',
       details: 'Add support for OAuth authentication',
@@ -577,7 +577,7 @@ describe('handleListCommand', () => {
       tasks: [],
     };
     const plan3 = {
-      id: '3',
+      id: 3,
       title: 'Fix authentication bug',
       goal: 'Fix auth bug',
       details: 'Resolve authentication-related issues',
@@ -585,7 +585,7 @@ describe('handleListCommand', () => {
       tasks: [],
     };
     const plan4 = {
-      id: '4',
+      id: 4,
       title: 'Update database schema',
       goal: 'Update DB schema',
       details: 'Modify database schema for new features',
@@ -593,10 +593,10 @@ describe('handleListCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, 'plan1.yml'), yaml.stringify(plan1));
-    await fs.writeFile(path.join(tasksDir, 'plan2.yml'), yaml.stringify(plan2));
-    await fs.writeFile(path.join(tasksDir, 'plan3.yml'), yaml.stringify(plan3));
-    await fs.writeFile(path.join(tasksDir, 'plan4.yml'), yaml.stringify(plan4));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan1));
+    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(plan2));
+    await fs.writeFile(path.join(tasksDir, '3.yml'), yaml.stringify(plan3));
+    await fs.writeFile(path.join(tasksDir, '4.yml'), yaml.stringify(plan4));
 
     const options = {};
     const command = {
@@ -636,7 +636,7 @@ describe('handleListCommand', () => {
     mockTable.mockClear();
 
     const plan1 = {
-      id: '1',
+      id: 1,
       title: 'Implement USER Authentication',
       goal: 'Add user authentication',
       details: 'Implement authentication system',
@@ -644,7 +644,7 @@ describe('handleListCommand', () => {
       tasks: [],
     };
     const plan2 = {
-      id: '2',
+      id: 2,
       title: 'Add user profile',
       goal: 'User profile feature',
       details: 'Add user profile functionality',
@@ -652,8 +652,8 @@ describe('handleListCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, 'plan1.yml'), yaml.stringify(plan1));
-    await fs.writeFile(path.join(tasksDir, 'plan2.yml'), yaml.stringify(plan2));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan1));
+    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(plan2));
 
     const options = {};
     const command = {
@@ -684,7 +684,7 @@ describe('handleListCommand', () => {
     mockTable.mockClear();
 
     const plan1 = {
-      id: '1',
+      id: 1,
       title: 'Implement database migration',
       goal: 'Database migration',
       details: 'Implement database migration system',
@@ -692,7 +692,7 @@ describe('handleListCommand', () => {
       tasks: [],
     };
     const plan2 = {
-      id: '2',
+      id: 2,
       title: 'Add user authentication',
       goal: 'User authentication',
       details: 'Add authentication functionality',
@@ -700,7 +700,7 @@ describe('handleListCommand', () => {
       tasks: [],
     };
     const plan3 = {
-      id: '3',
+      id: 3,
       title: 'Fix CSS bug',
       goal: 'CSS bug fix',
       details: 'Fix styling issues',
@@ -708,9 +708,9 @@ describe('handleListCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, 'plan1.yml'), yaml.stringify(plan1));
-    await fs.writeFile(path.join(tasksDir, 'plan2.yml'), yaml.stringify(plan2));
-    await fs.writeFile(path.join(tasksDir, 'plan3.yml'), yaml.stringify(plan3));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan1));
+    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(plan2));
+    await fs.writeFile(path.join(tasksDir, '3.yml'), yaml.stringify(plan3));
 
     const options = {};
     const command = {
@@ -755,12 +755,12 @@ describe('handleListCommand', () => {
         ],
       },
       {
-        id: 'main',
+        id: 11,
         title: 'Main Plan',
         goal: 'Test numeric string dependencies',
         details: 'Details',
         status: 'pending',
-        dependencies: ['10'], // String reference to numeric ID
+        dependencies: [10], // Numeric reference to numeric ID
         tasks: [
           {
             title: 'Task 1',
@@ -791,7 +791,7 @@ describe('handleListCommand', () => {
     const tableData = mockTable.mock.calls[0][0];
 
     // Find the main plan row
-    const mainPlanRow = tableData.find((row) => row[0] === 'main');
+    const mainPlanRow = tableData.find((row) => row[0] === 11);
     expect(mainPlanRow).toBeTruthy();
 
     // Check that the dependency is found and shows as done

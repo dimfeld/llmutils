@@ -4,6 +4,7 @@ import { quiet } from '../common/process.js';
 import { getGitRoot } from '../common/git.js'; // Assuming logging exists
 import { debugLog, error, log, warn } from '../logging.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
+import { DEFAULT_EXECUTOR } from './constants.js';
 
 /**
  * Deeply merges two RmplanConfig objects, with localConfig overriding mainConfig.
@@ -171,7 +172,14 @@ export async function loadConfig(configPath: string | null): Promise<RmplanConfi
   }
 
   debugLog(`Successfully loaded and validated configuration from ${configPath}`);
-  return result.data;
+  
+  // Ensure defaultExecutor is set if not provided in config
+  const config = result.data;
+  if (config.defaultExecutor === undefined) {
+    config.defaultExecutor = DEFAULT_EXECUTOR;
+  }
+  
+  return config;
 }
 
 /**
