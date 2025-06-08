@@ -4,7 +4,7 @@
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
-import { error, log } from '../../logging.js';
+import { log } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { generateNumericPlanId } from '../id_utils.js';
@@ -58,7 +58,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   // Create the initial plan object adhering to PlanSchema
   const plan: PlanSchema = {
-    id: planId.toString(),
+    id: planId,
     title: planTitle,
     goal: '',
     details: '',

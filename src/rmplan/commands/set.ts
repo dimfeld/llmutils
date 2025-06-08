@@ -8,8 +8,8 @@ export interface SetOptions {
   planFile: string;
   priority?: Priority;
   status?: Status;
-  dependsOn?: string[];
-  noDependsOn?: string[];
+  dependsOn?: number[];
+  noDependsOn?: number[];
   rmfilter?: string[];
   issue?: string[];
   noIssue?: string[];

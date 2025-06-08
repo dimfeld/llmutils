@@ -215,10 +215,9 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
   const { plans, duplicates } = await readAllPlans(tasksDir);
 
   // Check if the requested plan ID is a duplicate
-  const planId = !isNaN(numericPlanArg) ? numericPlanArg : planArg;
-  if (duplicates.includes(planId)) {
+  if (duplicates.includes(numericPlanArg)) {
     throw new Error(
-      `Plan ID ${planId} is duplicated in multiple files. Please run 'rmplan renumber' to fix this issue.`
+      `Plan ID ${numericPlanArg} is duplicated in multiple files. Please run 'rmplan renumber' to fix this issue.`
     );
   }
 
@@ -228,12 +227,6 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
     if (matchingPlan) {
       return matchingPlan.filename;
     }
-  }
-
-  // Try string lookup (for both string IDs and numeric string IDs that weren't found above)
-  const matchingPlan = plans.get(planArg);
-  if (matchingPlan) {
-    return matchingPlan.filename;
   }
 
   throw new Error(`No plan found with ID or file path: ${planArg}`);

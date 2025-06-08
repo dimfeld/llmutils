@@ -101,7 +101,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       newPlanIds.push(newPlanId);
 
       // Add dependency on the previously created plan (except for the first one)
-      const dependencies = i > 0 ? [newPlanIds[i - 1].toString()] : [];
+      const dependencies = i > 0 ? [newPlanIds[i - 1]] : [];
 
       const newPlan: PlanSchema = {
         id: newPlanId,
@@ -155,7 +155,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     const updatedDependencies = [...(originalPlan.dependencies || [])];
     // Add all new plan IDs to dependencies
     for (const newPlanId of newPlanIds) {
-      updatedDependencies.push(newPlanId.toString());
+      updatedDependencies.push(newPlanId);
     }
 
     const updatedOriginalPlan: PlanSchema = {
