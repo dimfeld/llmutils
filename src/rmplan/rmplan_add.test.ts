@@ -53,7 +53,7 @@ describe('rmplan add command', () => {
     const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
     const plan = yaml.parse(yamlContent) as PlanSchema;
 
-    expect(plan.id).toBe('1');
+    expect(plan.id).toBe(1);
     expect(plan.title).toBe('Test Title');
     expect(plan.goal).toBe('');
     expect(plan.details).toBe('');
@@ -70,7 +70,7 @@ describe('rmplan add command', () => {
       path.join(tasksDir, '50.yml'),
       schemaLine +
         yaml.stringify({
-          id: '50',
+          id: 50,
           title: 'Existing Plan 50',
           goal: 'Test goal',
           details: 'Test details',
@@ -84,7 +84,7 @@ describe('rmplan add command', () => {
       path.join(tasksDir, '100.yml'),
       schemaLine +
         yaml.stringify({
-          id: '100',
+          id: 100,
           title: 'Existing Plan 100',
           goal: 'Test goal',
           details: 'Test details',
@@ -115,7 +115,7 @@ describe('rmplan add command', () => {
     const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
     const plan = yaml.parse(yamlContent) as PlanSchema;
 
-    expect(plan.id).toBe('101');
+    expect(plan.id).toBe(101);
     expect(plan.title).toBe('New Plan Title');
   });
 
@@ -142,7 +142,7 @@ describe('rmplan add command', () => {
       path.join(tasksDir, '5.yml'),
       schemaLine +
         yaml.stringify({
-          id: '5',
+          id: 5,
           title: 'Numeric Plan 5',
           goal: 'Test goal',
           details: 'Test details',
@@ -172,7 +172,7 @@ describe('rmplan add command', () => {
     const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
     const plan = yaml.parse(yamlContent) as PlanSchema;
 
-    expect(plan.id).toBe('6');
+    expect(plan.id).toBe(6);
     expect(plan.title).toBe('Another Plan');
   });
 
@@ -196,7 +196,7 @@ describe('rmplan add command', () => {
     const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
     const plan = yaml.parse(yamlContent) as PlanSchema;
 
-    expect(plan.id).toBe('1');
+    expect(plan.id).toBe(1);
     expect(plan.title).toBe('This is a Multi Word Title');
   });
 
@@ -209,7 +209,7 @@ describe('rmplan add command', () => {
       path.join(tasksDir, '1.yml'),
       schemaLine +
         yaml.stringify({
-          id: '1',
+          id: 1,
           title: 'Dependency 1',
           goal: 'Test goal',
           details: 'Test details',
@@ -223,7 +223,7 @@ describe('rmplan add command', () => {
       path.join(tasksDir, '2.yml'),
       schemaLine +
         yaml.stringify({
-          id: '2',
+          id: 2,
           title: 'Dependency 2',
           goal: 'Test goal',
           details: 'Test details',
@@ -253,9 +253,9 @@ describe('rmplan add command', () => {
     const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
     const plan = yaml.parse(yamlContent) as PlanSchema;
 
-    expect(plan.id).toBe('3');
+    expect(plan.id).toBe(3);
     expect(plan.title).toBe('Plan with Dependencies');
-    expect(plan.dependencies).toEqual(['1', '2']);
+    expect(plan.dependencies).toEqual([1, 2]);
     expect(plan.priority).toBe('high');
   });
 });
