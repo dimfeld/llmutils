@@ -19,7 +19,7 @@ issue:
 planGeneratedAt: 2025-06-08T22:44:30.655Z
 promptsGeneratedAt: 2025-06-08T22:49:16.234Z
 createdAt: 2025-06-08T22:37:44.631Z
-updatedAt: 2025-06-08T23:08:30.888Z
+updatedAt: 2025-06-08T23:11:13.827Z
 project:
   title: Revamp plan format to have plan as front matter and details as markdown
     content afterwards
@@ -138,7 +138,7 @@ tasks:
           `details` field in the `PlanSchema` object contains the content from
           both the YAML key and the Markdown body, concatenated together with a
           newline.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/plans.ts`, modify `readPlanFile` to implement the
           content-merging logic. After parsing the YAML and extracting the
@@ -146,7 +146,7 @@ tasks:
           `details` property. If both a YAML `details` value and a Markdown body
           exist, combine them into a single string for the final `details`
           field. The value from the YAML should come first.
-        done: false
+        done: true
   - title: Create comprehensive tests for plan file input and output
     description: Add and update tests in `src/rmplan/plans.test.ts` to thoroughly
       validate the changes to `readPlanFile` and `writePlanFile`. The tests must

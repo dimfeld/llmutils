@@ -1143,7 +1143,7 @@ ${markdownBody}`;
     expect(plan.goal).toBe('Test merging YAML details with markdown body');
     expect(plan.status).toBe('pending');
     expect(plan.priority).toBe('medium');
-    
+
     // The details field should contain both the YAML value and the markdown body
     expect(plan.details).toBe(`${yamlDetails}\n\n${markdownBody}`);
     expect(plan.details).toContain(yamlDetails);
