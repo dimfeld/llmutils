@@ -10,7 +10,7 @@ import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
 
 export type PlanSummary = {
-  id: string | number;
+  id: number;
   title?: string;
   status?: 'pending' | 'in_progress' | 'done' | 'cancelled';
   priority?: 'low' | 'medium' | 'high' | 'urgent';
@@ -32,9 +32,9 @@ export type PlanSummary = {
 let cachedPlans = new Map<
   string,
   {
-    plans: Map<string | number, PlanSchema & { filename: string }>;
+    plans: Map<number, PlanSchema & { filename: string }>;
     maxNumericId: number;
-    duplicates: (string | number)[];
+    duplicates: number[];
   }
 >();
 
@@ -49,20 +49,20 @@ export async function readAllPlans(
   directory: string,
   readCache = true
 ): Promise<{
-  plans: Map<string | number, PlanSchema & { filename: string }>;
+  plans: Map<number, PlanSchema & { filename: string }>;
   maxNumericId: number;
-  duplicates: (string | number)[];
+  duplicates: number[];
 }> {
   let existing = readCache ? cachedPlans.get(directory) : undefined;
   if (existing) {
     return existing;
   }
 
-  const plans = new Map<string | number, PlanSchema & { filename: string }>();
+  const plans = new Map<number, PlanSchema & { filename: string }>();
   const promises: Promise<void>[] = [];
   let maxNumericId = 0;
-  const duplicates: (string | number)[] = [];
-  const seenIds = new Set<string | number>();
+  const duplicates: number[] = [];
+  const seenIds = new Set<number>();
 
   debugLog(`Starting to scan directory for plan files: ${directory}`);
 
@@ -79,8 +79,8 @@ export async function readAllPlans(
       debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
 
       // Determine if the ID is numeric
-      let idKey: string | number = plan.id;
-      let summaryId: string | number = plan.id;
+      let idKey: number = plan.id;
+      let summaryId: number = plan.id;
 
       if (typeof plan.id === 'number') {
         // ID is already a number
@@ -139,35 +139,6 @@ export async function readAllPlans(
       }
     }
   }
-
-  const originalPlanGet = plans.get.bind(plans);
-  const originalPlanHas = plans.has.bind(plans);
-
-  // This is a temporary hack until we can fully convert plan IDs to numbers
-  const getPlanById = (id: string | number) => {
-    let numId = Number(id);
-    if (!Number.isNaN(numId)) {
-      let byNum = originalPlanGet(numId);
-      if (byNum) {
-        return byNum;
-      }
-    }
-    return originalPlanGet(id.toString());
-  };
-
-  const hasPlanById = (id: string | number) => {
-    let numId = Number(id);
-    if (!Number.isNaN(numId)) {
-      let byNum = originalPlanHas(numId);
-      if (byNum) {
-        return byNum;
-      }
-    }
-    return originalPlanHas(id.toString());
-  };
-
-  plans.get = getPlanById;
-  plans.has = hasPlanById;
 
   await scanDirectory(directory);
   await Promise.all(promises);
@@ -403,7 +374,7 @@ export async function findNextPlan(
  */
 export function isPlanReady(
   plan: PlanSchema & { filename: string },
-  allPlans: Map<string | number, PlanSchema & { filename: string }>
+  allPlans: Map<number, PlanSchema & { filename: string }>
 ): boolean {
   const status = plan.status || 'pending';
 
@@ -436,9 +407,9 @@ export function isPlanReady(
 }
 
 export async function collectDependenciesInOrder(
-  planId: string | number,
-  allPlans: Map<string | number, PlanSchema & { filename: string }>,
-  visited: Set<string | number> = new Set()
+  planId: number,
+  allPlans: Map<number, PlanSchema & { filename: string }>,
+  visited: Set<number> = new Set()
 ): Promise<(PlanSchema & { filename: string })[]> {
   // Check for circular dependencies
   if (visited.has(planId)) {

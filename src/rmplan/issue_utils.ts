@@ -27,7 +27,7 @@ export interface IssueInstructionData {
  */
 export function createStubPlanFromIssue(
   issueData: IssueInstructionData,
-  planId: string | number
+  planId: number
 ): PlanSchema {
   const now = new Date().toISOString();
 
