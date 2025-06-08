@@ -3,16 +3,18 @@ import { z } from 'zod/v4';
 export const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent', 'maybe']);
 export type Priority = z.infer<typeof prioritySchema>;
 
+export const statusSchema = z.enum(['pending', 'in_progress', 'done', 'cancelled']);
+
 export const phaseSchema = z
   .object({
     title: z.string().optional(),
     goal: z.string(),
     details: z.string(),
-    id: z.union([z.number().int().positive(), z.string()]).optional(),
-    status: z.enum(['pending', 'in_progress', 'done', 'cancelled']).default('pending').optional(),
+    id: z.coerce.number().int().positive().optional(),
+    status: statusSchema.default('pending').optional(),
     priority: prioritySchema.optional(),
     container: z.boolean().default(false).optional(),
-    dependencies: z.array(z.string()).default([]).optional(),
+    dependencies: z.array(z.coerce.number().int().positive()).default([]).optional(),
     issue: z.array(z.url()).default([]).optional(),
     pullRequest: z.array(z.url()).default([]).optional(),
     docs: z.array(z.string()).default([]).optional(),

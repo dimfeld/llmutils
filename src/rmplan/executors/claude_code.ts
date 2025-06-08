@@ -49,6 +49,11 @@ export class ClaudeCodeExecutor implements Executor {
       isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
     }
 
+    if (interactive) {
+      // permissions MCP doesn't make sense in interactive mode
+      isPermissionsMcpEnabled = false;
+    }
+
     let tempMcpConfigDir: string | undefined = undefined;
     let dynamicMcpConfigFile: string | undefined;
 
@@ -212,6 +217,7 @@ export class ClaudeCodeExecutor implements Executor {
       } else {
         let splitter = createLineSplitter();
 
+        log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
         const result = await spawnAndLogOutput(args, {
           env: {
             ...process.env,
