@@ -111,7 +111,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
         project: {
           title: originalPlan.title || '',
           goal: originalPlan.goal,
-          details: originalPlan.details,
+          details: originalPlan.details || '',
         },
         status: 'pending',
         rmfilter: taskToPromote.files,

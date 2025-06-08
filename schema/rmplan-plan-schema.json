@@ -10,19 +10,13 @@
       "type": "string"
     },
     "details": {
+      "description": "Plan details. This can also be in markdown content after the YAML",
       "type": "string"
     },
     "id": {
-      "anyOf": [
-        {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
-        },
-        {
-          "type": "string"
-        }
-      ]
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
     },
     "status": {
       "default": "pending",
@@ -52,7 +46,9 @@
       "default": [],
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
       }
     },
     "issue": {
@@ -205,7 +201,6 @@
   },
   "required": [
     "goal",
-    "details",
     "tasks"
   ],
   "additionalProperties": false

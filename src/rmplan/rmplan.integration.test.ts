@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { clearPlanCache } from './plans.js';
+import { clearPlanCache, readPlanFile } from './plans.js';
 
 describe('rmplan CLI integration tests', () => {
   let tempDir: string;
@@ -52,8 +52,7 @@ describe('rmplan CLI integration tests', () => {
     expect(planFiles[0]).toBe('1.yml');
 
     // Verify plan content
-    const planContent = await fs.readFile(path.join(tasksDir, '1.yml'), 'utf-8');
-    const plan = yaml.parse(planContent);
+    const plan = await readPlanFile(path.join(tasksDir, '1.yml'));
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Integration Test Plan');
   });
@@ -145,8 +144,7 @@ describe('rmplan CLI integration tests', () => {
     expect(result).toContain('Marked 1 step done');
 
     // Verify the step was marked as done
-    const updatedContent = await fs.readFile(path.join(tasksDir, '1.yml'), 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent);
+    const updatedPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
 
     // The plan should have tasks with steps
     expect(updatedPlan.tasks).toBeDefined();
@@ -248,22 +246,20 @@ describe('rmplan CLI integration tests', () => {
     expect(result).toContain('Ready Plan');
   });
 
-  test.only('rmplan add with dependencies and priority', async () => {
+  test('rmplan add with dependencies and priority', async () => {
     // First create a plan to depend on
     await $`bun ${rmplanPath} add "First Plan" --config ${configPath}`.cwd(tempDir);
 
     // Create a plan with dependencies and priority
     const result =
-      await $`bun ${rmplanPath} add "Dependent Plan" --depends-on 1 --depends-on 3 --priority high --config ${configPath}`
+      await $`bun ${rmplanPath} add "Dependent Plan" --depends-on 1 --depends-on 3 --priority high --config ${configPath} --debug`
         .cwd(tempDir)
         .text();
 
     expect(result).toContain('Created plan stub:');
 
     // Verify the plan has dependencies and priority
-    const planContent = await fs.readFile(path.join(tasksDir, '2.yml'), 'utf-8');
-    const plan = yaml.parse(planContent);
-    console.log(plan);
+    const plan = await readPlanFile(path.join(tasksDir, '2.yml'));
     expect(plan.id).toBe(2);
     expect(plan.dependencies).toEqual([1, 3]);
     expect(plan.priority).toBe('high');

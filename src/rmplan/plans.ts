@@ -497,6 +497,8 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
     } else {
       parsed.details = markdownBody;
     }
+  } else {
+    parsed.details ??= '';
   }
 
   const result = phaseSchema.safeParse(parsed);

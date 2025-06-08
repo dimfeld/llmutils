@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { markStepDone } from './actions.js';
-import { clearPlanCache } from './plans.js';
+import { clearPlanCache, readPlanFile } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
 
@@ -105,8 +105,7 @@ describe('markStepDone', () => {
     expect(result.message).toContain('Task 1 step 2');
 
     // Read the updated plan
-    const updatedContent = await fs.readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     // Check that step 2 is now done
     expect(updatedPlan.tasks[0].steps![1].done).toBe(true);
@@ -154,8 +153,7 @@ describe('markStepDone', () => {
     expect(result.message).toContain('Task 1 steps 1-2');
 
     // Read the updated plan
-    const updatedContent = await fs.readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     // Check that steps 1 and 2 are now done
     expect(updatedPlan.tasks[0].steps![0].done).toBe(true);
@@ -203,8 +201,7 @@ describe('markStepDone', () => {
     expect(result.planComplete).toBe(true);
 
     // Read the updated plan
-    const updatedContent = await fs.readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     // Check that all steps in task 1 are done
     expect(updatedPlan.tasks[0].steps!.every((step) => step.done)).toBe(true);
@@ -212,7 +209,7 @@ describe('markStepDone', () => {
 
   test('updates plan status to done when all steps complete', async () => {
     const plan: PlanSchema = {
-      id: '1',
+      id: 1,
       title: 'Test Plan',
       goal: 'Test goal',
       details: 'Test details',
@@ -245,8 +242,7 @@ describe('markStepDone', () => {
     expect(result.planComplete).toBe(true);
 
     // Read the updated plan
-    const updatedContent = await fs.readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     // Check that plan status is done
     expect(updatedPlan.status).toBe('done');
@@ -254,7 +250,7 @@ describe('markStepDone', () => {
 
   test('handles plan with no steps', async () => {
     const plan: PlanSchema = {
-      id: '1',
+      id: 1,
       title: 'Test Plan',
       goal: 'Test goal',
       details: 'Test details',
