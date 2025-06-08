@@ -8,13 +8,13 @@ details: This phase will introduce the `research` command, its associated logic,
   generating the research prompt, handling optional file context with
   `rmfilter`, and saving the research back to the plan file.
 id: 51
-status: in_progress
+status: done
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-06-08T09:15:22.393Z
 promptsGeneratedAt: 2025-06-08T09:23:48.459Z
 createdAt: 2025-06-07T02:07:53.027Z
-updatedAt: 2025-06-08T09:37:00.910Z
+updatedAt: 2025-06-08T09:38:23.311Z
 project:
   title: research command
   goal: ""
@@ -257,26 +257,27 @@ tasks:
       - prompt: >
           Open the `README.md` file and locate the section that lists the
           `rmplan` subcommands.
-        done: false
+        done: true
       - prompt: >
           Add a new entry for `rmplan research [planArg]`. Describe its purpose,
           which is to generate a research prompt based on a plan's goal and
           details, and then append the findings back to the plan.
-        done: false
+        done: true
       - prompt: >
           Document the `--rmfilter` option, explaining that it incorporates file
           context into the research prompt using `rmfilter`.
-        done: false
+        done: true
       - prompt: >
           Provide a clear usage example that demonstrates how to use the command
           with and without the `--rmfilter` option, including how to pass
           additional file arguments using the `--` separator.
-        done: false
+        done: true
       - prompt: >
           Briefly explain the interactive paste-back mechanism for saving the
           research results to the plan file.
-        done: false
+        done: true
 changedFiles:
+  - README.md
   - src/rmplan/actions.ts
   - src/rmplan/commands/research.test.ts
   - src/rmplan/commands/research.ts
