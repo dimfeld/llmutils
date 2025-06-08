@@ -181,6 +181,17 @@ program
   });
 
 program
+  .command('research [planArg]')
+  .description('Generate a research prompt for a plan and append the results.')
+  .option('--rmfilter', 'Use rmfilter to include file context in the prompt.')
+  .allowExcessArguments(true)
+  .allowUnknownOption(true)
+  .action(async (planArg, options, command) => {
+    const { handleResearchCommand } = await import('./commands/research.js');
+    await handleResearchCommand(planArg, options, command).catch(handleCommandError);
+  });
+
+program
   .command('cleanup [files...]')
   .description('Remove end-of-line comments from changed files or specified files')
   .option(
