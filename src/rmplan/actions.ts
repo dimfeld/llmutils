@@ -1078,13 +1078,13 @@ async function gatherPhaseGenerationContext(
         }
 
         // Extract title from details or use ID as fallback
-        const title = dependencyPlan.details.split('\n')[0] || `Phase ${dependencyId}`;
+        const title = dependencyPlan.details?.split('\n')[0] || `Phase ${dependencyId}`;
 
         previousPhasesInfo.push({
           id: dependencyPlan.id || dependencyId,
           title: title,
           goal: dependencyPlan.goal,
-          description: dependencyPlan.details,
+          description: dependencyPlan.details || '',
         });
 
         // Add changed files from this dependency
@@ -1125,7 +1125,7 @@ async function gatherPhaseGenerationContext(
       overallProjectTitle: overallProjectTitle || undefined,
       currentPhaseTitle: currentPhaseData.title,
       currentPhaseGoal: currentPhaseData.goal,
-      currentPhaseDetails: currentPhaseData.details,
+      currentPhaseDetails: currentPhaseData.details || '',
       currentPhaseTasks: currentPhaseData.tasks.map((task) => ({
         title: task.title,
         description: task.description,

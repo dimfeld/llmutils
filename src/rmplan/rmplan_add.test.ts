@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { $ } from 'bun';
 import type { PlanSchema } from './planSchema.js';
+import { readPlanFile } from './plans.js';
 
 describe('rmplan add command', () => {
   let tempDir: string;
@@ -49,10 +50,7 @@ describe('rmplan add command', () => {
     ).toBe(true);
 
     // Read and verify plan content
-    const content = await fs.readFile(planPath, 'utf-8');
-    const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
-    const plan = yaml.parse(yamlContent) as PlanSchema;
-
+    const plan = await readPlanFile(planPath);
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Test Title');
     expect(plan.goal).toBe('');
@@ -111,10 +109,7 @@ describe('rmplan add command', () => {
     ).toBe(true);
 
     // Read and verify plan content
-    const content = await fs.readFile(planPath, 'utf-8');
-    const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
-    const plan = yaml.parse(yamlContent) as PlanSchema;
-
+    const plan = await readPlanFile(planPath);
     expect(plan.id).toBe(101);
     expect(plan.title).toBe('New Plan Title');
   });
@@ -168,10 +163,7 @@ describe('rmplan add command', () => {
     ).toBe(true);
 
     // Read and verify plan content
-    const content = await fs.readFile(planPath, 'utf-8');
-    const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
-    const plan = yaml.parse(yamlContent) as PlanSchema;
-
+    const plan = await readPlanFile(planPath);
     expect(plan.id).toBe(6);
     expect(plan.title).toBe('Another Plan');
   });
@@ -192,10 +184,7 @@ describe('rmplan add command', () => {
     ).toBe(true);
 
     // Read and verify plan content
-    const content = await fs.readFile(planPath, 'utf-8');
-    const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
-    const plan = yaml.parse(yamlContent) as PlanSchema;
-
+    const plan = await readPlanFile(planPath);
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('This is a Multi Word Title');
   });
@@ -249,9 +238,7 @@ describe('rmplan add command', () => {
     ).toBe(true);
 
     // Read and verify plan content
-    const content = await fs.readFile(planPath, 'utf-8');
-    const yamlContent = content.replace(/^#\s*yaml-language-server:.*$/m, '').trim();
-    const plan = yaml.parse(yamlContent) as PlanSchema;
+    const plan = await readPlanFile(planPath);
 
     expect(plan.id).toBe(3);
     expect(plan.title).toBe('Plan with Dependencies');

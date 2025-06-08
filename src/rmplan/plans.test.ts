@@ -9,6 +9,8 @@ import {
   resolvePlanFile,
   setPlanStatus,
   clearPlanCache,
+  readPlanFile,
+  writePlanFile,
 } from './plans.js';
 import { planSchema, type PlanSchema } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
@@ -729,8 +731,7 @@ describe('setPlanStatus', () => {
     await setPlanStatus(planPath, 'in_progress');
     const afterTime = new Date();
 
-    const updatedContent = await readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     expect(updatedPlan.status).toBe('in_progress');
     expect(updatedPlan.id).toBe(originalPlan.id);
@@ -779,8 +780,7 @@ describe('setPlanStatus', () => {
 
     await setPlanStatus(planPath, 'done');
 
-    const updatedContent = await readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     expect(new Date(updatedPlan.updatedAt!).getTime()).toBeGreaterThan(
       new Date(originalTime).getTime()
@@ -803,8 +803,7 @@ describe('setPlanStatus', () => {
     const beforeTime = new Date();
     await setPlanStatus(planPath, 'in_progress');
 
-    const updatedContent = await readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     expect(updatedPlan.status).toBe('in_progress');
     expect(updatedPlan.updatedAt).toBeDefined();
@@ -870,8 +869,7 @@ describe('setPlanStatus', () => {
 
     await setPlanStatus(planPath, 'in_progress');
 
-    const updatedContent = await readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as any;
+    const updatedPlan = await readPlanFile(planPath);
 
     // Check that all fields are preserved
     expect(updatedPlan.id).toBe(originalPlan.id);
@@ -912,9 +910,469 @@ describe('setPlanStatus', () => {
     await expect(Promise.all(promises)).resolves.toBeDefined();
 
     // Final state should be one of the statuses
-    const finalContent = await readFile(planPath, 'utf-8');
-    const finalPlan = yaml.parse(finalContent) as PlanSchema;
+    const finalPlan = await readPlanFile(planPath);
     expect(['pending', 'in_progress', 'done']).toContain(finalPlan.status);
+  });
+});
+
+describe('Plan File Reading and Writing', () => {
+  let tempDir: string;
+
+  beforeAll(async () => {
+    tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-frontmatter-test-')));
+  });
+
+  afterAll(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should read plan file with YAML front matter correctly', async () => {
+    const planPath = join(tempDir, 'front-matter-plan.md');
+    const frontMatterContent = `---
+id: 100
+title: Test Plan with Front Matter
+goal: Test the new front matter format
+status: pending
+priority: high
+dependencies: [1, 2]
+createdAt: 2024-01-01T00:00:00.000Z
+tasks:
+  - title: Task 1
+    description: First task
+    files: []
+    steps:
+      - prompt: Step 1
+        done: false
+---
+
+# Implementation Details
+
+This is the markdown body that contains the details of the plan.
+
+## Background
+
+The plan should support:
+- Multiple lines of markdown
+- Various markdown features
+- Code blocks
+
+\`\`\`typescript
+const example = "code block";
+\`\`\`
+
+And more content here.`;
+
+    await writeFile(planPath, frontMatterContent);
+
+    const plan = await readPlanFile(planPath);
+
+    expect(plan.id).toBe(100);
+    expect(plan.title).toBe('Test Plan with Front Matter');
+    expect(plan.goal).toBe('Test the new front matter format');
+    expect(plan.status).toBe('pending');
+    expect(plan.priority).toBe('high');
+    expect(plan.dependencies).toEqual([1, 2]);
+    expect(plan.tasks).toHaveLength(1);
+    expect(plan.tasks![0].title).toBe('Task 1');
+
+    // The markdown body should be placed in the details field
+    expect(plan.details).toContain('# Implementation Details');
+    expect(plan.details).toContain('This is the markdown body');
+    expect(plan.details).toContain('const example = "code block";');
+  });
+
+  it('should maintain backward compatibility with pure YAML files', async () => {
+    const planPath = join(tempDir, 'legacy-plan.yml');
+    const legacyPlan = {
+      id: 101,
+      title: 'Legacy YAML Plan',
+      goal: 'Test backward compatibility',
+      details: 'This is the details field in the YAML itself',
+      status: 'in_progress',
+      priority: 'medium',
+      dependencies: [3],
+      tasks: [
+        {
+          title: 'Legacy Task',
+          description: 'A task in the old format',
+          files: ['src/legacy.ts'],
+          steps: [
+            { prompt: 'Legacy step 1', done: true },
+            { prompt: 'Legacy step 2', done: false },
+          ],
+        },
+      ],
+    };
+
+    // Write as pure YAML (old format)
+    await writeFile(planPath, yaml.stringify(legacyPlan));
+
+    const plan = await readPlanFile(planPath);
+
+    // Verify all fields are read correctly
+    expect(plan.id).toBe(101);
+    expect(plan.title).toBe('Legacy YAML Plan');
+    expect(plan.goal).toBe('Test backward compatibility');
+    expect(plan.details).toBe('This is the details field in the YAML itself');
+    expect(plan.status).toBe('in_progress');
+    expect(plan.priority).toBe('medium');
+    expect(plan.dependencies).toEqual([3]);
+    expect(plan.tasks).toHaveLength(1);
+    expect(plan.tasks![0].title).toBe('Legacy Task');
+    expect(plan.tasks![0].steps).toHaveLength(2);
+  });
+
+  it('should write plan file with front matter format when details field is present', async () => {
+    const planPath = join(tempDir, 'write-front-matter-plan.md');
+    const planToWrite: PlanSchema = {
+      id: 102,
+      title: 'Test Writing Front Matter',
+      goal: 'Test that writePlanFile creates front matter format',
+      details: `# Plan Details
+
+This is the markdown content that should be placed
+in the body of the file, not in the YAML front matter.
+
+## Features
+- Multiple paragraphs
+- Lists and formatting
+- Code blocks
+
+\`\`\`typescript
+const test = "example";
+\`\`\``,
+      status: 'pending',
+      priority: 'high',
+      dependencies: [10, 20],
+      createdAt: '2024-01-15T00:00:00.000Z',
+      updatedAt: '2024-01-15T12:00:00.000Z',
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'A test task',
+          files: ['test.ts'],
+          steps: [
+            { prompt: 'Step 1', done: false },
+            { prompt: 'Step 2', done: false },
+          ],
+        },
+      ],
+    };
+
+    // Write the plan using writePlanFile
+    await writePlanFile(planPath, planToWrite);
+
+    // Read the raw file content to verify format
+    const fileContent = await readFile(planPath, 'utf-8');
+
+    // Check that it starts with front matter delimiter
+    expect(fileContent.startsWith('---\n')).toBe(true);
+
+    // Check that the yaml-language-server comment is within the front matter
+    expect(fileContent).toContain('# yaml-language-server: $schema=');
+
+    // Find where the front matter ends
+    const frontMatterEndIndex = fileContent.indexOf('\n---\n', 4);
+    expect(frontMatterEndIndex).toBeGreaterThan(0);
+
+    // Extract front matter and body
+    const frontMatterSection = fileContent.substring(4, frontMatterEndIndex);
+    const bodySection = fileContent.substring(frontMatterEndIndex + 5).trim();
+
+    // Parse the front matter as YAML
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    // Verify the front matter does NOT contain the details field
+    expect(frontMatterData.details).toBeUndefined();
+
+    // Verify all other fields are in the front matter
+    expect(frontMatterData.id).toBe(102);
+    expect(frontMatterData.title).toBe('Test Writing Front Matter');
+    expect(frontMatterData.goal).toBe('Test that writePlanFile creates front matter format');
+    expect(frontMatterData.status).toBe('pending');
+    expect(frontMatterData.priority).toBe('high');
+    expect(frontMatterData.dependencies).toEqual([10, 20]);
+    expect(frontMatterData.createdAt).toBe('2024-01-15T00:00:00.000Z');
+    expect(frontMatterData.updatedAt).toBe('2024-01-15T12:00:00.000Z');
+    expect(frontMatterData.tasks).toHaveLength(1);
+
+    // Verify the body contains the original details content
+    expect(bodySection).toBe(planToWrite.details);
+
+    // Also verify that readPlanFile can read it back correctly
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan).toEqual(planToWrite);
+  });
+
+  it('should merge YAML details field with markdown body for backward compatibility', async () => {
+    const planPath = join(tempDir, 'backward-compat-plan.md');
+    const yamlDetails = 'This is the details content from the YAML front matter.';
+    const markdownBody = `# Additional Details
+
+This is additional content in the markdown body.
+
+## More Information
+- This content should be appended
+- To the YAML details field`;
+
+    const fileContent = `---
+id: 103
+title: Backward Compatible Plan
+goal: Test merging YAML details with markdown body
+details: ${yamlDetails}
+status: pending
+priority: medium
+tasks:
+  - title: Test Task
+    description: A test task
+    files: []
+    steps:
+      - prompt: Step 1
+        done: false
+---
+
+${markdownBody}`;
+
+    await writeFile(planPath, fileContent);
+
+    const plan = await readPlanFile(planPath);
+
+    // Verify that both the YAML details and markdown body are combined
+    expect(plan.id).toBe(103);
+    expect(plan.title).toBe('Backward Compatible Plan');
+    expect(plan.goal).toBe('Test merging YAML details with markdown body');
+    expect(plan.status).toBe('pending');
+    expect(plan.priority).toBe('medium');
+
+    // The details field should contain both the YAML value and the markdown body
+    expect(plan.details).toBe(`${yamlDetails}\n\n${markdownBody}`);
+    expect(plan.details).toContain(yamlDetails);
+    expect(plan.details).toContain('# Additional Details');
+    expect(plan.details).toContain('This is additional content in the markdown body');
+  });
+
+  it('should perform a round-trip test to ensure symmetry between reading and writing', async () => {
+    const planPath = join(tempDir, 'round-trip-plan.md');
+    const originalPlan: PlanSchema = {
+      id: 104,
+      title: 'Round Trip Test Plan',
+      goal: 'Test that reading and writing preserves data',
+      details: `# Round Trip Test
+
+This plan tests the symmetry between readPlanFile and writePlanFile.
+
+## Test Objectives
+- Ensure all fields are preserved
+- Verify format consistency
+- Check that details remain in markdown body
+
+\`\`\`typescript
+const roundTrip = "test";
+\`\`\``,
+      status: 'in_progress',
+      priority: 'urgent',
+      dependencies: [50, 60, 70],
+      createdAt: '2024-02-01T10:00:00.000Z',
+      updatedAt: '2024-02-01T15:30:00.000Z',
+      tasks: [
+        {
+          title: 'Validate Round Trip',
+          description: 'Ensure data integrity',
+          files: ['test1.ts', 'test2.ts'],
+          steps: [
+            { prompt: 'Write the plan', done: true },
+            { prompt: 'Read it back', done: true },
+            { prompt: 'Compare results', done: false },
+          ],
+        },
+        {
+          title: 'Edge Cases',
+          description: 'Test special characters and formatting',
+          files: [],
+          steps: [{ prompt: 'Test with special chars: " \' \\ /', done: false }],
+        },
+      ],
+    };
+
+    // Write the plan
+    await writePlanFile(planPath, originalPlan);
+
+    // Read it back
+    const readBackPlan = await readPlanFile(planPath);
+
+    // Assert deep equality
+    expect(readBackPlan).toEqual(originalPlan);
+
+    // Specifically check that complex fields are preserved
+    expect(readBackPlan.tasks).toHaveLength(2);
+    expect(readBackPlan.tasks![0].steps).toHaveLength(3);
+    expect(readBackPlan.tasks![1].title).toBe('Edge Cases');
+    expect(readBackPlan.dependencies).toEqual([50, 60, 70]);
+    expect(readBackPlan.details).toContain('const roundTrip = "test";');
+  });
+
+  it('should verify the migration path for old-format files', async () => {
+    const oldFormatPath = join(tempDir, 'old-format-plan.yml');
+    const newFormatPath = join(tempDir, 'migrated-plan.md');
+
+    // Create a pure YAML plan file (old format)
+    const oldFormatPlan = {
+      id: 105,
+      title: 'Old Format Plan for Migration',
+      goal: 'Test migration from old to new format',
+      details: `This is the old format where details are stored in YAML.
+
+It should be migrated to the new format with:
+- YAML front matter for metadata
+- Markdown body for details content
+
+The migration should preserve all data.`,
+      status: 'pending',
+      priority: 'high',
+      dependencies: [80, 90],
+      createdAt: '2024-01-20T08:00:00.000Z',
+      updatedAt: '2024-01-20T08:00:00.000Z',
+      tasks: [
+        {
+          title: 'Migration Task',
+          description: 'Task to test migration',
+          files: ['migrate.ts'],
+          steps: [
+            { prompt: 'Read old format', done: false },
+            { prompt: 'Write new format', done: false },
+          ],
+        },
+      ],
+    };
+
+    // Write the old format file
+    await writeFile(oldFormatPath, yaml.stringify(oldFormatPlan));
+
+    // Read the old format file
+    const readPlan = await readPlanFile(oldFormatPath);
+
+    // Write it back in the new format
+    await writePlanFile(newFormatPath, readPlan);
+
+    // Read the raw content of the new file to verify format
+    const newFileContent = await readFile(newFormatPath, 'utf-8');
+
+    // Verify it's in front matter format
+    expect(newFileContent.startsWith('---\n')).toBe(true);
+
+    // Find the front matter and body sections
+    const frontMatterEndIndex = newFileContent.indexOf('\n---\n', 4);
+    expect(frontMatterEndIndex).toBeGreaterThan(0);
+
+    const frontMatterSection = newFileContent.substring(4, frontMatterEndIndex);
+    const bodySection = newFileContent.substring(frontMatterEndIndex + 5).trim();
+
+    // Parse the front matter
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    // Verify the front matter does NOT contain details
+    expect(frontMatterData.details).toBeUndefined();
+
+    // Verify all other fields are in front matter
+    expect(frontMatterData.id).toBe(105);
+    expect(frontMatterData.title).toBe('Old Format Plan for Migration');
+    expect(frontMatterData.goal).toBe('Test migration from old to new format');
+    expect(frontMatterData.status).toBe('pending');
+    expect(frontMatterData.priority).toBe('high');
+    expect(frontMatterData.dependencies).toEqual([80, 90]);
+    expect(frontMatterData.tasks).toHaveLength(1);
+
+    // Verify the body contains the original details
+    expect(bodySection).toBe(oldFormatPlan.details);
+
+    // Finally, read the new file and ensure data integrity
+    const migratedPlan = await readPlanFile(newFormatPath);
+    expect(migratedPlan).toEqual(readPlan);
+  });
+
+  it('should handle backward-compatibility merge-and-write scenario', async () => {
+    const mixedFormatPath = join(tempDir, 'mixed-format-plan.md');
+    const rewrittenPath = join(tempDir, 'rewritten-plan.md');
+
+    const yamlDetails = 'These are the details from the YAML front matter section.';
+    const markdownBody = `# Additional Markdown Content
+
+This content is in the markdown body and should be merged with the YAML details.
+
+## Important Notes
+- Both sources of details should be preserved
+- The order should be: YAML details first, then markdown body
+- After rewriting, only the markdown body should contain the details`;
+
+    // Create a file with details in both front matter and body
+    const mixedContent = `---
+id: 106
+title: Mixed Format Plan
+goal: Test merging and rewriting details from both sources
+details: ${yamlDetails}
+status: in_progress
+priority: low
+dependencies: [100]
+createdAt: 2024-03-01T00:00:00.000Z
+tasks:
+  - title: Merge Test Task
+    description: Testing the merge behavior
+    files: ['merge.ts', 'test.ts']
+    steps:
+      - prompt: Read mixed format
+        done: true
+      - prompt: Merge details
+        done: false
+---
+
+${markdownBody}`;
+
+    await writeFile(mixedFormatPath, mixedContent);
+
+    // Read the mixed format file (should merge details)
+    const mergedPlan = await readPlanFile(mixedFormatPath);
+
+    // Verify the details were merged correctly
+    expect(mergedPlan.details).toBe(`${yamlDetails}\n\n${markdownBody}`);
+    expect(mergedPlan.details).toContain(yamlDetails);
+    expect(mergedPlan.details).toContain(markdownBody);
+
+    // Write it back to a new file
+    await writePlanFile(rewrittenPath, mergedPlan);
+
+    // Read the raw content of the rewritten file
+    const rewrittenContent = await readFile(rewrittenPath, 'utf-8');
+
+    // Verify it's in the standard front matter format
+    expect(rewrittenContent.startsWith('---\n')).toBe(true);
+
+    // Extract front matter and body
+    const fmEndIndex = rewrittenContent.indexOf('\n---\n', 4);
+    const rewrittenFrontMatter = rewrittenContent.substring(4, fmEndIndex);
+    const rewrittenBody = rewrittenContent.substring(fmEndIndex + 5).trim();
+
+    // Parse the front matter
+    const rewrittenFmData = yaml.parse(rewrittenFrontMatter);
+
+    // Verify NO details in the front matter
+    expect(rewrittenFmData.details).toBeUndefined();
+
+    // Verify the body contains the combined details
+    expect(rewrittenBody).toBe(`${yamlDetails}\n\n${markdownBody}`);
+
+    // Verify all other fields are preserved correctly
+    expect(rewrittenFmData.id).toBe(106);
+    expect(rewrittenFmData.title).toBe('Mixed Format Plan');
+    expect(rewrittenFmData.goal).toBe('Test merging and rewriting details from both sources');
+    expect(rewrittenFmData.status).toBe('in_progress');
+    expect(rewrittenFmData.priority).toBe('low');
+    expect(rewrittenFmData.dependencies).toEqual([100]);
+    expect(rewrittenFmData.tasks).toHaveLength(1);
+    expect(rewrittenFmData.tasks[0].files).toEqual(['merge.ts', 'test.ts']);
+
+    // Final verification: read the rewritten file and check data integrity
+    const finalPlan = await readPlanFile(rewrittenPath);
+    expect(finalPlan).toEqual(mergedPlan);
   });
 });
 
