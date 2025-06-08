@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Update rmfind to use agentic search
+goal: "Implement: Update rmfind to use agentic search"
+details: >-
+  It should start with a query and overview of the directory structure then run
+  a loop with tools for:
+
+  - list directory
+
+  - grep with surrounding context
+
+  - read files and evaluate relevance
+
+
+  When evaluating a file's relevance, use a small subquery separate from the
+  primary loop.
+
+
+  Once that is working we can use it in more places. 
+
+
+  Also consider using Claude code to do the search.
+id: 59
+status: pending
+issue:
+  - https://github.com/dimfeld/llmutils/issues/128
+createdAt: 2025-06-08T22:37:46.402Z
+updatedAt: 2025-06-08T22:37:46.402Z
+tasks: []

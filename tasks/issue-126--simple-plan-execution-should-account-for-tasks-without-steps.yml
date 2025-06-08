@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: '"Simple plan" execution should account for tasks without steps'
+goal: 'Implement: "Simple plan" execution should account for tasks without steps'
+details: >-
+  Right now we account for a plan with no tasks, and a fully populated plan with
+  tasks and steps. We also should properly handle plans that have tasks, but no
+  steps on the tasks. 
+
+
+  In this case we can just use the regular task loop but treat the task
+  description and related files as the entirety of the prompt.
+id: 61
+status: pending
+issue:
+  - https://github.com/dimfeld/llmutils/issues/126
+createdAt: 2025-06-08T22:37:49.597Z
+updatedAt: 2025-06-08T22:37:49.597Z
+tasks: []

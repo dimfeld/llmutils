@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Revamp plan format to have plan as front matter and details as markdown
+  content afterwards
+goal: "Implement: Revamp plan format to have plan as front matter and details as
+  markdown content afterwards"
+details: >-
+  Should look like this:
+
+
+  ```markdown
+
+  ---
+
+  id: 1
+
+  title: a plan
+
+  # And other keys here
+
+  ---
+
+
+  And then the details go here
+
+  ```
+
+
+  Update readPlanFile and writePlanFile to transparently parse this and move the
+  body text in and out of the `details` field.
+
+
+  If you read a plan that still has a `details` field in the YAML itself, then
+  combine that with any body text.
+id: 58
+status: pending
+issue:
+  - https://github.com/dimfeld/llmutils/issues/132
+createdAt: 2025-06-08T22:37:44.631Z
+updatedAt: 2025-06-08T22:37:44.631Z
+tasks: []
