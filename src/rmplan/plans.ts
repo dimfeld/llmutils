@@ -529,13 +529,26 @@ export async function writePlanFile(filePath: string, plan: PlanSchema): Promise
     throw new Error(`Invalid plan data:\n${errors}`);
   }
 
-  // Convert to YAML with proper formatting
-  const yamlContent = yaml.stringify(result.data);
+  // Separate the details field from the rest of the plan
+  const { details, ...planWithoutDetails } = result.data;
 
-  // Add the yaml-language-server schema line at the top
+  // The yaml-language-server schema line
   const schemaLine =
-    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
-  const fullContent = schemaLine + yamlContent;
+    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json';
+
+  // Convert the plan (without details) to YAML with proper formatting
+  const yamlContent = yaml.stringify(planWithoutDetails);
+
+  // Construct the front matter format
+  let fullContent = '---\n';
+  fullContent += schemaLine + '\n';
+  fullContent += yamlContent;
+  fullContent += '---\n';
+
+  // Add the details as the body if present
+  if (details) {
+    fullContent += '\n' + details;
+  }
 
   await Bun.write(absolutePath, fullContent);
 }

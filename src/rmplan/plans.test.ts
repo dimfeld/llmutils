@@ -10,6 +10,7 @@ import {
   setPlanStatus,
   clearPlanCache,
   readPlanFile,
+  writePlanFile,
 } from './plans.js';
 import { planSchema, type PlanSchema } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
@@ -730,8 +731,7 @@ describe('setPlanStatus', () => {
     await setPlanStatus(planPath, 'in_progress');
     const afterTime = new Date();
 
-    const updatedContent = await readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     expect(updatedPlan.status).toBe('in_progress');
     expect(updatedPlan.id).toBe(originalPlan.id);
@@ -780,8 +780,7 @@ describe('setPlanStatus', () => {
 
     await setPlanStatus(planPath, 'done');
 
-    const updatedContent = await readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     expect(new Date(updatedPlan.updatedAt!).getTime()).toBeGreaterThan(
       new Date(originalTime).getTime()
@@ -804,8 +803,7 @@ describe('setPlanStatus', () => {
     const beforeTime = new Date();
     await setPlanStatus(planPath, 'in_progress');
 
-    const updatedContent = await readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as PlanSchema;
+    const updatedPlan = await readPlanFile(planPath);
 
     expect(updatedPlan.status).toBe('in_progress');
     expect(updatedPlan.updatedAt).toBeDefined();
@@ -871,8 +869,7 @@ describe('setPlanStatus', () => {
 
     await setPlanStatus(planPath, 'in_progress');
 
-    const updatedContent = await readFile(planPath, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent) as any;
+    const updatedPlan = await readPlanFile(planPath);
 
     // Check that all fields are preserved
     expect(updatedPlan.id).toBe(originalPlan.id);
@@ -913,8 +910,7 @@ describe('setPlanStatus', () => {
     await expect(Promise.all(promises)).resolves.toBeDefined();
 
     // Final state should be one of the statuses
-    const finalContent = await readFile(planPath, 'utf-8');
-    const finalPlan = yaml.parse(finalContent) as PlanSchema;
+    const finalPlan = await readPlanFile(planPath);
     expect(['pending', 'in_progress', 'done']).toContain(finalPlan.status);
   });
 });
@@ -1024,6 +1020,88 @@ And more content here.`;
     expect(plan.tasks).toHaveLength(1);
     expect(plan.tasks![0].title).toBe('Legacy Task');
     expect(plan.tasks![0].steps).toHaveLength(2);
+  });
+
+  it('should write plan file with front matter format when details field is present', async () => {
+    const planPath = join(tempDir, 'write-front-matter-plan.md');
+    const planToWrite: PlanSchema = {
+      id: 102,
+      title: 'Test Writing Front Matter',
+      goal: 'Test that writePlanFile creates front matter format',
+      details: `# Plan Details
+
+This is the markdown content that should be placed
+in the body of the file, not in the YAML front matter.
+
+## Features
+- Multiple paragraphs
+- Lists and formatting
+- Code blocks
+
+\`\`\`typescript
+const test = "example";
+\`\`\``,
+      status: 'pending',
+      priority: 'high',
+      dependencies: [10, 20],
+      createdAt: '2024-01-15T00:00:00.000Z',
+      updatedAt: '2024-01-15T12:00:00.000Z',
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'A test task',
+          files: ['test.ts'],
+          steps: [
+            { prompt: 'Step 1', done: false },
+            { prompt: 'Step 2', done: false },
+          ],
+        },
+      ],
+    };
+
+    // Write the plan using writePlanFile
+    await writePlanFile(planPath, planToWrite);
+
+    // Read the raw file content to verify format
+    const fileContent = await readFile(planPath, 'utf-8');
+
+    // Check that it starts with front matter delimiter
+    expect(fileContent.startsWith('---\n')).toBe(true);
+
+    // Check that the yaml-language-server comment is within the front matter
+    expect(fileContent).toContain('# yaml-language-server: $schema=');
+
+    // Find where the front matter ends
+    const frontMatterEndIndex = fileContent.indexOf('\n---\n', 4);
+    expect(frontMatterEndIndex).toBeGreaterThan(0);
+
+    // Extract front matter and body
+    const frontMatterSection = fileContent.substring(4, frontMatterEndIndex);
+    const bodySection = fileContent.substring(frontMatterEndIndex + 5).trim();
+
+    // Parse the front matter as YAML
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    // Verify the front matter does NOT contain the details field
+    expect(frontMatterData.details).toBeUndefined();
+
+    // Verify all other fields are in the front matter
+    expect(frontMatterData.id).toBe(102);
+    expect(frontMatterData.title).toBe('Test Writing Front Matter');
+    expect(frontMatterData.goal).toBe('Test that writePlanFile creates front matter format');
+    expect(frontMatterData.status).toBe('pending');
+    expect(frontMatterData.priority).toBe('high');
+    expect(frontMatterData.dependencies).toEqual([10, 20]);
+    expect(frontMatterData.createdAt).toBe('2024-01-15T00:00:00.000Z');
+    expect(frontMatterData.updatedAt).toBe('2024-01-15T12:00:00.000Z');
+    expect(frontMatterData.tasks).toHaveLength(1);
+
+    // Verify the body contains the original details content
+    expect(bodySection).toBe(planToWrite.details);
+
+    // Also verify that readPlanFile can read it back correctly
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan).toEqual(planToWrite);
   });
 });
 
