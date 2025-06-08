@@ -323,4 +323,119 @@ describe('rmplan set command', () => {
     const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.issue).toBeUndefined();
   });
+
+  test('should add documentation paths', async () => {
+    const planPath = await createTestPlan('23');
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        doc: ['docs/setup.md', 'docs/api.md'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.docs).toEqual(['docs/setup.md', 'docs/api.md']);
+  });
+
+  test('should not duplicate documentation paths', async () => {
+    const planPath = await createTestPlan('24');
+
+    // First add
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        doc: ['docs/setup.md'],
+      },
+      {}
+    );
+
+    // Try to add again with overlap
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        doc: ['docs/setup.md', 'docs/api.md'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.docs).toEqual(['docs/setup.md', 'docs/api.md']);
+  });
+
+  test('should remove documentation paths', async () => {
+    const planPath = await createTestPlan('25');
+
+    // First add documentation paths
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        doc: ['docs/setup.md', 'docs/api.md', 'docs/guide.md'],
+      },
+      {}
+    );
+
+    // Remove some
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noDoc: ['docs/setup.md', 'docs/guide.md'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.docs).toEqual(['docs/api.md']);
+  });
+
+  test('should handle plans without existing documentation paths', async () => {
+    const planPath = await createTestPlan('26');
+
+    // Remove documentation paths from plan without any
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noDoc: ['docs/setup.md'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.docs).toBeUndefined();
+  });
+
+  test('should handle adding and removing documentation paths in same command', async () => {
+    const planPath = await createTestPlan('27');
+
+    // First add some docs
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        doc: ['docs/old1.md', 'docs/old2.md', 'docs/keep.md'],
+      },
+      {}
+    );
+
+    // Add new and remove old in same command
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        doc: ['docs/new1.md', 'docs/new2.md'],
+        noDoc: ['docs/old1.md', 'docs/old2.md'],
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.docs).toEqual(['docs/keep.md', 'docs/new1.md', 'docs/new2.md']);
+  });
 });

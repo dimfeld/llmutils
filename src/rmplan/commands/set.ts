@@ -14,6 +14,8 @@ export interface SetOptions {
   rmfilter?: string[];
   issue?: string[];
   noIssue?: string[];
+  doc?: string[];
+  noDoc?: string[];
 }
 
 export async function handleSetCommand(
@@ -99,6 +101,34 @@ export async function handleSetCommand(
       if (plan.issue.length < originalLength) {
         modified = true;
         log(`Removed ${originalLength - plan.issue.length} issue URLs`);
+      }
+    }
+  }
+
+  // Add documentation paths
+  if (options.doc && options.doc.length > 0) {
+    if (!plan.docs) {
+      plan.docs = [];
+    }
+    for (const docUrl of options.doc) {
+      if (!plan.docs.includes(docUrl)) {
+        plan.docs.push(docUrl);
+        modified = true;
+        log(`Added documentation path: ${docUrl}`);
+      } else {
+        log(`Documentation path already exists: ${docUrl}`);
+      }
+    }
+  }
+
+  // Remove documentation paths
+  if (options.noDoc && options.noDoc.length > 0) {
+    if (plan.docs) {
+      const originalLength = plan.docs.length;
+      plan.docs = plan.docs.filter((url: string) => !options.noDoc!.includes(url));
+      if (plan.docs.length < originalLength) {
+        modified = true;
+        log(`Removed ${originalLength - plan.docs.length} documentation paths`);
       }
     }
   }

@@ -358,6 +358,8 @@ program
   )
   .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
   .option('--no-i, --no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
+  .option('--doc <paths...>', 'Add documentation file paths to the plan')
+  .option('--no-doc <paths...>', 'Remove documentation file paths from the plan')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
     options.dependsOn = intArg(options.dependsOn);
