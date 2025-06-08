@@ -4,12 +4,13 @@
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
-import { error, log } from '../../logging.js';
+import { log } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { generateNumericPlanId } from '../id_utils.js';
 import { writePlanFile } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
+import { prioritySchema, type PlanSchema } from '../planSchema.js';
+import { needArrayOrUndefined } from '../../common/cli.js';
 
 export async function handleAddCommand(title: string[], options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -48,7 +49,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   // Validate priority if provided
   if (options.priority) {
-    const validPriorities = ['low', 'medium', 'high', 'urgent'];
+    const validPriorities = prioritySchema.options;
     if (!validPriorities.includes(options.priority)) {
       throw new Error(
         `Invalid priority level: ${options.priority}. Must be one of: ${validPriorities.join(', ')}`
@@ -58,22 +59,17 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   // Create the initial plan object adhering to PlanSchema
   const plan: PlanSchema = {
-    id: planId.toString(),
+    id: planId,
     title: planTitle,
     goal: '',
     details: '',
     status: 'pending',
+    priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
+    dependencies: needArrayOrUndefined(options.dependsOn),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
   };
-
-  // Add dependencies if provided
-  if (options.dependsOn && options.dependsOn.length > 0) {
-    plan.dependencies = options.dependsOn;
-  }
-
-  plan.priority = (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium';
 
   // Write the plan to the new file
   await writePlanFile(filePath, plan);

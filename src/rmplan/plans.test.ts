@@ -41,7 +41,7 @@ describe('resolvePlanFile', () => {
 
     // Create test plan files
     const plan1 = {
-      id: 'test-plan-1',
+      id: 1,
       title: 'Test Plan 1',
       goal: 'Test goal 1',
       details: 'Details for test plan 1',
@@ -51,13 +51,13 @@ describe('resolvePlanFile', () => {
     };
 
     const plan2 = {
-      id: 'feature-auth',
+      id: 2,
       title: 'Implement Authentication',
       goal: 'Add authentication system',
       details: 'Add authentication to the application',
       status: 'in_progress',
       priority: 'high',
-      dependencies: ['test-plan-1'],
+      dependencies: [1],
       tasks: [],
     };
 
@@ -68,8 +68,8 @@ describe('resolvePlanFile', () => {
       tasks: [],
     };
 
-    await writeFile(join(tasksDir, 'test-plan-1.yml'), yaml.stringify(plan1));
-    await writeFile(join(tasksDir, 'feature-auth.yml'), yaml.stringify(plan2));
+    await writeFile(join(tasksDir, '1.yml'), yaml.stringify(plan1));
+    await writeFile(join(tasksDir, '2.yml'), yaml.stringify(plan2));
     await writeFile(join(tasksDir, 'no-id.yml'), yaml.stringify(planWithoutId));
 
     // Create a plan outside the tasks dir
@@ -85,7 +85,7 @@ describe('resolvePlanFile', () => {
   });
 
   it('should resolve an absolute file path that exists', async () => {
-    const absolutePath = join(tasksDir, 'test-plan-1.yml');
+    const absolutePath = join(tasksDir, '1.yml');
     const resolved = await resolvePlanFile(absolutePath);
     expect(resolved).toBe(absolutePath);
   });
@@ -95,21 +95,21 @@ describe('resolvePlanFile', () => {
     process.chdir(tasksDir);
 
     try {
-      const resolved = await resolvePlanFile('./test-plan-1.yml');
-      expect(resolved).toBe(join(tasksDir, 'test-plan-1.yml'));
+      const resolved = await resolvePlanFile('./1.yml');
+      expect(resolved).toBe(join(tasksDir, '1.yml'));
     } finally {
       process.chdir(originalCwd);
     }
   });
 
   it('should resolve a plan ID to the correct file', async () => {
-    const resolved = await resolvePlanFile('test-plan-1');
-    expect(resolved).toBe(join(tasksDir, 'test-plan-1.yml'));
+    const resolved = await resolvePlanFile('1');
+    expect(resolved).toBe(join(tasksDir, '1.yml'));
   });
 
   it('should resolve a plan ID with dashes', async () => {
-    const resolved = await resolvePlanFile('feature-auth');
-    expect(resolved).toBe(join(tasksDir, 'feature-auth.yml'));
+    const resolved = await resolvePlanFile('2');
+    expect(resolved).toBe(join(tasksDir, '2.yml'));
   });
 
   it('should throw error for non-existent file path', async () => {
@@ -130,7 +130,7 @@ describe('resolvePlanFile', () => {
     await mkdir(nestedDir, { recursive: true });
 
     const nestedPlan = {
-      id: 'nested-plan',
+      id: 3,
       title: 'Nested Plan',
       goal: 'Test nested directory',
       details: 'Details for nested plan',
@@ -142,7 +142,7 @@ describe('resolvePlanFile', () => {
     // Clear cache to ensure the new file is found
     clearPlanCache();
 
-    const resolved = await resolvePlanFile('nested-plan');
+    const resolved = await resolvePlanFile('3');
     expect(resolved).toBe(join(nestedDir, 'nested-plan.yml'));
   });
 
@@ -206,32 +206,6 @@ describe('resolvePlanFile', () => {
     expect(resolved).toBe(join(tasksDir, '103.yml'));
   });
 
-  it('should resolve older plans by their string ID contained within a file', async () => {
-    // Create a plan with a string ID in a file with a different name
-    const oldPlan = {
-      id: 'alpha-plan-id',
-      title: 'Old Plan with String ID',
-      goal: 'Test old string ID',
-      details: 'Details for old plan',
-      status: 'pending',
-      tasks: [],
-    };
-
-    await writeFile(join(tasksDir, 'old-plan.yml'), yaml.stringify(oldPlan));
-
-    // Clear cache to ensure the new file is found
-    clearPlanCache();
-
-    const resolved = await resolvePlanFile('alpha-plan-id');
-    expect(resolved).toBe(join(tasksDir, 'old-plan.yml'));
-  });
-
-  it('should resolve older plans by their direct filename', async () => {
-    // This already exists as 'feature-auth.yml'
-    const resolved = await resolvePlanFile('feature-auth.yml');
-    expect(resolved).toBe(join(tasksDir, 'feature-auth.yml'));
-  });
-
   it('should throw an error if the plan ID or filename cannot be resolved', async () => {
     await expect(resolvePlanFile('999')).rejects.toThrow('No plan found with ID or file path: 999');
 
@@ -259,7 +233,7 @@ describe('readAllPlans', () => {
       {
         filename: 'plan1.yml',
         content: {
-          id: 'plan-1',
+          id: 1,
           title: 'Plan 1',
           goal: 'Goal 1',
           details: 'Details for plan 1',
@@ -271,19 +245,19 @@ describe('readAllPlans', () => {
       {
         filename: 'plan2.yaml',
         content: {
-          id: 'plan-2',
+          id: 2,
           title: 'Plan 2',
           goal: 'Goal 2',
           details: 'Details for plan 2',
           status: 'done',
-          dependencies: ['plan-1'],
+          dependencies: [1],
           tasks: [],
         },
       },
       {
         filename: join('subdir', 'nested.yml'),
         content: {
-          id: 'nested-plan',
+          id: 3,
           title: 'Nested Plan',
           goal: 'Nested goal',
           details: 'Details for nested plan',
@@ -327,9 +301,9 @@ describe('readAllPlans', () => {
     const { plans, maxNumericId } = await readAllPlans(tempDir);
 
     expect(plans.size).toBe(3);
-    expect(plans.has('plan-1')).toBe(true);
-    expect(plans.has('plan-2')).toBe(true);
-    expect(plans.has('nested-plan')).toBe(true);
+    expect(plans.has(1)).toBe(true);
+    expect(plans.has(2)).toBe(true);
+    expect(plans.has(3)).toBe(true);
 
     // The no-id.yml file should not be included
     const generatedIdPlan = Array.from(plans.values()).find((p) =>
@@ -337,14 +311,14 @@ describe('readAllPlans', () => {
     );
     expect(generatedIdPlan).toBeUndefined();
 
-    // Since all IDs are strings, maxNumericId should be 0
-    expect(maxNumericId).toBe(0);
+    // Since all IDs are numeric, maxNumericId should be 3
+    expect(maxNumericId).toBe(3);
   });
 
   it('should include correct plan summaries', async () => {
     const { plans } = await readAllPlans(tempDir);
 
-    const plan1 = plans.get('plan-1');
+    const plan1 = plans.get(1);
     expect(plan1).toBeDefined();
     expect(plan1!.title).toBe('Plan 1');
     expect(plan1!.goal).toBe('Goal 1');
@@ -352,10 +326,10 @@ describe('readAllPlans', () => {
     expect(plan1!.priority).toBe('high');
     expect(plan1!.filename).toBe(join(tempDir, 'plan1.yml'));
 
-    const plan2 = plans.get('plan-2');
+    const plan2 = plans.get(2);
     expect(plan2).toBeDefined();
     expect(plan2!.status).toBe('done');
-    expect(plan2!.dependencies).toEqual(['plan-1']);
+    expect(plan2!.dependencies).toEqual([1]);
   });
 
   it('should handle empty directories', async () => {
@@ -372,11 +346,10 @@ describe('readAllPlans', () => {
   it('should handle numeric IDs and calculate maxNumericId correctly', async () => {
     const numericIdDir = await mkdtemp(join(tmpdir(), 'numeric-id-test-'));
     try {
-      // Create plans with various numeric and string IDs
+      // Create plans with numeric IDs
       const plans = [
         { id: 100, title: 'Plan 100', goal: 'Test', details: 'Test', tasks: [] },
         { id: 50, title: 'Plan 50', goal: 'Test', details: 'Test', tasks: [] },
-        { id: 'string-id', title: 'String ID Plan', goal: 'Test', details: 'Test', tasks: [] },
         { id: 75, title: 'Plan 75', goal: 'Test', details: 'Test', tasks: [] },
       ];
 
@@ -397,71 +370,10 @@ describe('readAllPlans', () => {
       expect(readPlans.get(75)).toBeDefined();
       expect(readPlans.get(75)!.id).toBe(75);
 
-      // String ID should still work
-      expect(readPlans.get('string-id')).toBeDefined();
-      expect(readPlans.get('string-id')!.id).toBe('string-id');
-
       // maxNumericId should be the highest numeric ID
       expect(maxNumericId).toBe(100);
     } finally {
       await rm(numericIdDir, { recursive: true, force: true });
-    }
-  });
-
-  it('should handle string representations of numeric IDs', async () => {
-    const stringNumericIdDir = await mkdtemp(join(tmpdir(), 'string-numeric-test-'));
-    try {
-      // Create plans with string representations of numbers
-      const plans = [
-        { id: '123', title: 'String 123', goal: 'Test', details: 'Test', tasks: [] },
-        { id: '456', title: 'String 456', goal: 'Test', details: 'Test', tasks: [] },
-        { id: 'abc-123', title: 'Mixed ID', goal: 'Test', details: 'Test', tasks: [] },
-      ];
-
-      for (const plan of plans) {
-        await writeFile(join(stringNumericIdDir, `${plan.id}.yml`), yaml.stringify(plan));
-      }
-
-      const { plans: readPlans, maxNumericId } = await readAllPlans(stringNumericIdDir);
-
-      // String numeric IDs should be converted to numbers
-      expect(readPlans.get(123)).toBeDefined();
-      expect(readPlans.get(123)!.id).toBe(123);
-      expect(typeof readPlans.get(123)!.id).toBe('number');
-
-      expect(readPlans.get(456)).toBeDefined();
-      expect(readPlans.get(456)!.id).toBe(456);
-
-      // Non-numeric string should remain a string
-      expect(readPlans.get('abc-123')).toBeDefined();
-      expect(readPlans.get('abc-123')!.id).toBe('abc-123');
-
-      // maxNumericId should be 456
-      expect(maxNumericId).toBe(456);
-    } finally {
-      await rm(stringNumericIdDir, { recursive: true, force: true });
-    }
-  });
-
-  it('should return maxNumericId 0 when no numeric IDs exist', async () => {
-    const noNumericIdDir = await mkdtemp(join(tmpdir(), 'no-numeric-test-'));
-    try {
-      // Create plans with only string IDs
-      const plans = [
-        { id: 'alpha', title: 'Alpha Plan', goal: 'Test', details: 'Test', tasks: [] },
-        { id: 'beta-123', title: 'Beta Plan', goal: 'Test', details: 'Test', tasks: [] },
-      ];
-
-      for (const plan of plans) {
-        await writeFile(join(noNumericIdDir, `${plan.id}.yml`), yaml.stringify(plan));
-      }
-
-      const { plans: readPlans, maxNumericId } = await readAllPlans(noNumericIdDir);
-
-      expect(readPlans.size).toBe(2);
-      expect(maxNumericId).toBe(0);
-    } finally {
-      await rm(noNumericIdDir, { recursive: true, force: true });
     }
   });
 
@@ -531,7 +443,7 @@ describe('findNextReadyPlan', () => {
       {
         filename: 'low-priority-1.yml',
         content: {
-          id: 'low-1',
+          id: 1,
           title: 'Low Priority 1',
           goal: 'Low priority goal',
           details: 'Details',
@@ -543,7 +455,7 @@ describe('findNextReadyPlan', () => {
       {
         filename: 'urgent-priority.yml',
         content: {
-          id: 'urgent-1',
+          id: 2,
           title: 'Urgent Priority',
           goal: 'Urgent goal',
           details: 'Details',
@@ -555,7 +467,7 @@ describe('findNextReadyPlan', () => {
       {
         filename: 'medium-priority.yml',
         content: {
-          id: 'medium-1',
+          id: 3,
           title: 'Medium Priority',
           goal: 'Medium goal',
           details: 'Details',
@@ -567,7 +479,7 @@ describe('findNextReadyPlan', () => {
       {
         filename: 'high-priority.yml',
         content: {
-          id: 'high-1',
+          id: 4,
           title: 'High Priority',
           goal: 'High goal',
           details: 'Details',
@@ -579,7 +491,7 @@ describe('findNextReadyPlan', () => {
       {
         filename: 'no-priority.yml',
         content: {
-          id: 'no-priority-1',
+          id: 5,
           title: 'No Priority',
           goal: 'No priority goal',
           details: 'Details',
@@ -590,7 +502,7 @@ describe('findNextReadyPlan', () => {
       {
         filename: 'high-priority-2.yml',
         content: {
-          id: 'high-2',
+          id: 6,
           title: 'High Priority 2',
           goal: 'Second high priority goal',
           details: 'Details',
@@ -602,7 +514,7 @@ describe('findNextReadyPlan', () => {
       {
         filename: 'done-plan.yml',
         content: {
-          id: 'done-1',
+          id: 7,
           title: 'Done Plan',
           goal: 'Already done',
           details: 'Details',
@@ -614,26 +526,26 @@ describe('findNextReadyPlan', () => {
       {
         filename: 'blocked-plan.yml',
         content: {
-          id: 'blocked-1',
+          id: 8,
           title: 'Blocked Plan',
           goal: 'Blocked by dependency',
           details: 'Details',
           status: 'pending',
           priority: 'urgent',
-          dependencies: ['done-1', 'low-1'], // low-1 is not done, so this is blocked
+          dependencies: [7, 1], // low-1 is not done, so this is blocked
           tasks: [],
         },
       },
       {
         filename: 'ready-with-deps.yml',
         content: {
-          id: 'ready-deps-1',
+          id: 9,
           title: 'Ready with Dependencies',
           goal: 'Has dependencies but they are done',
           details: 'Details',
           status: 'pending',
           priority: 'medium',
-          dependencies: ['done-1'], // done-1 is done, so this is ready
+          dependencies: [7], // done-1 is done, so this is ready
           tasks: [],
         },
       },
@@ -651,7 +563,7 @@ describe('findNextReadyPlan', () => {
   it('should return the highest priority ready plan', async () => {
     const nextPlan = await findNextPlan(tempDir, { includePending: true });
     expect(nextPlan).toBeDefined();
-    expect(nextPlan!.id).toBe('urgent-1');
+    expect(nextPlan!.id).toBe(2);
   });
 
   it('should sort by ID when priorities are equal', async () => {
@@ -663,27 +575,27 @@ describe('findNextReadyPlan', () => {
 
     const nextPlan = await findNextPlan(tempDir, { includePending: true });
     expect(nextPlan).toBeDefined();
-    expect(nextPlan!.id).toBe('high-1'); // high-1 comes before high-2 alphabetically
+    expect(nextPlan!.id).toBe(4); // Plan 4 comes before plan 6
   });
 
   it('should skip blocked plans even if they have high priority', async () => {
     // The blocked-1 plan has urgent priority but depends on low-1 which is not done
     const { plans } = await readAllPlans(tempDir);
-    const blockedPlan = plans.get('blocked-1');
+    const blockedPlan = plans.get(8);
     expect(blockedPlan).toBeDefined();
     expect(blockedPlan!.priority).toBe('urgent');
 
     // But it should not be returned as the next plan
     const nextPlan = await findNextPlan(tempDir, { includePending: true });
     expect(nextPlan).toBeDefined();
-    expect(nextPlan!.id).not.toBe('blocked-1');
+    expect(nextPlan!.id).not.toBe(8);
   });
 
   it('should include plans with all dependencies done', async () => {
     const { plans } = await readAllPlans(tempDir);
-    const readyWithDeps = plans.get('ready-deps-1');
+    const readyWithDeps = plans.get(9);
     expect(readyWithDeps).toBeDefined();
-    expect(readyWithDeps!.dependencies).toEqual(['done-1']);
+    expect(readyWithDeps!.dependencies).toEqual([7]);
 
     // Create a fresh directory with only the dependency test plans
     const depTestDir = await mkdtemp(join(tmpdir(), 'dep-test-'));
@@ -691,7 +603,7 @@ describe('findNextReadyPlan', () => {
       await writeFile(
         join(depTestDir, 'done-dep.yml'),
         yaml.stringify({
-          id: 'done-dep',
+          id: 10,
           title: 'Done Dependency',
           goal: 'Already done',
           details: 'Details',
@@ -703,20 +615,20 @@ describe('findNextReadyPlan', () => {
       await writeFile(
         join(depTestDir, 'ready-with-deps.yml'),
         yaml.stringify({
-          id: 'ready-with-deps',
+          id: 11,
           title: 'Ready with Dependencies',
           goal: 'Has dependencies but they are done',
           details: 'Details',
           status: 'pending',
           priority: 'medium',
-          dependencies: ['done-dep'],
+          dependencies: [10],
           tasks: [],
         })
       );
 
       const nextPlan = await findNextPlan(depTestDir, { includePending: true });
       expect(nextPlan).toBeDefined();
-      expect(nextPlan!.id).toBe('ready-with-deps');
+      expect(nextPlan!.id).toBe(11);
     } finally {
       await rm(depTestDir, { recursive: true, force: true });
     }
@@ -729,7 +641,7 @@ describe('findNextReadyPlan', () => {
       await writeFile(
         join(doneDir, 'done.yml'),
         yaml.stringify({
-          id: 'done-plan',
+          id: 12,
           title: 'Done',
           goal: 'Already done',
           details: 'Details',
@@ -752,7 +664,7 @@ describe('findNextReadyPlan', () => {
       await writeFile(
         join(priorityTestDir, 'no-priority.yml'),
         yaml.stringify({
-          id: 'no-priority',
+          id: 13,
           title: 'No Priority',
           goal: 'No priority goal',
           details: 'Details',
@@ -764,7 +676,7 @@ describe('findNextReadyPlan', () => {
       await writeFile(
         join(priorityTestDir, 'low-priority.yml'),
         yaml.stringify({
-          id: 'low-priority',
+          id: 14,
           title: 'Low Priority',
           goal: 'Low priority goal',
           details: 'Details',
@@ -776,7 +688,7 @@ describe('findNextReadyPlan', () => {
 
       const nextPlan = await findNextPlan(priorityTestDir, { includePending: true });
       expect(nextPlan).toBeDefined();
-      expect(nextPlan!.id).toBe('low-priority'); // Low priority is higher than no priority
+      expect(nextPlan!.id).toBe(14); // Low priority is higher than no priority
     } finally {
       await rm(priorityTestDir, { recursive: true, force: true });
     }
@@ -800,7 +712,7 @@ describe('setPlanStatus', () => {
   it('should successfully update status and updatedAt for a valid plan', async () => {
     const planPath = join(tempDir, 'test-plan.yml');
     const originalPlan: PlanSchema = {
-      id: 'test-plan',
+      id: 15,
       title: 'Test Plan',
       goal: 'Test goal',
       details: 'Test details',
@@ -851,7 +763,7 @@ describe('setPlanStatus', () => {
     const planPath = join(tempDir, 'time-test-plan.yml');
     const originalTime = '2024-01-01T00:00:00.000Z';
     const originalPlan: PlanSchema = {
-      id: 'time-test',
+      id: 16,
       title: 'Time Test Plan',
       goal: 'Test time update',
       details: 'Test details',
@@ -878,7 +790,7 @@ describe('setPlanStatus', () => {
   it('should handle plans without updatedAt field', async () => {
     const planPath = join(tempDir, 'no-updatedat-plan.yml');
     const originalPlan: PlanSchema = {
-      id: 'no-updatedat',
+      id: 17,
       title: 'No UpdatedAt Plan',
       goal: 'Test without updatedAt',
       details: 'Test details',
@@ -932,13 +844,13 @@ describe('setPlanStatus', () => {
   it('should preserve other fields when updating status', async () => {
     const planPath = join(tempDir, 'preserve-fields.yml');
     const originalPlan: PlanSchema = {
-      id: 'preserve-test',
+      id: 18,
       title: 'Preserve Fields Test',
       goal: 'Test field preservation',
       details: 'Detailed description',
       status: 'pending',
       priority: 'high',
-      dependencies: ['dep1', 'dep2'],
+      dependencies: [19, 20],
       createdAt: '2024-01-01T00:00:00.000Z',
       updatedAt: '2024-01-01T00:00:00.000Z',
       tasks: [
@@ -979,7 +891,7 @@ describe('setPlanStatus', () => {
   it('should handle concurrent updates gracefully', async () => {
     const planPath = join(tempDir, 'concurrent-test.yml');
     const originalPlan: PlanSchema = {
-      id: 'concurrent',
+      id: 21,
       title: 'Concurrent Test',
       goal: 'Test concurrent updates',
       details: 'Testing',
@@ -1041,29 +953,6 @@ tasks: []
     expect(typeof validatedPlan.id).toBe('number');
   });
 
-  it('should still handle string IDs correctly', () => {
-    const planWithStringId: PlanSchema = {
-      id: 'string-id-123',
-      title: 'Test Plan with String ID',
-      goal: 'Test string ID handling',
-      details: 'This plan has a string ID',
-      status: 'pending',
-      tasks: [],
-    };
-
-    const yamlString = yaml.stringify(planWithStringId);
-
-    // Verify the YAML contains the string ID
-    expect(yamlString).toMatch(/id: ['"]?string-id-123['"]?/);
-
-    // Parse it back and verify
-    const parsed = yaml.parse(yamlString);
-    const validatedPlan = planSchema.parse(parsed);
-
-    expect(validatedPlan.id).toBe('string-id-123');
-    expect(typeof validatedPlan.id).toBe('string');
-  });
-
   it('should accept plans without IDs', () => {
     const planWithoutId: PlanSchema = {
       title: 'Test Plan without ID',
@@ -1100,7 +989,6 @@ tasks: []
   it('should handle mixed ID types in a plan collection', () => {
     const plans = [
       { id: 100, title: 'Numeric ID Plan', goal: 'Test', details: 'Test', tasks: [] },
-      { id: 'alpha-id', title: 'String ID Plan', goal: 'Test', details: 'Test', tasks: [] },
       { title: 'No ID Plan', goal: 'Test', details: 'Test', tasks: [] },
     ];
 

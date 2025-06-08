@@ -89,7 +89,7 @@ test('prepareNextStep includes autoexamples when present in prompt', async () =>
   };
 
   const plan: PlanSchema = {
-    id: 'test-plan-id',
+    id: 123,
     title: 'Test plan',
     goal: 'Test plan',
     details: 'Test details',

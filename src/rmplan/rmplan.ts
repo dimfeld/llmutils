@@ -42,6 +42,27 @@ import { prioritySchema } from './planSchema.js';
 
 await loadEnv();
 
+function intArg(value: string | undefined): number | undefined;
+function intArg(value: string[] | undefined): number[] | undefined;
+function intArg<T extends string | string[] | undefined>(
+  value: T | undefined
+): number | number[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const out = value.map((s) => intArg(s));
+    return out as number[] | undefined;
+  }
+
+  let n = Number(value);
+  if (Number.isNaN(n)) {
+    throw new Error(`Argument must be an integer, saw ${value.toString()}`);
+  }
+  return n;
+}
+
 const program = new Command();
 program.name('rmplan').description('Generate and execute task plans using LLMs');
 program.option(
@@ -106,6 +127,7 @@ program
   .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
+    options.dependsOn = intArg(options.dependsOn);
     await handleAddCommand(title, options, command).catch(handleCommandError);
   });
 
@@ -338,6 +360,8 @@ program
   .option('--no-i, --no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
+    options.dependsOn = intArg(options.dependsOn);
+    options.noDependsOn = intArg(options.noDependsOn);
     await handleSetCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
   });
 

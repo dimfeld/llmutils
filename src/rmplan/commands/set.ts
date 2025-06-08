@@ -1,3 +1,4 @@
+import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
 import type { Priority } from '../planSchema.js';
@@ -8,8 +9,8 @@ export interface SetOptions {
   planFile: string;
   priority?: Priority;
   status?: Status;
-  dependsOn?: string[];
-  noDependsOn?: string[];
+  dependsOn?: number[];
+  noDependsOn?: number[];
   rmfilter?: string[];
   issue?: string[];
   noIssue?: string[];

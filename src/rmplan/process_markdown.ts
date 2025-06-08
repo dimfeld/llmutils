@@ -131,7 +131,7 @@ export interface ExtractMarkdownToYamlOptions {
   issueUrls?: string[];
   planRmfilterArgs?: string[];
   output: string;
-  projectId?: string | number;
+  projectId?: number;
   stubPlan?: { data: PlanSchema; path: string };
   commit?: boolean;
 }
@@ -352,7 +352,7 @@ export async function saveMultiPhaseYaml(
   };
 
   // Process phases
-  const phaseIndexToId = new Map<number, string | number>();
+  const phaseIndexToId = new Map<number, number>();
   let successfulWrites = 0;
   const failedPhases: number[] = [];
 
@@ -554,7 +554,7 @@ export async function saveMultiPhaseYaml(
 
   if (options.stubPlan?.data && actuallyMultiphase) {
     options.stubPlan.data.dependencies ??= [];
-    options.stubPlan.data.dependencies.push(...phaseIndexToId.values().map((id) => id.toString()));
+    options.stubPlan.data.dependencies.push(...phaseIndexToId.values().map((id) => id));
     options.stubPlan.data.container = true;
     await writePlanFile(options.stubPlan.path, options.stubPlan.data);
     log(chalk.green(`✓ Converted stub plan to container`));
@@ -566,7 +566,7 @@ export async function saveMultiPhaseYaml(
       log(`Output directory: ${outputDir}`);
     } else {
       log(chalk.green(`✓ Successfully converted markdown to 1 phase file`));
-      log(`Output file: ${options.output}.yml`);
+      log(`Output file: ${options.output}`);
     }
   }
 

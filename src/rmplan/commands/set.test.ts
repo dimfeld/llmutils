@@ -21,7 +21,7 @@ describe('rmplan set command', () => {
     await rm(tempDir, { recursive: true });
   });
 
-  const createTestPlan = async (id: string) => {
+  const createTestPlan = async (id: number) => {
     const planPath = path.join(tasksDir, `${id}.yml`);
     const plan: PlanSchema = {
       id,
@@ -41,7 +41,7 @@ describe('rmplan set command', () => {
   };
 
   test('should update priority', async () => {
-    const planPath = await createTestPlan('10');
+    const planPath = await createTestPlan(10);
 
     await handleSetCommand(
       planPath,
@@ -58,7 +58,7 @@ describe('rmplan set command', () => {
   });
 
   test('should update status', async () => {
-    const planPath = await createTestPlan('11');
+    const planPath = await createTestPlan(11);
 
     await handleSetCommand(
       planPath,
@@ -74,30 +74,30 @@ describe('rmplan set command', () => {
   });
 
   test('should add dependencies', async () => {
-    const planPath = await createTestPlan('12');
+    const planPath = await createTestPlan(12);
 
     await handleSetCommand(
       planPath,
       {
         planFile: planPath,
-        dependsOn: ['10', '11'],
+        dependsOn: [10, 11],
       },
       {}
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.dependencies).toEqual(['10', '11']);
+    expect(updatedPlan.dependencies).toEqual([10, 11]);
   });
 
   test('should not duplicate dependencies', async () => {
-    const planPath = await createTestPlan('13');
+    const planPath = await createTestPlan(13);
 
     // First add
     await handleSetCommand(
       planPath,
       {
         planFile: planPath,
-        dependsOn: ['10'],
+        dependsOn: [10],
       },
       {}
     );
@@ -107,24 +107,24 @@ describe('rmplan set command', () => {
       planPath,
       {
         planFile: planPath,
-        dependsOn: ['10', '11'],
+        dependsOn: [10, 11],
       },
       {}
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.dependencies).toEqual(['10', '11']);
+    expect(updatedPlan.dependencies).toEqual([10, 11]);
   });
 
   test('should remove dependencies', async () => {
-    const planPath = await createTestPlan('14');
+    const planPath = await createTestPlan(14);
 
     // First add dependencies
     await handleSetCommand(
       planPath,
       {
         planFile: planPath,
-        dependsOn: ['10', '11', '12'],
+        dependsOn: [10, 11, 12],
       },
       {}
     );
@@ -134,17 +134,17 @@ describe('rmplan set command', () => {
       planPath,
       {
         planFile: planPath,
-        noDependsOn: ['10', '12'],
+        noDependsOn: [10, 12],
       },
       {}
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.dependencies).toEqual(['11']);
+    expect(updatedPlan.dependencies).toEqual([11]);
   });
 
   test('should update rmfilter', async () => {
-    const planPath = await createTestPlan('15');
+    const planPath = await createTestPlan(15);
 
     await handleSetCommand(
       planPath,
@@ -160,7 +160,7 @@ describe('rmplan set command', () => {
   });
 
   test('should update multiple fields at once', async () => {
-    const planPath = await createTestPlan('16');
+    const planPath = await createTestPlan(16);
 
     await handleSetCommand(
       planPath,
@@ -168,7 +168,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         priority: 'urgent',
         status: 'in_progress',
-        dependsOn: ['10', '11'],
+        dependsOn: [10, 11],
         rmfilter: ['src/**/*.ts'],
       },
       {}
@@ -177,12 +177,12 @@ describe('rmplan set command', () => {
     const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.priority).toBe('urgent');
     expect(updatedPlan.status).toBe('in_progress');
-    expect(updatedPlan.dependencies).toEqual(['10', '11']);
+    expect(updatedPlan.dependencies).toEqual([10, 11]);
     expect(updatedPlan.rmfilter).toEqual(['src/**/*.ts']);
   });
 
   test('should not update if no changes made', async () => {
-    const planPath = await createTestPlan('17');
+    const planPath = await createTestPlan(17);
     const originalPlan = await readPlanFile(planPath);
     const originalUpdatedAt = originalPlan.updatedAt;
 
@@ -202,7 +202,7 @@ describe('rmplan set command', () => {
   });
 
   test('should add issue URLs', async () => {
-    const planPath = await createTestPlan('18');
+    const planPath = await createTestPlan(18);
 
     await handleSetCommand(
       planPath,
@@ -224,7 +224,7 @@ describe('rmplan set command', () => {
   });
 
   test('should not duplicate issue URLs', async () => {
-    const planPath = await createTestPlan('19');
+    const planPath = await createTestPlan(19);
 
     // First add
     await handleSetCommand(
@@ -257,7 +257,7 @@ describe('rmplan set command', () => {
   });
 
   test('should remove issue URLs', async () => {
-    const planPath = await createTestPlan('20');
+    const planPath = await createTestPlan(20);
 
     // First add issue URLs
     await handleSetCommand(
@@ -291,14 +291,14 @@ describe('rmplan set command', () => {
   });
 
   test('should handle plans without existing dependencies', async () => {
-    const planPath = await createTestPlan('21');
+    const planPath = await createTestPlan(21);
 
     // Remove dependencies
     await handleSetCommand(
       planPath,
       {
         planFile: planPath,
-        noDependsOn: ['10', '11'],
+        noDependsOn: [10, 11],
       },
       {}
     );
@@ -308,7 +308,7 @@ describe('rmplan set command', () => {
   });
 
   test('should handle plans without existing issue URLs', async () => {
-    const planPath = await createTestPlan('22');
+    const planPath = await createTestPlan(22);
 
     // Remove issue URLs
     await handleSetCommand(

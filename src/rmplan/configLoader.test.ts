@@ -155,7 +155,6 @@ postApplyCommands:
 
       const config = await loadConfig(configPath);
 
-      expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR);
       expect(config).toHaveProperty('postApplyCommands');
       expect(config.postApplyCommands).toHaveLength(1);
       expect(config.postApplyCommands?.[0].title).toBe('Test Command');

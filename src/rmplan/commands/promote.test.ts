@@ -119,7 +119,7 @@ describe('handlePromoteCommand', () => {
     expect(updatedOriginalPlan.tasks).toHaveLength(2);
     expect(updatedOriginalPlan.tasks![0].title).toBe('Set up database schema');
     expect(updatedOriginalPlan.tasks![1].title).toBe('Add password hashing');
-    expect(updatedOriginalPlan.dependencies).toContain('2');
+    expect(updatedOriginalPlan.dependencies).toContain(2);
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
@@ -204,13 +204,13 @@ describe('handlePromoteCommand', () => {
     expect(newPlan3.id).toBe(3);
     expect(newPlan3.title).toBe('Add password hashing');
     expect(newPlan3.details).toBe('Implement secure password storage');
-    expect(newPlan3.dependencies).toContain('2');
+    expect(newPlan3.dependencies).toContain(2);
 
     // Verify plan 4 (from task 1.4) depends on plan 3
     expect(newPlan4.id).toBe(4);
     expect(newPlan4.title).toBe('Create registration endpoint');
     expect(newPlan4.details).toBe('API endpoint for user registration');
-    expect(newPlan4.dependencies).toContain('3');
+    expect(newPlan4.dependencies).toContain(3);
 
     // Read and verify the original plan was updated
     const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
@@ -219,9 +219,9 @@ describe('handlePromoteCommand', () => {
     expect(updatedOriginalPlan.tasks![1].title).toBe('Add email verification');
 
     // Original plan should depend on all new plans
-    expect(updatedOriginalPlan.dependencies).toContain('2');
-    expect(updatedOriginalPlan.dependencies).toContain('3');
-    expect(updatedOriginalPlan.dependencies).toContain('4');
+    expect(updatedOriginalPlan.dependencies).toContain(2);
+    expect(updatedOriginalPlan.dependencies).toContain(3);
+    expect(updatedOriginalPlan.dependencies).toContain(4);
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
@@ -296,13 +296,13 @@ describe('handlePromoteCommand', () => {
     expect(newPlan3.id).toBe(3);
     expect(newPlan3.title).toBe('Task two');
     expect(newPlan3.details).toBe('Second task description');
-    expect(newPlan3.dependencies).toContain('2');
+    expect(newPlan3.dependencies).toContain(2);
 
     // Verify plan 4 (from task 1.3) depends on plan 3
     expect(newPlan4.id).toBe(4);
     expect(newPlan4.title).toBe('Task three');
     expect(newPlan4.details).toBe('Third task description');
-    expect(newPlan4.dependencies).toContain('3');
+    expect(newPlan4.dependencies).toContain(3);
 
     // Read and verify the original plan was updated
     const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
@@ -310,9 +310,9 @@ describe('handlePromoteCommand', () => {
     expect(updatedOriginalPlan.tasks).toEqual([]);
 
     // Original plan should depend on all new plans
-    expect(updatedOriginalPlan.dependencies).toContain('2');
-    expect(updatedOriginalPlan.dependencies).toContain('3');
-    expect(updatedOriginalPlan.dependencies).toContain('4');
+    expect(updatedOriginalPlan.dependencies).toContain(2);
+    expect(updatedOriginalPlan.dependencies).toContain(3);
+    expect(updatedOriginalPlan.dependencies).toContain(4);
 
     // Status should remain unchanged
     expect(updatedOriginalPlan.status).toBe('pending');
@@ -408,12 +408,12 @@ describe('handlePromoteCommand', () => {
     // Plan 1 should have only the first task remaining
     expect(updatedPlan1.tasks).toHaveLength(1);
     expect(updatedPlan1.tasks![0].title).toBe('Plan 1 Task 1');
-    expect(updatedPlan1.dependencies).toContain('3');
+    expect(updatedPlan1.dependencies).toContain(3);
 
     // Plan 2 should have only the second task remaining
     expect(updatedPlan2.tasks).toHaveLength(1);
     expect(updatedPlan2.tasks![0].title).toBe('Plan 2 Task 2');
-    expect(updatedPlan2.dependencies).toContain('4');
+    expect(updatedPlan2.dependencies).toContain(4);
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();

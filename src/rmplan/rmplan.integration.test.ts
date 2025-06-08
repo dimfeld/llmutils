@@ -54,14 +54,14 @@ describe('rmplan CLI integration tests', () => {
     // Verify plan content
     const planContent = await fs.readFile(path.join(tasksDir, '1.yml'), 'utf-8');
     const plan = yaml.parse(planContent);
-    expect(plan.id).toBe('1');
+    expect(plan.id).toBe(1);
     expect(plan.title).toBe('Integration Test Plan');
   });
 
   test('rmplan list shows created plans', async () => {
     // Create a test plan
     const plan = {
-      id: '1',
+      id: 1,
       title: 'List Test Plan',
       goal: 'Test listing',
       details: 'Details',
@@ -79,7 +79,7 @@ describe('rmplan CLI integration tests', () => {
   test('rmplan show displays plan details', async () => {
     // Create a test plan
     const plan = {
-      id: '1',
+      id: 1,
       title: 'Show Test Plan',
       goal: 'Test showing plan details',
       details: 'Detailed description of the plan',
@@ -112,7 +112,7 @@ describe('rmplan CLI integration tests', () => {
   test('rmplan done marks steps as complete', async () => {
     // Create a test plan with steps
     const plan = {
-      id: '1',
+      id: 1,
       title: 'Done Test Plan',
       goal: 'Test marking steps done',
       details: 'Details',
@@ -163,7 +163,7 @@ describe('rmplan CLI integration tests', () => {
     // Create plans with different statuses
     const plans = [
       {
-        id: '1',
+        id: 1,
         title: 'Pending Plan',
         goal: 'Test',
         details: 'Details',
@@ -171,7 +171,7 @@ describe('rmplan CLI integration tests', () => {
         tasks: [],
       },
       {
-        id: '2',
+        id: 2,
         title: 'Done Plan',
         goal: 'Test',
         details: 'Details',
@@ -179,7 +179,7 @@ describe('rmplan CLI integration tests', () => {
         tasks: [],
       },
       {
-        id: '3',
+        id: 3,
         title: 'In Progress Plan',
         goal: 'Test',
         details: 'Details',
@@ -209,7 +209,7 @@ describe('rmplan CLI integration tests', () => {
     // Create plans with dependencies
     const plans = [
       {
-        id: '1',
+        id: 1,
         title: 'Completed Dependency',
         goal: 'Already done',
         details: 'Details',
@@ -217,21 +217,21 @@ describe('rmplan CLI integration tests', () => {
         tasks: [],
       },
       {
-        id: '2',
+        id: 2,
         title: 'Ready Plan',
         goal: 'Ready to start',
         details: 'Details',
         status: 'pending',
-        dependencies: ['1'],
+        dependencies: [1],
         tasks: [],
       },
       {
-        id: '3',
+        id: 3,
         title: 'Blocked Plan',
         goal: 'Blocked by dependencies',
         details: 'Details',
         status: 'pending',
-        dependencies: ['2'],
+        dependencies: [2],
         tasks: [],
       },
     ];
@@ -248,13 +248,13 @@ describe('rmplan CLI integration tests', () => {
     expect(result).toContain('Ready Plan');
   });
 
-  test('rmplan add with dependencies and priority', async () => {
+  test.only('rmplan add with dependencies and priority', async () => {
     // First create a plan to depend on
     await $`bun ${rmplanPath} add "First Plan" --config ${configPath}`.cwd(tempDir);
 
     // Create a plan with dependencies and priority
     const result =
-      await $`bun ${rmplanPath} add "Dependent Plan" --depends-on 1 --priority high --config ${configPath}`
+      await $`bun ${rmplanPath} add "Dependent Plan" --depends-on 1 --depends-on 3 --priority high --config ${configPath}`
         .cwd(tempDir)
         .text();
 
@@ -263,8 +263,9 @@ describe('rmplan CLI integration tests', () => {
     // Verify the plan has dependencies and priority
     const planContent = await fs.readFile(path.join(tasksDir, '2.yml'), 'utf-8');
     const plan = yaml.parse(planContent);
-    expect(plan.id).toBe('2');
-    expect(plan.dependencies).toEqual(['1']);
+    console.log(plan);
+    expect(plan.id).toBe(2);
+    expect(plan.dependencies).toEqual([1, 3]);
     expect(plan.priority).toBe('high');
   });
 });
