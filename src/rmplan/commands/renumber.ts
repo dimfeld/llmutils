@@ -155,12 +155,15 @@ export async function handleRenumber(options: any, command: any) {
   let nextId = maxNumericId;
 
   const idMappings = new Map<string, number>();
-  const newFileIds = new Map<string, number>();
+  const newFileIds = new Map<
+    string,
+    { id: number; reason: 'missing' | 'alphanumeric' | 'conflict' }
+  >();
   const plansToWrite = new Set<string>();
   for (const plan of plansToRenumber) {
     nextId++;
     idMappings.set(String(plan.currentId), nextId);
-    newFileIds.set(plan.filePath, nextId);
+    newFileIds.set(plan.filePath, { id: nextId, reason: plan.reason });
     plansToWrite.add(plan.filePath);
 
     log(
@@ -175,7 +178,11 @@ export async function handleRenumber(options: any, command: any) {
     for (const [filePath, plan] of allPlans) {
       let isRenumbered = newFileIds.has(filePath);
       if (isRenumbered) {
-        plan.id = newFileIds.get(filePath)!;
+        const { id, reason } = newFileIds.get(filePath)!;
+        plan.id = id;
+        if (reason === 'missing') {
+          plan.status = 'done';
+        }
       }
 
       // Check if this plan has dependencies that need updating
