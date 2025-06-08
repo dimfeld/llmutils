@@ -9,6 +9,7 @@ import {
   resolvePlanFile,
   setPlanStatus,
   clearPlanCache,
+  readPlanFile,
 } from './plans.js';
 import { planSchema, type PlanSchema } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
@@ -915,6 +916,114 @@ describe('setPlanStatus', () => {
     const finalContent = await readFile(planPath, 'utf-8');
     const finalPlan = yaml.parse(finalContent) as PlanSchema;
     expect(['pending', 'in_progress', 'done']).toContain(finalPlan.status);
+  });
+});
+
+describe('Plan File Reading and Writing', () => {
+  let tempDir: string;
+
+  beforeAll(async () => {
+    tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-frontmatter-test-')));
+  });
+
+  afterAll(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should read plan file with YAML front matter correctly', async () => {
+    const planPath = join(tempDir, 'front-matter-plan.md');
+    const frontMatterContent = `---
+id: 100
+title: Test Plan with Front Matter
+goal: Test the new front matter format
+status: pending
+priority: high
+dependencies: [1, 2]
+createdAt: 2024-01-01T00:00:00.000Z
+tasks:
+  - title: Task 1
+    description: First task
+    files: []
+    steps:
+      - prompt: Step 1
+        done: false
+---
+
+# Implementation Details
+
+This is the markdown body that contains the details of the plan.
+
+## Background
+
+The plan should support:
+- Multiple lines of markdown
+- Various markdown features
+- Code blocks
+
+\`\`\`typescript
+const example = "code block";
+\`\`\`
+
+And more content here.`;
+
+    await writeFile(planPath, frontMatterContent);
+
+    const plan = await readPlanFile(planPath);
+
+    expect(plan.id).toBe(100);
+    expect(plan.title).toBe('Test Plan with Front Matter');
+    expect(plan.goal).toBe('Test the new front matter format');
+    expect(plan.status).toBe('pending');
+    expect(plan.priority).toBe('high');
+    expect(plan.dependencies).toEqual([1, 2]);
+    expect(plan.tasks).toHaveLength(1);
+    expect(plan.tasks![0].title).toBe('Task 1');
+    
+    // The markdown body should be placed in the details field
+    expect(plan.details).toContain('# Implementation Details');
+    expect(plan.details).toContain('This is the markdown body');
+    expect(plan.details).toContain('const example = "code block";');
+  });
+
+  it('should maintain backward compatibility with pure YAML files', async () => {
+    const planPath = join(tempDir, 'legacy-plan.yml');
+    const legacyPlan = {
+      id: 101,
+      title: 'Legacy YAML Plan',
+      goal: 'Test backward compatibility',
+      details: 'This is the details field in the YAML itself',
+      status: 'in_progress',
+      priority: 'medium',
+      dependencies: [3],
+      tasks: [
+        {
+          title: 'Legacy Task',
+          description: 'A task in the old format',
+          files: ['src/legacy.ts'],
+          steps: [
+            { prompt: 'Legacy step 1', done: true },
+            { prompt: 'Legacy step 2', done: false }
+          ]
+        }
+      ]
+    };
+
+    // Write as pure YAML (old format)
+    await writeFile(planPath, yaml.stringify(legacyPlan));
+
+    const plan = await readPlanFile(planPath);
+
+    // Verify all fields are read correctly
+    expect(plan.id).toBe(101);
+    expect(plan.title).toBe('Legacy YAML Plan');
+    expect(plan.goal).toBe('Test backward compatibility');
+    expect(plan.details).toBe('This is the details field in the YAML itself');
+    expect(plan.status).toBe('in_progress');
+    expect(plan.priority).toBe('medium');
+    expect(plan.dependencies).toEqual([3]);
+    expect(plan.tasks).toHaveLength(1);
+    expect(plan.tasks![0].title).toBe('Legacy Task');
+    expect(plan.tasks![0].steps).toHaveLength(2);
   });
 });
 

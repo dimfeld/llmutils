@@ -455,15 +455,49 @@ export async function collectDependenciesInOrder(
 }
 
 /**
- * Reads a plan YAML file and validates it with the plan schema.
- * @param filePath - The path to the plan YAML file
+ * Reads a plan file and validates it with the plan schema.
+ * Supports both pure YAML format and YAML front matter with markdown body.
+ * @param filePath - The path to the plan file
  * @returns The validated plan data
  * @throws Error if the file cannot be read or validation fails
  */
 export async function readPlanFile(filePath: string): Promise<PlanSchema> {
   const absolutePath = resolve(filePath);
   const content = await Bun.file(absolutePath).text();
-  const parsed = yaml.parse(content);
+  
+  let parsed: any;
+  let markdownBody: string | undefined;
+
+  // Check if the file uses front matter format
+  if (content.startsWith('---\n')) {
+    // Find the closing delimiter for front matter
+    const endDelimiterIndex = content.indexOf('\n---\n', 4);
+    
+    if (endDelimiterIndex !== -1) {
+      // Extract front matter and body
+      const frontMatter = content.substring(4, endDelimiterIndex);
+      markdownBody = content.substring(endDelimiterIndex + 5).trim();
+      
+      // Parse the front matter as YAML
+      parsed = yaml.parse(frontMatter);
+    } else {
+      // No closing delimiter found, treat entire file as YAML
+      parsed = yaml.parse(content);
+    }
+  } else {
+    // No front matter, parse entire content as YAML
+    parsed = yaml.parse(content);
+  }
+
+  // If we have a markdown body, add it to the details field
+  if (markdownBody) {
+    // If there's already a details field in the YAML, combine them
+    if (parsed.details) {
+      parsed.details = parsed.details + '\n\n' + markdownBody;
+    } else {
+      parsed.details = markdownBody;
+    }
+  }
 
   const result = phaseSchema.safeParse(parsed);
   if (!result.success) {
