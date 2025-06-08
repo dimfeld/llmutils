@@ -14,7 +14,7 @@ dependencies: []
 planGeneratedAt: 2025-06-08T09:15:22.393Z
 promptsGeneratedAt: 2025-06-08T09:23:48.459Z
 createdAt: 2025-06-07T02:07:53.027Z
-updatedAt: 2025-06-08T09:26:22.503Z
+updatedAt: 2025-06-08T09:27:32.922Z
 project:
   title: research command
   goal: ""
@@ -128,18 +128,18 @@ tasks:
           In `src/rmplan/prompt.ts`, create and export a new function
           `generateResearchPrompt`. It should accept the plan's goal and details
           as string arguments.
-        done: false
+        done: true
       - prompt: >
           The prompt's text should instruct an LLM to act as a research
           assistant. It should clearly state the research topic using the
           provided goal and details from the plan.
-        done: false
+        done: true
       - prompt: >
           The prompt should ask the model to find relevant information,
           synthesize it, and provide a concise summary, key findings, and any
           relevant links or sources. Structure the prompt to guide the LLM
           towards a well-organized response.
-        done: false
+        done: true
   - title: Implement the paste-back and plan update functionality
     description: Extend the core action in `actions.ts`. After copying the prompt,
       use `waitForEnter(true)` to wait for the user to paste their research.
@@ -279,6 +279,7 @@ tasks:
 changedFiles:
   - src/rmplan/actions.ts
   - src/rmplan/commands/research.ts
+  - src/rmplan/prompt.ts
   - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan
