@@ -105,7 +105,7 @@ export async function handleSetCommand(
     }
   }
 
-  // Add documentation URLs
+  // Add documentation paths
   if (options.doc && options.doc.length > 0) {
     if (!plan.docs) {
       plan.docs = [];
@@ -114,21 +114,21 @@ export async function handleSetCommand(
       if (!plan.docs.includes(docUrl)) {
         plan.docs.push(docUrl);
         modified = true;
-        log(`Added documentation URL: ${docUrl}`);
+        log(`Added documentation path: ${docUrl}`);
       } else {
-        log(`Documentation URL already exists: ${docUrl}`);
+        log(`Documentation path already exists: ${docUrl}`);
       }
     }
   }
 
-  // Remove documentation URLs
+  // Remove documentation paths
   if (options.noDoc && options.noDoc.length > 0) {
     if (plan.docs) {
       const originalLength = plan.docs.length;
       plan.docs = plan.docs.filter((url: string) => !options.noDoc!.includes(url));
       if (plan.docs.length < originalLength) {
         modified = true;
-        log(`Removed ${originalLength - plan.docs.length} documentation URLs`);
+        log(`Removed ${originalLength - plan.docs.length} documentation paths`);
       }
     }
   }
