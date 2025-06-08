@@ -1103,6 +1103,53 @@ const test = "example";
     const readBackPlan = await readPlanFile(planPath);
     expect(readBackPlan).toEqual(planToWrite);
   });
+
+  it('should merge YAML details field with markdown body for backward compatibility', async () => {
+    const planPath = join(tempDir, 'backward-compat-plan.md');
+    const yamlDetails = 'This is the details content from the YAML front matter.';
+    const markdownBody = `# Additional Details
+
+This is additional content in the markdown body.
+
+## More Information
+- This content should be appended
+- To the YAML details field`;
+
+    const fileContent = `---
+id: 103
+title: Backward Compatible Plan
+goal: Test merging YAML details with markdown body
+details: ${yamlDetails}
+status: pending
+priority: medium
+tasks:
+  - title: Test Task
+    description: A test task
+    files: []
+    steps:
+      - prompt: Step 1
+        done: false
+---
+
+${markdownBody}`;
+
+    await writeFile(planPath, fileContent);
+
+    const plan = await readPlanFile(planPath);
+
+    // Verify that both the YAML details and markdown body are combined
+    expect(plan.id).toBe(103);
+    expect(plan.title).toBe('Backward Compatible Plan');
+    expect(plan.goal).toBe('Test merging YAML details with markdown body');
+    expect(plan.status).toBe('pending');
+    expect(plan.priority).toBe('medium');
+    
+    // The details field should contain both the YAML value and the markdown body
+    expect(plan.details).toBe(`${yamlDetails}\n\n${markdownBody}`);
+    expect(plan.details).toContain(yamlDetails);
+    expect(plan.details).toContain('# Additional Details');
+    expect(plan.details).toContain('This is additional content in the markdown body');
+  });
 });
 
 describe('schema validation and YAML serialization', () => {
