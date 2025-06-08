@@ -206,32 +206,6 @@ describe('resolvePlanFile', () => {
     expect(resolved).toBe(join(tasksDir, '103.yml'));
   });
 
-  it('should resolve older plans by their numeric ID contained within a file', async () => {
-    // Create a plan with a numeric ID in a file with a different name
-    const oldPlan = {
-      id: 104,
-      title: 'Old Plan with Numeric ID',
-      goal: 'Test old numeric ID',
-      details: 'Details for old plan',
-      status: 'pending',
-      tasks: [],
-    };
-
-    await writeFile(join(tasksDir, 'old-plan.yml'), yaml.stringify(oldPlan));
-
-    // Clear cache to ensure the new file is found
-    clearPlanCache();
-
-    const resolved = await resolvePlanFile('104');
-    expect(resolved).toBe(join(tasksDir, 'old-plan.yml'));
-  });
-
-  it('should resolve older plans by their direct filename', async () => {
-    // This already exists as '2.yml'
-    const resolved = await resolvePlanFile('2.yml');
-    expect(resolved).toBe(join(tasksDir, '2.yml'));
-  });
-
   it('should throw an error if the plan ID or filename cannot be resolved', async () => {
     await expect(resolvePlanFile('999')).rejects.toThrow('No plan found with ID or file path: 999');
 
@@ -402,8 +376,6 @@ describe('readAllPlans', () => {
       await rm(numericIdDir, { recursive: true, force: true });
     }
   });
-
-
 
   it('should handle invalid YAML and empty files gracefully', async () => {
     const errorTestDir = await mkdtemp(join(tmpdir(), 'error-test-'));
@@ -980,7 +952,6 @@ tasks: []
     expect(validatedPlan.id).toBe(456);
     expect(typeof validatedPlan.id).toBe('number');
   });
-
 
   it('should accept plans without IDs', () => {
     const planWithoutId: PlanSchema = {

@@ -56,3 +56,9 @@ export function parseCliArgsFromString(commandString: string): string[] {
 
   return args;
 }
+
+export function needArrayOrUndefined<T>(value: T | T[] | undefined): T[] | undefined {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) return value;
+  return [value];
+}

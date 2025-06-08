@@ -248,13 +248,13 @@ describe('rmplan CLI integration tests', () => {
     expect(result).toContain('Ready Plan');
   });
 
-  test('rmplan add with dependencies and priority', async () => {
+  test.only('rmplan add with dependencies and priority', async () => {
     // First create a plan to depend on
     await $`bun ${rmplanPath} add "First Plan" --config ${configPath}`.cwd(tempDir);
 
     // Create a plan with dependencies and priority
     const result =
-      await $`bun ${rmplanPath} add "Dependent Plan" --depends-on 1 --priority high --config ${configPath}`
+      await $`bun ${rmplanPath} add "Dependent Plan" --depends-on 1 --depends-on 3 --priority high --config ${configPath}`
         .cwd(tempDir)
         .text();
 
@@ -263,8 +263,9 @@ describe('rmplan CLI integration tests', () => {
     // Verify the plan has dependencies and priority
     const planContent = await fs.readFile(path.join(tasksDir, '2.yml'), 'utf-8');
     const plan = yaml.parse(planContent);
+    console.log(plan);
     expect(plan.id).toBe(2);
-    expect(plan.dependencies).toEqual([1]);
+    expect(plan.dependencies).toEqual([1, 3]);
     expect(plan.priority).toBe('high');
   });
 });

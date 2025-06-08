@@ -1,3 +1,4 @@
+import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
 import type { Priority } from '../planSchema.js';

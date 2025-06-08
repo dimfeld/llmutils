@@ -172,14 +172,8 @@ export async function loadConfig(configPath: string | null): Promise<RmplanConfi
   }
 
   debugLog(`Successfully loaded and validated configuration from ${configPath}`);
-  
-  // Ensure defaultExecutor is set if not provided in config
-  const config = result.data;
-  if (config.defaultExecutor === undefined) {
-    config.defaultExecutor = DEFAULT_EXECUTOR;
-  }
-  
-  return config;
+
+  return result.data;
 }
 
 /**
