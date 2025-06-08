@@ -14,7 +14,7 @@ dependencies: []
 planGeneratedAt: 2025-06-08T09:15:22.393Z
 promptsGeneratedAt: 2025-06-08T09:23:48.459Z
 createdAt: 2025-06-07T02:07:53.027Z
-updatedAt: 2025-06-08T09:28:39.992Z
+updatedAt: 2025-06-08T09:32:17.510Z
 project:
   title: research command
   goal: ""
@@ -186,30 +186,30 @@ tasks:
       - prompt: >
           In `src/rmplan/actions.ts`, modify the `handleResearch` function to
           check if the `--rmfilter` option is enabled.
-        done: false
+        done: true
       - prompt: >
           If `--rmfilter` is true, combine the `rmfilter` arguments from the
           plan's `rmfilter` field with the command-line file arguments passed
           into the function.
-        done: false
+        done: true
       - prompt: >
           If there are any combined `rmfilter` arguments, generate the research
           prompt and write it to a temporary file.
-        done: false
+        done: true
       - prompt: >
           Use `logSpawn` to execute `rmfilter` with the combined file/filter
           arguments, `--copy`, and `--instructions @<temp_file_path>`. This will
           generate the final context-aware prompt and copy it to the clipboard.
-        done: false
+        done: true
       - prompt: >
           Ensure the temporary prompt file is deleted after the `rmfilter`
           process completes, using a `finally` block.
-        done: false
+        done: true
       - prompt: >
           If `--rmfilter` is false or no arguments are provided, the function
           should fall back to the original behavior of just copying the basic
           research prompt to the clipboard.
-        done: false
+        done: true
   - title: Add tests for the new `research` command
     description: "Create a new test file `src/rmplan/commands/research.test.ts`.
       Write tests to cover the new functionality, including: resolving the plan,

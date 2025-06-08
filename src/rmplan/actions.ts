@@ -37,7 +37,7 @@ import {
   type GetChangedFilesOptions,
 } from '../rmfilter/additional_docs.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
-import { commitAll, quiet } from '../common/process.js';
+import { commitAll, quiet, logSpawn } from '../common/process.js';
 import { getGitRoot } from '../common/git.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { Extractor } from '../treesitter/extract.js';
@@ -1159,31 +1159,77 @@ export async function handleResearch(
   // Read the plan file
   let planData = await readPlanFile(planFile);
 
-  // Generate research prompt (placeholder for now)
+  // Generate research prompt
   const prompt = generateResearchPrompt(planData);
 
-  // Copy to clipboard
-  await clipboard.write(prompt);
+  let tempPromptFile: string | null = null;
 
-  log('Research prompt copied to clipboard');
-  log(`Perform your research, then ${sshAwarePasteAction()} the results back into the terminal.`);
+  try {
+    // Check if rmfilter option is enabled
+    if (options.rmfilter) {
+      // Combine rmfilter arguments from plan's rmfilter field with command-line file arguments
+      const planRmfilterArgs = planData.rmfilter || [];
+      const commandLineArgs = options.rmfilterArgs || [];
+      const combinedArgs = [...planRmfilterArgs, ...commandLineArgs];
 
-  // Wait for user to paste their research
-  const pastedContent = await waitForEnter(true);
+      // If there are any combined rmfilter arguments, use rmfilter to generate context-aware prompt
+      if (combinedArgs.length > 0) {
+        // Generate the research prompt and write it to a temporary file
+        tempPromptFile = path.join(
+          os.tmpdir(),
+          `rmplan-research-prompt-${Date.now()}-${crypto.randomUUID()}.md`
+        );
+        await Bun.write(tempPromptFile, prompt);
 
-  // If pasted content is not empty, append it to the details field
-  if (pastedContent && pastedContent.trim()) {
-    planData.details = planData.details + '\n\n--- Research ---\n\n' + pastedContent.trim();
+        // Get the git root directory
+        const gitRoot = await getGitRoot();
 
-    // Update the updatedAt timestamp
-    planData.updatedAt = new Date().toISOString();
+        // Use logSpawn to execute rmfilter with the combined file/filter arguments, --copy, and --instructions
+        await logSpawn(
+          ['rmfilter', '--copy', '--instructions', `@${tempPromptFile}`, ...combinedArgs],
+          { cwd: gitRoot }
+        ).exited;
 
-    // Save the modified plan back to the file
-    await writePlanFile(planFile, planData);
+        log('Research prompt with context copied to clipboard via rmfilter');
+      } else {
+        // Fall back to original behavior if no rmfilter arguments provided
+        await clipboard.write(prompt);
+        log('Research prompt copied to clipboard');
+      }
+    } else {
+      // Fall back to original behavior when --rmfilter is false
+      await clipboard.write(prompt);
+      log('Research prompt copied to clipboard');
+    }
 
-    log('Plan updated with research results');
-  } else {
-    log('No research content was pasted');
+    log(`Perform your research, then ${sshAwarePasteAction()} the results back into the terminal.`);
+
+    // Wait for user to paste their research
+    const pastedContent = await waitForEnter(true);
+
+    // If pasted content is not empty, append it to the details field
+    if (pastedContent && pastedContent.trim()) {
+      planData.details = planData.details + '\n\n--- Research ---\n\n' + pastedContent.trim();
+
+      // Update the updatedAt timestamp
+      planData.updatedAt = new Date().toISOString();
+
+      // Save the modified plan back to the file
+      await writePlanFile(planFile, planData);
+
+      log('Plan updated with research results');
+    } else {
+      log('No research content was pasted');
+    }
+  } finally {
+    // Ensure the temporary prompt file is deleted after the rmfilter process completes
+    if (tempPromptFile) {
+      try {
+        await Bun.file(tempPromptFile).unlink();
+      } catch (err) {
+        // Ignore cleanup errors
+      }
+    }
   }
 }
 
