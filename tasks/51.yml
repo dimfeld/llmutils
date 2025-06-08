@@ -14,7 +14,7 @@ dependencies: []
 planGeneratedAt: 2025-06-08T09:15:22.393Z
 promptsGeneratedAt: 2025-06-08T09:23:48.459Z
 createdAt: 2025-06-07T02:07:53.027Z
-updatedAt: 2025-06-08T09:32:17.510Z
+updatedAt: 2025-06-08T09:37:00.910Z
 project:
   title: research command
   goal: ""
@@ -224,29 +224,29 @@ tasks:
           a temporary directory with a mock `tasks` folder and a sample plan
           file in a `beforeEach` block. Use `fs.mkdtemp` for the temporary
           directory and ensure it's cleaned up in `afterEach`.
-        done: false
+        done: true
       - prompt: >
           Write a test to verify that the basic research prompt is generated and
           copied to the clipboard. You will need to mock `clipboard.write` and
           `waitForEnter` to prevent the test from hanging.
-        done: false
+        done: true
       - prompt: >
           Write a test to verify the paste-back and update functionality. Mock
           `waitForEnter` to return a sample research string. After the command
           runs, read the plan file from the temporary directory and assert that
           its `details` field has been correctly appended with the research
           content.
-        done: false
+        done: true
       - prompt: >
           Write a test for the `--rmfilter` functionality. Create a plan that
           includes `rmfilter` arguments. Mock `logSpawn` and verify that it's
           called with the correct `rmfilter` command, including arguments from
           both the plan file and mock command-line arguments.
-        done: false
+        done: true
       - prompt: >
           Write a test to ensure that if a plan file does not exist, the command
           throws an appropriate error.
-        done: false
+        done: true
   - title: Update user documentation
     description: Add a section for the new `rmplan research` command in the
       project's `README.md` or other relevant documentation files, explaining
@@ -278,6 +278,7 @@ tasks:
         done: false
 changedFiles:
   - src/rmplan/actions.ts
+  - src/rmplan/commands/research.test.ts
   - src/rmplan/commands/research.ts
   - src/rmplan/prompt.ts
   - src/rmplan/rmplan.ts
