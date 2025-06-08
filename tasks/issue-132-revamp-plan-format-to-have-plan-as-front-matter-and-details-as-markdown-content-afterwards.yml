@@ -11,7 +11,7 @@ details: >
   smooth transition. Each step will be accompanied by dedicated tests to
   validate its correctness.
 id: 58
-status: in_progress
+status: done
 priority: high
 dependencies: []
 issue:
@@ -19,7 +19,7 @@ issue:
 planGeneratedAt: 2025-06-08T22:44:30.655Z
 promptsGeneratedAt: 2025-06-08T22:49:16.234Z
 createdAt: 2025-06-08T22:37:44.631Z
-updatedAt: 2025-06-08T23:11:13.827Z
+updatedAt: 2025-06-08T23:20:40.895Z
 project:
   title: Revamp plan format to have plan as front matter and details as markdown
     content afterwards
@@ -163,14 +163,14 @@ tasks:
           `PlanSchema` object, use `writePlanFile` to save it, then use
           `readPlanFile` to read it back. Finally, assert that the object read
           from the file is deeply equal to the original object.
-        done: false
+        done: true
       - prompt: >
           Add a test to verify the migration path for old-format files. The test
           should programmatically create a pure-YAML plan file. Then, read this
           file using `readPlanFile` and write the resulting object back to a new
           file using `writePlanFile`. Assert that the new file has been
           correctly converted to the new front matter format.
-        done: false
+        done: true
       - prompt: >
           Add a test for the backward-compatibility merge-and-write scenario.
           Create a file with `details` in both the front matter and the body.
@@ -178,7 +178,7 @@ tasks:
           Verify that the newly written file is in the standard front matter
           format and that its body contains the combined details from the
           original file.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/plans.test.ts
   - src/rmplan/plans.ts

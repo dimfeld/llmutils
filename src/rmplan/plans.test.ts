@@ -1150,6 +1150,230 @@ ${markdownBody}`;
     expect(plan.details).toContain('# Additional Details');
     expect(plan.details).toContain('This is additional content in the markdown body');
   });
+
+  it('should perform a round-trip test to ensure symmetry between reading and writing', async () => {
+    const planPath = join(tempDir, 'round-trip-plan.md');
+    const originalPlan: PlanSchema = {
+      id: 104,
+      title: 'Round Trip Test Plan',
+      goal: 'Test that reading and writing preserves data',
+      details: `# Round Trip Test
+
+This plan tests the symmetry between readPlanFile and writePlanFile.
+
+## Test Objectives
+- Ensure all fields are preserved
+- Verify format consistency
+- Check that details remain in markdown body
+
+\`\`\`typescript
+const roundTrip = "test";
+\`\`\``,
+      status: 'in_progress',
+      priority: 'urgent',
+      dependencies: [50, 60, 70],
+      createdAt: '2024-02-01T10:00:00.000Z',
+      updatedAt: '2024-02-01T15:30:00.000Z',
+      tasks: [
+        {
+          title: 'Validate Round Trip',
+          description: 'Ensure data integrity',
+          files: ['test1.ts', 'test2.ts'],
+          steps: [
+            { prompt: 'Write the plan', done: true },
+            { prompt: 'Read it back', done: true },
+            { prompt: 'Compare results', done: false },
+          ],
+        },
+        {
+          title: 'Edge Cases',
+          description: 'Test special characters and formatting',
+          files: [],
+          steps: [{ prompt: 'Test with special chars: " \' \\ /', done: false }],
+        },
+      ],
+    };
+
+    // Write the plan
+    await writePlanFile(planPath, originalPlan);
+
+    // Read it back
+    const readBackPlan = await readPlanFile(planPath);
+
+    // Assert deep equality
+    expect(readBackPlan).toEqual(originalPlan);
+
+    // Specifically check that complex fields are preserved
+    expect(readBackPlan.tasks).toHaveLength(2);
+    expect(readBackPlan.tasks![0].steps).toHaveLength(3);
+    expect(readBackPlan.tasks![1].title).toBe('Edge Cases');
+    expect(readBackPlan.dependencies).toEqual([50, 60, 70]);
+    expect(readBackPlan.details).toContain('const roundTrip = "test";');
+  });
+
+  it('should verify the migration path for old-format files', async () => {
+    const oldFormatPath = join(tempDir, 'old-format-plan.yml');
+    const newFormatPath = join(tempDir, 'migrated-plan.md');
+
+    // Create a pure YAML plan file (old format)
+    const oldFormatPlan = {
+      id: 105,
+      title: 'Old Format Plan for Migration',
+      goal: 'Test migration from old to new format',
+      details: `This is the old format where details are stored in YAML.
+
+It should be migrated to the new format with:
+- YAML front matter for metadata
+- Markdown body for details content
+
+The migration should preserve all data.`,
+      status: 'pending',
+      priority: 'high',
+      dependencies: [80, 90],
+      createdAt: '2024-01-20T08:00:00.000Z',
+      updatedAt: '2024-01-20T08:00:00.000Z',
+      tasks: [
+        {
+          title: 'Migration Task',
+          description: 'Task to test migration',
+          files: ['migrate.ts'],
+          steps: [
+            { prompt: 'Read old format', done: false },
+            { prompt: 'Write new format', done: false },
+          ],
+        },
+      ],
+    };
+
+    // Write the old format file
+    await writeFile(oldFormatPath, yaml.stringify(oldFormatPlan));
+
+    // Read the old format file
+    const readPlan = await readPlanFile(oldFormatPath);
+
+    // Write it back in the new format
+    await writePlanFile(newFormatPath, readPlan);
+
+    // Read the raw content of the new file to verify format
+    const newFileContent = await readFile(newFormatPath, 'utf-8');
+
+    // Verify it's in front matter format
+    expect(newFileContent.startsWith('---\n')).toBe(true);
+
+    // Find the front matter and body sections
+    const frontMatterEndIndex = newFileContent.indexOf('\n---\n', 4);
+    expect(frontMatterEndIndex).toBeGreaterThan(0);
+
+    const frontMatterSection = newFileContent.substring(4, frontMatterEndIndex);
+    const bodySection = newFileContent.substring(frontMatterEndIndex + 5).trim();
+
+    // Parse the front matter
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    // Verify the front matter does NOT contain details
+    expect(frontMatterData.details).toBeUndefined();
+
+    // Verify all other fields are in front matter
+    expect(frontMatterData.id).toBe(105);
+    expect(frontMatterData.title).toBe('Old Format Plan for Migration');
+    expect(frontMatterData.goal).toBe('Test migration from old to new format');
+    expect(frontMatterData.status).toBe('pending');
+    expect(frontMatterData.priority).toBe('high');
+    expect(frontMatterData.dependencies).toEqual([80, 90]);
+    expect(frontMatterData.tasks).toHaveLength(1);
+
+    // Verify the body contains the original details
+    expect(bodySection).toBe(oldFormatPlan.details);
+
+    // Finally, read the new file and ensure data integrity
+    const migratedPlan = await readPlanFile(newFormatPath);
+    expect(migratedPlan).toEqual(readPlan);
+  });
+
+  it('should handle backward-compatibility merge-and-write scenario', async () => {
+    const mixedFormatPath = join(tempDir, 'mixed-format-plan.md');
+    const rewrittenPath = join(tempDir, 'rewritten-plan.md');
+
+    const yamlDetails = 'These are the details from the YAML front matter section.';
+    const markdownBody = `# Additional Markdown Content
+
+This content is in the markdown body and should be merged with the YAML details.
+
+## Important Notes
+- Both sources of details should be preserved
+- The order should be: YAML details first, then markdown body
+- After rewriting, only the markdown body should contain the details`;
+
+    // Create a file with details in both front matter and body
+    const mixedContent = `---
+id: 106
+title: Mixed Format Plan
+goal: Test merging and rewriting details from both sources
+details: ${yamlDetails}
+status: in_progress
+priority: low
+dependencies: [100]
+createdAt: 2024-03-01T00:00:00.000Z
+tasks:
+  - title: Merge Test Task
+    description: Testing the merge behavior
+    files: ['merge.ts', 'test.ts']
+    steps:
+      - prompt: Read mixed format
+        done: true
+      - prompt: Merge details
+        done: false
+---
+
+${markdownBody}`;
+
+    await writeFile(mixedFormatPath, mixedContent);
+
+    // Read the mixed format file (should merge details)
+    const mergedPlan = await readPlanFile(mixedFormatPath);
+
+    // Verify the details were merged correctly
+    expect(mergedPlan.details).toBe(`${yamlDetails}\n\n${markdownBody}`);
+    expect(mergedPlan.details).toContain(yamlDetails);
+    expect(mergedPlan.details).toContain(markdownBody);
+
+    // Write it back to a new file
+    await writePlanFile(rewrittenPath, mergedPlan);
+
+    // Read the raw content of the rewritten file
+    const rewrittenContent = await readFile(rewrittenPath, 'utf-8');
+
+    // Verify it's in the standard front matter format
+    expect(rewrittenContent.startsWith('---\n')).toBe(true);
+
+    // Extract front matter and body
+    const fmEndIndex = rewrittenContent.indexOf('\n---\n', 4);
+    const rewrittenFrontMatter = rewrittenContent.substring(4, fmEndIndex);
+    const rewrittenBody = rewrittenContent.substring(fmEndIndex + 5).trim();
+
+    // Parse the front matter
+    const rewrittenFmData = yaml.parse(rewrittenFrontMatter);
+
+    // Verify NO details in the front matter
+    expect(rewrittenFmData.details).toBeUndefined();
+
+    // Verify the body contains the combined details
+    expect(rewrittenBody).toBe(`${yamlDetails}\n\n${markdownBody}`);
+
+    // Verify all other fields are preserved correctly
+    expect(rewrittenFmData.id).toBe(106);
+    expect(rewrittenFmData.title).toBe('Mixed Format Plan');
+    expect(rewrittenFmData.goal).toBe('Test merging and rewriting details from both sources');
+    expect(rewrittenFmData.status).toBe('in_progress');
+    expect(rewrittenFmData.priority).toBe('low');
+    expect(rewrittenFmData.dependencies).toEqual([100]);
+    expect(rewrittenFmData.tasks).toHaveLength(1);
+    expect(rewrittenFmData.tasks[0].files).toEqual(['merge.ts', 'test.ts']);
+
+    // Final verification: read the rewritten file and check data integrity
+    const finalPlan = await readPlanFile(rewrittenPath);
+    expect(finalPlan).toEqual(mergedPlan);
+  });
 });
 
 describe('schema validation and YAML serialization', () => {
