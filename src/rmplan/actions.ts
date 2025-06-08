@@ -1145,3 +1145,44 @@ async function gatherPhaseGenerationContext(
     throw e;
   }
 }
+
+/**
+ * Handles the research command by generating a research prompt and copying it to clipboard.
+ *
+ * @param planFile - Path to the plan file
+ * @param options - Options including rmfilter flag and command-line file arguments
+ */
+export async function handleResearch(
+  planFile: string,
+  options: { rmfilter?: boolean; rmfilterArgs?: string[] }
+): Promise<void> {
+  // Read the plan file
+  const planData = await readPlanFile(planFile);
+
+  // Generate research prompt (placeholder for now)
+  const prompt = generateResearchPrompt(planData);
+
+  // Copy to clipboard
+  await clipboard.write(prompt);
+
+  log('Research prompt copied to clipboard');
+}
+
+/**
+ * Generates a basic research prompt based on plan data.
+ * This is a placeholder implementation that will be expanded later.
+ *
+ * @param planData - The plan schema data
+ * @returns The generated research prompt
+ */
+function generateResearchPrompt(planData: PlanSchema): string {
+  return `# Research Prompt for Plan
+
+## Goal
+${planData.goal}
+
+## Details
+${planData.details}
+
+Please provide research and analysis related to this plan.`;
+}

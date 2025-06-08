@@ -14,7 +14,7 @@ dependencies: []
 planGeneratedAt: 2025-06-08T09:15:22.393Z
 promptsGeneratedAt: 2025-06-08T09:23:48.459Z
 createdAt: 2025-06-07T02:07:53.027Z
-updatedAt: 2025-06-08T09:24:43.257Z
+updatedAt: 2025-06-08T09:26:22.503Z
 project:
   title: research command
   goal: ""
@@ -82,40 +82,40 @@ tasks:
     steps:
       - prompt: |
           Create a new file `src/rmplan/commands/research.ts`.
-        done: false
+        done: true
       - prompt: >
           In the new file, define and export an async function
           `handleResearchCommand(planArg, options, command)`. This function will
           serve as the entry point for the `research` command.
-        done: false
+        done: true
       - prompt: >
           Inside `handleResearchCommand`, get the global options from
           `command.parent.opts()`. Then, use `resolvePlanFile` from
           `../plans.js` to get the full path to the plan file, passing `planArg`
           and the global config option.
-        done: false
+        done: true
       - prompt: >
           Also in `handleResearchCommand`, extract any additional arguments
           passed after a `--` separator from `process.argv`. These will be the
           command-line file arguments for `rmfilter`.
-        done: false
+        done: true
       - prompt: >
           Create a new async function `handleResearch` in
           `src/rmplan/actions.ts`. It should accept the resolved plan file path
           and an options object containing the `--rmfilter` flag and the
           command-line file arguments.
-        done: false
+        done: true
       - prompt: >
           Back in `handleResearchCommand`, call the new `handleResearch` action
           from `actions.ts`, passing the necessary arguments.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/actions.ts`, implement the initial logic for
           `handleResearch`. It should read the plan file using `readPlanFile`,
           call a new (yet to be created) `generateResearchPrompt` function, and
           copy the resulting prompt to the clipboard using `clipboard.write`.
           Log a confirmation message.
-        done: false
+        done: true
   - title: Implement the research prompt generation
     description: In `src/rmplan/prompt.ts`, create a new function
       `generateResearchPrompt` that takes the plan's goal and details and
@@ -277,6 +277,8 @@ tasks:
           research results to the plan file.
         done: false
 changedFiles:
+  - src/rmplan/actions.ts
+  - src/rmplan/commands/research.ts
   - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan
