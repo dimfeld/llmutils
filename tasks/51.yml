@@ -14,7 +14,7 @@ dependencies: []
 planGeneratedAt: 2025-06-08T09:15:22.393Z
 promptsGeneratedAt: 2025-06-08T09:23:48.459Z
 createdAt: 2025-06-07T02:07:53.027Z
-updatedAt: 2025-06-08T09:27:32.922Z
+updatedAt: 2025-06-08T09:28:39.992Z
 project:
   title: research command
   goal: ""
@@ -154,26 +154,26 @@ tasks:
           next steps: perform the research, and then paste the results back into
           the terminal. Use `sshAwarePasteAction` to provide the correct
           instruction for their environment.
-        done: false
+        done: true
       - prompt: >
           Use `waitForEnter(true)` from `src/common/terminal.ts` to capture the
           multi-line pasted content from the user.
-        done: false
+        done: true
       - prompt: >
           If the pasted content is not empty, append it to the `details` field
           of the plan object. Prepend the new content with a clear separator
           like `\n\n--- Research ---\n\n` to distinguish it from the original
           details.
-        done: false
+        done: true
       - prompt: >
           Update the `updatedAt` timestamp on the plan object to the current
           time.
-        done: false
+        done: true
       - prompt: >
           Use `writePlanFile` to save the modified plan object back to its file,
           overwriting the previous version. Log a confirmation message that the
           plan was updated.
-        done: false
+        done: true
   - title: Add support for `--rmfilter` and command-line file arguments
     description: Enhance the core action in `actions.ts` to handle the `--rmfilter`
       option. It should combine `rmfilter` arguments from the plan's `rmfilter`

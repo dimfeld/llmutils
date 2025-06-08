@@ -1157,7 +1157,7 @@ export async function handleResearch(
   options: { rmfilter?: boolean; rmfilterArgs?: string[] }
 ): Promise<void> {
   // Read the plan file
-  const planData = await readPlanFile(planFile);
+  let planData = await readPlanFile(planFile);
 
   // Generate research prompt (placeholder for now)
   const prompt = generateResearchPrompt(planData);
@@ -1166,6 +1166,25 @@ export async function handleResearch(
   await clipboard.write(prompt);
 
   log('Research prompt copied to clipboard');
+  log(`Perform your research, then ${sshAwarePasteAction()} the results back into the terminal.`);
+
+  // Wait for user to paste their research
+  const pastedContent = await waitForEnter(true);
+
+  // If pasted content is not empty, append it to the details field
+  if (pastedContent && pastedContent.trim()) {
+    planData.details = planData.details + '\n\n--- Research ---\n\n' + pastedContent.trim();
+
+    // Update the updatedAt timestamp
+    planData.updatedAt = new Date().toISOString();
+
+    // Save the modified plan back to the file
+    await writePlanFile(planFile, planData);
+
+    log('Plan updated with research results');
+  } else {
+    log('No research content was pasted');
+  }
 }
 
 /**
