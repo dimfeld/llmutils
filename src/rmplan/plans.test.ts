@@ -1290,6 +1290,71 @@ The migration should preserve all data.`,
     expect(migratedPlan).toEqual(readPlan);
   });
 
+  it('should preserve task done flag when writing and reading plans', async () => {
+    const planPath = join(tempDir, 'task-done-flag-plan.md');
+    const planWithTaskDone: PlanSchema = {
+      id: 107,
+      title: 'Plan with Task Done Flag',
+      goal: 'Test that task done flag is preserved',
+      details: `# Task Done Flag Test
+      
+This plan tests that the done flag on tasks is properly preserved
+when writing and reading plan files.`,
+      status: 'in_progress',
+      priority: 'medium',
+      tasks: [
+        {
+          title: 'Completed Task',
+          description: 'This task has been completed',
+          files: ['src/completed.ts'],
+          done: true,
+          steps: [
+            { prompt: 'Step 1', done: true },
+            { prompt: 'Step 2', done: true },
+          ],
+        },
+        {
+          title: 'Pending Task',
+          description: 'This task is not done yet',
+          files: ['src/pending.ts'],
+          done: false,
+          steps: [
+            { prompt: 'Step 1', done: false },
+          ],
+        },
+        {
+          title: 'Task without done flag',
+          description: 'This task has no explicit done flag',
+          files: [],
+          steps: [],
+        },
+      ],
+    };
+
+    // Write the plan
+    await writePlanFile(planPath, planWithTaskDone);
+
+    // Read it back
+    const readBackPlan = await readPlanFile(planPath);
+
+    // Verify all fields are preserved, especially the done flags
+    expect(readBackPlan.id).toBe(107);
+    expect(readBackPlan.tasks).toHaveLength(3);
+    
+    // Check first task (done: true)
+    expect(readBackPlan.tasks![0].title).toBe('Completed Task');
+    expect(readBackPlan.tasks![0].done).toBe(true);
+    expect(readBackPlan.tasks![0].steps).toHaveLength(2);
+    
+    // Check second task (done: false)
+    expect(readBackPlan.tasks![1].title).toBe('Pending Task');
+    expect(readBackPlan.tasks![1].done).toBe(false);
+    
+    // Check third task (no explicit done flag, defaults to undefined when not set)
+    expect(readBackPlan.tasks![2].title).toBe('Task without done flag');
+    expect(readBackPlan.tasks![2].done).toBeUndefined();
+  });
+
   it('should handle backward-compatibility merge-and-write scenario', async () => {
     const mixedFormatPath = join(tempDir, 'mixed-format-plan.md');
     const rewrittenPath = join(tempDir, 'rewritten-plan.md');
