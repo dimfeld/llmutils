@@ -155,12 +155,12 @@ Please create a comprehensive tutorial suitable for a junior engineer to underst
 
 ## Tutorial Guidelines
 
-- Use clear, simple language without being condescending
+- Use clear, simple language
 - Explain technical terms when you first use them
 - Include practical examples and analogies where helpful
 - Assume basic programming knowledge but not domain expertise
 - Focus on teaching both the "how" and the "why"
-- Make the tutorial hands-on and interactive where possible
+
 
 Structure your tutorial to build understanding progressively, starting with fundamentals and moving to more complex aspects.
 `;
