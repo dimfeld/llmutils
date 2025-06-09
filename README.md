@@ -315,7 +315,9 @@ The general usage pattern is that you will:
 
 Then repeat steps 5 through 7 until the task is done.
 
-**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `my-feature-123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
+Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
+
+### Additional Commands
 
 The `prepare` command is used to generate detailed steps and prompts for a phase plan that doesn't already have them. This is useful when you have a high-level plan outline but need to expand it with specific implementation steps.
 
@@ -325,9 +327,9 @@ The `split` command helps manage complexity by using an LLM to intelligently bre
 
 The `research` command generates a research prompt based on a plan's goal and details, helping you gather additional context or information to enhance the plan. The `--rmfilter` option incorporates file context into the research prompt using `rmfilter`, allowing you to include relevant code files and documentation. After running the research prompt through an LLM, the command provides an interactive paste-back mechanism where you can paste the research findings, and they will be automatically appended to the plan file's `research` field for future reference.
 
-Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
-
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
+
+**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
 
 Run `rmplan` with different commands to manage project plans:
 
