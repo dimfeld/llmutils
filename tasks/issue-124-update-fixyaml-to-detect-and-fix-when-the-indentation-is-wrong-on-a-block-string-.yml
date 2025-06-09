@@ -1,9 +1,9 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Update fixYaml to detect and fix when the indentation is wrong on a block
   string.
 goal: "Implement: Update fixYaml to detect and fix when the indentation is wrong
   on a block string."
-details: ""
 id: 62
 status: pending
 issue:
@@ -11,3 +11,14 @@ issue:
 createdAt: 2025-06-08T22:37:56.090Z
 updatedAt: 2025-06-08T22:37:56.090Z
 tasks: []
+---
+Occasionally a YAML string will come out of the LLM that looks like this:
+
+```yaml
+tasks:
+- steps:
+  - prompt: |
+    The prompt text is here: but not indented.
+```
+
+In this case, the text for the prompt is not correctly indented, and so it becomes a key in the YAML instead of the value of the prompt. fixYaml should be able to detect and fix this.
