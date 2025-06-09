@@ -11,7 +11,7 @@ import { commitAll, logSpawn } from '../../common/process.js';
 import { getGitRoot } from '../../common/git.js';
 import {
   executePostApplyCommand,
-  findPendingTask,
+  findNextActionableItem,
   markStepDone,
   prepareNextStep,
   preparePhase,
@@ -339,11 +339,33 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         await writePlanFile(currentPlanFile, planData);
       }
 
-      const pendingTaskInfo = findPendingTask(planData);
-      if (!pendingTaskInfo) {
+      const actionableItem = findNextActionableItem(planData);
+      if (!actionableItem) {
         log('Plan complete!');
         break;
       }
+
+      // Branch based on the type of actionable item
+      if (actionableItem.type === 'task') {
+        // Simple task without steps
+        log(
+          boldMarkdownHeaders(
+            `# Iteration ${stepCount}: Simple Task ${actionableItem.taskIndex + 1}...`
+          )
+        );
+        log(`Title: ${actionableItem.task.title}`);
+        if (actionableItem.task.description) {
+          log(`Description: ${actionableItem.task.description}`);
+        }
+        // TODO: Full implementation will be in the next task
+        continue;
+      }
+
+      // Handle step execution (existing logic)
+      const pendingTaskInfo = {
+        taskIndex: actionableItem.taskIndex,
+        task: actionableItem.task,
+      };
 
       const executorStepOptions = executor.prepareStepOptions?.() ?? {};
       const stepPreparationResult = await prepareNextStep(

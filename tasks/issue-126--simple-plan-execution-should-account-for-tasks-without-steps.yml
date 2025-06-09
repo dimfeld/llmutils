@@ -12,7 +12,7 @@ issue:
 planGeneratedAt: 2025-06-09T07:41:35.053Z
 promptsGeneratedAt: 2025-06-09T07:43:16.575Z
 createdAt: 2025-06-08T22:37:49.597Z
-updatedAt: 2025-06-09T07:54:58.157Z
+updatedAt: 2025-06-09T07:57:25.839Z
 project:
   title: '"Simple plan" execution should account for tasks without steps'
   goal: 'Implement: "Simple plan" execution should account for tasks without steps'
@@ -139,18 +139,18 @@ tasks:
           Replace the call to `findPendingTask` with `findNextActionableItem`.
           The loop should now terminate when `findNextActionableItem` returns
           `null`.
-        done: false
+        done: true
       - prompt: >
           Inside the loop, add a switch or if/else block to handle the `type` of
           the `ActionableItem`. If the type is 'step', the existing logic that
           calls `prepareNextStep` and executes the step should be run.
-        done: false
+        done: true
       - prompt: >
           If the `ActionableItem` type is 'task', this signifies a simple task.
           For now, add a block that logs the title and description of the simple
           task that will be executed. The full implementation will be in the
           next task.
-        done: false
+        done: true
   - title: Implement Direct Task Execution and Completion
     description: Implement the new direct execution logic within the agent's main
       loop. This involves constructing a comprehensive prompt from the simple
