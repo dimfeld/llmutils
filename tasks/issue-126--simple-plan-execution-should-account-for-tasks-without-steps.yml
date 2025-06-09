@@ -12,7 +12,7 @@ issue:
 planGeneratedAt: 2025-06-09T07:41:35.053Z
 promptsGeneratedAt: 2025-06-09T07:43:16.575Z
 createdAt: 2025-06-08T22:37:49.597Z
-updatedAt: 2025-06-09T07:50:45.836Z
+updatedAt: 2025-06-09T07:54:58.157Z
 project:
   title: '"Simple plan" execution should account for tasks without steps'
   goal: 'Implement: "Simple plan" execution should account for tasks without steps'
@@ -100,7 +100,7 @@ tasks:
           simple task to be executed. It should look like `({ type: 'step',
           taskIndex: number, stepIndex: number, ... } | { type: 'task',
           taskIndex: number, ... })`.
-        done: false
+        done: true
       - prompt: >
           Create a new function `findNextActionableItem(plan: PlanSchema):
           ActionableItem | null` in `src/rmplan/actions.ts`. This function will
@@ -109,14 +109,14 @@ tasks:
           step and return an actionable item of type 'step'. If it has no steps,
           return an actionable item of type 'task'. If all tasks are complete,
           return `null`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/actions.test.ts`, add a new test suite for
           `findNextActionableItem`. Include test cases for a plan with a pending
           simple task, a plan with a pending complex task, a plan with a mix of
           done simple tasks and pending complex tasks, and a fully completed
           plan.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/actions.ts`, find all usages of the old
           `findPendingTask` function and replace them with calls to the new
@@ -124,7 +124,7 @@ tasks:
           the new return type. For now, you can keep `findPendingTask` and have
           it call `findNextActionableItem` and filter for 'step' type for
           backward compatibility if needed, but the goal is to phase it out.
-        done: false
+        done: true
   - title: Refactor the Agent's Main Loop to Handle Simple Tasks
     description: Modify the agent's main execution loop to use the new task-finding
       function. The loop will then branch its logic based on the task's
@@ -219,6 +219,8 @@ tasks:
           task) is completed.
         done: false
 changedFiles:
+  - src/rmplan/actions.test.ts
+  - src/rmplan/actions.ts
   - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/research.test.ts
