@@ -956,7 +956,7 @@ export async function preparePhase(
     try {
       // Extract YAML from the response (LLM might include markdown formatting)
       const yamlContent = findYamlStart(text);
-      const parsed = fixYaml(yamlContent);
+      const parsed = await fixYaml(yamlContent, 5, config);
 
       // Validate that we got a tasks array
       if (!parsed.tasks || !Array.isArray(parsed.tasks)) {

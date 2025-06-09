@@ -468,7 +468,7 @@ describe('handleResearchCommand', () => {
     }
   });
 
-  test('generates Q&A prompt with --ask flag', async () => {
+  test('generates Q&A prompt with --prd flag', async () => {
     // Create a test plan
     const plan = {
       id: '9',
@@ -482,7 +482,7 @@ describe('handleResearchCommand', () => {
     const planFile = path.join(tasksDir, '9.yml');
     await writePlanFile(planFile, plan);
 
-    const options = { ask: true };
+    const options = { prd: true };
     const command = {
       parent: {
         opts: () => ({}),

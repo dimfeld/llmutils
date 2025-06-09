@@ -71,11 +71,9 @@ export async function handleSplitCommand(planArg: string, options: any, command:
   // Step 8: Extract and parse the YAML from the LLM response
   log(chalk.blue('\n📝 Processing LLM-generated phase structure...'));
   let parsedMultiPhase: any;
-  let cleanedYaml: string;
   try {
     const yamlContent = findYamlStart(llmResponse);
-    cleanedYaml = fixYaml(yamlContent);
-    parsedMultiPhase = yaml.parse(cleanedYaml);
+    parsedMultiPhase = await fixYaml(yamlContent, 5, splitConfig);
   } catch (err) {
     error(`Failed to parse multi-phase plan from LLM response: ${err as Error}`);
 
@@ -96,7 +94,7 @@ export async function handleSplitCommand(planArg: string, options: any, command:
 
     // Save invalid YAML for debugging
     const debugFile = 'rmplan-split-invalid.yml';
-    await Bun.write(debugFile, cleanedYaml);
+    await Bun.write(debugFile, yaml.stringify(parsedMultiPhase));
     throw new Error(`\nInvalid YAML saved to ${debugFile} for debugging.`);
   }
 

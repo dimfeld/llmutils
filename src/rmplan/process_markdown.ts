@@ -162,7 +162,7 @@ export async function extractMarkdownToYaml(
   // Parse the YAML to check if it's multi-phase
   let parsedYaml;
   try {
-    parsedYaml = fixYaml(convertedYaml);
+    parsedYaml = await fixYaml(convertedYaml, 5, config);
   } catch (e) {
     await Bun.write('rmplan-parse-failure.yml', convertedYaml);
     error('Failed to parse YAML. Saved raw output to rmplan-parse-failure.yml');

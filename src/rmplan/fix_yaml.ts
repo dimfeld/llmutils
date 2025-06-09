@@ -1,4 +1,7 @@
 import * as YAML from 'yaml';
+import { streamText } from 'ai';
+import { createModel } from '../common/model_factory.js';
+import type { RmplanConfig } from './configSchema.js';
 
 // Interface for YAML parsing error
 interface YamlError {
@@ -11,7 +14,7 @@ interface YamlError {
 }
 
 // Function to fix common YAML parsing issues
-export function fixYaml(inputYaml: string, maxAttempts: number = 5) {
+export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config?: RmplanConfig) {
   let currentYaml: string = inputYaml;
   let attempt: number = 0;
   let lastErrorLine: number | null = null;
@@ -121,7 +124,56 @@ export function fixYaml(inputYaml: string, maxAttempts: number = 5) {
     }
   }
 
+  // If we reach here, manual fixes failed. Try LLM fallback if config is provided
+  if (config) {
+    try {
+      const fixedYaml = await fixYamlWithLLM(currentYaml, config);
+      return YAML.parse(fixedYaml);
+    } catch (llmError) {
+      throw new Error(
+        `Failed to fix YAML after maximum attempts and LLM fallback failed: ${llmError as Error}`
+      );
+    }
+  }
+
   throw new Error('Failed to fix YAML after maximum attempts.');
+}
+
+// Function to fix YAML using LLM
+async function fixYamlWithLLM(yamlText: string, config: RmplanConfig): Promise<string> {
+  const modelSpec = config.models?.convert_yaml || 'google/gemini-2.5-flash-preview-05-20';
+
+  const prompt = `You are an AI assistant specialized in fixing invalid YAML syntax. Your task is to take the provided YAML text and fix any syntax errors to make it valid YAML.
+
+**Input YAML:**
+
+\`\`\`yaml
+${yamlText}
+\`\`\`
+
+**Instructions:**
+
+1. Fix any YAML syntax errors such as:
+   - Unquoted strings containing special characters
+   - Incorrect indentation
+   - Unclosed quotes
+   - Invalid escape sequences
+   - Reserved character issues
+
+2. Preserve the original structure and content as much as possible
+3. Only fix syntax issues, do not change the meaning or structure
+4. Use proper YAML quoting when necessary
+5. Ensure proper indentation (2 spaces per level)
+
+**Output Format:** Return only the fixed YAML content without any explanations, comments, or markdown fences.`;
+
+  const result = streamText({
+    model: await createModel(modelSpec, config),
+    prompt,
+    temperature: 0,
+  });
+
+  return await result.text;
 }
 
 // Fix unquoted strings with colons
