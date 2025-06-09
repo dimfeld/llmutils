@@ -12,8 +12,8 @@ import { formatFailuresForLlm } from './failures.ts';
 export type RetryRequester = (prompt: LlmPromptStructure) => Promise<string>;
 
 export function createRetryRequester(modelId: string): RetryRequester {
-  const model = createModel(modelId);
   return async (messages: LlmPromptStructure) => {
+    const model = await createModel(modelId);
     const { text } = await runStreamingPrompt({
       model,
       messages,

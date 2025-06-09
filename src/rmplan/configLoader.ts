@@ -140,10 +140,8 @@ export async function loadConfig(configPath: string | null): Promise<RmplanConfi
   try {
     fileContent = await Bun.file(configPath).text();
   } catch (err: any) {
-    // Handle file reading errors (e.g., permissions)
-    error(`Error reading configuration file ${configPath}: ${err.message}`);
     debugLog('File reading failed. Falling back to default configuration.');
-    // Return default here as the file might be inaccessible temporarily, similar to parsing errors.
+    // Return default here as the file might just not exist.
     return getDefaultConfig();
   }
 

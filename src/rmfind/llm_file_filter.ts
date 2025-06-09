@@ -206,7 +206,7 @@ export async function filterFilesWithQuery(
     debugLog(`Created ${batches.length} batches for processing`);
 
     // Process each batch
-    const model = createModel(modelName);
+    const model = await createModel(modelName);
     const filteredFiles: RelevantFile[] = [];
 
     for (let i = 0; i < batches.length; i++) {
