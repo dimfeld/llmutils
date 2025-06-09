@@ -48,7 +48,7 @@ export async function handleSplitCommand(planArg: string, options: any, command:
   // Step 7: Call the LLM to reorganize the plan
   log(chalk.blue('\n🤖 Analyzing plan structure and identifying logical phases...'));
   const modelSpec = splitConfig.models?.stepGeneration || 'google/gemini-2.0-flash';
-  const model = createModel(modelSpec);
+  const model = createModel(modelSpec, splitConfig);
 
   let llmResponse: string;
   try {

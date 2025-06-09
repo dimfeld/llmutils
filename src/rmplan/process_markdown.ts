@@ -73,7 +73,7 @@ export async function convertMarkdownToYaml(
   const modelSpec = config.models?.convert_yaml || 'google/gemini-2.5-flash-preview-05-20';
   const prompt = markdownToYamlConversionPrompt.replace('{markdownInput}', markdownInput);
   let result = streamText({
-    model: createModel(modelSpec),
+    model: createModel(modelSpec, config),
     prompt,
     temperature: 0,
   });

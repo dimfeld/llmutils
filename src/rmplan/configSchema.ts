@@ -110,6 +110,14 @@ export const rmplanConfigSchema = z
           .describe('Model spec for rmplan prepare phase generation'),
       })
       .optional(),
+    /** Custom API key environment variables for specific models or model prefixes */
+    modelApiKeys: z
+      .record(z.string(), z.string().describe('Environment variable name to use for API key'))
+      .optional()
+      .describe(
+        'Map of model ID or prefix to environment variable name for API key. ' +
+          'Example: {"openai/": "MY_OPENAI_KEY", "anthropic/claude-3.5-sonnet": "CLAUDE_SONNET_KEY"}'
+      ),
     /** Default executor to use when not specified via --executor option */
     defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
     /** Configuration for automatic workspace creation. */

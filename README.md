@@ -740,6 +740,44 @@ postApplyCommands:
 - `workingDirectory`: (Optional) String path relative to the repository root where the command should be executed. Defaults to the repository root.
 - `env`: (Optional) An object mapping environment variable names to string values for the command's execution context.
 
+#### Model API Keys
+
+The `modelApiKeys` setting allows you to specify custom environment variables for API keys on a per-model or per-provider basis. This is useful when you need to use different API keys for different models or when your API keys are stored in non-standard environment variables.
+
+**Example `.rmfilter/config/rmplan.yml`:**
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+
+modelApiKeys:
+  # Use a specific environment variable for all OpenAI models
+  'openai/': 'MY_OPENAI_API_KEY'
+
+  # Use a different key for a specific model
+  'anthropic/claude-3.5-sonnet': 'CLAUDE_SONNET_KEY'
+
+  # General key for other Anthropic models
+  'anthropic/': 'MY_ANTHROPIC_KEY'
+
+  # Keys for other providers
+  'groq/': 'GROQ_API_KEY'
+  'cerebras/': 'CEREBRAS_KEY'
+```
+
+**How It Works:**
+
+1. When creating a model instance, rmplan checks the `modelApiKeys` configuration
+2. It first looks for an exact match (e.g., `anthropic/claude-3.5-sonnet`)
+3. If no exact match is found, it looks for a prefix match (e.g., `anthropic/`)
+4. If a match is found, it uses the specified environment variable instead of the default
+5. If the custom environment variable is not set, it falls back to the provider's default environment variable
+
+**Notes:**
+
+- Exact matches take precedence over prefix matches
+- Google Vertex AI doesn't use API keys, so any custom key configuration for `vertex/` providers will be ignored
+- If a custom environment variable is specified but not found, the system will fall back to the default environment variable for that provider
+
 ### Executors
 
 The executor system in rmplan provides a flexible way to execute plan steps with different AI models or tools. Executors handle the interaction with language models, applying edits to the codebase, and integrating with external tools.
