@@ -361,18 +361,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
         // Construct the prompt for the simple task
         const promptParts: string[] = [];
-        
+
         // Add project-level context
         if (planData.project?.goal) {
           promptParts.push(
             `# Project Goal: ${planData.project.goal}\n`,
             'These instructions define a particular task of a feature implementation for this project'
           );
-          
+
           if (planData.project.details) {
             promptParts.push(`## Project Details:\n\n${planData.project.details}\n`);
           }
-          
+
           promptParts.push(
             `# Current Phase Goal: ${planData.goal}\n\n## Phase Details:\n\n${planData.details}\n`
           );
@@ -382,35 +382,35 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
           );
         }
-        
+
         // Add the task details
         promptParts.push(
           `## Task: ${actionableItem.task.title}\n`,
           `Description: ${actionableItem.task.description || 'No description provided'}`
         );
-        
+
         // Add relevant files if available
         if (actionableItem.task.files && actionableItem.task.files.length > 0) {
           promptParts.push(
             '\n## Relevant Files\n\nThese are relevant files for this task. If you think additional files are relevant, you can update them as well.'
           );
-          
+
           const gitRoot = await getGitRoot(currentBaseDir);
           const filePrefix = executor.filePathPrefix || '';
-          
+
           // Strip parenthetical comments from filenames
-          const cleanFiles = actionableItem.task.files.map((file) => 
+          const cleanFiles = actionableItem.task.files.map((file) =>
             file.replace(/\s*\([^)]*\)\s*$/, '').trim()
           );
-          
+
           cleanFiles.forEach((file) => {
             const relativePath = path.isAbsolute(file) ? path.relative(gitRoot, file) : file;
             promptParts.push(`- ${filePrefix}${relativePath}`);
           });
         }
-        
+
         const taskPrompt = promptParts.join('\n');
-        
+
         try {
           log(boldMarkdownHeaders('\n## Execution\n'));
           await executor.execute(taskPrompt);
@@ -419,7 +419,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           hasError = true;
           break;
         }
-        
+
         // Run post-apply commands if configured
         if (config.postApplyCommands && config.postApplyCommands.length > 0) {
           log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
@@ -435,7 +435,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             break;
           }
         }
-        
+
         // Mark the task as done
         try {
           log(boldMarkdownHeaders('\n## Marking task done\n'));
@@ -446,7 +446,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             currentBaseDir,
             config
           );
-          
+
           if (markResult.planComplete) {
             log('Plan fully completed!');
             break;
@@ -456,7 +456,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           hasError = true;
           break;
         }
-        
+
         continue;
       }
 

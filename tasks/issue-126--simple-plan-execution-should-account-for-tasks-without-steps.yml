@@ -12,7 +12,7 @@ issue:
 planGeneratedAt: 2025-06-09T07:41:35.053Z
 promptsGeneratedAt: 2025-06-09T07:43:16.575Z
 createdAt: 2025-06-08T22:37:49.597Z
-updatedAt: 2025-06-09T07:57:25.839Z
+updatedAt: 2025-06-09T08:01:32.382Z
 project:
   title: '"Simple plan" execution should account for tasks without steps'
   goal: 'Implement: "Simple plan" execution should account for tasks without steps'
@@ -169,26 +169,26 @@ tasks:
           timestamp, and write the plan back. It should also handle the
           `--commit` option by calling `commitAll` with a message derived from
           the task title and description.
-        done: false
+        done: true
       - prompt: >
           Add tests for `markTaskDone` in `src/rmplan/actions.test.ts`. Test
           that it correctly marks a task as done and that it triggers a commit
           when the option is provided.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/agent.ts`, within the 'task' execution branch
           of the main loop, construct a detailed prompt for the executor. The
           prompt should include the overall project goal and details from the
           plan, followed by the specific task's title, description, and a list
           of its associated files.
-        done: false
+        done: true
       - prompt: >
           After constructing the prompt, call `executor.execute(prompt)`. Upon
           successful execution, call the new `markTaskDone` function to update
           the plan's state, passing the current task index and the commit
           option. Also, ensure post-apply commands are run, similar to the
           step-based execution path.
-        done: false
+        done: true
   - title: Ensure Plan Completion Logic is Correct
     description: Update all logic that checks for overall plan completion to be
       aware of the new task-level `done` flag. A plan should now be considered
