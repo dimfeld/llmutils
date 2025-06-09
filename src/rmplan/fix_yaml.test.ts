@@ -311,6 +311,29 @@ items:
     });
   });
 
+  test('fixes single line strings that span lines', async () => {
+    const input = `priority: "high"
+details: "This project will implement a new attribute-based access control (ABAC) system to complement the existing role-based access control (RBAC). The new system is designed to control access to data objects (like devices, locations, inventory) for different actors (users, teams, entire organizations).
+
+The implementation will be phased, starting with the core backend infrastructure, followed by integration into existing queries, and finally building a comprehensive administrative UI for management."
+phases:
+  - name: Phase 1
+`;
+
+    const result = await fixYaml(input);
+    expect(result).toEqual({
+      priority: 'high',
+      details: `This project will implement a new attribute-based access control (ABAC) system to complement the existing role-based access control (RBAC). The new system is designed to control access to data objects (like devices, locations, inventory) for different actors (users, teams, entire organizations).
+
+The implementation will be phased, starting with the core backend infrastructure, followed by integration into existing queries, and finally building a comprehensive administrative UI for management.`,
+      phases: [
+        {
+          name: 'Phase 1',
+        },
+      ],
+    });
+  });
+
   describe('attempt counter reset', () => {
     test('resets attempt counter when error moves to later line', async () => {
       // This tests the logic where attempt counter resets if error line increases

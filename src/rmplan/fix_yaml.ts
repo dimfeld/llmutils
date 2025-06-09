@@ -2,6 +2,8 @@ import * as YAML from 'yaml';
 import { streamText } from 'ai';
 import { createModel } from '../common/model_factory.js';
 import type { RmplanConfig } from './configSchema.js';
+import { findYamlStart } from './process_markdown.js';
+import { quiet } from '../common/process.js';
 
 // Interface for YAML parsing error
 interface YamlError {
@@ -72,18 +74,35 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
       if (
         yamlError.message.includes('implicit map key') ||
         yamlError.message.includes('Nested mappings are not allowed in compact mappings') ||
-        yamlError.message.includes('Implicit map keys need to be on a single line')
+        yamlError.message.includes('Implicit map keys need to be on a single line') ||
+        (yamlError.message.includes('Implicit keys need to be on a single line') &&
+          yamlError.code !== 'MULTILINE_IMPLICIT_KEY')
       ) {
         // Likely an unquoted string with a colon
         currentYaml = fixUnquotedColon(currentYaml, lineNumber, colNumber);
         fixApplied = true;
       } else if (
+        yamlError.message.includes('Implicit keys need to be on a single line') &&
+        yamlError.code === 'MULTILINE_IMPLICIT_KEY'
+      ) {
+        // This is specifically a multiline quote issue
+        currentYaml = fixMissingClosingQuote(currentYaml, lineNumber, colNumber);
+        fixApplied = true;
+      } else if (
         yamlError.message.includes('unclosed quoted string') ||
         yamlError.message.includes('unexpected scalar') ||
-        yamlError.message.includes('Unexpected scalar at node end')
+        yamlError.message.includes('Unexpected scalar at node end') ||
+        yamlError.message.includes('Missing closing "quote')
       ) {
-        // Could be unescaped quotes or invalid alias reference
-        if (yamlError.message.includes('Unexpected scalar at node end')) {
+        // Could be unescaped quotes, invalid alias reference, or missing closing quote
+        if (
+          yamlError.message.includes('Missing closing "quote') ||
+          yamlError.code === 'MISSING_CHAR'
+        ) {
+          // Handle missing closing quote for strings that span lines
+          currentYaml = fixMissingClosingQuote(currentYaml, lineNumber, colNumber);
+          fixApplied = true;
+        } else if (yamlError.message.includes('Unexpected scalar at node end')) {
           // Check if it's an invalid alias reference (starts with *)
           const lines = currentYaml.split('\n');
           if (lineNumber && lines[lineNumber - 1]) {
@@ -127,8 +146,9 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
   // If we reach here, manual fixes failed. Try LLM fallback if config is provided
   if (config) {
     try {
+      console.log(`Attempting to fix YAML with LLM...`);
       const fixedYaml = await fixYamlWithLLM(currentYaml, config);
-      return YAML.parse(fixedYaml);
+      return YAML.parse(findYamlStart(fixedYaml));
     } catch (llmError) {
       throw new Error(
         `Failed to fix YAML after maximum attempts and LLM fallback failed: ${llmError as Error}`
@@ -172,6 +192,17 @@ ${yamlText}
     prompt,
     temperature: 0,
   });
+
+  if (!quiet) {
+    for await (const chunk of result.fullStream) {
+      if (chunk.type === 'text-delta') {
+        process.stdout.write(chunk.textDelta);
+      } else if (chunk.type === 'error') {
+        throw new Error((chunk.error as any).toString());
+      }
+    }
+    process.stdout.write('\n');
+  }
 
   return await result.text;
 }
@@ -315,4 +346,63 @@ function isValueQuoted(value: string): boolean {
     (trimmedValue.startsWith('"') && trimmedValue.endsWith('"')) ||
     (trimmedValue.startsWith("'") && trimmedValue.endsWith("'"))
   );
+}
+
+// Fix missing closing quote for strings that span multiple lines
+function fixMissingClosingQuote(
+  yamlText: string,
+  lineNumber: number | null,
+  colNumber: number | null
+): string {
+  const lines: string[] = yamlText.split('\n');
+  if (!lineNumber) return yamlText;
+
+  // Find the line with the unclosed quote by looking backwards from the error line
+  for (let i = Math.min(lineNumber - 1, lines.length - 1); i >= 0; i--) {
+    const line = lines[i];
+    const keyValueMatch = line.match(/^(\s*)([^:]+):\s*"(.*)$/);
+    if (keyValueMatch) {
+      const [, indent, key, valueStart] = keyValueMatch;
+
+      // Collect all content from this line until we hit the next key at the same indentation level
+      let fullValue = valueStart;
+      let endLine = i;
+
+      // Look for the end of the value content
+      for (let j = i + 1; j < lines.length; j++) {
+        const nextLine = lines[j];
+
+        // Check if we've hit another key at the same or lesser indentation
+        const nextKeyMatch = nextLine.match(/^(\s*)(\w+):/);
+        if (nextKeyMatch) {
+          const nextIndent = nextKeyMatch[1];
+          if (nextIndent.length <= indent.length) {
+            // Found the end of our value
+            break;
+          }
+        }
+
+        // Add the line content to our value
+        fullValue += '\n' + nextLine;
+        endLine = j;
+      }
+
+      // Clean up the value - remove any trailing quotes and escape internal quotes
+      fullValue = fullValue.replace(/"$/, ''); // Remove trailing quote if present
+
+      // Escape newlines and quotes for proper YAML flow scalar format
+      const escapedValue = fullValue
+        .replace(/"/g, '\\"') // Escape internal quotes
+        .replace(/\n/g, '\\n'); // Escape newlines
+
+      // Replace the original lines with the fixed version
+      const newLine = `${indent}${key}: "${escapedValue}"`;
+      const newLines = [...lines];
+      newLines.splice(i, endLine - i + 1, newLine);
+
+      return newLines.join('\n');
+    }
+  }
+
+  return yamlText;
 }
