@@ -1318,9 +1318,7 @@ when writing and reading plan files.`,
           description: 'This task is not done yet',
           files: ['src/pending.ts'],
           done: false,
-          steps: [
-            { prompt: 'Step 1', done: false },
-          ],
+          steps: [{ prompt: 'Step 1', done: false }],
         },
         {
           title: 'Task without done flag',
@@ -1340,16 +1338,16 @@ when writing and reading plan files.`,
     // Verify all fields are preserved, especially the done flags
     expect(readBackPlan.id).toBe(107);
     expect(readBackPlan.tasks).toHaveLength(3);
-    
+
     // Check first task (done: true)
     expect(readBackPlan.tasks![0].title).toBe('Completed Task');
     expect(readBackPlan.tasks![0].done).toBe(true);
     expect(readBackPlan.tasks![0].steps).toHaveLength(2);
-    
+
     // Check second task (done: false)
     expect(readBackPlan.tasks![1].title).toBe('Pending Task');
     expect(readBackPlan.tasks![1].done).toBe(false);
-    
+
     // Check third task (no explicit done flag, defaults to undefined when not set)
     expect(readBackPlan.tasks![2].title).toBe('Task without done flag');
     expect(readBackPlan.tasks![2].done).toBeUndefined();
