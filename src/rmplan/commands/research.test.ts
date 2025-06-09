@@ -243,9 +243,7 @@ describe('handleResearchCommand', () => {
       // Should have written rmfilter output to clipboard
       expect(clipboardWriteSpy).toHaveBeenCalledWith('rmfilter output');
 
-      expect(logSpy).toHaveBeenCalledWith(
-        'Research prompt with context copied to clipboard'
-      );
+      expect(logSpy).toHaveBeenCalledWith('Research prompt with context copied to clipboard');
     } finally {
       process.argv = originalArgv;
     }
@@ -299,7 +297,9 @@ describe('handleResearchCommand', () => {
       },
     };
 
-    await expect(handleResearchCommand('nonexistent', undefined, options, command)).rejects.toThrow();
+    await expect(
+      handleResearchCommand('nonexistent', undefined, options, command)
+    ).rejects.toThrow();
   });
 
   test('does not update plan when no content is pasted', async () => {
@@ -439,7 +439,7 @@ describe('handleResearchCommand', () => {
     // Mock the date for consistent testing
     const originalDate = Date;
     const mockDate = new Date('2024-01-15');
-    
+
     try {
       global.Date = class extends Date {
         constructor(...args: any[]) {
