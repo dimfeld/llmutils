@@ -13,6 +13,7 @@ import {
   executePostApplyCommand,
   findNextActionableItem,
   markStepDone,
+  markTaskDone,
   prepareNextStep,
   preparePhase,
 } from '../actions.js';
@@ -357,7 +358,105 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         if (actionableItem.task.description) {
           log(`Description: ${actionableItem.task.description}`);
         }
-        // TODO: Full implementation will be in the next task
+
+        // Construct the prompt for the simple task
+        const promptParts: string[] = [];
+        
+        // Add project-level context
+        if (planData.project?.goal) {
+          promptParts.push(
+            `# Project Goal: ${planData.project.goal}\n`,
+            'These instructions define a particular task of a feature implementation for this project'
+          );
+          
+          if (planData.project.details) {
+            promptParts.push(`## Project Details:\n\n${planData.project.details}\n`);
+          }
+          
+          promptParts.push(
+            `# Current Phase Goal: ${planData.goal}\n\n## Phase Details:\n\n${planData.details}\n`
+          );
+        } else {
+          // No project-level context, use phase as top-level
+          promptParts.push(
+            `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
+          );
+        }
+        
+        // Add the task details
+        promptParts.push(
+          `## Task: ${actionableItem.task.title}\n`,
+          `Description: ${actionableItem.task.description || 'No description provided'}`
+        );
+        
+        // Add relevant files if available
+        if (actionableItem.task.files && actionableItem.task.files.length > 0) {
+          promptParts.push(
+            '\n## Relevant Files\n\nThese are relevant files for this task. If you think additional files are relevant, you can update them as well.'
+          );
+          
+          const gitRoot = await getGitRoot(currentBaseDir);
+          const filePrefix = executor.filePathPrefix || '';
+          
+          // Strip parenthetical comments from filenames
+          const cleanFiles = actionableItem.task.files.map((file) => 
+            file.replace(/\s*\([^)]*\)\s*$/, '').trim()
+          );
+          
+          cleanFiles.forEach((file) => {
+            const relativePath = path.isAbsolute(file) ? path.relative(gitRoot, file) : file;
+            promptParts.push(`- ${filePrefix}${relativePath}`);
+          });
+        }
+        
+        const taskPrompt = promptParts.join('\n');
+        
+        try {
+          log(boldMarkdownHeaders('\n## Execution\n'));
+          await executor.execute(taskPrompt);
+        } catch (err) {
+          error('Task execution failed:', err);
+          hasError = true;
+          break;
+        }
+        
+        // Run post-apply commands if configured
+        if (config.postApplyCommands && config.postApplyCommands.length > 0) {
+          log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
+          for (const commandConfig of config.postApplyCommands) {
+            const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
+            if (!commandSucceeded) {
+              error(`Agent stopping because required command "${commandConfig.title}" failed.`);
+              hasError = true;
+              break;
+            }
+          }
+          if (hasError) {
+            break;
+          }
+        }
+        
+        // Mark the task as done
+        try {
+          log(boldMarkdownHeaders('\n## Marking task done\n'));
+          const markResult = await markTaskDone(
+            currentPlanFile,
+            actionableItem.taskIndex,
+            { commit: options.commit },
+            currentBaseDir,
+            config
+          );
+          
+          if (markResult.planComplete) {
+            log('Plan fully completed!');
+            break;
+          }
+        } catch (err) {
+          error('Failed to mark task as done:', err);
+          hasError = true;
+          break;
+        }
+        
         continue;
       }
 
