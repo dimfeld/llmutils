@@ -4,7 +4,6 @@ import { quiet } from '../common/process.js';
 import { getGitRoot } from '../common/git.js'; // Assuming logging exists
 import { debugLog, error, log, warn } from '../logging.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
-import { DEFAULT_EXECUTOR } from './constants.js';
 
 /**
  * Deeply merges two RmplanConfig objects, with localConfig overriding mainConfig.
@@ -13,44 +12,39 @@ import { DEFAULT_EXECUTOR } from './constants.js';
 function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): RmplanConfig {
   const merged: RmplanConfig = { ...mainConfig, ...localConfig };
 
+  function mergeConfigKey<KEY extends keyof RmplanConfig>(key: KEY) {
+    let mainValue: RmplanConfig[KEY] = mainConfig[key];
+    let localValue: RmplanConfig[KEY] = localConfig[key];
+
+    if (localValue === undefined) {
+      return;
+    }
+
+    if (Array.isArray(localValue)) {
+      if (mainValue) {
+        // @ts-expect-error hard to specify this is an array
+        merged[key] = [...(mainValue as any[]), ...localValue];
+      } else {
+        merged[key] = localValue;
+      }
+    } else if (typeof localValue === 'object') {
+      if (mainValue) {
+        merged[key] = { ...(mainValue as object), ...localValue };
+      } else {
+        merged[key] = localValue;
+      }
+    } else {
+      merged[key] = localValue;
+    }
+  }
+
   // Do deep merge for select paths
 
-  // Handle postApplyCommands: concatenate arrays if both exist
-  if (localConfig.postApplyCommands !== undefined) {
-    if (mainConfig.postApplyCommands && localConfig.postApplyCommands) {
-      merged.postApplyCommands = [
-        ...mainConfig.postApplyCommands,
-        ...localConfig.postApplyCommands,
-      ];
-    } else {
-      merged.postApplyCommands = localConfig.postApplyCommands;
-    }
-  }
-
-  // Handle paths: deep merge objects
-  if (localConfig.paths !== undefined) {
-    merged.paths = {
-      ...mainConfig.paths,
-      ...localConfig.paths,
-    };
-  }
-
-  // Handle autoexamples: concatenate arrays if both exist
-  if (localConfig.autoexamples !== undefined) {
-    if (mainConfig.autoexamples && localConfig.autoexamples) {
-      merged.autoexamples = [...mainConfig.autoexamples, ...localConfig.autoexamples];
-    } else {
-      merged.autoexamples = localConfig.autoexamples;
-    }
-  }
-
-  // Handle models: deep merge objects
-  if (localConfig.models !== undefined) {
-    merged.models = {
-      ...mainConfig.models,
-      ...localConfig.models,
-    };
-  }
+  mergeConfigKey('postApplyCommands');
+  mergeConfigKey('paths');
+  mergeConfigKey('autoexamples');
+  mergeConfigKey('models');
+  mergeConfigKey('modelApiKeys');
 
   // Handle executors: deep merge objects
   if (localConfig.executors !== undefined) {
