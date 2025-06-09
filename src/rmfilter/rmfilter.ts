@@ -873,8 +873,9 @@ function reconstructCliArgs(globalValues: GlobalValues, commandsParsed: CommandP
 export async function runRmfilterProgrammatically(
   args: string[],
   gitRoot: string,
-  baseDir: string
+  baseDir?: string
 ): Promise<string> {
+  baseDir ??= gitRoot;
   debugLog('runRmfilterProgrammatically', args, gitRoot, baseDir);
   const { globalValues, commandsParsed } = await getCurrentConfig({ args, gitRoot });
 

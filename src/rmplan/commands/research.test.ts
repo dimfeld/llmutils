@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleResearchCommand } from './research.js';
-import { clearPlanCache } from '../plans.js';
+import { clearPlanCache, writePlanFile, readPlanFile } from '../plans.js';
 import { ModuleMocker } from '../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -16,6 +16,7 @@ const clipboardWriteSpy = mock(() => {});
 const waitForEnterSpy = mock(() => Promise.resolve(''));
 const logSpawnSpy = mock(() => ({ exited: Promise.resolve() }));
 const sshAwarePasteActionSpy = mock(() => 'paste');
+const runRmfilterProgrammaticallySpy = mock(() => Promise.resolve('rmfilter output'));
 
 describe('handleResearchCommand', () => {
   let tempDir: string;
@@ -29,6 +30,7 @@ describe('handleResearchCommand', () => {
     waitForEnterSpy.mockClear();
     logSpawnSpy.mockClear();
     sshAwarePasteActionSpy.mockClear();
+    runRmfilterProgrammaticallySpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -72,6 +74,10 @@ describe('handleResearchCommand', () => {
     await moduleMocker.mock('../../common/ssh_detection.js', () => ({
       sshAwarePasteAction: sshAwarePasteActionSpy,
     }));
+
+    await moduleMocker.mock('../../rmfilter/rmfilter.js', () => ({
+      runRmfilterProgrammatically: runRmfilterProgrammaticallySpy,
+    }));
   });
 
   afterEach(async () => {
@@ -105,7 +111,7 @@ describe('handleResearchCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await writePlanFile(path.join(tasksDir, '1.yml'), plan);
 
     const options = {};
     const command = {
@@ -114,12 +120,12 @@ describe('handleResearchCommand', () => {
       },
     };
 
-    await handleResearchCommand('1', options, command);
+    await handleResearchCommand('1', undefined, options, command);
 
     // Should have generated and copied research prompt
     expect(clipboardWriteSpy).toHaveBeenCalledTimes(1);
     const promptContent = clipboardWriteSpy.mock.calls[0][0];
-    expect(promptContent).toContain('# Research Prompt for Plan');
+    expect(promptContent).toContain('# Research Assistant');
     expect(promptContent).toContain('Test implementation');
     expect(promptContent).toContain('Implement test feature');
 
@@ -155,7 +161,8 @@ describe('handleResearchCommand', () => {
     };
 
     const planFile = path.join(tasksDir, '2.yml');
-    await fs.writeFile(planFile, yaml.stringify(plan));
+    // Use writePlanFile to ensure proper format
+    await writePlanFile(planFile, plan);
 
     const options = {};
     const command = {
@@ -164,15 +171,14 @@ describe('handleResearchCommand', () => {
       },
     };
 
-    await handleResearchCommand('2', options, command);
+    await handleResearchCommand('2', undefined, options, command);
 
     // Read the updated plan file
-    const updatedContent = await fs.readFile(planFile, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent);
+    const updatedPlan = await readPlanFile(planFile);
 
     // Should have appended research to details
     expect(updatedPlan.details).toContain('Initial details');
-    expect(updatedPlan.details).toContain('--- Research ---');
+    expect(updatedPlan.details).toMatch(/# Research \w+ \w+ \d+ \d+/); // Matches date format
     expect(updatedPlan.details).toContain('This is my research findings from investigation.');
 
     // Should have updated timestamp
@@ -205,7 +211,7 @@ describe('handleResearchCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '3.yml'), yaml.stringify(plan));
+    await writePlanFile(path.join(tasksDir, '3.yml'), plan);
 
     // Mock process.argv to include additional rmfilter args
     const originalArgv = process.argv;
@@ -219,24 +225,26 @@ describe('handleResearchCommand', () => {
     };
 
     try {
-      await handleResearchCommand('3', options, command);
+      await handleResearchCommand('3', undefined, options, command);
 
-      // Should have called logSpawn with rmfilter command
-      expect(logSpawnSpy).toHaveBeenCalledTimes(1);
-      const spawnCall = logSpawnSpy.mock.calls[0];
-      const spawnArgs = spawnCall[0];
-      const spawnOptions = spawnCall[1];
+      // Should have called runRmfilterProgrammatically
+      expect(runRmfilterProgrammaticallySpy).toHaveBeenCalledTimes(1);
+      const rmfilterCall = runRmfilterProgrammaticallySpy.mock.calls[0];
+      const rmfilterArgs = rmfilterCall[0];
+      const rmfilterCwd = rmfilterCall[1];
 
-      expect(spawnArgs[0]).toBe('rmfilter');
-      expect(spawnArgs).toContain('--copy');
-      expect(spawnArgs).toContain('--instructions');
-      expect(spawnArgs).toContain('src/**/*.ts');
-      expect(spawnArgs).toContain('--with-imports');
-      expect(spawnArgs).toContain('additional-file.ts');
-      expect(spawnOptions.cwd).toBe(tempDir);
+      expect(rmfilterArgs).toContain('--instructions');
+      expect(rmfilterArgs).toContain('--bare');
+      expect(rmfilterArgs).toContain('src/**/*.ts');
+      expect(rmfilterArgs).toContain('--with-imports');
+      expect(rmfilterArgs).toContain('additional-file.ts');
+      expect(rmfilterCwd).toBe(tempDir);
+
+      // Should have written rmfilter output to clipboard
+      expect(clipboardWriteSpy).toHaveBeenCalledWith('rmfilter output');
 
       expect(logSpy).toHaveBeenCalledWith(
-        'Research prompt with context copied to clipboard via rmfilter'
+        'Research prompt with context copied to clipboard'
       );
     } finally {
       process.argv = originalArgv;
@@ -266,7 +274,7 @@ describe('handleResearchCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '4.yml'), yaml.stringify(plan));
+    await writePlanFile(path.join(tasksDir, '4.yml'), plan);
 
     const options = { rmfilter: true };
     const command = {
@@ -275,7 +283,7 @@ describe('handleResearchCommand', () => {
       },
     };
 
-    await handleResearchCommand('4', options, command);
+    await handleResearchCommand('4', undefined, options, command);
 
     // Should fall back to clipboard write since no rmfilter args
     expect(clipboardWriteSpy).toHaveBeenCalledTimes(1);
@@ -291,7 +299,7 @@ describe('handleResearchCommand', () => {
       },
     };
 
-    await expect(handleResearchCommand('nonexistent', options, command)).rejects.toThrow();
+    await expect(handleResearchCommand('nonexistent', undefined, options, command)).rejects.toThrow();
   });
 
   test('does not update plan when no content is pasted', async () => {
@@ -321,7 +329,7 @@ describe('handleResearchCommand', () => {
     };
 
     const planFile = path.join(tasksDir, '5.yml');
-    await fs.writeFile(planFile, yaml.stringify(plan));
+    await writePlanFile(planFile, plan);
 
     const options = {};
     const command = {
@@ -330,14 +338,130 @@ describe('handleResearchCommand', () => {
       },
     };
 
-    await handleResearchCommand('5', options, command);
+    await handleResearchCommand('5', undefined, options, command);
 
     // Read the plan file
-    const updatedContent = await fs.readFile(planFile, 'utf-8');
-    const updatedPlan = yaml.parse(updatedContent);
+    const updatedPlan = await readPlanFile(planFile);
 
     // Should not have changed
     expect(updatedPlan.details).toBe('Original details');
     expect(logSpy).toHaveBeenCalledWith('No research content was pasted');
+  });
+
+  test('generates research prompt with specific research goal', async () => {
+    // Create a test plan
+    const plan = {
+      id: '6',
+      title: 'Main Plan',
+      goal: 'Build a complete system',
+      details: 'System details',
+      status: 'pending',
+      priority: 'medium',
+      tasks: [],
+    };
+    const planFile = path.join(tasksDir, '6.yml');
+    await writePlanFile(planFile, plan);
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleResearchCommand('6', 'authentication flow', options, command);
+
+    // Should have generated prompt with research goal
+    expect(clipboardWriteSpy).toHaveBeenCalledTimes(1);
+    const promptContent = clipboardWriteSpy.mock.calls[0][0];
+    expect(promptContent).toContain('# Research Assistant');
+    expect(promptContent).toContain('**Goal**: authentication flow');
+    expect(promptContent).toContain('**Overall Project Goal**: Build a complete system');
+    expect(promptContent).toContain('**Specific Research Focus**: authentication flow');
+  });
+
+  test('generates tutorial prompt with --tutorial flag', async () => {
+    // Create a test plan
+    const plan = {
+      id: '7',
+      title: 'Tutorial Plan',
+      goal: 'Implement OAuth integration',
+      details: 'OAuth details',
+      status: 'pending',
+      priority: 'medium',
+      tasks: [],
+    };
+    const planFile = path.join(tasksDir, '7.yml');
+    await writePlanFile(planFile, plan);
+
+    const options = { tutorial: true };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleResearchCommand('7', undefined, options, command);
+
+    // Should have generated tutorial prompt
+    expect(clipboardWriteSpy).toHaveBeenCalledTimes(1);
+    const promptContent = clipboardWriteSpy.mock.calls[0][0];
+    expect(promptContent).toContain('# Tutorial Creation Assistant');
+    expect(promptContent).toContain('You are acting as a senior engineer creating a tutorial');
+    expect(promptContent).toContain('**Goal**: Implement OAuth integration');
+    expect(promptContent).toContain('Step-by-Step Implementation');
+  });
+
+  test('includes research goal in appended details', async () => {
+    // Mock waitForEnter to return sample research
+    waitForEnterSpy.mockResolvedValue('Tutorial content here.');
+
+    // Create a test plan
+    const plan = {
+      id: '8',
+      title: 'Goal Details Plan',
+      goal: 'Main goal',
+      details: 'Original details',
+      status: 'pending',
+      priority: 'medium',
+      tasks: [],
+    };
+    const planFile = path.join(tasksDir, '8.yml');
+    await writePlanFile(planFile, plan);
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Mock the date for consistent testing
+    const originalDate = Date;
+    const mockDate = new Date('2024-01-15');
+    global.Date = class extends Date {
+      constructor(...args: any[]) {
+        if (args.length === 0) {
+          super(mockDate.getTime());
+        } else {
+          super(...args);
+        }
+      }
+      static now() {
+        return mockDate.getTime();
+      }
+    } as any;
+
+    await handleResearchCommand('8', 'specific research task', options, command);
+
+    // Restore original Date
+    global.Date = originalDate;
+
+    // Read the updated plan
+    const updatedPlan = await readPlanFile(planFile);
+
+    // Should have appended research with goal in header
+    expect(updatedPlan.details).toContain('# Research Mon Jan 15 2024: specific research task');
+    expect(updatedPlan.details).toContain('Tutorial content here.');
   });
 });

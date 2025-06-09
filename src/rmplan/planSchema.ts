@@ -9,7 +9,10 @@ export const phaseSchema = z
   .object({
     title: z.string().optional(),
     goal: z.string(),
-    details: z.string().optional().describe('Plan details. This can also be in markdown content after the YAML'),
+    details: z
+      .string()
+      .optional()
+      .describe('Plan details. This can also be in markdown content after the YAML'),
     id: z.coerce.number().int().positive().optional(),
     status: statusSchema.default('pending').optional(),
     priority: prioritySchema.optional(),

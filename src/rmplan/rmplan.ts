@@ -181,14 +181,16 @@ program
   });
 
 program
-  .command('research [planArg]')
+  .command('research <planArg> [research-goal]')
   .description('Generate a research prompt for a plan and append the results.')
-  .option('--rmfilter', 'Use rmfilter to include file context in the prompt.')
+  .option('--rmfilter', `Use rmfilter to include the plan's file context in the prompt.`)
+  .option('--tutorial', 'Generate a tutorial suitable for a junior engineer to implement the task')
+  .usage('<planArg> [research-goal] [ -- custom rmfilter options]')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
-  .action(async (planArg, options, command) => {
+  .action(async (planArg, goal, options, command) => {
     const { handleResearchCommand } = await import('./commands/research.js');
-    await handleResearchCommand(planArg, options, command).catch(handleCommandError);
+    await handleResearchCommand(planArg, goal, options, command).catch(handleCommandError);
   });
 
 program

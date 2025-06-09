@@ -1,13 +1,11 @@
-import clipboard from 'clipboardy';
-import * as path from 'node:path';
-import * as os from 'node:os';
+import * as clipboard from '../../common/clipboard.js';
 import { getGitRoot } from '../../common/git.js';
-import { logSpawn } from '../../common/process.js';
 import { sshAwarePasteAction } from '../../common/ssh_detection.js';
 import { waitForEnter } from '../../common/terminal.js';
 import { log } from '../../logging.js';
 import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
 
 /**
  * Handles the rmplan research command.
@@ -19,7 +17,8 @@ import type { PlanSchema } from '../planSchema.js';
  */
 export async function handleResearchCommand(
   planArg: string,
-  options: { rmfilter?: boolean },
+  researchGoal: string | undefined,
+  options: { rmfilter?: boolean; tutorial?: boolean },
   command: any
 ): Promise<void> {
   // Get global options from parent command
@@ -34,101 +33,146 @@ export async function handleResearchCommand(
   const rmfilterArgs = separatorIndex !== -1 ? argv.slice(separatorIndex + 1) : [];
 
   // Call the core action function
-  await handleResearch(planFile, {
+  await handleResearch({
+    planFile,
+    researchGoal,
     rmfilter: options.rmfilter,
+    tutorial: options.tutorial,
     rmfilterArgs,
   });
 }
 
-async function handleResearch(
-  planFile: string,
-  options: { rmfilter?: boolean; rmfilterArgs?: string[] }
-): Promise<void> {
+async function handleResearch(options: {
+  planFile: string;
+  researchGoal?: string;
+  rmfilter?: boolean;
+  tutorial?: boolean;
+  rmfilterArgs?: string[];
+}): Promise<void> {
   // Read the plan file
-  let planData = await readPlanFile(planFile);
+  let planData = await readPlanFile(options.planFile);
 
   // Generate research prompt
-  const prompt = generateResearchPrompt(planData);
+  const prompt = generateResearchPrompt(planData, options.researchGoal, options.tutorial);
 
-  let tempPromptFile: string | null = null;
+  let rmfilterOptions: string[] = [];
+  // Check if rmfilter option is enabled
+  if (options.rmfilter && planData.rmfilter) {
+    rmfilterOptions.push(...planData.rmfilter);
+  }
 
-  try {
-    // Check if rmfilter option is enabled
-    if (options.rmfilter) {
-      // Combine rmfilter arguments from plan's rmfilter field with command-line file arguments
-      const planRmfilterArgs = planData.rmfilter || [];
-      const commandLineArgs = options.rmfilterArgs || [];
-      const combinedArgs = [...planRmfilterArgs, ...commandLineArgs];
+  const commandLineArgs = options.rmfilterArgs || [];
+  if (commandLineArgs.length > 0) {
+    rmfilterOptions.push('--', ...commandLineArgs);
+  }
 
-      // If there are any combined rmfilter arguments, use rmfilter to generate context-aware prompt
-      if (combinedArgs.length > 0) {
-        // Generate the research prompt and write it to a temporary file
-        tempPromptFile = path.join(
-          os.tmpdir(),
-          `rmplan-research-prompt-${Date.now()}-${crypto.randomUUID()}.md`
-        );
-        await Bun.write(tempPromptFile, prompt);
+  // If there are any combined rmfilter arguments, use rmfilter to generate context-aware prompt
+  if (rmfilterOptions.length > 0) {
+    // Get the git root directory
+    const gitRoot = await getGitRoot();
 
-        // Get the git root directory
-        const gitRoot = await getGitRoot();
+    const result = await runRmfilterProgrammatically(
+      ['--instructions', prompt, '--bare', ...rmfilterOptions],
+      gitRoot
+    );
 
-        // Use logSpawn to execute rmfilter with the combined file/filter arguments, --copy, and --instructions
-        await logSpawn(
-          ['rmfilter', '--copy', '--instructions', `@${tempPromptFile}`, ...combinedArgs],
-          { cwd: gitRoot }
-        ).exited;
+    await clipboard.write(result);
 
-        log('Research prompt with context copied to clipboard via rmfilter');
-      } else {
-        // Fall back to original behavior if no rmfilter arguments provided
-        await clipboard.write(prompt);
-        log('Research prompt copied to clipboard');
-      }
-    } else {
-      // Fall back to original behavior when --rmfilter is false
-      await clipboard.write(prompt);
-      log('Research prompt copied to clipboard');
-    }
+    log('Research prompt with context copied to clipboard');
+  } else {
+    // Fall back to original behavior when --rmfilter is false
+    await clipboard.write(prompt);
+    log('Research prompt copied to clipboard');
+  }
 
-    log(`Perform your research, then ${sshAwarePasteAction()} the results back into the terminal.`);
+  log(`Perform your research, then ${sshAwarePasteAction()} the results back into the terminal.`);
 
-    // Wait for user to paste their research
-    const pastedContent = await waitForEnter(true);
+  // Wait for user to paste their research
+  const pastedContent = await waitForEnter(true);
 
-    // If pasted content is not empty, append it to the details field
-    if (pastedContent && pastedContent.trim()) {
-      planData.details = planData.details + '\n\n--- Research ---\n\n' + pastedContent.trim();
+  // If pasted content is not empty, append it to the details field
+  if (pastedContent && pastedContent.trim()) {
+    const researchDate = new Date().toDateString();
+    const researchHeader = options.researchGoal
+      ? `# Research ${researchDate}: ${options.researchGoal}`
+      : `# Research ${researchDate}`;
+    planData.details =
+      (planData.details?.trimEnd() || '') + `\n\n${researchHeader}\n\n` + pastedContent.trim();
 
-      // Update the updatedAt timestamp
-      planData.updatedAt = new Date().toISOString();
+    // Update the updatedAt timestamp
+    planData.updatedAt = new Date().toISOString();
 
-      // Save the modified plan back to the file
-      await writePlanFile(planFile, planData);
+    // Save the modified plan back to the file
+    await writePlanFile(options.planFile, planData);
 
-      log('Plan updated with research results');
-    } else {
-      log('No research content was pasted');
-    }
-  } finally {
-    // Ensure the temporary prompt file is deleted after the rmfilter process completes
-    if (tempPromptFile) {
-      try {
-        await Bun.file(tempPromptFile).unlink();
-      } catch (err) {
-        // Ignore cleanup errors
-      }
-    }
+    log('Plan updated with research results');
+  } else {
+    log('No research content was pasted');
   }
 }
 
-function generateResearchPrompt({ goal, details }: PlanSchema): string {
+function generateResearchPrompt(
+  { goal, details }: PlanSchema,
+  researchGoal?: string,
+  tutorial?: boolean
+): string {
+  const primaryGoal = researchGoal || goal;
+  const contextSection = researchGoal
+    ? `
+
+## Project Context
+
+**Overall Project Goal**: ${goal}
+
+**Specific Research Focus**: ${researchGoal}`
+    : '';
+
+  if (tutorial) {
+    return `# Tutorial Creation Assistant
+
+You are acting as a senior engineer creating a tutorial for a junior engineer.
+
+## Tutorial Topic
+
+**Goal**: ${primaryGoal}${contextSection}
+
+**Details**: ${details}
+
+## Your Task
+
+Please create a comprehensive tutorial suitable for a junior engineer to understand and implement this task. Your tutorial should include:
+
+1. **Overview**: A clear explanation of what we're building and why
+2. **Prerequisites**: What the junior engineer should know or have set up before starting
+3. **Key Concepts**: Explain any important concepts, patterns, or technologies they'll need to understand
+4. **Step-by-Step Implementation**:
+   - Break down the implementation into clear, manageable steps
+   - Include code examples for each step
+   - Explain why each step is necessary and what it accomplishes
+5. **Common Pitfalls**: Warn about typical mistakes and how to avoid them
+6. **Testing**: How to verify that the implementation works correctly
+7. **Further Learning**: Resources for deepening their understanding
+
+## Tutorial Guidelines
+
+- Use clear, simple language without being condescending
+- Explain technical terms when you first use them
+- Include practical examples and analogies where helpful
+- Assume basic programming knowledge but not domain expertise
+- Focus on teaching both the "how" and the "why"
+- Make the tutorial hands-on and interactive where possible
+
+Structure your tutorial to build understanding progressively, starting with fundamentals and moving to more complex aspects.
+`;
+  }
+
   return `# Research Assistant
 
 You are acting as a research assistant to help gather relevant information for a project.
 
 ## Research Topic
 
-**Goal**: ${goal}
+**Goal**: ${primaryGoal}${contextSection}
 
 **Details**: ${details}
 

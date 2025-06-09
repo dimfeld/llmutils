@@ -15,3 +15,8 @@ type: rules
 - **Update call chains systematically**: `commitAll()` → `markStepDone()` → `prepareNextStep()` → calling code
 - **Let TypeScript guide you**: Use compilation errors to find all call sites that need updates
 - **Maintain backward compatibility when possible**: Add optional parameters before making them required
+
+### General Tips
+
+- When reading and writing from the clipboard, use the read and write functions in 'src/common/clipboard.ts'.
+- When running rmfilter from inside a command, use the `runRmfilterProgrammatically` function in 'src/rmfilter/rmfilter.ts' instead of spawning a new process.
