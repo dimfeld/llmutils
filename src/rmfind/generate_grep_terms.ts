@@ -17,7 +17,7 @@ export async function generateGrepTermsFromQuery(
   const schema = z.object({
     grepTerms: z.array(z.string()),
   });
-  const model = createModel(modelName);
+  const model = await createModel(modelName);
   const prompt = `
 # Code Search Query Processor
 

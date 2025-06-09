@@ -30,7 +30,7 @@ export async function runStreamingPrompt(options: {
   handleTextChunk?: (text: string) => void;
 }): Promise<{ text: string; result: StreamTextResult<ToolSet, never> }> {
   const result = streamText({
-    model: typeof options.model === 'string' ? createModel(options.model) : options.model,
+    model: typeof options.model === 'string' ? await createModel(options.model) : options.model,
     temperature: options.temperature ?? 0,
     prompt: options.input,
     messages: options.messages,

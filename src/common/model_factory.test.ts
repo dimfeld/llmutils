@@ -15,15 +15,15 @@ describe('createModel with custom API keys', () => {
     process.env = originalEnv;
   });
 
-  test('should use default environment variable when no config provided', () => {
+  test('should use default environment variable when no config provided', async () => {
     process.env.OPENAI_API_KEY = 'default-openai-key';
 
     // We can't directly test the API key usage without mocking the provider
     // but we can at least verify the function doesn't throw
-    expect(() => createModel('openai/gpt-4')).not.toThrow();
+    await expect(createModel('openai/gpt-4')).resolves.toBeDefined();
   });
 
-  test('should use custom environment variable for exact model match', () => {
+  test('should use custom environment variable for exact model match', async () => {
     process.env.CUSTOM_GPT4_KEY = 'custom-gpt4-key';
     process.env.OPENAI_API_KEY = 'default-openai-key';
 
@@ -34,10 +34,10 @@ describe('createModel with custom API keys', () => {
     };
 
     // Verify it doesn't throw with the custom config
-    expect(() => createModel('openai/gpt-4', config)).not.toThrow();
+    await expect(createModel('openai/gpt-4', config)).resolves.toBeDefined();
   });
 
-  test('should use custom environment variable for prefix match', () => {
+  test('should use custom environment variable for prefix match', async () => {
     process.env.MY_ANTHROPIC_KEY = 'custom-anthropic-key';
     process.env.ANTHROPIC_API_KEY = 'default-anthropic-key';
 
@@ -48,11 +48,11 @@ describe('createModel with custom API keys', () => {
     };
 
     // Should match any anthropic model
-    expect(() => createModel('anthropic/claude-3.5-sonnet', config)).not.toThrow();
-    expect(() => createModel('anthropic/claude-3-opus', config)).not.toThrow();
+    await expect(createModel('anthropic/claude-3.5-sonnet', config)).resolves.toBeDefined();
+    await expect(createModel('anthropic/claude-3-opus', config)).resolves.toBeDefined();
   });
 
-  test('should prefer exact match over prefix match', () => {
+  test('should prefer exact match over prefix match', async () => {
     process.env.SONNET_KEY = 'sonnet-specific-key';
     process.env.GENERAL_ANTHROPIC_KEY = 'general-anthropic-key';
     process.env.ANTHROPIC_API_KEY = 'default-anthropic-key';
@@ -65,13 +65,13 @@ describe('createModel with custom API keys', () => {
     };
 
     // Should use SONNET_KEY for the specific model
-    expect(() => createModel('anthropic/claude-3.5-sonnet', config)).not.toThrow();
+    await expect(createModel('anthropic/claude-3.5-sonnet', config)).resolves.toBeDefined();
 
     // Should use GENERAL_ANTHROPIC_KEY for other anthropic models
-    expect(() => createModel('anthropic/claude-3-opus', config)).not.toThrow();
+    await expect(createModel('anthropic/claude-3-opus', config)).resolves.toBeDefined();
   });
 
-  test('should fall back to default when custom env var not found', () => {
+  test('should fall back to default when custom env var not found', async () => {
     process.env.OPENAI_API_KEY = 'default-key';
     // NOT setting CUSTOM_KEY
 
@@ -82,10 +82,10 @@ describe('createModel with custom API keys', () => {
     };
 
     // Should still work with default key
-    expect(() => createModel('openai/gpt-4', config)).not.toThrow();
+    await expect(createModel('openai/gpt-4', config)).resolves.toBeDefined();
   });
 
-  test('should handle Google Vertex (no API key support)', () => {
+  test('should handle Google Vertex (no API key support)', async () => {
     process.env.CUSTOM_VERTEX_KEY = 'should-be-ignored';
     // Set required Vertex environment variables
     process.env.GOOGLE_VERTEX_LOCATION = 'us-central1';
@@ -98,10 +98,10 @@ describe('createModel with custom API keys', () => {
     };
 
     // Should not throw but should ignore the custom key
-    expect(() => createModel('vertex/gemini-pro', config)).not.toThrow();
+    await expect(createModel('vertex/gemini-pro', config)).resolves.toBeDefined();
   });
 
-  test('should work with multiple providers in config', () => {
+  test('should work with multiple providers in config', async () => {
     process.env.MY_OPENAI = 'openai-key';
     process.env.MY_ANTHROPIC = 'anthropic-key';
     process.env.MY_GROQ = 'groq-key';
@@ -115,23 +115,25 @@ describe('createModel with custom API keys', () => {
     };
 
     // All should work
-    expect(() => createModel('openai/gpt-4', config)).not.toThrow();
-    expect(() => createModel('anthropic/claude-3.5-sonnet', config)).not.toThrow();
-    expect(() => createModel('groq/llama-3.1-70b', config)).not.toThrow();
+    await expect(createModel('openai/gpt-4', config)).resolves.toBeDefined();
+    await expect(createModel('anthropic/claude-3.5-sonnet', config)).resolves.toBeDefined();
+    await expect(createModel('groq/llama-3.1-70b', config)).resolves.toBeDefined();
   });
 
-  test('should throw for unsupported provider', () => {
-    expect(() => createModel('unsupported/model')).toThrow('Unsupported provider: unsupported');
+  test('should throw for unsupported provider', async () => {
+    await expect(createModel('unsupported/model')).rejects.toThrow(
+      'Unsupported provider: unsupported'
+    );
   });
 
-  test('should throw for invalid model string format', () => {
-    expect(() => createModel('invalid-format')).toThrow(
+  test('should throw for invalid model string format', async () => {
+    await expect(createModel('invalid-format')).rejects.toThrow(
       'Model string must be in the format "provider/model-name"'
     );
-    expect(() => createModel('/')).toThrow(
+    await expect(createModel('/')).rejects.toThrow(
       'Model string must be in the format "provider/model-name"'
     );
-    expect(() => createModel('provider/')).toThrow(
+    await expect(createModel('provider/')).rejects.toThrow(
       'Model string must be in the format "provider/model-name"'
     );
   });

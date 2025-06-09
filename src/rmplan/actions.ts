@@ -919,7 +919,7 @@ export async function preparePhase(
     if (options.direct) {
       // Direct LLM call
       const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
-      const model = createModel(modelId, config);
+      const model = await createModel(modelId, config);
 
       log('Generating detailed steps for phase using model:', modelId);
 

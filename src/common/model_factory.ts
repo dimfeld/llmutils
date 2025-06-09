@@ -1,22 +1,23 @@
 import { anthropic, createAnthropic } from '@ai-sdk/anthropic';
 import { cerebras, createCerebras } from '@ai-sdk/cerebras';
-import { google, createGoogleGenerativeAI } from '@ai-sdk/google';
-import { groq, createGroq } from '@ai-sdk/groq';
-import { openai, createOpenAI } from '@ai-sdk/openai';
-import { xai, createXai } from '@ai-sdk/xai';
-import { vertex, createVertex } from '@ai-sdk/google-vertex';
-import { openrouter, createOpenRouter } from '@openrouter/ai-sdk-provider';
-import type { LanguageModel } from 'ai';
+import { createGoogleGenerativeAI, google } from '@ai-sdk/google';
+import { vertex } from '@ai-sdk/google-vertex';
+import { createGroq, groq } from '@ai-sdk/groq';
+import { createOpenAI, openai } from '@ai-sdk/openai';
+import { createXai, xai } from '@ai-sdk/xai';
 import { search } from '@inquirer/prompts';
+import { createOpenRouter, openrouter } from '@openrouter/ai-sdk-provider';
+import type { LanguageModel } from 'ai';
 import { debugLog } from '../logging.ts';
+import { loadEffectiveConfig } from '../rmplan/configLoader.ts';
+import type { RmplanConfig } from '../rmplan/configSchema.ts';
 import { OneCallExecutorName } from '../rmplan/executors/index.js';
 import {
-  CopyOnlyExecutor,
   ClaudeCodeExecutor,
+  CopyOnlyExecutor,
   CopyPasteExecutor,
   OneCallExecutor,
 } from '../rmplan/executors/index.ts';
-import type { RmplanConfig } from '../rmplan/configSchema.ts';
 
 /**
  * Gets the custom API key for a model based on the configuration.
@@ -66,7 +67,10 @@ function getCustomApiKey(modelString: string, config?: RmplanConfig): string | u
  * @returns A LanguageModel instance for the specified provider and model.
  * @throws Error if the provider or model is not supported.
  */
-export function createModel(modelString: string, config?: RmplanConfig): LanguageModel {
+export async function createModel(
+  modelString: string,
+  config?: RmplanConfig
+): Promise<LanguageModel> {
   const parts = modelString.split('/');
   if (parts.length < 2) {
     throw new Error('Model string must be in the format "provider/model-name"');
@@ -79,6 +83,8 @@ export function createModel(modelString: string, config?: RmplanConfig): Languag
   if (!provider || !modelName) {
     throw new Error('Model string must be in the format "provider/model-name"');
   }
+
+  config ??= await loadEffectiveConfig();
 
   // Check for custom API key
   const customApiKey = getCustomApiKey(modelString, config);

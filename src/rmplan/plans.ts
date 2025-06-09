@@ -595,7 +595,7 @@ ${planSummary}
 
 Respond with ONLY the filename, nothing else.`;
 
-    const model = createModel('google/gemini-2.0-flash');
+    const model = await createModel('google/gemini-2.0-flash');
     const result = await generateText({
       model,
       prompt,
