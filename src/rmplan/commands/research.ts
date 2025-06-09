@@ -32,6 +32,12 @@ export async function handleResearchCommand(
   const separatorIndex = argv.indexOf('--');
   const rmfilterArgs = separatorIndex !== -1 ? argv.slice(separatorIndex + 1) : [];
 
+  if (researchGoal === rmfilterArgs[0]) {
+    // If a research goal is not provided, Commander interprets the the first rmfilter argument as the research goal,
+    // so catch that.
+    researchGoal = undefined;
+  }
+
   // Call the core action function
   await handleResearch({
     planFile,
