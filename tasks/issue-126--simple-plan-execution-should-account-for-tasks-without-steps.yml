@@ -12,7 +12,7 @@ issue:
 planGeneratedAt: 2025-06-09T07:41:35.053Z
 promptsGeneratedAt: 2025-06-09T07:43:16.575Z
 createdAt: 2025-06-08T22:37:49.597Z
-updatedAt: 2025-06-09T07:46:08.983Z
+updatedAt: 2025-06-09T07:50:45.836Z
 project:
   title: '"Simple plan" execution should account for tasks without steps'
   goal: 'Implement: "Simple plan" execution should account for tasks without steps'
@@ -63,27 +63,27 @@ tasks:
           logic. The `needsPreparation` variable should now only be true if the
           plan has no tasks at all (`!planData.tasks.length`). This identifies a
           true "stub plan".
-        done: false
+        done: true
       - prompt: >
           Following the `needsPreparation` check, add a new condition to detect
           plans with "simple tasks" (tasks that exist but have no steps). The
           condition should be `planData.tasks.length > 0 &&
           planData.tasks.some(task => !task.steps || task.steps.length === 0)`.
-        done: false
+        done: true
       - prompt: >
           If a plan has simple tasks, the existing interactive prompt ('Generate
           detailed steps' vs 'Run the simple plan directly') should be shown. If
           the user chooses to run it directly, ensure the agent proceeds to the
           main execution loop. Remove the call to `executeStubPlan`, as that
           function is for plans with no tasks.
-        done: false
+        done: true
       - prompt: >
           Update the tests in `src/rmplan/commands/agent.test.ts`. Modify the
           "direct execution flow" tests to assert that when a user chooses to
           run a simple plan directly, `preparePhase` is not called, and the
           agent proceeds towards the main execution loop rather than calling
           `executeStubPlan`.
-        done: false
+        done: true
   - title: Create a Unified Function to Find the Next Actionable Task
     description: Refactor the logic for determining the next action. Create a new
       function that scans the plan and finds the first incomplete task. This
@@ -219,6 +219,8 @@ tasks:
           task) is completed.
         done: false
 changedFiles:
+  - src/rmplan/commands/agent.test.ts
+  - src/rmplan/commands/agent.ts
   - src/rmplan/commands/research.test.ts
   - src/rmplan/planSchema.ts
   - src/rmplan/plans.test.ts

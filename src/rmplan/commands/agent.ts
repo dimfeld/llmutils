@@ -217,11 +217,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   // Check if the plan needs preparation
   const planData = await readPlanFile(currentPlanFile);
 
-  // Check if prompts have been generated
-  const needsPreparation =
-    !planData.tasks.length || planData.tasks.some((task) => !task.steps?.length);
+  // Check if this is a true stub plan (no tasks at all)
+  const needsPreparation = !planData.tasks.length;
 
   if (needsPreparation) {
+    // This is a true stub plan with no tasks - handle it specially
     let shouldGenerateSteps = true; // Default behavior
 
     if (!options.nonInteractive) {
@@ -259,7 +259,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     } else {
       log('Proceeding to execute plan directly using high-level description.');
 
-      // Direct execution branch - bypass step-by-step loop
+      // Direct execution branch for true stub plans (no tasks)
       try {
         await executeStubPlan({
           config,
@@ -274,6 +274,50 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         error('Direct execution failed:', err);
         throw err;
       }
+    }
+  } else if (
+    planData.tasks.length > 0 &&
+    planData.tasks.some((task) => !task.steps || task.steps.length === 0)
+  ) {
+    // This plan has simple tasks (tasks without steps)
+    let shouldGenerateSteps = true; // Default behavior
+
+    if (!options.nonInteractive) {
+      // Interactive mode - ask user what to do
+      const choice = await select({
+        message: 'This plan lacks detailed steps. How would you like to proceed?',
+        choices: [
+          {
+            name: 'Generate detailed steps first',
+            value: 'generate',
+            description: 'Create step-by-step instructions before execution',
+          },
+          {
+            name: 'Run the simple plan directly',
+            value: 'direct',
+            description: 'Execute using just the high-level goal and details',
+          },
+        ],
+      });
+
+      shouldGenerateSteps = choice === 'generate';
+    }
+
+    if (shouldGenerateSteps) {
+      log('Plan needs preparation. Generating detailed steps and prompts...');
+      try {
+        await preparePhase(currentPlanFile, config, {
+          model: options.model,
+          direct: options.direct,
+        });
+        log('Successfully prepared the plan with detailed steps.');
+      } catch (err) {
+        throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
+      }
+    } else {
+      log('Proceeding to execute simple tasks directly.');
+      // For simple tasks, proceed to the main execution loop
+      // Do NOT call executeStubPlan - that's only for plans with no tasks
     }
   }
 
