@@ -286,6 +286,7 @@ program
     'Filter by status (can specify multiple). Valid values: pending, in_progress, done, ready'
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
+  .option('--files', 'Show file paths column')
   .action(async (searchTerms, options, command) => {
     const { handleListCommand } = await import('./commands/list.js');
     await handleListCommand(options, command, searchTerms).catch(handleCommandError);

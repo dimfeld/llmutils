@@ -133,7 +133,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   const tableData: string[][] = [];
 
   // Header row
-  tableData.push([
+  const headers = [
     chalk.bold('ID'),
     chalk.bold('Title'),
     chalk.bold('Status'),
@@ -141,8 +141,13 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     chalk.bold('Tasks'),
     chalk.bold('Steps'),
     chalk.bold('Depends On'),
-    chalk.bold('File'),
-  ]);
+  ];
+
+  if (options.files) {
+    headers.push(chalk.bold('File'));
+  }
+
+  tableData.push(headers);
 
   // Data rows
   for (const plan of planArray) {
@@ -209,7 +214,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
         .join(', ');
     }
 
-    tableData.push([
+    const row = [
       chalk.cyan(plan.id || 'no-id'),
       getCombinedTitleFromSummary(plan),
       statusColor(statusDisplay),
@@ -224,16 +229,45 @@ export async function handleListCommand(options: any, command: any, searchTerms?
         return stepCount === 0 ? '-' : stepCount.toString();
       })(),
       dependenciesDisplay,
-      chalk.gray(path.relative(searchDir, plan.filename)),
-    ]);
+    ];
+
+    if (options.files) {
+      row.push(chalk.gray(path.relative(searchDir, plan.filename)));
+    }
+
+    tableData.push(row);
   }
 
-  // Configure table options
-  const tableConfig = {
+  // Find the maximum title length in the data
+  let maxTitleLength = 5; // Start with header length "Title"
+  for (const plan of planArray) {
+    const title = getCombinedTitleFromSummary(plan);
+    maxTitleLength = Math.max(maxTitleLength, title.length);
+  }
+
+  // Configure table options with dynamic column widths
+  const terminalWidth = process.stdout.columns || 120; // fallback to 120 if not available
+
+  // Fixed column widths: ID(5), Status(12), Priority(10), Tasks(7), Steps(7), Depends(15)
+  const fixedColumnsWidth = 5 + 12 + 10 + 7 + 7 + 15;
+  const fileColumnWidth = options.files ? 20 : 0;
+  const columnCount = options.files ? 8 : 7;
+  const borderPadding = columnCount * 3 + 1; // 3 chars per column separator + 1 for end
+
+  // Calculate available width for the title column
+  const usedWidth = fixedColumnsWidth + fileColumnWidth + borderPadding;
+  const availableWidth = terminalWidth - usedWidth;
+
+  // Use the smaller of calculated width or max title length (with some padding)
+  const calculatedTitleWidth = Math.max(20, availableWidth);
+  const titleWidth = Math.min(calculatedTitleWidth, maxTitleLength + 2); // +2 for padding
+  const dependsWidth = 15;
+  const fileWidth = 20;
+
+  const tableConfig: any = {
     columns: {
-      1: { width: 50, wrapWord: true },
-      6: { width: 15, wrapWord: true },
-      7: { width: 20, wrapWord: true },
+      1: { width: titleWidth, wrapWord: true },
+      6: { width: dependsWidth, wrapWord: true },
     },
     border: {
       topBody: '─',
@@ -253,6 +287,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       joinJoin: '┼',
     },
   };
+
+  // Add file column configuration if showing files
+  if (options.files) {
+    tableConfig.columns[7] = { width: fileWidth, wrapWord: true };
+  }
 
   const output = table(tableData, tableConfig);
   log(output);
