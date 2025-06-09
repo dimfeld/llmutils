@@ -37,7 +37,7 @@ import {
   type GetChangedFilesOptions,
 } from '../rmfilter/additional_docs.js';
 import { extractFileReferencesFromInstructions } from '../rmfilter/instructions.js';
-import { commitAll, quiet } from '../common/process.js';
+import { commitAll, quiet, logSpawn } from '../common/process.js';
 import { getGitRoot } from '../common/git.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { Extractor } from '../treesitter/extract.js';

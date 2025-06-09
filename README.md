@@ -290,6 +290,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Plan Creation**: Use the `add` command to quickly create new plan stub files with metadata like dependencies and priority.
 - **Issue Import**: Use the `import` command to convert GitHub issues into structured plan files, with support for both single-issue and interactive multi-issue import modes, automatic duplicate prevention, and selective content inclusion.
 - **Plan Splitting**: Use the `split` command to intelligently break down large, complex plans into multiple phase-based plans using an LLM.
+- **Research Integration**: Use the `research` command to generate research prompts based on a plan's goals and append findings back to the plan for enhanced context.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
@@ -314,7 +315,9 @@ The general usage pattern is that you will:
 
 Then repeat steps 5 through 7 until the task is done.
 
-**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `my-feature-123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
+Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
+
+### Additional Commands
 
 The `prepare` command is used to generate detailed steps and prompts for a phase plan that doesn't already have them. This is useful when you have a high-level plan outline but need to expand it with specific implementation steps.
 
@@ -322,9 +325,11 @@ The `add` command allows you to quickly create new plan stub files with just a t
 
 The `split` command helps manage complexity by using an LLM to intelligently break down a large, detailed plan into multiple smaller, phase-based plans. Each phase becomes a separate plan file with proper dependencies, allowing you to tackle complex projects incrementally while maintaining the full context and details from the original plan.
 
-Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
+The `research` command generates a research prompt based on a plan's goal and details, helping you gather additional context or information to enhance the plan. The `--rmfilter` option incorporates file context into the research prompt using `rmfilter`, allowing you to include relevant code files and documentation. After running the research prompt through an LLM, the command provides an interactive paste-back mechanism where you can paste the research findings, and they will be automatically appended to the plan file's `research` field for future reference.
 
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
+
+**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
 
 Run `rmplan` with different commands to manage project plans:
 
@@ -388,6 +393,15 @@ rmplan prepare --next
 
 # Force preparation even if dependencies aren't complete
 rmplan prepare plan.yml --force
+
+# Generate a research prompt based on a plan's goals and details
+rmplan research plan.yml
+
+# Generate research prompt with file context using rmfilter
+rmplan research plan.yml --rmfilter -- src/**/*.ts --grep auth
+
+# Research using plan ID instead of file path
+rmplan research my-feature-123 --rmfilter -- docs/architecture.md
 
 # Create a new plan stub file with a title and optional metadata
 rmplan add "Implement OAuth authentication" --output tasks/oauth-auth.yml

@@ -1,26 +1,287 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: research command
-goal: ""
-details: >
-  The `rmplan` command should support a `research [planArg]` option that creates
-  a prompt encouraging the model to do research related
-
-  to the goal and details in the plan, and copies it to the clipboard.
-
-
-  This command should have an --rmfilter option which, if there are any rmfilter
-  arguments in the plan, use rmfilter to generate the prompt and include these
-  files. Also allow adding
-
-  them on the command line with the `--` CLI argument separator that other
-  commands use.
-
-
-  When the user pastes their content back in, append it to the end of the plan
-  details.
-id: "51"
-status: pending
-priority: maybe
+title: Implement the `research` command
+goal: To implement the core functionality of the `rmplan research` command,
+  including prompt generation, clipboard interaction, file-based context using
+  `rmfilter`, and updating the plan with research results.
+details: This phase will introduce the `research` command, its associated logic,
+  and tests. It will cover everything from parsing the command-line arguments to
+  generating the research prompt, handling optional file context with
+  `rmfilter`, and saving the research back to the plan file.
+id: 51
+status: done
+priority: medium
+dependencies: []
+planGeneratedAt: 2025-06-08T09:15:22.393Z
+promptsGeneratedAt: 2025-06-08T09:23:48.459Z
 createdAt: 2025-06-07T02:07:53.027Z
-updatedAt: 2025-06-07T08:37:04.702Z
-tasks: []
+updatedAt: 2025-06-08T09:38:23.311Z
+project:
+  title: research command
+  goal: ""
+  details: >
+    The `rmplan` command should support a `research [planArg]` option that
+    creates a prompt encouraging the model to do research related
+
+    to the goal and details in the plan, and copies it to the clipboard.
+
+
+    This command should have an --rmfilter option which, if there are any
+    rmfilter arguments in the plan, use rmfilter to generate the prompt and
+    include these files. Also allow adding
+
+    them on the command line with the `--` CLI argument separator that other
+    commands use.
+
+
+    When the user pastes their content back in, append it to the end of the plan
+    details.
+tasks:
+  - title: Define the `research` command structure in `rmplan.ts`
+    description: Add the new `research [planArg]` command to the main `rmplan.ts`
+      file using `commander`. This includes defining the command, its
+      description, the `--rmfilter` option, and setting up the action handler to
+      call a new function in a new `commands/research.ts` file. This task only
+      sets up the CLI definition and the call to the handler.
+    files:
+      - src/rmplan/rmplan.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/rmplan.ts`, add a new command definition for `research
+          [planArg]`. This should follow the pattern of other commands in the
+          file, like `next` or `done`.
+        done: true
+      - prompt: >
+          Set the description for the `research` command to "Generate a research
+          prompt for a plan and append the results."
+        done: true
+      - prompt: >
+          Add a boolean option `--rmfilter` to the command, with the description
+          "Use rmfilter to include file context in the prompt."
+        done: true
+      - prompt: >
+          Configure the command to allow excess arguments and unknown options,
+          which will be used to pass file paths to `rmfilter`. Use
+          `.allowExcessArguments(true)` and `.allowUnknownOption(true)`.
+        done: true
+      - prompt: >
+          In the `.action()` handler for the `research` command, dynamically
+          import `handleResearchCommand` from a new file
+          `src/rmplan/commands/research.ts` and call it, passing the `planArg`,
+          `options`, and `command` arguments. Ensure this is wrapped in a
+          `.catch(handleCommandError)` block.
+        done: true
+  - title: Create the research command handler and core action logic
+    description: Create a new file `src/rmplan/commands/research.ts` with a
+      `handleResearchCommand` function. This handler will resolve the plan file
+      and call a new core action function in `actions.ts`. The new action
+      function will read the plan, generate a basic research prompt, and copy it
+      to the clipboard.
+    files:
+      - src/rmplan/commands/research.ts
+      - src/rmplan/actions.ts
+    steps:
+      - prompt: |
+          Create a new file `src/rmplan/commands/research.ts`.
+        done: true
+      - prompt: >
+          In the new file, define and export an async function
+          `handleResearchCommand(planArg, options, command)`. This function will
+          serve as the entry point for the `research` command.
+        done: true
+      - prompt: >
+          Inside `handleResearchCommand`, get the global options from
+          `command.parent.opts()`. Then, use `resolvePlanFile` from
+          `../plans.js` to get the full path to the plan file, passing `planArg`
+          and the global config option.
+        done: true
+      - prompt: >
+          Also in `handleResearchCommand`, extract any additional arguments
+          passed after a `--` separator from `process.argv`. These will be the
+          command-line file arguments for `rmfilter`.
+        done: true
+      - prompt: >
+          Create a new async function `handleResearch` in
+          `src/rmplan/actions.ts`. It should accept the resolved plan file path
+          and an options object containing the `--rmfilter` flag and the
+          command-line file arguments.
+        done: true
+      - prompt: >
+          Back in `handleResearchCommand`, call the new `handleResearch` action
+          from `actions.ts`, passing the necessary arguments.
+        done: true
+      - prompt: >
+          In `src/rmplan/actions.ts`, implement the initial logic for
+          `handleResearch`. It should read the plan file using `readPlanFile`,
+          call a new (yet to be created) `generateResearchPrompt` function, and
+          copy the resulting prompt to the clipboard using `clipboard.write`.
+          Log a confirmation message.
+        done: true
+  - title: Implement the research prompt generation
+    description: In `src/rmplan/prompt.ts`, create a new function
+      `generateResearchPrompt` that takes the plan's goal and details and
+      constructs a prompt instructing an LLM to perform research, find relevant
+      information, and synthesize it.
+    files:
+      - src/rmplan/prompt.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/prompt.ts`, create and export a new function
+          `generateResearchPrompt`. It should accept the plan's goal and details
+          as string arguments.
+        done: true
+      - prompt: >
+          The prompt's text should instruct an LLM to act as a research
+          assistant. It should clearly state the research topic using the
+          provided goal and details from the plan.
+        done: true
+      - prompt: >
+          The prompt should ask the model to find relevant information,
+          synthesize it, and provide a concise summary, key findings, and any
+          relevant links or sources. Structure the prompt to guide the LLM
+          towards a well-organized response.
+        done: true
+  - title: Implement the paste-back and plan update functionality
+    description: Extend the core action in `actions.ts`. After copying the prompt,
+      use `waitForEnter(true)` to wait for the user to paste their research.
+      Append this pasted content to the `details` field of the plan and save the
+      updated plan file using `writePlanFile`.
+    files:
+      - src/rmplan/actions.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts`, modify the `handleResearch` function.
+          After copying the prompt, log a message instructing the user on the
+          next steps: perform the research, and then paste the results back into
+          the terminal. Use `sshAwarePasteAction` to provide the correct
+          instruction for their environment.
+        done: true
+      - prompt: >
+          Use `waitForEnter(true)` from `src/common/terminal.ts` to capture the
+          multi-line pasted content from the user.
+        done: true
+      - prompt: >
+          If the pasted content is not empty, append it to the `details` field
+          of the plan object. Prepend the new content with a clear separator
+          like `\n\n--- Research ---\n\n` to distinguish it from the original
+          details.
+        done: true
+      - prompt: >
+          Update the `updatedAt` timestamp on the plan object to the current
+          time.
+        done: true
+      - prompt: >
+          Use `writePlanFile` to save the modified plan object back to its file,
+          overwriting the previous version. Log a confirmation message that the
+          plan was updated.
+        done: true
+  - title: Add support for `--rmfilter` and command-line file arguments
+    description: Enhance the core action in `actions.ts` to handle the `--rmfilter`
+      option. It should combine `rmfilter` arguments from the plan's `rmfilter`
+      field and any arguments passed after `--` on the command line. If these
+      arguments exist, it should use `logSpawn` to run `rmfilter` to generate
+      the final prompt.
+    files:
+      - src/rmplan/actions.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts`, modify the `handleResearch` function to
+          check if the `--rmfilter` option is enabled.
+        done: true
+      - prompt: >
+          If `--rmfilter` is true, combine the `rmfilter` arguments from the
+          plan's `rmfilter` field with the command-line file arguments passed
+          into the function.
+        done: true
+      - prompt: >
+          If there are any combined `rmfilter` arguments, generate the research
+          prompt and write it to a temporary file.
+        done: true
+      - prompt: >
+          Use `logSpawn` to execute `rmfilter` with the combined file/filter
+          arguments, `--copy`, and `--instructions @<temp_file_path>`. This will
+          generate the final context-aware prompt and copy it to the clipboard.
+        done: true
+      - prompt: >
+          Ensure the temporary prompt file is deleted after the `rmfilter`
+          process completes, using a `finally` block.
+        done: true
+      - prompt: >
+          If `--rmfilter` is false or no arguments are provided, the function
+          should fall back to the original behavior of just copying the basic
+          research prompt to the clipboard.
+        done: true
+  - title: Add tests for the new `research` command
+    description: "Create a new test file `src/rmplan/commands/research.test.ts`.
+      Write tests to cover the new functionality, including: resolving the plan,
+      generating the correct prompt, handling the `--rmfilter` option, and
+      correctly appending the pasted research to the plan details. Use a
+      temporary directory for file operations."
+    files:
+      - src/rmplan/commands/research.test.ts
+    steps:
+      - prompt: >
+          Create a new test file `src/rmplan/commands/research.test.ts`. Set up
+          a temporary directory with a mock `tasks` folder and a sample plan
+          file in a `beforeEach` block. Use `fs.mkdtemp` for the temporary
+          directory and ensure it's cleaned up in `afterEach`.
+        done: true
+      - prompt: >
+          Write a test to verify that the basic research prompt is generated and
+          copied to the clipboard. You will need to mock `clipboard.write` and
+          `waitForEnter` to prevent the test from hanging.
+        done: true
+      - prompt: >
+          Write a test to verify the paste-back and update functionality. Mock
+          `waitForEnter` to return a sample research string. After the command
+          runs, read the plan file from the temporary directory and assert that
+          its `details` field has been correctly appended with the research
+          content.
+        done: true
+      - prompt: >
+          Write a test for the `--rmfilter` functionality. Create a plan that
+          includes `rmfilter` arguments. Mock `logSpawn` and verify that it's
+          called with the correct `rmfilter` command, including arguments from
+          both the plan file and mock command-line arguments.
+        done: true
+      - prompt: >
+          Write a test to ensure that if a plan file does not exist, the command
+          throws an appropriate error.
+        done: true
+  - title: Update user documentation
+    description: Add a section for the new `rmplan research` command in the
+      project's `README.md` or other relevant documentation files, explaining
+      its purpose, usage, and options.
+    files:
+      - README.md
+    steps:
+      - prompt: >
+          Open the `README.md` file and locate the section that lists the
+          `rmplan` subcommands.
+        done: true
+      - prompt: >
+          Add a new entry for `rmplan research [planArg]`. Describe its purpose,
+          which is to generate a research prompt based on a plan's goal and
+          details, and then append the findings back to the plan.
+        done: true
+      - prompt: >
+          Document the `--rmfilter` option, explaining that it incorporates file
+          context into the research prompt using `rmfilter`.
+        done: true
+      - prompt: >
+          Provide a clear usage example that demonstrates how to use the command
+          with and without the `--rmfilter` option, including how to pass
+          additional file arguments using the `--` separator.
+        done: true
+      - prompt: >
+          Briefly explain the interactive paste-back mechanism for saving the
+          research results to the plan file.
+        done: true
+changedFiles:
+  - README.md
+  - src/rmplan/actions.ts
+  - src/rmplan/commands/research.test.ts
+  - src/rmplan/commands/research.ts
+  - src/rmplan/prompt.ts
+  - src/rmplan/rmplan.ts
+rmfilter:
+  - src/rmplan
