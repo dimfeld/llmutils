@@ -41,6 +41,7 @@ export const phaseSchema = z
         files: z.array(z.string()).default([]).optional(),
         examples: z.array(z.string()).optional(),
         docs: z.array(z.string()).default([]).optional(),
+        done: z.boolean().default(false).optional(),
         steps: z
           .array(
             z.object({

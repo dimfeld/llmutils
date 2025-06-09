@@ -1,18 +1,226 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: '"Simple plan" execution should account for tasks without steps'
-goal: 'Implement: "Simple plan" execution should account for tasks without steps'
-details: >-
-  Right now we account for a plan with no tasks, and a fully populated plan with
-  tasks and steps. We also should properly handle plans that have tasks, but no
-  steps on the tasks. 
-
-
-  In this case we can just use the regular task loop but treat the task
-  description and related files as the entirety of the prompt.
+title: Implement Direct Execution of Tasks without Steps
+goal: Modify the agent to correctly identify and execute tasks that have a
+  description but no explicit steps, and to track their completion status.
 id: 61
-status: pending
+status: in_progress
+priority: high
+dependencies: []
 issue:
   - https://github.com/dimfeld/llmutils/issues/126
+planGeneratedAt: 2025-06-09T07:41:35.053Z
+promptsGeneratedAt: 2025-06-09T07:43:16.575Z
 createdAt: 2025-06-08T22:37:49.597Z
-updatedAt: 2025-06-08T22:37:49.597Z
-tasks: []
+updatedAt: 2025-06-09T07:43:16.585Z
+project:
+  title: '"Simple plan" execution should account for tasks without steps'
+  goal: 'Implement: "Simple plan" execution should account for tasks without steps'
+  details: >-
+    Right now we account for a plan with no tasks, and a fully populated plan
+    with tasks and steps. We also should properly handle plans that have tasks,
+    but no steps on the tasks. 
+
+
+    In this case we can just use the regular task loop but treat the task
+    description and related files as the entirety of the prompt.
+tasks:
+  - title: Enhance Plan Schema to Support Task-Level Completion
+    description: Update the `planSchema` to include an optional `done` boolean field
+      on the task object. This is essential for tracking the completion status
+      of tasks that do not have steps, preventing them from being executed
+      multiple times. The field should default to `false`.
+    files:
+      - src/rmplan/planSchema.ts
+      - src/rmplan/plans.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/planSchema.ts`, locate the schema for an individual
+          task within the `tasks` array of the `phaseSchema`. Add a new optional
+          boolean field named `done` to this task object schema. It should have
+          a default value of `false`.
+        done: false
+      - prompt: >
+          In `src/rmplan/plans.test.ts`, add a new test case within the 'Plan
+          File Reading and Writing' describe block. This test should verify that
+          a plan containing a task with `done: true` can be written to a file
+          using `writePlanFile` and then read back correctly using
+          `readPlanFile`, ensuring the `done` flag is preserved.
+        done: false
+  - title: Refactor Agent's Initial Plan Analysis
+    description: Modify the agent's initial control flow logic that checks if a plan
+      `needsPreparation`. This logic must be updated to correctly differentiate
+      between a plan with no tasks at all (a true "stub plan") and a plan that
+      contains simple tasks (tasks without steps). When a user opts to run a
+      plan with simple tasks directly, the agent should proceed to the main
+      execution loop instead of incorrectly calling the stub plan handler.
+    files:
+      - src/rmplan/commands/agent.ts
+      - src/rmplan/commands/agent.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/commands/agent.ts`, refactor the initial plan analysis
+          logic. The `needsPreparation` variable should now only be true if the
+          plan has no tasks at all (`!planData.tasks.length`). This identifies a
+          true "stub plan".
+        done: false
+      - prompt: >
+          Following the `needsPreparation` check, add a new condition to detect
+          plans with "simple tasks" (tasks that exist but have no steps). The
+          condition should be `planData.tasks.length > 0 &&
+          planData.tasks.some(task => !task.steps || task.steps.length === 0)`.
+        done: false
+      - prompt: >
+          If a plan has simple tasks, the existing interactive prompt ('Generate
+          detailed steps' vs 'Run the simple plan directly') should be shown. If
+          the user chooses to run it directly, ensure the agent proceeds to the
+          main execution loop. Remove the call to `executeStubPlan`, as that
+          function is for plans with no tasks.
+        done: false
+      - prompt: >
+          Update the tests in `src/rmplan/commands/agent.test.ts`. Modify the
+          "direct execution flow" tests to assert that when a user chooses to
+          run a simple plan directly, `preparePhase` is not called, and the
+          agent proceeds towards the main execution loop rather than calling
+          `executeStubPlan`.
+        done: false
+  - title: Create a Unified Function to Find the Next Actionable Task
+    description: Refactor the logic for determining the next action. Create a new
+      function that scans the plan and finds the first incomplete task. This
+      function will be used by the agent's main loop to decide which task to
+      work on next, whether it's a complex task with steps or a simple task to
+      be executed directly.
+    files:
+      - src/rmplan/actions.ts
+      - src/rmplan/actions.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts`, define the types for a discriminated union
+          `ActionableItem` which can represent either a step to be executed or a
+          simple task to be executed. It should look like `({ type: 'step',
+          taskIndex: number, stepIndex: number, ... } | { type: 'task',
+          taskIndex: number, ... })`.
+        done: false
+      - prompt: >
+          Create a new function `findNextActionableItem(plan: PlanSchema):
+          ActionableItem | null` in `src/rmplan/actions.ts`. This function will
+          iterate through the plan's tasks. If a task is not marked `done`, it
+          should check if it has steps. If it has steps, find the first undone
+          step and return an actionable item of type 'step'. If it has no steps,
+          return an actionable item of type 'task'. If all tasks are complete,
+          return `null`.
+        done: false
+      - prompt: >
+          In `src/rmplan/actions.test.ts`, add a new test suite for
+          `findNextActionableItem`. Include test cases for a plan with a pending
+          simple task, a plan with a pending complex task, a plan with a mix of
+          done simple tasks and pending complex tasks, and a fully completed
+          plan.
+        done: false
+      - prompt: >
+          In `src/rmplan/actions.ts`, find all usages of the old
+          `findPendingTask` function and replace them with calls to the new
+          `findNextActionableItem`. The logic will need to be adapted to handle
+          the new return type. For now, you can keep `findPendingTask` and have
+          it call `findNextActionableItem` and filter for 'step' type for
+          backward compatibility if needed, but the goal is to phase it out.
+        done: false
+  - title: Refactor the Agent's Main Loop to Handle Simple Tasks
+    description: Modify the agent's main execution loop to use the new task-finding
+      function. The loop will then branch its logic based on the task's
+      structure. If the current task has steps, it will proceed with the
+      existing step-by-step execution logic. If the task has no steps, it will
+      trigger a new direct execution path.
+    files:
+      - src/rmplan/commands/agent.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/commands/agent.ts`, modify the main `while` loop.
+          Replace the call to `findPendingTask` with `findNextActionableItem`.
+          The loop should now terminate when `findNextActionableItem` returns
+          `null`.
+        done: false
+      - prompt: >
+          Inside the loop, add a switch or if/else block to handle the `type` of
+          the `ActionableItem`. If the type is 'step', the existing logic that
+          calls `prepareNextStep` and executes the step should be run.
+        done: false
+      - prompt: >
+          If the `ActionableItem` type is 'task', this signifies a simple task.
+          For now, add a block that logs the title and description of the simple
+          task that will be executed. The full implementation will be in the
+          next task.
+        done: false
+  - title: Implement Direct Task Execution and Completion
+    description: Implement the new direct execution logic within the agent's main
+      loop. This involves constructing a comprehensive prompt from the simple
+      task's title, description, and associated files. After the executor
+      successfully processes the prompt, the logic will update the plan file to
+      set the task's `done` flag to `true` and handle optional commits.
+    files:
+      - src/rmplan/commands/agent.ts
+      - src/rmplan/actions.ts
+      - src/rmplan/actions.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts`, create a new function `markTaskDone`. It
+          should take a plan file path and a task index. This function will read
+          the plan, set `tasks[taskIndex].done = true`, update the `updatedAt`
+          timestamp, and write the plan back. It should also handle the
+          `--commit` option by calling `commitAll` with a message derived from
+          the task title and description.
+        done: false
+      - prompt: >
+          Add tests for `markTaskDone` in `src/rmplan/actions.test.ts`. Test
+          that it correctly marks a task as done and that it triggers a commit
+          when the option is provided.
+        done: false
+      - prompt: >
+          In `src/rmplan/commands/agent.ts`, within the 'task' execution branch
+          of the main loop, construct a detailed prompt for the executor. The
+          prompt should include the overall project goal and details from the
+          plan, followed by the specific task's title, description, and a list
+          of its associated files.
+        done: false
+      - prompt: >
+          After constructing the prompt, call `executor.execute(prompt)`. Upon
+          successful execution, call the new `markTaskDone` function to update
+          the plan's state, passing the current task index and the commit
+          option. Also, ensure post-apply commands are run, similar to the
+          step-based execution path.
+        done: false
+  - title: Ensure Plan Completion Logic is Correct
+    description: Update all logic that checks for overall plan completion to be
+      aware of the new task-level `done` flag. A plan should now be considered
+      complete only when all of its tasks are complete. A task is considered
+      complete if it has no steps and its `done` flag is true, or if it has
+      steps and all of those steps are marked as done.
+    files:
+      - src/rmplan/actions.ts
+      - src/rmplan/actions.test.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/actions.ts`, review the `markStepDone` function. It
+          currently checks for plan completion by calling `findPendingTask`.
+          Update this to use the new `findNextActionableItem` function. The plan
+          is complete if `findNextActionableItem` returns `null`.
+        done: false
+      - prompt: >
+          Similarly, review the `markTaskDone` function. After marking a task as
+          done, it should also call `findNextActionableItem` to check if the
+          entire plan is now complete. If so, it should update the plan's
+          top-level status to 'done'.
+        done: false
+      - prompt: >
+          In `src/rmplan/actions.test.ts`, enhance the tests for both
+          `markStepDone` and `markTaskDone`. Create a test with a plan that has
+          a mix of simple and complex tasks. Verify that the plan is only marked
+          as 'done' when the very last actionable item (be it a step or a simple
+          task) is completed.
+        done: false
+rmfilter:
+  - src/rmplan/commands/agent.ts
+  - --with-imports
+---
+
+This phase focuses on the core implementation for handling simple tasks. We will start by updating the plan's data schema to allow for task-level completion tracking. Then, we will refactor the agent's main control flow to correctly identify these simple tasks and route them to a new direct execution logic within the main loop, rather than the incorrect "stub plan" handler. This involves creating a new "actionable item" finder that can identify both pending steps and pending simple tasks, and then implementing the logic to execute the simple task and mark it as complete.
