@@ -400,35 +400,6 @@ IMPORTANT:
 `;
 }
 
-export function generateResearchPrompt(goal: string, details: string): string {
-  return `# Research Assistant
-
-You are acting as a research assistant to help gather relevant information for a project.
-
-## Research Topic
-
-**Goal**: ${goal}
-
-**Details**: ${details}
-
-## Your Task
-
-Please conduct research on the topic described above and provide a comprehensive response that includes:
-
-1. **Summary**: A concise overview of the key concepts and current state of the topic
-2. **Key Findings**: The most important insights, facts, or discoveries related to this topic
-3. **Relevant Information**: Additional context, background, or supporting details that would be useful
-4. **Sources and Links**: Any relevant documentation, articles, repositories, or other resources (include URLs when possible)
-5. **Recommendations**: Based on your research, any suggestions or best practices that could be helpful
-
-## Output Format
-
-Please structure your response clearly with headings and organize the information in a way that would be most useful for planning and implementation. Focus on providing actionable insights and practical information that can guide decision-making.
-
-Be thorough but concise, and prioritize information that is most directly relevant to the stated goal and details.
-`;
-}
-
 export function generateSplitPlanPrompt(plan: PlanSchema): string {
   // Construct the prompt explaining the goal
   const prompt = `# Plan Reorganization Task
