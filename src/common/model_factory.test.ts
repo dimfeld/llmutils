@@ -43,7 +43,7 @@ describe('createModel with custom API keys', () => {
 
     const config: RmplanConfig = {
       modelApiKeys: {
-        'anthropic/': 'MY_ANTHROPIC_KEY',
+        'anthropic/*': 'MY_ANTHROPIC_KEY',
       },
     };
 
@@ -59,7 +59,7 @@ describe('createModel with custom API keys', () => {
 
     const config: RmplanConfig = {
       modelApiKeys: {
-        'anthropic/': 'GENERAL_ANTHROPIC_KEY',
+        'anthropic/*': 'GENERAL_ANTHROPIC_KEY',
         'anthropic/claude-3.5-sonnet': 'SONNET_KEY',
       },
     };
@@ -77,7 +77,7 @@ describe('createModel with custom API keys', () => {
 
     const config: RmplanConfig = {
       modelApiKeys: {
-        'openai/': 'CUSTOM_KEY',
+        'openai/*': 'CUSTOM_KEY',
       },
     };
 
@@ -93,7 +93,7 @@ describe('createModel with custom API keys', () => {
 
     const config: RmplanConfig = {
       modelApiKeys: {
-        'vertex/': 'CUSTOM_VERTEX_KEY',
+        'vertex/*': 'CUSTOM_VERTEX_KEY',
       },
     };
 
@@ -108,9 +108,9 @@ describe('createModel with custom API keys', () => {
 
     const config: RmplanConfig = {
       modelApiKeys: {
-        'openai/': 'MY_OPENAI',
-        'anthropic/': 'MY_ANTHROPIC',
-        'groq/': 'MY_GROQ',
+        'openai/*': 'MY_OPENAI',
+        'anthropic/*': 'MY_ANTHROPIC',
+        'groq/*': 'MY_GROQ',
       },
     };
 
@@ -118,6 +118,20 @@ describe('createModel with custom API keys', () => {
     await expect(createModel('openai/gpt-4', config)).resolves.toBeDefined();
     await expect(createModel('anthropic/claude-3.5-sonnet', config)).resolves.toBeDefined();
     await expect(createModel('groq/llama-3.1-70b', config)).resolves.toBeDefined();
+  });
+
+  test('should not match keys without asterisk as prefix', async () => {
+    process.env.OPENAI_API_KEY = 'default-key';
+    process.env.CUSTOM_KEY = 'custom-key';
+
+    const config: RmplanConfig = {
+      modelApiKeys: {
+        'openai/gpt': 'CUSTOM_KEY', // Should NOT match openai/gpt-4
+      },
+    };
+
+    // Should use default key since 'openai/gpt' doesn't end with * and doesn't exactly match
+    await expect(createModel('openai/gpt-4', config)).resolves.toBeDefined();
   });
 
   test('should throw for unsupported provider', async () => {

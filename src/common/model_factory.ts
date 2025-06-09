@@ -42,9 +42,9 @@ function getCustomApiKey(modelString: string, config?: RmplanConfig): string | u
     }
   }
 
-  // Check for prefix matches (e.g., "openai/" matches "openai/gpt-4")
+  // Check for prefix matches (e.g., "openai/*" matches "openai/gpt-4")
   for (const [prefix, envVar] of Object.entries(config.modelApiKeys)) {
-    if (modelString.startsWith(prefix)) {
+    if (prefix.endsWith('*') && modelString.startsWith(prefix.slice(0, -1))) {
       const apiKey = process.env[envVar];
       if (apiKey) {
         debugLog(
