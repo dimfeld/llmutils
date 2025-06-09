@@ -4,7 +4,7 @@ title: Implement Direct Execution of Tasks without Steps
 goal: Modify the agent to correctly identify and execute tasks that have a
   description but no explicit steps, and to track their completion status.
 id: 61
-status: in_progress
+status: done
 priority: high
 dependencies: []
 issue:
@@ -12,7 +12,7 @@ issue:
 planGeneratedAt: 2025-06-09T07:41:35.053Z
 promptsGeneratedAt: 2025-06-09T07:43:16.575Z
 createdAt: 2025-06-08T22:37:49.597Z
-updatedAt: 2025-06-09T08:01:32.382Z
+updatedAt: 2025-06-09T08:04:34.439Z
 project:
   title: '"Simple plan" execution should account for tasks without steps'
   goal: 'Implement: "Simple plan" execution should account for tasks without steps'
@@ -204,20 +204,20 @@ tasks:
           currently checks for plan completion by calling `findPendingTask`.
           Update this to use the new `findNextActionableItem` function. The plan
           is complete if `findNextActionableItem` returns `null`.
-        done: false
+        done: true
       - prompt: >
           Similarly, review the `markTaskDone` function. After marking a task as
           done, it should also call `findNextActionableItem` to check if the
           entire plan is now complete. If so, it should update the plan's
           top-level status to 'done'.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/actions.test.ts`, enhance the tests for both
           `markStepDone` and `markTaskDone`. Create a test with a plan that has
           a mix of simple and complex tasks. Verify that the plan is only marked
           as 'done' when the very last actionable item (be it a step or a simple
           task) is completed.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/actions.test.ts
   - src/rmplan/actions.ts

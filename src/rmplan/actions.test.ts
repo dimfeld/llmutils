@@ -298,6 +298,111 @@ describe('markStepDone', () => {
     expect(commitAllSpy).toHaveBeenCalled();
     expect(commitAllSpy).toHaveBeenCalledWith(expect.stringContaining('Task 1'), tempDir);
   });
+
+  test('plan completion with mix of simple and complex tasks', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Simple Task 1',
+          description: 'No steps',
+          done: true,
+          steps: [],
+        },
+        {
+          title: 'Complex Task 2',
+          description: 'Has steps',
+          steps: [
+            {
+              prompt: 'Step 1',
+              done: true,
+            },
+            {
+              prompt: 'Step 2',
+              done: false,
+            },
+          ],
+        },
+        {
+          title: 'Simple Task 3',
+          description: 'Another simple task',
+          done: false,
+          steps: [],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    // Mark the last step of complex task 2 - should NOT complete the plan yet
+    const result1 = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
+
+    expect(result1.planComplete).toBe(false);
+
+    // Read the updated plan
+    const updatedPlan1 = await readPlanFile(planPath);
+    expect(updatedPlan1.status).toBe('in_progress');
+    expect(updatedPlan1.tasks[1].steps![1].done).toBe(true);
+
+    // Now we need to mark Simple Task 3 as done separately using markTaskDone
+    clearPlanCache(); // Clear cache to force re-read
+
+    // Verify that the plan still has pending work
+    const planData = await readPlanFile(planPath);
+    const nextItem = findNextActionableItem(planData);
+    expect(nextItem).not.toBeNull();
+    expect(nextItem?.type).toBe('task');
+  });
+
+  test('marks last step and completes plan when no simple tasks remain', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Simple Task 1',
+          description: 'Already done',
+          done: true,
+          steps: [],
+        },
+        {
+          title: 'Complex Task 2',
+          description: 'Last task with steps',
+          steps: [
+            {
+              prompt: 'Step 1',
+              done: true,
+            },
+            {
+              prompt: 'Step 2',
+              done: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    // Mark the last step - should complete the plan
+    const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
+
+    expect(result.planComplete).toBe(true);
+
+    // Read the updated plan
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('done');
+    expect(updatedPlan.tasks[1].steps![1].done).toBe(true);
+  });
 });
 
 describe('findNextActionableItem', () => {
@@ -705,6 +810,65 @@ describe('markTaskDone', () => {
     // Should have called commitAll
     expect(commitAllSpy).toHaveBeenCalled();
     expect(commitAllSpy).toHaveBeenCalledWith(expect.stringContaining('Task to Commit'), tempDir);
+  });
+
+  test('plan is only marked done when all simple and complex tasks are complete', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Complex Task 1',
+          description: 'Has steps',
+          steps: [
+            {
+              prompt: 'Step 1',
+              done: true,
+            },
+            {
+              prompt: 'Step 2',
+              done: true,
+            },
+          ],
+        },
+        {
+          title: 'Simple Task 2',
+          description: 'No steps',
+          done: false,
+          steps: [],
+        },
+        {
+          title: 'Complex Task 3',
+          description: 'More steps',
+          steps: [
+            {
+              prompt: 'Step 1',
+              done: true,
+            },
+            {
+              prompt: 'Step 2',
+              done: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    // Mark the simple task as done - should NOT complete the plan
+    const result = await markTaskDone(planPath, 1, {}, tempDir, {});
+
+    expect(result.planComplete).toBe(false);
+
+    // Read the updated plan
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.tasks[1].done).toBe(true);
   });
 });
 
