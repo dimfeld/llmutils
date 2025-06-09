@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { markStepDone, findNextActionableItem } from './actions.js';
+import { markStepDone, findNextActionableItem, markTaskDone } from './actions.js';
 import { clearPlanCache, readPlanFile } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
@@ -502,6 +502,212 @@ describe('findNextActionableItem', () => {
       expect(result.taskIndex).toBe(0);
       expect(result.task.title).toBe('Task without steps');
     }
+  });
+});
+
+describe('markTaskDone', () => {
+  let tempDir: string;
+  let tasksDir: string;
+
+  beforeEach(async () => {
+    // Clear mocks
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    commitAllSpy.mockClear();
+
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-markTaskDone-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    // Update getGitRoot mock to return tempDir
+    getGitRootSpy.mockResolvedValue(tempDir);
+
+    // Mock modules
+    await moduleMocker.mock('../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: mock(() => {}),
+      boldMarkdownHeaders: (text: string) => text,
+    }));
+
+    await moduleMocker.mock('../common/git.js', () => ({
+      getGitRoot: getGitRootSpy,
+    }));
+
+    await moduleMocker.mock('../common/process.js', () => ({
+      commitAll: commitAllSpy,
+      quiet: false,
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('marks simple task as done', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Simple Task 1',
+          description: 'Do something simple',
+          done: false,
+          steps: [],
+        },
+        {
+          title: 'Another Task',
+          description: 'Do something else',
+          done: false,
+          steps: [],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    const result = await markTaskDone(planPath, 0, {}, tempDir, {});
+
+    expect(result.planComplete).toBe(false);
+    expect(result.message).toContain('Simple Task 1');
+
+    // Read the updated plan
+    const updatedPlan = await readPlanFile(planPath);
+
+    // Check that the task is now done
+    expect(updatedPlan.tasks[0].done).toBe(true);
+    expect(updatedPlan.tasks[1].done).toBe(false);
+  });
+
+  test('updates plan status to done when last task completes', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'First Task',
+          description: 'Already done',
+          done: true,
+          steps: [],
+        },
+        {
+          title: 'Last Task',
+          description: 'Final task to complete',
+          done: false,
+          steps: [],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    const result = await markTaskDone(planPath, 1, {}, tempDir, {});
+
+    expect(result.planComplete).toBe(true);
+
+    // Read the updated plan
+    const updatedPlan = await readPlanFile(planPath);
+
+    // Check that plan status is done
+    expect(updatedPlan.status).toBe('done');
+    expect(updatedPlan.tasks[1].done).toBe(true);
+  });
+
+  test('returns error for invalid task index', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Only Task',
+          description: 'Do something',
+          done: false,
+          steps: [],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    await expect(markTaskDone(planPath, 5, {}, tempDir, {})).rejects.toThrow(
+      'Invalid task index: 5. Plan has 1 tasks.'
+    );
+  });
+
+  test('handles already completed task gracefully', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Already Done Task',
+          description: 'This was done before',
+          done: true,
+          steps: [],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    const result = await markTaskDone(planPath, 0, {}, tempDir, {});
+
+    expect(result.planComplete).toBe(false);
+    expect(result.message).toBe('Task "Already Done Task" is already marked as done.');
+  });
+
+  test('commits changes when commit flag is true', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Task to Commit',
+          description: 'This will be committed',
+          done: false,
+          steps: [],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    await markTaskDone(planPath, 0, { commit: true }, tempDir, {});
+
+    // Should have called commitAll
+    expect(commitAllSpy).toHaveBeenCalled();
+    expect(commitAllSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Task to Commit'),
+      tempDir
+    );
   });
 });
 
