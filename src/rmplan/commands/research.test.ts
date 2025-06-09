@@ -439,29 +439,32 @@ describe('handleResearchCommand', () => {
     // Mock the date for consistent testing
     const originalDate = Date;
     const mockDate = new Date('2024-01-15');
-    global.Date = class extends Date {
-      constructor(...args: any[]) {
-        if (args.length === 0) {
-          super(mockDate.getTime());
-        } else {
-          super(...args);
+    
+    try {
+      global.Date = class extends Date {
+        constructor(...args: any[]) {
+          if (args.length === 0) {
+            super(mockDate.getTime());
+          } else {
+            super(...args);
+          }
         }
-      }
-      static now() {
-        return mockDate.getTime();
-      }
-    } as any;
+        static now() {
+          return mockDate.getTime();
+        }
+      } as any;
 
-    await handleResearchCommand('8', 'specific research task', options, command);
+      await handleResearchCommand('8', 'specific research task', options, command);
 
-    // Restore original Date
-    global.Date = originalDate;
+      // Read the updated plan
+      const updatedPlan = await readPlanFile(planFile);
 
-    // Read the updated plan
-    const updatedPlan = await readPlanFile(planFile);
-
-    // Should have appended research with goal in header
-    expect(updatedPlan.details).toContain('# Research Mon Jan 15 2024: specific research task');
-    expect(updatedPlan.details).toContain('Tutorial content here.');
+      // Should have appended research with goal in header
+      expect(updatedPlan.details).toContain('# Research Mon Jan 15 2024: specific research task');
+      expect(updatedPlan.details).toContain('Tutorial content here.');
+    } finally {
+      // Restore original Date
+      global.Date = originalDate;
+    }
   });
 });
