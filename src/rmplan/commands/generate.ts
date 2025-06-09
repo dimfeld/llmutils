@@ -18,7 +18,7 @@ import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../../rmpr/comment_options.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.ts';
-import { generateSuggestedFilename, resolvePlanFile } from '../plans.js';
+import { generateSuggestedFilename, readPlanFile, resolvePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   extractMarkdownToYaml,
@@ -62,49 +62,31 @@ export async function handleGenerateCommand(
   let issueUrlsForExtract: string[] = [];
 
   let planFile: string | undefined = options.plan;
+  let parsedPlan: PlanSchema | null = null;
 
   if (options.plan) {
     const filePath = await resolvePlanFile(options.plan, globalOpts.config);
-    const fileContent = await Bun.file(filePath).text();
     planFile = filePath;
 
     // Check if the file is a YAML plan file by trying to parse it
-    let isYamlPlan = false;
-    let parsedPlan: PlanSchema | null = null;
 
     try {
       // Try to parse as YAML
-      const yamlContent = findYamlStart(fileContent);
-      parsedPlan = yaml.parse(yamlContent) as PlanSchema;
-
+      parsedPlan = await readPlanFile(filePath);
       // Validate that it has plan structure (at least id or goal)
-      if (parsedPlan && (parsedPlan.id || parsedPlan.goal)) {
-        isYamlPlan = true;
-      }
-    } catch {
-      // Not a valid YAML plan, treat as markdown
-      isYamlPlan = false;
-    }
-
-    if (isYamlPlan && parsedPlan) {
-      // Check if it's a stub plan (no tasks or empty tasks array)
       const isStubPlan = !parsedPlan.tasks || parsedPlan.tasks.length === 0;
 
       if (!isStubPlan) {
-        // Plan already has tasks - log a message and continue with normal flow
         log(
           chalk.yellow(
             'Plan already contains tasks. To regenerate, remove the tasks array from the YAML file.'
           )
         );
-        planText = fileContent;
-      } else {
-        // It's a stub plan - we'll handle task generation below
-        // For now, set planText to null to trigger special handling
-        planText = null as any;
+        return;
       }
-    } else {
-      // Regular markdown file
+    } catch {
+      // Not a valid YAML plan, treat as markdown
+      const fileContent = await Bun.file(filePath).text();
       planText = fileContent;
     }
   } else if (options.planEditor) {
@@ -193,12 +175,10 @@ export async function handleGenerateCommand(
 
   // Special handling for stub YAML plans
   let stubPlan: { data: PlanSchema; path: string } | undefined;
-  if (options.plan && planFile && planText === null) {
+  if (parsedPlan && planFile) {
     // We detected a stub plan earlier, now we need to load it properly
     try {
-      const fileContent = await Bun.file(planFile).text();
-      const yamlContent = findYamlStart(fileContent);
-      stubPlan = { data: yaml.parse(yamlContent) as PlanSchema, path: planFile };
+      stubPlan = { data: parsedPlan, path: planFile };
 
       const { goal, details } = stubPlan.data;
       if (!goal && !details) {
