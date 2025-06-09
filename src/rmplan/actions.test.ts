@@ -704,10 +704,7 @@ describe('markTaskDone', () => {
 
     // Should have called commitAll
     expect(commitAllSpy).toHaveBeenCalled();
-    expect(commitAllSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Task to Commit'),
-      tempDir
-    );
+    expect(commitAllSpy).toHaveBeenCalledWith(expect.stringContaining('Task to Commit'), tempDir);
   });
 });
 
