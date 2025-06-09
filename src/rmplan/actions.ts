@@ -858,7 +858,7 @@ export async function markStepDone(
   }
 
   // Check if plan is now complete
-  const stillPending = findPendingTask(planData);
+  const stillPending = findNextActionableItem(planData);
   const planComplete = !stillPending;
 
   // If plan is complete, update status to 'done'
