@@ -1,11 +1,10 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import yaml from 'yaml';
 import { $ } from 'bun';
-import type { PlanSchema } from './planSchema.js';
-import { readPlanFile } from './plans.js';
+import { beforeEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import yaml from 'yaml';
+import { readPlanFile } from '../plans.js';
 
 describe('rmplan add command', () => {
   let tempDir: string;
@@ -40,8 +39,8 @@ describe('rmplan add command', () => {
     // Check output mentions creation
     expect(result).toContain('Created plan stub:');
 
-    // The file should be named 1.yml since no plans exist
-    const planPath = path.join(tasksDir, '1.yml');
+    // The file should be named 1-test-title.yml since no plans exist
+    const planPath = path.join(tasksDir, '1-test-title.yml');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -99,8 +98,8 @@ describe('rmplan add command', () => {
         .cwd(tempDir)
         .text();
 
-    // The file should be named 101.yml (max ID was 100)
-    const planPath = path.join(tasksDir, '101.yml');
+    // The file should be named 101-new-plan-title.yml (max ID was 100)
+    const planPath = path.join(tasksDir, '101-new-plan-title.yml');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -153,8 +152,8 @@ describe('rmplan add command', () => {
       .cwd(tempDir)
       .text();
 
-    // The file should be named 6.yml (max numeric ID was 5)
-    const planPath = path.join(tasksDir, '6.yml');
+    // The file should be named 6-another-plan.yml (max numeric ID was 5)
+    const planPath = path.join(tasksDir, '6-another-plan.yml');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -174,8 +173,8 @@ describe('rmplan add command', () => {
       .cwd(tempDir)
       .text();
 
-    // The file should be named 1.yml
-    const planPath = path.join(tasksDir, '1.yml');
+    // The file should be named 1-this-is-a-multi-word-title.yml
+    const planPath = path.join(tasksDir, '1-this-is-a-multi-word-title.yml');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -228,8 +227,8 @@ describe('rmplan add command', () => {
       .cwd(tempDir)
       .text();
 
-    // The file should be named 3.yml
-    const planPath = path.join(tasksDir, '3.yml');
+    // The file should be named 3-plan-with-dependencies.yml
+    const planPath = path.join(tasksDir, '3-plan-with-dependencies.yml');
     expect(
       await fs.access(planPath).then(
         () => true,
