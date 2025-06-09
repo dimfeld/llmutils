@@ -4,6 +4,7 @@ import { createModel } from '../common/model_factory.js';
 import type { RmplanConfig } from './configSchema.js';
 import { findYamlStart } from './process_markdown.js';
 import { quiet } from '../common/process.js';
+import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 
 // Interface for YAML parsing error
 interface YamlError {
@@ -136,6 +137,7 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
         break;
       }
 
+      console.log('fixed yaml\n', currentYaml);
       if (!fixApplied) {
         console.error('No fix applied for error:', yamlError.message);
         break;
@@ -191,6 +193,13 @@ ${yamlText}
     model: await createModel(modelSpec, config),
     prompt,
     temperature: 0,
+    providerOptions: {
+      google: {
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
+      } satisfies GoogleGenerativeAIProviderOptions,
+    },
   });
 
   if (!quiet) {
@@ -373,11 +382,21 @@ function fixMissingClosingQuote(
         const nextLine = lines[j];
 
         // Check if we've hit another key at the same or lesser indentation
-        const nextKeyMatch = nextLine.match(/^(\s*)(\w+):/);
+        const nextKeyMatch = nextLine.match(/^(\s*)([\w-]+):/);
         if (nextKeyMatch) {
           const nextIndent = nextKeyMatch[1];
           if (nextIndent.length <= indent.length) {
             // Found the end of our value
+            break;
+          }
+        }
+
+        // Check if we've hit another array item at a similar indentation level
+        const arrayItemMatch = nextLine.match(/^(\s*)-\s+(\w+):/);
+        if (arrayItemMatch) {
+          const arrayIndent = arrayItemMatch[1];
+          // If this array item is at the same or higher level (less indented), stop
+          if (arrayIndent.length <= indent.length) {
             break;
           }
         }

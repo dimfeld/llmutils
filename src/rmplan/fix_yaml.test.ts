@@ -312,23 +312,40 @@ items:
   });
 
   test('fixes single line strings that span lines', async () => {
-    const input = `priority: "high"
-details: "This project will implement a new attribute-based access control (ABAC) system to complement the existing role-based access control (RBAC). The new system is designed to control access to data objects (like devices, locations, inventory) for different actors (users, teams, entire organizations).
-
-The implementation will be phased, starting with the core backend infrastructure, followed by integration into existing queries, and finally building a comprehensive administrative UI for management."
-phases:
-  - name: Phase 1
+    const input = `phases:
+  - id: "project-1"
+    tasks:
+      - title: "Build Materialization Engine"
+        description: "Create the core logic for populating the object_group_memberships table. This engine must handle the four key scenarios:
+1.  Full materialization when an Object Group is created.
+2.  Full re-materialization when an Object Group's rules are modified.
+3.  Incremental evaluation for a new object against all relevant Object Groups.
+4.  Incremental re-evaluation for a modified object against all relevant Object Groups."
+      - title: "Implement Materialization Logging"
+        description: "Create the materialization_logs table in the Drizzle schema. Integrate logging into the materialization engine to record the start, completion, duration, and outcome (success/error) of materialization tasks. This is crucial for monitoring and debugging."
+    status: "pending"
 `;
 
     const result = await fixYaml(input);
     expect(result).toEqual({
-      priority: 'high',
-      details: `This project will implement a new attribute-based access control (ABAC) system to complement the existing role-based access control (RBAC). The new system is designed to control access to data objects (like devices, locations, inventory) for different actors (users, teams, entire organizations).
-
-The implementation will be phased, starting with the core backend infrastructure, followed by integration into existing queries, and finally building a comprehensive administrative UI for management.`,
       phases: [
         {
-          name: 'Phase 1',
+          id: 'project-1',
+          tasks: [
+            {
+              title: 'Build Materialization Engine',
+              description: `Create the core logic for populating the object_group_memberships table. This engine must handle the four key scenarios:
+1.  Full materialization when an Object Group is created.
+2.  Full re-materialization when an Object Group's rules are modified.
+3.  Incremental evaluation for a new object against all relevant Object Groups.
+4.  Incremental re-evaluation for a modified object against all relevant Object Groups.`,
+            },
+            {
+              title: 'Implement Materialization Logging',
+              description: `Create the materialization_logs table in the Drizzle schema. Integrate logging into the materialization engine to record the start, completion, duration, and outcome (success/error) of materialization tasks. This is crucial for monitoring and debugging.`,
+            },
+          ],
+          status: 'pending',
         },
       ],
     });
