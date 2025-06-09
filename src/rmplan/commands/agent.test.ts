@@ -27,6 +27,9 @@ const buildExecutorAndLogSpy = mock(() => ({
 // Mock actions functions
 const preparePhase = mock(async () => {});
 const setPlanStatusSpy = mock(async () => {});
+const findPendingTaskSpy = mock(() => null); // Return null to indicate no more tasks
+const prepareNextStepSpy = mock(async () => null);
+const markStepDoneSpy = mock(async () => ({ message: 'Done', planComplete: true }));
 
 // Mock other dependencies
 const resolvePlanFileSpy = mock(async (planFile: string) => planFile);
@@ -54,6 +57,9 @@ describe('rmplanAgent - Direct Execution Flow', () => {
     getGitRootSpy.mockClear();
     openLogFileSpy.mockClear();
     closeLogFileSpy.mockClear();
+    findPendingTaskSpy.mockClear();
+    prepareNextStepSpy.mockClear();
+    markStepDoneSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -104,6 +110,10 @@ describe('rmplanAgent - Direct Execution Flow', () => {
 
     await moduleMocker.mock('../actions.js', () => ({
       preparePhase,
+      findPendingTask: findPendingTaskSpy,
+      prepareNextStep: prepareNextStepSpy,
+      markStepDone: markStepDoneSpy,
+      executePostApplyCommand: mock(async () => true),
     }));
 
     await moduleMocker.mock('../plans.js', () => ({
@@ -197,18 +207,15 @@ describe('rmplanAgent - Direct Execution Flow', () => {
       ],
     });
 
-    // Verify executor was called with correctly formatted prompt
-    expect(executorExecuteSpy).toHaveBeenCalled();
-    expect(executorExecuteSpy.mock.calls[0][0]).toInclude(
-      '# Goal\n\nImplement a simple feature\n\n## Details\n\nAdd a new function that returns hello world\n\n'
-    );
-    expect(executorExecuteSpy.mock.calls[0][0]).toInclude(stubPlanFile);
-
-    // Verify plan was marked as done
-    expect(setPlanStatusSpy).toHaveBeenCalledWith(stubPlanFile, 'done');
+    // Verify that executeStubPlan logic was NOT triggered (since this is a plan with tasks)
+    expect(executorExecuteSpy).not.toHaveBeenCalled();
+    expect(setPlanStatusSpy).not.toHaveBeenCalled();
 
     // Verify preparePhase was NOT called
     expect(preparePhase).not.toHaveBeenCalled();
+
+    // Verify the main execution loop was entered
+    expect(findPendingTaskSpy).toHaveBeenCalled();
   });
 
   test('interactive "generate steps" flow', async () => {
