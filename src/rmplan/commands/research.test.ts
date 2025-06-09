@@ -467,4 +467,38 @@ describe('handleResearchCommand', () => {
       global.Date = originalDate;
     }
   });
+
+  test('generates Q&A prompt with --ask flag', async () => {
+    // Create a test plan
+    const plan = {
+      id: '9',
+      title: 'Q&A Plan',
+      goal: 'Build a chat application',
+      details: 'Basic chat app details',
+      status: 'pending',
+      priority: 'medium',
+      tasks: [],
+    };
+    const planFile = path.join(tasksDir, '9.yml');
+    await writePlanFile(planFile, plan);
+
+    const options = { ask: true };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleResearchCommand('9', undefined, options, command);
+
+    // Should have generated Q&A prompt
+    expect(clipboardWriteSpy).toHaveBeenCalledTimes(1);
+    const promptContent = clipboardWriteSpy.mock.calls[0][0];
+    expect(promptContent).toContain('# Requirements Gathering Assistant');
+    expect(promptContent).toContain('You are acting as a business analyst');
+    expect(promptContent).toContain('**Goal**: Build a chat application');
+    expect(promptContent).toContain('Ask me one question at a time');
+    expect(promptContent).toContain('only one question at a time');
+    expect(promptContent).toContain('Begin by asking your first question about this project');
+  });
 });

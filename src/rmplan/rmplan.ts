@@ -185,6 +185,7 @@ program
   .description('Generate a research prompt for a plan and append the results.')
   .option('--rmfilter', `Use rmfilter to include the plan's file context in the prompt.`)
   .option('--tutorial', 'Generate the research output as a tutorial')
+  .option('--prd', 'Generate a Q&A mode prompt to iteratively develop a detailed specification')
   .usage('<planArg> [research-goal] [ -- custom rmfilter options]')
   .allowExcessArguments(true)
   .allowUnknownOption(true)

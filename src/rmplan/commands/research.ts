@@ -18,7 +18,7 @@ import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
 export async function handleResearchCommand(
   planArg: string,
   researchGoal: string | undefined,
-  options: { rmfilter?: boolean; tutorial?: boolean },
+  options: { rmfilter?: boolean; tutorial?: boolean; prd?: boolean },
   command: any
 ): Promise<void> {
   // Get global options from parent command
@@ -38,6 +38,7 @@ export async function handleResearchCommand(
     researchGoal,
     rmfilter: options.rmfilter,
     tutorial: options.tutorial,
+    prd: options.prd,
     rmfilterArgs,
   });
 }
@@ -47,13 +48,19 @@ async function handleResearch(options: {
   researchGoal?: string;
   rmfilter?: boolean;
   tutorial?: boolean;
+  prd?: boolean;
   rmfilterArgs?: string[];
 }): Promise<void> {
   // Read the plan file
   let planData = await readPlanFile(options.planFile);
 
   // Generate research prompt
-  const prompt = generateResearchPrompt(planData, options.researchGoal, options.tutorial);
+  const prompt = generateResearchPrompt(
+    planData,
+    options.researchGoal,
+    options.tutorial,
+    options.prd
+  );
 
   let rmfilterOptions: string[] = [];
   // Check if rmfilter option is enabled
@@ -114,7 +121,8 @@ async function handleResearch(options: {
 function generateResearchPrompt(
   { goal, details }: PlanSchema,
   researchGoal?: string,
-  tutorial?: boolean
+  tutorial?: boolean,
+  prd?: boolean
 ): string {
   const primaryGoal = researchGoal || goal;
   const contextSection = researchGoal
@@ -126,6 +134,34 @@ function generateResearchPrompt(
 
 **Specific Research Focus**: ${researchGoal}`
     : '';
+
+  if (prd) {
+    return `# Requirements Gathering Assistant
+
+You are acting as a business analyst helping to develop a thorough, step-by-step specification for this project idea.
+
+## Project Overview
+
+**Goal**: ${primaryGoal}${contextSection}
+
+**Current Details**: ${details}
+
+## Your Task
+
+Ask me one question at a time so we can develop a thorough, step-by-step spec for this idea. Each question should build on my previous answers, and our end goal is to have a detailed specification I can hand off to a developer. Let's do this iteratively and dig into every relevant detail. Remember, only one question at a time.
+
+## Guidelines for Questions
+
+- Start with high-level clarifications about scope, purpose, and user experience
+- Progress to more specific technical and implementation details
+- Ask about edge cases, error handling, and non-functional requirements
+- Consider user workflows, data models, integrations, and security
+- Focus on one aspect at a time to avoid overwhelming responses
+- Build upon previous answers to create a comprehensive picture
+
+Begin by asking your first question about this project.
+`;
+  }
 
   if (tutorial) {
     return `# Tutorial Creation Assistant
