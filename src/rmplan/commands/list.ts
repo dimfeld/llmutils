@@ -221,7 +221,18 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       priorityDisplay ? priorityColor(priorityDisplay) : '-',
       (() => {
         const taskCount = plan.tasks?.length || 0;
-        return plan.container && taskCount === 0 ? '-' : taskCount.toString();
+        if (taskCount) {
+          const doneTasks = plan.tasks?.filter(
+            (task) => task.steps?.length && task.steps?.every((step) => step.done)
+          );
+
+          if (doneTasks?.length) {
+            return `${doneTasks.length}/${taskCount}`;
+          }
+
+          return taskCount.toString();
+        }
+        return plan.container ? 'C' : '-';
       })(),
       (() => {
         const stepCount =
