@@ -13,7 +13,7 @@ issue:
 planGeneratedAt: 2025-06-10T07:23:41.608Z
 promptsGeneratedAt: 2025-06-10T07:34:01.189Z
 createdAt: 2025-06-06T16:55:35.032Z
-updatedAt: 2025-06-10T07:42:41.819Z
+updatedAt: 2025-06-10T07:59:36.225Z
 project:
   title: Implement the `rmplan update` command
   goal: The goal of this project is to implement a new `rmplan update` command.
@@ -146,14 +146,14 @@ tasks:
           output is a correctly formatted Markdown string, following the
           structure defined by `planMarkdownExampleFormat` in
           `src/rmplan/prompt.ts`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/process_markdown.ts`, create and export a new function
           `convertYamlToMarkdown(plan: PlanSchema): string`.
 
           This function will take a plan object and serialize it into a Markdown
           string.
-        done: false
+        done: true
       - prompt: >
           Implement the `convertYamlToMarkdown` function. It should generate a
           Markdown document with sections for Title, Goal, Priority, and
@@ -165,12 +165,12 @@ tasks:
 
           Ensure the output format matches the `planMarkdownExampleFormat` from
           `src/rmplan/prompt.ts`.
-        done: false
+        done: true
       - prompt: >
           Run the test you created in the first step and ensure it passes,
           confirming that the YAML-to-Markdown conversion is working as
           expected.
-        done: false
+        done: true
   - title: Create the plan update prompt template
     description: A new, specialized prompt is required to instruct the LLM on how to
       perform the update. This task will involve creating a prompt template in
@@ -365,6 +365,8 @@ tasks:
 changedFiles:
   - src/rmplan/commands/update.test.ts
   - src/rmplan/commands/update.ts
+  - src/rmplan/process_markdown.test.ts
+  - src/rmplan/process_markdown.ts
   - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan/

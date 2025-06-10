@@ -21,6 +21,70 @@ import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js
 import { input } from '@inquirer/prompts';
 import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 
+export function convertYamlToMarkdown(plan: PlanSchema): string {
+  const sections: string[] = [];
+
+  // Title section (if present)
+  if (plan.title) {
+    sections.push(`# ${plan.title}`);
+  }
+
+  // Goal section
+  sections.push(`## Goal\n${plan.goal}`);
+
+  // Priority section (if present)
+  if (plan.priority) {
+    sections.push(`## Priority\n${plan.priority}`);
+  }
+
+  // Details section
+  if (plan.details) {
+    sections.push(`### Details\n${plan.details}`);
+  }
+
+  // Add separator
+  sections.push('---');
+
+  // Tasks section
+  for (const task of plan.tasks) {
+    const taskSections: string[] = [];
+
+    // Task title
+    taskSections.push(`## Task: ${task.title}`);
+
+    // Task description
+    taskSections.push(`**Description:** ${task.description}`);
+
+    // Files (if present)
+    if (task.files && task.files.length > 0) {
+      taskSections.push(`**Files:**\n${task.files.map((file) => `- ${file}`).join('\n')}`);
+    }
+
+    // Steps (if present)
+    if (task.steps && task.steps.length > 0) {
+      taskSections.push('**Steps:**');
+
+      task.steps.forEach((step, index) => {
+        // Escape any triple backticks in the prompt by adding a zero-width space
+        const escapedPrompt = step.prompt.replace(/```/g, '\u200b```');
+        taskSections.push(
+          `${index + 1}.  **Prompt:**\n    \`\`\`\n    ${escapedPrompt.split('\n').join('\n    ')}\n    \`\`\``
+        );
+      });
+    }
+
+    sections.push(taskSections.join('\n'));
+    sections.push('---');
+  }
+
+  // Remove the last separator if there were tasks
+  if (plan.tasks.length > 0) {
+    sections.pop();
+  }
+
+  return sections.join('\n\n');
+}
+
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
 
