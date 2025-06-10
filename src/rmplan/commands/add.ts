@@ -8,7 +8,7 @@ import { log } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
-import { writePlanFile } from '../plans.js';
+import { writePlanFile, readAllPlans, readPlanFile } from '../plans.js';
 import { prioritySchema, type PlanSchema } from '../planSchema.js';
 import { needArrayOrUndefined } from '../../common/cli.js';
 
@@ -67,10 +67,34 @@ export async function handleAddCommand(title: string[], options: any, command: a
     status: 'pending',
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
     dependencies: needArrayOrUndefined(options.dependsOn),
+    parent: options.parent,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
   };
+
+  // If parent is specified, update the parent plan's dependencies
+  if (options.parent !== undefined) {
+    const { plans: allPlans } = await readAllPlans(targetDir);
+
+    const parentPlan = allPlans.get(options.parent);
+    if (!parentPlan) {
+      throw new Error(`Parent plan with ID ${options.parent} not found`);
+    }
+
+    // Add this plan's ID to the parent's dependencies
+    if (!parentPlan.dependencies) {
+      parentPlan.dependencies = [];
+    }
+    if (!parentPlan.dependencies.includes(planId)) {
+      parentPlan.dependencies.push(planId);
+      parentPlan.updatedAt = new Date().toISOString();
+
+      // Write the updated parent plan
+      await writePlanFile(parentPlan.filename, parentPlan);
+      log(chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${planId}`));
+    }
+  }
 
   // Write the plan to the new file
   await writePlanFile(filePath, plan);

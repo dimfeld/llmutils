@@ -244,4 +244,74 @@ describe('rmplan add command', () => {
     expect(plan.dependencies).toEqual([1, 2]);
     expect(plan.priority).toBe('high');
   });
+
+  test('creates plan with parent and updates parent dependencies', async () => {
+    // Create a parent plan
+    const schemaLine =
+      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
+
+    const parentCreatedAt = new Date().toISOString();
+    await fs.writeFile(
+      path.join(tasksDir, '1-parent-plan.yml'),
+      schemaLine +
+        yaml.stringify({
+          id: 1,
+          title: 'Parent Plan',
+          goal: 'Test parent goal',
+          details: 'Test parent details',
+          status: 'pending',
+          createdAt: parentCreatedAt,
+          updatedAt: parentCreatedAt,
+          tasks: [],
+        })
+    );
+
+    // Add a small delay to ensure timestamps are different
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Run rmplan add command with parent option
+    const result =
+      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Child Plan" --parent 1 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
+        .cwd(tempDir)
+        .text();
+
+    // Check output mentions creation and parent update
+    expect(result).toContain('Created plan stub:');
+    expect(result).toContain('Updated parent plan 1 to include dependency on 2');
+
+    // The child file should be named 2-child-plan.yml
+    const childPlanPath = path.join(tasksDir, '2-child-plan.yml');
+    expect(
+      await fs.access(childPlanPath).then(
+        () => true,
+        () => false
+      )
+    ).toBe(true);
+
+    // Read and verify child plan content
+    const childPlan = await readPlanFile(childPlanPath);
+    expect(childPlan.id).toBe(2);
+    expect(childPlan.title).toBe('Child Plan');
+    expect(childPlan.parent).toBe(1);
+
+    // Read and verify parent plan was updated
+    const parentPlanPath = path.join(tasksDir, '1-parent-plan.yml');
+    const parentPlan = await readPlanFile(parentPlanPath);
+    expect(parentPlan.dependencies).toEqual([2]);
+    expect(new Date(parentPlan.updatedAt!).getTime()).toBeGreaterThan(
+      new Date(parentCreatedAt).getTime()
+    );
+  });
+
+  test('errors when parent plan does not exist', async () => {
+    // Run rmplan add command with non-existent parent
+    const result =
+      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Orphan Plan" --parent 999 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
+        .cwd(tempDir)
+        .nothrow();
+
+    // Should exit with error code
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr.toString()).toContain('Parent plan with ID 999 not found');
+  });
 });

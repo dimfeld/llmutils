@@ -125,9 +125,11 @@ program
   .option('--edit', 'Open the newly created plan file in your editor')
   .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
+  .option('--parent <planId>', 'Set the parent plan ID')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
     options.dependsOn = intArg(options.dependsOn);
+    options.parent = intArg(options.parent);
     await handleAddCommand(title, options, command).catch(handleCommandError);
   });
 
