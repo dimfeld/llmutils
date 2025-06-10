@@ -62,6 +62,10 @@ ${phaseExampleFormatGeneric}
 
 8.  **Output Format:** Output *only* the raw, valid YAML string. Do **not** include any introductory text, explanations, comments, or Markdown fences (like \`\`\`yaml or \`\`\`).
 
+9. String with colons MUST be quoted.
+
+10. Multi-line strings MUST be properly indented.
+
 **Important for multi-phase plans:**
 - Each phase should have an id like "project-1", "project-2" etc.
 `;

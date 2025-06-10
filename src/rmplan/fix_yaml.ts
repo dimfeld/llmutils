@@ -178,6 +178,7 @@ ${yamlText}
 
 1. Fix any YAML syntax errors such as:
    - Unquoted strings containing special characters
+   - Unquoted strings with colons
    - Incorrect indentation
    - Unclosed quotes
    - Invalid escape sequences
@@ -187,6 +188,7 @@ ${yamlText}
 3. Only fix syntax issues, do not change the meaning or structure
 4. Use proper YAML quoting when necessary
 5. Ensure proper indentation (2 spaces per level)
+6. Make sure that strings with colons are quoted!
 
 **Output Format:** Return only the fixed YAML content without any explanations, comments, or markdown fences.`;
 
