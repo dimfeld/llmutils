@@ -51,6 +51,11 @@
         "maximum": 9007199254740991
       }
     },
+    "parent": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
     "issue": {
       "default": [],
       "type": "array",
