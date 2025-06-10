@@ -12,6 +12,9 @@ import type { Executor, ExecutorCommonOptions } from './types.ts';
 import { formatJsonMessage } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
+import * as net from 'net';
+import { confirm } from '@inquirer/prompts';
+import { stringify } from 'yaml';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -41,6 +44,53 @@ export class ClaudeCodeExecutor implements Executor {
       // handle them together.
       selectSteps: 'all',
     };
+  }
+
+  /**
+   * Creates a Unix socket server to handle permission requests from the MCP server
+   */
+  private async createPermissionSocketServer(socketPath: string): Promise<net.Server> {
+    const server = net.createServer((socket) => {
+      socket.on('data', async (data) => {
+        try {
+          const message = JSON.parse(data.toString());
+
+          if (message.type === 'permission_request') {
+            const { tool_name, input } = message;
+
+            // Format the input as human-readable YAML
+            let formattedInput = stringify(input);
+            if (formattedInput.length > 500) {
+              formattedInput = formattedInput.substring(0, 500) + '...';
+            }
+
+            // Prompt the user for confirmation
+            const approved = await confirm({
+              message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
+            });
+
+            // Send response back to MCP server
+            const response = {
+              type: 'permission_response',
+              approved,
+            };
+
+            socket.write(JSON.stringify(response) + '\n');
+          }
+        } catch (err) {
+          debugLog('Error handling permission request:', err);
+        }
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.listen(socketPath, () => {
+        resolve();
+      });
+      server.on('error', reject);
+    });
+
+    return server;
   }
 
   async execute(contextContent: string) {
@@ -111,11 +161,18 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     // Create temporary MCP configuration if permissions MCP is enabled
-    let mcpServerProcess: ReturnType<typeof Bun.spawn> | undefined;
+    let unixSocketServer: net.Server | undefined;
+    let unixSocketPath: string | undefined;
 
     if (isPermissionsMcpEnabled) {
       // Create a temporary directory
       tempMcpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-code-mcp-'));
+
+      // Create Unix socket path
+      unixSocketPath = path.join(tempMcpConfigDir, 'permissions.sock');
+
+      // Create and start the Unix socket server
+      unixSocketServer = await this.createPermissionSocketServer(unixSocketPath);
 
       // Resolve the absolute path to the permissions MCP script
       const permissionsMcpPath = Bun.resolveSync(
@@ -123,33 +180,12 @@ export class ClaudeCodeExecutor implements Executor {
         import.meta.dir
       );
 
-      // Create a promise to wait for the port number from the MCP server
-      const portPromise = Promise.withResolvers<number>();
-
-      // Spawn the MCP server process
-      mcpServerProcess = Bun.spawn([process.execPath, permissionsMcpPath], {
-        stdio: ['inherit', 'inherit', 'inherit'],
-        ipc(message) {
-          if (message && typeof message === 'object' && 'port' in message) {
-            portPromise.resolve(message.port);
-          }
-        },
-      });
-
-      // Wait for the port with a timeout
-      const port = await Promise.race([
-        portPromise.promise,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('MCP server startup timeout')), 5000)
-        ),
-      ]);
-
-      // Construct the MCP configuration object with SSE transport
+      // Construct the MCP configuration object with stdio transport
       const mcpConfig = {
         mcpServers: {
           permissions: {
-            type: 'sse',
-            url: `http://localhost:${port}/sse`,
+            type: 'stdio',
+            command: [process.execPath, permissionsMcpPath, unixSocketPath],
           },
         },
       };
@@ -236,9 +272,13 @@ export class ClaudeCodeExecutor implements Executor {
         }
       }
     } finally {
-      // Kill the spawned MCP server process if it exists
-      if (mcpServerProcess) {
-        mcpServerProcess.kill();
+      // Close the Unix socket server if it exists
+      if (unixSocketServer) {
+        await new Promise<void>((resolve) => {
+          unixSocketServer.close(() => {
+            resolve();
+          });
+        });
       }
 
       // Clean up temporary MCP configuration directory if it was created

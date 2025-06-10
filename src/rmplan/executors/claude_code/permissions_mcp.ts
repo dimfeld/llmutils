@@ -6,9 +6,8 @@
 
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
-import { confirm } from '@inquirer/prompts';
 import { stringify } from 'yaml';
-import chalk from 'chalk';
+import * as net from 'net';
 
 // Define the schema for the permission prompt input
 export const PermissionInputSchema = z.object({
@@ -22,71 +21,118 @@ const server = new FastMCP({
   version: '0.0.1',
 });
 
+// Unix socket connection for communication with parent process
+let parentSocket: net.Socket | null = null;
+
+// Connect to the parent process via Unix socket
+function connectToParent(socketPath: string) {
+  parentSocket = net.createConnection(socketPath, () => {
+    // Connection established
+  });
+
+  parentSocket.on('error', (err) => {
+    console.error('Socket error:', err);
+    process.exit(1);
+  });
+
+  parentSocket.on('close', () => {
+    process.exit(0);
+  });
+}
+
+// Send a request to the parent process and wait for response
+async function requestPermissionFromParent(tool_name: string, input: any): Promise<boolean> {
+  if (!parentSocket) {
+    throw new Error('Not connected to parent process');
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = {
+      type: 'permission_request',
+      tool_name,
+      input,
+    };
+
+    // Set up one-time listener for the response
+    const responseHandler = (data: Buffer) => {
+      try {
+        const response = JSON.parse(data.toString());
+        if (response.type === 'permission_response') {
+          parentSocket!.off('data', responseHandler);
+          resolve(response.approved);
+        }
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    parentSocket!.on('data', responseHandler);
+
+    // Send the request
+    parentSocket!.write(JSON.stringify(request) + '\n');
+  });
+}
+
 // Define the approval prompt tool
 server.addTool({
   name: 'approval_prompt',
   description: 'Prompts the user for permission to execute a tool',
   parameters: PermissionInputSchema,
   execute: async ({ tool_name, input }) => {
-    // Format the input as human-readable YAML
-    let formattedInput = stringify(input);
-    if (formattedInput.length > 500) {
-      formattedInput = formattedInput.substring(0, 500) + '...';
+    try {
+      // Request permission from the parent process
+      const approved = await requestPermissionFromParent(tool_name, input);
+
+      // Return the response based on user's decision
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              approved
+                ? {
+                    behavior: 'allow',
+                    updatedInput: input,
+                  }
+                : {
+                    behavior: 'deny',
+                    message: `User denied permission for tool: ${tool_name}`,
+                  }
+            ),
+          },
+        ],
+      };
+    } catch (err) {
+      // If communication fails, deny by default
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              behavior: 'deny',
+              message: `Permission request failed: ${err as Error}`,
+            }),
+          },
+        ],
+      };
     }
-
-    // Prompt the user for confirmation
-    const approved = await confirm({
-      message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
-    });
-
-    // Return the response based on user's decision
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            approved
-              ? {
-                  behavior: 'allow',
-                  updatedInput: input,
-                }
-              : {
-                  behavior: 'deny',
-                  message: `User denied permission for tool: ${tool_name}`,
-                }
-          ),
-        },
-      ],
-    };
   },
 });
 
-/** FastMCP has no way to listen on port "0" and get the actual port number back,
- * so we do this instead which is prone to race conditions but should almost always work.
- *
- * A better solution would be nice but this is ok for now. */
-async function findFreePort(): Promise<number> {
-  const server = Bun.serve({
-    port: 0,
-    fetch: () => new Response('OK'),
-  });
-
-  let port = server.port!;
-  await server.stop();
-  return port;
-}
-
 // Start the server if this file is run directly
 if (import.meta.main) {
-  const port = await findFreePort();
-  await server.start({
-    transportType: 'httpStream',
-    httpStream: {
-      port,
-    },
-  });
-  // Send the port number back to the parent process via IPC
-  if (process.send) {
-    process.send({ port });
+  // Get the Unix socket path from command line argument
+  const socketPath = process.argv[2];
+  if (!socketPath) {
+    console.error('Unix socket path must be provided as command line argument');
+    process.exit(1);
   }
+
+  // Connect to the parent process
+  connectToParent(socketPath);
+
+  // Start the MCP server in stdio mode
+  await server.start({
+    transportType: 'stdio',
+  });
 }
