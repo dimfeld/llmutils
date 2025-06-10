@@ -633,4 +633,457 @@ Updated details with more information
       'No response from LLM was provided'
     );
   });
+
+  test('should add a new task to an existing plan', async () => {
+    // Create an original plan with one task
+    const originalPlanId = 1;
+    const originalCreatedAt = '2024-01-01T00:00:00.000Z';
+    const originalPlan: PlanSchema = {
+      id: originalPlanId,
+      title: 'Original Plan',
+      goal: 'Original goal',
+      details: 'Original details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Existing Task',
+          description: 'Existing task description',
+          files: ['src/existing.ts'],
+          steps: [{ prompt: 'Existing step prompt', done: false }],
+        },
+      ],
+      rmfilter: ['src/**/*.ts'],
+      createdAt: originalCreatedAt,
+      updatedAt: originalCreatedAt,
+      planGeneratedAt: originalCreatedAt,
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(originalPlan));
+
+    // Mock waitForEnter to return a simulated LLM response that adds a new task
+    const mockWaitForEnter = mock(() =>
+      Promise.resolve(`# Original Plan
+
+## Goal
+Original goal
+
+### Details
+Original details
+
+---
+
+## Task: Existing Task
+**Description:** Existing task description
+**Files:**
+- src/existing.ts
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Existing step prompt
+    \`\`\`
+
+---
+
+## Task: New Authentication Task
+**Description:** Implement user authentication system
+**Files:**
+- src/auth/login.ts
+- src/auth/logout.ts
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Implement login functionality with JWT tokens
+    \`\`\`
+2.  **Prompt:**
+    \`\`\`
+    Implement logout functionality and session cleanup
+    \`\`\`
+`)
+    );
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: mockWaitForEnter,
+    }));
+
+    // Mock extractMarkdownToYaml to simulate updating the plan file
+    const mockExtractMarkdownToYaml = mock(async (inputText, config, quiet, options) => {
+      // Verify the updatePlan option is passed correctly
+      expect(options.updatePlan).toBeDefined();
+      expect(options.updatePlan.data.id).toBe(originalPlanId);
+      expect(options.updatePlan.data.createdAt).toBe(originalCreatedAt);
+      expect(options.updatePlan.path).toBe(planPath);
+      expect(options.output).toBe(planPath);
+
+      // Simulate updating the plan file with the new task
+      const updatedPlan: PlanSchema = {
+        ...originalPlan,
+        tasks: [
+          originalPlan.tasks[0],
+          {
+            title: 'New Authentication Task',
+            description: 'Implement user authentication system',
+            files: ['src/auth/login.ts', 'src/auth/logout.ts'],
+            steps: [
+              { prompt: 'Implement login functionality with JWT tokens', done: false },
+              { prompt: 'Implement logout functionality and session cleanup', done: false },
+            ],
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+
+      await fs.writeFile(planPath, yaml.stringify(updatedPlan));
+      return `Successfully updated plan at ${planPath}`;
+    });
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      convertYamlToMarkdown: mockConvertYamlToMarkdown,
+      extractMarkdownToYaml: mockExtractMarkdownToYaml,
+    }));
+
+    // Re-import after mocking
+    const updateModule = await import('./update.js');
+    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
+
+    const testDescription = 'Add authentication feature with login and logout functionality';
+    const options = {
+      description: testDescription,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call the update command
+    await newHandleUpdateCommand('1', options, command);
+
+    // Verify the plan file was updated
+    const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedPlanContent);
+
+    // Verify core metadata is preserved
+    expect(updatedPlan.id).toBe(originalPlanId);
+    expect(updatedPlan.createdAt).toBe(originalCreatedAt);
+
+    // Verify the new task was added
+    expect(updatedPlan.tasks).toHaveLength(2);
+    expect(updatedPlan.tasks[0].title).toBe('Existing Task');
+    expect(updatedPlan.tasks[1].title).toBe('New Authentication Task');
+    expect(updatedPlan.tasks[1].description).toBe('Implement user authentication system');
+    expect(updatedPlan.tasks[1].files).toEqual(['src/auth/login.ts', 'src/auth/logout.ts']);
+    expect(updatedPlan.tasks[1].steps).toHaveLength(2);
+
+    // Verify success message
+    expect(logSpy).toHaveBeenCalledWith(`Successfully updated plan: ${planPath}`);
+  });
+
+  test('should remove a task from an existing plan', async () => {
+    // Create an original plan with multiple tasks
+    const originalPlanId = 2;
+    const originalCreatedAt = '2024-01-02T00:00:00.000Z';
+    const originalPlan: PlanSchema = {
+      id: originalPlanId,
+      title: 'Multi-Task Plan',
+      goal: 'Build a complete application',
+      details: 'Application with multiple features',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Setup Database',
+          description: 'Configure database connections',
+          files: ['src/db/config.ts'],
+          steps: [{ prompt: 'Setup PostgreSQL connection', done: true }],
+        },
+        {
+          title: 'User Management',
+          description: 'Implement user CRUD operations',
+          files: ['src/users/controller.ts'],
+          steps: [{ prompt: 'Create user endpoints', done: false }],
+        },
+        {
+          title: 'Email Service',
+          description: 'Setup email notifications',
+          files: ['src/email/service.ts'],
+          steps: [{ prompt: 'Configure email provider', done: false }],
+        },
+      ],
+      createdAt: originalCreatedAt,
+      updatedAt: originalCreatedAt,
+      planGeneratedAt: originalCreatedAt,
+    };
+
+    const planPath = path.join(tasksDir, '2.yml');
+    await fs.writeFile(planPath, yaml.stringify(originalPlan));
+
+    // Mock waitForEnter to return a simulated LLM response that removes the Email Service task
+    const mockWaitForEnter = mock(() =>
+      Promise.resolve(`# Multi-Task Plan
+
+## Goal
+Build a complete application
+
+### Details
+Application with multiple features
+
+---
+
+## Task: Setup Database
+**Description:** Configure database connections
+**Files:**
+- src/db/config.ts
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Setup PostgreSQL connection
+    \`\`\`
+
+---
+
+## Task: User Management
+**Description:** Implement user CRUD operations
+**Files:**
+- src/users/controller.ts
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Create user endpoints
+    \`\`\`
+`)
+    );
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: mockWaitForEnter,
+    }));
+
+    // Mock extractMarkdownToYaml to simulate updating the plan file
+    const mockExtractMarkdownToYaml = mock(async (inputText, config, quiet, options) => {
+      // Verify the updatePlan option is passed correctly
+      expect(options.updatePlan).toBeDefined();
+      expect(options.updatePlan.data.id).toBe(originalPlanId);
+
+      // Simulate updating the plan file with the Email Service task removed
+      const updatedPlan: PlanSchema = {
+        ...originalPlan,
+        tasks: [originalPlan.tasks[0], originalPlan.tasks[1]], // Remove the third task
+        updatedAt: new Date().toISOString(),
+      };
+
+      await fs.writeFile(planPath, yaml.stringify(updatedPlan));
+      return `Successfully updated plan at ${planPath}`;
+    });
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      convertYamlToMarkdown: mockConvertYamlToMarkdown,
+      extractMarkdownToYaml: mockExtractMarkdownToYaml,
+    }));
+
+    // Re-import after mocking
+    const updateModule = await import('./update.js');
+    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
+
+    const testDescription =
+      'Remove the email service task as it will be handled by a third-party service';
+    const options = {
+      description: testDescription,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call the update command
+    await newHandleUpdateCommand('2', options, command);
+
+    // Verify the plan file was updated
+    const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedPlanContent);
+
+    // Verify core metadata is preserved
+    expect(updatedPlan.id).toBe(originalPlanId);
+    expect(updatedPlan.createdAt).toBe(originalCreatedAt);
+
+    // Verify the Email Service task was removed
+    expect(updatedPlan.tasks).toHaveLength(2);
+    expect(updatedPlan.tasks[0].title).toBe('Setup Database');
+    expect(updatedPlan.tasks[1].title).toBe('User Management');
+    expect(updatedPlan.tasks.find((t: any) => t.title === 'Email Service')).toBeUndefined();
+
+    // Verify success message
+    expect(logSpy).toHaveBeenCalledWith(`Successfully updated plan: ${planPath}`);
+  });
+
+  test('should modify an existing task in a plan', async () => {
+    // Create an original plan with a task that needs modification
+    const originalPlanId = 3;
+    const originalCreatedAt = '2024-01-03T00:00:00.000Z';
+    const originalPlan: PlanSchema = {
+      id: originalPlanId,
+      title: 'API Development Plan',
+      goal: 'Build RESTful API',
+      details: 'Create API endpoints for the application',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'User API',
+          description: 'Basic user endpoints',
+          files: ['src/api/users.ts'],
+          steps: [
+            { prompt: 'Create GET /users endpoint', done: true },
+            { prompt: 'Create POST /users endpoint', done: false },
+          ],
+        },
+        {
+          title: 'Product API',
+          description: 'Product management endpoints',
+          files: ['src/api/products.ts'],
+          steps: [{ prompt: 'Create product CRUD endpoints', done: false }],
+        },
+      ],
+      createdAt: originalCreatedAt,
+      updatedAt: originalCreatedAt,
+      planGeneratedAt: originalCreatedAt,
+    };
+
+    const planPath = path.join(tasksDir, '3.yml');
+    await fs.writeFile(planPath, yaml.stringify(originalPlan));
+
+    // Mock waitForEnter to return a simulated LLM response that modifies the User API task
+    const mockWaitForEnter = mock(() =>
+      Promise.resolve(`# API Development Plan
+
+## Goal
+Build RESTful API
+
+### Details
+Create API endpoints for the application
+
+---
+
+## Task: User API
+**Description:** Comprehensive user management endpoints with authentication
+**Files:**
+- src/api/users.ts
+- src/api/auth.ts
+- src/middleware/authentication.ts
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Create GET /users endpoint with pagination and filtering
+    \`\`\`
+2.  **Prompt:**
+    \`\`\`
+    Create POST /users endpoint with validation
+    \`\`\`
+3.  **Prompt:**
+    \`\`\`
+    Implement JWT authentication middleware
+    \`\`\`
+4.  **Prompt:**
+    \`\`\`
+    Add role-based access control
+    \`\`\`
+
+---
+
+## Task: Product API
+**Description:** Product management endpoints
+**Files:**
+- src/api/products.ts
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Create product CRUD endpoints
+    \`\`\`
+`)
+    );
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: mockWaitForEnter,
+    }));
+
+    // Mock extractMarkdownToYaml to simulate updating the plan file
+    const mockExtractMarkdownToYaml = mock(async (inputText, config, quiet, options) => {
+      // Verify the updatePlan option is passed correctly
+      expect(options.updatePlan).toBeDefined();
+      expect(options.updatePlan.data.id).toBe(originalPlanId);
+
+      // Simulate updating the plan file with modified User API task
+      const updatedPlan: PlanSchema = {
+        ...originalPlan,
+        tasks: [
+          {
+            title: 'User API',
+            description: 'Comprehensive user management endpoints with authentication',
+            files: ['src/api/users.ts', 'src/api/auth.ts', 'src/middleware/authentication.ts'],
+            steps: [
+              { prompt: 'Create GET /users endpoint with pagination and filtering', done: false },
+              { prompt: 'Create POST /users endpoint with validation', done: false },
+              { prompt: 'Implement JWT authentication middleware', done: false },
+              { prompt: 'Add role-based access control', done: false },
+            ],
+          },
+          originalPlan.tasks[1], // Keep Product API task unchanged
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+
+      await fs.writeFile(planPath, yaml.stringify(updatedPlan));
+      return `Successfully updated plan at ${planPath}`;
+    });
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      convertYamlToMarkdown: mockConvertYamlToMarkdown,
+      extractMarkdownToYaml: mockExtractMarkdownToYaml,
+    }));
+
+    // Re-import after mocking
+    const updateModule = await import('./update.js');
+    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
+
+    const testDescription =
+      'Expand the User API task to include authentication and authorization features';
+    const options = {
+      description: testDescription,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call the update command
+    await newHandleUpdateCommand('3', options, command);
+
+    // Verify the plan file was updated
+    const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedPlanContent);
+
+    // Verify core metadata is preserved
+    expect(updatedPlan.id).toBe(originalPlanId);
+    expect(updatedPlan.createdAt).toBe(originalCreatedAt);
+
+    // Verify the User API task was modified
+    expect(updatedPlan.tasks).toHaveLength(2);
+    expect(updatedPlan.tasks[0].title).toBe('User API');
+    expect(updatedPlan.tasks[0].description).toBe(
+      'Comprehensive user management endpoints with authentication'
+    );
+    expect(updatedPlan.tasks[0].files).toHaveLength(3);
+    expect(updatedPlan.tasks[0].files).toContain('src/middleware/authentication.ts');
+    expect(updatedPlan.tasks[0].steps).toHaveLength(4);
+    expect(updatedPlan.tasks[0].steps[2].prompt).toContain('JWT authentication');
+
+    // Verify Product API task remains unchanged
+    expect(updatedPlan.tasks[1].title).toBe('Product API');
+    expect(updatedPlan.tasks[1].description).toBe('Product management endpoints');
+
+    // Verify success message
+    expect(logSpy).toHaveBeenCalledWith(`Successfully updated plan: ${planPath}`);
+  });
 });

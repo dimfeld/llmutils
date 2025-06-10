@@ -13,7 +13,7 @@ issue:
 planGeneratedAt: 2025-06-10T07:23:41.608Z
 promptsGeneratedAt: 2025-06-10T07:34:01.189Z
 createdAt: 2025-06-06T16:55:35.032Z
-updatedAt: 2025-06-10T08:24:43.495Z
+updatedAt: 2025-06-10T08:28:38.124Z
 project:
   title: Implement the `rmplan update` command
   goal: The goal of this project is to implement a new `rmplan update` command.
@@ -311,28 +311,28 @@ tasks:
           Set up an initial plan file, provide an "add task" description, mock
           the LLM's Markdown response containing the new task, and verify that
           the final YAML file is correctly updated.
-        done: false
+        done: true
       - prompt: >
           Write a test case for removing a task.
 
           This test should start with a plan containing multiple tasks, provide
           a "remove task X" description, mock the LLM's response without that
           task, and verify the task is absent in the updated YAML file.
-        done: false
+        done: true
       - prompt: >
           Write a test case for modifying an existing task.
 
           The test should mock an LLM response where a task's description or
           steps have been altered and verify the changes are correctly applied
           to the YAML file.
-        done: false
+        done: true
       - prompt: >
           Write a test to confirm that providing the update description via the
           `description` argument works as expected.
 
           This test can be simpler and may not need to mock the full LLM
           interaction, but should verify the description is passed correctly.
-        done: false
+        done: true
   - title: Update user documentation
     description: The final task is to document the new `rmplan update` command. We
       will update the `README.md` and any other relevant documentation to
