@@ -192,7 +192,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   if (plan.details) {
     log('\n' + chalk.bold('Details:'));
     log('─'.repeat(60));
-    
+
     if (!options.full) {
       const lines = plan.details.split('\n');
       if (lines.length > 20) {
@@ -231,7 +231,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       if (totalSteps > 0) {
         log(`  Progress: ${doneSteps}/${totalSteps} steps completed`);
       }
-      log(`  ${chalk.gray(task.description)}`);
+      log(`  ${chalk.rgb(200, 200, 200)(task.description)}`);
 
       if (task.files && task.files.length > 0) {
         log(`  Files: ${task.files.join(', ')}`);
@@ -245,7 +245,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
         log('  Steps:');
         task.steps.forEach((step, stepIdx) => {
           const stepIcon = step.done ? '✓' : '○';
-          const stepColor = step.done ? chalk.green : chalk.gray;
+          const stepColor = step.done ? chalk.green : chalk.rgb(170, 170, 170);
           const prompt = step.prompt.split('\n')[0];
           const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
           log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
