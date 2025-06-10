@@ -420,7 +420,7 @@ export async function saveMultiPhaseYaml(
       phase.project = projectInfo;
     }
 
-    if (options.stubPlan?.data) {
+    if (options.stubPlan?.data && actuallyMultiphase) {
       phase.parent = options.stubPlan?.data.id;
     }
 
