@@ -13,7 +13,7 @@ issue:
 planGeneratedAt: 2025-06-10T07:23:41.608Z
 promptsGeneratedAt: 2025-06-10T07:34:01.189Z
 createdAt: 2025-06-06T16:55:35.032Z
-updatedAt: 2025-06-10T07:38:42.211Z
+updatedAt: 2025-06-10T07:42:41.819Z
 project:
   title: Implement the `rmplan update` command
   goal: The goal of this project is to implement a new `rmplan update` command.
@@ -99,7 +99,7 @@ tasks:
 
           The function should first check if the `description` argument is
           provided. If it is, use its value.
-        done: false
+        done: true
       - prompt: >
           If the `description` argument is not provided, implement the logic to
           open the user's default text editor.
@@ -110,14 +110,14 @@ tasks:
 
           You can reference the editor-opening logic in `handleGenerateCommand`
           for the `--plan-editor` option.
-        done: false
+        done: true
       - prompt: >
           After the editor process closes, read the content from the temporary
           file to get the update description.
 
           Ensure the temporary file is deleted after its content has been read,
           even if an error occurs.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/update.test.ts`, add tests to verify both
           input methods.
@@ -127,7 +127,7 @@ tasks:
 
           Another test should mock the editor process and temporary file
           interaction to verify the editor-based input flow.
-        done: false
+        done: true
   - title: Create a YAML-to-Markdown plan converter
     description: To provide the existing plan as context to the LLM, we need to
       convert it from its structured YAML format into a human-readable Markdown

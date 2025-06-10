@@ -63,7 +63,7 @@ describe('handleUpdateCommand', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('placeholder test - update command setup', async () => {
+  test('should use description from command line when provided', async () => {
     // Create a test plan
     const plan: PlanSchema = {
       id: '1',
@@ -85,7 +85,10 @@ describe('handleUpdateCommand', () => {
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const options = {};
+    const testDescription = 'Add authentication feature to the plan';
+    const options = {
+      description: testDescription,
+    };
 
     const command = {
       parent: {
@@ -96,19 +99,177 @@ describe('handleUpdateCommand', () => {
     // Call the update command
     await handleUpdateCommand('1', options, command);
 
-    // Verify that log was called with expected message
+    // Verify that log was called with update description
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Update command called with plan file:')
+      expect.stringContaining('Update description: Add authentication feature to the plan')
     );
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('1.yml'));
+  });
+
+  test('should open editor when description not provided', async () => {
+    // Create a test plan
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          files: [],
+          steps: [{ prompt: 'Test step prompt', done: false }],
+        },
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+
+    // Mock logSpawn to simulate editor process
+    const mockLogSpawn = mock(() => ({
+      exited: Promise.resolve(0),
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: mockLogSpawn,
+    }));
+
+    // Mock Bun.write and Bun.file for temp file operations
+    const editorContent = 'Update plan to include database migrations';
+    let tempFilePath: string = '';
+    const originalWrite = Bun.write;
+    const originalFile = Bun.file;
+
+    // @ts-ignore - Override Bun methods for testing
+    Bun.write = mock(async (path: string, content: string) => {
+      if (path.includes('rmplan-update-desc-')) {
+        tempFilePath = path;
+        // Simulate file creation
+        return { size: 0 };
+      }
+      return originalWrite(path, content);
+    });
+
+    // @ts-ignore - Override Bun methods for testing
+    Bun.file = mock((path: string) => {
+      if (path === tempFilePath) {
+        return {
+          text: async () => editorContent,
+          unlink: async () => {},
+        };
+      }
+      return originalFile(path);
+    });
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    try {
+      // Call the update command
+      await handleUpdateCommand('1', options, command);
+
+      // Verify editor was opened
+      expect(mockLogSpawn).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.any(String),
+          expect.stringContaining('rmplan-update-desc-'),
+        ]),
+        expect.objectContaining({ stdio: ['inherit', 'inherit', 'inherit'] })
+      );
+
+      // Verify that log was called with update description
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Update description: Update plan to include database migrations')
+      );
+    } finally {
+      // Restore original Bun methods
+      // @ts-ignore
+      Bun.write = originalWrite;
+      // @ts-ignore
+      Bun.file = originalFile;
+    }
+  });
+
+  test('should handle empty editor content', async () => {
+    // Create a test plan
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+
+    // Mock logSpawn to simulate editor process
+    const mockLogSpawn = mock(() => ({
+      exited: Promise.resolve(0),
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: mockLogSpawn,
+    }));
+
+    // Mock Bun.write and Bun.file for temp file operations
+    let tempFilePath: string = '';
+    const originalWrite = Bun.write;
+    const originalFile = Bun.file;
+
+    // @ts-ignore - Override Bun methods for testing
+    Bun.write = mock(async (path: string, content: string) => {
+      if (path.includes('rmplan-update-desc-')) {
+        tempFilePath = path;
+        return { size: 0 };
+      }
+      return originalWrite(path, content);
+    });
+
+    // @ts-ignore - Override Bun methods for testing
+    Bun.file = mock((path: string) => {
+      if (path === tempFilePath) {
+        return {
+          text: async () => '', // Empty content
+          unlink: async () => {},
+        };
+      }
+      return originalFile(path);
+    });
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    try {
+      // Call the update command - should throw error
+      await expect(handleUpdateCommand('1', options, command)).rejects.toThrow(
+        'No update description was provided from the editor.'
+      );
+    } finally {
+      // Restore original Bun methods
+      // @ts-ignore
+      Bun.write = originalWrite;
+      // @ts-ignore
+      Bun.file = originalFile;
+    }
   });
 
   // TODO: Add more tests as the update command functionality is implemented
   test.todo('should read existing plan from file');
-  test.todo('should check if plan has an issue field');
-  test.todo('should fetch latest issue content when issue field exists');
-  test.todo('should update plan fields as needed');
+  test.todo('should update plan fields based on LLM response');
   test.todo('should write updated plan back to file');
   test.todo('should handle errors when plan file does not exist');
-  test.todo('should handle errors when fetching issue content fails');
+  test.todo('should handle errors when LLM call fails');
 });
