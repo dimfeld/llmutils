@@ -192,7 +192,19 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   if (plan.details) {
     log('\n' + chalk.bold('Details:'));
     log('─'.repeat(60));
-    log(plan.details);
+    
+    if (!options.full) {
+      const lines = plan.details.split('\n');
+      if (lines.length > 20) {
+        const truncatedLines = lines.slice(0, 20);
+        log(truncatedLines.join('\n'));
+        log(chalk.gray(`... and ${lines.length - 20} more lines (use --full to see all)`));
+      } else {
+        log(plan.details);
+      }
+    } else {
+      log(plan.details);
+    }
   }
 
   // Display tasks with completion status

@@ -316,6 +316,7 @@ program
   .option('--next', 'Show the next plan that is ready to be implemented')
   .option('--current', 'Show the current plan (in_progress or next ready plan)')
   .option('--copy-details', 'Copy the plan details to the clipboard')
+  .option('--full', 'Display full details without truncation')
   .action(async (planFile, options, command) => {
     const { handleShowCommand } = await import('./commands/show.js');
     await handleShowCommand(planFile, options, command).catch(handleCommandError);
