@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import chalk from 'chalk';
 import yaml from 'yaml';
 import { debugLog } from '../../../logging.ts';
+import { createTwoFilesPatch, diffLines } from 'diff';
 
 // Represents the top-level message object
 type Message =
@@ -140,6 +141,28 @@ export function formatJsonMessage(input: string) {
           outputLines.push(
             chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
             `File path: ${filePath}\nNumber of lines: ${lineCount}`
+          );
+        } else if (
+          content.name === 'Edit' &&
+          content.input &&
+          typeof content.input === 'object' &&
+          'file_path' in content.input &&
+          'old_string' in content.input &&
+          'new_string' in content.input
+        ) {
+          const { old_string, new_string, file_path } = content.input as {
+            old_string: string;
+            new_string: string;
+            file_path: string;
+          };
+
+          // Create a diff between the old and new strings
+          const diff = createTwoFilesPatch('old', 'new', old_string, new_string);
+
+          outputLines.push(
+            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+            `File path: ${file_path}\n`,
+            diff
           );
         } else if (
           content.name === 'TodoWrite' &&

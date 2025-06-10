@@ -1,0 +1,20 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Convert permissions MCP to stdio
+goal: ""
+id: 63
+status: pending
+priority: medium
+createdAt: 2025-06-10T08:02:56.765Z
+updatedAt: 2025-06-10T08:02:56.765Z
+tasks: []
+---
+I think if you take too long to respond to the permissions prompt the HTTP connection times out maybe,
+and so we should try using it in stdio mode instead.
+
+Prmopt communication needs to change in this case. We would communicate via IPC instead of HTTP.
+
+The MCP server should send a message with the tool details when it gets a request, and the parent
+process should then display the prompt, and send the response back via IPC.
+
+Update 2025-06-10: Looks like in Claude Code 1.0.18 this change may be unnecessary, but need to check
