@@ -2,6 +2,7 @@
 // Displays detailed information about a plan
 
 import chalk from 'chalk';
+import * as clipboard from '../../common/clipboard.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
@@ -256,4 +257,9 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   }
 
   log('');
+
+  if (options.copyDetails && plan.details) {
+    await clipboard.write(plan.details);
+    log(chalk.green(`Copied details to clipboard`));
+  }
 }
