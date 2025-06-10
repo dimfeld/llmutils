@@ -587,7 +587,7 @@ export async function markStepDone(
 
     for (let i = 0; i < pendingSteps.length; i++) {
       const step = pendingSteps[i];
-      output.push(`\n## Step ${i + 1}]\n\n${step.prompt}`);
+      output.push(`\n## Step ${i + 1}\n\n${step.prompt}`);
     }
   } else {
     const numSteps = options.steps || 1;
