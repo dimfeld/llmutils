@@ -13,7 +13,7 @@ issue:
 planGeneratedAt: 2025-06-10T07:23:41.608Z
 promptsGeneratedAt: 2025-06-10T07:34:01.189Z
 createdAt: 2025-06-06T16:55:35.032Z
-updatedAt: 2025-06-10T08:02:29.834Z
+updatedAt: 2025-06-10T08:15:47.157Z
 project:
   title: Implement the `rmplan update` command
   goal: The goal of this project is to implement a new `rmplan update` command.
@@ -225,16 +225,16 @@ tasks:
           In `handleUpdateCommand`, after getting the plan file path and update
           description, use `resolvePlanFile` and `readPlanFile` to load the plan
           data.
-        done: false
+        done: true
       - prompt: >
           Call the `convertYamlToMarkdown` function (from Task 3) to convert the
           loaded plan object into its Markdown representation.
-        done: false
+        done: true
       - prompt: >
           Use the `generateUpdatePrompt` function (from Task 4) with the plan's
           Markdown and the user's update description to create the final LLM
           prompt.
-        done: false
+        done: true
       - prompt: >
           Integrate the `rmfilter` logic from the `generate` command. This
           involves creating a temporary file for the prompt, collecting
@@ -243,7 +243,7 @@ tasks:
 
           This will place the final, context-aware prompt onto the user's
           clipboard.
-        done: false
+        done: true
   - title: Adapt the YAML extraction process for updates
     description: The existing `extractMarkdownToYaml` function is designed for
       creating new plans or filling in stubs. This task will involve

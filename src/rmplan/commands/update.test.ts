@@ -3,7 +3,6 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { handleUpdateCommand } from './update.js';
 import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
@@ -15,15 +14,28 @@ const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
 const warnSpy = mock(() => {});
 
+// Mock process spawn
+const mockLogSpawn = mock(() => ({
+  exited: Promise.resolve(0),
+}));
+
+// Mock prompt generation functions
+const mockConvertYamlToMarkdown = mock(() => '# Test Plan\n## Goal\nTest goal');
+const mockGenerateUpdatePrompt = mock(() => 'Update prompt content');
+
 describe('handleUpdateCommand', () => {
   let tempDir: string;
   let tasksDir: string;
+  let handleUpdateCommand: any;
 
   beforeEach(async () => {
     // Clear mocks
     logSpy.mockClear();
     errorSpy.mockClear();
     warnSpy.mockClear();
+    mockLogSpawn.mockClear();
+    mockConvertYamlToMarkdown.mockClear();
+    mockGenerateUpdatePrompt.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -33,14 +45,13 @@ describe('handleUpdateCommand', () => {
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
-    // Mock modules
+    // Mock all modules before importing
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
       warn: warnSpy,
     }));
 
-    // Mock config loader
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
@@ -49,10 +60,25 @@ describe('handleUpdateCommand', () => {
       }),
     }));
 
-    // Mock utils
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
     }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: mockLogSpawn,
+    }));
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      convertYamlToMarkdown: mockConvertYamlToMarkdown,
+    }));
+
+    await moduleMocker.mock('../prompt.js', () => ({
+      generateUpdatePrompt: mockGenerateUpdatePrompt,
+    }));
+
+    // Import the module after all mocks are set up
+    const updateModule = await import('./update.js');
+    handleUpdateCommand = updateModule.handleUpdateCommand;
   });
 
   afterEach(async () => {
@@ -103,6 +129,13 @@ describe('handleUpdateCommand', () => {
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining('Update description: Add authentication feature to the plan')
     );
+
+    // Verify the conversion and prompt generation were called
+    expect(mockConvertYamlToMarkdown).toHaveBeenCalled();
+    expect(mockGenerateUpdatePrompt).toHaveBeenCalledWith(
+      '# Test Plan\n## Goal\nTest goal',
+      testDescription
+    );
   });
 
   test('should open editor when description not provided', async () => {
@@ -113,28 +146,12 @@ describe('handleUpdateCommand', () => {
       goal: 'Test goal',
       details: 'Test details',
       status: 'in_progress',
-      tasks: [
-        {
-          title: 'Test Task',
-          description: 'Test task description',
-          files: [],
-          steps: [{ prompt: 'Test step prompt', done: false }],
-        },
-      ],
+      tasks: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
-
-    // Mock logSpawn to simulate editor process
-    const mockLogSpawn = mock(() => ({
-      exited: Promise.resolve(0),
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      logSpawn: mockLogSpawn,
-    }));
 
     // Mock Bun.write and Bun.file for temp file operations
     const editorContent = 'Update plan to include database migrations';
@@ -146,7 +163,6 @@ describe('handleUpdateCommand', () => {
     Bun.write = mock(async (path: string, content: string) => {
       if (path.includes('rmplan-update-desc-')) {
         tempFilePath = path;
-        // Simulate file creation
         return { size: 0 };
       }
       return originalWrite(path, content);
@@ -211,15 +227,6 @@ describe('handleUpdateCommand', () => {
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    // Mock logSpawn to simulate editor process
-    const mockLogSpawn = mock(() => ({
-      exited: Promise.resolve(0),
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      logSpawn: mockLogSpawn,
-    }));
-
     // Mock Bun.write and Bun.file for temp file operations
     let tempFilePath: string = '';
     const originalWrite = Bun.write;
@@ -266,10 +273,113 @@ describe('handleUpdateCommand', () => {
     }
   });
 
-  // TODO: Add more tests as the update command functionality is implemented
-  test.todo('should read existing plan from file');
-  test.todo('should update plan fields based on LLM response');
-  test.todo('should write updated plan back to file');
-  test.todo('should handle errors when plan file does not exist');
-  test.todo('should handle errors when LLM call fails');
+  test('should generate update prompt with plan data and rmfilter options', async () => {
+    // Create a test plan with rmfilter and docs
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          files: [],
+          steps: [{ prompt: 'Test step prompt', done: false }],
+        },
+      ],
+      rmfilter: ['src/**/*.ts'],
+      docs: ['README.md'],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+
+    const testDescription = 'Add authentication feature';
+    const options = {
+      description: testDescription,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call the update command
+    await handleUpdateCommand('1', options, command);
+
+    // Verify that rmfilter was called with correct arguments
+    expect(mockLogSpawn).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        'rmfilter',
+        'src/**/*.ts',
+        '--docs',
+        'README.md',
+        '--bare',
+        '--copy',
+        '--instructions',
+        expect.stringContaining('@'),
+      ]),
+      expect.objectContaining({
+        cwd: tempDir,
+        stdio: ['inherit', 'inherit', 'inherit'],
+      })
+    );
+
+    // Verify that log was called with success message
+    expect(logSpy).toHaveBeenCalledWith('Update prompt with context has been copied to clipboard.');
+  });
+
+  test('should handle errors when plan file does not exist', async () => {
+    const options = {
+      description: 'Update something',
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call with non-existent plan
+    await expect(handleUpdateCommand('non-existent-plan', options, command)).rejects.toThrow();
+  });
+
+  test('should handle rmfilter exit with non-zero code', async () => {
+    // Override the mock for this test
+    mockLogSpawn.mockImplementationOnce(() => ({
+      exited: Promise.resolve(1), // Non-zero exit code
+    }));
+
+    // Create a test plan
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Test Plan',
+      goal: 'Test goal',
+      status: 'pending',
+      tasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+
+    const options = {
+      description: 'Update',
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Should throw error when rmfilter fails
+    await expect(handleUpdateCommand('1', options, command)).rejects.toThrow(
+      'rmfilter exited with code 1'
+    );
+  });
 });
