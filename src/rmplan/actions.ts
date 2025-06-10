@@ -601,7 +601,11 @@ export async function markStepDone(
         `Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`
       )
     );
-    if (nowDoneSteps.length > 1) {
+
+    const allSteps = pending.stepIndex === 0 && pending.stepIndex + numSteps === task.steps.length;
+    if (allSteps) {
+      output.push(task.title);
+    } else if (nowDoneSteps.length > 1) {
       output.push(
         `${task.title} steps ${pending.stepIndex + 1}-${pending.stepIndex + nowDoneSteps.length}`
       );
