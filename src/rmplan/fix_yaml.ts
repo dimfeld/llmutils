@@ -21,6 +21,7 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
   let currentYaml: string = inputYaml;
   let attempt: number = 0;
   let lastErrorLine: number | null = null;
+  let lastError: Error | undefined;
 
   while (attempt < maxAttempts) {
     try {
@@ -28,8 +29,9 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
       let parsedYaml = YAML.parse(currentYaml);
       return parsedYaml;
     } catch (error: unknown) {
+      lastError = error as Error;
       if (attempt === maxAttempts - 1) {
-        throw error;
+        break;
       }
       attempt++;
 
@@ -137,7 +139,6 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
         break;
       }
 
-      console.log('fixed yaml\n', currentYaml);
       if (!fixApplied) {
         console.error('No fix applied for error:', yamlError.message);
         break;
@@ -158,7 +159,7 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
     }
   }
 
-  throw new Error('Failed to fix YAML after maximum attempts.');
+  throw new Error(`Failed to fix YAML after maximum attempts: ${lastError}`);
 }
 
 // Function to fix YAML using LLM

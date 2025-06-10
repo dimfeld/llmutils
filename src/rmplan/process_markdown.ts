@@ -19,6 +19,7 @@ import {
 } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
 import { input } from '@inquirer/prompts';
+import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
@@ -76,6 +77,13 @@ export async function convertMarkdownToYaml(
     model: await createModel(modelSpec, config),
     prompt,
     temperature: 0,
+    providerOptions: {
+      google: {
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
+      } satisfies GoogleGenerativeAIProviderOptions,
+    },
   });
 
   if (!quiet) {
@@ -393,16 +401,16 @@ export async function saveMultiPhaseYaml(
     phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;
 
     // Add overall project information to each phase
-    if (actuallyMultiphase) {
-      if (projectInfo.goal || projectInfo.title || projectInfo.details) {
-        phase.project = projectInfo;
-      }
-    } else if (options.stubPlan?.data) {
+    if (options.stubPlan?.data) {
       phase.project = {
         title: options.stubPlan?.data.title,
         goal: options.stubPlan?.data.goal,
         details: options.stubPlan?.data.details,
       };
+    } else if (actuallyMultiphase) {
+      if (projectInfo.goal || projectInfo.title || projectInfo.details) {
+        phase.project = projectInfo;
+      }
     }
 
     // Add rmfilter and issue from options

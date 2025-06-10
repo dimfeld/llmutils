@@ -40,9 +40,9 @@ export async function runStreamingPrompt(options: {
     providerOptions: {
       google: {
         thinkingConfig: {
-          include_thoughts: true,
+          includeThoughts: true,
         },
-      } as GoogleGenerativeAIProviderOptions,
+      } satisfies GoogleGenerativeAIProviderOptions,
     },
   });
 

@@ -550,6 +550,9 @@ export async function writePlanFile(filePath: string, plan: PlanSchema): Promise
   // Add the details as the body if present
   if (details) {
     fullContent += '\n' + details;
+    if (!details.endsWith('\n')) {
+      fullContent += '\n';
+    }
   }
 
   await Bun.write(absolutePath, fullContent);

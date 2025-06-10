@@ -227,7 +227,9 @@ line4: @third error
   with: invalid nesting
     and: no closing
 `;
-      await expect(fixYaml(input, 3)).rejects.toThrow('Failed to fix YAML after maximum attempts.');
+      await expect(fixYaml(input, 3)).rejects.toThrow(
+        /Failed to fix YAML after maximum attempts: /
+      );
     });
 
     test('respects custom maxAttempts', async () => {
@@ -311,7 +313,7 @@ items:
     });
   });
 
-  test('fixes single line strings that span lines', async () => {
+  test('fixes single line quoted strings that span lines', async () => {
     const input = `phases:
   - id: "project-1"
     tasks:
@@ -348,6 +350,33 @@ items:
           status: 'pending',
         },
       ],
+    });
+  });
+
+  test.skip('fixed nonquoted strings that span lines with colons', async () => {
+    const input = `title: Implement Multi-Organization Permissions Model
+goal: To create a flexible, performant, model
+details: This project will implement a new attribute-based access control (ABAC) system to complement the existing role-based access control (RBAC). The new system is designed to control access to data objects (like devices, locations, inventory) for different actors (users, teams, entire organizations).
+  The core components are:
+  1.  **Actor Groups**: Flexible collections of entities (users, roles, teams, organizations, other groups) that can be granted permissions.
+  2.  **Object Groups**: Collections of data objects defined by a set of rules (e.g., all devices from a specific manufacturer).
+  3.  **Materialized Memberships**: To ensure high performance, the members of each Object Group will be pre-calculated and stored in a dedicated table. This avoids complex, slow queries at request time.
+  4.  **Permissions**: Links that grant an Actor Group access to an Object Group.
+  The implementation will be phased, starting with the core backend infrastructure, followed by integration into existing queries, and finally building a comprehensive administrative UI for management.
+priority: high`;
+
+    const result = await fixYaml(input);
+    expect(result).toEqual({
+      title: 'Implement Multi-Organization Permissions Model',
+      goal: `To create a flexible, performant, model`,
+      details: `This project will implement a new attribute-based access control (ABAC) system to complement the existing role-based access control (RBAC). The new system is designed to control access to data objects (like devices, locations, inventory) for different actors (users, teams, entire organizations).
+  The core components are:
+  1.  **Actor Groups**: Flexible collections of entities (users, roles, teams, organizations, other groups) that can be granted permissions.
+  2.  **Object Groups**: Collections of data objects defined by a set of rules (e.g., all devices from a specific manufacturer).
+  3.  **Materialized Memberships**: To ensure high performance, the members of each Object Group will be pre-calculated and stored in a dedicated table. This avoids complex, slow queries at request time.
+  4.  **Permissions**: Links that grant an Actor Group access to an Object Group.
+  The implementation will be phased, starting with the core backend infrastructure, followed by integration into existing queries, and finally building a comprehensive administrative UI for management.`,
+      priority: 'high',
     });
   });
 
