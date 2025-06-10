@@ -23,6 +23,10 @@ const mockLogSpawn = mock(() => ({
 const mockConvertYamlToMarkdown = mock(() => '# Test Plan\n## Goal\nTest goal');
 const mockGenerateUpdatePrompt = mock(() => 'Update prompt content');
 
+// Mock rmfilter and clipboard
+const mockRunRmfilterProgrammatically = mock(() => Promise.resolve('rmfilter output'));
+const mockClipboardWrite = mock(() => Promise.resolve());
+
 describe('handleUpdateCommand', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -36,6 +40,8 @@ describe('handleUpdateCommand', () => {
     mockLogSpawn.mockClear();
     mockConvertYamlToMarkdown.mockClear();
     mockGenerateUpdatePrompt.mockClear();
+    mockRunRmfilterProgrammatically.mockClear();
+    mockClipboardWrite.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -74,6 +80,14 @@ describe('handleUpdateCommand', () => {
 
     await moduleMocker.mock('../prompt.js', () => ({
       generateUpdatePrompt: mockGenerateUpdatePrompt,
+    }));
+
+    await moduleMocker.mock('../../rmfilter/rmfilter.js', () => ({
+      runRmfilterProgrammatically: mockRunRmfilterProgrammatically,
+    }));
+
+    await moduleMocker.mock('../../common/clipboard.js', () => ({
+      write: mockClipboardWrite,
     }));
 
     // Import the module after all mocks are set up
@@ -367,22 +381,22 @@ describe('handleUpdateCommand', () => {
     }
 
     // Verify that rmfilter was called with correct arguments
-    expect(mockLogSpawn).toHaveBeenCalledWith(
+    expect(mockRunRmfilterProgrammatically).toHaveBeenCalledWith(
       expect.arrayContaining([
-        'rmfilter',
-        'src/**/*.ts',
+        '--bare',
+        '--instructions',
+        'Update prompt content',
+        '--edit-format',
+        'diff',
         '--docs',
         'README.md',
-        '--bare',
-        '--copy',
-        '--instructions',
-        expect.stringContaining('@'),
+        'src/**/*.ts',
       ]),
-      expect.objectContaining({
-        cwd: tempDir,
-        stdio: ['inherit', 'inherit', 'inherit'],
-      })
+      tempDir
     );
+
+    // Verify clipboard was written
+    expect(mockClipboardWrite).toHaveBeenCalledWith('rmfilter output');
   });
 
   test('should handle errors when plan file does not exist', async () => {
@@ -401,10 +415,10 @@ describe('handleUpdateCommand', () => {
   });
 
   test('should handle rmfilter exit with non-zero code', async () => {
-    // Override the mock for this test
-    mockLogSpawn.mockImplementationOnce(() => ({
-      exited: Promise.resolve(1), // Non-zero exit code
-    }));
+    // Override the mock for this test to throw error
+    mockRunRmfilterProgrammatically.mockImplementationOnce(() => {
+      throw new Error('rmfilter failed');
+    });
 
     // Create a test plan
     const plan: PlanSchema = {
@@ -430,9 +444,7 @@ describe('handleUpdateCommand', () => {
     };
 
     // Should throw error when rmfilter fails
-    await expect(handleUpdateCommand('1', options, command)).rejects.toThrow(
-      'rmfilter exited with code 1'
-    );
+    await expect(handleUpdateCommand('1', options, command)).rejects.toThrow('rmfilter failed');
   });
 
   test('should complete end-to-end update process with LLM response', async () => {
@@ -1085,5 +1097,47 @@ Create API endpoints for the application
 
     // Verify success message
     expect(logSpy).toHaveBeenCalledWith(`Successfully updated plan: ${planPath}`);
+  });
+
+  test('should throw error when description is mistakenly placed after double dash', async () => {
+    // Create a test plan
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'pending',
+      tasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+
+    const options = {
+      description: 'Add new feature',
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Simulate user putting description after -- by modifying process.argv
+    const originalArgv = process.argv;
+    process.argv = ['node', 'rmplan', 'update', '1', '--', 'Add new feature', 'src/**/*.ts'];
+
+    try {
+      await handleUpdateCommand('1', options, command);
+    } catch (error) {
+      expect(error.message).toContain(
+        'The update description should be provided as a positional argument'
+      );
+      expect(error.message).toContain('rmplan update <plan> "description" -- <rmfilter args>');
+    } finally {
+      // Restore original argv
+      process.argv = originalArgv;
+    }
   });
 });

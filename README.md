@@ -421,13 +421,13 @@ rmplan split tasks/large-feature.yml --output-dir ./feature-phases
 rmplan split tasks/complex-refactor.yml --output-dir ./refactor-phases -- docs/architecture.md
 
 # Update an existing plan with natural language changes
-rmplan update tasks/feature.yml --description "Add error handling to the API calls"
+rmplan update tasks/feature.yml "Add error handling to the API calls"
 
 # Update using plan ID and open editor for description
 rmplan update my-feature-123 --editor
 
 # Update with additional context from rmfilter
-rmplan update tasks/feature.yml --description "Remove the database migration task" -- src/**/*.ts
+rmplan update tasks/feature.yml "Remove the database migration task" -- src/**/*.ts
 
 # List all plan files in the tasks directory (shows pending and in_progress by default)
 rmplan list
@@ -1080,7 +1080,7 @@ rmplan add "Add logging system" --depends-on auth --priority medium --edit
 rmplan split tasks/big-refactor.yml --output-dir ./refactor-phases
 
 # Update an existing plan with new requirements
-rmplan update tasks/feature.yml --description "Add a new task for database setup and remove the placeholder task"
+rmplan update tasks/feature.yml "Add a new task for database setup and remove the placeholder task"
 
 # Update a plan using an editor for the description
 rmplan update 123.yml --editor
