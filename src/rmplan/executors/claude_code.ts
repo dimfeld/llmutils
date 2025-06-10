@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -10,6 +11,7 @@ import type { RmplanConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions } from './types.ts';
 import { formatJsonMessage } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
+import chalk from 'chalk';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -44,6 +46,10 @@ export class ClaudeCodeExecutor implements Executor {
   async execute(contextContent: string) {
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive, enablePermissionsMcp } =
       this.options;
+
+    // TODO Interactive mode isn't integrated with the logging
+    interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
+
     let isPermissionsMcpEnabled = enablePermissionsMcp === true;
     if (process.env.CLAUDE_CODE_MCP) {
       isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
@@ -58,9 +64,6 @@ export class ClaudeCodeExecutor implements Executor {
     let dynamicMcpConfigFile: string | undefined;
 
     allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
-    // TODO Interactive mode needs some work. It's not taking the prompt right away
-    // Also it isn't integrated with the logging
-    interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
 
     const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
 
@@ -160,11 +163,11 @@ export class ClaudeCodeExecutor implements Executor {
       const args = ['claude'];
 
       if (!interactive) {
-        args.push('--verbose', '--output-format', 'stream-json');
-      }
+        args.push('--verbose', '--output-format', 'stream-json', '--print');
 
-      if (debug && !interactive) {
-        args.push('--debug');
+        if (debug) {
+          args.push('--debug');
+        }
       }
 
       if (allowedTools.length) {
@@ -195,13 +198,10 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--model', this.sharedOptions.model);
       }
 
-      if (!interactive) {
-        args.push('-p');
-      }
-
-      args.push(contextContent);
-
       if (interactive) {
+        await clipboard.write(contextContent);
+        log(chalk.green(`Copied prompt to clipboard to paste into Claude`));
+
         // In interactive mode, use Bun.spawn directly with inherited stdio
         debugLog(args);
         const proc = Bun.spawn(args, {
@@ -215,6 +215,7 @@ export class ClaudeCodeExecutor implements Executor {
           throw new Error(`Claude exited with non-zero exit code: ${exitCode}`);
         }
       } else {
+        args.push(contextContent);
         let splitter = createLineSplitter();
 
         log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
