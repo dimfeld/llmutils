@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { generatePhaseStepsPrompt, type PhaseGenerationContext } from './prompt';
+import {
+  generatePhaseStepsPrompt,
+  generateUpdatePrompt,
+  type PhaseGenerationContext,
+} from './prompt';
 
 describe('generatePhaseStepsPrompt', () => {
   it('should generate prompt with no previous phases', () => {
@@ -170,5 +174,70 @@ describe('generatePhaseStepsPrompt', () => {
     expect(prompt).toContain('Ensure all fields are properly populated');
     expect(prompt).toContain('Use proper YAML syntax with correct indentation');
     expect(prompt).toContain('Multi-line prompts should use the pipe (|) character');
+  });
+});
+
+describe('generateUpdatePrompt', () => {
+  it('should correctly embed planAsMarkdown and updateDescription in the prompt', () => {
+    const planAsMarkdown = `# My Test Plan
+
+## Goal
+To test the update prompt generation
+
+## Priority
+medium
+
+### Details
+This is a test plan with some details
+
+---
+
+## Task: First Task
+**Description:** This is the first task
+**Files:**
+- src/test1.ts
+- src/test2.ts
+
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Do something first
+    \`\`\`
+2.  **Prompt:**
+    \`\`\`
+    Do something second
+    \`\`\``;
+
+    const updateDescription = 'Add a new task for error handling and update the priority to high';
+
+    const prompt = generateUpdatePrompt(planAsMarkdown, updateDescription);
+
+    // Check that the prompt contains the key sections
+    expect(prompt).toContain('# Plan Update Task');
+    expect(prompt).toContain(
+      'You are acting as a project manager tasked with updating an existing project plan'
+    );
+
+    // Check that the existing plan is embedded
+    expect(prompt).toContain('## Current Plan');
+    expect(prompt).toContain(planAsMarkdown);
+
+    // Check that the update description is embedded
+    expect(prompt).toContain('## Requested Update');
+    expect(prompt).toContain(updateDescription);
+
+    // Check instructions section
+    expect(prompt).toContain('## Instructions');
+    expect(prompt).toContain('Return the ENTIRE updated plan');
+    expect(prompt).toContain('add, remove, or modify any part of the plan');
+    expect(prompt).toContain('Preserve any unmodified parts');
+
+    // Check that it references the required output format
+    expect(prompt).toContain('## Required Output Format');
+    expect(prompt).toContain('Your response must follow this exact Markdown structure:');
+
+    // Check important notes
+    expect(prompt).toContain('## Important Notes');
+    expect(prompt).toContain('Output ONLY the updated plan in Markdown format');
   });
 });

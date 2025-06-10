@@ -13,7 +13,7 @@ issue:
 planGeneratedAt: 2025-06-10T07:23:41.608Z
 promptsGeneratedAt: 2025-06-10T07:34:01.189Z
 createdAt: 2025-06-06T16:55:35.032Z
-updatedAt: 2025-06-10T07:59:36.225Z
+updatedAt: 2025-06-10T08:02:29.834Z
 project:
   title: Implement the `rmplan update` command
   goal: The goal of this project is to implement a new `rmplan update` command.
@@ -184,7 +184,7 @@ tasks:
           In `src/rmplan/prompt.ts`, create and export a new function
           `generateUpdatePrompt(planAsMarkdown: string, updateDescription:
           string): string`.
-        done: false
+        done: true
       - prompt: >
           Implement the `generateUpdatePrompt` function. The prompt should
           instruct the LLM to act as a project manager updating a plan.
@@ -194,7 +194,7 @@ tasks:
 
           The primary instruction is to return the *entire updated plan* in the
           exact same Markdown format.
-        done: false
+        done: true
       - prompt: >
           The prompt must explicitly mention that the LLM can add, remove, or
           modify any part of the plan (title, goal, tasks, steps, etc.) based on
@@ -202,7 +202,7 @@ tasks:
 
           Reference the `planMarkdownExampleFormat` as the required output
           format.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/prompt.test.ts`, add a new test case for
           `generateUpdatePrompt`.
@@ -210,7 +210,7 @@ tasks:
           This test should verify that the function correctly embeds the
           provided `planAsMarkdown` and `updateDescription` into the final
           prompt string.
-        done: false
+        done: true
   - title: Implement the core update logic
     description: This task will wire all the components together in the command
       handler. It will read the specified plan, convert it to Markdown,
@@ -367,6 +367,8 @@ changedFiles:
   - src/rmplan/commands/update.ts
   - src/rmplan/process_markdown.test.ts
   - src/rmplan/process_markdown.ts
+  - src/rmplan/prompt.test.ts
+  - src/rmplan/prompt.ts
   - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan/

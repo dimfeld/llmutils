@@ -438,6 +438,54 @@ IMPORTANT:
 `;
 }
 
+export function generateUpdatePrompt(planAsMarkdown: string, updateDescription: string): string {
+  return `# Plan Update Task
+
+You are acting as a project manager tasked with updating an existing project plan based on requested changes.
+
+## Current Plan
+
+You have been provided with an existing plan in Markdown format:
+
+${planAsMarkdown}
+
+## Requested Update
+
+The following changes have been requested:
+
+${updateDescription}
+
+## Instructions
+
+Please analyze the existing plan and the requested changes, then:
+
+1. **Return the ENTIRE updated plan** in the exact same Markdown format as provided
+2. You may **add, remove, or modify any part of the plan** including:
+   - Title and goal
+   - Priority level
+   - Details section
+   - Tasks (add new ones, remove existing ones, or modify them)
+   - Steps within tasks
+   - File references
+   - Any other content
+3. **Preserve any unmodified parts** of the plan exactly as they were
+4. Ensure the updated plan maintains consistency and logical flow
+
+## Required Output Format
+
+Your response must follow this exact Markdown structure:
+
+${planMarkdownExampleFormat}
+
+## Important Notes
+
+- Output ONLY the updated plan in Markdown format
+- Do not include any explanations, commentary, or text outside the plan structure
+- Maintain the exact formatting with proper headers, bullet points, and code blocks
+- If the existing plan uses phase-based structure, maintain that structure in your update
+- Ensure all changes align with the requested update while keeping the plan coherent`;
+}
+
 export function generateSplitPlanPrompt(plan: PlanSchema): string {
   // Construct the prompt explaining the goal
   const prompt = `# Plan Reorganization Task
