@@ -327,6 +327,8 @@ The `split` command helps manage complexity by using an LLM to intelligently bre
 
 The `research` command generates a research prompt based on a plan's goal and details, helping you gather additional context or information to enhance the plan. The `--rmfilter` option incorporates file context into the research prompt using `rmfilter`, allowing you to include relevant code files and documentation. After running the research prompt through an LLM, the command provides an interactive paste-back mechanism where you can paste the research findings, and they will be automatically appended to the plan file's `research` field for future reference.
 
+The `update` command allows you to modify an existing plan by providing a natural language description of the desired changes. This enables iterative refinement of plans as requirements evolve or new information becomes available. The command uses an LLM to intelligently update the plan's tasks and structure while preserving important metadata.
+
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
 
 **Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
@@ -417,6 +419,15 @@ rmplan split tasks/large-feature.yml --output-dir ./feature-phases
 
 # Split and include specific documentation for context
 rmplan split tasks/complex-refactor.yml --output-dir ./refactor-phases -- docs/architecture.md
+
+# Update an existing plan with natural language changes
+rmplan update tasks/feature.yml --description "Add error handling to the API calls"
+
+# Update using plan ID and open editor for description
+rmplan update my-feature-123 --editor
+
+# Update with additional context from rmfilter
+rmplan update tasks/feature.yml --description "Remove the database migration task" -- src/**/*.ts
 
 # List all plan files in the tasks directory (shows pending and in_progress by default)
 rmplan list
@@ -1067,6 +1078,12 @@ rmplan add "Add logging system" --depends-on auth --priority medium --edit
 
 # Split a complex plan into manageable phases
 rmplan split tasks/big-refactor.yml --output-dir ./refactor-phases
+
+# Update an existing plan with new requirements
+rmplan update tasks/feature.yml --description "Add a new task for database setup and remove the placeholder task"
+
+# Update a plan using an editor for the description
+rmplan update 123.yml --editor
 
 # Multi-phase planning workflow
 # 1. Generate a phase-based plan
