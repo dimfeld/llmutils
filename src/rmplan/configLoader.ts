@@ -242,13 +242,11 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
         // Merge the configurations with local overriding main
         effectiveConfig = mergeConfigs(config, localConfig);
 
-        if (!quiet) {
-          log(
-            'Loaded configuration files',
-            configPath ? `Main: ${configPath}` : 'Default config',
-            `\nLocal override: ${localConfigPath}`
-          );
-        }
+        debugLog(
+          'Loaded configuration files',
+          configPath ? `Main: ${configPath}` : 'Default config',
+          `\nLocal override: ${localConfigPath}`
+        );
       } catch (localErr: any) {
         // If there's a validation error in the local config, log it but continue with the main config
         warn(`Error loading local override configuration: ${localErr.message}`);
@@ -261,9 +259,7 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
         effectiveConfig = config;
       }
     } else {
-      if (!quiet) {
-        log('Loaded configuration file', configPath);
-      }
+      debugLog('Loaded configuration file', configPath);
       effectiveConfig = config;
     }
 
