@@ -13,7 +13,7 @@ issue:
 planGeneratedAt: 2025-06-10T07:23:41.608Z
 promptsGeneratedAt: 2025-06-10T07:34:01.189Z
 createdAt: 2025-06-06T16:55:35.032Z
-updatedAt: 2025-06-10T08:15:47.157Z
+updatedAt: 2025-06-10T08:24:43.495Z
 project:
   title: Implement the `rmplan update` command
   goal: The goal of this project is to implement a new `rmplan update` command.
@@ -261,20 +261,20 @@ tasks:
           the `waitForEnter` utility to pause and wait for the user to paste the
           LLM's Markdown output from their clipboard. This mirrors the flow in
           `handleGenerateCommand`.
-        done: false
+        done: true
       - prompt: >
           Modify the `ExtractMarkdownToYamlOptions` interface in
           `src/rmplan/process_markdown.ts` to include an optional `updatePlan`
           field. This field will hold the original plan's data and file path,
           e.g., `updatePlan?: { data: PlanSchema; path: string }`.
-        done: false
+        done: true
       - prompt: >
           In `extractMarkdownToYaml`, add logic to handle the new `updatePlan`
           option. If it's present, use the `id` and `createdAt` from
           `updatePlan.data` for the new plan. The `updatedAt` timestamp should
           be set to the current time. This ensures that core metadata is
           preserved during an update.
-        done: false
+        done: true
       - prompt: >
           In `handleUpdateCommand`, call `extractMarkdownToYaml` with the pasted
           Markdown.
@@ -284,7 +284,7 @@ tasks:
 
           Set the `output` option to the original plan's file path to ensure the
           file is overwritten.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/update.test.ts`, add a test to verify the
           update process.
@@ -294,7 +294,7 @@ tasks:
           It should then call the handler and assert that the original plan file
           is overwritten, `id` and `createdAt` are preserved, `updatedAt` is
           changed, and the tasks reflect the LLM's output.
-        done: false
+        done: true
   - title: Add comprehensive tests for the update command
     description: To ensure reliability, we will create a suite of tests for the
       `update` command. These tests will cover various scenarios, such as

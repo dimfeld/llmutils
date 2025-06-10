@@ -280,7 +280,8 @@ export async function extractMarkdownToYaml(
       (await generateNumericPlanId(await resolveTasksDir(config)));
     const now = new Date().toISOString();
     // Use createdAt from update/stub plan if available, otherwise use current timestamp
-    validatedPlan.createdAt = options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
+    validatedPlan.createdAt =
+      options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
     validatedPlan.updatedAt = now;
     validatedPlan.planGeneratedAt = now;
 
@@ -437,7 +438,8 @@ export async function saveMultiPhaseYaml(
     const now = new Date().toISOString();
     phase.planGeneratedAt = now;
     // Use createdAt from update/stub plan if available for all phases
-    phase.createdAt = options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
+    phase.createdAt =
+      options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
     phase.updatedAt = now;
 
     phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;

@@ -231,10 +231,7 @@ describe('handleUpdateCommand', () => {
 
     // Verify editor was opened
     expect(mockLogSpawn).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.any(String),
-        expect.stringContaining('rmplan-update-desc-'),
-      ]),
+      expect.arrayContaining([expect.any(String), expect.stringContaining('rmplan-update-desc-')]),
       expect.objectContaining({ stdio: ['inherit', 'inherit', 'inherit'] })
     );
 

@@ -134,15 +134,15 @@ export async function handleUpdateCommand(planFile: string, options: any, comman
     log('Next steps:');
     log('1. Paste the prompt into your LLM chat interface');
     log('2. Copy the updated plan from the LLM response');
-    log('3. Press Enter when you\'ve copied the response');
-    
+    log("3. Press Enter when you've copied the response");
+
     // Wait for user to paste the LLM's response
     const llmResponse = await waitForEnter(true);
-    
+
     if (!llmResponse || !llmResponse.trim()) {
       throw new Error('No response from LLM was provided');
     }
-    
+
     // Extract the YAML from the markdown response and update the plan
     await extractMarkdownToYaml(llmResponse, config, globalOpts.quiet || false, {
       output: resolvedPlanFile,
@@ -151,7 +151,7 @@ export async function handleUpdateCommand(planFile: string, options: any, comman
       planRmfilterArgs: planData.rmfilter,
       commit: options.commit,
     });
-    
+
     log(`Successfully updated plan: ${resolvedPlanFile}`);
   } finally {
     if (wrotePrompt) {
