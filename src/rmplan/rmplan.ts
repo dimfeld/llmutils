@@ -367,6 +367,8 @@ program
   })
   .option('-d, --depends-on <planIds...>', 'Add plan IDs as dependencies')
   .option('--no-d, --no-depends-on <planIds...>', 'Remove plan IDs from dependencies')
+  .option('--parent <planId>', 'Set the parent plan ID')
+  .option('--no-parent', 'Remove the parent plan association')
   .option(
     '--rmfilter <files...>',
     'Set rmfilter files (comma-separated list or multiple arguments)'
@@ -379,6 +381,7 @@ program
     const { handleSetCommand } = await import('./commands/set.js');
     options.dependsOn = intArg(options.dependsOn);
     options.noDependsOn = intArg(options.noDependsOn);
+    options.parent = intArg(options.parent);
     await handleSetCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
   });
 

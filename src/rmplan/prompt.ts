@@ -158,6 +158,12 @@ export interface PhaseGenerationContext {
     goal: string;
     description: string;
   }>; // Info from dependent, completed phases
+  parentPlanInfo?: {
+    id: number;
+    title: string;
+    goal: string;
+    details: string;
+  }; // Info from parent plan
   changedFilesFromDependencies: string[]; // Concatenated list of changedFiles from completed dependencies
   rmfilterArgsFromPlan: string[]; // rmfilter args from the original plan/request
   // Potentially add baseBranch if needed
@@ -323,11 +329,22 @@ ${context.changedFilesFromDependencies.join('\n')}
     projectContextSection = contextParts.join('\n') + '\n';
   }
 
+  // Build parent plan section
+  const parentPlanSection = context.parentPlanInfo
+    ? `## Parent Plan Context
+
+**Parent Plan:** ${context.parentPlanInfo.title} (ID: ${context.parentPlanInfo.id})
+**Parent Goal:** ${context.parentPlanInfo.goal}
+**Parent Details:** ${context.parentPlanInfo.details}
+
+`
+    : '';
+
   return `# Phase Implementation Generation
 
 You are generating detailed implementation steps${hasProjectContext ? ' for a specific phase of a larger project' : ' for a project'}.
 
-${projectContextSection}${previousPhasesSection}
+${projectContextSection}${parentPlanSection}${previousPhasesSection}
 
 ## Current Phase Details
 

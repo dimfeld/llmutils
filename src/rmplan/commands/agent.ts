@@ -16,7 +16,13 @@ import {
   prepareNextStep,
   preparePhase,
 } from '../actions.js';
-import { readPlanFile, resolvePlanFile, setPlanStatus, writePlanFile } from '../plans.js';
+import {
+  readAllPlans,
+  readPlanFile,
+  resolvePlanFile,
+  setPlanStatus,
+  writePlanFile,
+} from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import {
   buildExecutorAndLog,
@@ -456,6 +462,28 @@ async function executeStubPlan({
   }
   if (planData.details) {
     directPrompt += `## Details\n\n${planData.details}\n\n`;
+  }
+
+  // Add parent plan information if available
+  if (planData.parent) {
+    const tasksDir = path.dirname(planFilePath);
+    try {
+      const { plans: allPlans } = await readAllPlans(tasksDir);
+      const parentPlan = allPlans.get(planData.parent);
+      if (parentPlan) {
+        directPrompt += `## Parent Plan Context\n\n`;
+        directPrompt += `**Parent Plan:** ${parentPlan.title || `Plan ${planData.parent}`} (ID: ${planData.parent})\n`;
+        if (parentPlan.goal) {
+          directPrompt += `**Parent Goal:** ${parentPlan.goal}\n`;
+        }
+        if (parentPlan.details) {
+          directPrompt += `**Parent Details:** ${parentPlan.details}\n`;
+        }
+        directPrompt += `\n`;
+      }
+    } catch (err) {
+      warn(`Warning: Could not load parent plan ${planData.parent}: ${err}`);
+    }
   }
 
   if (!directPrompt.trim()) {

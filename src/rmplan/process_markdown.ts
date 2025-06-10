@@ -225,16 +225,27 @@ export async function extractMarkdownToYaml(
 
     // Inherit fields from stub plan if provided
     if (options.stubPlan?.data) {
+      const stubPlanDetails = options.stubPlan.data.details?.trim();
+      if (stubPlanDetails) {
+        validatedPlan.details = [
+          '# Original Plan Details',
+          stubPlanDetails,
+          '# Processed Plan Details',
+          validatedPlan.details,
+        ].join('\n\n');
+      }
+
       // Combine dependencies from both stub plan and generated plan
-      if (options.stubPlan?.data.dependencies) {
+      if (options.stubPlan.data.dependencies) {
         const existingDeps = new Set(validatedPlan.dependencies || []);
         const stubDeps = new Set(options.stubPlan?.data.dependencies);
         validatedPlan.dependencies = Array.from(new Set([...existingDeps, ...stubDeps]));
       }
-      // Inherit priority if not already set
-      if (!validatedPlan.priority && options.stubPlan?.data.priority) {
+
+      if (options.stubPlan?.data.priority) {
         validatedPlan.priority = options.stubPlan?.data.priority;
       }
+
       // Combine issue URLs from both sources
       if (options.stubPlan?.data.issue) {
         const existingIssues = new Set(validatedPlan.issue || []);
@@ -401,16 +412,12 @@ export async function saveMultiPhaseYaml(
     phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;
 
     // Add overall project information to each phase
+    if (projectInfo.goal || projectInfo.title || projectInfo.details) {
+      phase.project = projectInfo;
+    }
+
     if (options.stubPlan?.data) {
-      phase.project = {
-        title: options.stubPlan?.data.title,
-        goal: options.stubPlan?.data.goal,
-        details: options.stubPlan?.data.details,
-      };
-    } else if (actuallyMultiphase) {
-      if (projectInfo.goal || projectInfo.title || projectInfo.details) {
-        phase.project = projectInfo;
-      }
+      phase.parent = options.stubPlan?.data.id;
     }
 
     // Add rmfilter and issue from options

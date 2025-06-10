@@ -18,7 +18,12 @@ import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../../rmpr/comment_options.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.ts';
-import { generateSuggestedFilename, readPlanFile, resolvePlanFile } from '../plans.js';
+import {
+  generateSuggestedFilename,
+  readAllPlans,
+  readPlanFile,
+  resolvePlanFile,
+} from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   extractMarkdownToYaml,
@@ -195,6 +200,24 @@ export async function handleGenerateCommand(
       }
       if (details) {
         planParts.push(`\n## Details\n${details}`);
+      }
+
+      // Add parent plan information if available
+      if (stubPlan.data.parent) {
+        const tasksDir = await resolveTasksDir(config);
+        const { plans: allPlans } = await readAllPlans(tasksDir);
+        const parentPlan = allPlans.get(stubPlan.data.parent);
+        if (parentPlan) {
+          planParts.push(
+            `\n## Parent Plan Context\n**Parent Plan:** ${parentPlan.title || `Plan ${stubPlan.data.parent}`} (ID: ${stubPlan.data.parent})`
+          );
+          if (parentPlan.goal) {
+            planParts.push(`**Parent Goal:** ${parentPlan.goal}`);
+          }
+          if (parentPlan.details) {
+            planParts.push(`**Parent Details:** ${parentPlan.details}`);
+          }
+        }
       }
 
       planText = planParts.join('\n');

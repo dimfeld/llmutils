@@ -108,6 +108,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
         title: taskToPromote.title,
         goal: '',
         details: taskToPromote.description,
+        parent: originalPlan.parent,
         project: {
           title: originalPlan.title || '',
           goal: originalPlan.goal,

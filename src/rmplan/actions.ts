@@ -1056,7 +1056,21 @@ async function gatherPhaseGenerationContext(
     }> = [];
     const changedFilesFromDependencies: string[] = [];
 
-    // 4. Process each dependency
+    // 4. Process parent plan info
+    let parentPlanInfo: { id: number; title: string; goal: string; details: string } | undefined;
+    if (currentPhaseData.parent) {
+      const parentPlan = allPlans.get(currentPhaseData.parent);
+      if (parentPlan) {
+        parentPlanInfo = {
+          id: currentPhaseData.parent,
+          title: parentPlan.title || `Plan ${currentPhaseData.parent}`,
+          goal: parentPlan.goal,
+          details: parentPlan.details || '',
+        };
+      }
+    }
+
+    // 5. Process each dependency
     if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
       // Read all plans in the directory to find dependencies by ID
       const { plans: allPlans } = await readAllPlans(projectPlanDir);
@@ -1131,6 +1145,7 @@ async function gatherPhaseGenerationContext(
         description: task.description,
       })),
       previousPhasesInfo,
+      parentPlanInfo,
       changedFilesFromDependencies: changedFilesExist,
       rmfilterArgsFromPlan,
     };

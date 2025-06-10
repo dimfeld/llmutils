@@ -1,6 +1,7 @@
+import path from 'path';
 import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
-import { readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
+import { readAllPlans, readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
 import type { Priority } from '../planSchema.js';
 
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled';
@@ -11,6 +12,8 @@ export interface SetOptions {
   status?: Status;
   dependsOn?: number[];
   noDependsOn?: number[];
+  parent?: number;
+  noParent?: boolean;
   rmfilter?: string[];
   issue?: string[];
   noIssue?: string[];
@@ -67,6 +70,34 @@ export async function handleSetCommand(
         modified = true;
         log(`Removed ${originalLength - plan.dependencies.length} dependencies`);
       }
+    }
+  }
+
+  // Set parent
+  if (options.parent !== undefined) {
+    // Load all plans to check if parent exists
+    // Use the directory of the current plan file as the search directory
+    const planDir = path.dirname(options.planFile);
+    const { plans: allPlans } = await readAllPlans(planDir);
+
+    const parentPlan = allPlans.get(options.parent);
+    if (!parentPlan) {
+      throw new Error(`Parent plan with ID ${options.parent} not found`);
+    }
+
+    plan.parent = options.parent;
+    modified = true;
+    log(`Set parent to ${options.parent}`);
+  }
+
+  // Remove parent
+  if (options.noParent) {
+    if (plan.parent !== undefined) {
+      delete plan.parent;
+      modified = true;
+      log('Removed parent');
+    } else {
+      log('No parent to remove');
     }
   }
 

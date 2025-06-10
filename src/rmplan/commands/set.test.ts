@@ -438,4 +438,104 @@ describe('rmplan set command', () => {
     const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.docs).toEqual(['docs/keep.md', 'docs/new1.md', 'docs/new2.md']);
   });
+
+  test('should set parent plan', async () => {
+    // Create both parent and child plans
+    const parentPlanPath = await createTestPlan(15);
+    const planPath = await createTestPlan(30);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        parent: 15,
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.parent).toBe(15);
+  });
+
+  test('should remove parent plan', async () => {
+    // Create both parent and child plans
+    const parentPlanPath = await createTestPlan(20);
+    const planPath = await createTestPlan(31);
+
+    // First set a parent
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        parent: 20,
+      },
+      {}
+    );
+
+    let updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.parent).toBe(20);
+
+    // Then remove it
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noParent: true,
+      },
+      {}
+    );
+
+    updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.parent).toBeUndefined();
+  });
+
+  test('should handle removing parent when none exists', async () => {
+    const planPath = await createTestPlan(32);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noParent: true,
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.parent).toBeUndefined();
+  });
+
+  test('should throw error when setting non-existent parent', async () => {
+    const planPath = await createTestPlan(33);
+
+    await expect(
+      handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          parent: 999, // Non-existent parent ID
+        },
+        {}
+      )
+    ).rejects.toThrow('Parent plan with ID 999 not found');
+  });
+
+  test('should allow setting existing parent', async () => {
+    // Create a parent plan first
+    const parentPlanPath = await createTestPlan(100);
+    const childPlanPath = await createTestPlan(101);
+
+    // Set parent to the existing plan
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        parent: 100,
+      },
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(childPlanPath);
+    expect(updatedPlan.parent).toBe(100);
+  });
 });

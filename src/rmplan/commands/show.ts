@@ -115,6 +115,18 @@ export async function handleShowCommand(planFile: string | undefined, options: a
               ? chalk.gray
               : chalk.white;
   log(`${chalk.cyan('Priority:')} ${plan.priority ? priorityColor(plan.priority) : ''}`);
+
+  // Display parent plan if present
+  if (plan.parent) {
+    const parentPlan = allPlans.get(plan.parent);
+    if (parentPlan) {
+      log(
+        `${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} - ${getCombinedTitleFromSummary(parentPlan)}`
+      );
+    } else {
+      log(`${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} ${chalk.red('[Not found]')}`);
+    }
+  }
   log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
   log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
 
