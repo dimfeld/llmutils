@@ -275,52 +275,9 @@ export async function extractMarkdownToYaml(
     throw e;
   }
 
-  // Create ordered plan with all fields
-  const orderedPlan: any = {
-    id: validatedPlan.id,
-  };
-
-  // Always include status and priority
-  if (validatedPlan.status) {
-    orderedPlan.status = validatedPlan.status;
-  }
-  if (validatedPlan.priority) {
-    orderedPlan.priority = validatedPlan.priority;
-  }
-
-  // Add optional fields only if they have values
-  if (validatedPlan.dependencies?.length) {
-    orderedPlan.dependencies = validatedPlan.dependencies;
-  }
-  if (validatedPlan.baseBranch) {
-    orderedPlan.baseBranch = validatedPlan.baseBranch;
-  }
-  if (validatedPlan.rmfilter?.length) {
-    orderedPlan.rmfilter = validatedPlan.rmfilter;
-  }
-  if (validatedPlan.issue?.length) {
-    orderedPlan.issue = validatedPlan.issue;
-  }
-  if (validatedPlan.pullRequest?.length) {
-    orderedPlan.pullRequest = validatedPlan.pullRequest;
-  }
-
-  // Add required fields
-  orderedPlan.goal = validatedPlan.goal;
-  orderedPlan.details = validatedPlan.details;
-  orderedPlan.planGeneratedAt = validatedPlan.planGeneratedAt;
-  orderedPlan.promptsGeneratedAt = validatedPlan.promptsGeneratedAt;
-  orderedPlan.createdAt = validatedPlan.createdAt;
-  orderedPlan.updatedAt = validatedPlan.updatedAt;
-  orderedPlan.tasks = validatedPlan.tasks;
-
-  if (validatedPlan.changedFiles?.length) {
-    orderedPlan.changedFiles = validatedPlan.changedFiles;
-  }
-
   // Write single-phase plan to output file
   const outputPath = options.output.endsWith('.yml') ? options.output : `${options.output}.yml`;
-  await writePlanFile(outputPath, orderedPlan);
+  await writePlanFile(outputPath, validatedPlan);
 
   if (!quiet) {
     log(chalk.green('Success!'), `Wrote single-phase plan to ${outputPath}`);
@@ -329,7 +286,7 @@ export async function extractMarkdownToYaml(
   // Commit if requested
   if (options.commit) {
     const gitRoot = await getGitRoot();
-    const commitMessage = `Add plan: ${orderedPlan.title || orderedPlan.goal}`;
+    const commitMessage = `Add plan: ${validatedPlan.title || validatedPlan.goal}`;
     await commitAll(commitMessage, gitRoot);
     if (!quiet) {
       log(chalk.green('✓ Committed changes'));
