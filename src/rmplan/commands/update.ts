@@ -6,9 +6,10 @@ import * as path from 'path';
 import { log, error } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
+import { waitForEnter } from '../../common/terminal.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFile, readPlanFile } from '../plans.js';
-import { convertYamlToMarkdown } from '../process_markdown.js';
+import { convertYamlToMarkdown, extractMarkdownToYaml } from '../process_markdown.js';
 import { generateUpdatePrompt } from '../prompt.js';
 
 export async function handleUpdateCommand(planFile: string, options: any, command: any) {
@@ -133,7 +134,25 @@ export async function handleUpdateCommand(planFile: string, options: any, comman
     log('Next steps:');
     log('1. Paste the prompt into your LLM chat interface');
     log('2. Copy the updated plan from the LLM response');
-    log('3. Run: rmplan extract --output ' + resolvedPlanFile);
+    log('3. Press Enter when you\'ve copied the response');
+    
+    // Wait for user to paste the LLM's response
+    const llmResponse = await waitForEnter(true);
+    
+    if (!llmResponse || !llmResponse.trim()) {
+      throw new Error('No response from LLM was provided');
+    }
+    
+    // Extract the YAML from the markdown response and update the plan
+    await extractMarkdownToYaml(llmResponse, config, globalOpts.quiet || false, {
+      output: resolvedPlanFile,
+      updatePlan: { data: planData, path: resolvedPlanFile },
+      issueUrls: planData.issue,
+      planRmfilterArgs: planData.rmfilter,
+      commit: options.commit,
+    });
+    
+    log(`Successfully updated plan: ${resolvedPlanFile}`);
   } finally {
     if (wrotePrompt) {
       try {

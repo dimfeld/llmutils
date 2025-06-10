@@ -209,6 +209,7 @@ export interface ExtractMarkdownToYamlOptions {
   output: string;
   projectId?: number;
   stubPlan?: { data: PlanSchema; path: string };
+  updatePlan?: { data: PlanSchema; path: string };
   commit?: boolean;
 }
 
@@ -271,14 +272,15 @@ export async function extractMarkdownToYaml(
     }
     validatedPlan = result.data;
 
-    // Set metadata fields, using stubPlan?.data if provided
+    // Set metadata fields, using stubPlan?.data or updatePlan?.data if provided
     validatedPlan.id =
+      options.updatePlan?.data?.id ||
       options.stubPlan?.data?.id ||
       options.projectId ||
       (await generateNumericPlanId(await resolveTasksDir(config)));
     const now = new Date().toISOString();
-    // Use createdAt from stub plan if available, otherwise use current timestamp
-    validatedPlan.createdAt = options.stubPlan?.data?.createdAt || now;
+    // Use createdAt from update/stub plan if available, otherwise use current timestamp
+    validatedPlan.createdAt = options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
     validatedPlan.updatedAt = now;
     validatedPlan.planGeneratedAt = now;
 
@@ -407,7 +409,7 @@ export async function saveMultiPhaseYaml(
   const tasksDir = await resolveTasksDir(config);
   let nextId = actuallyMultiphase
     ? await generateNumericPlanId(tasksDir)
-    : options.stubPlan?.data?.id || options.projectId;
+    : options.updatePlan?.data?.id || options.stubPlan?.data?.id || options.projectId;
   // Force it to be a number
   // TODO we can remove this later once the last vestiges of string IDs are gone
   if (typeof nextId !== 'number') {
@@ -434,8 +436,8 @@ export async function saveMultiPhaseYaml(
     // Add metadata if not present
     const now = new Date().toISOString();
     phase.planGeneratedAt = now;
-    // Use createdAt from stub plan if available for all phases
-    phase.createdAt = options.stubPlan?.data?.createdAt || now;
+    // Use createdAt from update/stub plan if available for all phases
+    phase.createdAt = options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
     phase.updatedAt = now;
 
     phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;
