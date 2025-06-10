@@ -163,7 +163,7 @@ export class ClaudeCodeExecutor implements Executor {
       const args = ['claude'];
 
       if (!interactive) {
-        args.push('--verbose', '--output-format', 'stream-json', '--print');
+        args.push('--verbose', '--output-format', 'stream-json');
 
         if (debug) {
           args.push('--debug');
@@ -215,7 +215,7 @@ export class ClaudeCodeExecutor implements Executor {
           throw new Error(`Claude exited with non-zero exit code: ${exitCode}`);
         }
       } else {
-        args.push(contextContent);
+        args.push('--print', contextContent);
         let splitter = createLineSplitter();
 
         log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
