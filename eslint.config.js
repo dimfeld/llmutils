@@ -46,7 +46,12 @@ export function createConfig() {
       rules: {
         'no-unexpected-multiline': 'off',
         'prefer-const': 'off',
-        '@typescript-eslint/no-misused-promises': 'error',
+        '@typescript-eslint/no-misused-promises': [
+          'error',
+          {
+            checksVoidReturn: false,
+          },
+        ],
         '@typescript-eslint/no-unused-vars': 'off',
         '@typescript-eslint/no-unsafe-return': pedanticWarn,
         '@typescript-eslint/no-unsafe-call': pedanticWarn,

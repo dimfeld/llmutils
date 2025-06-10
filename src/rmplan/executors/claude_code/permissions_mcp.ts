@@ -62,7 +62,7 @@ async function requestPermissionFromParent(tool_name: string, input: any): Promi
           resolve(response.approved);
         }
       } catch (err) {
-        reject(err);
+        reject(err as Error);
       }
     };
 

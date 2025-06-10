@@ -1,15 +1,24 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Convert permissions MCP to stdio
-goal: ""
+goal: "Convert the permissions MCP server from SSE mode to stdio mode to avoid HTTP timeout issues"
 id: 63
-status: in_progress
+status: done
 priority: medium
 docs:
   - https://bun.sh/guides/process/ipc
 createdAt: 2025-06-10T08:02:56.765Z
 updatedAt: 2025-06-10T21:05:31.978Z
-tasks: []
+completedAt: 2025-06-10T22:30:00.000Z
+tasks:
+  - text: Update permissions_mcp.ts to use stdio transport and Unix socket communication
+    status: done
+  - text: Update claude_code.ts to create Unix socket server and handle permission requests
+    status: done
+  - text: Update MCP configuration generation to use stdio transport
+    status: done
+  - text: Update documentation to reflect the new stdio implementation
+    status: done
 ---
 
 Relevant Directory:
