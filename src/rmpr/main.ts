@@ -18,6 +18,7 @@
  */
 
 import { confirm, input, select } from '@inquirer/prompts';
+import chalk from 'chalk';
 import * as path from 'node:path';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
@@ -224,7 +225,7 @@ export async function handleRmprCommand(
 
   log(`Selected ${selectedComments.length} comments to address:`);
   selectedComments.forEach(({ comment, thread }, index) => {
-    log(`  ${index + 1}. [${thread.path}:${thread.originalLine}]:`);
+    log(`  ${index + 1}. [${thread.path}:${thread.line ?? 'N/A'}]:`);
     log(`     Body: "${comment.body.split('\n')[0]}..."`);
     log(`     Diff Hunk: "${comment.diffHunk.split('\n')[0]}..."`);
   });
@@ -268,7 +269,7 @@ export async function handleRmprCommand(
     defaultModelForExecutor(defaultExecutor, 'answerPr');
   let additionalUserRmFilterArgs: string[] = [];
 
-  if (!options.yes) {
+  if (!options.yes && !options.dryRun) {
     log('\nSettings can be adjusted before generating the LLM prompt.');
     if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
       log(
@@ -331,14 +332,99 @@ export async function handleRmprCommand(
         }
       }
     } else if (filesProcessedWithAiComments.size > 0 && options.dryRun) {
-      log('\n--- DRY RUN INFO ---');
+      log(chalk.bold.yellow('\n--- DRY RUN INFO ---'));
       log(
-        'In AI Comments mode, if not a dry run, AI comments would be written to the following files for your review before generating the final prompt:'
+        chalk.yellow(
+          'In AI Comments mode, if not a dry run, AI comments would be written to the following files for your review before generating the final prompt:'
+        )
       );
       for (const filePath of filesProcessedWithAiComments.keys()) {
-        log(`  - ${filePath}`);
+        log(chalk.gray(`  - ${filePath}`));
       }
-      log('These files have NOT been modified on disk due to --dry-run.');
+      log(chalk.red('These files have NOT been modified on disk due to --dry-run.'));
+
+      // Show only the sections with AI comments
+      log(chalk.bold.cyan('\n--- AI COMMENT SECTIONS ---'));
+      for (const [filePath, content] of filesProcessedWithAiComments.entries()) {
+        const lines = content.split('\n');
+        const sections: { startLine: number; endLine: number; lines: string[] }[] = [];
+        let currentSection: { startLine: number; endLine: number; lines: string[] } | null = null;
+        let inAiSection = false;
+
+        // Find all AI comment sections
+        let inCommentBlock = false;
+        let consecutiveAiLines = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const trimmed = line.trim();
+
+          const hasAiCommentStart = trimmed.includes('AI_COMMENT_START');
+          const hasAiCommentEnd = trimmed.includes('AI_COMMENT_END');
+          const hasAiComment = trimmed.includes('AI:');
+
+          if (hasAiCommentStart) {
+            // Start of a comment block
+            inCommentBlock = true;
+            inAiSection = true;
+            currentSection = { startLine: i + 1, endLine: i + 1, lines: [line] };
+            consecutiveAiLines = 0;
+          } else if (inCommentBlock) {
+            // Inside a comment block - add all lines until AI_COMMENT_END
+            if (currentSection) {
+              currentSection.lines.push(line);
+              currentSection.endLine = i + 1;
+
+              if (hasAiCommentEnd) {
+                // End of comment block
+                sections.push(currentSection);
+                currentSection = null;
+                inAiSection = false;
+                inCommentBlock = false;
+              }
+            }
+          } else if (hasAiComment) {
+            // Standalone AI: comment (not in a block)
+            if (!inAiSection) {
+              // Start a new section for consecutive AI: comments
+              inAiSection = true;
+              currentSection = { startLine: i + 1, endLine: i + 1, lines: [line] };
+              consecutiveAiLines = 1;
+            } else if (currentSection) {
+              // Continue the current AI: section
+              currentSection.lines.push(line);
+              currentSection.endLine = i + 1;
+              consecutiveAiLines++;
+            }
+          } else if (inAiSection && !inCommentBlock) {
+            // Not an AI: comment, but we're in a standalone AI: section
+            if (currentSection) {
+              // Add one more line after consecutive AI: comments
+              currentSection.lines.push(line);
+              currentSection.endLine = i + 1;
+              sections.push(currentSection);
+              currentSection = null;
+              inAiSection = false;
+              consecutiveAiLines = 0;
+            }
+          }
+        }
+
+        // Add any remaining section
+        if (currentSection) {
+          sections.push(currentSection);
+        }
+
+        // Print the sections
+        if (sections.length > 0) {
+          log(chalk.bold.green(`\n=== ${filePath} ===`));
+          for (const section of sections) {
+            log(chalk.blue(`Lines ${section.startLine}-${section.endLine}:`));
+            section.lines.forEach((line) => log(line));
+            log(chalk.gray('---'));
+          }
+        }
+      }
     }
     instructions = createInlineCommentsPrompt(filesProcessedWithAiComments.keys().toArray());
   } else {
@@ -390,7 +476,9 @@ export async function handleRmprCommand(
 
   if (options.dryRun) {
     log(
-      'Exiting due to --dry-run. No LLM call will be made, and no files will be modified by the LLM.'
+      chalk.bold.red(
+        'Exiting due to --dry-run. No LLM call will be made, and no files will be modified by the LLM.'
+      )
     );
     process.exit(0);
   }
@@ -482,11 +570,11 @@ export async function handleRmprCommand(
 
         if (success) {
           log(
-            `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+            `Successfully posted reply to thread ${thread.id} for comment on ${thread.path}:${thread.line ?? 'N/A'}`
           );
         } else {
           debugLog(
-            `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.originalLine}`
+            `Failed to post reply to thread ${thread.id} for comment on ${thread.path}:${thread.line ?? 'N/A'}`
           );
         }
       }

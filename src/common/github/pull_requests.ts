@@ -331,11 +331,8 @@ export async function selectReviewComments(
   }
 
   const groups = threads.map((thread) => {
-    let start = Math.max(
-      1,
-      thread.startLine ?? thread.line ?? thread.originalStartLine ?? thread.originalLine
-    );
-    let end = thread.line ?? thread.originalLine;
+    let start = Math.max(1, thread.startLine ?? thread.line ?? 1);
+    let end = thread.line ?? start;
 
     let range = end - start + 1;
     let terminalExtra = Math.max(0, Math.floor((MAX_HEIGHT - 10 - range) / 2));
@@ -358,7 +355,7 @@ export async function selectReviewComments(
         LINE_PADDING
       ),
       value: { comment, thread, diffForContext } satisfies DetailedReviewComment,
-      short: `${thread.path}:${thread.originalLine}`,
+      short: `${thread.path}:${thread.line ?? 'N/A'}`,
       description:
         limitLines(diffForTerminal ?? '', Math.max(2, MAX_HEIGHT - 10)) +
         '\n\n' +
@@ -369,13 +366,14 @@ export async function selectReviewComments(
       return a.value.comment.id.localeCompare(b.value.comment.id);
     });
 
-    const lineRange = thread.originalStartLine
-      ? `${thread.originalStartLine}-${thread.originalLine}`
-      : `${thread.originalLine}`;
+    const lineRange =
+      thread.startLine && thread.line && thread.startLine !== thread.line
+        ? `${thread.startLine}-${thread.line}`
+        : `${thread.line ?? 'N/A'}`;
 
     return {
       path: thread.path,
-      line: thread.originalLine,
+      line: thread.line ?? 0,
       choices: [new Separator(`== ${thread.path}:${lineRange} ==`), ...comments],
     };
   });

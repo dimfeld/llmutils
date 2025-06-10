@@ -28,17 +28,26 @@ function getAfterStateLines(diffForContext: DetailedReviewComment['diffForContex
 
 /**
  * Finds the best match for the comment's context in the original content, returning adjusted line numbers.
+ * @param originalContent - The current file content
+ * @param diffForContext - The diff context from the review comment
+ * @param targetLineInFile - The 1-indexed line number from thread.line (may be null for outdated comments)
+ * @param targetStartLineInFile - The 1-indexed start line number from thread.startLine (may be null)
+ * @returns Adjusted 0-indexed line numbers for comment placement
  */
 function findBestMatchLine(
   originalContent: string,
   diffForContext: DetailedReviewComment['diffForContext'],
-  originalStartLine: number | null,
-  originalLine: number
+  targetLineInFile: number | null,
+  targetStartLineInFile: number | null
 ): { startLine: number; endLine: number } | null {
   const afterStateLines = getAfterStateLines(diffForContext);
   if (afterStateLines.length === 0) {
-    // Fallback to original line numbers if no valid context
-    return { startLine: originalStartLine ?? originalLine, endLine: originalLine };
+    // Fallback to line numbers if no valid context
+    if (targetStartLineInFile !== null && targetLineInFile !== null) {
+      // Convert from 1-indexed to 0-indexed
+      return { startLine: targetStartLineInFile - 1, endLine: targetLineInFile - 1 };
+    }
+    return null;
   }
 
   const matches = findClosestMatches(originalContent, afterStateLines, {
@@ -51,50 +60,77 @@ function findBestMatchLine(
     return null;
   }
 
-  // Find the match closest to the original line numbers
-  const originalReferenceLine = originalStartLine ?? originalLine;
-  let bestMatch = matches[0];
-  let minDistance = Math.abs(bestMatch.startLine - originalReferenceLine);
+  // If we have a target line, use it to find the closest match
+  if (targetLineInFile !== null) {
+    // Convert 1-indexed to 0-indexed for comparison with match results
+    const targetLine0Indexed = targetLineInFile - 1;
 
-  for (const match of matches.slice(1)) {
-    const distance = Math.abs(match.startLine - originalReferenceLine);
-    // Prefer match with higher score, or if scores are equal, the one with smaller distance
-    if (
-      match.score > bestMatch.score ||
-      (match.score === bestMatch.score && distance < minDistance)
-    ) {
-      bestMatch = match;
-      minDistance = distance;
+    let bestMatch = matches[0];
+    let minDistance = Math.abs(bestMatch.startLine - targetLine0Indexed);
+
+    for (const match of matches.slice(1)) {
+      const distance = Math.abs(match.startLine - targetLine0Indexed);
+      // Prefer match with higher score, or if scores are equal, the one with smaller distance
+      if (
+        match.score > bestMatch.score ||
+        (match.score === bestMatch.score && distance < minDistance)
+      ) {
+        bestMatch = match;
+        minDistance = distance;
+      }
     }
-  }
 
-  // Adjust line numbers based on the comment's position within the diff context
-  // Find the index of the target line in afterStateLines by matching newLineNumber
-  let targetIndex = diffForContext.findIndex(
-    (diffLine) => diffLine.newLineNumber - 1 === originalReferenceLine
-  );
+    // Continue with the best match found and adjust based on diff context
+    // Adjust line numbers based on the comment's position within the diff context
+    let targetIndex = diffForContext.findIndex(
+      (diffLine) => diffLine.newLineNumber === targetLineInFile
+    );
 
-  // If no exact match, fallback to using the original line numbers relative to the match
-  if (targetIndex === -1) {
-    error(`No matching newLineNumber found for line ${originalReferenceLine} in diffForContext`);
+    // If no exact match, fallback to using the line numbers relative to the match
+    if (targetIndex === -1) {
+      debugLog(`No matching newLineNumber found for line ${targetLineInFile} in diffForContext`);
+      return {
+        startLine: bestMatch.startLine,
+        endLine: bestMatch.endLine,
+      };
+    }
+
+    // The bestMatch already gives us the location in the file where the diff context was found
+    // We need to adjust within that match based on where the target line is within the diff context
+    const contextStartLineInDiff = diffForContext[0].newLineNumber;
+    const targetOffsetInContext = targetLineInFile - contextStartLineInDiff;
+
+    // The target line is at bestMatch.startLine + targetOffsetInContext
+    const adjustedEndLine = bestMatch.startLine + targetOffsetInContext;
+
+    // For block comments, calculate the start line
+    const adjustedStartLine =
+      targetStartLineInFile !== null &&
+      targetLineInFile !== null &&
+      targetStartLineInFile !== targetLineInFile
+        ? adjustedEndLine - (targetLineInFile - targetStartLineInFile)
+        : adjustedEndLine;
+
+    debugLog(`Adjusted lines: startLine=${adjustedStartLine}, endLine=${adjustedEndLine}`);
+
+    return {
+      startLine: adjustedStartLine,
+      endLine: adjustedEndLine,
+    };
+  } else {
+    // No target line available (outdated comment), just use the highest scoring match
+    let bestMatch = matches[0];
+    for (const match of matches.slice(1)) {
+      if (match.score > bestMatch.score) {
+        bestMatch = match;
+      }
+    }
+
     return {
       startLine: bestMatch.startLine,
       endLine: bestMatch.endLine,
     };
   }
-
-  // Calculate the offset from the start of the matched context
-  const lineOffset = diffForContext[targetIndex].newLineNumber - diffForContext[0].newLineNumber;
-  const adjustedStartLine = bestMatch.startLine + lineOffset;
-  const adjustedEndLine =
-    originalStartLine && originalStartLine !== originalLine
-      ? adjustedStartLine + (originalLine - originalStartLine)
-      : adjustedStartLine;
-
-  return {
-    startLine: adjustedStartLine,
-    endLine: adjustedEndLine,
-  };
 }
 
 type LineCommenter = (text: string) => string;
@@ -221,8 +257,8 @@ export function insertAiCommentsIntoFileContent(
   // adjusted line numbers.
   const commentsWithAdjustedLines = commentsForFile
     .map((comment) => {
-      const startLine = comment.thread.startLine ?? comment.thread.originalStartLine;
-      const endLine = comment.thread.line ?? comment.thread.originalLine;
+      const startLine = comment.thread.startLine;
+      const endLine = comment.thread.line;
 
       debugLog({
         index1Start: startLine,
@@ -231,13 +267,16 @@ export function insertAiCommentsIntoFileContent(
       const bestMatchResult = findBestMatchLine(
         originalContent,
         comment.diffForContext,
-        // Pass zero-indexed line numbers
-        startLine ? startLine - 1 : null,
-        endLine - 1
+        // Pass 1-indexed line numbers directly
+        endLine,
+        startLine
       );
 
       if (!bestMatchResult) {
-        let lineRange = startLine ? `${startLine}-${endLine}` : endLine;
+        let lineRange =
+          startLine && endLine && startLine !== endLine
+            ? `${startLine}-${endLine}`
+            : (endLine ?? 'unknown');
         errors.push(
           singleLineWithPrefix(
             `Could not find matching comment content from ${filePath}:${lineRange}: `,
@@ -304,6 +343,7 @@ export function insertAiCommentsIntoFileContent(
       const startMarkerLine = currentPrefixer(`AI_COMMENT_START`);
       const endMarkerLine = currentPrefixer(`AI_COMMENT_END`);
 
+      debugLog(`Block comment: startLine=${startLine}, endLine=${endLine}`);
       addToMapList(insertBefore, startLine, [startMarkerLine, ...aiPrefixedBodyLines]);
       addToMapList(insertAfter, endLine, [endMarkerLine]);
     } else {
