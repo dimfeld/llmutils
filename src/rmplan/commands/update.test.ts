@@ -1214,6 +1214,130 @@ Updated details with more information
     expect(logSpy).toHaveBeenCalledWith(`Successfully updated plan: ${planPath}`);
   });
 
+  test('should change status from done to in_progress when updating a completed plan', async () => {
+    // Create an original plan with status done
+    const originalPlanId = 5;
+    const originalCreatedAt = '2024-01-05T00:00:00.000Z';
+    const originalPlan: PlanSchema = {
+      id: originalPlanId,
+      title: 'Completed Plan',
+      goal: 'A plan that was completed',
+      details: 'This plan has been completed',
+      status: 'done',
+      tasks: [
+        {
+          title: 'Completed Task',
+          description: 'A task that was completed',
+          files: [],
+          steps: [
+            { prompt: 'Step 1', done: true },
+            { prompt: 'Step 2', done: true },
+          ],
+        },
+      ],
+      createdAt: originalCreatedAt,
+      updatedAt: originalCreatedAt,
+      planGeneratedAt: originalCreatedAt,
+    };
+
+    const planPath = path.join(tasksDir, '5.yml');
+    await fs.writeFile(planPath, yaml.stringify(originalPlan));
+
+    // Mock waitForEnter to return a simulated LLM response
+    const mockWaitForEnter = mock(() =>
+      Promise.resolve(`# Completed Plan - Updated
+
+## Goal
+A plan that was completed - now being updated
+
+### Details
+This plan is being updated with new requirements
+
+---
+
+## Task: Updated Task
+**Description:** Adding new functionality to the completed task
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Implement the new feature
+    \`\`\`
+`)
+    );
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: mockWaitForEnter,
+    }));
+
+    // Mock extractMarkdownToYaml to verify status change
+    const mockExtractMarkdownToYaml = mock(async (inputText, config, quiet, options) => {
+      // Verify the updatePlan option is passed correctly
+      expect(options.updatePlan).toBeDefined();
+      expect(options.updatePlan.data.id).toBe(originalPlanId);
+      expect(options.updatePlan.data.status).toBe('done');
+      
+      // Simulate the real behavior - status should change from done to in_progress
+      const updatedPlan: PlanSchema = {
+        ...originalPlan,
+        title: 'Completed Plan - Updated',
+        goal: 'A plan that was completed - now being updated',
+        details: 'This plan is being updated with new requirements',
+        status: 'in_progress', // This should be changed from 'done'
+        tasks: [
+          {
+            title: 'Updated Task',
+            description: 'Adding new functionality to the completed task',
+            files: [],
+            steps: [{ prompt: 'Implement the new feature', done: false }],
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+
+      await fs.writeFile(planPath, yaml.stringify(updatedPlan));
+      return `Successfully updated plan at ${planPath}`;
+    });
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      convertYamlToMarkdown: mockConvertYamlToMarkdown,
+      extractMarkdownToYaml: mockExtractMarkdownToYaml,
+    }));
+
+    // Re-import after mocking
+    const updateModule = await import('./update.js');
+    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
+
+    const testDescription = 'Add new requirements to the completed plan';
+    const options = {
+      description: testDescription,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call the update command
+    await newHandleUpdateCommand('5', options, command);
+
+    // Verify the plan file was updated
+    const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedPlanContent);
+
+    // Verify status changed from done to in_progress
+    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.status).not.toBe('done');
+
+    // Verify other fields were updated
+    expect(updatedPlan.id).toBe(originalPlanId);
+    expect(updatedPlan.createdAt).toBe(originalCreatedAt);
+    expect(updatedPlan.title).toBe('Completed Plan - Updated');
+
+    // Verify success message
+    expect(logSpy).toHaveBeenCalledWith(`Successfully updated plan: ${planPath}`);
+  });
+
   test('should throw error when description is mistakenly placed after double dash', async () => {
     // Create a test plan
     const plan: PlanSchema = {

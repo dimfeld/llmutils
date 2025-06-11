@@ -352,6 +352,7 @@ export async function extractMarkdownToYaml(
       'rmfilter',
       'dependencies',
       'priority',
+      'project',
     ] as const;
 
     // When updating a plan, preserve all existing fields that weren't explicitly updated
@@ -382,7 +383,11 @@ export async function extractMarkdownToYaml(
 
       // Set status from original if not set
       if (!validatedPlan.status) {
-        validatedPlan.status = originalPlan.status || 'pending';
+        if (originalPlan.status === 'done') {
+          validatedPlan.status = 'in_progress';
+        } else {
+          validatedPlan.status = originalPlan.status || 'pending';
+        }
       }
     } else {
       // Not an update - set metadata fields for new plan
