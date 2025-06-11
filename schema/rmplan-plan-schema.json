@@ -79,6 +79,9 @@
         "type": "string"
       }
     },
+    "assignedTo": {
+      "type": "string"
+    },
     "planGeneratedAt": {
       "type": "string",
       "format": "date-time",

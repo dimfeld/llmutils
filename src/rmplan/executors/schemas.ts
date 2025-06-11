@@ -12,7 +12,7 @@ export const OneCallExecutorName = 'direct-call';
 export const claudeCodeOptionsSchema = z.object({
   allowedTools: z.array(z.string()).optional(),
   allowAllTools: z.boolean().optional(),
-  includeDefaultTools: z.boolean().optional().default(true),
+  includeDefaultTools: z.boolean().default(true).optional(),
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
   interactive: z.boolean().optional(),

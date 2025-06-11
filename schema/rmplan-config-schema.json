@@ -219,9 +219,6 @@
               "type": "boolean"
             }
           },
-          "required": [
-            "includeDefaultTools"
-          ],
           "additionalProperties": false
         },
         "copy-only": {
