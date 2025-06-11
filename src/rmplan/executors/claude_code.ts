@@ -66,7 +66,7 @@ export class ClaudeCodeExecutor implements Executor {
 
             // Print BEL character to alert user
             process.stdout.write('\x07');
-            
+
             // Prompt the user for confirmation
             const approved = await confirm({
               message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,

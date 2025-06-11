@@ -1275,7 +1275,7 @@ This plan is being updated with new requirements
       expect(options.updatePlan).toBeDefined();
       expect(options.updatePlan.data.id).toBe(originalPlanId);
       expect(options.updatePlan.data.status).toBe('done');
-      
+
       // Simulate the real behavior - status should change from done to in_progress
       const updatedPlan: PlanSchema = {
         ...originalPlan,

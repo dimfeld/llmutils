@@ -1,0 +1,17 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Update permissions MCP to have an option for "always approve"
+goal: ""
+id: 63
+status: pending
+priority: medium
+createdAt: 2025-06-11T08:25:17.665Z
+updatedAt: 2025-06-11T08:25:17.665Z
+tasks: []
+---
+
+Replace the `confirm` with a `select` with options for Allow, Disallow, or Always Allow
+
+If Always Allow is selected, then remember that this tool type is always allowed.
+
+If Always Allow is selected on a Bash tool invocation, then we should allow a specific prefix substring of the command. We need some way to easily specify what prefix is allowed.
