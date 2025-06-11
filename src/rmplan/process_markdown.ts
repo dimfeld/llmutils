@@ -338,26 +338,71 @@ export async function extractMarkdownToYaml(
     }
     validatedPlan = result.data;
 
-    // Set metadata fields, using stubPlan?.data or updatePlan?.data if provided
-    validatedPlan.id =
-      options.updatePlan?.data?.id ||
-      options.stubPlan?.data?.id ||
-      options.projectId ||
-      (await generateNumericPlanId(await resolveTasksDir(config)));
-    const now = new Date().toISOString();
-    // Use createdAt from update/stub plan if available, otherwise use current timestamp
-    validatedPlan.createdAt =
-      options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
-    validatedPlan.updatedAt = now;
-    validatedPlan.planGeneratedAt = now;
+    // When updating a plan, preserve all existing fields that weren't explicitly updated
+    if (options.updatePlan?.data) {
+      const originalPlan = options.updatePlan.data;
 
-    if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
-      validatedPlan.promptsGeneratedAt = now;
-    }
+      // Preserve all fields from the original plan that aren't in the updated plan
+      // This includes fields like parent, container, baseBranch, changedFiles, etc.
+      const fieldsToPreserve = [
+        'parent',
+        'container',
+        'baseBranch',
+        'changedFiles',
+        'pullRequest',
+        'assignedTo',
+        'docs',
+        'issue',
+        'rmfilter',
+        'dependencies',
+        'priority',
+      ] as const;
 
-    // Set defaults for status if not already set
-    if (!validatedPlan.status) {
-      validatedPlan.status = 'pending';
+      for (const field of fieldsToPreserve) {
+        if (originalPlan[field] !== undefined && validatedPlan[field] === undefined) {
+          (validatedPlan as any)[field] = originalPlan[field];
+        }
+      }
+
+      // Always preserve these metadata fields from the original
+      validatedPlan.id = originalPlan.id;
+      validatedPlan.createdAt = originalPlan.createdAt;
+      validatedPlan.updatedAt = new Date().toISOString();
+
+      // Only update planGeneratedAt if the plan structure changed
+      validatedPlan.planGeneratedAt =
+        validatedPlan.planGeneratedAt || originalPlan.planGeneratedAt || new Date().toISOString();
+
+      // Update promptsGeneratedAt if prompts were regenerated
+      if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
+        validatedPlan.promptsGeneratedAt = new Date().toISOString();
+      } else {
+        validatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
+      }
+
+      // Set status from original if not set
+      if (!validatedPlan.status) {
+        validatedPlan.status = originalPlan.status || 'pending';
+      }
+    } else {
+      // Not an update - set metadata fields for new plan
+      validatedPlan.id =
+        options.stubPlan?.data?.id ||
+        options.projectId ||
+        (await generateNumericPlanId(await resolveTasksDir(config)));
+      const now = new Date().toISOString();
+      validatedPlan.createdAt = options.stubPlan?.data?.createdAt || now;
+      validatedPlan.updatedAt = now;
+      validatedPlan.planGeneratedAt = now;
+
+      if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
+        validatedPlan.promptsGeneratedAt = now;
+      }
+
+      // Set defaults for status if not already set
+      if (!validatedPlan.status) {
+        validatedPlan.status = 'pending';
+      }
     }
 
     // Inherit fields from stub plan if provided
@@ -395,12 +440,15 @@ export async function extractMarkdownToYaml(
       }
     }
 
-    // Populate issue and rmfilter arrays from options (these take precedence over stub plan)
-    if (options.issueUrls && options.issueUrls.length > 0) {
-      validatedPlan.issue = options.issueUrls;
-    }
-    if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
-      validatedPlan.rmfilter = options.planRmfilterArgs;
+    // Populate issue and rmfilter arrays from options (only for new plans, not updates)
+    // For updates, these are already preserved from the original plan above
+    if (!options.updatePlan?.data) {
+      if (options.issueUrls && options.issueUrls.length > 0) {
+        validatedPlan.issue = options.issueUrls;
+      }
+      if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
+        validatedPlan.rmfilter = options.planRmfilterArgs;
+      }
     }
 
     // Special handling for plan updates: merge tasks while preserving completed ones

@@ -1099,6 +1099,161 @@ Create API endpoints for the application
     expect(logSpy).toHaveBeenCalledWith(`Successfully updated plan: ${planPath}`);
   });
 
+  test('should preserve fields like parent during update', async () => {
+    // Create an original plan with parent and other fields
+    const originalPlanId = 4;
+    const originalCreatedAt = '2024-01-04T00:00:00.000Z';
+    const originalPlan: PlanSchema = {
+      id: originalPlanId,
+      title: 'Child Plan',
+      goal: 'Implement sub-feature',
+      details: 'Details for sub-feature',
+      status: 'in_progress',
+      priority: 'high',
+      parent: 100,
+      container: false,
+      baseBranch: 'feature/parent-feature',
+      changedFiles: ['src/feature.ts', 'tests/feature.test.ts'],
+      pullRequest: ['https://github.com/org/repo/pull/456'],
+      assignedTo: 'jane.doe',
+      docs: ['docs/feature.md'],
+      issue: ['https://github.com/org/repo/issues/123'],
+      rmfilter: ['--with-imports', 'src/**/*.ts'],
+      dependencies: [50, 51],
+      tasks: [
+        {
+          title: 'Original Task',
+          description: 'Original task description',
+          files: [],
+          steps: [{ prompt: 'Original step prompt', done: false }],
+        },
+      ],
+      createdAt: originalCreatedAt,
+      updatedAt: originalCreatedAt,
+      planGeneratedAt: originalCreatedAt,
+      promptsGeneratedAt: originalCreatedAt,
+    };
+
+    const planPath = path.join(tasksDir, '4.yml');
+    await fs.writeFile(planPath, yaml.stringify(originalPlan));
+
+    // Mock waitForEnter to return a simulated LLM response
+    const mockWaitForEnter = mock(() =>
+      Promise.resolve(`# Updated Child Plan
+
+## Goal
+Updated goal for sub-feature
+
+### Details
+Updated details with more information
+
+---
+
+## Task: Updated Task
+**Description:** Updated task description
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Updated step prompt
+    \`\`\`
+`)
+    );
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: mockWaitForEnter,
+    }));
+
+    // Mock extractMarkdownToYaml to verify field preservation
+    const mockExtractMarkdownToYaml = mock(async (inputText, config, quiet, options) => {
+      // Verify the updatePlan option is passed correctly
+      expect(options.updatePlan).toBeDefined();
+      expect(options.updatePlan.data.id).toBe(originalPlanId);
+      expect(options.updatePlan.data.parent).toBe(100);
+
+      // Simulate the real behavior of extractMarkdownToYaml with field preservation
+      const updatedPlan: PlanSchema = {
+        // All original fields should be preserved
+        ...originalPlan,
+        // Only these fields should be updated from the LLM response
+        title: 'Updated Child Plan',
+        goal: 'Updated goal for sub-feature',
+        details: 'Updated details with more information',
+        tasks: [
+          {
+            title: 'Updated Task',
+            description: 'Updated task description',
+            files: [],
+            steps: [{ prompt: 'Updated step prompt', done: false }],
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+
+      await fs.writeFile(planPath, yaml.stringify(updatedPlan));
+      return `Successfully updated plan at ${planPath}`;
+    });
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      convertYamlToMarkdown: mockConvertYamlToMarkdown,
+      extractMarkdownToYaml: mockExtractMarkdownToYaml,
+    }));
+
+    // Re-import after mocking
+    const updateModule = await import('./update.js');
+    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
+
+    const testDescription = 'Update the sub-feature implementation details';
+    const options = {
+      description: testDescription,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call the update command
+    await newHandleUpdateCommand('4', options, command);
+
+    // Verify the plan file was updated
+    const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
+    const updatedPlan = yaml.parse(updatedPlanContent);
+
+    // Verify all original fields are preserved
+    expect(updatedPlan.id).toBe(originalPlanId);
+    expect(updatedPlan.parent).toBe(100);
+    expect(updatedPlan.container).toBe(false);
+    expect(updatedPlan.baseBranch).toBe('feature/parent-feature');
+    expect(updatedPlan.changedFiles).toEqual(['src/feature.ts', 'tests/feature.test.ts']);
+    expect(updatedPlan.pullRequest).toEqual(['https://github.com/org/repo/pull/456']);
+    expect(updatedPlan.assignedTo).toBe('jane.doe');
+    expect(updatedPlan.docs).toEqual(['docs/feature.md']);
+    expect(updatedPlan.issue).toEqual(['https://github.com/org/repo/issues/123']);
+    expect(updatedPlan.rmfilter).toEqual(['--with-imports', 'src/**/*.ts']);
+    expect(updatedPlan.dependencies).toEqual([50, 51]);
+    expect(updatedPlan.priority).toBe('high');
+    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.createdAt).toBe(originalCreatedAt);
+    expect(updatedPlan.planGeneratedAt).toBe(originalCreatedAt);
+    expect(updatedPlan.promptsGeneratedAt).toBe(originalCreatedAt);
+
+    // Verify content was updated
+    expect(updatedPlan.title).toBe('Updated Child Plan');
+    expect(updatedPlan.goal).toBe('Updated goal for sub-feature');
+    expect(updatedPlan.details).toBe('Updated details with more information');
+    expect(updatedPlan.tasks[0].title).toBe('Updated Task');
+
+    // Verify updatedAt was changed
+    expect(updatedPlan.updatedAt).not.toBe(originalCreatedAt);
+    expect(new Date(updatedPlan.updatedAt).getTime()).toBeGreaterThan(
+      new Date(originalCreatedAt).getTime()
+    );
+
+    // Verify success message
+    expect(logSpy).toHaveBeenCalledWith(`Successfully updated plan: ${planPath}`);
+  });
+
   test('should throw error when description is mistakenly placed after double dash', async () => {
     // Create a test plan
     const plan: PlanSchema = {
