@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn, it } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -6,6 +6,8 @@ import yaml from 'yaml';
 import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
+import * as updateMod from './update.js';
+import { generateUpdatePrompt } from './update.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -21,7 +23,6 @@ const mockLogSpawn = mock(() => ({
 
 // Mock prompt generation functions
 const mockConvertYamlToMarkdown = mock(() => '# Test Plan\n## Goal\nTest goal');
-const mockGenerateUpdatePrompt = mock(() => 'Update prompt content');
 
 // Mock rmfilter and clipboard
 const mockRunRmfilterProgrammatically = mock(() => Promise.resolve('rmfilter output'));
@@ -39,7 +40,6 @@ describe('handleUpdateCommand', () => {
     warnSpy.mockClear();
     mockLogSpawn.mockClear();
     mockConvertYamlToMarkdown.mockClear();
-    mockGenerateUpdatePrompt.mockClear();
     mockRunRmfilterProgrammatically.mockClear();
     mockClipboardWrite.mockClear();
 
@@ -78,10 +78,6 @@ describe('handleUpdateCommand', () => {
       convertYamlToMarkdown: mockConvertYamlToMarkdown,
     }));
 
-    await moduleMocker.mock('../prompt.js', () => ({
-      generateUpdatePrompt: mockGenerateUpdatePrompt,
-    }));
-
     await moduleMocker.mock('../../rmfilter/rmfilter.js', () => ({
       runRmfilterProgrammatically: mockRunRmfilterProgrammatically,
     }));
@@ -106,6 +102,7 @@ describe('handleUpdateCommand', () => {
   test('should use description from command line when provided', async () => {
     // Mock waitForEnter to avoid stdin issues in tests
     const mockWaitForEnter = mock(() => Promise.resolve(''));
+    const promptSpy = spyOn(updateMod, 'generateUpdatePrompt');
 
     await moduleMocker.mock('../../common/terminal.js', () => ({
       waitForEnter: mockWaitForEnter,
@@ -166,10 +163,7 @@ describe('handleUpdateCommand', () => {
 
     // Verify the conversion and prompt generation were called
     expect(mockConvertYamlToMarkdown).toHaveBeenCalled();
-    expect(mockGenerateUpdatePrompt).toHaveBeenCalledWith(
-      '# Test Plan\n## Goal\nTest goal',
-      testDescription
-    );
+    expect(promptSpy).toHaveBeenCalledWith('# Test Plan\n## Goal\nTest goal', testDescription);
   });
 
   test('should open editor when description not provided', async () => {
@@ -179,10 +173,6 @@ describe('handleUpdateCommand', () => {
     await moduleMocker.mock('../../common/terminal.js', () => ({
       waitForEnter: mockWaitForEnter,
     }));
-
-    // Re-import after mocking
-    const updateModule = await import('./update.js');
-    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
 
     // Create a test plan
     const plan: PlanSchema = {
@@ -238,7 +228,7 @@ describe('handleUpdateCommand', () => {
 
     try {
       // Call the update command - will fail at rmfilter, but that's ok for this test
-      await newHandleUpdateCommand('1', options, command);
+      await handleUpdateCommand('1', options, command);
     } catch (e) {
       // Expected to fail at rmfilter
     }
@@ -353,10 +343,6 @@ describe('handleUpdateCommand', () => {
       waitForEnter: mockWaitForEnter,
     }));
 
-    // Re-import after mocking
-    const updateModule = await import('./update.js');
-    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
-
     const testDescription = 'Add authentication feature';
     const options = {
       description: testDescription,
@@ -375,23 +361,21 @@ describe('handleUpdateCommand', () => {
 
     // Call the update command - will fail at rmfilter, but that's ok for this test
     try {
-      await newHandleUpdateCommand('1', options, command);
+      await handleUpdateCommand('1', options, command);
     } catch (e) {
       // Expected to fail at rmfilter
     }
 
     // Verify that rmfilter was called with correct arguments
     expect(mockRunRmfilterProgrammatically).toHaveBeenCalledWith(
-      expect.arrayContaining([
+      [
         '--bare',
         '--instructions',
-        'Update prompt content',
-        '--edit-format',
-        'diff',
+        expect.stringMatching('Add authentication feature'),
         '--docs',
         'README.md',
         'src/**/*.ts',
-      ]),
+      ],
       tempDir
     );
 
@@ -556,10 +540,6 @@ Updated details with more information
       extractMarkdownToYaml: mockExtractMarkdownToYaml,
     }));
 
-    // Re-import after mocking
-    const updateModule = await import('./update.js');
-    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
-
     const testDescription = 'Add new features and update existing tasks';
     const options = {
       description: testDescription,
@@ -572,7 +552,7 @@ Updated details with more information
     };
 
     // Call the update command
-    await newHandleUpdateCommand('1', options, command);
+    await handleUpdateCommand('1', options, command);
 
     // Verify waitForEnter was called
     expect(mockWaitForEnter).toHaveBeenCalledWith(true);
@@ -626,10 +606,6 @@ Updated details with more information
       waitForEnter: mockWaitForEnter,
     }));
 
-    // Re-import after mocking
-    const updateModule = await import('./update.js');
-    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
-
     const options = {
       description: 'Update',
     };
@@ -641,7 +617,7 @@ Updated details with more information
     };
 
     // Should throw error when LLM response is empty
-    await expect(newHandleUpdateCommand('1', options, command)).rejects.toThrow(
+    await expect(handleUpdateCommand('1', options, command)).rejects.toThrow(
       'No response from LLM was provided'
     );
   });
@@ -754,10 +730,6 @@ Original details
       extractMarkdownToYaml: mockExtractMarkdownToYaml,
     }));
 
-    // Re-import after mocking
-    const updateModule = await import('./update.js');
-    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
-
     const testDescription = 'Add authentication feature with login and logout functionality';
     const options = {
       description: testDescription,
@@ -770,7 +742,7 @@ Original details
     };
 
     // Call the update command
-    await newHandleUpdateCommand('1', options, command);
+    await handleUpdateCommand('1', options, command);
 
     // Verify the plan file was updated
     const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
@@ -892,10 +864,6 @@ Application with multiple features
       extractMarkdownToYaml: mockExtractMarkdownToYaml,
     }));
 
-    // Re-import after mocking
-    const updateModule = await import('./update.js');
-    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
-
     const testDescription =
       'Remove the email service task as it will be handled by a third-party service';
     const options = {
@@ -909,7 +877,7 @@ Application with multiple features
     };
 
     // Call the update command
-    await newHandleUpdateCommand('2', options, command);
+    await handleUpdateCommand('2', options, command);
 
     // Verify the plan file was updated
     const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
@@ -1053,10 +1021,6 @@ Create API endpoints for the application
       extractMarkdownToYaml: mockExtractMarkdownToYaml,
     }));
 
-    // Re-import after mocking
-    const updateModule = await import('./update.js');
-    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
-
     const testDescription =
       'Expand the User API task to include authentication and authorization features';
     const options = {
@@ -1070,7 +1034,7 @@ Create API endpoints for the application
     };
 
     // Call the update command
-    await newHandleUpdateCommand('3', options, command);
+    await handleUpdateCommand('3', options, command);
 
     // Verify the plan file was updated
     const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
@@ -1198,10 +1162,6 @@ Updated details with more information
       extractMarkdownToYaml: mockExtractMarkdownToYaml,
     }));
 
-    // Re-import after mocking
-    const updateModule = await import('./update.js');
-    const { handleUpdateCommand: newHandleUpdateCommand } = updateModule;
-
     const testDescription = 'Update the sub-feature implementation details';
     const options = {
       description: testDescription,
@@ -1214,7 +1174,7 @@ Updated details with more information
     };
 
     // Call the update command
-    await newHandleUpdateCommand('4', options, command);
+    await handleUpdateCommand('4', options, command);
 
     // Verify the plan file was updated
     const updatedPlanContent = await fs.readFile(planPath, 'utf-8');
@@ -1287,12 +1247,148 @@ Updated details with more information
       await handleUpdateCommand('1', options, command);
     } catch (error) {
       expect(error.message).toContain(
-        'The update description should be provided as a positional argument'
+        'Usage: rmplan update <plan> "description" -- <rmfilter args>'
       );
-      expect(error.message).toContain('rmplan update <plan> "description" -- <rmfilter args>');
     } finally {
       // Restore original argv
       process.argv = originalArgv;
     }
+  });
+});
+
+describe('generateUpdatePrompt', () => {
+  it('should correctly embed planAsMarkdown and updateDescription in the prompt', () => {
+    const planAsMarkdown = `# My Test Plan
+
+## Goal
+To test the update prompt generation
+
+## Priority
+medium
+
+### Details
+This is a test plan with some details
+
+---
+
+## Task: First Task
+**Description:** This is the first task
+**Files:**
+- src/test1.ts
+- src/test2.ts
+
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Do something first
+    \`\`\`
+2.  **Prompt:**
+    \`\`\`
+    Do something second
+    \`\`\``;
+
+    const updateDescription = 'Add a new task for error handling and update the priority to high';
+
+    const prompt = generateUpdatePrompt(planAsMarkdown, updateDescription);
+
+    // Check that the prompt contains the key sections
+    expect(prompt).toContain('# Plan Update Task');
+    expect(prompt).toContain(
+      'You are acting as a project manager tasked with updating an existing project plan'
+    );
+
+    // Check that the existing plan is embedded
+    expect(prompt).toContain('## Current Plan');
+    expect(prompt).toContain(planAsMarkdown);
+
+    // Check that the update description is embedded
+    expect(prompt).toContain('## Requested Update');
+    expect(prompt).toContain(updateDescription);
+
+    // Check instructions section
+    expect(prompt).toContain('## Instructions');
+    expect(prompt).toContain('Return the ENTIRE updated plan');
+    expect(prompt).toContain('For **Pending Tasks** only, you may:');
+    expect(prompt).toContain('Add new tasks');
+    expect(prompt).toContain('Remove existing pending tasks');
+    expect(prompt).toContain('Modify pending tasks');
+    expect(prompt).toContain('Preserve any unmodified parts');
+
+    // Check that it references the required output format
+    expect(prompt).toContain('## Required Output Format');
+    expect(prompt).toContain('Your response must follow the exact structure of the input plan');
+
+    // Check important notes
+    expect(prompt).toContain('## Important Notes');
+    expect(prompt).toContain('Output ONLY the updated plan in Markdown format');
+  });
+
+  it('should include instructions for preserving completed tasks', () => {
+    const planAsMarkdown = `# Test Plan
+
+## Goal
+Test goal
+
+---
+
+# Completed Tasks
+*These tasks have been completed and should not be modified.*
+
+## Task: Completed Task [TASK-1] ✓
+**Description:** This task is done
+**Steps:** *(All completed)*
+1.  **Prompt:** ✓
+    \`\`\`
+    Completed step
+    \`\`\`
+
+---
+
+# Pending Tasks
+*These tasks can be updated, modified, or removed as needed.*
+
+## Task: Pending Task [TASK-2]
+**Description:** This task is not done
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Pending step
+    \`\`\``;
+
+    const updateDescription = 'Add a new feature';
+
+    const prompt = generateUpdatePrompt(planAsMarkdown, updateDescription);
+
+    // Check for completed task preservation instructions
+    expect(prompt).toContain('CRITICAL: Preserve ALL completed tasks exactly as they appear');
+    expect(prompt).toContain('Completed tasks are marked with ✓');
+    expect(prompt).toContain('Do NOT modify, remove, or change any completed tasks');
+    expect(prompt).toContain('Keep all task IDs (e.g., [TASK-1], [TASK-2]) exactly as shown');
+
+    // Check for pending task instructions
+    expect(prompt).toContain('For **Pending Tasks** only, you may:');
+    expect(prompt).toContain('Add new tasks');
+    expect(prompt).toContain('Remove existing pending tasks');
+    expect(prompt).toContain('Modify pending tasks');
+
+    // Check for task numbering instructions
+    expect(prompt).toContain('Continue the task numbering sequence');
+    expect(prompt).toContain(
+      'if the last task is [TASK-5], new tasks should be [TASK-6], [TASK-7]'
+    );
+
+    // Check structure preservation
+    expect(prompt).toContain('Keep the "Completed Tasks" section if it exists');
+    expect(prompt).toContain('Keep the "Pending Tasks" section');
+    expect(prompt).toContain('Maintain the separation between completed and pending tasks');
+
+    // Check formatting requirements
+    expect(prompt).toContain('Task ID format [TASK-N]');
+    expect(prompt).toContain('Completed task markers (✓)');
+
+    // Check final warning
+    expect(prompt).toContain(
+      'NEVER modify completed tasks - they represent work that has already been done'
+    );
   });
 });

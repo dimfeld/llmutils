@@ -338,25 +338,25 @@ export async function extractMarkdownToYaml(
     }
     validatedPlan = result.data;
 
+    // Preserve all fields from the original plan that aren't in the updated plan
+    // This includes fields like parent, container, baseBranch, changedFiles, etc.
+    const fieldsToPreserve = [
+      'parent',
+      'container',
+      'baseBranch',
+      'changedFiles',
+      'pullRequest',
+      'assignedTo',
+      'docs',
+      'issue',
+      'rmfilter',
+      'dependencies',
+      'priority',
+    ] as const;
+
     // When updating a plan, preserve all existing fields that weren't explicitly updated
     if (options.updatePlan?.data) {
       const originalPlan = options.updatePlan.data;
-
-      // Preserve all fields from the original plan that aren't in the updated plan
-      // This includes fields like parent, container, baseBranch, changedFiles, etc.
-      const fieldsToPreserve = [
-        'parent',
-        'container',
-        'baseBranch',
-        'changedFiles',
-        'pullRequest',
-        'assignedTo',
-        'docs',
-        'issue',
-        'rmfilter',
-        'dependencies',
-        'priority',
-      ] as const;
 
       for (const field of fieldsToPreserve) {
         if (originalPlan[field] !== undefined && validatedPlan[field] === undefined) {
@@ -417,26 +417,21 @@ export async function extractMarkdownToYaml(
         ].join('\n\n');
       }
 
-      // Combine dependencies from both stub plan and generated plan
-      if (options.stubPlan.data.dependencies) {
-        const existingDeps = new Set(validatedPlan.dependencies || []);
-        const stubDeps = new Set(options.stubPlan?.data.dependencies);
-        validatedPlan.dependencies = Array.from(new Set([...existingDeps, ...stubDeps]));
-      }
+      // Merge the fixed fields, combining arrays and preferring the stub plan for scalars
+      for (const field of fieldsToPreserve) {
+        const stubValue = options.stubPlan.data[field];
+        const newValue = validatedPlan[field];
 
-      if (options.stubPlan?.data.priority) {
-        validatedPlan.priority = options.stubPlan?.data.priority;
-      }
-
-      if (options.stubPlan?.data.assignedTo) {
-        validatedPlan.assignedTo = options.stubPlan?.data.assignedTo;
-      }
-
-      // Combine issue URLs from both sources
-      if (options.stubPlan?.data.issue) {
-        const existingIssues = new Set(validatedPlan.issue || []);
-        const stubIssues = new Set(options.stubPlan?.data.issue);
-        validatedPlan.issue = Array.from(new Set([...existingIssues, ...stubIssues]));
+        if (
+          (stubValue == null || Array.isArray(stubValue)) &&
+          (newValue == null || Array.isArray(newValue))
+        ) {
+          (validatedPlan as any)[field] = Array.from(
+            new Set([...(stubValue || []), ...(newValue || [])])
+          );
+        } else if (stubValue !== undefined) {
+          (validatedPlan as any)[field] = stubValue;
+        }
       }
     }
 

@@ -10,7 +10,6 @@ import { waitForEnter } from '../../common/terminal.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFile, readPlanFile } from '../plans.js';
 import { convertYamlToMarkdown, extractMarkdownToYaml } from '../process_markdown.js';
-import { generateUpdatePrompt } from '../prompt.js';
 import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
 import * as clipboard from '../../common/clipboard.js';
 
@@ -84,16 +83,14 @@ export async function handleUpdateCommand(planFile: string, options: any, comman
   const doubleDashIdx = process.argv.indexOf('--');
   const userCliRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
 
-  // Check if the description was mistakenly placed after the double dash
   if (
-    userCliRmfilterArgs.length > 0 &&
-    options.description &&
-    userCliRmfilterArgs[0] === options.description
+    (userCliRmfilterArgs.length > 0 && userCliRmfilterArgs[0] === options.description) ||
+    !options.description
   ) {
-    throw new Error(
-      'The update description should be provided as a positional argument, not after the -- separator.\n' +
-        'Correct usage: rmplan update <plan> "description" -- <rmfilter args>'
-    );
+    // Commander can't differentiate between a description before the double dash and the first
+    // rmfilter argument where there is no description, so if we get here it means
+    // there was no description.
+    throw new Error('Usage: rmplan update <plan> "description" -- <rmfilter args>');
   }
 
   // Combine user CLI args and plan's rmfilter args
@@ -106,13 +103,7 @@ export async function handleUpdateCommand(planFile: string, options: any, comman
   }
 
   // Construct rmfilter arguments
-  const rmfilterArgs: string[] = [
-    '--bare',
-    '--instructions',
-    updatePrompt,
-    '--edit-format',
-    'diff',
-  ];
+  const rmfilterArgs: string[] = ['--bare', '--instructions', updatePrompt];
 
   // Add docs if available
   if (planData.docs) {
@@ -153,4 +144,65 @@ export async function handleUpdateCommand(planFile: string, options: any, comman
   });
 
   log(`Successfully updated plan: ${resolvedPlanFile}`);
+}
+
+export function generateUpdatePrompt(planAsMarkdown: string, updateDescription: string): string {
+  return `# Plan Update Task
+
+You are acting as a project manager tasked with updating an existing project plan based on requested changes.
+
+## Current Plan
+
+You have been provided with an existing plan in Markdown format:
+
+${planAsMarkdown}
+
+## Requested Update
+
+The following changes have been requested:
+
+${updateDescription}
+
+## Instructions
+
+Please analyze the existing plan and the requested changes, then:
+
+1. **Return the ENTIRE updated plan** in the exact same Markdown format as provided
+2. **CRITICAL: Preserve ALL completed tasks exactly as they appear**
+   - Completed tasks are marked with ✓ and appear in the "Completed Tasks" section
+   - Do NOT modify, remove, or change any completed tasks
+   - If a completed task contains steps you would want to modify, instead add a new task that builds on the completed task to make the appropriate changes.
+   - Keep all task IDs (e.g., [TASK-1], [TASK-2]) exactly as shown
+3. For **Pending Tasks** only, you may:
+   - Add new tasks
+   - Remove existing pending tasks
+   - Modify pending tasks (title, description, files, steps)
+   - Reorder pending tasks
+4. When adding new tasks:
+   - Continue the task numbering sequence (e.g., if the last task is [TASK-5], new tasks should be [TASK-6], [TASK-7], etc.)
+   - Place new tasks in the appropriate section based on their completion status
+5. **Preserve the structure**:
+   - Keep the "Completed Tasks" section if it exists
+   - Keep the "Pending Tasks" section for tasks that are not yet done
+   - Maintain the separation between completed and pending tasks
+6. **Preserve any unmodified parts** of the plan exactly as they were
+7. Ensure the updated plan maintains consistency and logical flow
+
+## Required Output Format
+
+Your response must follow the exact structure of the input plan, maintaining:
+- The same header levels and formatting
+- Task ID format [TASK-N]
+- Completed task markers (✓)
+- Section separators (---)
+- Code block formatting for prompts
+
+## Important Notes
+
+- Output ONLY the updated plan in Markdown format
+- Do not include any explanations, commentary, or text outside the plan structure
+- Maintain the exact formatting with proper headers, bullet points, and code blocks
+- If the existing plan uses phase-based structure, maintain that structure in your update
+- Ensure all changes align with the requested update while keeping the plan coherent
+- NEVER modify completed tasks - they represent work that has already been done`;
 }
