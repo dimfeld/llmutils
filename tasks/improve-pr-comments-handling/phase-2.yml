@@ -15,7 +15,7 @@ issue:
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-11T18:35:17.861Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-11T18:56:22.548Z
+updatedAt: 2025-06-11T18:58:30.499Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -183,27 +183,27 @@ tasks:
           `createHybridContextPrompt`. This function will accept the aggregated
           results from processing all files: a map or list of modified file
           contents, and a list of all collected `CommentDiffContext` objects.
-        done: false
+        done: true
       - prompt: >
           Inside `createHybridContextPrompt`, start building the prompt string
           using the `hybridContextPrompt` template from `src/rmpr/prompts.ts`.
-        done: false
+        done: true
       - prompt: >
           Generate the `<diff_contexts>` XML block. Iterate through the list of
           `CommentDiffContext` objects and, for each one, create a
           `<diff_context>` element containing the `diffHunk`, using the comment
           ID as an attribute (e.g., `<diff_context id="${context.id}">`).
-        done: false
+        done: true
       - prompt: >
           Append the modified file contents to the prompt. For clarity and
           better parsing by the LLM, wrap each file's content in a `<file
           path="<file_path>">...</file>` block.
-        done: false
+        done: true
       - prompt: >
           Combine the instructional text, the `<diff_contexts>` block, and all
           the `<file>` blocks into a single, complete prompt string and return
           it.
-        done: false
+        done: true
   - title: Integrate the New Hybrid Mode into `main.ts`
     description: The new "hybrid-context" mode will be integrated into the `rmpr`
       tool's main workflow in `src/rmpr/main.ts`. This involves adding it as an
