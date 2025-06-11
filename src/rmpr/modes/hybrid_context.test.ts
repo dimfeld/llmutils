@@ -8,9 +8,7 @@ import type { DetailedReviewComment, CommentDiffContext, HybridInsertionResult }
 import type { DiffLine } from '../../common/github/pull_requests.ts';
 
 // Helper to create mock DetailedReviewComment
-function createMockComment(
-  overrides: Partial<DetailedReviewComment> = {}
-): DetailedReviewComment {
+function createMockComment(overrides: Partial<DetailedReviewComment> = {}): DetailedReviewComment {
   const defaultComment: DetailedReviewComment = {
     thread: {
       id: 'thread-1',
@@ -23,7 +21,8 @@ function createMockComment(
       id: 'comment-1',
       databaseId: 123,
       body: 'This needs to be fixed',
-      diffHunk: '@@ -7,6 +7,8 @@ function example() {\n   const a = 1;\n   const b = 2;\n+  const c = 3;\n+  const d = 4;\n   return a + b;\n }',
+      diffHunk:
+        '@@ -7,6 +7,8 @@ function example() {\n   const a = 1;\n   const b = 2;\n+  const c = 3;\n+  const d = 4;\n   return a + b;\n }',
       author: { login: 'reviewer' },
     },
     diffForContext: [
@@ -65,7 +64,7 @@ describe('insertAiCommentsAndPrepareDiffContexts', () => {
 
     // Check that AI comment was inserted
     expect(result.contentWithAiComments).toContain('// AI (id: comment-1): This needs to be fixed');
-    
+
     // Check that diff context was created
     expect(result.commentDiffContexts).toHaveLength(1);
     expect(result.commentDiffContexts[0]).toEqual({
@@ -93,12 +92,19 @@ function another() {
 }`;
 
     const comment1 = createMockComment({
-      thread: { id: 'thread-1', path: 'src/example.ts', diffSide: 'RIGHT', line: 3, startLine: null },
+      thread: {
+        id: 'thread-1',
+        path: 'src/example.ts',
+        diffSide: 'RIGHT',
+        line: 3,
+        startLine: null,
+      },
       comment: {
         id: 'comment-1',
         databaseId: 123,
         body: 'Variable b should be renamed',
-        diffHunk: '@@ -1,5 +1,5 @@\n function example() {\n   const a = 1;\n-  const b = 2;\n+  const b = 2; // rename this\n   const c = 3;',
+        diffHunk:
+          '@@ -1,5 +1,5 @@\n function example() {\n   const a = 1;\n-  const b = 2;\n+  const b = 2; // rename this\n   const c = 3;',
         author: { login: 'reviewer' },
       },
       diffForContext: [
@@ -110,17 +116,24 @@ function another() {
     });
 
     const comment2 = createMockComment({
-      thread: { id: 'thread-2', path: 'src/example.ts', diffSide: 'RIGHT', line: 10, startLine: null },
+      thread: {
+        id: 'thread-2',
+        path: 'src/example.ts',
+        diffSide: 'RIGHT',
+        line: 10,
+        startLine: null,
+      },
       comment: {
         id: 'comment-2',
         databaseId: 124,
         body: 'Add error handling here',
-        diffHunk: '@@ -8,4 +8,4 @@\n function another() {\n-  console.log(\'hello\');\n+  console.log(\'hello\'); // needs error handling\n   return 42;',
+        diffHunk:
+          "@@ -8,4 +8,4 @@\n function another() {\n-  console.log('hello');\n+  console.log('hello'); // needs error handling\n   return 42;",
         author: { login: 'reviewer' },
       },
       diffForContext: [
         { content: ' function another() {', oldLineNumber: 9, newLineNumber: 9 },
-        { content: '   console.log(\'hello\');', oldLineNumber: 10, newLineNumber: 10 },
+        { content: "   console.log('hello');", oldLineNumber: 10, newLineNumber: 10 },
         { content: '   return 42;', oldLineNumber: 11, newLineNumber: 11 },
         { content: ' }', oldLineNumber: 12, newLineNumber: 12 },
       ],
@@ -133,9 +146,13 @@ function another() {
     );
 
     // Check that both AI comments were inserted
-    expect(result.contentWithAiComments).toContain('// AI (id: comment-1): Variable b should be renamed');
-    expect(result.contentWithAiComments).toContain('// AI (id: comment-2): Add error handling here');
-    
+    expect(result.contentWithAiComments).toContain(
+      '// AI (id: comment-1): Variable b should be renamed'
+    );
+    expect(result.contentWithAiComments).toContain(
+      '// AI (id: comment-2): Add error handling here'
+    );
+
     // Check that both diff contexts were created
     expect(result.commentDiffContexts).toHaveLength(2);
     expect(result.commentDiffContexts[0].id).toBe('comment-1');
@@ -166,7 +183,8 @@ function another() {
         id: 'comment-block',
         databaseId: 125,
         body: 'This entire block needs refactoring',
-        diffHunk: '@@ -1,7 +1,7 @@\n function example() {\n   const a = 1;\n   const b = 2;\n   const c = 3;\n   const d = 4;\n   return a + b;\n }',
+        diffHunk:
+          '@@ -1,7 +1,7 @@\n function example() {\n   const a = 1;\n   const b = 2;\n   const c = 3;\n   const d = 4;\n   return a + b;\n }',
         author: { login: 'reviewer' },
       },
     });
@@ -179,13 +197,15 @@ function another() {
 
     // Check that block markers were inserted
     expect(result.contentWithAiComments).toContain('// AI_COMMENT_START');
-    expect(result.contentWithAiComments).toContain('// AI (id: comment-block): This entire block needs refactoring');
+    expect(result.contentWithAiComments).toContain(
+      '// AI (id: comment-block): This entire block needs refactoring'
+    );
     expect(result.contentWithAiComments).toContain('// AI_COMMENT_END');
 
     // Verify the structure of the result
     const lines = result.contentWithAiComments.split('\n');
-    const startIndex = lines.findIndex(line => line.includes('AI_COMMENT_START'));
-    const endIndex = lines.findIndex(line => line.includes('AI_COMMENT_END'));
+    const startIndex = lines.findIndex((line) => line.includes('AI_COMMENT_START'));
+    const endIndex = lines.findIndex((line) => line.includes('AI_COMMENT_END'));
     expect(startIndex).toBeGreaterThan(-1);
     expect(endIndex).toBeGreaterThan(startIndex);
   });
@@ -196,7 +216,13 @@ function another() {
 }`;
 
     const comment = createMockComment({
-      thread: { id: 'thread-1', path: 'src/example.ts', diffSide: 'RIGHT', line: 2, startLine: null },
+      thread: {
+        id: 'thread-1',
+        path: 'src/example.ts',
+        diffSide: 'RIGHT',
+        line: 2,
+        startLine: null,
+      },
       comment: {
         id: 'comment-multi',
         databaseId: 126,
@@ -218,7 +244,9 @@ function another() {
     );
 
     // Check multiline comment formatting
-    expect(result.contentWithAiComments).toContain('// AI (id: comment-multi): This function needs:');
+    expect(result.contentWithAiComments).toContain(
+      '// AI (id: comment-multi): This function needs:'
+    );
     expect(result.contentWithAiComments).toContain('// AI: - Better name');
     expect(result.contentWithAiComments).toContain('// AI: - Documentation');
     expect(result.contentWithAiComments).toContain('// AI: - Tests');
@@ -251,7 +279,13 @@ function another() {
 </div>`;
 
     const htmlComment = createMockComment({
-      thread: { id: 'thread-html', path: 'example.html', diffSide: 'RIGHT', line: 2, startLine: null },
+      thread: {
+        id: 'thread-html',
+        path: 'example.html',
+        diffSide: 'RIGHT',
+        line: 2,
+        startLine: null,
+      },
       diffForContext: [
         { content: ' <div>', oldLineNumber: 1, newLineNumber: 1 },
         { content: '   <p>Hello</p>', oldLineNumber: 2, newLineNumber: 2 },
@@ -305,8 +339,20 @@ function another() {
 </button>`;
 
     const scriptComment = createMockComment({
-      thread: { id: 'thread-1', path: 'Component.svelte', diffSide: 'RIGHT', line: 2, startLine: null },
-      comment: { id: 'comment-script', databaseId: 127, body: 'Use const instead', diffHunk: '', author: null },
+      thread: {
+        id: 'thread-1',
+        path: 'Component.svelte',
+        diffSide: 'RIGHT',
+        line: 2,
+        startLine: null,
+      },
+      comment: {
+        id: 'comment-script',
+        databaseId: 127,
+        body: 'Use const instead',
+        diffHunk: '',
+        author: null,
+      },
       diffForContext: [
         { content: ' <script>', oldLineNumber: 1, newLineNumber: 1 },
         { content: '   let count = 0;', oldLineNumber: 2, newLineNumber: 2 },
@@ -315,8 +361,20 @@ function another() {
     });
 
     const templateComment = createMockComment({
-      thread: { id: 'thread-2', path: 'Component.svelte', diffSide: 'RIGHT', line: 8, startLine: null },
-      comment: { id: 'comment-template', databaseId: 128, body: 'Add aria-label', diffHunk: '', author: null },
+      thread: {
+        id: 'thread-2',
+        path: 'Component.svelte',
+        diffSide: 'RIGHT',
+        line: 8,
+        startLine: null,
+      },
+      comment: {
+        id: 'comment-template',
+        databaseId: 128,
+        body: 'Add aria-label',
+        diffHunk: '',
+        author: null,
+      },
       diffForContext: [
         { content: ' <button on:click={increment}>', oldLineNumber: 8, newLineNumber: 8 },
         { content: '   Count: {count}', oldLineNumber: 9, newLineNumber: 9 },
@@ -332,9 +390,11 @@ function another() {
 
     // Script section should use JS-style comments
     expect(result.contentWithAiComments).toContain('// AI (id: comment-script): Use const instead');
-    
+
     // Template section should use HTML-style comments
-    expect(result.contentWithAiComments).toContain('<!-- AI (id: comment-template): Add aria-label -->');
+    expect(result.contentWithAiComments).toContain(
+      '<!-- AI (id: comment-template): Add aria-label -->'
+    );
   });
 
   test('reports errors for unplaceable comments', () => {
@@ -343,10 +403,14 @@ function another() {
 }`;
 
     const comment = createMockComment({
-      thread: { id: 'thread-1', path: 'src/example.ts', diffSide: 'RIGHT', line: null, startLine: null },
-      diffForContext: [
-        { content: ' nonexistent code', oldLineNumber: 1, newLineNumber: 1 },
-      ],
+      thread: {
+        id: 'thread-1',
+        path: 'src/example.ts',
+        diffSide: 'RIGHT',
+        line: null,
+        startLine: null,
+      },
+      diffForContext: [{ content: ' nonexistent code', oldLineNumber: 1, newLineNumber: 1 }],
     });
 
     const result = insertAiCommentsAndPrepareDiffContexts(
@@ -376,12 +440,12 @@ function another() {
 }`;
 
     const comment = createMockComment({
-      thread: { 
-        id: 'thread-1', 
-        path: 'src/example.ts', 
-        diffSide: 'RIGHT', 
-        line: null,  // null indicates outdated
-        startLine: null 
+      thread: {
+        id: 'thread-1',
+        path: 'src/example.ts',
+        diffSide: 'RIGHT',
+        line: null, // null indicates outdated
+        startLine: null,
       },
       comment: {
         id: 'comment-outdated',
@@ -393,8 +457,8 @@ function another() {
       // The diff context shows what the reviewer saw - function with c and d variables
       diffForContext: [
         { content: ' function example() {', oldLineNumber: 1, newLineNumber: 1 },
-        { content: '   const alpha = 1;  // renamed from \'a\'', oldLineNumber: 2, newLineNumber: 2 },
-        { content: '   const beta = 2;   // renamed from \'b\'', oldLineNumber: 3, newLineNumber: 3 },
+        { content: "   const alpha = 1;  // renamed from 'a'", oldLineNumber: 2, newLineNumber: 2 },
+        { content: "   const beta = 2;   // renamed from 'b'", oldLineNumber: 3, newLineNumber: 3 },
         { content: '   const c = 3;', oldLineNumber: 4, newLineNumber: 4 },
       ],
     });
@@ -425,14 +489,12 @@ function another() {
       diffForContext: [],
     });
 
-    const result = insertAiCommentsAndPrepareDiffContexts(
-      originalContent,
-      [comment],
-      'empty.ts'
-    );
+    const result = insertAiCommentsAndPrepareDiffContexts(originalContent, [comment], 'empty.ts');
 
     // With empty diffForContext and line numbers, comment should be placed using fallback
-    expect(result.contentWithAiComments).toContain('// AI (id: comment-empty): Add content to this file');
+    expect(result.contentWithAiComments).toContain(
+      '// AI (id: comment-empty): Add content to this file'
+    );
     expect(result.errors).toHaveLength(0);
   });
 
@@ -448,7 +510,13 @@ function another() {
 }`;
 
     const newComment = createMockComment({
-      thread: { id: 'thread-new', path: 'src/example.ts', diffSide: 'RIGHT', line: 3, startLine: null },
+      thread: {
+        id: 'thread-new',
+        path: 'src/example.ts',
+        diffSide: 'RIGHT',
+        line: 3,
+        startLine: null,
+      },
       comment: {
         id: 'new-comment',
         databaseId: 130,
@@ -473,7 +541,7 @@ function another() {
     // Old markers should be removed
     expect(result.contentWithAiComments).not.toContain('old-comment');
     expect(result.contentWithAiComments).not.toContain('Old block comment');
-    
+
     // New comment should be added
     expect(result.contentWithAiComments).toContain('// AI (id: new-comment): New review comment');
   });
@@ -484,7 +552,13 @@ function another() {
 }`;
 
     const comment = createMockComment({
-      thread: { id: 'thread-1', path: 'src/example.ts', diffSide: 'RIGHT', line: 2, startLine: null },
+      thread: {
+        id: 'thread-1',
+        path: 'src/example.ts',
+        diffSide: 'RIGHT',
+        line: 2,
+        startLine: null,
+      },
       comment: {
         id: 'comment-cleaned',
         databaseId: 131,
@@ -507,7 +581,9 @@ function another() {
     );
 
     // Should use cleanedComment instead of raw body
-    expect(result.contentWithAiComments).toContain('// AI (id: comment-cleaned): Please change this');
+    expect(result.contentWithAiComments).toContain(
+      '// AI (id: comment-cleaned): Please change this'
+    );
     expect(result.contentWithAiComments).not.toContain('```suggestion');
   });
 });
@@ -515,18 +591,23 @@ function another() {
 describe('createHybridContextPrompt', () => {
   test('creates prompt with single file and diff context', () => {
     const fileContents = new Map([
-      ['src/example.ts', `function example() {
+      [
+        'src/example.ts',
+        `function example() {
   // AI (id: comment-1): This needs to be fixed
   const a = 1;
   return a;
-}`]
+}`,
+      ],
     ]);
 
-    const diffContexts: CommentDiffContext[] = [{
-      id: 'comment-1',
-      aiComment: '// AI (id: comment-1): This needs to be fixed',
-      diffHunk: '@@ -1,3 +1,3 @@\n function example() {\n-  const a = 1;\n+  const a = 2;',
-    }];
+    const diffContexts: CommentDiffContext[] = [
+      {
+        id: 'comment-1',
+        aiComment: '// AI (id: comment-1): This needs to be fixed',
+        diffHunk: '@@ -1,3 +1,3 @@\n function example() {\n-  const a = 1;\n+  const a = 2;',
+      },
+    ];
 
     const prompt = createHybridContextPrompt(fileContents, diffContexts);
 
@@ -569,7 +650,7 @@ describe('createHybridContextPrompt', () => {
     // Check both diff contexts are included
     expect(prompt).toContain('<diff_context id="comment-1">');
     expect(prompt).toContain('<diff_context id="comment-2">');
-    
+
     // Check both files are included
     expect(prompt).toContain('<file path="src/file1.ts">');
     expect(prompt).toContain('<file path="src/file2.ts">');
@@ -599,12 +680,15 @@ describe('createHybridContextPrompt', () => {
 
   test('validates ID matching between inline comments and diff contexts', () => {
     const fileContents = new Map([
-      ['src/example.ts', `function test() {
+      [
+        'src/example.ts',
+        `function test() {
   // AI (id: abc-123): First comment
   const x = 1;
   // AI (id: def-456): Second comment
   return x;
-}`]
+}`,
+      ],
     ]);
 
     const diffContexts: CommentDiffContext[] = [
@@ -625,8 +709,8 @@ describe('createHybridContextPrompt', () => {
     // Verify that IDs in diff_context tags match what we expect
     // Note: The prompt contains a template example with <comment_id>, so we filter that out
     const diffContextIds = [...prompt.matchAll(/<diff_context id="([^"]+)">/g)]
-      .map(m => m[1])
-      .filter(id => id !== '<comment_id>');
+      .map((m) => m[1])
+      .filter((id) => id !== '<comment_id>');
     expect(diffContextIds).toEqual(['abc-123', 'def-456']);
 
     // Verify file content contains matching IDs

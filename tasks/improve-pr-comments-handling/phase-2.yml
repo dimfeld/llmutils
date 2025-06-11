@@ -6,7 +6,7 @@ goal: To create a new "hybrid context" mode for `rmpr` that embeds AI-readable
   diff hunk for each comment to the Language Model, offering a richer context
   for generating code changes.
 id: 29
-status: in_progress
+status: done
 priority: high
 dependencies:
   - 28
@@ -15,7 +15,7 @@ issue:
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-11T18:35:17.861Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-11T19:02:55.389Z
+updatedAt: 2025-06-11T19:17:05.005Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -267,7 +267,7 @@ tasks:
     steps:
       - prompt: |
           Create a new test file at `src/rmpr/modes/hybrid_context.test.ts`.
-        done: false
+        done: true
       - prompt: >
           Write a test suite for `insertAiCommentsAndPrepareDiffContexts`.
           Create mock `DetailedReviewComment` objects and file content. Verify
@@ -275,32 +275,26 @@ tasks:
           the returned `commentDiffContexts` array contains the correct
           `diffHunk` for each successfully placed comment, and that errors are
           reported for unplaceable comments.
-        done: false
+        done: true
       - prompt: >
           Add a test case to `insertAiCommentsAndPrepareDiffContexts` that
           handles multiple comments on a single file, ensuring they are all
           processed and their contexts are collected correctly.
-        done: false
+        done: true
       - prompt: >
           Write a test suite for `createHybridContextPrompt`. Provide mock
           `HybridInsertionResult` data to the function. Assert that the
           generated prompt string contains the correct instructional text, a
           properly formatted `<diff_contexts>` block with all expected contexts,
           and the full content of the modified files wrapped in `<file>` tags.
-        done: false
+        done: true
       - prompt: >
           Validate that the IDs in the inline comments (`// AI (id: ...)`) match
           the `id` attributes in the `<diff_context>` tags within the generated
           prompt.
-        done: false
+        done: true
 changedFiles:
-  - src/rmplan/executors/claude_code/permissions_mcp.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/rmplan.ts
-  - src/rmpr/main.ts
-  - src/rmpr/modes/hybrid_context.ts
-  - src/rmpr/prompts.ts
-  - src/rmpr/types.ts
+  - src/rmpr/modes/hybrid_context.test.ts
 rmfilter:
   - src/rmpr
   - src/common/github
