@@ -21,6 +21,136 @@ import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js
 import { input } from '@inquirer/prompts';
 import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 
+export function convertYamlToMarkdown(
+  plan: PlanSchema,
+  options?: { includeTaskIds?: boolean }
+): string {
+  const sections: string[] = [];
+
+  // Title section (if present)
+  if (plan.title) {
+    sections.push(`# ${plan.title}`);
+  }
+
+  // Goal section
+  sections.push(`## Goal\n${plan.goal}`);
+
+  // Priority section (if present)
+  if (plan.priority) {
+    sections.push(`## Priority\n${plan.priority}`);
+  }
+
+  // Details section
+  if (plan.details) {
+    sections.push(`### Details\n${plan.details}`);
+  }
+
+  // Add separator
+  sections.push('---');
+
+  // Separate tasks into done and pending
+  const doneTasks: Array<{ task: PlanSchema['tasks'][0]; index: number }> = [];
+  const pendingTasks: Array<{ task: PlanSchema['tasks'][0]; index: number }> = [];
+
+  plan.tasks.forEach((task, index) => {
+    // Check if all steps in the task are done
+    const isTaskDone = task.steps.length > 0 && task.steps.every((step) => step.done);
+    if (isTaskDone) {
+      doneTasks.push({ task, index });
+    } else {
+      pendingTasks.push({ task, index });
+    }
+  });
+
+  // Add done tasks section if there are any
+  if (doneTasks.length > 0) {
+    sections.push('# Completed Tasks');
+    sections.push('*These tasks have been completed and should not be modified.*');
+    sections.push('');
+
+    for (const { task, index } of doneTasks) {
+      const taskSections: string[] = [];
+
+      // Task title with ID
+      const taskId = options?.includeTaskIds ? ` [TASK-${index + 1}]` : '';
+      taskSections.push(`## Task: ${task.title}${taskId} ✓`);
+
+      // Task description
+      taskSections.push(`**Description:** ${task.description}`);
+
+      // Files (if present)
+      if (task.files && task.files.length > 0) {
+        taskSections.push(`**Files:**\n${task.files.map((file) => `- ${file}`).join('\n')}`);
+      }
+
+      // Steps (if present)
+      if (task.steps && task.steps.length > 0) {
+        taskSections.push('**Steps:** *(All completed)*');
+
+        task.steps.forEach((step, stepIndex) => {
+          // Escape any triple backticks in the prompt by adding a zero-width space
+          const escapedPrompt = step.prompt.replace(/```/g, '\u200b```');
+          taskSections.push(
+            `${stepIndex + 1}.  **Prompt:** ✓\n    \`\`\`\n    ${escapedPrompt.split('\n').join('\n    ')}\n    \`\`\``
+          );
+        });
+      }
+
+      sections.push(taskSections.join('\n'));
+      sections.push('---');
+    }
+  }
+
+  // Add pending tasks section
+  if (pendingTasks.length > 0) {
+    if (doneTasks.length > 0) {
+      sections.push('# Pending Tasks');
+      sections.push('*These tasks can be updated, modified, or removed as needed.*');
+      sections.push('');
+    }
+
+    for (const { task, index } of pendingTasks) {
+      const taskSections: string[] = [];
+
+      // Task title with ID
+      const taskId = options?.includeTaskIds ? ` [TASK-${index + 1}]` : '';
+      taskSections.push(`## Task: ${task.title}${taskId}`);
+
+      // Task description
+      taskSections.push(`**Description:** ${task.description}`);
+
+      // Files (if present)
+      if (task.files && task.files.length > 0) {
+        taskSections.push(`**Files:**\n${task.files.map((file) => `- ${file}`).join('\n')}`);
+      }
+
+      // Steps (if present)
+      if (task.steps && task.steps.length > 0) {
+        taskSections.push('**Steps:**');
+
+        task.steps.forEach((step, stepIndex) => {
+          // Escape any triple backticks in the prompt by adding a zero-width space
+          const escapedPrompt = step.prompt.replace(/```/g, '\u200b```');
+          const doneMarker = step.done ? ' ✓' : '';
+          taskSections.push(
+            `${stepIndex + 1}.  **Prompt:**${doneMarker}\n    \`\`\`\n    ${escapedPrompt.split('\n').join('\n    ')}\n    \`\`\``
+          );
+        });
+      }
+
+      sections.push(taskSections.join('\n'));
+      sections.push('---');
+    }
+  }
+
+  // Remove the last separator if there were tasks
+  if (plan.tasks.length > 0) {
+    sections.pop();
+  }
+
+  return sections.join('\n\n');
+}
+
 // Define the prompt for Markdown to YAML conversion
 const markdownToYamlConversionPrompt = `You are an AI assistant specialized in converting structured Markdown text into YAML format. Your task is to convert the provided Markdown input into YAML, strictly adhering to the specified schema.
 
@@ -145,6 +275,7 @@ export interface ExtractMarkdownToYamlOptions {
   output: string;
   projectId?: number;
   stubPlan?: { data: PlanSchema; path: string };
+  updatePlan?: { data: PlanSchema; path: string };
   commit?: boolean;
 }
 
@@ -207,24 +338,76 @@ export async function extractMarkdownToYaml(
     }
     validatedPlan = result.data;
 
-    // Set metadata fields, using stubPlan?.data if provided
-    validatedPlan.id =
-      options.stubPlan?.data?.id ||
-      options.projectId ||
-      (await generateNumericPlanId(await resolveTasksDir(config)));
-    const now = new Date().toISOString();
-    // Use createdAt from stub plan if available, otherwise use current timestamp
-    validatedPlan.createdAt = options.stubPlan?.data?.createdAt || now;
-    validatedPlan.updatedAt = now;
-    validatedPlan.planGeneratedAt = now;
+    // Preserve all fields from the original plan that aren't in the updated plan
+    // This includes fields like parent, container, baseBranch, changedFiles, etc.
+    const fieldsToPreserve = [
+      'parent',
+      'container',
+      'baseBranch',
+      'changedFiles',
+      'pullRequest',
+      'assignedTo',
+      'docs',
+      'issue',
+      'rmfilter',
+      'dependencies',
+      'priority',
+      'project',
+    ] as const;
 
-    if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
-      validatedPlan.promptsGeneratedAt = now;
-    }
+    // When updating a plan, preserve all existing fields that weren't explicitly updated
+    if (options.updatePlan?.data) {
+      const originalPlan = options.updatePlan.data;
 
-    // Set defaults for status if not already set
-    if (!validatedPlan.status) {
-      validatedPlan.status = 'pending';
+      for (const field of fieldsToPreserve) {
+        if (originalPlan[field] !== undefined && validatedPlan[field] === undefined) {
+          (validatedPlan as any)[field] = originalPlan[field];
+        }
+      }
+
+      // Always preserve these metadata fields from the original
+      validatedPlan.id = originalPlan.id;
+      validatedPlan.createdAt = originalPlan.createdAt;
+      validatedPlan.updatedAt = new Date().toISOString();
+
+      // Only update planGeneratedAt if the plan structure changed
+      validatedPlan.planGeneratedAt =
+        validatedPlan.planGeneratedAt || originalPlan.planGeneratedAt || new Date().toISOString();
+
+      // Update promptsGeneratedAt if prompts were regenerated
+      if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
+        validatedPlan.promptsGeneratedAt = new Date().toISOString();
+      } else {
+        validatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
+      }
+
+      // Set status from original if not set
+      if (!validatedPlan.status) {
+        if (originalPlan.status === 'done') {
+          validatedPlan.status = 'in_progress';
+        } else {
+          validatedPlan.status = originalPlan.status || 'pending';
+        }
+      }
+    } else {
+      // Not an update - set metadata fields for new plan
+      validatedPlan.id =
+        options.stubPlan?.data?.id ||
+        options.projectId ||
+        (await generateNumericPlanId(await resolveTasksDir(config)));
+      const now = new Date().toISOString();
+      validatedPlan.createdAt = options.stubPlan?.data?.createdAt || now;
+      validatedPlan.updatedAt = now;
+      validatedPlan.planGeneratedAt = now;
+
+      if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
+        validatedPlan.promptsGeneratedAt = now;
+      }
+
+      // Set defaults for status if not already set
+      if (!validatedPlan.status) {
+        validatedPlan.status = 'pending';
+      }
     }
 
     // Inherit fields from stub plan if provided
@@ -239,35 +422,78 @@ export async function extractMarkdownToYaml(
         ].join('\n\n');
       }
 
-      // Combine dependencies from both stub plan and generated plan
-      if (options.stubPlan.data.dependencies) {
-        const existingDeps = new Set(validatedPlan.dependencies || []);
-        const stubDeps = new Set(options.stubPlan?.data.dependencies);
-        validatedPlan.dependencies = Array.from(new Set([...existingDeps, ...stubDeps]));
-      }
+      // Merge the fixed fields, combining arrays and preferring the stub plan for scalars
+      for (const field of fieldsToPreserve) {
+        const stubValue = options.stubPlan.data[field];
+        const newValue = validatedPlan[field];
 
-      if (options.stubPlan?.data.priority) {
-        validatedPlan.priority = options.stubPlan?.data.priority;
-      }
-
-      if (options.stubPlan?.data.assignedTo) {
-        validatedPlan.assignedTo = options.stubPlan?.data.assignedTo;
-      }
-
-      // Combine issue URLs from both sources
-      if (options.stubPlan?.data.issue) {
-        const existingIssues = new Set(validatedPlan.issue || []);
-        const stubIssues = new Set(options.stubPlan?.data.issue);
-        validatedPlan.issue = Array.from(new Set([...existingIssues, ...stubIssues]));
+        if (
+          (stubValue == null || Array.isArray(stubValue)) &&
+          (newValue == null || Array.isArray(newValue))
+        ) {
+          (validatedPlan as any)[field] = Array.from(
+            new Set([...(stubValue || []), ...(newValue || [])])
+          );
+        } else if (stubValue !== undefined) {
+          (validatedPlan as any)[field] = stubValue;
+        }
       }
     }
 
-    // Populate issue and rmfilter arrays from options (these take precedence over stub plan)
-    if (options.issueUrls && options.issueUrls.length > 0) {
-      validatedPlan.issue = options.issueUrls;
+    // Populate issue and rmfilter arrays from options (only for new plans, not updates)
+    // For updates, these are already preserved from the original plan above
+    if (!options.updatePlan?.data) {
+      if (options.issueUrls && options.issueUrls.length > 0) {
+        validatedPlan.issue = options.issueUrls;
+      }
+      if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
+        validatedPlan.rmfilter = options.planRmfilterArgs;
+      }
     }
-    if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
-      validatedPlan.rmfilter = options.planRmfilterArgs;
+
+    // Special handling for plan updates: merge tasks while preserving completed ones
+    if (options.updatePlan?.data) {
+      const originalTasks = options.updatePlan.data.tasks;
+      const updatedTasks = validatedPlan.tasks;
+
+      // Build a map of original completed tasks (all steps done)
+      const completedTasks = new Map<number, (typeof originalTasks)[0]>();
+      originalTasks.forEach((task, index) => {
+        if (task.steps.length > 0 && task.steps.every((step) => step.done)) {
+          completedTasks.set(index, task);
+        }
+      });
+
+      // Parse task IDs from the updated markdown to match tasks
+      const taskIdRegex = /\[TASK-(\d+)\]/;
+      const mergedTasks: typeof originalTasks = [];
+
+      // First, add all completed tasks in their original positions
+      for (const [index, task] of completedTasks) {
+        mergedTasks[index] = task;
+      }
+
+      // Then process updated tasks
+      updatedTasks.forEach((updatedTask) => {
+        // Try to extract task ID from title
+        const match = updatedTask.title.match(taskIdRegex);
+        if (match) {
+          const taskIndex = parseInt(match[1]) - 1; // Convert to 0-based index
+          // Remove the task ID from the title
+          updatedTask.title = updatedTask.title.replace(taskIdRegex, '').trim();
+
+          // Only update if this was not a completed task
+          if (!completedTasks.has(taskIndex)) {
+            mergedTasks[taskIndex] = updatedTask;
+          }
+        } else {
+          // New task without ID - add to the end
+          mergedTasks.push(updatedTask);
+        }
+      });
+
+      // Filter out any undefined entries and reassign
+      validatedPlan.tasks = mergedTasks.filter((task) => task !== undefined);
     }
   } catch (e) {
     // Save the failed YAML for debugging
@@ -343,7 +569,7 @@ export async function saveMultiPhaseYaml(
   const tasksDir = await resolveTasksDir(config);
   let nextId = actuallyMultiphase
     ? await generateNumericPlanId(tasksDir)
-    : options.stubPlan?.data?.id || options.projectId;
+    : options.updatePlan?.data?.id || options.stubPlan?.data?.id || options.projectId;
   // Force it to be a number
   // TODO we can remove this later once the last vestiges of string IDs are gone
   if (typeof nextId !== 'number') {
@@ -370,8 +596,9 @@ export async function saveMultiPhaseYaml(
     // Add metadata if not present
     const now = new Date().toISOString();
     phase.planGeneratedAt = now;
-    // Use createdAt from stub plan if available for all phases
-    phase.createdAt = options.stubPlan?.data?.createdAt || now;
+    // Use createdAt from update/stub plan if available for all phases
+    phase.createdAt =
+      options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
     phase.updatedAt = now;
 
     phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;

@@ -355,6 +355,17 @@ program
   });
 
 program
+  .command('update <planFile> [description]')
+  .description('Update an existing plan using natural language description of changes')
+  .option('--editor', 'Open editor to provide the update description')
+  .action(async (planFile, description, options, command) => {
+    const { handleUpdateCommand } = await import('./commands/update.js');
+    await handleUpdateCommand(planFile, { ...options, description }, command).catch(
+      handleCommandError
+    );
+  });
+
+program
   .command('set <planFile>')
   .description(
     'Update plan properties like priority, status, dependencies, and rmfilter. Can be a file path or plan ID.'
