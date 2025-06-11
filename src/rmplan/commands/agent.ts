@@ -11,8 +11,9 @@ import { commitAll, logSpawn } from '../../common/process.js';
 import { getGitRoot } from '../../common/git.js';
 import {
   executePostApplyCommand,
-  findPendingTask,
+  findNextActionableItem,
   markStepDone,
+  markTaskDone,
   prepareNextStep,
   preparePhase,
 } from '../actions.js';
@@ -217,11 +218,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   // Check if the plan needs preparation
   const planData = await readPlanFile(currentPlanFile);
 
-  // Check if prompts have been generated
-  const needsPreparation =
-    !planData.tasks.length || planData.tasks.some((task) => !task.steps?.length);
+  // Check if this is a true stub plan (no tasks at all)
+  const needsPreparation = !planData.tasks.length;
 
   if (needsPreparation) {
+    // This is a true stub plan with no tasks - handle it specially
     let shouldGenerateSteps = true; // Default behavior
 
     if (!options.nonInteractive) {
@@ -259,7 +260,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     } else {
       log('Proceeding to execute plan directly using high-level description.');
 
-      // Direct execution branch - bypass step-by-step loop
+      // Direct execution branch for true stub plans (no tasks)
       try {
         await executeStubPlan({
           config,
@@ -274,6 +275,50 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         error('Direct execution failed:', err);
         throw err;
       }
+    }
+  } else if (
+    planData.tasks.length > 0 &&
+    planData.tasks.some((task) => !task.steps || task.steps.length === 0)
+  ) {
+    // This plan has simple tasks (tasks without steps)
+    let shouldGenerateSteps = true; // Default behavior
+
+    if (!options.nonInteractive) {
+      // Interactive mode - ask user what to do
+      const choice = await select({
+        message: 'This plan lacks detailed steps. How would you like to proceed?',
+        choices: [
+          {
+            name: 'Generate detailed steps first',
+            value: 'generate',
+            description: 'Create step-by-step instructions before execution',
+          },
+          {
+            name: 'Run the simple plan directly',
+            value: 'direct',
+            description: 'Execute using just the high-level goal and details',
+          },
+        ],
+      });
+
+      shouldGenerateSteps = choice === 'generate';
+    }
+
+    if (shouldGenerateSteps) {
+      log('Plan needs preparation. Generating detailed steps and prompts...');
+      try {
+        await preparePhase(currentPlanFile, config, {
+          model: options.model,
+          direct: options.direct,
+        });
+        log('Successfully prepared the plan with detailed steps.');
+      } catch (err) {
+        throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
+      }
+    } else {
+      log('Proceeding to execute simple tasks directly.');
+      // For simple tasks, proceed to the main execution loop
+      // Do NOT call executeStubPlan - that's only for plans with no tasks
     }
   }
 
@@ -295,11 +340,131 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         await writePlanFile(currentPlanFile, planData);
       }
 
-      const pendingTaskInfo = findPendingTask(planData);
-      if (!pendingTaskInfo) {
+      const actionableItem = findNextActionableItem(planData);
+      if (!actionableItem) {
         log('Plan complete!');
         break;
       }
+
+      // Branch based on the type of actionable item
+      if (actionableItem.type === 'task') {
+        // Simple task without steps
+        log(
+          boldMarkdownHeaders(
+            `# Iteration ${stepCount}: Simple Task ${actionableItem.taskIndex + 1}...`
+          )
+        );
+        log(`Title: ${actionableItem.task.title}`);
+        if (actionableItem.task.description) {
+          log(`Description: ${actionableItem.task.description}`);
+        }
+
+        // Construct the prompt for the simple task
+        const promptParts: string[] = [];
+
+        // Add project-level context
+        if (planData.project?.goal) {
+          promptParts.push(
+            `# Project Goal: ${planData.project.goal}\n`,
+            'These instructions define a particular task of a feature implementation for this project'
+          );
+
+          if (planData.project.details) {
+            promptParts.push(`## Project Details:\n\n${planData.project.details}\n`);
+          }
+
+          promptParts.push(
+            `# Current Phase Goal: ${planData.goal}\n\n## Phase Details:\n\n${planData.details}\n`
+          );
+        } else {
+          // No project-level context, use phase as top-level
+          promptParts.push(
+            `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
+          );
+        }
+
+        // Add the task details
+        promptParts.push(
+          `## Task: ${actionableItem.task.title}\n`,
+          `Description: ${actionableItem.task.description || 'No description provided'}`
+        );
+
+        // Add relevant files if available
+        if (actionableItem.task.files && actionableItem.task.files.length > 0) {
+          promptParts.push(
+            '\n## Relevant Files\n\nThese are relevant files for this task. If you think additional files are relevant, you can update them as well.'
+          );
+
+          const gitRoot = await getGitRoot(currentBaseDir);
+          const filePrefix = executor.filePathPrefix || '';
+
+          // Strip parenthetical comments from filenames
+          const cleanFiles = actionableItem.task.files.map((file) =>
+            file.replace(/\s*\([^)]*\)\s*$/, '').trim()
+          );
+
+          cleanFiles.forEach((file) => {
+            const relativePath = path.isAbsolute(file) ? path.relative(gitRoot, file) : file;
+            promptParts.push(`- ${filePrefix}${relativePath}`);
+          });
+        }
+
+        const taskPrompt = promptParts.join('\n');
+
+        try {
+          log(boldMarkdownHeaders('\n## Execution\n'));
+          await executor.execute(taskPrompt);
+        } catch (err) {
+          error('Task execution failed:', err);
+          hasError = true;
+          break;
+        }
+
+        // Run post-apply commands if configured
+        if (config.postApplyCommands && config.postApplyCommands.length > 0) {
+          log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
+          for (const commandConfig of config.postApplyCommands) {
+            const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
+            if (!commandSucceeded) {
+              error(`Agent stopping because required command "${commandConfig.title}" failed.`);
+              hasError = true;
+              break;
+            }
+          }
+          if (hasError) {
+            break;
+          }
+        }
+
+        // Mark the task as done
+        try {
+          log(boldMarkdownHeaders('\n## Marking task done\n'));
+          const markResult = await markTaskDone(
+            currentPlanFile,
+            actionableItem.taskIndex,
+            { commit: options.commit },
+            currentBaseDir,
+            config
+          );
+
+          if (markResult.planComplete) {
+            log('Plan fully completed!');
+            break;
+          }
+        } catch (err) {
+          error('Failed to mark task as done:', err);
+          hasError = true;
+          break;
+        }
+
+        continue;
+      }
+
+      // Handle step execution (existing logic)
+      const pendingTaskInfo = {
+        taskIndex: actionableItem.taskIndex,
+        task: actionableItem.task,
+      };
 
       const executorStepOptions = executor.prepareStepOptions?.() ?? {};
       const stepPreparationResult = await prepareNextStep(
