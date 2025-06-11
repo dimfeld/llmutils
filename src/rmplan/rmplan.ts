@@ -290,6 +290,8 @@ program
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
   .option('--files', 'Show file paths column')
+  .option('-u, --user <username>', 'Filter by assignedTo username')
+  .option('--mine', 'Show only plans assigned to current user')
   .action(async (searchTerms, options, command) => {
     const { handleListCommand } = await import('./commands/list.js');
     await handleListCommand(options, command, searchTerms).catch(handleCommandError);
@@ -381,6 +383,8 @@ program
   .option('--no-i, --no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
   .option('--no-doc <paths...>', 'Remove documentation file paths from the plan')
+  .option('--assign <username>', 'Assign the plan to a user')
+  .option('--no-assign', 'Remove the plan assignment')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
     options.dependsOn = intArg(options.dependsOn);

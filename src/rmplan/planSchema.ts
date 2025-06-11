@@ -22,6 +22,7 @@ export const phaseSchema = z
     issue: z.array(z.url()).default([]).optional(),
     pullRequest: z.array(z.url()).default([]).optional(),
     docs: z.array(z.string()).default([]).optional(),
+    assignedTo: z.string().optional(),
     planGeneratedAt: z.string().datetime().optional(),
     promptsGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),

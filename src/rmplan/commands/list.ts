@@ -28,6 +28,16 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   // Filter plans based on status
   let planArray = Array.from(plans.values());
 
+  // Filter by assignedTo if requested
+  if (options.user || options.mine) {
+    const filterUser = options.mine ? process.env.USER || process.env.USERNAME : options.user;
+    if (filterUser) {
+      planArray = planArray.filter((plan) => plan.assignedTo === filterUser);
+    } else if (options.mine) {
+      log(chalk.yellow('Warning: Could not determine current user from environment'));
+    }
+  }
+
   // Filter by search terms if provided
   if (searchTerms && searchTerms.length > 0) {
     planArray = planArray.filter((plan) => {

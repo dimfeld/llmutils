@@ -45,6 +45,10 @@ export async function handleGenerateCommand(
   const doubleDashIdx = process.argv.indexOf('--');
   const userCliRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
 
+  if (userCliRmfilterArgs[0] === planArg) {
+    planArg = undefined;
+  }
+
   let planOptionsSet = [planArg, options.plan, options.planEditor, options.issue].reduce(
     (acc, val) => acc + (val ? 1 : 0),
     0

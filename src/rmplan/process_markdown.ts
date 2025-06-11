@@ -250,6 +250,10 @@ export async function extractMarkdownToYaml(
         validatedPlan.priority = options.stubPlan?.data.priority;
       }
 
+      if (options.stubPlan?.data.assignedTo) {
+        validatedPlan.assignedTo = options.stubPlan?.data.assignedTo;
+      }
+
       // Combine issue URLs from both sources
       if (options.stubPlan?.data.issue) {
         const existingIssues = new Set(validatedPlan.issue || []);
@@ -397,6 +401,10 @@ export async function saveMultiPhaseYaml(
       // Inherit priority if not already set
       if (!phase.priority && options.stubPlan?.data.priority) {
         phase.priority = options.stubPlan?.data.priority;
+      }
+      // Inherit assignedTo if not already set
+      if (!phase.assignedTo && options.stubPlan?.data.assignedTo) {
+        phase.assignedTo = options.stubPlan?.data.assignedTo;
       }
       // Combine issue URLs from both sources
       if (options.stubPlan?.data.issue) {

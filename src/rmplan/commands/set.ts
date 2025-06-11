@@ -19,6 +19,8 @@ export interface SetOptions {
   noIssue?: string[];
   doc?: string[];
   noDoc?: string[];
+  assign?: string;
+  noAssign?: boolean;
 }
 
 export async function handleSetCommand(
@@ -161,6 +163,24 @@ export async function handleSetCommand(
         modified = true;
         log(`Removed ${originalLength - plan.docs.length} documentation paths`);
       }
+    }
+  }
+
+  // Set assignedTo
+  if (options.assign !== undefined) {
+    plan.assignedTo = options.assign;
+    modified = true;
+    log(`Assigned to ${options.assign}`);
+  }
+
+  // Remove assignedTo
+  if (options.noAssign) {
+    if (plan.assignedTo !== undefined) {
+      delete plan.assignedTo;
+      modified = true;
+      log('Removed assignedTo');
+    } else {
+      log('No assignedTo to remove');
     }
   }
 

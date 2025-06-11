@@ -116,6 +116,9 @@ export async function handleShowCommand(planFile: string | undefined, options: a
               ? chalk.gray
               : chalk.white;
   log(`${chalk.cyan('Priority:')} ${plan.priority ? priorityColor(plan.priority) : ''}`);
+  if (plan.assignedTo) {
+    log(`${chalk.cyan('Assigned To:')} ${plan.assignedTo}`);
+  }
 
   // Display parent plan if present
   if (plan.parent) {
