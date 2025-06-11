@@ -803,6 +803,56 @@ modelApiKeys:
 - Google Vertex AI doesn't use API keys, so any custom key configuration for `vertex/` providers will be ignored
 - If a custom environment variable is specified but not found, the system will fall back to the default environment variable for that provider
 
+#### answer-pr Configuration
+
+The `answerPr` section allows you to set default values for the `rmplan answer-pr` command. These defaults are used when the corresponding command-line options are not explicitly provided.
+
+**Example `.rmfilter/config/rmplan.yml`:**
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+
+answerPr:
+  # Default mode for handling PR comments
+  # Options: 'inline-comments', 'separate-context', 'hybrid-context'
+  mode: hybrid-context
+  
+  # Whether to automatically commit changes after processing
+  commit: true
+  
+  # Whether to post replies to review threads after committing
+  comment: true
+```
+
+**Fields:**
+
+- `mode`: (Optional) The default mode for handling PR comments. Options are:
+  - `inline-comments`: Inserts AI comment markers directly into the code files
+  - `separate-context`: Includes PR comments as separate context in the prompt
+  - `hybrid-context`: Combines both approaches for maximum context
+- `commit`: (Optional) Boolean, defaults to `false` if not specified. When `true`, automatically commits changes after processing
+- `comment`: (Optional) Boolean, defaults to `false` if not specified. When `true`, posts replies to handled review threads after committing
+
+**How It Works:**
+
+1. When you run `rmplan answer-pr` without specifying options, the command checks the configuration
+2. For any option not provided on the command line, it uses the value from the configuration
+3. Command-line options always take precedence over configuration defaults
+4. If neither command-line nor configuration provides a value, built-in defaults are used
+
+**Example Usage:**
+
+```bash
+# With the above configuration, this command:
+rmplan answer-pr
+
+# Is equivalent to:
+rmplan answer-pr --mode hybrid-context --commit --comment
+
+# But you can still override individual options:
+rmplan answer-pr --mode inline-comments  # Uses inline-comments mode but keeps commit and comment from config
+```
+
 ### Executors
 
 The executor system in rmplan provides a flexible way to execute plan steps with different AI models or tools. Executors handle the interaction with language models, applying edits to the codebase, and integrating with external tools.

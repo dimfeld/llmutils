@@ -110,6 +110,23 @@ export const rmplanConfigSchema = z
           .describe('Model spec for rmplan prepare phase generation'),
       })
       .optional(),
+    /** Default settings for answer-pr command */
+    answerPr: z
+      .object({
+        mode: z
+          .enum(['hybrid', 'inline', 'separate'])
+          .optional()
+          .describe('Default mode for answer-pr command'),
+        comment: z
+          .boolean()
+          .optional()
+          .describe('Default value for whether to add comments after processing'),
+        commit: z
+          .boolean()
+          .optional()
+          .describe('Default value for whether to commit changes after processing'),
+      })
+      .optional(),
     /** Custom API key environment variables for specific models or model prefixes */
     modelApiKeys: z
       .record(z.string(), z.string().describe('Environment variable name to use for API key'))

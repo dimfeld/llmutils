@@ -20,5 +20,20 @@ export async function handleAnswerPrCommand(
     options.executor = config.defaultExecutor || DEFAULT_EXECUTOR;
   }
 
+  // Apply answer-pr config defaults if not specified in CLI options
+  if (config.answerPr) {
+    if (options.mode === undefined && config.answerPr.mode !== undefined) {
+      options.mode = config.answerPr.mode;
+    }
+    if (options.comment === undefined && config.answerPr.comment !== undefined) {
+      options.comment = config.answerPr.comment;
+    }
+    if (options.commit === undefined && config.answerPr.commit !== undefined) {
+      options.commit = config.answerPr.commit;
+    }
+  }
+
+  options.mode ??= 'inline-comments';
+
   await handleRmprCommand(prIdentifier, options, globalOpts, config);
 }

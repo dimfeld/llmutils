@@ -411,8 +411,7 @@ program
   )
   .option(
     '--mode <mode>',
-    "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt. 'hybrid-context' combines both approaches.",
-    'inline-comments'
+    "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt. 'hybrid-context' combines both approaches."
   )
   .option(`-x, --executor <name>`, 'The executor to use for execution')
   .addHelpText('after', `Available executors: ${executorNames}`)
@@ -430,8 +429,8 @@ program
     'Prepare and print the LLM prompt, but do not call the LLM or apply edits.',
     false
   )
-  .option('--commit', 'Commit changes to jj/git', false)
-  .option('--comment', 'Post replies to review threads after committing changes', false)
+  .option('--commit', 'Commit changes to jj/git')
+  .option('--comment', 'Post replies to review threads after committing changes')
   .action(async (prIdentifier, options, command) => {
     const { handleAnswerPrCommand } = await import('./commands/answerPr.js');
     await handleAnswerPrCommand(prIdentifier, options, command).catch(handleCommandError);
