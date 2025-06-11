@@ -816,10 +816,10 @@ answerPr:
   # Default mode for handling PR comments
   # Options: 'inline-comments', 'separate-context', 'hybrid-context'
   mode: hybrid-context
-  
+
   # Whether to automatically commit changes after processing
   commit: true
-  
+
   # Whether to post replies to review threads after committing
   comment: true
 ```

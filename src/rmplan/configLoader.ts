@@ -40,11 +40,12 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
 
   // Do deep merge for select paths
 
-  mergeConfigKey('postApplyCommands');
-  mergeConfigKey('paths');
+  mergeConfigKey('answerPr');
   mergeConfigKey('autoexamples');
-  mergeConfigKey('models');
   mergeConfigKey('modelApiKeys');
+  mergeConfigKey('models');
+  mergeConfigKey('paths');
+  mergeConfigKey('postApplyCommands');
 
   // Handle executors: deep merge objects
   if (localConfig.executors !== undefined) {

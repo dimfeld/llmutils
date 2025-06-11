@@ -20,6 +20,9 @@
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import * as path from 'node:path';
+import { parseCliArgsFromString } from '../common/cli.js';
+import { secureWrite } from '../common/fs.js';
+import { getCurrentBranchName, getGitRoot, hasUncommittedChanges } from '../common/git.js';
 import { parsePrOrIssueNumber } from '../common/github/identifiers.js';
 import {
   addReplyToReviewThread,
@@ -29,17 +32,12 @@ import {
   type FileNode,
 } from '../common/github/pull_requests.js';
 import { askForModelId } from '../common/model_factory.js';
-import { DEFAULT_RUN_MODEL } from '../common/run_and_apply.js';
+import { commitAll } from '../common/process.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import { commitAll } from '../common/process.js';
-import { parseCliArgsFromString } from '../common/cli.js';
-import { secureWrite } from '../common/fs.js';
-import { getGitRoot, hasUncommittedChanges } from '../common/git.js';
 import type { RmplanConfig } from '../rmplan/configSchema.js';
 import {
   buildExecutorAndLog,
-  ClaudeCodeExecutor,
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
 } from '../rmplan/executors/index.js';
@@ -50,7 +48,11 @@ import {
   type RmprOptions,
 } from './comment_options.js';
 import { getCurrentCommitSha } from './git_utils.js';
-import { getCurrentBranchName } from '../common/git.js';
+import {
+  createHybridContextPrompt,
+  formatDiffContexts,
+  insertAiCommentsAndPrepareDiffContexts,
+} from './modes/hybrid_context.js';
 import {
   createInlineCommentsPrompt,
   insertAiCommentsIntoFileContent,
@@ -60,12 +62,7 @@ import {
   createSeparateContextPrompt,
   formatReviewCommentsForSeparateContext,
 } from './modes/separate_context.js';
-import {
-  insertAiCommentsAndPrepareDiffContexts,
-  createHybridContextPrompt,
-  formatDiffContexts,
-} from './modes/hybrid_context.js';
-import type { DetailedReviewComment, CommentDiffContext } from './types.js';
+import type { CommentDiffContext, DetailedReviewComment } from './types.js';
 
 /**
  * Main handler for the rmpr command that processes GitHub Pull Request review comments using LLMs.
@@ -291,11 +288,13 @@ export async function handleRmprCommand(
       commit: options.commit,
       comment: options.comment,
       showCommentOption: true,
+      mode: options.mode,
     });
     modelForLlmEdit = promptResults.model;
     options.executor = promptResults.executor;
     options.commit = promptResults.commit;
     options.comment = promptResults.comment;
+    options.mode = promptResults.mode;
     additionalUserRmFilterArgs = promptResults.rmfilterOptions;
   }
 
@@ -609,6 +608,7 @@ interface PromptOptions {
   executor: string;
   commit: boolean;
   comment: boolean;
+  mode: string;
 }
 
 async function optionsPrompt(initialOptions: {
@@ -617,6 +617,7 @@ async function optionsPrompt(initialOptions: {
   commit: boolean;
   comment?: boolean;
   showCommentOption?: boolean;
+  mode: string;
 }): Promise<PromptOptions> {
   let result: PromptOptions = {
     model: initialOptions.modelForLlmEdit,
@@ -624,6 +625,7 @@ async function optionsPrompt(initialOptions: {
     executor: initialOptions.executor,
     commit: initialOptions.commit,
     comment: initialOptions.comment ?? false,
+    mode: initialOptions.mode,
   };
 
   let userWantsToContinue = false;
@@ -635,6 +637,7 @@ async function optionsPrompt(initialOptions: {
       choices: [
         { name: `Execute (${result.executor} - ${result.model})`, value: 'continue' },
         { name: 'Change LLM model for editing', value: 'model' },
+        { name: `Change comment handling mode (current: ${result.mode})`, value: 'mode' },
         { name: 'Edit rmfilter options for context', value: 'rmfilter' },
         result.commit
           ? { name: 'Disable autocommit', value: 'no-commit' }
@@ -665,6 +668,21 @@ async function optionsPrompt(initialOptions: {
       });
       result.rmfilterOptions = parseCliArgsFromString(newArgsStr.trim());
       log(`Additional rmfilter args set to: "${result.rmfilterOptions.join(' ')}"`);
+    } else if (choice === 'mode') {
+      const newMode = await select({
+        message: 'Select comment handling mode:',
+        default: result.mode,
+        choices: [
+          {
+            name: 'Inline Comments - Insert AI comment markers into code',
+            value: 'inline-comments',
+          },
+          { name: 'Separate Context - Include PR comments in prompt', value: 'separate-context' },
+          { name: 'Hybrid Context - Combine both approaches', value: 'hybrid-context' },
+        ],
+      });
+      result.mode = newMode;
+      log(`Comment handling mode set to: ${result.mode}`);
     } else if (choice === 'comment' || choice === 'no-comment') {
       result.comment = choice === 'comment';
     } else if (choice === 'no-commit') {

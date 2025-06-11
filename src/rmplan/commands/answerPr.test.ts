@@ -13,7 +13,7 @@ describe('answerPr command', () => {
 
   beforeEach(async () => {
     await moduleMocker.clear();
-    
+
     // Mock dependencies
     mockHandleRmprCommand = mock();
     await moduleMocker.mock('../../rmpr/main.js', () => ({
@@ -44,7 +44,7 @@ describe('answerPr command', () => {
 
   test('should apply config defaults when options not specified', async () => {
     const options = {};
-    
+
     await handleAnswerPrCommand('PR-123', options, mockCommand);
 
     expect(mockHandleRmprCommand).toHaveBeenCalledWith(
@@ -67,7 +67,7 @@ describe('answerPr command', () => {
       comment: false,
       commit: false,
     };
-    
+
     await handleAnswerPrCommand('PR-123', options, mockCommand);
 
     expect(mockHandleRmprCommand).toHaveBeenCalledWith(
@@ -88,7 +88,7 @@ describe('answerPr command', () => {
       mode: 'separate',
       // comment and commit not specified, should use config defaults
     };
-    
+
     await handleAnswerPrCommand('PR-123', options, mockCommand);
 
     expect(mockHandleRmprCommand).toHaveBeenCalledWith(
@@ -115,7 +115,7 @@ describe('answerPr command', () => {
     }));
 
     const options = {};
-    
+
     await handleAnswerPrCommand('PR-123', options, mockCommand);
 
     expect(mockHandleRmprCommand).toHaveBeenCalledWith(
