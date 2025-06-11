@@ -613,7 +613,6 @@ describe('handleListCommand', () => {
 
     // Debug: print all log calls to understand what's happening
     const logCalls = mockLog.mock.calls;
-    console.log('Log calls:', logCalls);
 
     // Find the log call that contains "Showing:"
     const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing:'));

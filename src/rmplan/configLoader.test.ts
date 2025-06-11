@@ -321,7 +321,8 @@ executors:
   "claude-code":
     allowedTools: ["tool1", "tool2"]
     includeDefaultTools: false
-    enablePermissionsMcp: true
+    permissionsMcp:
+      enabled: true
   "copy-only": {}
 `
       );
@@ -347,7 +348,7 @@ executors:
       expect(config.executors?.['claude-code']).toEqual({
         allowedTools: ['tool1', 'tool2'], // from main
         includeDefaultTools: true, // from local (overrides main)
-        enablePermissionsMcp: true, // from main
+        permissionsMcp: { enabled: true }, // from main
         mcpConfigFile: '/path/to/config', // from local
       });
 

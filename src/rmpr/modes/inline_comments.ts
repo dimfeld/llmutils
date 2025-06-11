@@ -43,7 +43,7 @@ function findBestMatchLine(
   const afterStateLines = getAfterStateLines(diffForContext);
   if (afterStateLines.length === 0) {
     // Fallback to line numbers if no valid context
-    if (targetStartLineInFile !== null && targetLineInFile !== null) {
+    if (targetStartLineInFile != null && targetLineInFile != null) {
       // Convert from 1-indexed to 0-indexed
       return { startLine: targetStartLineInFile - 1, endLine: targetLineInFile - 1 };
     }
@@ -61,7 +61,7 @@ function findBestMatchLine(
   }
 
   // If we have a target line, use it to find the closest match
-  if (targetLineInFile !== null) {
+  if (targetLineInFile != null) {
     // Convert 1-indexed to 0-indexed for comparison with match results
     const targetLine0Indexed = targetLineInFile - 1;
 
@@ -105,8 +105,8 @@ function findBestMatchLine(
 
     // For block comments, calculate the start line
     const adjustedStartLine =
-      targetStartLineInFile !== null &&
-      targetLineInFile !== null &&
+      targetStartLineInFile != null &&
+      targetLineInFile != null &&
       targetStartLineInFile !== targetLineInFile
         ? adjustedEndLine - (targetLineInFile - targetStartLineInFile)
         : adjustedEndLine;
@@ -257,8 +257,8 @@ export function insertAiCommentsIntoFileContent(
   // adjusted line numbers.
   const commentsWithAdjustedLines = commentsForFile
     .map((comment) => {
-      const startLine = comment.thread.startLine;
-      const endLine = comment.thread.line;
+      const startLine = comment.thread.startLine ?? comment.thread.originalStartLine;
+      const endLine = comment.thread.line ?? comment.thread.originalLine;
 
       debugLog({
         index1Start: startLine,

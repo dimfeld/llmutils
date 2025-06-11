@@ -4,8 +4,7 @@ import {
   createHybridContextPrompt,
   removeAiCommentMarkers,
 } from './hybrid_context.ts';
-import type { DetailedReviewComment, CommentDiffContext, HybridInsertionResult } from '../types.ts';
-import type { DiffLine } from '../../common/github/pull_requests.ts';
+import type { DetailedReviewComment, CommentDiffContext } from '../types.ts';
 
 // Helper to create mock DetailedReviewComment
 function createMockComment(overrides: Partial<DetailedReviewComment> = {}): DetailedReviewComment {
@@ -16,6 +15,8 @@ function createMockComment(overrides: Partial<DetailedReviewComment> = {}): Deta
       diffSide: 'RIGHT',
       line: 10,
       startLine: null,
+      originalLine: 10,
+      originalStartLine: null,
     },
     comment: {
       id: 'comment-1',
@@ -69,7 +70,7 @@ describe('insertAiCommentsAndPrepareDiffContexts', () => {
     expect(result.commentDiffContexts).toHaveLength(1);
     expect(result.commentDiffContexts[0]).toEqual({
       id: 'comment-1',
-      aiComment: '// AI (id: comment-1): This needs to be fixed',
+      aiComment: 'This needs to be fixed',
       diffHunk: comment.comment.diffHunk,
     });
 
@@ -98,6 +99,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 3,
         startLine: null,
+        originalLine: 3,
+        originalStartLine: null,
       },
       comment: {
         id: 'comment-1',
@@ -122,6 +125,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 10,
         startLine: null,
+        originalLine: 10,
+        originalStartLine: null,
       },
       comment: {
         id: 'comment-2',
@@ -178,6 +183,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 5,
         startLine: 2,
+        originalLine: 5,
+        originalStartLine: 2,
       },
       comment: {
         id: 'comment-block',
@@ -222,6 +229,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 2,
         startLine: null,
+        originalLine: 2,
+        originalStartLine: null,
       },
       comment: {
         id: 'comment-multi',
@@ -258,7 +267,15 @@ function another() {
     return 42`;
 
     const pythonComment = createMockComment({
-      thread: { id: 'thread-py', path: 'example.py', diffSide: 'RIGHT', line: 2, startLine: null },
+      thread: {
+        id: 'thread-py',
+        path: 'example.py',
+        diffSide: 'RIGHT',
+        line: 2,
+        startLine: null,
+        originalLine: 2,
+        originalStartLine: null,
+      },
       diffForContext: [
         { content: ' def example():', oldLineNumber: 1, newLineNumber: 1 },
         { content: '     return 42', oldLineNumber: 2, newLineNumber: 2 },
@@ -285,6 +302,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 2,
         startLine: null,
+        originalLine: 2,
+        originalStartLine: null,
       },
       diffForContext: [
         { content: ' <div>', oldLineNumber: 1, newLineNumber: 1 },
@@ -308,7 +327,15 @@ function another() {
 }`;
 
     const cssComment = createMockComment({
-      thread: { id: 'thread-css', path: 'styles.css', diffSide: 'RIGHT', line: 2, startLine: null },
+      thread: {
+        id: 'thread-css',
+        path: 'styles.css',
+        diffSide: 'RIGHT',
+        line: 2,
+        startLine: null,
+        originalLine: 2,
+        originalStartLine: null,
+      },
       diffForContext: [
         { content: ' .example {', oldLineNumber: 1, newLineNumber: 1 },
         { content: '   color: red;', oldLineNumber: 2, newLineNumber: 2 },
@@ -345,6 +372,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 2,
         startLine: null,
+        originalLine: 2,
+        originalStartLine: null,
       },
       comment: {
         id: 'comment-script',
@@ -367,6 +396,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 8,
         startLine: null,
+        originalLine: 8,
+        originalStartLine: null,
       },
       comment: {
         id: 'comment-template',
@@ -409,6 +440,8 @@ function another() {
         diffSide: 'RIGHT',
         line: null,
         startLine: null,
+        originalLine: 1,
+        originalStartLine: null,
       },
       diffForContext: [{ content: ' nonexistent code', oldLineNumber: 1, newLineNumber: 1 }],
     });
@@ -446,6 +479,8 @@ function another() {
         diffSide: 'RIGHT',
         line: null, // null indicates outdated
         startLine: null,
+        originalLine: 1,
+        originalStartLine: null,
       },
       comment: {
         id: 'comment-outdated',
@@ -478,7 +513,15 @@ function another() {
     const originalContent = '';
 
     const comment = createMockComment({
-      thread: { id: 'thread-1', path: 'empty.ts', diffSide: 'RIGHT', line: 1, startLine: 1 },
+      thread: {
+        id: 'thread-1',
+        path: 'empty.ts',
+        diffSide: 'RIGHT',
+        line: 1,
+        startLine: 1,
+        originalLine: 1,
+        originalStartLine: 1,
+      },
       comment: {
         id: 'comment-empty',
         databaseId: 132,
@@ -516,6 +559,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 3,
         startLine: null,
+        originalLine: 3,
+        originalStartLine: null,
       },
       comment: {
         id: 'new-comment',
@@ -558,6 +603,8 @@ function another() {
         diffSide: 'RIGHT',
         line: 2,
         startLine: null,
+        originalLine: 2,
+        originalStartLine: null,
       },
       comment: {
         id: 'comment-cleaned',
@@ -590,77 +637,54 @@ function another() {
 
 describe('createHybridContextPrompt', () => {
   test('creates prompt with single file and diff context', () => {
-    const fileContents = new Map([
-      [
-        'src/example.ts',
-        `function example() {
-  // AI (id: comment-1): This needs to be fixed
-  const a = 1;
-  return a;
-}`,
-      ],
-    ]);
-
     const diffContexts: CommentDiffContext[] = [
       {
         id: 'comment-1',
-        aiComment: '// AI (id: comment-1): This needs to be fixed',
+        aiComment: 'This needs to be fixed',
         diffHunk: '@@ -1,3 +1,3 @@\n function example() {\n-  const a = 1;\n+  const a = 2;',
       },
     ];
 
-    const prompt = createHybridContextPrompt(fileContents, diffContexts);
+    const prompt = createHybridContextPrompt(diffContexts);
 
     // Check prompt structure
-    expect(prompt).toContain('<diff_contexts>');
-    expect(prompt).toContain('<diff_context id="comment-1">');
+    expect(prompt).toContain('<diffContexts>');
+    expect(prompt).toContain('<diffContext id="comment-1">');
     expect(prompt).toContain('<diffHunk>');
     expect(prompt).toContain('@@ -1,3 +1,3 @@');
     expect(prompt).toContain('</diffHunk>');
-    expect(prompt).toContain('</diff_context>');
-    expect(prompt).toContain('</diff_contexts>');
+    expect(prompt).toContain('</diffContext>');
+    expect(prompt).toContain('</diffContexts>');
 
     // Check file content
-    expect(prompt).toContain('<file path="src/example.ts">');
-    expect(prompt).toContain('// AI (id: comment-1): This needs to be fixed');
-    expect(prompt).toContain('</file>');
+    expect(prompt).toContain('<diffInstructions>This needs to be fixed</diffInstructions>');
   });
 
   test('creates prompt with multiple files and diff contexts', () => {
-    const fileContents = new Map([
-      ['src/file1.ts', 'content1 with // AI (id: comment-1): Fix this'],
-      ['src/file2.ts', 'content2 with // AI (id: comment-2): And this'],
-    ]);
-
     const diffContexts: CommentDiffContext[] = [
       {
         id: 'comment-1',
-        aiComment: '// AI (id: comment-1): Fix this',
+        aiComment: 'Fix this',
         diffHunk: 'diff1',
       },
       {
         id: 'comment-2',
-        aiComment: '// AI (id: comment-2): And this',
+        aiComment: 'And this',
         diffHunk: 'diff2',
       },
     ];
 
-    const prompt = createHybridContextPrompt(fileContents, diffContexts);
+    const prompt = createHybridContextPrompt(diffContexts);
 
     // Check both diff contexts are included
-    expect(prompt).toContain('<diff_context id="comment-1">');
-    expect(prompt).toContain('<diff_context id="comment-2">');
-
-    // Check both files are included
-    expect(prompt).toContain('<file path="src/file1.ts">');
-    expect(prompt).toContain('<file path="src/file2.ts">');
+    expect(prompt).toContain('<diffContext id="comment-1">');
+    expect(prompt).toContain('<diffContext id="comment-2">');
   });
 
   test('includes instructional prompt at the beginning', () => {
-    const fileContents = new Map();
     const diffContexts: CommentDiffContext[] = [];
 
-    const prompt = createHybridContextPrompt(fileContents, diffContexts);
+    const prompt = createHybridContextPrompt(diffContexts);
 
     // Should start with instruction text (imported from prompts.ts)
     expect(prompt).toBeTruthy();
@@ -668,29 +692,15 @@ describe('createHybridContextPrompt', () => {
   });
 
   test('handles empty inputs gracefully', () => {
-    const fileContents = new Map();
     const diffContexts: CommentDiffContext[] = [];
 
-    const prompt = createHybridContextPrompt(fileContents, diffContexts);
+    const prompt = createHybridContextPrompt(diffContexts);
 
-    expect(prompt).toContain('<diff_contexts>');
-    expect(prompt).toContain('</diff_contexts>');
-    expect(prompt).toContain('Files with review comments:');
+    expect(prompt).toContain('<diffContexts>');
+    expect(prompt).toContain('</diffContexts>');
   });
 
   test('validates ID matching between inline comments and diff contexts', () => {
-    const fileContents = new Map([
-      [
-        'src/example.ts',
-        `function test() {
-  // AI (id: abc-123): First comment
-  const x = 1;
-  // AI (id: def-456): Second comment
-  return x;
-}`,
-      ],
-    ]);
-
     const diffContexts: CommentDiffContext[] = [
       {
         id: 'abc-123',
@@ -704,11 +714,11 @@ describe('createHybridContextPrompt', () => {
       },
     ];
 
-    const prompt = createHybridContextPrompt(fileContents, diffContexts);
+    const prompt = createHybridContextPrompt(diffContexts);
 
-    // Verify that IDs in diff_context tags match what we expect
+    // Verify that IDs in diffContext tags match what we expect
     // Note: The prompt contains a template example with <comment_id>, so we filter that out
-    const diffContextIds = [...prompt.matchAll(/<diff_context id="([^"]+)">/g)]
+    const diffContextIds = [...prompt.matchAll(/<diffContext id="([^"]+)">/g)]
       .map((m) => m[1])
       .filter((id) => id !== '<comment_id>');
     expect(diffContextIds).toEqual(['abc-123', 'def-456']);

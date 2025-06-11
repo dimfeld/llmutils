@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { insertAiCommentsIntoFileContent, removeAiCommentMarkers } from './inline_comments.js';
 import type { DetailedReviewComment } from '../types.js';
+import { setDebug } from '../../common/process.js';
 
 describe('AI Comments Mode Logic', () => {
   describe('insertAiCommentsIntoFileContent - Handling Modified Files with diffForContext', () => {
@@ -31,6 +32,8 @@ describe('AI Comments Mode Logic', () => {
         path: 'test.ts',
         line: line,
         startLine: startLine,
+        originalLine: line,
+        originalStartLine: startLine,
         diffSide: 'RIGHT',
       },
       diffForContext,
@@ -252,6 +255,8 @@ describe('AI Comments Mode Logic', () => {
         path: 'test.ts',
         line: line,
         startLine: startLine,
+        originalLine: line,
+        originalStartLine: startLine,
         diffSide: 'RIGHT',
       },
       diffForContext: [
@@ -476,9 +481,10 @@ describe('AI Comments Mode Logic', () => {
       thread: {
         id: `thread-${id}`,
         path: 'test.ts',
-        // Explicitly exclude originalLine and originalStartLine to ensure no reliance
         line: line,
         startLine: startLine,
+        originalLine: line,
+        originalStartLine: startLine,
         diffSide: 'RIGHT',
       },
       diffForContext,
@@ -706,6 +712,8 @@ describe('AI Comments Mode Logic', () => {
         id: `thread-${id}`,
         line: line,
         startLine: startLine,
+        originalLine: line,
+        originalStartLine: startLine,
         diffSide: 'RIGHT',
       },
       diffForContext: [
@@ -826,6 +834,7 @@ describe('AI Comments Mode Logic', () => {
         '<h2>Goodbye</h2>',
         '<!-- AI_COMMENT_END -->',
       ].join('\n');
+      console.log(contentWithAiComments);
       expect(contentWithAiComments).toBe(expected);
     });
   });

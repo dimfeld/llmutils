@@ -11,15 +11,13 @@ export function formatReviewCommentsForSeparateContext(
   const reviewElements: string[] = [];
 
   for (const comment of selectedComments) {
+    const end = comment.thread.line ?? comment.thread.originalLine;
+    const start = comment.thread.startLine ?? comment.thread.originalStartLine ?? end;
     let lineInfo: string;
-    if (
-      comment.thread.startLine &&
-      comment.thread.line &&
-      comment.thread.startLine !== comment.thread.line
-    ) {
-      lineInfo = `${comment.thread.startLine}-${comment.thread.line}`;
-    } else if (comment.thread.line) {
-      lineInfo = `${comment.thread.line}`;
+    if (start && end && start != end) {
+      lineInfo = `${start}-${end}`;
+    } else if (start) {
+      lineInfo = `${start}`;
     } else {
       lineInfo = 'outdated';
     }
@@ -29,22 +27,22 @@ export function formatReviewCommentsForSeparateContext(
     const prefixedCommentBody = commentBody.split('\n').map((line) => `Comment: ${line}`);
 
     // Format diffForContext with injected comments
-    const targetLine = comment.thread.line;
+    const targetLine = start;
     const diffKey = comment.thread.diffSide === 'LEFT' ? 'oldLineNumber' : 'newLineNumber';
 
-    // Find the index after the target line
-    let spliceAfterIndex = -1;
+    // Find the index before the target line
+    let spliceBeforeIndex = -1;
     if (targetLine) {
       for (let i = 0; i < comment.diffForContext.length; i++) {
         if (comment.diffForContext[i][diffKey] === targetLine) {
-          spliceAfterIndex = i + 1;
+          spliceBeforeIndex = i;
           break;
         }
       }
     }
 
     let diffContentLines: string[];
-    if (spliceAfterIndex === -1 || spliceAfterIndex >= comment.diffForContext.length) {
+    if (spliceBeforeIndex === -1 || spliceBeforeIndex >= comment.diffForContext.length) {
       // Place it at the end
       diffContentLines = [
         ...comment.diffForContext.map((line) => line.content),
@@ -52,9 +50,9 @@ export function formatReviewCommentsForSeparateContext(
       ];
     } else {
       diffContentLines = [
-        ...comment.diffForContext.slice(0, spliceAfterIndex).map((line) => line.content),
+        ...comment.diffForContext.slice(0, spliceBeforeIndex).map((line) => line.content),
         ...prefixedCommentBody,
-        ...comment.diffForContext.slice(spliceAfterIndex).map((line) => line.content),
+        ...comment.diffForContext.slice(spliceBeforeIndex).map((line) => line.content),
       ];
     }
 

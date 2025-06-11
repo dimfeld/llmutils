@@ -331,8 +331,11 @@ export async function selectReviewComments(
   }
 
   const groups = threads.map((thread) => {
-    let start = Math.max(1, thread.startLine ?? thread.line ?? 1);
-    let end = thread.line ?? start;
+    let start = Math.max(
+      1,
+      thread.startLine ?? thread.originalStartLine ?? thread.line ?? thread.originalLine ?? 1
+    );
+    let end = thread.line ?? thread.originalLine ?? start;
 
     let range = end - start + 1;
     let terminalExtra = Math.max(0, Math.floor((MAX_HEIGHT - 10 - range) / 2));
@@ -366,14 +369,11 @@ export async function selectReviewComments(
       return a.value.comment.id.localeCompare(b.value.comment.id);
     });
 
-    const lineRange =
-      thread.startLine && thread.line && thread.startLine !== thread.line
-        ? `${thread.startLine}-${thread.line}`
-        : `${thread.line ?? 'N/A'}`;
+    const lineRange = start && end && start !== end ? `${start}-${end}` : `${start ?? 'N/A'}`;
 
     return {
       path: thread.path,
-      line: thread.line ?? 0,
+      line: start ?? 0,
       choices: [new Separator(`== ${thread.path}:${lineRange} ==`), ...comments],
     };
   });

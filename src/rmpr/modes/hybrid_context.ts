@@ -253,8 +253,8 @@ export function insertAiCommentsAndPrepareDiffContexts(
   // adjusted line numbers.
   const commentsWithAdjustedLines = commentsForFile
     .map((comment) => {
-      const startLine = comment.thread.startLine;
-      const endLine = comment.thread.line;
+      const startLine = comment.thread.startLine ?? comment.thread.originalStartLine;
+      const endLine = comment.thread.line ?? comment.thread.originalLine;
 
       debugLog({
         index1Start: startLine,
