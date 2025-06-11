@@ -314,7 +314,16 @@ export async function handleRmprCommand(
   if (options.mode === 'inline-comments') {
     log('Preparing context in Inline Comments mode...');
     for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
-      const originalContent = await Bun.file(path.resolve(gitRoot, filePath)).text();
+      const absolutePath = path.resolve(gitRoot, filePath);
+      const file = Bun.file(absolutePath);
+      const exists = await file.exists();
+      
+      if (!exists) {
+        warn(`File not found: ${filePath} - skipping AI comment insertion for this file`);
+        continue;
+      }
+      
+      const originalContent = await file.text();
       const { contentWithAiComments, errors } = insertAiCommentsIntoFileContent(
         originalContent,
         fileInfo.comments,
@@ -442,7 +451,16 @@ export async function handleRmprCommand(
     const allCommentDiffContexts: CommentDiffContext[] = [];
 
     for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
-      const originalContent = await Bun.file(path.resolve(gitRoot, filePath)).text();
+      const absolutePath = path.resolve(gitRoot, filePath);
+      const file = Bun.file(absolutePath);
+      const exists = await file.exists();
+      
+      if (!exists) {
+        warn(`File not found: ${filePath} - skipping AI comment insertion for this file`);
+        continue;
+      }
+      
+      const originalContent = await file.text();
       const { contentWithAiComments, commentDiffContexts, errors } =
         insertAiCommentsAndPrepareDiffContexts(originalContent, fileInfo.comments, filePath);
 
@@ -559,7 +577,15 @@ export async function handleRmprCommand(
     for (const filePath of filesProcessedWithAiComments.keys()) {
       try {
         const absolutePath = path.resolve(gitRoot, filePath);
-        const currentContentAfterLlm = await Bun.file(absolutePath).text();
+        const file = Bun.file(absolutePath);
+        const exists = await file.exists();
+        
+        if (!exists) {
+          warn(`File not found when cleaning AI markers: ${filePath} - skipping cleanup for this file`);
+          continue;
+        }
+        
+        const currentContentAfterLlm = await file.text();
         const cleanedContent = removeAiCommentMarkers(currentContentAfterLlm, filePath);
         await secureWrite(gitRoot, filePath, cleanedContent);
       } catch (e: any) {
