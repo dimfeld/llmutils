@@ -67,10 +67,47 @@ export class ClaudeCodeExecutor implements Executor {
             // Print BEL character to alert user
             process.stdout.write('\x07');
 
+            let approved: boolean;
+
+            // Create a promise that resolves with the default response after timeout
+            const timeoutPromise = this.options.permissionsMcp?.timeout
+              ? new Promise<boolean>((resolve) => {
+                  const defaultResponse = this.options.permissionsMcp?.defaultResponse ?? 'no';
+                  setTimeout(() => {
+                    log(`Permission prompt timed out, using default: ${defaultResponse}`);
+                    resolve(defaultResponse === 'yes');
+                  }, this.options.permissionsMcp!.timeout);
+                })
+              : new Promise<boolean>(() => {}); // Never resolves if no timeout
+
+            // Create an AbortController for the prompt
+            const controller = new AbortController();
+
             // Prompt the user for confirmation
-            const approved = await confirm({
-              message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
-            });
+            const promptPromise = confirm(
+              {
+                message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
+              },
+              { signal: controller.signal }
+            );
+
+            // Race between the prompt and the timeout
+            try {
+              approved = await Promise.race([promptPromise, timeoutPromise]);
+              controller.abort(); // Cancel the prompt if timeout wins
+            } catch (err: any) {
+              // If the prompt was aborted (timeout occurred), use the timeout result
+              if (err.name === 'AbortPromptError' && this.options.permissionsMcp?.defaultResponse) {
+                approved = this.options.permissionsMcp.defaultResponse === 'yes';
+                log(
+                  chalk.yellow(
+                    `Permission prompt timed out. Using default: ${this.options.permissionsMcp.defaultResponse}`
+                  )
+                );
+              } else {
+                throw err;
+              }
+            }
 
             // Send response back to MCP server
             const response = {
@@ -97,13 +134,12 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
-    let { disallowedTools, allowAllTools, mcpConfigFile, interactive, enablePermissionsMcp } =
-      this.options;
+    let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     // TODO Interactive mode isn't integrated with the logging
     interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
 
-    let isPermissionsMcpEnabled = enablePermissionsMcp === true;
+    let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
     if (process.env.CLAUDE_CODE_MCP) {
       isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
     }

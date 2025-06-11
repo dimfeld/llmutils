@@ -16,7 +16,14 @@ export const claudeCodeOptionsSchema = z.object({
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
   interactive: z.boolean().optional(),
-  enablePermissionsMcp: z.boolean().optional(),
+  permissionsMcp: z
+    .object({
+      enabled: z.boolean(),
+      defaultResponse: z.enum(['yes', 'no']).optional(),
+      timeout: z.number().optional().describe('Timeout in milliseconds for permission prompts'),
+    })
+    .optional()
+    .describe('Configuration for the permissions MCP server'),
 });
 
 /**

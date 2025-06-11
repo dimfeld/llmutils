@@ -215,8 +215,29 @@
             "interactive": {
               "type": "boolean"
             },
-            "enablePermissionsMcp": {
-              "type": "boolean"
+            "permissionsMcp": {
+              "description": "Configuration for the permissions MCP server",
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "defaultResponse": {
+                  "type": "string",
+                  "enum": [
+                    "yes",
+                    "no"
+                  ]
+                },
+                "timeout": {
+                  "description": "Timeout in milliseconds for permission prompts",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "enabled"
+              ],
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
