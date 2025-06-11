@@ -593,6 +593,14 @@ export async function handleRmprCommand(
       debugLog('Skipping posting replies to review threads (--comment not enabled)');
     }
   }
+
+  // Print URLs for all addressed comments
+  log('\nAddressed review comments:');
+  const prUrl = `https://github.com/${resolvedPrIdentifier.owner}/${resolvedPrIdentifier.repo}/pull/${resolvedPrIdentifier.number}`;
+  for (const { thread, comment } of selectedComments) {
+    const commentUrl = `${prUrl}#discussion_r${comment.databaseId}`;
+    log(`  - ${thread.path}:${thread.line ?? 'N/A'} -- ${commentUrl}`);
+  }
 }
 
 interface PromptOptions {
