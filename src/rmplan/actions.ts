@@ -352,18 +352,41 @@ export async function prepareNextStep(
     promptParts.push(selectedPendingSteps[0].prompt);
   }
 
+  // Helper function to check if a string is a URL
+  const isURL = (str: string): boolean => {
+    try {
+      new URL(str);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   if (!rmfilter) {
     // Collect docs from phase and task only (config paths are handled elsewhere)
     const docsSet = new Set<string>();
+    const docURLsSet = new Set<string>();
 
     // Add docs from the current phase
     if (planData.docs) {
-      planData.docs.forEach((doc: string) => docsSet.add(doc));
+      planData.docs.forEach((doc: string) => {
+        if (isURL(doc)) {
+          docURLsSet.add(doc);
+        } else {
+          docsSet.add(doc);
+        }
+      });
     }
 
     // Add docs from the active task
     if (activeTask.docs) {
-      activeTask.docs.forEach((doc: string) => docsSet.add(doc));
+      activeTask.docs.forEach((doc: string) => {
+        if (isURL(doc)) {
+          docURLsSet.add(doc);
+        } else {
+          docsSet.add(doc);
+        }
+      });
     }
 
     // Get additional docs using findAdditionalDocs when rmfilter is false
@@ -381,8 +404,10 @@ export async function prepareNextStep(
     files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
 
     // Add MDC files with their descriptions if available
-    if (filteredMdcFiles.length > 0 || docsSet.size > 0) {
+    if (filteredMdcFiles.length > 0 || docsSet.size > 0 || docURLsSet.size > 0) {
       promptParts.push('\n## Additional Documentation\n');
+
+      // Add MDC files
       for (const mdcFile of filteredMdcFiles) {
         const relativePath = path.relative(gitRoot, mdcFile.filePath);
         if (mdcFile.data?.description) {
@@ -392,8 +417,17 @@ export async function prepareNextStep(
         }
       }
 
+      // Add local doc files
       for (const doc of docsSet) {
         promptParts.push(`- ${filePrefix}${doc}`);
+      }
+
+      // Add doc URLs
+      if (docURLsSet.size > 0) {
+        promptParts.push('\n### Documentation URLs\n');
+        for (const url of docURLsSet) {
+          promptParts.push(`- ${url}`);
+        }
       }
     }
   }
@@ -1060,16 +1094,30 @@ async function gatherPhaseGenerationContext(
     }> = [];
     const changedFilesFromDependencies: string[] = [];
 
+    // Helper function to check if a string is a URL
+    const isURL = (str: string): boolean => {
+      try {
+        new URL(str);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     // 4. Process parent plan info
-    let parentPlanInfo: { id: number; title: string; goal: string; details: string } | undefined;
+    let parentPlanInfo:
+      | { id: number; title: string; goal: string; details: string; docURLs?: string[] }
+      | undefined;
     if (currentPhaseData.parent) {
       const parentPlan = allPlans.get(currentPhaseData.parent);
       if (parentPlan) {
+        const parentDocURLs = parentPlan.docs?.filter(isURL) || [];
         parentPlanInfo = {
           id: currentPhaseData.parent,
           title: parentPlan.title || `Plan ${currentPhaseData.parent}`,
           goal: parentPlan.goal,
           details: parentPlan.details || '',
+          ...(parentDocURLs.length > 0 && { docURLs: parentDocURLs }),
         };
       }
     }
@@ -1136,6 +1184,9 @@ async function gatherPhaseGenerationContext(
       rmfilterArgsFromPlan.push('--', ...changedFilesExist);
     }
 
+    // Extract current phase doc URLs
+    const currentPhaseDocURLs = currentPhaseData.docs?.filter(isURL) || [];
+
     // 5. Build and return the context object
     const context: PhaseGenerationContext = {
       overallProjectGoal,
@@ -1152,6 +1203,7 @@ async function gatherPhaseGenerationContext(
       parentPlanInfo,
       changedFilesFromDependencies: changedFilesExist,
       rmfilterArgsFromPlan,
+      ...(currentPhaseDocURLs.length > 0 && { currentPhaseDocURLs }),
     };
 
     return context;

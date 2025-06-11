@@ -163,9 +163,11 @@ export interface PhaseGenerationContext {
     title: string;
     goal: string;
     details: string;
+    docURLs?: string[]; // URLs from parent plan docs
   }; // Info from parent plan
   changedFilesFromDependencies: string[]; // Concatenated list of changedFiles from completed dependencies
   rmfilterArgsFromPlan: string[]; // rmfilter args from the original plan/request
+  currentPhaseDocURLs?: string[]; // URLs from current phase docs
   // Potentially add baseBranch if needed
 }
 
@@ -330,15 +332,34 @@ ${context.changedFilesFromDependencies.join('\n')}
   }
 
   // Build parent plan section
-  const parentPlanSection = context.parentPlanInfo
-    ? `## Parent Plan Context
+  let parentPlanSection = '';
+  if (context.parentPlanInfo) {
+    parentPlanSection = `## Parent Plan Context
 
 **Parent Plan:** ${context.parentPlanInfo.title} (ID: ${context.parentPlanInfo.id})
 **Parent Goal:** ${context.parentPlanInfo.goal}
 **Parent Details:** ${context.parentPlanInfo.details}
+`;
 
-`
-    : '';
+    if (context.parentPlanInfo.docURLs && context.parentPlanInfo.docURLs.length > 0) {
+      parentPlanSection += `**Parent Documentation URLs:**\n`;
+      context.parentPlanInfo.docURLs.forEach((url) => {
+        parentPlanSection += `- ${url}\n`;
+      });
+    }
+
+    parentPlanSection += '\n';
+  }
+
+  // Build documentation URLs section for current phase
+  let docURLsSection = '';
+  if (context.currentPhaseDocURLs && context.currentPhaseDocURLs.length > 0) {
+    docURLsSection = `## Documentation URLs\n\n`;
+    context.currentPhaseDocURLs.forEach((url) => {
+      docURLsSection += `- ${url}\n`;
+    });
+    docURLsSection += '\n';
+  }
 
   return `# Phase Implementation Generation
 
@@ -352,7 +373,7 @@ ${projectContextSection}${parentPlanSection}${previousPhasesSection}
 
 **Phase Details:** ${context.currentPhaseDetails}
 
-## Tasks to Implement
+${docURLsSection}## Tasks to Implement
 
 ${tasksSection}
 

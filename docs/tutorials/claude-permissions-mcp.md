@@ -193,11 +193,7 @@ Create a `mcp-config.json` file to define the MCP server for stdio:
   "mcpServers": {
     "permissions": {
       "type": "stdio",
-      "command": [
-        "node",
-        "dist/permissions-server.js",
-        "/path/to/unix/socket"
-      ]
+      "command": ["node", "dist/permissions-server.js", "/path/to/unix/socket"]
     }
   }
 }
@@ -255,11 +251,7 @@ To demonstrate with a filesystem MCP server, ensure your `mcp-config.json` inclu
   "mcpServers": {
     "permissions": {
       "type": "stdio",
-      "command": [
-        "node",
-        "dist/permissions-server.js",
-        "/path/to/unix/socket"
-      ]
+      "command": ["node", "dist/permissions-server.js", "/path/to/unix/socket"]
     }
   }
 }
@@ -381,20 +373,22 @@ import { confirm } from '@inquirer/prompts';
 const server = net.createServer((socket) => {
   socket.on('data', async (data) => {
     const message = JSON.parse(data.toString());
-    
+
     if (message.type === 'permission_request') {
       const { tool_name, input } = message;
-      
+
       // Prompt the user for confirmation
       const approved = await confirm({
         message: `Claude wants to run tool: ${tool_name}. Allow?`,
       });
-      
+
       // Send response back to MCP server
-      socket.write(JSON.stringify({
-        type: 'permission_response',
-        approved,
-      }) + '\n');
+      socket.write(
+        JSON.stringify({
+          type: 'permission_response',
+          approved,
+        }) + '\n'
+      );
     }
   });
 });
@@ -409,6 +403,7 @@ This creates an interactive prompt for the user to approve or deny tool usage.
 You've implemented a permissions MCP server for the Claude Code SDK using FastMCP in TypeScript with stdio transport. FastMCP simplifies development with its intuitive APIs and built-in best practices, while stdio transport enables direct communication with Claude Code. The Unix socket approach avoids HTTP timeout issues and provides reliable communication for interactive permission prompts.
 
 This architecture allows:
+
 - Real-time user confirmation for tool usage
 - No timeout issues when users take time to respond
 - Direct integration with Claude Code's MCP system

@@ -464,6 +464,16 @@ async function executeStubPlan({
     directPrompt += `## Details\n\n${planData.details}\n\n`;
   }
 
+  // Helper function to check if a string is a URL
+  const isURL = (str: string): boolean => {
+    try {
+      new URL(str);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   // Add parent plan information if available
   if (planData.parent) {
     const tasksDir = path.dirname(planFilePath);
@@ -479,10 +489,34 @@ async function executeStubPlan({
         if (parentPlan.details) {
           directPrompt += `**Parent Details:** ${parentPlan.details}\n`;
         }
+
+        // Check parent plan's docs for URLs
+        if (parentPlan.docs && parentPlan.docs.length > 0) {
+          const parentURLs = parentPlan.docs.filter(isURL);
+          if (parentURLs.length > 0) {
+            directPrompt += `**Parent Documentation URLs:**\n`;
+            parentURLs.forEach((url) => {
+              directPrompt += `- ${url}\n`;
+            });
+          }
+        }
+
         directPrompt += `\n`;
       }
     } catch (err) {
-      warn(`Warning: Could not load parent plan ${planData.parent}: ${err}`);
+      warn(`Warning: Could not load parent plan ${planData.parent}: ${err as Error}`);
+    }
+  }
+
+  // Add current plan's doc URLs if available
+  if (planData.docs && planData.docs.length > 0) {
+    const docURLs = planData.docs.filter(isURL);
+    if (docURLs.length > 0) {
+      directPrompt += `## Documentation URLs\n\n`;
+      docURLs.forEach((url) => {
+        directPrompt += `- ${url}\n`;
+      });
+      directPrompt += `\n`;
     }
   }
 
