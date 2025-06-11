@@ -21,7 +21,10 @@ import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js
 import { input } from '@inquirer/prompts';
 import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 
-export function convertYamlToMarkdown(plan: PlanSchema): string {
+export function convertYamlToMarkdown(
+  plan: PlanSchema,
+  options?: { includeTaskIds?: boolean }
+): string {
   const sections: string[] = [];
 
   // Title section (if present)
@@ -45,36 +48,99 @@ export function convertYamlToMarkdown(plan: PlanSchema): string {
   // Add separator
   sections.push('---');
 
-  // Tasks section
-  for (const task of plan.tasks) {
-    const taskSections: string[] = [];
+  // Separate tasks into done and pending
+  const doneTasks: Array<{ task: PlanSchema['tasks'][0]; index: number }> = [];
+  const pendingTasks: Array<{ task: PlanSchema['tasks'][0]; index: number }> = [];
 
-    // Task title
-    taskSections.push(`## Task: ${task.title}`);
+  plan.tasks.forEach((task, index) => {
+    // Check if all steps in the task are done
+    const isTaskDone = task.steps.length > 0 && task.steps.every((step) => step.done);
+    if (isTaskDone) {
+      doneTasks.push({ task, index });
+    } else {
+      pendingTasks.push({ task, index });
+    }
+  });
 
-    // Task description
-    taskSections.push(`**Description:** ${task.description}`);
+  // Add done tasks section if there are any
+  if (doneTasks.length > 0) {
+    sections.push('# Completed Tasks');
+    sections.push('*These tasks have been completed and should not be modified.*');
+    sections.push('');
 
-    // Files (if present)
-    if (task.files && task.files.length > 0) {
-      taskSections.push(`**Files:**\n${task.files.map((file) => `- ${file}`).join('\n')}`);
+    for (const { task, index } of doneTasks) {
+      const taskSections: string[] = [];
+
+      // Task title with ID
+      const taskId = options?.includeTaskIds ? ` [TASK-${index + 1}]` : '';
+      taskSections.push(`## Task: ${task.title}${taskId} ✓`);
+
+      // Task description
+      taskSections.push(`**Description:** ${task.description}`);
+
+      // Files (if present)
+      if (task.files && task.files.length > 0) {
+        taskSections.push(`**Files:**\n${task.files.map((file) => `- ${file}`).join('\n')}`);
+      }
+
+      // Steps (if present)
+      if (task.steps && task.steps.length > 0) {
+        taskSections.push('**Steps:** *(All completed)*');
+
+        task.steps.forEach((step, stepIndex) => {
+          // Escape any triple backticks in the prompt by adding a zero-width space
+          const escapedPrompt = step.prompt.replace(/```/g, '\u200b```');
+          taskSections.push(
+            `${stepIndex + 1}.  **Prompt:** ✓\n    \`\`\`\n    ${escapedPrompt.split('\n').join('\n    ')}\n    \`\`\``
+          );
+        });
+      }
+
+      sections.push(taskSections.join('\n'));
+      sections.push('---');
+    }
+  }
+
+  // Add pending tasks section
+  if (pendingTasks.length > 0) {
+    if (doneTasks.length > 0) {
+      sections.push('# Pending Tasks');
+      sections.push('*These tasks can be updated, modified, or removed as needed.*');
+      sections.push('');
     }
 
-    // Steps (if present)
-    if (task.steps && task.steps.length > 0) {
-      taskSections.push('**Steps:**');
+    for (const { task, index } of pendingTasks) {
+      const taskSections: string[] = [];
 
-      task.steps.forEach((step, index) => {
-        // Escape any triple backticks in the prompt by adding a zero-width space
-        const escapedPrompt = step.prompt.replace(/```/g, '\u200b```');
-        taskSections.push(
-          `${index + 1}.  **Prompt:**\n    \`\`\`\n    ${escapedPrompt.split('\n').join('\n    ')}\n    \`\`\``
-        );
-      });
+      // Task title with ID
+      const taskId = options?.includeTaskIds ? ` [TASK-${index + 1}]` : '';
+      taskSections.push(`## Task: ${task.title}${taskId}`);
+
+      // Task description
+      taskSections.push(`**Description:** ${task.description}`);
+
+      // Files (if present)
+      if (task.files && task.files.length > 0) {
+        taskSections.push(`**Files:**\n${task.files.map((file) => `- ${file}`).join('\n')}`);
+      }
+
+      // Steps (if present)
+      if (task.steps && task.steps.length > 0) {
+        taskSections.push('**Steps:**');
+
+        task.steps.forEach((step, stepIndex) => {
+          // Escape any triple backticks in the prompt by adding a zero-width space
+          const escapedPrompt = step.prompt.replace(/```/g, '\u200b```');
+          const doneMarker = step.done ? ' ✓' : '';
+          taskSections.push(
+            `${stepIndex + 1}.  **Prompt:**${doneMarker}\n    \`\`\`\n    ${escapedPrompt.split('\n').join('\n    ')}\n    \`\`\``
+          );
+        });
+      }
+
+      sections.push(taskSections.join('\n'));
+      sections.push('---');
     }
-
-    sections.push(taskSections.join('\n'));
-    sections.push('---');
   }
 
   // Remove the last separator if there were tasks
@@ -335,6 +401,51 @@ export async function extractMarkdownToYaml(
     }
     if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
       validatedPlan.rmfilter = options.planRmfilterArgs;
+    }
+
+    // Special handling for plan updates: merge tasks while preserving completed ones
+    if (options.updatePlan?.data) {
+      const originalTasks = options.updatePlan.data.tasks;
+      const updatedTasks = validatedPlan.tasks;
+
+      // Build a map of original completed tasks (all steps done)
+      const completedTasks = new Map<number, (typeof originalTasks)[0]>();
+      originalTasks.forEach((task, index) => {
+        if (task.steps.length > 0 && task.steps.every((step) => step.done)) {
+          completedTasks.set(index, task);
+        }
+      });
+
+      // Parse task IDs from the updated markdown to match tasks
+      const taskIdRegex = /\[TASK-(\d+)\]/;
+      const mergedTasks: typeof originalTasks = [];
+
+      // First, add all completed tasks in their original positions
+      for (const [index, task] of completedTasks) {
+        mergedTasks[index] = task;
+      }
+
+      // Then process updated tasks
+      updatedTasks.forEach((updatedTask) => {
+        // Try to extract task ID from title
+        const match = updatedTask.title.match(taskIdRegex);
+        if (match) {
+          const taskIndex = parseInt(match[1]) - 1; // Convert to 0-based index
+          // Remove the task ID from the title
+          updatedTask.title = updatedTask.title.replace(taskIdRegex, '').trim();
+
+          // Only update if this was not a completed task
+          if (!completedTasks.has(taskIndex)) {
+            mergedTasks[taskIndex] = updatedTask;
+          }
+        } else {
+          // New task without ID - add to the end
+          mergedTasks.push(updatedTask);
+        }
+      });
+
+      // Filter out any undefined entries and reassign
+      validatedPlan.tasks = mergedTasks.filter((task) => task !== undefined);
     }
   } catch (e) {
     // Save the failed YAML for debugging

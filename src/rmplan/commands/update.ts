@@ -74,8 +74,8 @@ export async function handleUpdateCommand(planFile: string, options: any, comman
   const planData = await readPlanFile(resolvedPlanFile);
   log(`Loaded plan: ${planData.title || `Plan ${planData.id}`}`);
 
-  // Convert the plan to markdown format
-  const planMarkdown = convertYamlToMarkdown(planData);
+  // Convert the plan to markdown format with task IDs
+  const planMarkdown = convertYamlToMarkdown(planData, { includeTaskIds: true });
 
   // Generate the update prompt
   const updatePrompt = generateUpdatePrompt(planMarkdown, updateDescription);

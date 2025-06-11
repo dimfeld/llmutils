@@ -40,7 +40,7 @@ When plans are generated from markdown or processed through various transformati
 // In extractMarkdownToYaml function, around line 230
 if (options.stubPlan?.data) {
   // ... existing field inheritance ...
-  
+
   if (options.stubPlan?.data.assignedTo) {
     validatedPlan.assignedTo = options.stubPlan?.data.assignedTo;
   }
@@ -53,7 +53,7 @@ if (options.stubPlan?.data) {
 // In saveMultiPhaseYaml function, around line 400
 if (options.stubPlan?.data) {
   // ... existing field inheritance ...
-  
+
   // Inherit assignedTo if not already set
   if (!phase.assignedTo && options.stubPlan?.data.assignedTo) {
     phase.assignedTo = options.stubPlan?.data.assignedTo;
@@ -197,6 +197,7 @@ dueDate: z.string().datetime().optional(),
 ## Summary
 
 Adding a new field to the plan schema involves:
+
 1. Updating the schema definition
 2. Ensuring the field is preserved during plan processing
 3. Adding display logic where appropriate

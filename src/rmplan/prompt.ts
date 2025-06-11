@@ -460,22 +460,33 @@ ${updateDescription}
 Please analyze the existing plan and the requested changes, then:
 
 1. **Return the ENTIRE updated plan** in the exact same Markdown format as provided
-2. You may **add, remove, or modify any part of the plan** including:
-   - Title and goal
-   - Priority level
-   - Details section
-   - Tasks (add new ones, remove existing ones, or modify them)
-   - Steps within tasks
-   - File references
-   - Any other content
-3. **Preserve any unmodified parts** of the plan exactly as they were
-4. Ensure the updated plan maintains consistency and logical flow
+2. **CRITICAL: Preserve ALL completed tasks exactly as they appear**
+   - Completed tasks are marked with ✓ and appear in the "Completed Tasks" section
+   - Do NOT modify, remove, or change any completed tasks
+   - Keep all task IDs (e.g., [TASK-1], [TASK-2]) exactly as shown
+3. For **Pending Tasks** only, you may:
+   - Add new tasks
+   - Remove existing pending tasks
+   - Modify pending tasks (title, description, files, steps)
+   - Reorder pending tasks
+4. When adding new tasks:
+   - Continue the task numbering sequence (e.g., if the last task is [TASK-5], new tasks should be [TASK-6], [TASK-7], etc.)
+   - Place new tasks in the appropriate section based on their completion status
+5. **Preserve the structure**:
+   - Keep the "Completed Tasks" section if it exists
+   - Keep the "Pending Tasks" section for tasks that are not yet done
+   - Maintain the separation between completed and pending tasks
+6. **Preserve any unmodified parts** of the plan exactly as they were
+7. Ensure the updated plan maintains consistency and logical flow
 
 ## Required Output Format
 
-Your response must follow this exact Markdown structure:
-
-${planMarkdownExampleFormat}
+Your response must follow the exact structure of the input plan, maintaining:
+- The same header levels and formatting
+- Task ID format [TASK-N]
+- Completed task markers (✓)
+- Section separators (---)
+- Code block formatting for prompts
 
 ## Important Notes
 
@@ -483,7 +494,8 @@ ${planMarkdownExampleFormat}
 - Do not include any explanations, commentary, or text outside the plan structure
 - Maintain the exact formatting with proper headers, bullet points, and code blocks
 - If the existing plan uses phase-based structure, maintain that structure in your update
-- Ensure all changes align with the requested update while keeping the plan coherent`;
+- Ensure all changes align with the requested update while keeping the plan coherent
+- NEVER modify completed tasks - they represent work that has already been done`;
 }
 
 export function generateSplitPlanPrompt(plan: PlanSchema): string {

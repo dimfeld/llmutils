@@ -229,15 +229,87 @@ This is a test plan with some details
     // Check instructions section
     expect(prompt).toContain('## Instructions');
     expect(prompt).toContain('Return the ENTIRE updated plan');
-    expect(prompt).toContain('add, remove, or modify any part of the plan');
+    expect(prompt).toContain('For **Pending Tasks** only, you may:');
+    expect(prompt).toContain('Add new tasks');
+    expect(prompt).toContain('Remove existing pending tasks');
+    expect(prompt).toContain('Modify pending tasks');
     expect(prompt).toContain('Preserve any unmodified parts');
 
     // Check that it references the required output format
     expect(prompt).toContain('## Required Output Format');
-    expect(prompt).toContain('Your response must follow this exact Markdown structure:');
+    expect(prompt).toContain('Your response must follow the exact structure of the input plan');
 
     // Check important notes
     expect(prompt).toContain('## Important Notes');
     expect(prompt).toContain('Output ONLY the updated plan in Markdown format');
+  });
+
+  it('should include instructions for preserving completed tasks', () => {
+    const planAsMarkdown = `# Test Plan
+
+## Goal
+Test goal
+
+---
+
+# Completed Tasks
+*These tasks have been completed and should not be modified.*
+
+## Task: Completed Task [TASK-1] ✓
+**Description:** This task is done
+**Steps:** *(All completed)*
+1.  **Prompt:** ✓
+    \`\`\`
+    Completed step
+    \`\`\`
+
+---
+
+# Pending Tasks
+*These tasks can be updated, modified, or removed as needed.*
+
+## Task: Pending Task [TASK-2]
+**Description:** This task is not done
+**Steps:**
+1.  **Prompt:**
+    \`\`\`
+    Pending step
+    \`\`\``;
+
+    const updateDescription = 'Add a new feature';
+
+    const prompt = generateUpdatePrompt(planAsMarkdown, updateDescription);
+
+    // Check for completed task preservation instructions
+    expect(prompt).toContain('CRITICAL: Preserve ALL completed tasks exactly as they appear');
+    expect(prompt).toContain('Completed tasks are marked with ✓');
+    expect(prompt).toContain('Do NOT modify, remove, or change any completed tasks');
+    expect(prompt).toContain('Keep all task IDs (e.g., [TASK-1], [TASK-2]) exactly as shown');
+
+    // Check for pending task instructions
+    expect(prompt).toContain('For **Pending Tasks** only, you may:');
+    expect(prompt).toContain('Add new tasks');
+    expect(prompt).toContain('Remove existing pending tasks');
+    expect(prompt).toContain('Modify pending tasks');
+
+    // Check for task numbering instructions
+    expect(prompt).toContain('Continue the task numbering sequence');
+    expect(prompt).toContain(
+      'if the last task is [TASK-5], new tasks should be [TASK-6], [TASK-7]'
+    );
+
+    // Check structure preservation
+    expect(prompt).toContain('Keep the "Completed Tasks" section if it exists');
+    expect(prompt).toContain('Keep the "Pending Tasks" section');
+    expect(prompt).toContain('Maintain the separation between completed and pending tasks');
+
+    // Check formatting requirements
+    expect(prompt).toContain('Task ID format [TASK-N]');
+    expect(prompt).toContain('Completed task markers (✓)');
+
+    // Check final warning
+    expect(prompt).toContain(
+      'NEVER modify completed tasks - they represent work that has already been done'
+    );
   });
 });
