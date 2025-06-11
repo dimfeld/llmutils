@@ -15,7 +15,7 @@ issue:
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-11T18:35:17.861Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-11T18:52:49.433Z
+updatedAt: 2025-06-11T18:56:22.548Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -131,10 +131,10 @@ tasks:
           `HybridInsertionResult` interface that will be the return type of the
           main function, containing `contentWithAiComments`,
           `commentDiffContexts`, and `errors`.
-        done: false
+        done: true
       - prompt: |
           Create the new file `src/rmpr/modes/hybrid_context.ts`.
-        done: false
+        done: true
       - prompt: >
           In `hybrid_context.ts`, implement the function
           `insertAiCommentsAndPrepareDiffContexts`. Adapt the core logic from
@@ -142,7 +142,7 @@ tasks:
           `src/rmpr/modes/inline_comments.ts`. This new function will take the
           file content, a list of `DetailedReviewComment` objects, and the file
           path as arguments, and it will return a `HybridInsertionResult`.
-        done: false
+        done: true
       - prompt: >
           Modify the comment insertion logic within
           `insertAiCommentsAndPrepareDiffContexts`. For each comment, use its
@@ -150,20 +150,20 @@ tasks:
           AI-readable comment string, following the format defined in the
           previous task (e.g., `// AI (id: ${comment.comment.id}):
           ${commentBody}`).
-        done: false
+        done: true
       - prompt: >
           As each comment is successfully placed into the file content, create
           and store a `CommentDiffContext` object. This object should contain
           the comment's ID, the full AI comment text that was generated, and the
           original `comment.comment.diffHunk`. Collect these objects in a list
           to be returned.
-        done: false
+        done: true
       - prompt: >
           Ensure the function correctly handles and returns any errors
           encountered during comment placement, similar to the `errors` array in
           the `inline_comments.ts` implementation. The final return value should
           be an object matching the `HybridInsertionResult` interface.
-        done: false
+        done: true
   - title: Implement Prompt Generation for Hybrid Mode
     description: Within `hybrid_context.ts`, a function named
       `createHybridContextPrompt` will be developed. This function will take the
@@ -296,7 +296,9 @@ tasks:
 changedFiles:
   - src/rmplan/executors/claude_code/permissions_mcp.ts
   - src/rmplan/executors/claude_code.ts
+  - src/rmpr/modes/hybrid_context.ts
   - src/rmpr/prompts.ts
+  - src/rmpr/types.ts
 rmfilter:
   - src/rmpr
   - src/common/github
