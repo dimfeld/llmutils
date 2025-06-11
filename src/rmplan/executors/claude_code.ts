@@ -185,7 +185,8 @@ export class ClaudeCodeExecutor implements Executor {
         mcpServers: {
           permissions: {
             type: 'stdio',
-            command: [process.execPath, permissionsMcpPath, unixSocketPath],
+            command: process.execPath,
+            args: [permissionsMcpPath, unixSocketPath],
           },
         },
       };
