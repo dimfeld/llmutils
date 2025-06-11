@@ -411,7 +411,7 @@ program
   )
   .option(
     '--mode <mode>',
-    "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt.",
+    "Specify the editing mode. 'inline-comments' (default) inserts comments into code. 'separate-context' adds them to the prompt. 'hybrid-context' combines both approaches.",
     'inline-comments'
   )
   .option(`-x, --executor <name>`, 'The executor to use for execution')

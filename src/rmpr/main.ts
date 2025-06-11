@@ -60,7 +60,11 @@ import {
   createSeparateContextPrompt,
   formatReviewCommentsForSeparateContext,
 } from './modes/separate_context.js';
-import type { DetailedReviewComment } from './types.js';
+import {
+  insertAiCommentsAndPrepareDiffContexts,
+  createHybridContextPrompt,
+} from './modes/hybrid_context.js';
+import type { DetailedReviewComment, CommentDiffContext } from './types.js';
 
 /**
  * Main handler for the rmpr command that processes GitHub Pull Request review comments using LLMs.
@@ -271,7 +275,10 @@ export async function handleRmprCommand(
 
   if (!options.yes && !options.dryRun) {
     log('\nSettings can be adjusted before generating the LLM prompt.');
-    if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
+    if (
+      (options.mode === 'inline-comments' || options.mode === 'hybrid-context') &&
+      filesProcessedWithAiComments.size > 0
+    ) {
       log(
         'AI comments have been written to the relevant files. You can examine and edit them directly on disk before continuing.'
       );
@@ -427,6 +434,65 @@ export async function handleRmprCommand(
       }
     }
     instructions = createInlineCommentsPrompt(filesProcessedWithAiComments.keys().toArray());
+  } else if (options.mode === 'hybrid-context') {
+    log('Preparing context in Hybrid Context mode...');
+
+    // Variables to aggregate results from all files
+    const fileContentsWithAiComments = new Map<string, string>();
+    const allCommentDiffContexts: CommentDiffContext[] = [];
+
+    for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
+      const originalContent = await Bun.file(path.resolve(gitRoot, filePath)).text();
+      const { contentWithAiComments, commentDiffContexts, errors } =
+        insertAiCommentsAndPrepareDiffContexts(originalContent, fileInfo.comments, filePath);
+
+      // Aggregate results
+      fileContentsWithAiComments.set(filePath, contentWithAiComments);
+      allCommentDiffContexts.push(...commentDiffContexts);
+      filesProcessedWithAiComments.set(filePath, contentWithAiComments);
+
+      // Display errors
+      for (const { error: errorMessage } of errors) {
+        error(errorMessage);
+      }
+    }
+
+    // Write modified content to disk
+    if (fileContentsWithAiComments.size > 0 && !options.dryRun) {
+      log('\nAI comments with diff contexts have been prepared in the following files:');
+      for (const [filePath, content] of fileContentsWithAiComments.entries()) {
+        log(`  - ${filePath}`);
+        try {
+          await secureWrite(gitRoot, filePath, content);
+        } catch (e: any) {
+          error(`Failed to write AI comments to ${filePath}: ${e.message}`);
+          process.exit(1);
+        }
+      }
+    } else if (fileContentsWithAiComments.size > 0 && options.dryRun) {
+      log(chalk.bold.yellow('\n--- DRY RUN INFO ---'));
+      log(
+        chalk.yellow(
+          'In Hybrid Context mode, if not a dry run, AI comments would be written to the following files:'
+        )
+      );
+      for (const filePath of fileContentsWithAiComments.keys()) {
+        log(chalk.gray(`  - ${filePath}`));
+      }
+      log(chalk.red('These files have NOT been modified on disk due to --dry-run.'));
+
+      // Show diff contexts that would be included
+      log(chalk.bold.cyan('\n--- DIFF CONTEXTS TO BE INCLUDED ---'));
+      for (const context of allCommentDiffContexts) {
+        log(chalk.blue(`Comment ID: ${context.id}`));
+        log(chalk.gray('Diff Hunk:'));
+        context.diffHunk.split('\n').forEach((line) => log(chalk.gray(`  ${line}`)));
+        log(chalk.gray('---'));
+      }
+    }
+
+    // Generate the final LLM prompt using createHybridContextPrompt
+    instructions = createHybridContextPrompt(fileContentsWithAiComments, allCommentDiffContexts);
   } else {
     // Default to "separate-context" mode
     log('Preparing context in Separate Context mode...');
@@ -485,7 +551,10 @@ export async function handleRmprCommand(
 
   await executor.execute(llmPrompt);
 
-  if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
+  if (
+    (options.mode === 'inline-comments' || options.mode === 'hybrid-context') &&
+    filesProcessedWithAiComments.size > 0
+  ) {
     log('Cleaning up AI comment markers...');
     for (const filePath of filesProcessedWithAiComments.keys()) {
       try {

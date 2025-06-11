@@ -15,7 +15,7 @@ issue:
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-11T18:35:17.861Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-11T18:58:30.499Z
+updatedAt: 2025-06-11T19:02:55.389Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -221,38 +221,38 @@ tasks:
           In `src/rmpr/main.ts`, update the definition of the `--mode`
           command-line option to include `"hybrid-context"` as a valid choice,
           alongside the existing modes.
-        done: false
+        done: true
       - prompt: >
           In the `handleRmprCommand` function, add a new `else if` condition to
           handle the `hybrid-context` mode. Import
           `insertAiCommentsAndPrepareDiffContexts` and
           `createHybridContextPrompt` from `src/rmpr/modes/hybrid_context.ts`.
-        done: false
+        done: true
       - prompt: >
           Within the new `hybrid-context` block, iterate through the
           `commentsByFilePath` map. For each file, call
           `insertAiCommentsAndPrepareDiffContexts` and aggregate the returned
           `contentWithAiComments` and `commentDiffContexts`. Also, collect and
           display any errors.
-        done: false
+        done: true
       - prompt: >
           After processing all files, write the modified content
           (`contentWithAiComments`) for each file to disk using the
           `secureWrite` utility. This step is analogous to the file writing in
           the `inline-comments` mode.
-        done: false
+        done: true
       - prompt: >
           Use the aggregated results to generate the final LLM prompt by calling
           `createHybridContextPrompt`. Assign the result to the `instructions`
           variable, which will then be used to build the `llmPrompt`.
-        done: false
+        done: true
       - prompt: >
           After the `executor.execute(llmPrompt)` call, implement the cleanup
           step. Reuse the `removeAiCommentMarkers` function (from
           `inline_comments.ts`) to remove all AI-related comments and markers
           from the files that were modified, ensuring the codebase is left in a
           clean state.
-        done: false
+        done: true
   - title: Write Comprehensive Tests for the Hybrid Mode
     description: Thorough tests will be written for the new hybrid mode. Unit tests
       will cover `insertAiCommentsAndPrepareDiffContexts` to ensure correct AI
@@ -296,6 +296,8 @@ tasks:
 changedFiles:
   - src/rmplan/executors/claude_code/permissions_mcp.ts
   - src/rmplan/executors/claude_code.ts
+  - src/rmplan/rmplan.ts
+  - src/rmpr/main.ts
   - src/rmpr/modes/hybrid_context.ts
   - src/rmpr/prompts.ts
   - src/rmpr/types.ts
