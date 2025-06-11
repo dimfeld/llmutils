@@ -60,7 +60,12 @@ import {
   createSeparateContextPrompt,
   formatReviewCommentsForSeparateContext,
 } from './modes/separate_context.js';
-import type { DetailedReviewComment } from './types.js';
+import {
+  insertAiCommentsAndPrepareDiffContexts,
+  createHybridContextPrompt,
+  formatDiffContexts,
+} from './modes/hybrid_context.js';
+import type { DetailedReviewComment, CommentDiffContext } from './types.js';
 
 /**
  * Main handler for the rmpr command that processes GitHub Pull Request review comments using LLMs.
@@ -271,7 +276,10 @@ export async function handleRmprCommand(
 
   if (!options.yes && !options.dryRun) {
     log('\nSettings can be adjusted before generating the LLM prompt.');
-    if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
+    if (
+      (options.mode === 'inline-comments' || options.mode === 'hybrid-context') &&
+      filesProcessedWithAiComments.size > 0
+    ) {
       log(
         'AI comments have been written to the relevant files. You can examine and edit them directly on disk before continuing.'
       );
@@ -307,7 +315,16 @@ export async function handleRmprCommand(
   if (options.mode === 'inline-comments') {
     log('Preparing context in Inline Comments mode...');
     for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
-      const originalContent = await Bun.file(path.resolve(gitRoot, filePath)).text();
+      const absolutePath = path.resolve(gitRoot, filePath);
+      const file = Bun.file(absolutePath);
+      const exists = await file.exists();
+
+      if (!exists) {
+        warn(`File not found: ${filePath} - skipping AI comment insertion for this file`);
+        continue;
+      }
+
+      const originalContent = await file.text();
       const { contentWithAiComments, errors } = insertAiCommentsIntoFileContent(
         originalContent,
         fileInfo.comments,
@@ -345,88 +362,67 @@ export async function handleRmprCommand(
 
       // Show only the sections with AI comments
       log(chalk.bold.cyan('\n--- AI COMMENT SECTIONS ---'));
-      for (const [filePath, content] of filesProcessedWithAiComments.entries()) {
-        const lines = content.split('\n');
-        const sections: { startLine: number; endLine: number; lines: string[] }[] = [];
-        let currentSection: { startLine: number; endLine: number; lines: string[] } | null = null;
-        let inAiSection = false;
-
-        // Find all AI comment sections
-        let inCommentBlock = false;
-        let consecutiveAiLines = 0;
-
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          const trimmed = line.trim();
-
-          const hasAiCommentStart = trimmed.includes('AI_COMMENT_START');
-          const hasAiCommentEnd = trimmed.includes('AI_COMMENT_END');
-          const hasAiComment = trimmed.includes('AI:');
-
-          if (hasAiCommentStart) {
-            // Start of a comment block
-            inCommentBlock = true;
-            inAiSection = true;
-            currentSection = { startLine: i + 1, endLine: i + 1, lines: [line] };
-            consecutiveAiLines = 0;
-          } else if (inCommentBlock) {
-            // Inside a comment block - add all lines until AI_COMMENT_END
-            if (currentSection) {
-              currentSection.lines.push(line);
-              currentSection.endLine = i + 1;
-
-              if (hasAiCommentEnd) {
-                // End of comment block
-                sections.push(currentSection);
-                currentSection = null;
-                inAiSection = false;
-                inCommentBlock = false;
-              }
-            }
-          } else if (hasAiComment) {
-            // Standalone AI: comment (not in a block)
-            if (!inAiSection) {
-              // Start a new section for consecutive AI: comments
-              inAiSection = true;
-              currentSection = { startLine: i + 1, endLine: i + 1, lines: [line] };
-              consecutiveAiLines = 1;
-            } else if (currentSection) {
-              // Continue the current AI: section
-              currentSection.lines.push(line);
-              currentSection.endLine = i + 1;
-              consecutiveAiLines++;
-            }
-          } else if (inAiSection && !inCommentBlock) {
-            // Not an AI: comment, but we're in a standalone AI: section
-            if (currentSection) {
-              // Add one more line after consecutive AI: comments
-              currentSection.lines.push(line);
-              currentSection.endLine = i + 1;
-              sections.push(currentSection);
-              currentSection = null;
-              inAiSection = false;
-              consecutiveAiLines = 0;
-            }
-          }
-        }
-
-        // Add any remaining section
-        if (currentSection) {
-          sections.push(currentSection);
-        }
-
-        // Print the sections
-        if (sections.length > 0) {
-          log(chalk.bold.green(`\n=== ${filePath} ===`));
-          for (const section of sections) {
-            log(chalk.blue(`Lines ${section.startLine}-${section.endLine}:`));
-            section.lines.forEach((line) => log(line));
-            log(chalk.gray('---'));
-          }
-        }
-      }
+      printAiCommentSections(filesProcessedWithAiComments);
     }
     instructions = createInlineCommentsPrompt(filesProcessedWithAiComments.keys().toArray());
+  } else if (options.mode === 'hybrid-context') {
+    log('Preparing context in Hybrid Context mode...');
+
+    // Variables to aggregate results from all files
+    const fileContentsWithAiComments = new Map<string, string>();
+    const allCommentDiffContexts: CommentDiffContext[] = [];
+
+    for (const [filePath, fileInfo] of commentsByFilePath.entries()) {
+      const absolutePath = path.resolve(gitRoot, filePath);
+      const file = Bun.file(absolutePath);
+      const exists = await file.exists();
+
+      if (!exists) {
+        warn(`File not found: ${filePath} - skipping AI comment insertion for this file`);
+        continue;
+      }
+
+      const originalContent = await file.text();
+      const { contentWithAiComments, commentDiffContexts, errors } =
+        insertAiCommentsAndPrepareDiffContexts(originalContent, fileInfo.comments, filePath);
+
+      // Aggregate results
+      fileContentsWithAiComments.set(filePath, contentWithAiComments);
+      allCommentDiffContexts.push(...commentDiffContexts);
+      filesProcessedWithAiComments.set(filePath, contentWithAiComments);
+
+      // Display errors
+      for (const { error: errorMessage } of errors) {
+        error(errorMessage);
+      }
+    }
+
+    // Write modified content to disk
+    if (fileContentsWithAiComments.size > 0 && !options.dryRun) {
+      log('\nAI comments with diff contexts have been prepared in the following files:');
+      for (const [filePath, content] of fileContentsWithAiComments.entries()) {
+        log(`  - ${filePath}`);
+        try {
+          await secureWrite(gitRoot, filePath, content);
+        } catch (e: any) {
+          error(`Failed to write AI comments to ${filePath}: ${e.message}`);
+          process.exit(1);
+        }
+      }
+    } else if (fileContentsWithAiComments.size > 0 && options.dryRun) {
+      log(chalk.bold.yellow('\n--- DRY RUN INFO ---'));
+
+      log(chalk.bold.cyan('\n--- AI COMMENT SECTIONS ---'));
+      printAiCommentSections(filesProcessedWithAiComments);
+      log(chalk.red('These files have NOT been modified on disk due to --dry-run.'));
+
+      // Show diff contexts that would be included
+      log(chalk.bold.cyan('\n--- DIFF CONTEXTS TO BE INCLUDED ---'));
+      log(formatDiffContexts(allCommentDiffContexts));
+    }
+
+    // Generate the final LLM prompt using createHybridContextPrompt
+    instructions = createHybridContextPrompt(allCommentDiffContexts);
   } else {
     // Default to "separate-context" mode
     log('Preparing context in Separate Context mode...');
@@ -485,12 +481,25 @@ export async function handleRmprCommand(
 
   await executor.execute(llmPrompt);
 
-  if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0) {
+  if (
+    (options.mode === 'inline-comments' || options.mode === 'hybrid-context') &&
+    filesProcessedWithAiComments.size > 0
+  ) {
     log('Cleaning up AI comment markers...');
     for (const filePath of filesProcessedWithAiComments.keys()) {
       try {
         const absolutePath = path.resolve(gitRoot, filePath);
-        const currentContentAfterLlm = await Bun.file(absolutePath).text();
+        const file = Bun.file(absolutePath);
+        const exists = await file.exists();
+
+        if (!exists) {
+          warn(
+            `File not found when cleaning AI markers: ${filePath} - skipping cleanup for this file`
+          );
+          continue;
+        }
+
+        const currentContentAfterLlm = await file.text();
         const cleanedContent = removeAiCommentMarkers(currentContentAfterLlm, filePath);
         await secureWrite(gitRoot, filePath, cleanedContent);
       } catch (e: any) {
@@ -660,4 +669,87 @@ async function optionsPrompt(initialOptions: {
   debugLog(result);
 
   return result;
+}
+
+function printAiCommentSections(files: Map<string, string>) {
+  for (const [filePath, content] of files.entries()) {
+    const lines = content.split('\n');
+    const sections: { startLine: number; endLine: number; lines: string[] }[] = [];
+    let currentSection: { startLine: number; endLine: number; lines: string[] } | null = null;
+    let inAiSection = false;
+
+    // Find all AI comment sections
+    let inCommentBlock = false;
+    let consecutiveAiLines = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      const hasAiCommentStart = trimmed.includes('AI_COMMENT_START');
+      const hasAiCommentEnd = trimmed.includes('AI_COMMENT_END');
+      const hasAiComment = trimmed.includes('AI:');
+
+      if (hasAiCommentStart) {
+        // Start of a comment block
+        inCommentBlock = true;
+        inAiSection = true;
+        currentSection = { startLine: i + 1, endLine: i + 1, lines: [line] };
+        consecutiveAiLines = 0;
+      } else if (inCommentBlock) {
+        // Inside a comment block - add all lines until AI_COMMENT_END
+        if (currentSection) {
+          currentSection.lines.push(line);
+          currentSection.endLine = i + 1;
+
+          if (hasAiCommentEnd) {
+            // End of comment block
+            sections.push(currentSection);
+            currentSection = null;
+            inAiSection = false;
+            inCommentBlock = false;
+          }
+        }
+      } else if (hasAiComment) {
+        // Standalone AI: comment (not in a block)
+        if (!inAiSection) {
+          // Start a new section for consecutive AI: comments
+          inAiSection = true;
+          currentSection = { startLine: i + 1, endLine: i + 1, lines: [line] };
+          consecutiveAiLines = 1;
+        } else if (currentSection) {
+          // Continue the current AI: section
+          currentSection.lines.push(line);
+          currentSection.endLine = i + 1;
+          consecutiveAiLines++;
+        }
+      } else if (inAiSection && !inCommentBlock) {
+        // Not an AI: comment, but we're in a standalone AI: section
+        if (currentSection) {
+          // Add one more line after consecutive AI: comments
+          currentSection.lines.push(line);
+          currentSection.endLine = i + 1;
+          sections.push(currentSection);
+          currentSection = null;
+          inAiSection = false;
+          consecutiveAiLines = 0;
+        }
+      }
+    }
+
+    // Add any remaining section
+    if (currentSection) {
+      sections.push(currentSection);
+    }
+
+    // Print the sections
+    if (sections.length > 0) {
+      log(chalk.bold.green(`\n=== ${filePath} ===`));
+      for (const section of sections) {
+        log(chalk.blue(`Lines ${section.startLine}-${section.endLine}:`));
+        section.lines.forEach((line) => log(line));
+        log(chalk.gray('---'));
+      }
+    }
+  }
 }

@@ -6,3 +6,15 @@ export interface DetailedReviewComment {
   diffForContext: DiffLine[];
   cleanedComment?: string;
 }
+
+export interface CommentDiffContext {
+  id: string;
+  aiComment: string;
+  diffHunk: string;
+}
+
+export interface HybridInsertionResult {
+  contentWithAiComments: string;
+  commentDiffContexts: CommentDiffContext[];
+  errors: Array<{ comment: DetailedReviewComment; error: string }>;
+}

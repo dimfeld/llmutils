@@ -1,28 +1,21 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement Hybrid Context Comment Mode
 goal: To create a new "hybrid context" mode for `rmpr` that embeds AI-readable
   comments directly into the full file content while also providing the original
   diff hunk for each comment to the Language Model, offering a richer context
   for generating code changes.
-details: >
-  This phase will introduce a new comment processing mode, tentatively named
-  "hybrid-context". This mode will combine the strengths of the existing
-  `inline-comments` and `separate-context` modes. It will modify files on disk
-  to include AI comments (like `inline-comments`) and also structure the LLM
-  prompt to include the specific diff hunk related to each AI comment (providing
-  "before/after" context similar to `separate_context`). This dual approach aims
-  to give the AI precise local context within the current file and historical
-  context from the diff.
 id: 29
-status: pending
+status: done
 priority: high
+dependencies:
+  - 28
 issue:
   - https://github.com/dimfeld/llmutils/issues/112
-dependencies:
-  - "28"
 planGeneratedAt: 2025-06-02T19:27:55.318Z
+promptsGeneratedAt: 2025-06-11T18:35:17.861Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-02T19:27:55.318Z
+updatedAt: 2025-06-11T19:17:05.005Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -77,23 +70,47 @@ project:
     robust and accurate, leading to better-automated code modifications.
 tasks:
   - title: Define the Hybrid Mode's Prompt Structure and Output Format
-    description: >
-      This task involves designing the precise format of the LLM prompt for the
-      new hybrid mode. The prompt needs to clearly present both the full file
-      content with embedded AI comments and the associated diff hunks. A
+    description: "This task involves designing the precise format of the LLM prompt
+      for the new hybrid mode. The prompt needs to clearly present both the full
+      file content with embedded AI comments and the associated diff hunks. A
       proposed structure might involve marking AI comments in the file with
-      unique IDs (e.g., `// AI_COMMENT_START (id: comment123)`) and then
-      providing a separate section in the prompt (e.g., within
-      `<diff_contexts>`) where each `diffHunk` is linked to its corresponding
-      comment ID. The task includes drafting the instructional text for the LLM,
-      guiding it on how to utilize both the inline comment and its associated
-      diff context effectively.
-    files: []
-    steps: []
+      unique IDs (e.g., `// AI: (id: comment123) ...`) and then providing a
+      separate section in the prompt (e.g., within `<diff_contexts>`) where each
+      `diffHunk` is linked to its corresponding comment ID. The task includes
+      drafting the instructional text for the LLM, guiding it on how to utilize
+      both the inline comment and its associated diff context effectively."
+    files:
+      - src/rmpr/prompts.ts
+    steps:
+      - prompt: >
+          In `src/rmpr/prompts.ts`, create a new exported constant named
+          `hybridContextPrompt`. This will serve as the instructional template
+          for the new hybrid mode.
+        done: true
+      - prompt: >
+          Populate the `hybridContextPrompt` string with instructional text for
+          the LLM. Explain that the prompt contains two forms of context: AI
+          comments inserted directly into the files to show *where* a change is
+          needed, and a separate `<diff_contexts>` block that provides the
+          original diff hunk for *what* the reviewer was seeing.
+        done: true
+      - prompt: >
+          Clearly define the format for the inline AI comments, specifying that
+          they will include a unique ID, for example: `// AI (id: <comment_id>):
+          <comment_body>`. Also define the format for the diff context block,
+          for example: `<diff_contexts>\n<diff_context
+          id="<comment_id>">\n...\n</diff_context>\n</diff_contexts>`.
+        done: true
+      - prompt: >
+          Instruct the LLM to use the inline comment's location to make changes
+          in the full file, and to use the corresponding diff context (linked by
+          the ID) to understand the reviewer's intent and the state of the code
+          at the time of the review. Emphasize that the AI should remove the AI
+          comments and markers after addressing them.
+        done: true
   - title: Create `hybrid_context.ts` for New Mode Logic
-    description: >
-      A new file, `src/rmpr/modes/hybrid_context.ts`, will be created to house
-      the logic for the hybrid mode. The core function,
+    description: A new file, `src/rmpr/modes/hybrid_context.ts`, will be created to
+      house the logic for the hybrid mode. The core function,
       `insertAiCommentsAndPrepareDiffContexts`, will be implemented here. This
       function will process a given file's content and a list of
       `DetailedReviewComment` objects. It will adapt logic from
@@ -103,57 +120,186 @@ tasks:
       the modified file content (`contentWithAiComments`), a list or map of
       `commentDiffContexts` (linking comment IDs to their `diffHunk` and AI
       comment text), and any errors encountered during placement.
-    files: []
-    steps: []
+    files:
+      - src/rmpr/modes/hybrid_context.ts
+      - src/rmpr/types.ts
+    steps:
+      - prompt: >
+          In `src/rmpr/types.ts`, define the necessary types for the hybrid
+          mode's logic. Create a `CommentDiffContext` interface with `id`,
+          `aiComment`, and `diffHunk` properties. Also, define a
+          `HybridInsertionResult` interface that will be the return type of the
+          main function, containing `contentWithAiComments`,
+          `commentDiffContexts`, and `errors`.
+        done: true
+      - prompt: |
+          Create the new file `src/rmpr/modes/hybrid_context.ts`.
+        done: true
+      - prompt: >
+          In `hybrid_context.ts`, implement the function
+          `insertAiCommentsAndPrepareDiffContexts`. Adapt the core logic from
+          `insertAiCommentsIntoFileContent` in
+          `src/rmpr/modes/inline_comments.ts`. This new function will take the
+          file content, a list of `DetailedReviewComment` objects, and the file
+          path as arguments, and it will return a `HybridInsertionResult`.
+        done: true
+      - prompt: >
+          Modify the comment insertion logic within
+          `insertAiCommentsAndPrepareDiffContexts`. For each comment, use its
+          `comment.id` as the unique identifier. Embed this ID directly into the
+          AI-readable comment string, following the format defined in the
+          previous task (e.g., `// AI (id: ${comment.comment.id}):
+          ${commentBody}`).
+        done: true
+      - prompt: >
+          As each comment is successfully placed into the file content, create
+          and store a `CommentDiffContext` object. This object should contain
+          the comment's ID, the full AI comment text that was generated, and the
+          original `comment.comment.diffHunk`. Collect these objects in a list
+          to be returned.
+        done: true
+      - prompt: >
+          Ensure the function correctly handles and returns any errors
+          encountered during comment placement, similar to the `errors` array in
+          the `inline_comments.ts` implementation. The final return value should
+          be an object matching the `HybridInsertionResult` interface.
+        done: true
   - title: Implement Prompt Generation for Hybrid Mode
-    description: >
-      Within `hybrid_context.ts`, a function named `createHybridContextPrompt`
-      will be developed. This function will take the aggregated results from
-      `insertAiCommentsAndPrepareDiffContexts` (across all relevant files) and
-      construct the complete LLM prompt according to the format defined in Task
-      2.1. The prompt will include the modified file(s) content and the
-      collection of diff contexts. The instructional part of the prompt will be
-      carefully crafted to direct the AI to use the inline `// AI:` comments for
-      identifying *where* to make changes in the full file, and to use the
-      corresponding `diff_context` (linked by ID) to understand the original
-      state and reviewer's perspective for that specific change.
-    files: []
-    steps: []
+    description: Within `hybrid_context.ts`, a function named
+      `createHybridContextPrompt` will be developed. This function will take the
+      aggregated results from `insertAiCommentsAndPrepareDiffContexts` (across
+      all relevant files) and construct the complete LLM prompt according to the
+      format defined in Task 1. The prompt will include the modified file(s)
+      content and the collection of diff contexts. The instructional part of the
+      prompt will be carefully crafted to direct the AI to use the inline `//
+      AI:` comments for identifying *where* to make changes in the full file,
+      and to use the corresponding `diff_context` (linked by ID) to understand
+      the original state and reviewer's perspective for that specific change.
+    files:
+      - src/rmpr/modes/hybrid_context.ts
+    steps:
+      - prompt: >
+          In `src/rmpr/modes/hybrid_context.ts`, create a new function
+          `createHybridContextPrompt`. This function will accept the aggregated
+          results from processing all files: a map or list of modified file
+          contents, and a list of all collected `CommentDiffContext` objects.
+        done: true
+      - prompt: >
+          Inside `createHybridContextPrompt`, start building the prompt string
+          using the `hybridContextPrompt` template from `src/rmpr/prompts.ts`.
+        done: true
+      - prompt: >
+          Generate the `<diff_contexts>` XML block. Iterate through the list of
+          `CommentDiffContext` objects and, for each one, create a
+          `<diff_context>` element containing the `diffHunk`, using the comment
+          ID as an attribute (e.g., `<diff_context id="${context.id}">`).
+        done: true
+      - prompt: >
+          Append the modified file contents to the prompt. For clarity and
+          better parsing by the LLM, wrap each file's content in a `<file
+          path="<file_path>">...</file>` block.
+        done: true
+      - prompt: >
+          Combine the instructional text, the `<diff_contexts>` block, and all
+          the `<file>` blocks into a single, complete prompt string and return
+          it.
+        done: true
   - title: Integrate the New Hybrid Mode into `main.ts`
-    description: >
-      The new "hybrid-context" mode will be integrated into the `rmpr` tool's
-      main workflow in `src/rmpr/main.ts`. This involves adding it as an option
-      to the `--mode` command-line argument. The `handleRmprCommand` function
-      will be updated to invoke the new logic from `hybrid_context.ts` when this
-      mode is selected. The integration will include:
-
-      1.  Calling `insertAiCommentsAndPrepareDiffContexts` for each file with
-      selected comments.
-
-      2.  Writing the `contentWithAiComments` (files with embedded AI comments
-      and IDs) to disk.
-
-      3.  Generating the final LLM prompt using `createHybridContextPrompt`.
-
-      4.  After the LLM execution, ensuring that AI comment markers are cleaned
-      up from the files, potentially reusing the `removeAiCommentMarkers`
-      function.
-    files: []
-    steps: []
+    description: The new "hybrid-context" mode will be integrated into the `rmpr`
+      tool's main workflow in `src/rmpr/main.ts`. This involves adding it as an
+      option to the `--mode` command-line argument. The `handleRmprCommand`
+      function will be updated to invoke the new logic from `hybrid_context.ts`
+      when this mode is selected. The integration will include calling
+      `insertAiCommentsAndPrepareDiffContexts` for each file with selected
+      comments, writing the `contentWithAiComments` to disk, generating the
+      final LLM prompt using `createHybridContextPrompt`, and ensuring that AI
+      comment markers are cleaned up from the files after the LLM execution.
+    files:
+      - src/rmpr/main.ts
+    steps:
+      - prompt: >
+          In `src/rmpr/main.ts`, update the definition of the `--mode`
+          command-line option to include `"hybrid-context"` as a valid choice,
+          alongside the existing modes.
+        done: true
+      - prompt: >
+          In the `handleRmprCommand` function, add a new `else if` condition to
+          handle the `hybrid-context` mode. Import
+          `insertAiCommentsAndPrepareDiffContexts` and
+          `createHybridContextPrompt` from `src/rmpr/modes/hybrid_context.ts`.
+        done: true
+      - prompt: >
+          Within the new `hybrid-context` block, iterate through the
+          `commentsByFilePath` map. For each file, call
+          `insertAiCommentsAndPrepareDiffContexts` and aggregate the returned
+          `contentWithAiComments` and `commentDiffContexts`. Also, collect and
+          display any errors.
+        done: true
+      - prompt: >
+          After processing all files, write the modified content
+          (`contentWithAiComments`) for each file to disk using the
+          `secureWrite` utility. This step is analogous to the file writing in
+          the `inline-comments` mode.
+        done: true
+      - prompt: >
+          Use the aggregated results to generate the final LLM prompt by calling
+          `createHybridContextPrompt`. Assign the result to the `instructions`
+          variable, which will then be used to build the `llmPrompt`.
+        done: true
+      - prompt: >
+          After the `executor.execute(llmPrompt)` call, implement the cleanup
+          step. Reuse the `removeAiCommentMarkers` function (from
+          `inline_comments.ts`) to remove all AI-related comments and markers
+          from the files that were modified, ensuring the codebase is left in a
+          clean state.
+        done: true
   - title: Write Comprehensive Tests for the Hybrid Mode
-    description: >
-      Thorough tests will be written for the new hybrid mode. Unit tests will
-      cover `insertAiCommentsAndPrepareDiffContexts` to ensure correct AI
+    description: Thorough tests will be written for the new hybrid mode. Unit tests
+      will cover `insertAiCommentsAndPrepareDiffContexts` to ensure correct AI
       comment insertion, ID generation, and `diffHunk` association. Tests for
       `createHybridContextPrompt` will validate the structure and content of the
       generated LLM prompt. Integration tests within `main.ts` (or its testing
       equivalent) will verify the end-to-end functionality of the
       "hybrid-context" mode, including file modification, prompt generation, and
       cleanup.
-    files: []
-    steps: []
+    files:
+      - src/rmpr/modes/hybrid_context.test.ts
+    steps:
+      - prompt: |
+          Create a new test file at `src/rmpr/modes/hybrid_context.test.ts`.
+        done: true
+      - prompt: >
+          Write a test suite for `insertAiCommentsAndPrepareDiffContexts`.
+          Create mock `DetailedReviewComment` objects and file content. Verify
+          that the function correctly inserts AI comments with unique IDs, that
+          the returned `commentDiffContexts` array contains the correct
+          `diffHunk` for each successfully placed comment, and that errors are
+          reported for unplaceable comments.
+        done: true
+      - prompt: >
+          Add a test case to `insertAiCommentsAndPrepareDiffContexts` that
+          handles multiple comments on a single file, ensuring they are all
+          processed and their contexts are collected correctly.
+        done: true
+      - prompt: >
+          Write a test suite for `createHybridContextPrompt`. Provide mock
+          `HybridInsertionResult` data to the function. Assert that the
+          generated prompt string contains the correct instructional text, a
+          properly formatted `<diff_contexts>` block with all expected contexts,
+          and the full content of the modified files wrapped in `<file>` tags.
+        done: true
+      - prompt: >
+          Validate that the IDs in the inline comments (`// AI (id: ...)`) match
+          the `id` attributes in the `<diff_context>` tags within the generated
+          prompt.
+        done: true
+changedFiles:
+  - src/rmpr/modes/hybrid_context.test.ts
 rmfilter:
   - src/rmpr
   - src/common/github
   - --with-imports
   - docs/github-diffs.md
+---
+
+This phase will introduce a new comment processing mode, tentatively named "hybrid-context". This mode will combine the strengths of the existing `inline-comments` and `separate-context` modes. It will modify files on disk to include AI comments (like `inline-comments`) and also structure the LLM prompt to include the specific diff hunk related to each AI comment (providing "before/after" context similar to `separate_context`). This dual approach aims to give the AI precise local context within the current file and historical context from the diff.
