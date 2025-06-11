@@ -363,7 +363,7 @@ export function insertAiCommentsAndPrepareDiffContexts(
     // Create and store the CommentDiffContext
     commentDiffContexts.push({
       id: commentId,
-      aiComment: fullAiComment,
+      aiComment: comment.comment.body,
       diffHunk: comment.comment.diffHunk,
     });
   }
@@ -447,39 +447,28 @@ export function removeAiCommentMarkers(fileContent: string, filePath: string): s
  * @param allDiffContexts - All collected CommentDiffContext objects from all files
  * @returns The complete prompt string
  */
-export function createHybridContextPrompt(
-  fileContents: Map<string, string>,
-  allDiffContexts: CommentDiffContext[]
-): string {
+export function createHybridContextPrompt(allDiffContexts: CommentDiffContext[]): string {
   debugLog('createHybridContextPrompt', {
-    fileCount: fileContents.size,
     diffContextCount: allDiffContexts.length,
   });
 
   // Start with the instructional prompt
   let prompt = hybridContextPrompt;
 
-  // Generate the <diff_contexts> XML block
-  const diffContextsXml = allDiffContexts
-    .map(
-      (context) =>
-        `<diff_context id="${context.id}">\n<diffHunk>\n${context.diffHunk}\n</diffHunk>\n</diff_context>`
-    )
-    .join('\n');
-
   // Add the diff contexts section
-  prompt += '\n\n<diff_contexts>\n';
-  prompt += diffContextsXml;
-  prompt += '\n</diff_contexts>\n\n';
-
-  // Add the file contents
-  prompt += 'Files with review comments:\n\n';
-
-  for (const [filePath, content] of fileContents) {
-    prompt += `<file path="${filePath}">\n`;
-    prompt += content;
-    prompt += '\n</file>\n\n';
-  }
+  prompt += '\n\n<diffContexts>\n';
+  prompt += formatDiffContexts(allDiffContexts);
+  prompt += '\n</diffContexts>\n\n';
 
   return prompt;
+}
+
+export function formatDiffContexts(diffContexts: CommentDiffContext[]) {
+  // Generate the <diff_contexts> XML block
+  return diffContexts
+    .map(
+      (context) =>
+        `<diffContext id="${context.id}">\n<diffInstructions>${context.aiComment}</diffInstructions>\n<diffHunk>\n${context.diffHunk}\n</diffHunk>\n</diffContext>`
+    )
+    .join('\n');
 }
