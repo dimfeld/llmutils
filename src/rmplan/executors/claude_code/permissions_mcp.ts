@@ -130,6 +130,7 @@ if (import.meta.main) {
 
   // Connect to the parent process
   connectToParent(socketPath);
+  process.stdin.on('close', () => parentSocket?.end());
 
   // Start the MCP server in stdio mode
   await server.start({

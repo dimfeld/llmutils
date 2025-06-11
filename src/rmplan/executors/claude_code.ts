@@ -120,43 +120,45 @@ export class ClaudeCodeExecutor implements Executor {
 
     const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
 
-    const defaultAllowedTools = this.options.includeDefaultTools
-      ? [
-          `Edit`,
-          'MultiEdit',
-          `Write`,
-          'WebFetch',
-          `Bash(cat:*)`,
-          `Bash(cd:*)`,
-          'Bash(cp:*)',
-          'Bash(find:*)',
-          'Bash(grep:*)',
-          'Bash(ls:*)',
-          'Bash(mkdir:*)',
-          'Bash(mv:*)',
-          'Bash(pwd)',
-          'Bash(rg:*)',
-          'Bash(sed:*)',
-          // Allow Claude to delete its own test scripts
-          'Bash(rm test-:*)',
-          'Bash(rm -f test-:*)',
-          'Bash(jj status)',
-          'Bash(jj log:*)',
-          'Bash(jj commit:*)',
-          ...jsTaskRunners.flatMap((name) => [
-            `Bash(${name} test:*)`,
-            `Bash(${name} run build:*)`,
-            `Bash(${name} run check:*)`,
-            `Bash(${name} run typecheck:*)`,
-            `Bash(${name} run lint:*)`,
-            `Bash(${name} install)`,
-            `Bash(${name} add:*)`,
-          ]),
-          'Bash(cargo add:*)',
-          'Bash(cargo build)',
-          'Bash(cargo test:*)',
-        ]
-      : [];
+    const defaultAllowedTools =
+      (this.options.includeDefaultTools ?? true)
+        ? [
+            `Edit`,
+            'MultiEdit',
+            `Write`,
+            'WebFetch',
+            'WebSearch',
+            `Bash(cat:*)`,
+            `Bash(cd:*)`,
+            'Bash(cp:*)',
+            'Bash(find:*)',
+            'Bash(grep:*)',
+            'Bash(ls:*)',
+            'Bash(mkdir:*)',
+            'Bash(mv:*)',
+            'Bash(pwd)',
+            'Bash(rg:*)',
+            'Bash(sed:*)',
+            // Allow Claude to delete its own test scripts
+            'Bash(rm test-:*)',
+            'Bash(rm -f test-:*)',
+            'Bash(jj status)',
+            'Bash(jj log:*)',
+            'Bash(jj commit:*)',
+            ...jsTaskRunners.flatMap((name) => [
+              `Bash(${name} test:*)`,
+              `Bash(${name} run build:*)`,
+              `Bash(${name} run check:*)`,
+              `Bash(${name} run typecheck:*)`,
+              `Bash(${name} run lint:*)`,
+              `Bash(${name} install)`,
+              `Bash(${name} add:*)`,
+            ]),
+            'Bash(cargo add:*)',
+            'Bash(cargo build)',
+            'Bash(cargo test:*)',
+          ]
+        : [];
 
     let allowedTools = [...defaultAllowedTools, ...(this.options.allowedTools ?? [])];
     if (disallowedTools) {
