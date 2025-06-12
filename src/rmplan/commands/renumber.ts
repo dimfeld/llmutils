@@ -221,9 +221,27 @@ export async function handleRenumber(options: any, command: any) {
       }
     }
 
+    const renumberedByPath = new Map(plansToRenumber.map((plan) => [plan.filePath, plan]));
     for (const filePath of plansToWrite) {
       const plan = allPlans.get(filePath)!;
-      await writePlanFile(filePath, plan as PlanSchema);
+
+      let writeFilePath = filePath;
+      // If the plan filepath starts with the id, renumber it.
+      const oldId = renumberedByPath.get(filePath)?.currentId;
+      if (oldId) {
+        let parsed = path.parse(filePath);
+        if (parsed.name.startsWith(`${oldId}-`)) {
+          let suffix = parsed.base.slice(`${oldId}-`.length);
+
+          writeFilePath = path.join(parsed.dir, `${plan.id}-${suffix}`);
+        }
+      }
+
+      await writePlanFile(writeFilePath, plan as PlanSchema);
+
+      if (writeFilePath !== filePath) {
+        await Bun.file(filePath).unlink();
+      }
     }
 
     log('\nRenumbering complete!');
