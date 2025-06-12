@@ -274,7 +274,7 @@ export async function handleRmprCommand(
   if (!options.yes && !options.dryRun) {
     log('\nSettings can be adjusted before generating the LLM prompt.');
     if (
-      (options.mode === 'inline-comments' || options.mode === 'hybrid-context') &&
+      (options.mode === 'inline-comments' || options.mode === 'hybrid') &&
       filesProcessedWithAiComments.size > 0
     ) {
       log(
@@ -364,7 +364,7 @@ export async function handleRmprCommand(
       printAiCommentSections(filesProcessedWithAiComments);
     }
     instructions = createInlineCommentsPrompt(filesProcessedWithAiComments.keys().toArray());
-  } else if (options.mode === 'hybrid-context') {
+  } else if (options.mode === 'hybrid') {
     log('Preparing context in Hybrid Context mode...');
 
     // Variables to aggregate results from all files
@@ -481,7 +481,7 @@ export async function handleRmprCommand(
   await executor.execute(llmPrompt);
 
   if (
-    (options.mode === 'inline-comments' || options.mode === 'hybrid-context') &&
+    (options.mode === 'inline-comments' || options.mode === 'hybrid') &&
     filesProcessedWithAiComments.size > 0
   ) {
     log('Cleaning up AI comment markers...');
@@ -678,7 +678,7 @@ async function optionsPrompt(initialOptions: {
             value: 'inline-comments',
           },
           { name: 'Separate Context - Include PR comments in prompt', value: 'separate-context' },
-          { name: 'Hybrid Context - Combine both approaches', value: 'hybrid-context' },
+          { name: 'Hybrid Context - Combine both approaches', value: 'hybrid' },
         ],
       });
       result.mode = newMode;

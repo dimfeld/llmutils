@@ -814,8 +814,8 @@ The `answerPr` section allows you to set default values for the `rmplan answer-p
 
 answerPr:
   # Default mode for handling PR comments
-  # Options: 'inline-comments', 'separate-context', 'hybrid-context'
-  mode: hybrid-context
+  # Options: 'inline-comments', 'separate-context', 'hybrid'
+  mode: hybrid
 
   # Whether to automatically commit changes after processing
   commit: true
@@ -829,7 +829,7 @@ answerPr:
 - `mode`: (Optional) The default mode for handling PR comments. Options are:
   - `inline-comments`: Inserts AI comment markers directly into the code files
   - `separate-context`: Includes PR comments as separate context in the prompt
-  - `hybrid-context`: Combines both approaches for maximum context
+  - `hybrid`: Combines both approaches for maximum context
 - `commit`: (Optional) Boolean, defaults to `false` if not specified. When `true`, automatically commits changes after processing
 - `comment`: (Optional) Boolean, defaults to `false` if not specified. When `true`, posts replies to handled review threads after committing
 
@@ -847,7 +847,7 @@ answerPr:
 rmplan answer-pr
 
 # Is equivalent to:
-rmplan answer-pr --mode hybrid-context --commit --comment
+rmplan answer-pr --mode hybrid --commit --comment
 
 # But you can still override individual options:
 rmplan answer-pr --mode inline-comments  # Uses inline-comments mode but keeps commit and comment from config
