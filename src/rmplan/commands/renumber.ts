@@ -48,8 +48,7 @@ export async function handleRenumber(options: any, command: any) {
   for (const file of planFiles) {
     const filePath = path.join(tasksDirectory, file);
     try {
-      const planData = await Bun.file(filePath).text();
-      const plan = yaml.parse(planData) as PlanSchema;
+      const plan = await readPlanFile(filePath);
       if (plan.id) {
         let numId = Number(plan.id);
         if (!Number.isNaN(numId)) {
