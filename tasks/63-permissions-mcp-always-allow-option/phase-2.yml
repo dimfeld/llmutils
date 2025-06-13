@@ -15,7 +15,7 @@ docs:
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T07:11:25.761Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T07:13:24.408Z
+updatedAt: 2025-06-13T07:16:16.681Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -103,28 +103,28 @@ tasks:
           Map<string, true | string[]>()`. This will allow storing either a
           boolean for general tools or an array of string prefixes specifically
           for the `Bash` tool.
-        done: false
+        done: true
       - prompt: >
           Import the new custom prefix prompt you created in the previous task
           into `claude_code.ts`.
-        done: false
+        done: true
       - prompt: >
           In the `createPermissionSocketServer` method, locate the logic where
           `userChoice === 'always_allow'`. Add a condition to check if the
           `tool_name` is 'Bash'.
-        done: false
+        done: true
       - prompt: >
           If the tool is 'Bash', call your new prefix prompt, passing the
           `input.command` to it. When the prompt resolves with a selected
           prefix, add this prefix to the array of allowed prefixes for 'Bash' in
           the `alwaysAllowedTools` map. If an array for 'Bash' doesn't exist
           yet, create it.
-        done: false
+        done: true
       - prompt: >
           Update the logic for non-Bash tools. When "Always Allow" is chosen,
           the behavior should be to set `this.alwaysAllowedTools.set(tool_name,
           true)`.
-        done: false
+        done: true
   - title: Implement Prefix-Based Approval Logic for Bash Tools
     description: Update the pre-prompt approval check. For incoming `Bash` tool
       requests, the logic must now compare the command's input against the list
