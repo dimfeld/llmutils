@@ -879,12 +879,21 @@ rmplan agent plan.yml --executor direct-call
 
 ### Claude Code Executor: Interactive Tool Permissions
 
-The Claude Code executor includes an interactive permission system that allows you to control which tool invocations are automatically approved. When Claude attempts to use a tool during execution, you'll see a permission prompt with three options:
+**Note**: The interactive permission system is disabled by default. To enable it, set the `CLAUDE_CODE_PERMISSIONS` environment variable to `true` or configure it in your rmplan configuration file:
+
+```yaml
+# In .rmfilter/config/rmplan.local.yml
+executors:
+  claude-code:
+    permissionsMcp:
+      enabled: true
+```
+
+When enabled, the Claude Code executor includes an interactive permission system that allows you to control which tool invocations are automatically approved. When Claude attempts to use a tool during execution, you'll see a permission prompt with three options:
 
 - **Allow**: Permits this specific tool invocation only
 - **Disallow**: Denies this specific tool invocation
 - **Always Allow**: Permanently approves this tool (or command prefix for Bash tools) for automatic execution in future sessions
-
 #### Special Handling for Bash Commands
 
 The `Bash` tool receives special treatment due to its powerful nature. When you select "Always Allow" for a Bash command, an interactive prefix selection interface appears:
@@ -892,36 +901,12 @@ The `Bash` tool receives special treatment due to its powerful nature. When you 
 1. The interface displays command tokens that you can navigate using arrow keys
 2. Press the right arrow to include more of the command in the approved prefix
 3. Press the left arrow to include less of the command
-4. Press 'a' to create a wildcard rule that approves all Bash commands (use with caution)
+4. Press 'a' to select all the words in the command
 5. Press Enter to confirm your selection
-
-For example, if Claude attempts to run `bun test src/utils.test.ts`, you can create rules like:
-
-- `bun test` - Approves all bun test commands
-- `bun` - Approves all bun commands
-- `*` - Approves all Bash commands (created by pressing 'a')
 
 #### Permission Persistence
 
-"Always Allow" rules are automatically saved to the `.claude/settings.local.json` file in your project's root directory. This ensures your preferences persist across sessions. The file format looks like this:
-
-```json
-{
-  "permissions": {
-    "allow": ["Read", "Write", "Bash(git status:*)", "Bash(npm test:*)", "Bash(bun run:*)"],
-    "deny": []
-  },
-  "enableAllProjectMcpServers": false
-}
-```
-
-In this example:
-
-- `"Read"` and `"Write"` are standard tools that are always allowed
-- `"Bash(git status:*)"` allows any git status command with additional arguments
-- `"Bash(npm test:*)"` allows npm test with any additional arguments
-- The `:*` suffix indicates that any arguments after the prefix are allowed
-
+"Always Allow" rules are automatically saved to the `.claude/settings.local.json` file in your project's root directory. This ensures your preferences persist across sessions.
 ## Multi-Phase Project Planning
 
 The `rmplan` utility supports a detailed planning mode that enables breaking large software features into phases, with each phase delivering a working component that builds on previous phases. This approach ensures incremental, validated progress through complex implementations.
