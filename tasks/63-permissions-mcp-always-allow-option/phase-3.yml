@@ -4,7 +4,7 @@ title: Persist Approval Rules
 goal: To save the "Always Allow" rules to a configuration file and load them on
   startup, making them persistent across multiple sessions.
 id: 67
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - 66
@@ -12,7 +12,7 @@ parent: 63
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T07:27:45.666Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T07:31:04.925Z
+updatedAt: 2025-06-13T07:32:34.685Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -105,14 +105,14 @@ tasks:
           section, describe the new permission prompt that appears when Claude
           attempts to use a tool, explaining the "Allow", "Disallow", and
           "Always Allow" options.
-        done: false
+        done: true
       - prompt: >
           Within the new documentation section, add a subsection explaining the
           special handling for `Bash` commands. Describe how choosing "Always
           Allow" for a `Bash` tool triggers an interactive prefix selection
           prompt, and explain how to use the arrow keys and 'a' key to define a
           safe command prefix for automatic approval.
-        done: false
+        done: true
       - prompt: >
           Conclude the new section by documenting the persistence mechanism.
           State that "Always Allow" rules are saved to a
@@ -120,8 +120,9 @@ tasks:
           Include a sample snippet of this JSON file to illustrate the format of
           the `permissions.allow` array for both standard tools and `Bash`
           prefixes.
-        done: false
+        done: true
 changedFiles:
+  - README.md
   - src/rmplan/actions.ts
   - src/rmplan/executors/claude_code/prefix_prompt.ts
   - src/rmplan/executors/claude_code.ts
