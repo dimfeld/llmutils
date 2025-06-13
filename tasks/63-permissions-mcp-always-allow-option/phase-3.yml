@@ -4,14 +4,15 @@ title: Persist Approval Rules
 goal: To save the "Always Allow" rules to a configuration file and load them on
   startup, making them persistent across multiple sessions.
 id: 67
-status: pending
+status: in_progress
 priority: medium
 dependencies:
   - 66
 parent: 63
 planGeneratedAt: 2025-06-13T06:34:02.120Z
+promptsGeneratedAt: 2025-06-13T07:27:45.666Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T06:34:02.120Z
+updatedAt: 2025-06-13T07:27:45.675Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -39,40 +40,116 @@ project:
     `git status` or `npm run`) that will be automatically approved in the
     future.
 
-    4.  These "Always Allow" rules will be persisted to a configuration file, so
-    they are remembered across sessions.
+    4.  These "Always Allow" rules will be persisted to the Claude Code local
+    configuration file, so they are remembered across sessions.
 
 
     This feature will be implemented primarily within the `ClaudeCodeExecutor`
     in `src/rmplan/executors/claude_code.ts`, which handles the permission
     prompting logic.
 tasks:
-  - title: Define a File-Based Storage Mechanism for Permissions
-    description: Determine a suitable location and format (e.g., a JSON file in a
-      user-specific configuration directory) for a permissions file. This file
-      will be used to store the "Always Allow" rules, including both full tool
-      names and `Bash` command prefixes.
-    steps: []
-  - title: Load Permission Rules on Startup
-    description: Implement logic within the `ClaudeCodeExecutor`'s initialization
-      process to read the permissions file from the disk if it exists. The
-      loaded rules will be used to populate the in-memory rule set at the start
-      of a session.
-    steps: []
   - title: Save Permission Rules on Update
-    description: Implement logic to write the entire, updated set of permission
-      rules back to the configuration file on disk. This save operation should
-      be triggered every time a user adds a new "Always Allow" rule.
-    steps: []
+    description: Implement logic to write a new "Always Allow" rule to the Claude
+      Code local settings file, `.claude/settings.local.json`, and update that
+      file every time the "Always Allow" rule is selected. This involves
+      creating helper methods to read the configuration on startup to populate
+      the in-memory ruleset, and another to write back to the file whenever a
+      new rule is permanently added by the user. The file I/O should be robust,
+      handling cases where the file or directory doesn't exist and preserving
+      other settings within the JSON file.
+    files:
+      - src/rmplan/executors/claude_code.ts
+    steps:
+      - prompt: >
+          In `ClaudeCodeExecutor`, create two private helper methods:
+          `getSettingsFilePath` to locate `.claude/settings.local.json` relative
+          to the git root, and `loadPermissions` to read this file.
+          `loadPermissions` should parse the `permissions.allow` array,
+          populating the `alwaysAllowedTools` map. It must correctly handle
+          `Bash(prefix:*)` entries by extracting the prefix, and other entries
+          as simple tool names. Ensure it is resilient to the file or keys not
+          existing.
+        done: false
+      - prompt: >
+          In `ClaudeCodeExecutor`, create a private async method
+          `savePermissions`. This method will read the current settings file,
+          convert the `alwaysAllowedTools` map back into an array of strings
+          (e.g., `WebSearch`, `Bash(git status:*)`), merge them into the
+          `permissions.allow` array ensuring no duplicates, and write the
+          updated configuration object back to the file, preserving any other
+          existing settings.
+        done: false
+      - prompt: >
+          At the beginning of the `execute` method in `ClaudeCodeExecutor`, add
+          a call to `await this.loadPermissions()` to initialize the in-memory
+          ruleset from the settings file before the `claude` process is started.
+        done: false
+      - prompt: >
+          In the `createPermissionSocketServer` method's `data` event handler,
+          after a user selects "Always Allow" and the in-memory
+          `this.alwaysAllowedTools` map is updated, add a call to `await
+          this.savePermissions()`. This will persist the new rule to the JSON
+          configuration file immediately.
+        done: false
   - title: Document the New Permission System
-    description: Update the project's `README.md` file or other relevant user-facing
-      documentation. The documentation should explain the new "Always Allow"
-      feature, describe how the interactive `Bash` prefix selection works, and
-      specify where the permissions configuration file is stored.
-    steps: []
+    description: Update the project's README.md file to document the new permissions
+      system. The documentation should explain the "Always Allow" feature,
+      describe how the interactive Bash prefix selection works, and specify
+      where the permissions configuration file is stored, including its format.
+    files:
+      - README.md
+    steps:
+      - prompt: >
+          Create a new file `README.md` if it doesn't exist. Add a new section
+          titled "Claude Code Executor: Interactive Tool Permissions". In this
+          section, describe the new permission prompt that appears when Claude
+          attempts to use a tool, explaining the "Allow", "Disallow", and
+          "Always Allow" options.
+        done: false
+      - prompt: >
+          Within the new documentation section, add a subsection explaining the
+          special handling for `Bash` commands. Describe how choosing "Always
+          Allow" for a `Bash` tool triggers an interactive prefix selection
+          prompt, and explain how to use the arrow keys and 'a' key to define a
+          safe command prefix for automatic approval.
+        done: false
+      - prompt: >
+          Conclude the new section by documenting the persistence mechanism.
+          State that "Always Allow" rules are saved to a
+          `.claude/settings.local.json` file in the project's root directory.
+          Include a sample snippet of this JSON file to illustrate the format of
+          the `permissions.allow` array for both standard tools and `Bash`
+          prefixes.
+        done: false
 rmfilter:
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/claude_code/permissions_mcp.ts
 ---
 
 The final phase makes the "Always Allow" feature robust by ensuring user preferences are not lost when the application restarts. This involves implementing file I/O to save and load the ruleset, defining a clear location for this configuration, and documenting the feature for end-users.
+
+The file should be the existing Claude Code settings file located at '.claude/settings.local.json'. It looks something like this:
+
+```
+{
+  "permissions": {
+    "allow": [
+      "Bash(rg:*)",
+      "Bash(bun run:*)",
+      "Bash(bun test:*)",
+      "Bash(jj status:*)",
+      "Bash(jj commit:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(bun pm ls:*)",
+      "Bash(node:*)",
+      "Bash(jj diff:*)"
+    ],
+    "deny": []
+  },
+  "enableAllProjectMcpServers": false
+}
+```
+
+So we want to add new entries to the `allow` array, with the prefix and then `:*` at the end.

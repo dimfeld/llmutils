@@ -38,6 +38,107 @@ export class ClaudeCodeExecutor implements Executor {
     public rmplanConfig: RmplanConfig
   ) {}
 
+  /**
+   * Gets the path to the Claude settings file relative to the git root
+   */
+  private async getSettingsFilePath(): Promise<string> {
+    const gitRoot = await getGitRoot();
+    return path.join(gitRoot, '.claude', 'settings.local.json');
+  }
+
+  /**
+   * Loads permissions from the Claude settings file and populates the alwaysAllowedTools map
+   */
+  private async loadPermissions(): Promise<void> {
+    try {
+      const settingsPath = await this.getSettingsFilePath();
+      const settingsContent = await fs.readFile(settingsPath, 'utf-8');
+      const settings = JSON.parse(settingsContent);
+
+      if (settings.permissions?.allow && Array.isArray(settings.permissions.allow)) {
+        for (const entry of settings.permissions.allow) {
+          if (entry.startsWith('Bash(') && entry.endsWith(')')) {
+            // Parse Bash entries with prefixes: "Bash(prefix:*)"
+            const bashContent = entry.slice(5, -1); // Remove "Bash(" and ")"
+            if (bashContent.endsWith(':*')) {
+              const prefix = bashContent.slice(0, -2); // Remove ":*"
+              const existingPrefixes = this.alwaysAllowedTools.get('Bash') as string[] | undefined;
+              if (existingPrefixes) {
+                existingPrefixes.push(prefix);
+              } else {
+                this.alwaysAllowedTools.set('Bash', [prefix]);
+              }
+            }
+          } else {
+            // For non-Bash tools, just set them as allowed
+            this.alwaysAllowedTools.set(entry, true);
+          }
+        }
+      }
+    } catch (err) {
+      // If file doesn't exist or can't be read, that's fine - just start with empty permissions
+      debugLog('Could not load Claude settings:', err);
+    }
+  }
+
+  /**
+   * Saves the current permissions back to the Claude settings file
+   */
+  private async savePermissions(): Promise<void> {
+    try {
+      const settingsPath = await this.getSettingsFilePath();
+
+      // Try to read existing settings first
+      let settings: any = {};
+      try {
+        const settingsContent = await fs.readFile(settingsPath, 'utf-8');
+        settings = JSON.parse(settingsContent);
+      } catch (err) {
+        // File doesn't exist or can't be parsed - start with defaults
+        settings = {
+          permissions: {
+            allow: [],
+            deny: [],
+          },
+          enableAllProjectMcpServers: false,
+        };
+      }
+
+      // Ensure permissions structure exists
+      if (!settings.permissions) {
+        settings.permissions = { allow: [], deny: [] };
+      }
+      if (!Array.isArray(settings.permissions.allow)) {
+        settings.permissions.allow = [];
+      }
+
+      // Convert the alwaysAllowedTools map back to the array format
+      const allowList: string[] = [];
+      for (const [toolName, value] of this.alwaysAllowedTools.entries()) {
+        if (toolName === 'Bash' && Array.isArray(value)) {
+          // Add each Bash prefix as a separate entry
+          for (const prefix of value) {
+            allowList.push(`Bash(${prefix}:*)`);
+          }
+        } else if (value === true) {
+          // Non-Bash tools are just added by name
+          allowList.push(toolName);
+        }
+      }
+
+      settings.permissions.allow = allowList;
+
+      // Ensure directory exists
+      const settingsDir = path.dirname(settingsPath);
+      await fs.mkdir(settingsDir, { recursive: true });
+
+      // Write the settings back to file
+      await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    } catch (err) {
+      debugLog('Could not save Claude settings:', err);
+    }
+  }
+
   prepareStepOptions(): Partial<PrepareNextStepOptions> {
     return {
       rmfilter: false,
@@ -166,6 +267,9 @@ export class ClaudeCodeExecutor implements Executor {
                     chalk.blue(`Tool ${tool_name} added to always allowed list for this session`)
                   );
                 }
+
+                // Save the updated permissions to the settings file
+                await this.savePermissions();
               }
             } catch (err: any) {
               // If the prompt was aborted (timeout occurred), use the timeout result
@@ -206,6 +310,9 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
+    // Load permissions from settings file at the start
+    await this.loadPermissions();
+
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     // TODO Interactive mode isn't integrated with the logging
