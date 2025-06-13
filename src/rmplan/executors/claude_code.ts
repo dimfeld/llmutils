@@ -59,6 +59,19 @@ export class ClaudeCodeExecutor implements Executor {
           if (message.type === 'permission_request') {
             const { tool_name, input } = message;
 
+            // Check if this tool is already in the always allowed set
+            if (this.alwaysAllowedTools.has(tool_name)) {
+              log(chalk.green(`Tool ${tool_name} automatically approved (always allowed)`));
+
+              const response = {
+                type: 'permission_response',
+                approved: true,
+              };
+
+              socket.write(JSON.stringify(response) + '\n');
+              return;
+            }
+
             // Format the input as human-readable YAML
             let formattedInput = stringify(input);
             if (formattedInput.length > 500) {
@@ -105,6 +118,12 @@ export class ClaudeCodeExecutor implements Executor {
 
               // Set approved based on the user's choice
               approved = userChoice === 'allow' || userChoice === 'always_allow';
+
+              // If user chose "Always Allow", add the tool to the always allowed set
+              if (userChoice === 'always_allow') {
+                this.alwaysAllowedTools.add(tool_name);
+                log(chalk.blue(`Tool ${tool_name} added to always allowed list for this session`));
+              }
             } catch (err: any) {
               // If the prompt was aborted (timeout occurred), use the timeout result
               if (err.name === 'AbortPromptError' && this.options.permissionsMcp?.defaultResponse) {
