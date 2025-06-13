@@ -1061,13 +1061,17 @@ export async function preparePhase(
 
     // Add docs from the current phase
     if (currentPhaseData.docs) {
-      currentPhaseData.docs.forEach((doc: string) => docsSet.add(doc));
+      currentPhaseData.docs.forEach((doc: string) => {
+        docsSet.add(doc);
+      });
     }
 
     // Add docs from tasks
     for (const task of currentPhaseData.tasks) {
       if (task.docs) {
-        task.docs.forEach((doc: string) => docsSet.add(doc));
+        task.docs.forEach((doc: string) => {
+          docsSet.add(doc);
+        });
       }
     }
 
@@ -1175,26 +1179,7 @@ export async function preparePhase(
     }
 
     // 10. Update Phase YAML
-    if (currentPhaseData.tasks?.length) {
-      // Merge LLM-generated task details into currentPhaseData.tasks
-      for (let i = 0; i < currentPhaseData.tasks.length; i++) {
-        const existingTask = currentPhaseData.tasks[i];
-        const llmTask = parsedTasks[i];
-
-        if (!llmTask) {
-          warn(`Warning: LLM did not generate details for task ${i + 1}: ${existingTask.title}`);
-          continue;
-        }
-
-        // Update task with LLM-generated details
-        existingTask.description = llmTask.description || existingTask.description;
-        existingTask.files = llmTask.files || [];
-        existingTask.steps = llmTask.steps || [];
-      }
-    } else {
-      // If currentPhaseData.tasks is empty, assign parsedTasks directly
-      currentPhaseData.tasks = parsedTasks;
-    }
+    currentPhaseData.tasks = parsedTasks;
 
     // Update timestamps
     const now = new Date().toISOString();
@@ -1250,16 +1235,6 @@ async function gatherPhaseGenerationContext(
       description: string;
     }> = [];
     const changedFilesFromDependencies: string[] = [];
-
-    // Helper function to check if a string is a URL
-    const isURL = (str: string): boolean => {
-      try {
-        new URL(str);
-        return true;
-      } catch {
-        return false;
-      }
-    };
 
     // 4. Process parent plan info
     let parentPlanInfo:
