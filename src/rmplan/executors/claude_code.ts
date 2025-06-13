@@ -81,8 +81,6 @@ export class ClaudeCodeExecutor implements Executor {
             // Print BEL character to alert user
             process.stdout.write('\x07');
 
-            let approved: boolean;
-
             // Create a promise that resolves with the default response after timeout
             const timeoutPromise = this.options.permissionsMcp?.timeout
               ? new Promise<string>((resolve) => {
@@ -92,7 +90,7 @@ export class ClaudeCodeExecutor implements Executor {
                     resolve(defaultResponse === 'yes' ? 'allow' : 'disallow');
                   }, this.options.permissionsMcp!.timeout);
                 })
-              : new Promise<string>(() => {}); // Never resolves if no timeout
+              : null;
 
             // Create an AbortController for the prompt
             const controller = new AbortController();
@@ -111,9 +109,11 @@ export class ClaudeCodeExecutor implements Executor {
             );
 
             // Race between the prompt and the timeout
-            let userChoice: string;
+            let approved: boolean;
             try {
-              userChoice = await Promise.race([promptPromise, timeoutPromise as Promise<string>]);
+              let userChoice = await Promise.race(
+                [promptPromise, timeoutPromise as Promise<string>].filter(Boolean)
+              );
               controller.abort(); // Cancel the prompt if timeout wins
 
               // Set approved based on the user's choice
