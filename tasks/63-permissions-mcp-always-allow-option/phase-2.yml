@@ -5,7 +5,7 @@ goal: To introduce a specialized, interactive prompt for defining allowed
   prefixes for `Bash` commands when a user chooses the "Always Allow" option for
   them.
 id: 66
-status: in_progress
+status: done
 priority: high
 dependencies:
   - 65
@@ -15,7 +15,7 @@ docs:
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T07:11:25.761Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T07:16:16.681Z
+updatedAt: 2025-06-13T07:16:52.575Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -137,25 +137,25 @@ tasks:
           In `createPermissionSocketServer`, navigate to the beginning of the
           `socket.on('data', ...)` handler where the automatic approval check
           occurs.
-        done: false
+        done: true
       - prompt: >
           Modify the existing check `this.alwaysAllowedTools.has(tool_name)` to
           work with the new `Map` structure. First, check if
           `this.alwaysAllowedTools.get(tool_name)` is `true`. This handles
           non-Bash tools that have been fully approved.
-        done: false
+        done: true
       - prompt: >
           Add a new block of logic specifically for when `tool_name === 'Bash'`.
           In this block, retrieve the array of approved prefixes from
           `this.alwaysAllowedTools.get('Bash')`.
-        done: false
+        done: true
       - prompt: >
           If an array of prefixes exists for the `Bash` tool, iterate through
           it. For each prefix, check if the incoming `input.command` string
           starts with that prefix. If a match is found, automatically approve
           the request and send the `permission_response` without prompting the
           user.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/actions.ts
   - src/rmplan/executors/claude_code/prefix_prompt.ts
