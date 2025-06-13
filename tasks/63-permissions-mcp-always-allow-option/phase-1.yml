@@ -12,7 +12,7 @@ parent: 63
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T06:38:48.325Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T06:43:49.694Z
+updatedAt: 2025-06-13T06:45:16.668Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -100,13 +100,13 @@ tasks:
           `socket.on('data', ...)` event handler, add logic to check if the
           `tool_name` from the incoming message exists in the
           `this.alwaysAllowedTools` set.
-        done: false
+        done: true
       - prompt: >
           If the `tool_name` is found in the set, send an `approved: true`
           response directly to the socket and return from the handler to bypass
           the user prompt. Be sure to add a log message indicating that the tool
           was automatically approved.
-        done: false
+        done: true
   - title: Update State When "Always Allow" is Selected
     description: Enhance the prompt's handling logic so that when a user selects the
       "Always Allow" option, the corresponding `tool_name` is added to the
