@@ -1,9 +1,9 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Add and generate commands should look at existing tasks and try to
   autoadd dependencies
 goal: "Implement: Add and generate commands should look at existing tasks and
   try to autoadd dependencies"
-details: ""
 id: 48
 status: pending
 priority: low
@@ -12,3 +12,6 @@ issue:
 createdAt: 2025-06-07T02:05:21.825Z
 updatedAt: 2025-06-07T07:25:58.681Z
 tasks: []
+---
+
+When creating a plan, optionally try to infer related other plans that the new plan depends on. Use a language model for this. We should also have a separate command for inferring dependencies for an existing plan.

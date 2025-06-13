@@ -1,0 +1,78 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Persist Approval Rules
+goal: To save the "Always Allow" rules to a configuration file and load them on
+  startup, making them persistent across multiple sessions.
+id: 67
+status: pending
+priority: medium
+dependencies:
+  - 66
+parent: 63
+planGeneratedAt: 2025-06-13T06:34:02.120Z
+createdAt: 2025-06-11T08:25:17.665Z
+updatedAt: 2025-06-13T06:34:02.120Z
+project:
+  title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
+    Matching
+  goal: To update the interactive permissions MCP, replacing the simple
+    confirmation prompt with a more flexible system that allows users to
+    permanently approve certain tool invocations, including support for
+    fine-grained, prefix-based approvals for Bash commands.
+  details: >-
+    The current permission system requires users to manually approve or deny
+    every tool invocation within a session, which can be repetitive. This
+    project will enhance the user experience by introducing an "Always Allow"
+    option.
+
+
+    The key changes are:
+
+    1.  Replacing the `confirm` (Yes/No) prompt with a `select` prompt offering
+    "Allow", "Disallow", or "Always Allow".
+
+    2.  If "Always Allow" is chosen, the system will remember this choice for
+    the specific tool.
+
+    3.  For `Bash` tools, selecting "Always Allow" will trigger a special
+    interactive prompt where the user can define a safe command prefix (e.g.,
+    `git status` or `npm run`) that will be automatically approved in the
+    future.
+
+    4.  These "Always Allow" rules will be persisted to a configuration file, so
+    they are remembered across sessions.
+
+
+    This feature will be implemented primarily within the `ClaudeCodeExecutor`
+    in `src/rmplan/executors/claude_code.ts`, which handles the permission
+    prompting logic.
+tasks:
+  - title: Define a File-Based Storage Mechanism for Permissions
+    description: Determine a suitable location and format (e.g., a JSON file in a
+      user-specific configuration directory) for a permissions file. This file
+      will be used to store the "Always Allow" rules, including both full tool
+      names and `Bash` command prefixes.
+    steps: []
+  - title: Load Permission Rules on Startup
+    description: Implement logic within the `ClaudeCodeExecutor`'s initialization
+      process to read the permissions file from the disk if it exists. The
+      loaded rules will be used to populate the in-memory rule set at the start
+      of a session.
+    steps: []
+  - title: Save Permission Rules on Update
+    description: Implement logic to write the entire, updated set of permission
+      rules back to the configuration file on disk. This save operation should
+      be triggered every time a user adds a new "Always Allow" rule.
+    steps: []
+  - title: Document the New Permission System
+    description: Update the project's `README.md` file or other relevant user-facing
+      documentation. The documentation should explain the new "Always Allow"
+      feature, describe how the interactive `Bash` prefix selection works, and
+      specify where the permissions configuration file is stored.
+    steps: []
+rmfilter:
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/claude_code/permissions_mcp.ts
+---
+
+The final phase makes the "Always Allow" feature robust by ensuring user preferences are not lost when the application restarts. This involves implementing file I/O to save and load the ruleset, defining a clear location for this configuration, and documenting the feature for end-users.

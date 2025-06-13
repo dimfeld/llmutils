@@ -1,0 +1,84 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Implement Custom Bash Command Prefix Selection
+goal: To introduce a specialized, interactive prompt for defining allowed
+  prefixes for `Bash` commands when a user chooses the "Always Allow" option for
+  them.
+id: 66
+status: pending
+priority: high
+dependencies:
+  - 65
+parent: 63
+planGeneratedAt: 2025-06-13T06:34:02.120Z
+createdAt: 2025-06-11T08:25:17.665Z
+updatedAt: 2025-06-13T06:34:02.120Z
+docs:
+- https://github.com/SBoudrias/Inquirer.js/blob/main/packages/core/README.md
+project:
+  title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
+    Matching
+  goal: To update the interactive permissions MCP, replacing the simple
+    confirmation prompt with a more flexible system that allows users to
+    permanently approve certain tool invocations, including support for
+    fine-grained, prefix-based approvals for Bash commands.
+  details: >-
+    The current permission system requires users to manually approve or deny
+    every tool invocation within a session, which can be repetitive. This
+    project will enhance the user experience by introducing an "Always Allow"
+    option.
+
+
+    The key changes are:
+
+    1.  Replacing the `confirm` (Yes/No) prompt with a `select` prompt offering
+    "Allow", "Disallow", or "Always Allow".
+
+    2.  If "Always Allow" is chosen, the system will remember this choice for
+    the specific tool.
+
+    3.  For `Bash` tools, selecting "Always Allow" will trigger a special
+    interactive prompt where the user can define a safe command prefix (e.g.,
+    `git status` or `npm run`) that will be automatically approved in the
+    future.
+
+    4.  These "Always Allow" rules will be persisted to a configuration file, so
+    they are remembered across sessions.
+
+
+    This feature will be implemented primarily within the `ClaudeCodeExecutor`
+    in `src/rmplan/executors/claude_code.ts`, which handles the permission
+    prompting logic.
+tasks:
+  - title: Create a Custom Interactive Prompt for Prefix Selection
+    description: Using the `@inquirer/core` library, develop a new custom prompt
+      component. This component will display the `Bash` command and allow the
+      user to select a prefix by moving a cursor word-by-word with the left and
+      right arrow keys. It will also support a keybind ('a') to select the
+      entire command string.
+    steps: []
+  - title: Integrate the Custom Prefix Prompt into the Permission Flow
+    description: Update the `createPermissionSocketServer` logic. If the user
+      selects "Always Allow" and the `tool_name` is `Bash`, the system will
+      invoke the new custom prefix selection prompt to capture the user-defined
+      safe prefix.
+    steps: []
+  - title: Enhance Storage to Support Bash Prefixes
+    description: Modify the in-memory storage structure to accommodate the new
+      `Bash` prefix rules. This will likely require changing from a simple `Set`
+      of tool names to a more complex `Map` that can store a list of approved
+      prefixes for the `Bash` tool alongside other approved tool names.
+    steps: []
+  - title: Implement Prefix-Based Approval Logic for Bash Tools
+    description: Update the pre-prompt approval check. For incoming `Bash` tool
+      requests, the logic must now compare the command's input against the list
+      of stored, approved prefixes to determine if it can be automatically
+      approved.
+    steps: []
+rmfilter:
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/claude_code/permissions_mcp.ts
+---
+
+This phase builds on the "Always Allow" feature by adding the required special handling for `Bash` tools. When a user decides to always allow a `Bash` command, instead of approving the entire tool wholesale, they will be presented with a new custom prompt. This prompt will allow them to interactively select a prefix of the command to approve, providing more granular and safer control.
+
