@@ -24,7 +24,7 @@ type Message =
   | {
       type: 'result';
       subtype: 'success';
-      cost_usd: number;
+      total_cost_usd: number;
       duration_ms: number;
       duration_api_ms: number;
       is_error: boolean;
@@ -37,7 +37,7 @@ type Message =
   | {
       type: 'result';
       subtype: 'error_max_turns';
-      cost_usd: number;
+      total_cost_usd: number;
       duration_ms: number;
       duration_api_ms: number;
       is_error: boolean;
@@ -80,7 +80,7 @@ export function formatJsonMessage(input: string) {
 
   if (message.type === 'result') {
     if (message.subtype === 'success' || message.subtype === 'error_max_turns') {
-      let result = `Cost: $${message.cost_usd.toFixed(2)}, ${Math.round(message.duration_ms / 1000)}s for ${message.num_turns} turns`;
+      let result = `Cost: $${message.total_cost_usd.toFixed(2)}, ${Math.round(message.duration_ms / 1000)}s for ${message.num_turns} turns`;
       if (message.subtype === 'error_max_turns') {
         result += ' (max turns reached)';
       }
