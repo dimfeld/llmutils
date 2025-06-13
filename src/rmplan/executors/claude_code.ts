@@ -13,8 +13,9 @@ import { formatJsonMessage } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import * as net from 'net';
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import { stringify } from 'yaml';
+import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -29,12 +30,114 @@ export class ClaudeCodeExecutor implements Executor {
 
   // readonly forceReviewCommentsMode = 'separate-context';
   readonly filePathPrefix = '@';
+  private alwaysAllowedTools = new Map<string, true | string[]>();
 
   constructor(
     public options: ClaudeCodeExecutorOptions,
     public sharedOptions: ExecutorCommonOptions,
     public rmplanConfig: RmplanConfig
   ) {}
+
+  /**
+   * Gets the path to the Claude settings file relative to the git root
+   */
+  private async getSettingsFilePath(): Promise<string> {
+    const gitRoot = await getGitRoot();
+    return path.join(gitRoot, '.claude', 'settings.local.json');
+  }
+
+  /**
+   * Loads permissions from the Claude settings file and populates the alwaysAllowedTools map
+   */
+  private async loadPermissions(): Promise<void> {
+    try {
+      const settingsPath = await this.getSettingsFilePath();
+      const settingsContent = await fs.readFile(settingsPath, 'utf-8');
+      const settings = JSON.parse(settingsContent);
+
+      if (settings.permissions?.allow && Array.isArray(settings.permissions.allow)) {
+        for (const entry of settings.permissions.allow) {
+          if (entry.startsWith('Bash(') && entry.endsWith(')')) {
+            // Parse Bash entries with prefixes: "Bash(prefix:*)"
+            const bashContent = entry.slice(5, -1); // Remove "Bash(" and ")"
+            if (bashContent.endsWith(':*')) {
+              const prefix = bashContent.slice(0, -2); // Remove ":*"
+              const existingPrefixes = this.alwaysAllowedTools.get('Bash') as string[] | undefined;
+              if (existingPrefixes) {
+                existingPrefixes.push(prefix);
+              } else {
+                this.alwaysAllowedTools.set('Bash', [prefix]);
+              }
+            }
+          } else {
+            // For non-Bash tools, just set them as allowed
+            this.alwaysAllowedTools.set(entry, true);
+          }
+        }
+      }
+    } catch (err) {
+      // If file doesn't exist or can't be read, that's fine - just start with empty permissions
+      debugLog('Could not load Claude settings:', err);
+    }
+  }
+
+  /**
+   * Saves the current permissions back to the Claude settings file
+   */
+  private async savePermissions(): Promise<void> {
+    try {
+      const settingsPath = await this.getSettingsFilePath();
+
+      // Try to read existing settings first
+      let settings: any = {};
+      try {
+        const settingsContent = await fs.readFile(settingsPath, 'utf-8');
+        settings = JSON.parse(settingsContent);
+      } catch (err) {
+        // File doesn't exist or can't be parsed - start with defaults
+        settings = {
+          permissions: {
+            allow: [],
+            deny: [],
+          },
+          enableAllProjectMcpServers: false,
+        };
+      }
+
+      // Ensure permissions structure exists
+      if (!settings.permissions) {
+        settings.permissions = { allow: [], deny: [] };
+      }
+      if (!Array.isArray(settings.permissions.allow)) {
+        settings.permissions.allow = [];
+      }
+
+      // Convert the alwaysAllowedTools map back to the array format
+      const allowList: string[] = [];
+      for (const [toolName, value] of this.alwaysAllowedTools.entries()) {
+        if (toolName === 'Bash' && Array.isArray(value)) {
+          // Add each Bash prefix as a separate entry
+          for (const prefix of value) {
+            allowList.push(`Bash(${prefix}:*)`);
+          }
+        } else if (value === true) {
+          // Non-Bash tools are just added by name
+          allowList.push(toolName);
+        }
+      }
+
+      settings.permissions.allow = allowList;
+
+      // Ensure directory exists
+      const settingsDir = path.dirname(settingsPath);
+      await fs.mkdir(settingsDir, { recursive: true });
+
+      // Write the settings back to file
+      await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    } catch (err) {
+      debugLog('Could not save Claude settings:', err);
+    }
+  }
 
   prepareStepOptions(): Partial<PrepareNextStepOptions> {
     return {
@@ -58,6 +161,34 @@ export class ClaudeCodeExecutor implements Executor {
           if (message.type === 'permission_request') {
             const { tool_name, input } = message;
 
+            // Check if this tool is already in the always allowed set
+            const allowedValue = this.alwaysAllowedTools.get(tool_name);
+            if (allowedValue !== undefined) {
+              // For Bash tools, check if the command matches any allowed prefix
+              if (tool_name === 'Bash' && Array.isArray(allowedValue)) {
+                const command = input.command as string;
+                const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
+
+                if (isAllowed) {
+                  log(chalk.green(`Bash command automatically approved (matches allowed prefix)`));
+                  const response = {
+                    type: 'permission_response',
+                    approved: true,
+                  };
+                  socket.write(JSON.stringify(response) + '\n');
+                  return;
+                }
+              } else if (allowedValue === true) {
+                log(chalk.green(`Tool ${tool_name} automatically approved (always allowed)`));
+                const response = {
+                  type: 'permission_response',
+                  approved: true,
+                };
+                socket.write(JSON.stringify(response) + '\n');
+                return;
+              }
+            }
+
             // Format the input as human-readable YAML
             let formattedInput = stringify(input);
             if (formattedInput.length > 500) {
@@ -67,34 +198,79 @@ export class ClaudeCodeExecutor implements Executor {
             // Print BEL character to alert user
             process.stdout.write('\x07');
 
-            let approved: boolean;
-
             // Create a promise that resolves with the default response after timeout
             const timeoutPromise = this.options.permissionsMcp?.timeout
-              ? new Promise<boolean>((resolve) => {
+              ? new Promise<string>((resolve) => {
                   const defaultResponse = this.options.permissionsMcp?.defaultResponse ?? 'no';
                   setTimeout(() => {
                     log(`Permission prompt timed out, using default: ${defaultResponse}`);
-                    resolve(defaultResponse === 'yes');
+                    resolve(defaultResponse === 'yes' ? 'allow' : 'disallow');
                   }, this.options.permissionsMcp!.timeout);
                 })
-              : new Promise<boolean>(() => {}); // Never resolves if no timeout
+              : null;
 
             // Create an AbortController for the prompt
             const controller = new AbortController();
 
             // Prompt the user for confirmation
-            const promptPromise = confirm(
+            const promptPromise = select(
               {
                 message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
+                choices: [
+                  { name: 'Allow', value: 'allow' },
+                  { name: 'Disallow', value: 'disallow' },
+                  { name: 'Always Allow', value: 'always_allow' },
+                ],
               },
               { signal: controller.signal }
             );
 
             // Race between the prompt and the timeout
+            let approved: boolean;
             try {
-              approved = await Promise.race([promptPromise, timeoutPromise]);
+              let userChoice = await Promise.race(
+                [promptPromise, timeoutPromise as Promise<string>].filter(Boolean)
+              );
               controller.abort(); // Cancel the prompt if timeout wins
+
+              // Set approved based on the user's choice
+              approved = userChoice === 'allow' || userChoice === 'always_allow';
+
+              // If user chose "Always Allow", add the tool to the always allowed set
+              if (userChoice === 'always_allow') {
+                if (tool_name === 'Bash') {
+                  // For Bash tool, prompt for a prefix to allow
+                  const command = input.command as string;
+                  const selectedPrefix = await prefixPrompt({
+                    message: 'Select the command prefix to always allow:',
+                    command: command,
+                  });
+
+                  // Add the prefix to the array of allowed prefixes for Bash
+                  const existingPrefixes = this.alwaysAllowedTools.get('Bash') as
+                    | string[]
+                    | undefined;
+                  if (existingPrefixes) {
+                    existingPrefixes.push(selectedPrefix);
+                  } else {
+                    this.alwaysAllowedTools.set('Bash', [selectedPrefix]);
+                  }
+                  log(
+                    chalk.blue(
+                      `Bash prefix "${selectedPrefix}" added to always allowed list for this session`
+                    )
+                  );
+                } else {
+                  // For non-Bash tools, set the value to true
+                  this.alwaysAllowedTools.set(tool_name, true);
+                  log(
+                    chalk.blue(`Tool ${tool_name} added to always allowed list for this session`)
+                  );
+                }
+
+                // Save the updated permissions to the settings file
+                await this.savePermissions();
+              }
             } catch (err: any) {
               // If the prompt was aborted (timeout occurred), use the timeout result
               if (err.name === 'AbortPromptError' && this.options.permissionsMcp?.defaultResponse) {
@@ -134,6 +310,9 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
+    // Load permissions from settings file at the start
+    await this.loadPermissions();
+
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     // TODO Interactive mode isn't integrated with the logging
