@@ -13,6 +13,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.build.json",
+    "build": "./build.sh",
     "lint": "eslint .",
     "dev-install": "pnpm add -g file://$(pwd)",
     "format": "prettier --write .",

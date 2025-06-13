@@ -36,5 +36,7 @@ repomix-*
 task.yml
 **/*-agent-output.md
 **/.claude/settings.local.json
+/rmplan
 rmplan-*
 .rmfilter/config/*.local.yml
+.*.bun-build

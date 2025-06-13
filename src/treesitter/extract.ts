@@ -2,7 +2,13 @@ import { Parser, Node, Tree, TreeCursor, type Language, Query } from 'web-tree-s
 import { loadLanguage } from './load_language.ts';
 import { log } from '../logging.ts';
 
-await Parser.init();
+let parserInitDone = false;
+async function initParser() {
+  if (!parserInitDone) {
+    await Parser.init();
+    parserInitDone = true;
+  }
+}
 
 // Check if a node is exported
 function isExported(node: Node) {
@@ -436,6 +442,7 @@ export class Extractor {
   }
 
   async createParser(language: string) {
+    await initParser();
     const languageModule = await this.getLanguage(language);
     if (!languageModule) {
       throw new Error(`Language ${language} not found`);

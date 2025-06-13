@@ -40,8 +40,6 @@ import { executors } from './executors/index.js';
 import { handleCommandError } from './utils/commands.js';
 import { prioritySchema } from './planSchema.js';
 
-await loadEnv();
-
 function intArg(value: string | undefined): number | undefined;
 function intArg(value: string[] | undefined): number[] | undefined;
 function intArg<T extends string | string[] | undefined>(
@@ -459,4 +457,12 @@ workspaceCommand
     await handleWorkspaceAddCommand(planIdentifier, options, command).catch(handleCommandError);
   });
 
-await program.parseAsync(process.argv);
+async function run() {
+  await loadEnv();
+  await program.parseAsync(process.argv);
+}
+
+run().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
