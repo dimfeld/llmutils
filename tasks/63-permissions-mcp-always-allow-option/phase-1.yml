@@ -5,14 +5,14 @@ goal: To replace the binary yes/no prompt with a multi-choice prompt that
   includes an "Always Allow" option and to handle the basic in-memory approval
   logic for the current session.
 id: 65
-status: in_progress
+status: done
 priority: high
 dependencies: []
 parent: 63
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T06:38:48.325Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T06:45:16.668Z
+updatedAt: 2025-06-13T06:45:37.482Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -117,13 +117,13 @@ tasks:
       - prompt: >
           In `createPermissionSocketServer`, modify the logic that processes the
           result from the `select` prompt.
-        done: false
+        done: true
       - prompt: >
           If the user's choice is "Always Allow", add the `tool_name` from the
           permission request to the `this.alwaysAllowedTools` set before sending
           the approval response. The logic to set `approved` to `true` should
           already be in place from the first task.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/executors/claude_code.ts
 rmfilter:
