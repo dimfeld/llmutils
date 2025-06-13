@@ -1,5 +1,4 @@
-import { createPrompt, useState, useKeypress } from '@inquirer/core';
-import { isEnterKey, isLeftKey, isRightKey } from '@inquirer/core';
+import { createPrompt, useState, useKeypress, isEnterKey } from '@inquirer/core';
 import chalk from 'chalk';
 
 interface PrefixPromptConfig {
@@ -12,9 +11,9 @@ export const prefixPrompt = createPrompt<string, PrefixPromptConfig>((config, do
   const [selectedWordIndex, setSelectedWordIndex] = useState(words.length - 1);
 
   useKeypress((key) => {
-    if (isLeftKey(key) && selectedWordIndex > 0) {
+    if (key.name === 'left' && selectedWordIndex > 0) {
       setSelectedWordIndex(selectedWordIndex - 1);
-    } else if (isRightKey(key) && selectedWordIndex < words.length - 1) {
+    } else if (key.name === 'right' && selectedWordIndex < words.length - 1) {
       setSelectedWordIndex(selectedWordIndex + 1);
     } else if (key.name === 'a') {
       setSelectedWordIndex(words.length - 1);
