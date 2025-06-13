@@ -9,10 +9,10 @@ import { log } from '../../logging.js';
 
 interface PlanToRenumber {
   filePath: string;
-  currentId: string | number;
+  currentId: number | undefined;
   plan: Record<string, any>;
-  reason: 'missing' | 'alphanumeric' | 'conflict';
-  conflictsWith?: string | number;
+  reason: 'missing' | 'conflict';
+  conflictsWith?: number;
 }
 
 export async function handleRenumber(options: any, command: any) {
@@ -35,7 +35,7 @@ export async function handleRenumber(options: any, command: any) {
   const allPlans = new Map<string, Record<string, any>>();
   let maxNumericId = 0;
   const plansToRenumber: PlanToRenumber[] = [];
-  const idToFiles = new Map<string | number, { plan: PlanSchema; filePath: string }[]>();
+  const idToFiles = new Map<number, { plan: PlanSchema; filePath: string }[]>();
 
   // Build maps of IDs to files to detect conflicts
   // We need to re-scan files because readAllPlans overwrites duplicates
@@ -53,36 +53,23 @@ export async function handleRenumber(options: any, command: any) {
         let numId = Number(plan.id);
         if (!Number.isNaN(numId)) {
           maxNumericId = Math.max(maxNumericId, numId);
-        }
 
-        const stringId = String(plan.id);
-        if (!idToFiles.has(stringId)) {
-          idToFiles.set(stringId, []);
+          if (!idToFiles.has(plan.id)) {
+            idToFiles.set(plan.id, []);
+          }
+          idToFiles.get(plan.id)!.push({ plan, filePath });
         }
-        idToFiles.get(stringId)!.push({ plan, filePath });
+      } else {
+        plansToRenumber.push({
+          filePath: filePath,
+          currentId: plan.id,
+          plan,
+          reason: 'missing',
+        });
       }
       allPlans.set(filePath, plan);
     } catch (e) {
       // Skip invalid plan files
-    }
-  }
-
-  // Find plans with alphanumeric IDs
-  for (const [filePath, plan] of allPlans) {
-    if (typeof plan.id === 'string' && !/^\d+$/.test(plan.id)) {
-      plansToRenumber.push({
-        filePath: filePath,
-        currentId: plan.id,
-        plan,
-        reason: 'alphanumeric',
-      });
-    } else if (plan.id == undefined) {
-      plansToRenumber.push({
-        filePath: filePath,
-        currentId: plan.id,
-        plan,
-        reason: 'missing',
-      });
     }
   }
 
@@ -154,10 +141,7 @@ export async function handleRenumber(options: any, command: any) {
   let nextId = maxNumericId;
 
   const idMappings = new Map<string, number>();
-  const newFileIds = new Map<
-    string,
-    { id: number; reason: 'missing' | 'alphanumeric' | 'conflict' }
-  >();
+  const newFileIds = new Map<string, { id: number; reason: 'missing' | 'conflict' }>();
   const plansToWrite = new Set<string>();
   for (const plan of plansToRenumber) {
     nextId++;
