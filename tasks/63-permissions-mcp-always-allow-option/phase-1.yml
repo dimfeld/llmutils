@@ -12,7 +12,7 @@ parent: 63
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T06:38:48.325Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T06:41:21.742Z
+updatedAt: 2025-06-13T06:43:49.694Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -86,7 +86,7 @@ tasks:
           instance property named `alwaysAllowedTools`. Initialize this property
           as a `new Set<string>()` to hold the names of tools that are approved
           for the entire session.
-        done: false
+        done: true
   - title: Bypass Prompt for Pre-Approved Tools
     description: Modify the logic in `createPermissionSocketServer` to check the
       in-memory store before displaying the permission prompt. If the tool
@@ -125,7 +125,6 @@ tasks:
           already be in place from the first task.
         done: false
 changedFiles:
-  - src/rmplan/executors/claude_code/format.ts
   - src/rmplan/executors/claude_code.ts
 rmfilter:
   - src/rmplan/executors/claude_code.ts

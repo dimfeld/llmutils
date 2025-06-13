@@ -29,6 +29,7 @@ export class ClaudeCodeExecutor implements Executor {
 
   // readonly forceReviewCommentsMode = 'separate-context';
   readonly filePathPrefix = '@';
+  private alwaysAllowedTools = new Set<string>();
 
   constructor(
     public options: ClaudeCodeExecutorOptions,
@@ -101,7 +102,7 @@ export class ClaudeCodeExecutor implements Executor {
             try {
               userChoice = await Promise.race([promptPromise, timeoutPromise as Promise<string>]);
               controller.abort(); // Cancel the prompt if timeout wins
-              
+
               // Set approved based on the user's choice
               approved = userChoice === 'allow' || userChoice === 'always_allow';
             } catch (err: any) {
