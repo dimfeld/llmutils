@@ -39,56 +39,14 @@ export class ClaudeCodeExecutor implements Executor {
   ) {}
 
   /**
-   * Gets the path to the Claude settings file relative to the git root
+   * Adds a new permission rule to the Claude settings file
    */
-  private async getSettingsFilePath(): Promise<string> {
-    const gitRoot = await getGitRoot();
-    return path.join(gitRoot, '.claude', 'settings.local.json');
-  }
-
-  /**
-   * Loads permissions from the Claude settings file and populates the alwaysAllowedTools map
-   */
-  private async loadPermissions(): Promise<void> {
+  private async addPermissionToFile(toolName: string, prefix?: string): Promise<void> {
     try {
-      const settingsPath = await this.getSettingsFilePath();
-      const settingsContent = await fs.readFile(settingsPath, 'utf-8');
-      const settings = JSON.parse(settingsContent);
+      const gitRoot = await getGitRoot();
+      const settingsPath = path.join(gitRoot, '.claude', 'settings.local.json');
 
-      if (settings.permissions?.allow && Array.isArray(settings.permissions.allow)) {
-        for (const entry of settings.permissions.allow) {
-          if (entry.startsWith('Bash(') && entry.endsWith(')')) {
-            // Parse Bash entries with prefixes: "Bash(prefix:*)"
-            const bashContent = entry.slice(5, -1); // Remove "Bash(" and ")"
-            if (bashContent.endsWith(':*')) {
-              const prefix = bashContent.slice(0, -2); // Remove ":*"
-              const existingPrefixes = this.alwaysAllowedTools.get('Bash') as string[] | undefined;
-              if (existingPrefixes) {
-                existingPrefixes.push(prefix);
-              } else {
-                this.alwaysAllowedTools.set('Bash', [prefix]);
-              }
-            }
-          } else {
-            // For non-Bash tools, just set them as allowed
-            this.alwaysAllowedTools.set(entry, true);
-          }
-        }
-      }
-    } catch (err) {
-      // If file doesn't exist or can't be read, that's fine - just start with empty permissions
-      debugLog('Could not load Claude settings:', err);
-    }
-  }
-
-  /**
-   * Saves the current permissions back to the Claude settings file
-   */
-  private async savePermissions(): Promise<void> {
-    try {
-      const settingsPath = await this.getSettingsFilePath();
-
-      // Try to read existing settings first
+      // Try to read existing settings
       let settings: any = {};
       try {
         const settingsContent = await fs.readFile(settingsPath, 'utf-8');
@@ -100,42 +58,29 @@ export class ClaudeCodeExecutor implements Executor {
             allow: [],
             deny: [],
           },
-          enableAllProjectMcpServers: false,
         };
       }
 
       // Ensure permissions structure exists
-      if (!settings.permissions) {
-        settings.permissions = { allow: [], deny: [] };
+      settings.permissions ??= { allow: [], deny: [] };
+      settings.permissions.allow ??= [];
+
+      // Add the new permission rule
+      const newRule = toolName === 'Bash' && prefix ? `Bash(${prefix}:*)` : toolName;
+
+      // Only add if it doesn't already exist
+      if (!settings.permissions.allow.includes(newRule)) {
+        settings.permissions.allow.push(newRule);
+
+        // Ensure directory exists
+        const settingsDir = path.dirname(settingsPath);
+        await fs.mkdir(settingsDir, { recursive: true });
+
+        // Write the settings back to file
+        await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
       }
-      if (!Array.isArray(settings.permissions.allow)) {
-        settings.permissions.allow = [];
-      }
-
-      // Convert the alwaysAllowedTools map back to the array format
-      const allowList: string[] = [];
-      for (const [toolName, value] of this.alwaysAllowedTools.entries()) {
-        if (toolName === 'Bash' && Array.isArray(value)) {
-          // Add each Bash prefix as a separate entry
-          for (const prefix of value) {
-            allowList.push(`Bash(${prefix}:*)`);
-          }
-        } else if (value === true) {
-          // Non-Bash tools are just added by name
-          allowList.push(toolName);
-        }
-      }
-
-      settings.permissions.allow = allowList;
-
-      // Ensure directory exists
-      const settingsDir = path.dirname(settingsPath);
-      await fs.mkdir(settingsDir, { recursive: true });
-
-      // Write the settings back to file
-      await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
     } catch (err) {
-      debugLog('Could not save Claude settings:', err);
+      debugLog('Could not save permission to Claude settings:', err);
     }
   }
 
@@ -238,6 +183,8 @@ export class ClaudeCodeExecutor implements Executor {
 
               // If user chose "Always Allow", add the tool to the always allowed set
               if (userChoice === 'always_allow') {
+                let prefixForBash: string | undefined;
+
                 if (tool_name === 'Bash') {
                   // For Bash tool, prompt for a prefix to allow
                   const command = input.command as string;
@@ -245,6 +192,7 @@ export class ClaudeCodeExecutor implements Executor {
                     message: 'Select the command prefix to always allow:',
                     command: command,
                   });
+                  prefixForBash = selectedPrefix;
 
                   // Add the prefix to the array of allowed prefixes for Bash
                   const existingPrefixes = this.alwaysAllowedTools.get('Bash') as
@@ -268,8 +216,8 @@ export class ClaudeCodeExecutor implements Executor {
                   );
                 }
 
-                // Save the updated permissions to the settings file
-                await this.savePermissions();
+                // Save the new permission rule to the settings file
+                await this.addPermissionToFile(tool_name, prefixForBash);
               }
             } catch (err: any) {
               // If the prompt was aborted (timeout occurred), use the timeout result
@@ -310,9 +258,6 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string) {
-    // Load permissions from settings file at the start
-    await this.loadPermissions();
-
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     // TODO Interactive mode isn't integrated with the logging
