@@ -15,6 +15,7 @@ import chalk from 'chalk';
 import * as net from 'net';
 import { confirm, select } from '@inquirer/prompts';
 import { stringify } from 'yaml';
+import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -29,7 +30,7 @@ export class ClaudeCodeExecutor implements Executor {
 
   // readonly forceReviewCommentsMode = 'separate-context';
   readonly filePathPrefix = '@';
-  private alwaysAllowedTools = new Set<string>();
+  private alwaysAllowedTools = new Map<string, true | string[]>();
 
   constructor(
     public options: ClaudeCodeExecutorOptions,
@@ -60,16 +61,31 @@ export class ClaudeCodeExecutor implements Executor {
             const { tool_name, input } = message;
 
             // Check if this tool is already in the always allowed set
-            if (this.alwaysAllowedTools.has(tool_name)) {
-              log(chalk.green(`Tool ${tool_name} automatically approved (always allowed)`));
+            const allowedValue = this.alwaysAllowedTools.get(tool_name);
+            if (allowedValue !== undefined) {
+              // For Bash tools, check if the command matches any allowed prefix
+              if (tool_name === 'Bash' && Array.isArray(allowedValue)) {
+                const command = input.command as string;
+                const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
 
-              const response = {
-                type: 'permission_response',
-                approved: true,
-              };
-
-              socket.write(JSON.stringify(response) + '\n');
-              return;
+                if (isAllowed) {
+                  log(chalk.green(`Bash command automatically approved (matches allowed prefix)`));
+                  const response = {
+                    type: 'permission_response',
+                    approved: true,
+                  };
+                  socket.write(JSON.stringify(response) + '\n');
+                  return;
+                }
+              } else if (allowedValue === true) {
+                log(chalk.green(`Tool ${tool_name} automatically approved (always allowed)`));
+                const response = {
+                  type: 'permission_response',
+                  approved: true,
+                };
+                socket.write(JSON.stringify(response) + '\n');
+                return;
+              }
             }
 
             // Format the input as human-readable YAML
@@ -121,8 +137,35 @@ export class ClaudeCodeExecutor implements Executor {
 
               // If user chose "Always Allow", add the tool to the always allowed set
               if (userChoice === 'always_allow') {
-                this.alwaysAllowedTools.add(tool_name);
-                log(chalk.blue(`Tool ${tool_name} added to always allowed list for this session`));
+                if (tool_name === 'Bash') {
+                  // For Bash tool, prompt for a prefix to allow
+                  const command = input.command as string;
+                  const selectedPrefix = await prefixPrompt({
+                    message: 'Select the command prefix to always allow:',
+                    command: command,
+                  });
+
+                  // Add the prefix to the array of allowed prefixes for Bash
+                  const existingPrefixes = this.alwaysAllowedTools.get('Bash') as
+                    | string[]
+                    | undefined;
+                  if (existingPrefixes) {
+                    existingPrefixes.push(selectedPrefix);
+                  } else {
+                    this.alwaysAllowedTools.set('Bash', [selectedPrefix]);
+                  }
+                  log(
+                    chalk.blue(
+                      `Bash prefix "${selectedPrefix}" added to always allowed list for this session`
+                    )
+                  );
+                } else {
+                  // For non-Bash tools, set the value to true
+                  this.alwaysAllowedTools.set(tool_name, true);
+                  log(
+                    chalk.blue(`Tool ${tool_name} added to always allowed list for this session`)
+                  );
+                }
               }
             } catch (err: any) {
               // If the prompt was aborted (timeout occurred), use the timeout result
