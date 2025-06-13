@@ -13,7 +13,7 @@ import { formatJsonMessage } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import * as net from 'net';
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
@@ -71,30 +71,39 @@ export class ClaudeCodeExecutor implements Executor {
 
             // Create a promise that resolves with the default response after timeout
             const timeoutPromise = this.options.permissionsMcp?.timeout
-              ? new Promise<boolean>((resolve) => {
+              ? new Promise<string>((resolve) => {
                   const defaultResponse = this.options.permissionsMcp?.defaultResponse ?? 'no';
                   setTimeout(() => {
                     log(`Permission prompt timed out, using default: ${defaultResponse}`);
-                    resolve(defaultResponse === 'yes');
+                    resolve(defaultResponse === 'yes' ? 'allow' : 'disallow');
                   }, this.options.permissionsMcp!.timeout);
                 })
-              : new Promise<boolean>(() => {}); // Never resolves if no timeout
+              : new Promise<string>(() => {}); // Never resolves if no timeout
 
             // Create an AbortController for the prompt
             const controller = new AbortController();
 
             // Prompt the user for confirmation
-            const promptPromise = confirm(
+            const promptPromise = select(
               {
                 message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
+                choices: [
+                  { name: 'Allow', value: 'allow' },
+                  { name: 'Disallow', value: 'disallow' },
+                  { name: 'Always Allow', value: 'always_allow' },
+                ],
               },
               { signal: controller.signal }
             );
 
             // Race between the prompt and the timeout
+            let userChoice: string;
             try {
-              approved = await Promise.race([promptPromise, timeoutPromise]);
+              userChoice = await Promise.race([promptPromise, timeoutPromise as Promise<string>]);
               controller.abort(); // Cancel the prompt if timeout wins
+              
+              // Set approved based on the user's choice
+              approved = userChoice === 'allow' || userChoice === 'always_allow';
             } catch (err: any) {
               // If the prompt was aborted (timeout occurred), use the timeout result
               if (err.name === 'AbortPromptError' && this.options.permissionsMcp?.defaultResponse) {
