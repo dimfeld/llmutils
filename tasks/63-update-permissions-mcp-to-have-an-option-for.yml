@@ -5,13 +5,27 @@ goal: ""
 id: 63
 status: pending
 priority: medium
+container: true
+dependencies:
+  - 65
+  - 66
+  - 67
 createdAt: 2025-06-11T08:25:17.665Z
 updatedAt: 2025-06-11T08:25:17.665Z
 tasks: []
+rmfilter:
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/claude_code/permissions_mcp.ts
 ---
 
-Replace the `confirm` with a `select` with options for Allow, Disallow, or Always Allow
+Replace the permissions `confirm` with a `select` with options for Allow, Disallow, or Always Allow
 
-If Always Allow is selected, then remember that this tool type is always allowed.
+If Always Allow is selected, then the MCP code should remember that this tool type is always allowed.
 
 If Always Allow is selected on a Bash tool invocation, then we should allow a specific prefix substring of the command. We need some way to easily specify what prefix is allowed.
+
+## "Always Allow" Prefix Selection Prompt Design
+
+Use the @inquirer/core library described at https://raw.githubusercontent.com/SBoudrias/Inquirer.js/refs/heads/main/packages/core/README.md
+
+Display the command on a line. Allow using the left and right arrow keys to select more or fewer words. Selected words should be rendered in white and unselected words in gray. Pressing 'a' should select the entire string.

@@ -1,0 +1,135 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Implement Core "Always Allow" Functionality
+goal: To replace the binary yes/no prompt with a multi-choice prompt that
+  includes an "Always Allow" option and to handle the basic in-memory approval
+  logic for the current session.
+id: 65
+status: in_progress
+priority: high
+dependencies: []
+parent: 63
+planGeneratedAt: 2025-06-13T06:34:02.120Z
+promptsGeneratedAt: 2025-06-13T06:38:48.325Z
+createdAt: 2025-06-11T08:25:17.665Z
+updatedAt: 2025-06-13T06:41:21.742Z
+project:
+  title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
+    Matching
+  goal: To update the interactive permissions MCP, replacing the simple
+    confirmation prompt with a more flexible system that allows users to
+    permanently approve certain tool invocations, including support for
+    fine-grained, prefix-based approvals for Bash commands.
+  details: >-
+    The current permission system requires users to manually approve or deny
+    every tool invocation within a session, which can be repetitive. This
+    project will enhance the user experience by introducing an "Always Allow"
+    option.
+
+
+    The key changes are:
+
+    1.  Replacing the `confirm` (Yes/No) prompt with a `select` prompt offering
+    "Allow", "Disallow", or "Always Allow".
+
+    2.  If "Always Allow" is chosen, the system will remember this choice for
+    the specific tool.
+
+    3.  For `Bash` tools, selecting "Always Allow" will trigger a special
+    interactive prompt where the user can define a safe command prefix (e.g.,
+    `git status` or `npm run`) that will be automatically approved in the
+    future.
+
+    4.  These "Always Allow" rules will be persisted to a configuration file, so
+    they are remembered across sessions.
+
+
+    This feature will be implemented primarily within the `ClaudeCodeExecutor`
+    in `src/rmplan/executors/claude_code.ts`, which handles the permission
+    prompting logic.
+tasks:
+  - title: Upgrade Permission Prompt to a Select Input
+    description: 'Convert the existing boolean `confirm` prompt into a `select`
+      prompt. The new prompt will provide the user with three choices: "Allow"
+      (for one-time execution), "Disallow" (for one-time denial), and "Always
+      Allow" (to approve all future requests for this tool).'
+    files:
+      - src/rmplan/executors/claude_code.ts
+    steps:
+      - prompt: >
+          In `src/rmplan/executors/claude_code.ts`, import `select` from
+          `@inquirer/prompts` in addition to the existing `confirm` import.
+        done: true
+      - prompt: >
+          Within the `createPermissionSocketServer` method, replace the
+          `confirm` call with a `select` call. The new prompt should have a
+          similar message but present the user with three choices: "Allow",
+          "Disallow", and "Always Allow".
+        done: true
+      - prompt: >
+          Store the string result from the `select` prompt in a variable (e.g.,
+          `userChoice`). Update the logic to set the `approved` variable to
+          `true` if the user selects "Allow" or "Always Allow", and `false` for
+          "Disallow". The special handling for "Always Allow" will be
+          implemented in a subsequent task.
+        done: true
+  - title: Implement In-Memory Storage for "Always Allow" Rules
+    description: Create an in-memory data structure, such as a `Set` or `Map`,
+      within the `ClaudeCodeExecutor` class. This structure will hold the names
+      of tools that the user has marked as "Always Allow" during the current
+      application session.
+    files:
+      - src/rmplan/executors/claude_code.ts
+    steps:
+      - prompt: >
+          In the `ClaudeCodeExecutor` class definition, add a new private
+          instance property named `alwaysAllowedTools`. Initialize this property
+          as a `new Set<string>()` to hold the names of tools that are approved
+          for the entire session.
+        done: false
+  - title: Bypass Prompt for Pre-Approved Tools
+    description: Modify the logic in `createPermissionSocketServer` to check the
+      in-memory store before displaying the permission prompt. If the tool
+      requesting permission is already in the "Always Allow" set, the request
+      should be approved automatically without any user interaction.
+    files:
+      - src/rmplan/executors/claude_code.ts
+    steps:
+      - prompt: >
+          In the `createPermissionSocketServer` method, at the beginning of the
+          `socket.on('data', ...)` event handler, add logic to check if the
+          `tool_name` from the incoming message exists in the
+          `this.alwaysAllowedTools` set.
+        done: false
+      - prompt: >
+          If the `tool_name` is found in the set, send an `approved: true`
+          response directly to the socket and return from the handler to bypass
+          the user prompt. Be sure to add a log message indicating that the tool
+          was automatically approved.
+        done: false
+  - title: Update State When "Always Allow" is Selected
+    description: Enhance the prompt's handling logic so that when a user selects the
+      "Always Allow" option, the corresponding `tool_name` is added to the
+      in-memory data structure for future reference in the session.
+    files:
+      - src/rmplan/executors/claude_code.ts
+    steps:
+      - prompt: >
+          In `createPermissionSocketServer`, modify the logic that processes the
+          result from the `select` prompt.
+        done: false
+      - prompt: >
+          If the user's choice is "Always Allow", add the `tool_name` from the
+          permission request to the `this.alwaysAllowedTools` set before sending
+          the approval response. The logic to set `approved` to `true` should
+          already be in place from the first task.
+        done: false
+changedFiles:
+  - src/rmplan/executors/claude_code/format.ts
+  - src/rmplan/executors/claude_code.ts
+rmfilter:
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/claude_code/permissions_mcp.ts
+---
+
+This initial phase focuses on establishing the core workflow. We will replace the existing `@inquirer/prompts` `confirm` call with a `select` call. We will then implement the logic to store "Always Allow" decisions in memory and bypass the prompt for tools that have been pre-approved within the active session. The special handling for Bash commands will be deferred to a later phase.
