@@ -236,8 +236,33 @@ export async function handleGenerateCommand(
     throw new Error('No plan text was provided.');
   }
 
+  // Read planning document if configured
+  let planningDocContent = '';
+  if (config.paths?.planning) {
+    const planningPath = path.isAbsolute(config.paths.planning)
+      ? config.paths.planning
+      : path.join(gitRoot, config.paths.planning);
+    try {
+      const planningFile = Bun.file(planningPath);
+      if (await planningFile.exists()) {
+        planningDocContent = await planningFile.text();
+        log(chalk.blue('📋 Including planning document:'), path.relative(gitRoot, planningPath));
+      } else {
+        warn(`Planning document not found: ${planningPath}`);
+      }
+    } catch (err) {
+      warn(`Failed to read planning document: ${err as Error}`);
+    }
+  }
+
+  // Create the prompt with optional planning document
+  let fullPlanText = planText;
+  if (planningDocContent) {
+    fullPlanText = `${planText}\n\n# Planning Rules\n\n${planningDocContent}`;
+  }
+
   // planText now contains the loaded plan
-  const promptString = options.simple ? simplePlanPrompt(planText) : planPrompt(planText);
+  const promptString = options.simple ? simplePlanPrompt(fullPlanText) : planPrompt(fullPlanText);
   const tmpPromptPath = path.join(os.tmpdir(), `rmplan-prompt-${Date.now()}.md`);
   let exitRes: number | undefined;
   let wrotePrompt = false;

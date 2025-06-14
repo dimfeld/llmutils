@@ -58,6 +58,10 @@
             "type": "string"
           }
         },
+        "planning": {
+          "description": "Path to a planning document file to include in all planning prompts",
+          "type": "string"
+        },
         "trackingFile": {
           "description": "Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)",
           "type": "string"
@@ -111,6 +115,29 @@
         "stepGeneration": {
           "description": "Model spec for rmplan prepare phase generation",
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "answerPr": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "Default mode for answer-pr command",
+          "type": "string",
+          "enum": [
+            "hybrid",
+            "inline",
+            "separate"
+          ]
+        },
+        "comment": {
+          "description": "Default value for whether to add comments after processing",
+          "type": "boolean"
+        },
+        "commit": {
+          "description": "Default value for whether to commit changes after processing",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

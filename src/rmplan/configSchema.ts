@@ -71,6 +71,12 @@ export const rmplanConfigSchema = z
           .describe(
             'Paths to directories to search for .md and .mdc documentation files to auto-include'
           ),
+        planning: z
+          .string()
+          .optional()
+          .describe(
+            'Path to a planning document file to include in all planning prompts'
+          ),
         trackingFile: z
           .string()
           .optional()

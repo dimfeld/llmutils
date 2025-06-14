@@ -935,12 +935,36 @@ export async function preparePhase(
     const docs = Array.from(docsSet);
     const docsArgs = docs.flatMap((doc) => ['--docs', doc]);
 
-    const phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
+    // Read planning document if configured
+    let planningDocContent = '';
+    const gitRoot = (await getGitRoot()) || process.cwd();
+    if (config.paths?.planning) {
+      const planningPath = path.isAbsolute(config.paths.planning)
+        ? config.paths.planning
+        : path.join(gitRoot, config.paths.planning);
+      try {
+        const planningFile = Bun.file(planningPath);
+        if (await planningFile.exists()) {
+          planningDocContent = await planningFile.text();
+          log(chalk.blue('📋 Including planning document:'), path.relative(gitRoot, planningPath));
+        } else {
+          warn(`Planning document not found: ${planningPath}`);
+        }
+      } catch (err) {
+        warn(`Failed to read planning document: ${err as Error}`);
+      }
+    }
+
+    let phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
+    
+    // Add planning document content to the prompt if available
+    if (planningDocContent) {
+      phaseStepsPrompt += `\n\n# Planning Rules\n\n${planningDocContent}`;
+    }
 
     // 6. Invoke rmfilter programmatically
     let prompt: string;
     try {
-      const gitRoot = (await getGitRoot()) || process.cwd();
       prompt = await runRmfilterProgrammatically(
         [...rmfilterArgs, ...docsArgs, '--bare', '--instructions', phaseStepsPrompt],
         gitRoot,
