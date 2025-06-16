@@ -1,22 +1,7 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: MCP Server Mode
 goal: "Implement: MCP Server Mode"
-details: |-
-  Allow running as an MCP server. Tools should include:
-
-  - plan extraction from markdown
-  - generate prompts for task
-  - list all tasks, ready tasks, tasks upstream/downstream of a particular task 
-  - list details for a task
-  - get next task
-  - get next step/prompt in a task
-  - mark task done
-  - update plan for a task
-
-  Also expose the planning prompts as prompt resources.
-
-
-  Consider https://www.npmjs.com/package/fastmcp for the MCP server framework.
 id: 49
 status: pending
 priority: low
@@ -25,3 +10,21 @@ issue:
 createdAt: 2025-06-07T02:05:24.730Z
 updatedAt: 2025-06-07T07:26:21.250Z
 tasks: []
+---
+
+Allow running as an MCP server. Tools should include:
+
+- plan extraction from markdown
+- generate prompts for task
+- list all tasks, ready tasks, tasks upstream/downstream of a particular task 
+- list details for a task
+- get next task
+- get next step/prompt in a task
+- mark task done
+- update plan for a task
+- Get parent/siblings of a task
+
+Also expose the planning prompts as prompt resources.
+
+
+Consider https://www.npmjs.com/package/fastmcp for the MCP server framework.
