@@ -942,24 +942,16 @@ export async function preparePhase(
       const planningPath = path.isAbsolute(config.paths.planning)
         ? config.paths.planning
         : path.join(gitRoot, config.paths.planning);
-      try {
-        const planningFile = Bun.file(planningPath);
-        if (await planningFile.exists()) {
-          planningDocContent = await planningFile.text();
-          log(chalk.blue('📋 Including planning document:'), path.relative(gitRoot, planningPath));
-        } else {
-          warn(`Planning document not found: ${planningPath}`);
-        }
-      } catch (err) {
-        warn(`Failed to read planning document: ${err as Error}`);
-      }
+      const planningFile = Bun.file(planningPath);
+      planningDocContent = await planningFile.text();
+      log(chalk.blue('📋 Including planning document:'), path.relative(gitRoot, planningPath));
     }
 
     let phaseStepsPrompt = generatePhaseStepsPrompt(phaseGenCtx);
-    
+
     // Add planning document content to the prompt if available
     if (planningDocContent) {
-      phaseStepsPrompt += `\n\n# Planning Rules\n\n${planningDocContent}`;
+      phaseStepsPrompt += `\n\n## Planning Rules\n\n${planningDocContent}`;
     }
 
     // 6. Invoke rmfilter programmatically
