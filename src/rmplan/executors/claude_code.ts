@@ -234,7 +234,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Write the configuration to a file
       dynamicMcpConfigFile = path.join(tempMcpConfigDir, 'mcp-config.json');
-      await fs.writeFile(dynamicMcpConfigFile, JSON.stringify(mcpConfig, null, 2));
+      await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
     try {

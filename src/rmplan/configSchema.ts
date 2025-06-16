@@ -74,9 +74,7 @@ export const rmplanConfigSchema = z
         planning: z
           .string()
           .optional()
-          .describe(
-            'Path to a planning document file to include in all planning prompts'
-          ),
+          .describe('Path to a planning document file to include in all planning prompts'),
         trackingFile: z
           .string()
           .optional()

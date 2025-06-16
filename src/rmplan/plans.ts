@@ -131,8 +131,14 @@ export async function readAllPlans(
       if (entry.isDirectory()) {
         debugLog(`Found subdirectory: ${fullPath}`);
         await scanDirectory(fullPath);
-      } else if (entry.isFile() && (entry.name.endsWith('.yml') || entry.name.endsWith('.yaml'))) {
-        debugLog(`Found YAML file: ${fullPath}`);
+      } else if (
+        entry.isFile() &&
+        (entry.name.endsWith('.md') ||
+          entry.name.endsWith('.yml') ||
+          entry.name.endsWith('.yaml')) &&
+        !entry.name.endsWith('-agent-output.md')
+      ) {
+        debugLog(`Found plan file: ${fullPath}`);
         promises.push(readFile(fullPath));
       } else {
         debugLog(`Skipping non-YAML file: ${fullPath}`);
@@ -199,6 +205,25 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
       return potentialPath;
     } catch {
       // File doesn't exist in tasks directory
+    }
+  }
+
+  // If no extension provided, try with .md extension first (default), then .yml
+  if (!planArg.includes('/') && !planArg.includes('\\') && !planArg.includes('.')) {
+    // Try with .md extension first
+    const mdPath = path.join(tasksDir, `${planArg}.md`);
+    try {
+      await stat(mdPath);
+      return mdPath;
+    } catch {
+      // Try with .yml extension
+      const ymlPath = path.join(tasksDir, `${planArg}.yml`);
+      try {
+        await stat(ymlPath);
+        return ymlPath;
+      } catch {
+        // Neither exists, continue to ID lookup
+      }
     }
   }
 

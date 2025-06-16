@@ -365,11 +365,11 @@ export async function handleGenerateCommand(
 
       let outputPath: string;
       if (planFile) {
-        if (planFile.endsWith('.yml')) {
+        if (planFile.endsWith('.yml') || planFile.endsWith('.md')) {
           outputPath = planFile;
         } else {
           // Use the directory of the plan file for output
-          outputPath = path.join(path.dirname(planFile), path.basename(planFile, '.md'));
+          outputPath = path.join(path.dirname(planFile), path.basename(planFile));
         }
       } else {
         // Default to current directory with a generated name
