@@ -507,9 +507,9 @@ export async function extractMarkdownToYaml(
 
   // Write single-phase plan to output file
   const outputPath =
-    options.output.endsWith('.yml') || options.output.endsWith('.md')
+    options.output.endsWith('.yml') || options.output.endsWith('.plan.md')
       ? options.output
-      : `${options.output}.md`;
+      : `${options.output}.plan.md`;
   await writePlanFile(outputPath, validatedPlan);
 
   if (!quiet) {
@@ -540,7 +540,7 @@ export async function saveMultiPhaseYaml(
   // but we end up saving to a single file instead of a subdirectory.
   const actuallyMultiphase = parsedYaml.phases.length > 1;
   let outputDir = options.output;
-  if (options.output.endsWith('.yml') || options.output.endsWith('.md')) {
+  if (options.output.endsWith('.yml') || options.output.endsWith('.plan.md')) {
     outputDir = options.output.slice(0, options.output.lastIndexOf('.'));
   }
   const outputDirComponents = outputDir.split(path.sep);
@@ -753,8 +753,8 @@ export async function saveMultiPhaseYaml(
     );
 
     const phaseFilePath = actuallyMultiphase
-      ? path.join(outputDir, `phase-${phaseIndex}.md`)
-      : `${outputDir}.md`;
+      ? path.join(outputDir, `phase-${phaseIndex}.plan.md`)
+      : `${outputDir}.plan.md`;
 
     try {
       await writePlanFile(phaseFilePath, orderedContent as PlanSchema);
@@ -808,6 +808,6 @@ export async function saveMultiPhaseYaml(
   if (actuallyMultiphase) {
     return `Successfully created ${successfulWrites} phase files in ${outputDir}`;
   } else {
-    return `Successfully created plan file at ${outputDir}.md`;
+    return `Successfully created plan file at ${outputDir}.plan.md`;
   }
 }

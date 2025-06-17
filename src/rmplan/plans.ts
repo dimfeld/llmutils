@@ -133,10 +133,10 @@ export async function readAllPlans(
         await scanDirectory(fullPath);
       } else if (
         entry.isFile() &&
-        (entry.name.endsWith('.md') ||
+        (entry.name.endsWith('.plan.md') ||
           entry.name.endsWith('.yml') ||
           entry.name.endsWith('.yaml')) &&
-        !entry.name.endsWith('-agent-output.md')
+        !entry.name.endsWith('-agent-output.plan.md')
       ) {
         debugLog(`Found plan file: ${fullPath}`);
         promises.push(readFile(fullPath));
@@ -208,13 +208,13 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
     }
   }
 
-  // If no extension provided, try with .md extension first (default), then .yml
+  // If no extension provided, try with .plan.md extension first (default), then .yml
   if (!planArg.includes('/') && !planArg.includes('\\') && !planArg.includes('.')) {
-    // Try with .md extension first
-    const mdPath = path.join(tasksDir, `${planArg}.md`);
+    // Try with .plan.md extension first
+    const planMdPath = path.join(tasksDir, `${planArg}.plan.md`);
     try {
-      await stat(mdPath);
-      return mdPath;
+      await stat(planMdPath);
+      return planMdPath;
     } catch {
       // Try with .yml extension
       const ymlPath = path.join(tasksDir, `${planArg}.yml`);

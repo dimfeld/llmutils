@@ -43,7 +43,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   // Create filename using plan ID + slugified title
   const slugifiedTitle = slugify(planTitle);
-  const filename = `${planId}-${slugifiedTitle}.md`;
+  const filename = `${planId}-${slugifiedTitle}.plan.md`;
 
   // Construct the full path to the new plan file
   const filePath = path.join(targetDir, filename);

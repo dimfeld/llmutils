@@ -25,9 +25,14 @@ export async function handleExtractCommand(inputFile: string | undefined, option
 
   let outputPath = options.output;
   if (options.plan && !options.output) {
-    let name = options.plan.endsWith('.yml')
-      ? options.plan
-      : path.basename(options.plan, '.md') + '.yml';
+    let name;
+    if (options.plan.endsWith('.yml')) {
+      name = options.plan;
+    } else if (options.plan.endsWith('.plan.md')) {
+      name = path.basename(options.plan, '.plan.md') + '.yml';
+    } else {
+      name = path.basename(options.plan, '.md') + '.yml';
+    }
     outputPath = path.join(path.dirname(options.plan), name);
   }
 

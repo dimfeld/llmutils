@@ -133,7 +133,7 @@ export async function handleGenerateCommand(
       log(chalk.green('✓ Plan copied to clipboard'));
 
       // Generate suggested filename using Gemini Flash 2.0
-      let suggestedFilename = await generateSuggestedFilename(planText, '.md');
+      let suggestedFilename = await generateSuggestedFilename(planText, '.plan.md');
 
       // Prompt for save location
       let savePath = await input({
@@ -365,7 +365,7 @@ export async function handleGenerateCommand(
 
       let outputPath: string;
       if (planFile) {
-        if (planFile.endsWith('.yml') || planFile.endsWith('.md')) {
+        if (planFile.endsWith('.yml') || planFile.endsWith('.plan.md')) {
           outputPath = planFile;
         } else {
           // Use the directory of the plan file for output
