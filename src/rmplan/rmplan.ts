@@ -343,6 +343,16 @@ program
   });
 
 program
+  .command('validate')
+  .description('Validate all plan files for Zod schema errors and unknown keys')
+  .option('--dir <directory>', 'Directory to validate (defaults to configured task directory)')
+  .option('-v, --verbose', 'Show valid files as well as invalid ones')
+  .action(async (options, command) => {
+    const { handleValidateCommand } = await import('./commands/validate.js');
+    await handleValidateCommand(options, command).catch(handleCommandError);
+  });
+
+program
   .command('split <planArg>')
   .description(
     'Use LLM to intelligently split a large plan into smaller, phase-based plans with dependencies'

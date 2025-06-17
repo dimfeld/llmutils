@@ -216,10 +216,10 @@ export class ClaudeCodeExecutor implements Executor {
       unixSocketServer = await this.createPermissionSocketServer(unixSocketPath);
 
       // Resolve the absolute path to the permissions MCP script
-      const permissionsMcpPath = Bun.resolveSync(
-        './claude_code/permissions_mcp.ts',
-        import.meta.dir
-      );
+      let permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.ts');
+      if (!(await Bun.file(permissionsMcpPath).exists())) {
+        permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.js');
+      }
 
       // Construct the MCP configuration object with stdio transport
       const mcpConfig = {
