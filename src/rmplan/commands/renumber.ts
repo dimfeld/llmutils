@@ -41,7 +41,8 @@ export async function handleRenumber(options: any, command: any) {
   // We need to re-scan files because readAllPlans overwrites duplicates
   const filesInDir = await fs.promises.readdir(tasksDirectory, { recursive: true });
   const planFiles = filesInDir.filter(
-    (f) => typeof f === 'string' && (f.endsWith('.yml') || f.endsWith('.yaml'))
+    (f) =>
+      typeof f === 'string' && (f.endsWith('.plan.md') || f.endsWith('.yml') || f.endsWith('.yaml'))
   );
 
   // Build ID to files mapping by scanning files directly

@@ -133,7 +133,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       newPlans.push(newPlan);
 
       // Save the new plan
-      const newPlanPath = path.join(tasksDir, `${newPlanId}.yml`);
+      const newPlanPath = path.join(tasksDir, `${newPlanId}.plan.md`);
       await writePlanFile(newPlanPath, newPlan);
 
       // Clear cache so next generateNumericPlanId call gets updated max ID

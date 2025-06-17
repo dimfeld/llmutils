@@ -224,8 +224,10 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
   // Create stub plan using the shared utility function
   const stubPlan = createStubPlanFromIssue(issueData, newId);
 
-  // Generate filename from the suggested name but with .yml extension
-  const filename = issueData.suggestedFileName.replace(/\.md$/, '.yml');
+  // Generate filename from the suggested name but with .plan.md extension
+  const filename = issueData.suggestedFileName.endsWith('.plan.md')
+    ? issueData.suggestedFileName
+    : issueData.suggestedFileName.replace(/\.md$/, '.plan.md');
   const fullPath = path.join(tasksDir, filename);
 
   // Write the stub plan file

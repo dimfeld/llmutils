@@ -180,7 +180,7 @@ export async function getInstructionsFromGithubIssue(
   const plan = selected.join('\n\n');
 
   const suggestedFileName =
-    `issue-${data.issue.number}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase();
+    `issue-${data.issue.number}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.plan.md`.toLowerCase();
 
   return {
     suggestedFileName,
