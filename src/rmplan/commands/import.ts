@@ -227,7 +227,9 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
   // Generate filename from the suggested name but with .plan.md extension
   const filename = issueData.suggestedFileName.endsWith('.plan.md')
     ? issueData.suggestedFileName
-    : issueData.suggestedFileName.replace(/\.md$/, '.plan.md');
+    : issueData.suggestedFileName.endsWith('.md')
+      ? issueData.suggestedFileName.replace(/\.md$/, '.plan.md')
+      : `${issueData.suggestedFileName}.plan.md`;
   const fullPath = path.join(tasksDir, filename);
 
   // Write the stub plan file
