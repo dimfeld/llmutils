@@ -123,21 +123,12 @@ export async function readAllPlans(
 
   async function scanDirectory(dir: string) {
     debugLog(`Scanning directory: ${dir}`);
-    const entries = await readdir(dir, { withFileTypes: true });
+    const entries = await readdir(dir, { recursive: true });
 
     for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
+      const fullPath = join(dir, entry);
 
-      if (entry.isDirectory()) {
-        debugLog(`Found subdirectory: ${fullPath}`);
-        await scanDirectory(fullPath);
-      } else if (
-        entry.isFile() &&
-        (entry.name.endsWith('.plan.md') ||
-          entry.name.endsWith('.yml') ||
-          entry.name.endsWith('.yaml')) &&
-        !entry.name.endsWith('-agent-output.plan.md')
-      ) {
+      if (entry.endsWith('.plan.md') || entry.endsWith('.yml') || entry.endsWith('.yaml')) {
         debugLog(`Found plan file: ${fullPath}`);
         promises.push(readFile(fullPath));
       } else {
