@@ -27,11 +27,11 @@ export async function handleExtractCommand(inputFile: string | undefined, option
   if (options.plan && !options.output) {
     let name;
     if (options.plan.endsWith('.yml')) {
-      name = options.plan;
+      name = path.basename(options.plan, '.yml') + '.plan.md';
     } else if (options.plan.endsWith('.plan.md')) {
-      name = path.basename(options.plan, '.plan.md') + '.yml';
+      name = options.plan;
     } else {
-      name = path.basename(options.plan, '.md') + '.yml';
+      name = path.basename(options.plan, '.md') + '.plan.md';
     }
     outputPath = path.join(path.dirname(options.plan), name);
   }
@@ -45,9 +45,12 @@ export async function handleExtractCommand(inputFile: string | undefined, option
 
   // Check if output file already exists and is a stub plan
   let stubPlanData: PlanSchema | undefined;
-  const outputYmlPath = outputPath.endsWith('.yml') ? outputPath : `${outputPath}.yml`;
+  const outputPlanPath =
+    outputPath.endsWith('.plan.md') || outputPath.endsWith('.yml')
+      ? outputPath
+      : `${outputPath}.plan.md`;
   try {
-    const existingPlan = await readPlanFile(outputYmlPath);
+    const existingPlan = await readPlanFile(outputPlanPath);
     // Check if it's a stub plan (has structure but no tasks)
     if (existingPlan && (!existingPlan.tasks || existingPlan.tasks.length === 0)) {
       stubPlanData = existingPlan;
@@ -64,7 +67,7 @@ export async function handleExtractCommand(inputFile: string | undefined, option
     output: outputPath,
     projectId: options.projectId,
     issueUrls: options.issue ? [options.issue] : [],
-    stubPlan: stubPlanData ? { data: stubPlanData, path: outputYmlPath } : undefined,
+    stubPlan: stubPlanData ? { data: stubPlanData, path: outputPlanPath } : undefined,
   };
 
   await extractMarkdownToYaml(inputText, config, options.quiet ?? false, extractOptions);
