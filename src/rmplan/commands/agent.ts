@@ -435,6 +435,47 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   }
 }
 
+/**
+ * Find sibling plans (plans with the same parent) and categorize them by status
+ */
+async function findSiblingPlans(
+  currentPlanId: number,
+  parentId: number | undefined,
+  planDir: string
+): Promise<{
+  completed: Array<{ id: number; title: string; filename: string }>;
+  pending: Array<{ id: number; title: string; filename: string }>;
+}> {
+  if (!parentId) {
+    return { completed: [], pending: [] };
+  }
+
+  const { plans: allPlans } = await readAllPlans(planDir);
+  const siblings = { completed: [], pending: [] } as {
+    completed: Array<{ id: number; title: string; filename: string }>;
+    pending: Array<{ id: number; title: string; filename: string }>;
+  };
+
+  for (const [id, plan] of allPlans) {
+    // Skip current plan and plans without the same parent
+    if (id === currentPlanId || plan.parent !== parentId) continue;
+
+    const siblingInfo = {
+      id,
+      title: plan.title || `Plan ${id}`,
+      filename: path.join(planDir, `${id}.yml`),
+    };
+
+    if (plan.status === 'done') {
+      siblings.completed.push(siblingInfo);
+    } else {
+      siblings.pending.push(siblingInfo);
+    }
+  }
+
+  return siblings;
+}
+
 async function executeStubPlan({
   config,
   baseDir,
@@ -474,6 +515,12 @@ async function executeStubPlan({
     }
   };
 
+  // Add current plan context for the agent
+  const currentPlanFilename = path.basename(planFilePath);
+  directPrompt += `## Current Plan Context\n\n`;
+  directPrompt += `**Current Plan File:** ${currentPlanFilename}\n`;
+  directPrompt += `**Current Plan Title:** ${planData.title || 'Untitled Plan'}\n\n`;
+
   // Add parent plan information if available
   if (planData.parent) {
     const tasksDir = path.dirname(planFilePath);
@@ -481,7 +528,9 @@ async function executeStubPlan({
       const { plans: allPlans } = await readAllPlans(tasksDir);
       const parentPlan = allPlans.get(planData.parent);
       if (parentPlan) {
+        const parentPlanFilename = `${planData.parent}.yml`;
         directPrompt += `## Parent Plan Context\n\n`;
+        directPrompt += `**Parent Plan File:** ${parentPlanFilename}\n`;
         directPrompt += `**Parent Plan:** ${parentPlan.title || `Plan ${planData.parent}`} (ID: ${planData.parent})\n`;
         if (parentPlan.goal) {
           directPrompt += `**Parent Goal:** ${parentPlan.goal}\n`;
@@ -502,6 +551,30 @@ async function executeStubPlan({
         }
 
         directPrompt += `\n`;
+
+        // Add sibling plans information
+        const siblings = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
+
+        if (siblings.completed.length > 0 || siblings.pending.length > 0) {
+          directPrompt += `## Sibling Plans (Same Parent)\n\n`;
+          directPrompt += `These are other plans that are part of the same parent plan. Reference them for additional context about the overall project structure.\n\n`;
+
+          if (siblings.completed.length > 0) {
+            directPrompt += `### Completed Sibling Plans:\n`;
+            siblings.completed.forEach((sibling) => {
+              directPrompt += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+            });
+            directPrompt += `\n`;
+          }
+
+          if (siblings.pending.length > 0) {
+            directPrompt += `### Pending Sibling Plans:\n`;
+            siblings.pending.forEach((sibling) => {
+              directPrompt += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+            });
+            directPrompt += `\n`;
+          }
+        }
       }
     } catch (err) {
       warn(`Warning: Could not load parent plan ${planData.parent}: ${err as Error}`);

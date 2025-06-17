@@ -52,6 +52,47 @@ import { createModel } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './llm_utils/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 import { readAllPlans, readPlanFile, writePlanFile, type PlanSummary } from './plans.js';
+
+/**
+ * Find sibling plans (plans with the same parent) and categorize them by status
+ */
+async function findSiblingPlans(
+  currentPlanId: number,
+  parentId: number | undefined,
+  planDir: string
+): Promise<{
+  completed: Array<{ id: number; title: string; filename: string }>;
+  pending: Array<{ id: number; title: string; filename: string }>;
+}> {
+  if (!parentId) {
+    return { completed: [], pending: [] };
+  }
+
+  const { plans: allPlans } = await readAllPlans(planDir);
+  const siblings = { completed: [], pending: [] } as {
+    completed: Array<{ id: number; title: string; filename: string }>;
+    pending: Array<{ id: number; title: string; filename: string }>;
+  };
+
+  for (const [id, plan] of allPlans) {
+    // Skip current plan and plans without the same parent
+    if (id === currentPlanId || plan.parent !== parentId) continue;
+
+    const siblingInfo = {
+      id,
+      title: plan.title || `Plan ${id}`,
+      filename: path.join(planDir, `${id}.yml`),
+    };
+
+    if (plan.status === 'done') {
+      siblings.completed.push(siblingInfo);
+    } else {
+      siblings.pending.push(siblingInfo);
+    }
+  }
+
+  return siblings;
+}
 import * as clipboard from '../common/clipboard.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.js';
 import { waitForEnter } from '../common/terminal.js';
@@ -306,6 +347,10 @@ export async function prepareNextStep(
 
   const promptParts: string[] = [];
 
+  // Add current plan filename context
+  const currentPlanFilename = path.basename(planFile);
+  promptParts.push(`## Current Plan File: ${currentPlanFilename}\n`);
+
   if (planData.project?.goal) {
     promptParts.push(
       `# Project Goal: ${planData.project.goal}\n`,
@@ -324,6 +369,38 @@ export async function prepareNextStep(
     promptParts.push(
       `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
     );
+  }
+
+  // Add sibling plan context if there's a parent
+  if (planData.parent) {
+    const planDir = path.dirname(planFile);
+    try {
+      const siblings = await findSiblingPlans(planData.id || 0, planData.parent, planDir);
+
+      if (siblings.completed.length > 0 || siblings.pending.length > 0) {
+        promptParts.push('\n## Related Plans (Same Parent)\n');
+        promptParts.push(
+          'These plans are part of the same parent plan and can provide additional context:\n'
+        );
+
+        if (siblings.completed.length > 0) {
+          promptParts.push('### Completed Related Plans:');
+          siblings.completed.forEach((sibling) => {
+            promptParts.push(`- **${sibling.title}** (File: ${path.basename(sibling.filename)})`);
+          });
+        }
+
+        if (siblings.pending.length > 0) {
+          promptParts.push('\n### Pending Related Plans:');
+          siblings.pending.forEach((sibling) => {
+            promptParts.push(`- **${sibling.title}** (File: ${path.basename(sibling.filename)})`);
+          });
+        }
+        promptParts.push('');
+      }
+    } catch (err) {
+      warn(`Warning: Could not load sibling plans: ${err as Error}`);
+    }
   }
 
   promptParts.push(
@@ -1203,6 +1280,23 @@ async function gatherPhaseGenerationContext(
     // Extract current phase doc URLs
     const currentPhaseDocURLs = currentPhaseData.docs?.filter(isURL) || [];
 
+    // Get sibling plans if there's a parent
+    let siblingPlansInfo: PhaseGenerationContext['siblingPlansInfo'];
+    if (currentPhaseData.parent) {
+      try {
+        const siblings = await findSiblingPlans(
+          currentPhaseData.id || 0,
+          currentPhaseData.parent,
+          projectPlanDir
+        );
+        if (siblings.completed.length > 0 || siblings.pending.length > 0) {
+          siblingPlansInfo = siblings;
+        }
+      } catch (err) {
+        warn(`Warning: Could not load sibling plans: ${err as Error}`);
+      }
+    }
+
     // 5. Build and return the context object
     const context: PhaseGenerationContext = {
       overallProjectGoal,
@@ -1217,9 +1311,11 @@ async function gatherPhaseGenerationContext(
       })),
       previousPhasesInfo,
       parentPlanInfo,
+      ...(siblingPlansInfo && { siblingPlansInfo }),
       changedFilesFromDependencies: changedFilesExist,
       rmfilterArgsFromPlan,
       ...(currentPhaseDocURLs.length > 0 && { currentPhaseDocURLs }),
+      currentPlanFilename: path.basename(phaseFilePath),
     };
 
     return context;

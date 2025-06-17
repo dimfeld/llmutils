@@ -1,5 +1,6 @@
 import type { PlanSchema } from './planSchema.js';
 import yaml from 'yaml';
+import path from 'path';
 
 export const planExampleFormat = `
 title: A concise single-sentence title for the project plan
@@ -165,9 +166,14 @@ export interface PhaseGenerationContext {
     details: string;
     docURLs?: string[]; // URLs from parent plan docs
   }; // Info from parent plan
+  siblingPlansInfo?: {
+    completed: Array<{ id: number; title: string; filename: string }>;
+    pending: Array<{ id: number; title: string; filename: string }>;
+  }; // Info about sibling plans (same parent)
   changedFilesFromDependencies: string[]; // Concatenated list of changedFiles from completed dependencies
   rmfilterArgsFromPlan: string[]; // rmfilter args from the original plan/request
   currentPhaseDocURLs?: string[]; // URLs from current phase docs
+  currentPlanFilename?: string; // Current plan's filename
   // Potentially add baseBranch if needed
 }
 
@@ -351,6 +357,32 @@ ${context.changedFilesFromDependencies.join('\n')}
     parentPlanSection += '\n';
   }
 
+  // Build sibling plans section
+  let siblingPlansSection = '';
+  if (
+    context.siblingPlansInfo &&
+    (context.siblingPlansInfo.completed.length > 0 || context.siblingPlansInfo.pending.length > 0)
+  ) {
+    siblingPlansSection = `## Related Plans (Same Parent)\n\n`;
+    siblingPlansSection += `These plans are part of the same parent plan. Reference them for additional context about the overall project structure.\n\n`;
+
+    if (context.siblingPlansInfo.completed.length > 0) {
+      siblingPlansSection += `### Completed Related Plans:\n`;
+      context.siblingPlansInfo.completed.forEach((sibling) => {
+        siblingPlansSection += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+      });
+      siblingPlansSection += '\n';
+    }
+
+    if (context.siblingPlansInfo.pending.length > 0) {
+      siblingPlansSection += `### Pending Related Plans:\n`;
+      context.siblingPlansInfo.pending.forEach((sibling) => {
+        siblingPlansSection += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+      });
+      siblingPlansSection += '\n';
+    }
+  }
+
   // Build documentation URLs section for current phase
   let docURLsSection = '';
   if (context.currentPhaseDocURLs && context.currentPhaseDocURLs.length > 0) {
@@ -361,11 +393,17 @@ ${context.changedFilesFromDependencies.join('\n')}
     docURLsSection += '\n';
   }
 
+  // Add current plan filename if available
+  let currentPlanSection = '';
+  if (context.currentPlanFilename) {
+    currentPlanSection = `## Current Plan File: ${context.currentPlanFilename}\n\n`;
+  }
+
   return `# Phase Implementation Generation
 
 You are generating detailed implementation steps${hasProjectContext ? ' for a specific phase of a larger project' : ' for a project'}.
 
-${projectContextSection}${parentPlanSection}${previousPhasesSection}
+${currentPlanSection}${projectContextSection}${parentPlanSection}${siblingPlansSection}${previousPhasesSection}
 
 ## Current Phase Details
 
