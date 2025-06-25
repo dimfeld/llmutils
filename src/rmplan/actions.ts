@@ -52,47 +52,8 @@ import { createModel } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './llm_utils/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
 import { readAllPlans, readPlanFile, writePlanFile, type PlanSummary } from './plans.js';
+import { findSiblingPlans } from './context_helpers.js';
 
-/**
- * Find sibling plans (plans with the same parent) and categorize them by status
- */
-async function findSiblingPlans(
-  currentPlanId: number,
-  parentId: number | undefined,
-  tasksDir: string
-): Promise<{
-  completed: Array<{ id: number; title: string; filename: string }>;
-  pending: Array<{ id: number; title: string; filename: string }>;
-}> {
-  if (!parentId) {
-    return { completed: [], pending: [] };
-  }
-
-  const { plans: allPlans } = await readAllPlans(tasksDir);
-  const siblings = { completed: [], pending: [] } as {
-    completed: Array<{ id: number; title: string; filename: string }>;
-    pending: Array<{ id: number; title: string; filename: string }>;
-  };
-
-  for (const [id, plan] of allPlans) {
-    // Skip current plan and plans without the same parent
-    if (id === currentPlanId || plan.parent !== parentId) continue;
-
-    const siblingInfo = {
-      id,
-      title: plan.title || `Plan ${id}`,
-      filename: plan.filename,
-    };
-
-    if (plan.status === 'done') {
-      siblings.completed.push(siblingInfo);
-    } else {
-      siblings.pending.push(siblingInfo);
-    }
-  }
-
-  return siblings;
-}
 import * as clipboard from '../common/clipboard.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.js';
 import { waitForEnter } from '../common/terminal.js';

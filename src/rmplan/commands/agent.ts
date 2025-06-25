@@ -37,6 +37,7 @@ import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
+import { buildPlanContextPrompt } from '../context_helpers.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -383,6 +384,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           );
         }
 
+        // Add parent plan context and sibling plans information
+        const planContext = await buildPlanContextPrompt({
+          planData,
+          planFilePath: currentPlanFile,
+          baseDir: currentBaseDir,
+          config,
+          includeCurrentPlanContext: false, // Don't include current plan context since we're adding it separately
+        });
+        if (planContext) {
+          promptParts.push(planContext);
+        }
+
         // Add the task details
         promptParts.push(
           `## Task: ${actionableItem.task.title}\n`,
@@ -600,47 +613,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   }
 }
 
-/**
- * Find sibling plans (plans with the same parent) and categorize them by status
- */
-async function findSiblingPlans(
-  currentPlanId: number,
-  parentId: number | undefined,
-  tasksDir: string
-): Promise<{
-  completed: Array<{ id: number; title: string; filename: string }>;
-  pending: Array<{ id: number; title: string; filename: string }>;
-}> {
-  if (!parentId) {
-    return { completed: [], pending: [] };
-  }
-
-  const { plans: allPlans } = await readAllPlans(tasksDir);
-  const siblings = { completed: [], pending: [] } as {
-    completed: Array<{ id: number; title: string; filename: string }>;
-    pending: Array<{ id: number; title: string; filename: string }>;
-  };
-
-  for (const [id, plan] of allPlans) {
-    // Skip current plan and plans without the same parent
-    if (id === currentPlanId || plan.parent !== parentId) continue;
-
-    const siblingInfo = {
-      id,
-      title: plan.title || `Plan ${id}`,
-      filename: plan.filename,
-    };
-
-    if (plan.status === 'done') {
-      siblings.completed.push(siblingInfo);
-    } else {
-      siblings.pending.push(siblingInfo);
-    }
-  }
-
-  return siblings;
-}
-
 async function executeStubPlan({
   config,
   baseDir,
@@ -680,72 +652,15 @@ async function executeStubPlan({
     }
   };
 
-  // Add current plan context for the agent
-  const root = await getGitRoot(baseDir);
-  const currentPlanFilename = path.relative(root, planFilePath);
-  directPrompt += `## Current Plan Context\n\n`;
-  directPrompt += `**Current Plan File:** ${currentPlanFilename}\n`;
-  directPrompt += `**Current Plan Title:** ${planData.title || 'Untitled Plan'}\n\n`;
-
-  // Add parent plan information if available
-  if (planData.parent) {
-    try {
-      const tasksDir = await resolveTasksDir(config);
-      const { plans: allPlans } = await readAllPlans(tasksDir);
-      const parentPlan = allPlans.get(planData.parent);
-      if (parentPlan) {
-        const parentPlanFilename = path.relative(root, parentPlan.filename);
-        directPrompt += `## Parent Plan Context\n\n`;
-        directPrompt += `**Parent Plan File:** ${parentPlanFilename}\n`;
-        directPrompt += `**Parent Plan:** ${parentPlan.title || `Plan ${planData.parent}`} (ID: ${planData.parent})\n`;
-        if (parentPlan.goal) {
-          directPrompt += `**Parent Goal:** ${parentPlan.goal}\n`;
-        }
-        if (parentPlan.details) {
-          directPrompt += `**Parent Details:** ${parentPlan.details}\n`;
-        }
-
-        // Check parent plan's docs for URLs
-        if (parentPlan.docs && parentPlan.docs.length > 0) {
-          const parentURLs = parentPlan.docs.filter(isURL);
-          if (parentURLs.length > 0) {
-            directPrompt += `**Parent Documentation URLs:**\n`;
-            parentURLs.forEach((url) => {
-              directPrompt += `- ${url}\n`;
-            });
-          }
-        }
-
-        directPrompt += `\n`;
-
-        // Add sibling plans information
-        const siblings = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
-
-        if (siblings.completed.length > 0 || siblings.pending.length > 0) {
-          directPrompt += `## Sibling Plans (Same Parent)\n\n`;
-          directPrompt += `These are other plans that are part of the same parent plan. Reference them for additional context about the overall project structure.\n\n`;
-
-          if (siblings.completed.length > 0) {
-            directPrompt += `### Completed Sibling Plans:\n`;
-            siblings.completed.forEach((sibling) => {
-              directPrompt += `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})\n`;
-            });
-            directPrompt += `\n`;
-          }
-
-          if (siblings.pending.length > 0) {
-            directPrompt += `### Pending Sibling Plans:\n`;
-            siblings.pending.forEach((sibling) => {
-              directPrompt += `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})\n`;
-            });
-            directPrompt += `\n`;
-          }
-        }
-      }
-    } catch (err) {
-      warn(`Warning: Could not load parent plan ${planData.parent}: ${err as Error}`);
-    }
-  }
+  // Add parent plan context and sibling plans information
+  const planContext = await buildPlanContextPrompt({
+    planData,
+    planFilePath,
+    baseDir,
+    config,
+    includeCurrentPlanContext: true,
+  });
+  directPrompt += planContext;
 
   if (planData.rmfilter?.length) {
     directPrompt += `## Potential file paths to look at\n\n`;
