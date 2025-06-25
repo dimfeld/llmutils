@@ -41,7 +41,7 @@ import { commitAll, quiet, logSpawn } from '../common/process.js';
 import { getGitRoot } from '../common/git.js';
 import { findFilesCore, type RmfindOptions } from '../rmfind/core.js';
 import { Extractor } from '../treesitter/extract.js';
-import type { PostApplyCommand, RmplanConfig } from './configSchema.js';
+import { resolveTasksDir, type PostApplyCommand, type RmplanConfig } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
 import { fixYaml } from './fix_yaml.js';
@@ -59,7 +59,7 @@ import { readAllPlans, readPlanFile, writePlanFile, type PlanSummary } from './p
 async function findSiblingPlans(
   currentPlanId: number,
   parentId: number | undefined,
-  planDir: string
+  tasksDir: string
 ): Promise<{
   completed: Array<{ id: number; title: string; filename: string }>;
   pending: Array<{ id: number; title: string; filename: string }>;
@@ -68,7 +68,7 @@ async function findSiblingPlans(
     return { completed: [], pending: [] };
   }
 
-  const { plans: allPlans } = await readAllPlans(planDir);
+  const { plans: allPlans } = await readAllPlans(tasksDir);
   const siblings = { completed: [], pending: [] } as {
     completed: Array<{ id: number; title: string; filename: string }>;
     pending: Array<{ id: number; title: string; filename: string }>;
@@ -81,7 +81,7 @@ async function findSiblingPlans(
     const siblingInfo = {
       id,
       title: plan.title || `Plan ${id}`,
-      filename: path.join(planDir, `${id}.yml`),
+      filename: plan.filename,
     };
 
     if (plan.status === 'done') {
@@ -348,7 +348,8 @@ export async function prepareNextStep(
   const promptParts: string[] = [];
 
   // Add current plan filename context
-  const currentPlanFilename = path.basename(planFile);
+  const root = await getGitRoot();
+  const currentPlanFilename = path.relative(root, planFile);
   promptParts.push(`## Current Plan File: ${currentPlanFilename}\n`);
 
   if (planData.project?.goal) {
@@ -373,33 +374,33 @@ export async function prepareNextStep(
 
   // Add sibling plan context if there's a parent
   if (planData.parent) {
-    const planDir = path.dirname(planFile);
-    try {
-      const siblings = await findSiblingPlans(planData.id || 0, planData.parent, planDir);
+    const tasksDir = await resolveTasksDir(config);
+    const siblings = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
 
-      if (siblings.completed.length > 0 || siblings.pending.length > 0) {
-        promptParts.push('\n## Related Plans (Same Parent)\n');
-        promptParts.push(
-          'These plans are part of the same parent plan and can provide additional context:\n'
-        );
+    if (siblings.completed.length > 0 || siblings.pending.length > 0) {
+      promptParts.push('\n## Related Plans (Same Parent)\n');
+      promptParts.push(
+        'These plans are part of the same parent plan and can provide additional context:\n'
+      );
 
-        if (siblings.completed.length > 0) {
-          promptParts.push('### Completed Related Plans:');
-          siblings.completed.forEach((sibling) => {
-            promptParts.push(`- **${sibling.title}** (File: ${path.basename(sibling.filename)})`);
-          });
-        }
-
-        if (siblings.pending.length > 0) {
-          promptParts.push('\n### Pending Related Plans:');
-          siblings.pending.forEach((sibling) => {
-            promptParts.push(`- **${sibling.title}** (File: ${path.basename(sibling.filename)})`);
-          });
-        }
-        promptParts.push('');
+      if (siblings.completed.length > 0) {
+        promptParts.push('### Completed Related Plans:');
+        siblings.completed.forEach((sibling) => {
+          promptParts.push(
+            `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})`
+          );
+        });
       }
-    } catch (err) {
-      warn(`Warning: Could not load sibling plans: ${err as Error}`);
+
+      if (siblings.pending.length > 0) {
+        promptParts.push('\n### Pending Related Plans:');
+        siblings.pending.forEach((sibling) => {
+          promptParts.push(
+            `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})`
+          );
+        });
+      }
+      promptParts.push('');
     }
   }
 

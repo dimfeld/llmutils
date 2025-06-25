@@ -35,7 +35,7 @@ import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
 import type { PlanSchema } from '../planSchema.js';
-import type { RmplanConfig } from '../configSchema.js';
+import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -441,7 +441,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 async function findSiblingPlans(
   currentPlanId: number,
   parentId: number | undefined,
-  planDir: string
+  tasksDir: string
 ): Promise<{
   completed: Array<{ id: number; title: string; filename: string }>;
   pending: Array<{ id: number; title: string; filename: string }>;
@@ -450,7 +450,7 @@ async function findSiblingPlans(
     return { completed: [], pending: [] };
   }
 
-  const { plans: allPlans } = await readAllPlans(planDir);
+  const { plans: allPlans } = await readAllPlans(tasksDir);
   const siblings = { completed: [], pending: [] } as {
     completed: Array<{ id: number; title: string; filename: string }>;
     pending: Array<{ id: number; title: string; filename: string }>;
@@ -463,7 +463,7 @@ async function findSiblingPlans(
     const siblingInfo = {
       id,
       title: plan.title || `Plan ${id}`,
-      filename: path.join(planDir, `${id}.yml`),
+      filename: plan.filename,
     };
 
     if (plan.status === 'done') {
@@ -516,19 +516,20 @@ async function executeStubPlan({
   };
 
   // Add current plan context for the agent
-  const currentPlanFilename = path.basename(planFilePath);
+  const root = await getGitRoot(baseDir);
+  const currentPlanFilename = path.relative(root, planFilePath);
   directPrompt += `## Current Plan Context\n\n`;
   directPrompt += `**Current Plan File:** ${currentPlanFilename}\n`;
   directPrompt += `**Current Plan Title:** ${planData.title || 'Untitled Plan'}\n\n`;
 
   // Add parent plan information if available
   if (planData.parent) {
-    const tasksDir = path.dirname(planFilePath);
     try {
+      const tasksDir = await resolveTasksDir(config);
       const { plans: allPlans } = await readAllPlans(tasksDir);
       const parentPlan = allPlans.get(planData.parent);
       if (parentPlan) {
-        const parentPlanFilename = `${planData.parent}.yml`;
+        const parentPlanFilename = path.relative(root, parentPlan.filename);
         directPrompt += `## Parent Plan Context\n\n`;
         directPrompt += `**Parent Plan File:** ${parentPlanFilename}\n`;
         directPrompt += `**Parent Plan:** ${parentPlan.title || `Plan ${planData.parent}`} (ID: ${planData.parent})\n`;
@@ -562,7 +563,7 @@ async function executeStubPlan({
           if (siblings.completed.length > 0) {
             directPrompt += `### Completed Sibling Plans:\n`;
             siblings.completed.forEach((sibling) => {
-              directPrompt += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+              directPrompt += `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})\n`;
             });
             directPrompt += `\n`;
           }
@@ -570,7 +571,7 @@ async function executeStubPlan({
           if (siblings.pending.length > 0) {
             directPrompt += `### Pending Sibling Plans:\n`;
             siblings.pending.forEach((sibling) => {
-              directPrompt += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+              directPrompt += `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})\n`;
             });
             directPrompt += `\n`;
           }
@@ -579,6 +580,16 @@ async function executeStubPlan({
     } catch (err) {
       warn(`Warning: Could not load parent plan ${planData.parent}: ${err as Error}`);
     }
+  }
+
+  if (planData.rmfilter?.length) {
+    directPrompt += `## Potential file paths to look at\n\n`;
+    planData.rmfilter.forEach((file) => {
+      if (!file.startsWith('-')) {
+        directPrompt += `- ${file}\n`;
+      }
+    });
+    directPrompt += `\n`;
   }
 
   // Add current plan's doc URLs if available
