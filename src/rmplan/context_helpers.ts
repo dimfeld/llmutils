@@ -66,7 +66,7 @@ interface PlanContextOptions {
 /**
  * Helper function to check if a string is a URL
  */
-function isURL(str: string): boolean {
+export function isURL(str: string): boolean {
   try {
     new URL(str);
     return true;

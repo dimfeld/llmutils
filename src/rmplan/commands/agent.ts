@@ -23,6 +23,7 @@ import {
   resolvePlanFile,
   setPlanStatus,
   writePlanFile,
+  clearPlanCache,
 } from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import {
@@ -37,7 +38,9 @@ import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
-import { buildPlanContextPrompt } from '../context_helpers.js';
+import { buildPlanContextPrompt, isURL } from '../context_helpers.js';
+import { buildExecutionPrompt } from '../prompt_builder.js';
+import chalk from 'chalk';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -360,69 +363,20 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           log(`Description: ${actionableItem.task.description}`);
         }
 
-        // Construct the prompt for the simple task
-        const promptParts: string[] = [];
-
-        // Add project-level context
-        if (planData.project?.goal) {
-          promptParts.push(
-            `# Project Goal: ${planData.project.goal}\n`,
-            'These instructions define a particular task of a feature implementation for this project'
-          );
-
-          if (planData.project.details) {
-            promptParts.push(`## Project Details:\n\n${planData.project.details}\n`);
-          }
-
-          promptParts.push(
-            `# Current Phase Goal: ${planData.goal}\n\n## Phase Details:\n\n${planData.details}\n`
-          );
-        } else {
-          // No project-level context, use phase as top-level
-          promptParts.push(
-            `# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`
-          );
-        }
-
-        // Add parent plan context and sibling plans information
-        const planContext = await buildPlanContextPrompt({
+        // Build the prompt for the simple task using the unified function
+        const taskPrompt = await buildExecutionPrompt({
           planData,
           planFilePath: currentPlanFile,
           baseDir: currentBaseDir,
           config,
-          includeCurrentPlanContext: false, // Don't include current plan context since we're adding it separately
+          task: {
+            title: actionableItem.task.title,
+            description: actionableItem.task.description,
+            files: actionableItem.task.files,
+          },
+          filePathPrefix: executor.filePathPrefix,
+          includeCurrentPlanContext: false, // Don't include current plan context since it's already in project context
         });
-        if (planContext) {
-          promptParts.push(planContext);
-        }
-
-        // Add the task details
-        promptParts.push(
-          `## Task: ${actionableItem.task.title}\n`,
-          `Description: ${actionableItem.task.description || 'No description provided'}`
-        );
-
-        // Add relevant files if available
-        if (actionableItem.task.files && actionableItem.task.files.length > 0) {
-          promptParts.push(
-            '\n## Relevant Files\n\nThese are relevant files for this task. If you think additional files are relevant, you can update them as well.'
-          );
-
-          const gitRoot = await getGitRoot(currentBaseDir);
-          const filePrefix = executor.filePathPrefix || '';
-
-          // Strip parenthetical comments from filenames
-          const cleanFiles = actionableItem.task.files.map((file) =>
-            file.replace(/\s*\([^)]*\)\s*$/, '').trim()
-          );
-
-          cleanFiles.forEach((file) => {
-            const relativePath = path.isAbsolute(file) ? path.relative(gitRoot, file) : file;
-            promptParts.push(`- ${filePrefix}${relativePath}`);
-          });
-        }
-
-        const taskPrompt = promptParts.join('\n');
 
         try {
           log(boldMarkdownHeaders('\n## Execution\n'));
@@ -633,56 +587,15 @@ async function executeStubPlan({
   planData.updatedAt = new Date().toISOString();
   await writePlanFile(planFilePath, planData);
 
-  // Construct single prompt from goal and details
-  let directPrompt = '';
-  if (planData.goal) {
-    directPrompt += `# Goal\n\n${planData.goal}\n\n`;
-  }
-  if (planData.details) {
-    directPrompt += `## Details\n\n${planData.details}\n\n`;
-  }
-
-  // Helper function to check if a string is a URL
-  const isURL = (str: string): boolean => {
-    try {
-      new URL(str);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  // Add parent plan context and sibling plans information
-  const planContext = await buildPlanContextPrompt({
+  // Build execution prompt using the unified function
+  const directPrompt = await buildExecutionPrompt({
     planData,
     planFilePath,
     baseDir,
     config,
+    filePathPrefix: executor.filePathPrefix,
     includeCurrentPlanContext: true,
   });
-  directPrompt += planContext;
-
-  if (planData.rmfilter?.length) {
-    directPrompt += `## Potential file paths to look at\n\n`;
-    planData.rmfilter.forEach((file) => {
-      if (!file.startsWith('-')) {
-        directPrompt += `- ${file}\n`;
-      }
-    });
-    directPrompt += `\n`;
-  }
-
-  // Add current plan's doc URLs if available
-  if (planData.docs && planData.docs.length > 0) {
-    const docURLs = planData.docs.filter(isURL);
-    if (docURLs.length > 0) {
-      directPrompt += `## Documentation URLs\n\n`;
-      docURLs.forEach((url) => {
-        directPrompt += `- ${url}\n`;
-      });
-      directPrompt += `\n`;
-    }
-  }
 
   if (!directPrompt.trim()) {
     throw new Error('Plan has no goal or details to execute directly');
@@ -709,6 +622,11 @@ async function executeStubPlan({
   // Mark plan as complete only if no error occurred
   await setPlanStatus(planFilePath, 'done');
   log('Plan executed directly and marked as complete!');
+  
+  // Check if parent plan should be marked done
+  if (planData.parent) {
+    await checkAndMarkParentDone(planData.parent, config, baseDir);
+  }
 
   // Check if commit was requested
   if (commit) {
@@ -720,6 +638,64 @@ async function executeStubPlan({
       log('Changes committed successfully');
     } else {
       throw new Error('Commit failed');
+    }
+  }
+}
+
+/**
+ * Checks if a parent plan's children are all complete and marks the parent as done if so.
+ * This function is duplicated here to avoid circular dependencies with actions.ts
+ */
+async function checkAndMarkParentDone(
+  parentId: number,
+  config: RmplanConfig,
+  baseDir?: string
+): Promise<void> {
+  const tasksDir = await resolveTasksDir(config);
+  // Force re-read to get updated statuses
+  clearPlanCache();
+  const { plans: allPlans } = await readAllPlans(tasksDir);
+  
+  // Get the parent plan
+  const parentPlan = allPlans.get(parentId);
+  if (!parentPlan) {
+    warn(`Parent plan with ID ${parentId} not found`);
+    return;
+  }
+  
+  // If parent is already done, nothing to do
+  if (parentPlan.status === 'done') {
+    return;
+  }
+  
+  // Find all children of this parent
+  const children = Array.from(allPlans.values()).filter(plan => plan.parent === parentId);
+  
+  // Check if all children are done
+  const allChildrenDone = children.every(child => child.status === 'done');
+  
+  if (allChildrenDone && children.length > 0) {
+    // Mark parent as done
+    parentPlan.status = 'done';
+    parentPlan.updatedAt = new Date().toISOString();
+    
+    // Update changed files from children
+    const allChangedFiles = new Set<string>();
+    for (const child of children) {
+      if (child.changedFiles) {
+        child.changedFiles.forEach(file => allChangedFiles.add(file));
+      }
+    }
+    if (allChangedFiles.size > 0) {
+      parentPlan.changedFiles = Array.from(allChangedFiles);
+    }
+    
+    await writePlanFile(parentPlan.filename, parentPlan);
+    log(chalk.green(`✓ Parent plan "${parentPlan.title}" marked as complete (all children done)`));
+    
+    // Recursively check if this parent has a parent
+    if (parentPlan.parent) {
+      await checkAndMarkParentDone(parentPlan.parent, config, baseDir);
     }
   }
 }
