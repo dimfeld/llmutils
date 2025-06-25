@@ -198,9 +198,11 @@ describe('rmplanAgent - Direct Execution Flow', () => {
     });
 
     // Verify executor was called with correctly formatted prompt
-    expect(executorExecuteSpy).toHaveBeenCalledWith(
+    expect(executorExecuteSpy).toHaveBeenCalled();
+    expect(executorExecuteSpy.mock.calls[0][0]).toInclude(
       '# Goal\n\nImplement a simple feature\n\n## Details\n\nAdd a new function that returns hello world\n\n'
     );
+    expect(executorExecuteSpy.mock.calls[0][0]).toInclude(stubPlanFile);
 
     // Verify plan was marked as done
     expect(setPlanStatusSpy).toHaveBeenCalledWith(stubPlanFile, 'done');

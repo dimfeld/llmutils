@@ -98,8 +98,8 @@ describe('handlePromoteCommand', () => {
     // Promote the second task (1.2)
     await handlePromoteCommand(['1.2'], {});
 
-    // Check that the new plan file was created (should be 2.yml)
-    const newPlanPath = path.join(tasksDir, '2.yml');
+    // Check that the new plan file was created (should be 2.plan.md)
+    const newPlanPath = path.join(tasksDir, '2.plan.md');
     const newPlanExists = await fs
       .access(newPlanPath)
       .then(() => true)
@@ -167,10 +167,10 @@ describe('handlePromoteCommand', () => {
     // Promote tasks 2-4 (1.2-4)
     await handlePromoteCommand(['1.2-4'], {});
 
-    // Check that three new plan files were created (2.yml, 3.yml, 4.yml)
-    const plan2Path = path.join(tasksDir, '2.yml');
-    const plan3Path = path.join(tasksDir, '3.yml');
-    const plan4Path = path.join(tasksDir, '4.yml');
+    // Check that three new plan files were created (2.plan.md, 3.plan.md, 4.plan.md)
+    const plan2Path = path.join(tasksDir, '2.plan.md');
+    const plan3Path = path.join(tasksDir, '3.plan.md');
+    const plan4Path = path.join(tasksDir, '4.plan.md');
 
     const plan2Exists = await fs
       .access(plan2Path)
@@ -259,10 +259,10 @@ describe('handlePromoteCommand', () => {
     // Promote all tasks (1.1-3)
     await handlePromoteCommand(['1.1-3'], {});
 
-    // Check that three new plan files were created (2.yml, 3.yml, 4.yml)
-    const plan2Path = path.join(tasksDir, '2.yml');
-    const plan3Path = path.join(tasksDir, '3.yml');
-    const plan4Path = path.join(tasksDir, '4.yml');
+    // Check that three new plan files were created (2.plan.md, 3.plan.md, 4.plan.md)
+    const plan2Path = path.join(tasksDir, '2.plan.md');
+    const plan3Path = path.join(tasksDir, '3.plan.md');
+    const plan4Path = path.join(tasksDir, '4.plan.md');
 
     const plan2Exists = await fs
       .access(plan2Path)
@@ -369,9 +369,9 @@ describe('handlePromoteCommand', () => {
     // Promote task 2 from plan 1 and task 1 from plan 2 (1.2 2.1)
     await handlePromoteCommand(['1.2', '2.1'], {});
 
-    // Check that two new plan files were created (3.yml, 4.yml)
-    const plan3Path = path.join(tasksDir, '3.yml');
-    const plan4Path = path.join(tasksDir, '4.yml');
+    // Check that two new plan files were created (3.plan.md, 4.plan.md)
+    const plan3Path = path.join(tasksDir, '3.plan.md');
+    const plan4Path = path.join(tasksDir, '4.plan.md');
 
     const plan3Exists = await fs
       .access(plan3Path)

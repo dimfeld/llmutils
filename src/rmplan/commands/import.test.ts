@@ -418,7 +418,7 @@ describe('handleImportCommand', () => {
     expect(writePlanFile).toHaveBeenCalled();
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
 
-    expect(filePath).toBe('/test/git/root/tasks/issue-123-test-issue.yml');
+    expect(filePath).toBe('/test/git/root/tasks/issue-123-test-issue.plan.md');
     expect(planData).toMatchObject({
       id: 6, // maxId + 1
       title: 'Test Issue',

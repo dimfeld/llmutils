@@ -39,8 +39,8 @@ describe('rmplan add command', () => {
     // Check output mentions creation
     expect(result).toContain('Created plan stub:');
 
-    // The file should be named 1-test-title.yml since no plans exist
-    const planPath = path.join(tasksDir, '1-test-title.yml');
+    // The file should be named 1-test-title.plan.md since no plans exist
+    const planPath = path.join(tasksDir, '1-test-title.plan.md');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -98,8 +98,8 @@ describe('rmplan add command', () => {
         .cwd(tempDir)
         .text();
 
-    // The file should be named 101-new-plan-title.yml (max ID was 100)
-    const planPath = path.join(tasksDir, '101-new-plan-title.yml');
+    // The file should be named 101-new-plan-title.plan.md (max ID was 100)
+    const planPath = path.join(tasksDir, '101-new-plan-title.plan.md');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -152,8 +152,8 @@ describe('rmplan add command', () => {
       .cwd(tempDir)
       .text();
 
-    // The file should be named 6-another-plan.yml (max numeric ID was 5)
-    const planPath = path.join(tasksDir, '6-another-plan.yml');
+    // The file should be named 6-another-plan.plan.md (max numeric ID was 5)
+    const planPath = path.join(tasksDir, '6-another-plan.plan.md');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -173,8 +173,8 @@ describe('rmplan add command', () => {
       .cwd(tempDir)
       .text();
 
-    // The file should be named 1-this-is-a-multi-word-title.yml
-    const planPath = path.join(tasksDir, '1-this-is-a-multi-word-title.yml');
+    // The file should be named 1-this-is-a-multi-word-title.plan.md
+    const planPath = path.join(tasksDir, '1-this-is-a-multi-word-title.plan.md');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -227,8 +227,8 @@ describe('rmplan add command', () => {
       .cwd(tempDir)
       .text();
 
-    // The file should be named 3-plan-with-dependencies.yml
-    const planPath = path.join(tasksDir, '3-plan-with-dependencies.yml');
+    // The file should be named 3-plan-with-dependencies.plan.md
+    const planPath = path.join(tasksDir, '3-plan-with-dependencies.plan.md');
     expect(
       await fs.access(planPath).then(
         () => true,
@@ -279,8 +279,8 @@ describe('rmplan add command', () => {
     expect(result).toContain('Created plan stub:');
     expect(result).toContain('Updated parent plan 1 to include dependency on 2');
 
-    // The child file should be named 2-child-plan.yml
-    const childPlanPath = path.join(tasksDir, '2-child-plan.yml');
+    // The child file should be named 2-child-plan.plan.md
+    const childPlanPath = path.join(tasksDir, '2-child-plan.plan.md');
     expect(
       await fs.access(childPlanPath).then(
         () => true,

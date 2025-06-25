@@ -49,10 +49,10 @@ describe('rmplan CLI integration tests', () => {
     // Check that file was created
     const planFiles = await fs.readdir(tasksDir);
     expect(planFiles).toHaveLength(1);
-    expect(planFiles[0]).toBe('1-integration-test-plan.yml');
+    expect(planFiles[0]).toBe('1-integration-test-plan.plan.md');
 
     // Verify plan content
-    const plan = await readPlanFile(path.join(tasksDir, '1-integration-test-plan.yml'));
+    const plan = await readPlanFile(path.join(tasksDir, '1-integration-test-plan.plan.md'));
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Integration Test Plan');
   });
@@ -259,7 +259,7 @@ describe('rmplan CLI integration tests', () => {
     expect(result).toContain('Created plan stub:');
 
     // Verify the plan has dependencies and priority
-    const plan = await readPlanFile(path.join(tasksDir, '2-dependent-plan.yml'));
+    const plan = await readPlanFile(path.join(tasksDir, '2-dependent-plan.plan.md'));
     expect(plan.id).toBe(2);
     expect(plan.dependencies).toEqual([1, 3]);
     expect(plan.priority).toBe('high');
