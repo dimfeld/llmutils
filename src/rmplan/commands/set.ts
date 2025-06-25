@@ -105,7 +105,7 @@ export async function handleSetCommand(
 
   // Update rmfilter
   if (options.rmfilter && options.rmfilter.length > 0) {
-    plan.rmfilter = options.rmfilter;
+    plan.rmfilter = Array.from(new Set([...(plan.rmfilter || []), ...options.rmfilter])).sort();
     modified = true;
     log(`Updated rmfilter patterns`);
   }
