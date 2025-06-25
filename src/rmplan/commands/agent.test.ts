@@ -28,6 +28,7 @@ const buildExecutorAndLogSpy = mock(() => ({
 const preparePhase = mock(async () => {});
 const setPlanStatusSpy = mock(async () => {});
 const findPendingTaskSpy = mock(() => null); // Return null to indicate no more tasks
+const findNextActionableItemSpy = mock(() => null); // Return null to indicate no more tasks
 const prepareNextStepSpy = mock(async () => null);
 const markStepDoneSpy = mock(async () => ({ message: 'Done', planComplete: true }));
 
@@ -58,6 +59,7 @@ describe('rmplanAgent - Direct Execution Flow', () => {
     openLogFileSpy.mockClear();
     closeLogFileSpy.mockClear();
     findPendingTaskSpy.mockClear();
+    findNextActionableItemSpy.mockClear();
     prepareNextStepSpy.mockClear();
     markStepDoneSpy.mockClear();
 
@@ -111,8 +113,10 @@ describe('rmplanAgent - Direct Execution Flow', () => {
     await moduleMocker.mock('../actions.js', () => ({
       preparePhase,
       findPendingTask: findPendingTaskSpy,
+      findNextActionableItem: findNextActionableItemSpy,
       prepareNextStep: prepareNextStepSpy,
       markStepDone: markStepDoneSpy,
+      markTaskDone: mock(async () => ({ message: 'Done', planComplete: true })),
       executePostApplyCommand: mock(async () => true),
     }));
 
@@ -207,15 +211,14 @@ describe('rmplanAgent - Direct Execution Flow', () => {
       ],
     });
 
-    // Verify that executeStubPlan logic was NOT triggered (since this is a plan with tasks)
-    expect(executorExecuteSpy).not.toHaveBeenCalled();
-    expect(setPlanStatusSpy).not.toHaveBeenCalled();
-
-    // Verify preparePhase was NOT called
+    // Verify preparePhase was NOT called (since user chose direct)
     expect(preparePhase).not.toHaveBeenCalled();
 
     // Verify the main execution loop was entered
-    expect(findPendingTaskSpy).toHaveBeenCalled();
+    expect(findNextActionableItemSpy).toHaveBeenCalled();
+
+    // Since findNextActionableItemSpy returns null, no execution should happen
+    expect(executorExecuteSpy).not.toHaveBeenCalled();
   });
 
   test('interactive "generate steps" flow', async () => {
@@ -240,9 +243,11 @@ describe('rmplanAgent - Direct Execution Flow', () => {
       }
     );
 
-    // Verify direct execution logic was not triggered
+    // Verify the main execution loop was entered after preparePhase
+    expect(findNextActionableItemSpy).toHaveBeenCalled();
+
+    // Since findNextActionableItemSpy returns null, no execution should happen
     expect(executorExecuteSpy).not.toHaveBeenCalled();
-    expect(setPlanStatusSpy).not.toHaveBeenCalled();
   });
 
   test('non-interactive mode defaults to generate steps', async () => {
@@ -264,8 +269,10 @@ describe('rmplanAgent - Direct Execution Flow', () => {
       }
     );
 
-    // Verify direct execution logic was not triggered
+    // Verify the main execution loop was entered after preparePhase
+    expect(findNextActionableItemSpy).toHaveBeenCalled();
+
+    // Since findNextActionableItemSpy returns null, no execution should happen
     expect(executorExecuteSpy).not.toHaveBeenCalled();
-    expect(setPlanStatusSpy).not.toHaveBeenCalled();
   });
 });
