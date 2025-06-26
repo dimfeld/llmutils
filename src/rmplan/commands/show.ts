@@ -259,7 +259,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
   // Display rmfilter args if present
   if (plan.rmfilter && plan.rmfilter.length > 0) {
-    log('\n' + chalk.bold('RmFilter Arguments:'));
+    log('\n' + chalk.bold('rmfilter Arguments:'));
     log('─'.repeat(60));
     log(`  ${plan.rmfilter.join(' ')}`);
   }
