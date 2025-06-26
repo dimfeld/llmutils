@@ -1,0 +1,42 @@
+---
+title: API Performance Optimization
+goal: Improve API response times by 50%
+id: 102
+status: in_progress
+priority: urgent
+parent: 100
+assignedTo: backend-team
+pullRequest:
+  - https://github.com/example/repo/pull/123
+changedFiles:
+  - src/api/routes/users.ts
+  - src/api/middleware/cache.ts
+tasks:
+  - title: Implement response caching
+    description: Add Redis caching layer for frequently accessed endpoints
+    files:
+      - src/api/middleware/cache.ts
+      - src/config/redis.ts
+    done: true
+    steps:
+      - prompt: Set up Redis connection and configuration
+        done: true
+      - prompt: Create caching middleware with TTL support
+        done: true
+      - prompt: Apply caching to user and product endpoints
+        done: true
+  - title: Optimize database queries
+    description: Reduce N+1 queries and add proper indexing
+    files:
+      - src/db/queries/*.ts
+    done: false
+    steps:
+      - prompt: Audit existing queries for N+1 problems
+        done: true
+      - prompt: Add database indexes for common query patterns
+        done: false
+      - prompt: Implement query result batching
+        done: false
+---
+
+This plan is part of the Q1 2024 goals and has already made progress with caching implementation.

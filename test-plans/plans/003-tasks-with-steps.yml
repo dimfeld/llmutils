@@ -1,0 +1,62 @@
+---
+title: Full Plan with Tasks and Steps
+goal: Refactor the data processing pipeline for better performance
+id: 3
+status: in_progress
+priority: high
+baseBranch: main
+changedFiles:
+  - src/pipeline/processor.ts
+  - src/pipeline/transformer.ts
+rmfilter:
+  - src/pipeline/**/*.ts
+  - --with-imports
+tasks:
+  - title: Profile current performance
+    description: Analyze the existing pipeline to identify bottlenecks
+    files:
+      - src/pipeline/processor.ts
+      - src/tests/performance.test.ts
+    docs:
+      - docs/performance-guidelines.md
+    done: true
+    steps:
+      - prompt: Add performance timing to each stage of the pipeline
+        done: true
+      - prompt: Run performance tests and collect baseline metrics
+        done: true
+      - prompt: Generate a report identifying the slowest operations
+        examples:
+          - src/examples/performance-report.md
+        done: false
+  - title: Optimize data transformation
+    description: Improve the efficiency of data transformation operations
+    files:
+      - src/pipeline/transformer.ts
+      - src/utils/data-utils.ts
+    done: false
+    steps:
+      - prompt: Replace sequential array operations with single-pass transformations
+        done: false
+      - prompt: Implement batch processing for large datasets
+        done: false
+      - prompt: Add caching for frequently accessed transformations
+        examples:
+          - src/examples/caching-pattern.ts
+        done: false
+  - title: Update tests
+    description: Ensure all tests pass with the new implementation
+    files:
+      - src/tests/pipeline.test.ts
+      - src/tests/transformer.test.ts
+    done: false
+    steps:
+      - prompt: Update unit tests to reflect new transformation logic
+        done: false
+      - prompt: Add performance regression tests
+        done: false
+---
+
+This is a comprehensive plan showing tasks with detailed steps. The first task
+has been partially completed, demonstrating progress tracking at both the task
+and step level.

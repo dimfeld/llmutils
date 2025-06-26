@@ -1,0 +1,56 @@
+---
+# Test configuration for rmplan with example plans
+paths:
+  tasks: test-plans/plans
+  docs:
+    - test-plans/docs
+  planning: test-plans/planning.md
+
+postApplyCommands:
+  - title: Run type checking
+    command: bun run check
+  - title: Run tests
+    command: bun test
+    allowFailure: true
+    hideOutputOnSuccess: true
+
+autoexamples:
+  - authentication
+  - performance optimization
+  - find: caching
+    example: src/examples/caching-pattern.ts
+
+models:
+  execution: anthropic/claude-3.5-sonnet
+  answerPr: openai/gpt-4o
+  convert_yaml: anthropic/claude-3-haiku
+  stepGeneration: anthropic/claude-3.5-sonnet
+
+answerPr:
+  mode: hybrid
+  comment: true
+  commit: false
+
+defaultExecutor: claude-code
+
+workspaceCreation:
+  cloneLocation: ~/.rmfilter/test-workspaces/
+  postCloneCommands:
+    - title: Install dependencies
+      command: bun install
+    - title: Set up environment
+      command: cp .env.example .env
+
+executors:
+  claude-code:
+    tools:
+      - bash
+      - read
+      - write
+      - search
+    mcpServers: []
+  copy-paste:
+    executionModel: anthropic/claude-3.5-sonnet
+  direct-call:
+    executionModel: openai/gpt-4o
+---

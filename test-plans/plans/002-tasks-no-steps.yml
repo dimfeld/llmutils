@@ -1,0 +1,32 @@
+---
+title: Plan with Tasks but No Steps
+goal: Implement a simple authentication system
+id: 2
+status: in_progress
+priority: medium
+tasks:
+  - title: Create user model
+    description: Define the user schema and database model
+    files:
+      - src/models/user.ts
+      - src/db/schema.ts
+    done: false
+    steps: []
+  - title: Implement login endpoint
+    description: Create API endpoint for user authentication
+    files:
+      - src/api/auth/login.ts
+      - src/middleware/auth.ts
+    done: false
+    steps: []
+  - title: Add password hashing
+    description: Implement secure password storage using bcrypt
+    files:
+      - src/utils/crypto.ts
+    done: true
+    steps: []
+---
+
+This plan has tasks defined but no detailed steps for each task. This is useful
+when you have a high-level breakdown but haven't yet planned the specific
+implementation steps.
