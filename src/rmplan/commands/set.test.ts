@@ -6,15 +6,27 @@ import yaml from 'yaml';
 import { readPlanFile } from '../plans.js';
 import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
+import { setDebug } from '../../common/process.js';
+import type { RmplanConfig } from '../configSchema.js';
 
 describe('rmplan set command', () => {
   let tempDir: string;
   let tasksDir: string;
+  let globalOpts: any;
 
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), 'rmplan-set-test-'));
     tasksDir = path.join(tempDir, 'tasks');
+    let config: RmplanConfig = {
+      paths: {
+        tasks: tasksDir,
+      },
+    };
     await mkdir(tasksDir, { recursive: true });
+    await Bun.file(path.join(tempDir, '.rmplan.yml')).write(yaml.stringify(config));
+    globalOpts = {
+      config: path.join(tempDir, '.rmplan.yml'),
+    };
   });
 
   afterEach(async () => {
@@ -49,7 +61,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         priority: 'high',
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -66,7 +78,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         status: 'in_progress',
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -99,7 +111,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         dependsOn: [10],
       },
-      {}
+      globalOpts
     );
 
     // Try to add again with overlap
@@ -109,7 +121,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         dependsOn: [10, 11],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -126,7 +138,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         dependsOn: [10, 11, 12],
       },
-      {}
+      globalOpts
     );
 
     // Remove some
@@ -136,7 +148,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         noDependsOn: [10, 12],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -152,7 +164,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         rmfilter: ['src/**/*.ts', 'tests/**/*.test.ts'],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -171,7 +183,7 @@ describe('rmplan set command', () => {
         dependsOn: [10, 11],
         rmfilter: ['src/**/*.ts'],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -194,7 +206,7 @@ describe('rmplan set command', () => {
       {
         planFile: planPath,
       },
-      {}
+      globalOpts
     );
 
     const unchangedPlan = await readPlanFile(planPath);
@@ -213,7 +225,7 @@ describe('rmplan set command', () => {
           'https://github.com/owner/repo/issues/124',
         ],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -233,7 +245,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         issue: ['https://github.com/owner/repo/issues/123'],
       },
-      {}
+      globalOpts
     );
 
     // Try to add again with overlap
@@ -246,7 +258,7 @@ describe('rmplan set command', () => {
           'https://github.com/owner/repo/issues/124',
         ],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -270,7 +282,7 @@ describe('rmplan set command', () => {
           'https://github.com/owner/repo/issues/125',
         ],
       },
-      {}
+      globalOpts
     );
 
     // Remove some
@@ -283,7 +295,7 @@ describe('rmplan set command', () => {
           'https://github.com/owner/repo/issues/125',
         ],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -300,7 +312,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         noDependsOn: [10, 11],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -317,7 +329,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         noIssue: ['https://github.com/owner/repo/issues/123'],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -333,7 +345,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         doc: ['docs/setup.md', 'docs/api.md'],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -350,7 +362,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         doc: ['docs/setup.md'],
       },
-      {}
+      globalOpts
     );
 
     // Try to add again with overlap
@@ -360,7 +372,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         doc: ['docs/setup.md', 'docs/api.md'],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -377,7 +389,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         doc: ['docs/setup.md', 'docs/api.md', 'docs/guide.md'],
       },
-      {}
+      globalOpts
     );
 
     // Remove some
@@ -387,7 +399,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         noDoc: ['docs/setup.md', 'docs/guide.md'],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -404,7 +416,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         noDoc: ['docs/setup.md'],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -421,7 +433,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         doc: ['docs/old1.md', 'docs/old2.md', 'docs/keep.md'],
       },
-      {}
+      globalOpts
     );
 
     // Add new and remove old in same command
@@ -432,7 +444,7 @@ describe('rmplan set command', () => {
         doc: ['docs/new1.md', 'docs/new2.md'],
         noDoc: ['docs/old1.md', 'docs/old2.md'],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -450,7 +462,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         parent: 15,
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -469,7 +481,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         parent: 20,
       },
-      {}
+      globalOpts
     );
 
     let updatedPlan = await readPlanFile(planPath);
@@ -482,7 +494,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         noParent: true,
       },
-      {}
+      globalOpts
     );
 
     updatedPlan = await readPlanFile(planPath);
@@ -498,7 +510,7 @@ describe('rmplan set command', () => {
         planFile: planPath,
         noParent: true,
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -515,7 +527,7 @@ describe('rmplan set command', () => {
           planFile: planPath,
           parent: 999, // Non-existent parent ID
         },
-        {}
+        globalOpts
       )
     ).rejects.toThrow('Parent plan with ID 999 not found');
   });
@@ -532,7 +544,7 @@ describe('rmplan set command', () => {
         planFile: childPlanPath,
         parent: 100,
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(childPlanPath);

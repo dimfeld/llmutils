@@ -614,11 +614,11 @@ describe('handleListCommand', () => {
     // Debug: print all log calls to understand what's happening
     const logCalls = mockLog.mock.calls;
 
-    // Find the log call that contains "Showing:"
-    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing:'));
+    // Find the log call that contains "Showing"
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing'));
 
     expect(showingCall).toBeTruthy();
-    expect(showingCall[0]).toBe('Showing: 3 of 4 plan(s)');
+    expect(showingCall[0]).toBe('Showing 3 of 4 plan(s)');
 
     // Check that table was called and verify contents
     expect(mockTable).toHaveBeenCalled();
@@ -667,9 +667,9 @@ describe('handleListCommand', () => {
     // Check that log was called with the right output
     expect(mockLog).toHaveBeenCalled();
     const logCalls = mockLog.mock.calls;
-    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing:'));
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing'));
     expect(showingCall).toBeTruthy();
-    expect(showingCall[0]).toBe('Showing: 2 of 2 plan(s)');
+    expect(showingCall[0]).toBe('Showing 2 of 2 plan(s)');
 
     // Should find both plans
     expect(mockTable).toHaveBeenCalled();
@@ -724,9 +724,9 @@ describe('handleListCommand', () => {
     // Check that log was called with the right output
     expect(mockLog).toHaveBeenCalled();
     const logCalls = mockLog.mock.calls;
-    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing:'));
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing'));
     expect(showingCall).toBeTruthy();
-    expect(showingCall[0]).toBe('Showing: 2 of 3 plan(s)');
+    expect(showingCall[0]).toBe('Showing 2 of 3 plan(s)');
 
     // Should find plans 1 and 2
     expect(mockTable).toHaveBeenCalled();
