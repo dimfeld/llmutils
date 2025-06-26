@@ -247,6 +247,7 @@ function createAgentCommand(command: Command, description: string) {
       '--direct',
       'Call LLM directly instead of copying prompt to clipboard during preparation'
     )
+    .option('--dry-run', 'Print the generated prompt but do not execute it')
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planFile, options, command) => {

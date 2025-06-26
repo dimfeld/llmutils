@@ -101,13 +101,7 @@ describe('Parent Plan Completion', () => {
     expect(parent.status).toBe('in_progress');
 
     // Mark child 2 steps as done
-    await markStepDone(
-      child2Path,
-      { steps: 2 },
-      { taskIndex: 0, stepIndex: 0 },
-      tempDir,
-      config
-    );
+    await markStepDone(child2Path, { steps: 2 }, { taskIndex: 0, stepIndex: 0 }, tempDir, config);
 
     // Parent should now be done
     parent = await readPlanFile(parentPath);

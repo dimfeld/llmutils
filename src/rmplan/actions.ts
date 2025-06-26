@@ -51,7 +51,13 @@ import { convertMarkdownToYaml, findYamlStart } from './process_markdown.js';
 import { createModel } from '../common/model_factory.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from './llm_utils/run_and_apply.js';
 import { runRmfilterProgrammatically } from '../rmfilter/rmfilter.js';
-import { readAllPlans, readPlanFile, writePlanFile, clearPlanCache, type PlanSummary } from './plans.js';
+import {
+  readAllPlans,
+  readPlanFile,
+  writePlanFile,
+  clearPlanCache,
+  type PlanSummary,
+} from './plans.js';
 import { findSiblingPlans } from './context_helpers.js';
 
 import * as clipboard from '../common/clipboard.js';
@@ -1526,44 +1532,44 @@ async function checkAndMarkParentDone(
   // Force re-read to get updated statuses
   clearPlanCache();
   const { plans: allPlans } = await readAllPlans(tasksDir);
-  
+
   // Get the parent plan
   const parentPlan = allPlans.get(parentId);
   if (!parentPlan) {
     warn(`Parent plan with ID ${parentId} not found`);
     return;
   }
-  
+
   // If parent is already done, nothing to do
   if (parentPlan.status === 'done') {
     return;
   }
-  
+
   // Find all children of this parent
-  const children = Array.from(allPlans.values()).filter(plan => plan.parent === parentId);
-  
+  const children = Array.from(allPlans.values()).filter((plan) => plan.parent === parentId);
+
   // Check if all children are done
-  const allChildrenDone = children.every(child => child.status === 'done');
-  
+  const allChildrenDone = children.every((child) => child.status === 'done');
+
   if (allChildrenDone && children.length > 0) {
     // Mark parent as done
     parentPlan.status = 'done';
     parentPlan.updatedAt = new Date().toISOString();
-    
+
     // Update changed files from children
     const allChangedFiles = new Set<string>();
     for (const child of children) {
       if (child.changedFiles) {
-        child.changedFiles.forEach(file => allChangedFiles.add(file));
+        child.changedFiles.forEach((file) => allChangedFiles.add(file));
       }
     }
     if (allChangedFiles.size > 0) {
       parentPlan.changedFiles = Array.from(allChangedFiles);
     }
-    
+
     await writePlanFile(parentPlan.filename, parentPlan);
     log(chalk.green(`✓ Parent plan "${parentPlan.title}" marked as complete (all children done)`));
-    
+
     // Recursively check if this parent has a parent
     if (parentPlan.parent) {
       await checkAndMarkParentDone(parentPlan.parent, config, baseDir);

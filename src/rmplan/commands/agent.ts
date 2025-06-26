@@ -273,6 +273,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           planData,
           executor,
           commit: options.commit,
+          dryRun: options.dryRun,
         });
         return;
       } catch (err) {
@@ -377,6 +378,13 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           filePathPrefix: executor.filePathPrefix,
           includeCurrentPlanContext: false, // Don't include current plan context since it's already in project context
         });
+
+        if (options.dryRun) {
+          log(boldMarkdownHeaders('\n## Dry Run - Generated Prompt\n'));
+          log(taskPrompt);
+          log('\n--dry-run mode: Would execute the above prompt');
+          continue;
+        }
 
         try {
           log(boldMarkdownHeaders('\n## Execution\n'));
@@ -503,6 +511,17 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         log(contextContent);
       }
 
+      if (options.dryRun) {
+        log(boldMarkdownHeaders('\n## Dry Run - Generated Context\n'));
+        if (!executorStepOptions.rmfilter) {
+          log('(Context already shown above)');
+        } else {
+          log(contextContent);
+        }
+        log('\n--dry-run mode: Would execute the above context');
+        continue;
+      }
+
       try {
         log(boldMarkdownHeaders('\n## Execution\n'));
         await executor.execute(contextContent);
@@ -574,6 +593,7 @@ async function executeStubPlan({
   planData,
   executor,
   commit,
+  dryRun = false,
 }: {
   config: RmplanConfig;
   baseDir: string;
@@ -581,6 +601,7 @@ async function executeStubPlan({
   planData: PlanSchema;
   executor: Executor;
   commit: boolean;
+  dryRun?: boolean;
 }) {
   // Update plan status to in_progress
   planData.status = 'in_progress';
@@ -605,6 +626,11 @@ async function executeStubPlan({
   log('Using combined goal and details as prompt:');
   log(directPrompt);
 
+  if (dryRun) {
+    log('\n--dry-run mode: Would execute the above prompt');
+    return;
+  }
+
   // Execute the consolidated prompt
   await executor.execute(directPrompt);
 
@@ -622,7 +648,7 @@ async function executeStubPlan({
   // Mark plan as complete only if no error occurred
   await setPlanStatus(planFilePath, 'done');
   log('Plan executed directly and marked as complete!');
-  
+
   // Check if parent plan should be marked done
   if (planData.parent) {
     await checkAndMarkParentDone(planData.parent, config, baseDir);
@@ -655,44 +681,44 @@ async function checkAndMarkParentDone(
   // Force re-read to get updated statuses
   clearPlanCache();
   const { plans: allPlans } = await readAllPlans(tasksDir);
-  
+
   // Get the parent plan
   const parentPlan = allPlans.get(parentId);
   if (!parentPlan) {
     warn(`Parent plan with ID ${parentId} not found`);
     return;
   }
-  
+
   // If parent is already done, nothing to do
   if (parentPlan.status === 'done') {
     return;
   }
-  
+
   // Find all children of this parent
-  const children = Array.from(allPlans.values()).filter(plan => plan.parent === parentId);
-  
+  const children = Array.from(allPlans.values()).filter((plan) => plan.parent === parentId);
+
   // Check if all children are done
-  const allChildrenDone = children.every(child => child.status === 'done');
-  
+  const allChildrenDone = children.every((child) => child.status === 'done');
+
   if (allChildrenDone && children.length > 0) {
     // Mark parent as done
     parentPlan.status = 'done';
     parentPlan.updatedAt = new Date().toISOString();
-    
+
     // Update changed files from children
     const allChangedFiles = new Set<string>();
     for (const child of children) {
       if (child.changedFiles) {
-        child.changedFiles.forEach(file => allChangedFiles.add(file));
+        child.changedFiles.forEach((file) => allChangedFiles.add(file));
       }
     }
     if (allChangedFiles.size > 0) {
       parentPlan.changedFiles = Array.from(allChangedFiles);
     }
-    
+
     await writePlanFile(parentPlan.filename, parentPlan);
     log(chalk.green(`✓ Parent plan "${parentPlan.title}" marked as complete (all children done)`));
-    
+
     // Recursively check if this parent has a parent
     if (parentPlan.parent) {
       await checkAndMarkParentDone(parentPlan.parent, config, baseDir);

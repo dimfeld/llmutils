@@ -135,10 +135,6 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     return 0;
   });
 
-  // Display as table
-  log(chalk.bold('Plan Files:'));
-  log('');
-
   // Prepare table data
   const tableData: string[][] = [];
 
@@ -242,7 +238,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
           return taskCount.toString();
         }
-        return plan.container ? 'C' : '-';
+        return plan.container ? 'CTR' : '-';
       })(),
       (() => {
         const stepCount =
@@ -317,7 +313,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   const output = table(tableData, tableConfig);
   log(output);
 
-  log(`Showing: ${planArray.length} of ${plans.size} plan(s)`);
+  log(`Showing ${planArray.length} of ${plans.size} plan(s)`);
 
   // Display duplicate IDs if any exist
   if (duplicates.length > 0) {
