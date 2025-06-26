@@ -413,6 +413,17 @@ export async function extractMarkdownToYaml(
     // Inherit fields from stub plan if provided
     if (options.stubPlan?.data) {
       const stubPlanDetails = options.stubPlan.data.details?.trim();
+      const stubPlanTitle = options.stubPlan.data.title?.trim();
+      const stubPlanGoal = options.stubPlan.data.goal?.trim();
+
+      if (stubPlanTitle) {
+        validatedPlan.title = stubPlanTitle;
+      }
+
+      if (stubPlanGoal) {
+        validatedPlan.goal = stubPlanGoal;
+      }
+
       if (stubPlanDetails) {
         validatedPlan.details = [
           '# Original Plan Details',
@@ -761,9 +772,19 @@ export async function saveMultiPhaseYaml(
       } else {
         phaseFilePath = `${outputDir}.plan.md`;
       }
+      const stubPlanTitle = options.stubPlan?.data.title?.trim();
+      const stubPlanGoal = options.stubPlan?.data.goal?.trim();
+      const stubPlanDetails = options.stubPlan?.data.details?.trim();
 
-      if (options.stubPlan?.data.details) {
-        let stubPlanDetails = options.stubPlan.data.details;
+      if (stubPlanTitle) {
+        orderedContent.title = stubPlanTitle;
+      }
+
+      if (stubPlanGoal) {
+        orderedContent.goal = stubPlanGoal;
+      }
+
+      if (stubPlanDetails) {
         orderedContent.details = [
           '# Original Plan Details',
           stubPlanDetails,
