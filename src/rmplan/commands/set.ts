@@ -3,6 +3,8 @@ import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { readAllPlans, readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
 import type { Priority } from '../planSchema.js';
+import { resolveTasksDir } from '../configSchema.js';
+import { loadEffectiveConfig } from '../configLoader.js';
 
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled';
 
@@ -79,7 +81,8 @@ export async function handleSetCommand(
   if (options.parent !== undefined) {
     // Load all plans to check if parent exists
     // Use the directory of the current plan file as the search directory
-    const planDir = path.dirname(options.planFile);
+    const config = await loadEffectiveConfig(globalOpts.config);
+    const planDir = await resolveTasksDir(config);
     const { plans: allPlans } = await readAllPlans(planDir);
 
     const parentPlan = allPlans.get(options.parent);
