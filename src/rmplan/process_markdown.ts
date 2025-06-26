@@ -750,14 +750,31 @@ export async function saveMultiPhaseYaml(
         const value = validationResult.data[key as keyof PlanSchema];
         return [key, value];
       })
-    );
+    ) as PlanSchema;
 
-    const phaseFilePath = actuallyMultiphase
-      ? path.join(outputDir, `phase-${phaseIndex}.plan.md`)
-      : `${outputDir}.plan.md`;
+    let phaseFilePath: string;
+    if (actuallyMultiphase) {
+      phaseFilePath = path.join(outputDir, `phase-${phaseIndex}.plan.md`);
+    } else {
+      if (options.output.endsWith('.yml') || options.output.endsWith('.plan.md')) {
+        phaseFilePath = options.output;
+      } else {
+        phaseFilePath = `${outputDir}.plan.md`;
+      }
+
+      if (options.stubPlan?.data.details) {
+        let stubPlanDetails = options.stubPlan.data.details;
+        orderedContent.details = [
+          '# Original Plan Details',
+          stubPlanDetails,
+          '# Processed Plan Details',
+          orderedContent.details,
+        ].join('\n\n');
+      }
+    }
 
     try {
-      await writePlanFile(phaseFilePath, orderedContent as PlanSchema);
+      await writePlanFile(phaseFilePath, orderedContent);
       successfulWrites++;
     } catch (err) {
       warn(`Warning: Failed to write phase ${phaseIndex} YAML file:`, err);
