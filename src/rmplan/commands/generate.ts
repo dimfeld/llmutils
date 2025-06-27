@@ -93,6 +93,15 @@ export async function handleGenerateCommand(
         );
         return;
       }
+
+      // Check if plan is already done
+      if (parsedPlan.status === 'done') {
+        warn(
+          chalk.yellow(
+            '⚠️  Warning: This plan is already marked as "done". You may have typed the wrong plan ID.'
+          )
+        );
+      }
     } catch {
       // Not a valid YAML plan, treat as markdown
       const fileContent = await Bun.file(filePath).text();
@@ -322,6 +331,18 @@ export async function handleGenerateCommand(
         )
       );
 
+      // Warn if copying content for a plan that's already done or has tasks
+      if (
+        parsedPlan &&
+        (parsedPlan.status === 'done' || (parsedPlan.tasks && parsedPlan.tasks.length > 0))
+      ) {
+        warn(
+          chalk.yellow(
+            '⚠️  Warning: Copying content for a plan that is already done or has existing tasks. You may have typed the wrong plan ID.'
+          )
+        );
+      }
+
       // Copy the prompt directly to clipboard without running rmfilter
       await clipboard.write(promptString);
       log('Prompt copied to clipboard');
@@ -333,6 +354,18 @@ export async function handleGenerateCommand(
         stubPlan?.data.docs.forEach((doc) => {
           docsArgs.push('--docs', doc);
         });
+      }
+
+      // Warn if copying content for a plan that's already done or has tasks
+      if (
+        parsedPlan &&
+        (parsedPlan.status === 'done' || (parsedPlan.tasks && parsedPlan.tasks.length > 0))
+      ) {
+        warn(
+          chalk.yellow(
+            '⚠️  Warning: Copying content for a plan that is already done or has existing tasks. You may have typed the wrong plan ID.'
+          )
+        );
       }
 
       // Append autofound files to rmfilter args
