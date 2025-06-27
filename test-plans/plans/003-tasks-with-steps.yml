@@ -56,7 +56,6 @@ tasks:
       - prompt: Add performance regression tests
         done: false
 ---
-
 This is a comprehensive plan showing tasks with detailed steps. The first task
 has been partially completed, demonstrating progress tracking at both the task
 and step level.

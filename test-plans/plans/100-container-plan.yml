@@ -8,6 +8,5 @@ container: true
 dependencies: [101, 102, 103]
 tasks: []
 ---
-
 This is a container plan that organizes other plans but has no tasks of its own.
 It represents a high-level goal that is accomplished by completing its dependencies.

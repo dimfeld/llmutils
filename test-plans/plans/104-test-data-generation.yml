@@ -5,9 +5,9 @@ id: 104
 status: pending
 priority: medium
 parent: 103
-createdAt: "2024-01-15T10:00:00Z"
-updatedAt: "2024-01-15T10:00:00Z"
-planGeneratedAt: "2024-01-15T09:30:00Z"
+createdAt: '2024-01-15T10:00:00Z'
+updatedAt: '2024-01-15T10:00:00Z'
+planGeneratedAt: '2024-01-15T09:30:00Z'
 tasks:
   - title: Design test data factory system
     description: Create a flexible factory pattern for generating test data
@@ -36,6 +36,5 @@ tasks:
       - prompt: Document factory usage patterns
         done: false
 ---
-
 This plan is a child of the Testing Infrastructure plan (103) and focuses specifically
 on test data generation. It demonstrates a nested dependency relationship.

@@ -26,7 +26,6 @@ tasks:
     done: true
     steps: []
 ---
-
 This plan has tasks defined but no detailed steps for each task. This is useful
 when you have a high-level breakdown but haven't yet planned the specific
 implementation steps.

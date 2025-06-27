@@ -31,5 +31,4 @@ tasks:
       - prompt: Convert component styles to styled-components
         done: false
 ---
-
 This plan is part of the Q1 2024 goals (parent: 100) and focuses on frontend improvements.

@@ -38,5 +38,4 @@ tasks:
       - prompt: Implement query result batching
         done: false
 ---
-
 This plan is part of the Q1 2024 goals and has already made progress with caching implementation.
