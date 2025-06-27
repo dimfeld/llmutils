@@ -894,6 +894,7 @@ When enabled, the Claude Code executor includes an interactive permission system
 - **Allow**: Permits this specific tool invocation only
 - **Disallow**: Denies this specific tool invocation
 - **Always Allow**: Permanently approves this tool (or command prefix for Bash tools) for automatic execution in future sessions
+
 #### Special Handling for Bash Commands
 
 The `Bash` tool receives special treatment due to its powerful nature. When you select "Always Allow" for a Bash command, an interactive prefix selection interface appears:
@@ -907,6 +908,7 @@ The `Bash` tool receives special treatment due to its powerful nature. When you 
 #### Permission Persistence
 
 "Always Allow" rules are automatically saved to the `.claude/settings.local.json` file in your project's root directory. This ensures your preferences persist across sessions.
+
 ## Multi-Phase Project Planning
 
 The `rmplan` utility supports a detailed planning mode that enables breaking large software features into phases, with each phase delivering a working component that builds on previous phases. This approach ensures incremental, validated progress through complex implementations.

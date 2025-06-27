@@ -6,8 +6,20 @@ interface PrefixPromptConfig {
   command: string;
 }
 
+export function extractCommandAfterCd(command: string): string {
+  // Check if command is of the form "cd some/directory && another command"
+  // Handle both quoted and unquoted paths
+  const cdPattern = /^cd\s+(?:"[^"]+"|'[^']+'|[^\s]+)\s*&&\s*(.+)$/;
+  const match = command.match(cdPattern);
+
+  // If it matches, use only the part after &&
+  return match ? match[1].trim() : command;
+}
+
 export const prefixPrompt = createPrompt<string, PrefixPromptConfig>((config, done) => {
-  const words = config.command.split(/\s+/).filter((word) => word.length > 0);
+  const actualCommand = extractCommandAfterCd(config.command);
+
+  const words = actualCommand.split(/\s+/).filter((word) => word.length > 0);
   const [selectedWordIndex, setSelectedWordIndex] = useState(words.length - 1);
 
   useKeypress((key) => {
