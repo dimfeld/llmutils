@@ -58,7 +58,7 @@ import {
   clearPlanCache,
   type PlanSummary,
 } from './plans.js';
-import { findSiblingPlans } from './context_helpers.js';
+import { findSiblingPlans, isURL } from './context_helpers.js';
 
 import * as clipboard from '../common/clipboard.js';
 import { sshAwarePasteAction } from '../common/ssh_detection.js';
@@ -1073,7 +1073,7 @@ export async function preparePhase(
 
     // Convert to array and create --docs arguments
     const docs = Array.from(docsSet);
-    const docsArgs = docs.flatMap((doc) => ['--docs', doc]);
+    const docsArgs = docs.filter((doc) => !isURL(doc)).flatMap((doc) => ['--docs', doc]);
 
     // Read planning document if configured
     let planningDocContent = '';
@@ -1206,7 +1206,8 @@ export async function preparePhase(
 
     // 12. Log success
     log(chalk.green('✓ Successfully generated detailed steps for phase'));
-    log(`Updated phase file: ${phaseYamlFile}`);
+    let relativePath = path.relative(gitRoot, phaseYamlFile);
+    log(`Updated phase file: ${relativePath}`);
   } catch (err) {
     error('Failed to generate phase details:', err);
     throw err;
