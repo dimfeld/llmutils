@@ -29,7 +29,7 @@ async function copyWasmFiles() {
     await fs.copyFile(wasmFile, destPath);
   }
 
-  console.log(`Copied ${wasmFiles.length} .wasm files to dist/`);
+  console.log(`Copied ${wasmFiles.length} .wasm files to dist`);
 }
 
 const output = await Promise.all([

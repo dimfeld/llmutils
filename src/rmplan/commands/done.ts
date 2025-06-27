@@ -1,11 +1,11 @@
 // Command handler for 'rmplan done'
 // Marks the next step/task in a plan YAML as done
 
-import { log } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
+import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { markStepDone } from '../actions.js';
 import { resolvePlanFile } from '../plans.js';
+import { markStepDone } from '../plans/mark_done.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 
 export async function handleDoneCommand(planFile: string, options: any, command: any) {

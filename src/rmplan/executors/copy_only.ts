@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 import * as clipboard from '../../common/clipboard.ts';
 import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';
-import type { PrepareNextStepOptions } from '../actions.ts';
+import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, Executor } from './types';
 import { copyOnlyOptionsSchema, CopyOnlyExecutorName } from './schemas.js';

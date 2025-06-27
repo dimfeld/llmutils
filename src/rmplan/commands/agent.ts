@@ -1,46 +1,39 @@
 // Command handler for 'rmplan agent' and 'rmplan run'
 // Automatically executes steps in a plan YAML file
 
-import * as path from 'path';
-import * as os from 'node:os';
-import * as fs from 'node:fs/promises';
-import yaml from 'yaml';
 import { select } from '@inquirer/prompts';
-import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
-import { commitAll, logSpawn } from '../../common/process.js';
+import chalk from 'chalk';
+import * as path from 'path';
 import { getGitRoot } from '../../common/git.js';
-import {
-  executePostApplyCommand,
-  findNextActionableItem,
-  markStepDone,
-  markTaskDone,
-  prepareNextStep,
-  preparePhase,
-} from '../actions.js';
-import {
-  readAllPlans,
-  readPlanFile,
-  resolvePlanFile,
-  setPlanStatus,
-  writePlanFile,
-  clearPlanCache,
-} from '../plans.js';
+import { commitAll, logSpawn } from '../../common/process.js';
+import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
+import { executePostApplyCommand } from '../actions.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
 } from '../executors/index.js';
 import type { Executor, ExecutorCommonOptions } from '../executors/types.js';
-import { createWorkspace } from '../workspace/workspace_manager.js';
+import {
+  clearPlanCache,
+  readAllPlans,
+  readPlanFile,
+  resolvePlanFile,
+  setPlanStatus,
+  writePlanFile,
+} from '../plans.js';
+import { findNextActionableItem } from '../plans/find_next.js';
+import { markStepDone, markTaskDone } from '../plans/mark_done.js';
+import { preparePhase } from '../plans/prepare_phase.js';
+import { prepareNextStep } from '../plans/prepare_step.js';
+import type { PlanSchema } from '../planSchema.js';
+import { buildExecutionPrompt } from '../prompt_builder.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
+import { createWorkspace } from '../workspace/workspace_manager.js';
 import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
-import type { PlanSchema } from '../planSchema.js';
-import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
-import { buildPlanContextPrompt, isURL } from '../context_helpers.js';
-import { buildExecutionPrompt } from '../prompt_builder.js';
-import chalk from 'chalk';
 
 export async function handleAgentCommand(
   planFile: string | undefined,

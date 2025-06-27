@@ -49,7 +49,7 @@ describe('handleDoneCommand', () => {
       warn: mock(() => {}),
     }));
 
-    await moduleMocker.mock('../actions.js', () => ({
+    await moduleMocker.mock('../plans/mark_done.js', () => ({
       markStepDone: markStepDoneSpy,
     }));
 
