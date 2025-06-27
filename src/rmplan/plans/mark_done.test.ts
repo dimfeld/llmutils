@@ -3,10 +3,11 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { markStepDone, findNextActionableItem, markTaskDone } from './actions.js';
-import { clearPlanCache, readPlanFile } from './plans.js';
-import type { PlanSchema } from './planSchema.js';
-import { ModuleMocker } from '../testing.js';
+import { markStepDone, markTaskDone } from './mark_done.js';
+import { clearPlanCache, readPlanFile } from '../plans.js';
+import type { PlanSchema } from '../planSchema.js';
+import { ModuleMocker } from '../../testing.js';
+import { findNextActionableItem } from './find_next.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -40,17 +41,17 @@ describe('markStepDone', () => {
     getGitRootSpy.mockResolvedValue(tempDir);
 
     // Mock modules
-    await moduleMocker.mock('../logging.js', () => ({
+    await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
       warn: mock(() => {}),
     }));
 
-    await moduleMocker.mock('../common/git.js', () => ({
+    await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: getGitRootSpy,
     }));
 
-    await moduleMocker.mock('../common/process.js', () => ({
+    await moduleMocker.mock('../../common/process.js', () => ({
       commitAll: commitAllSpy,
       quiet: false,
     }));
@@ -66,7 +67,7 @@ describe('markStepDone', () => {
 
   test('marks single step as done', async () => {
     const plan: PlanSchema = {
-      id: '1',
+      id: 1,
       title: 'Test Plan',
       goal: 'Test goal',
       details: 'Test details',
@@ -77,17 +78,14 @@ describe('markStepDone', () => {
           description: 'Do something',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
               done: true,
             },
             {
-              description: 'Step 2',
               prompt: 'Do step 2',
               done: false,
             },
             {
-              description: 'Step 3',
               prompt: 'Do step 3',
               done: false,
             },
@@ -114,7 +112,7 @@ describe('markStepDone', () => {
 
   test('marks multiple steps as done', async () => {
     const plan: PlanSchema = {
-      id: '1',
+      id: 1,
       title: 'Test Plan',
       goal: 'Test goal',
       details: 'Test details',
@@ -125,17 +123,14 @@ describe('markStepDone', () => {
           description: 'Do something',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
               done: false,
             },
             {
-              description: 'Step 2',
               prompt: 'Do step 2',
               done: false,
             },
             {
-              description: 'Step 3',
               prompt: 'Do step 3',
               done: false,
             },
@@ -163,7 +158,7 @@ describe('markStepDone', () => {
 
   test('marks all steps in task as done with task flag', async () => {
     const plan: PlanSchema = {
-      id: '1',
+      id: 1,
       title: 'Test Plan',
       goal: 'Test goal',
       details: 'Test details',
@@ -174,17 +169,14 @@ describe('markStepDone', () => {
           description: 'Do something',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
               done: true,
             },
             {
-              description: 'Step 2',
               prompt: 'Do step 2',
               done: false,
             },
             {
-              description: 'Step 3',
               prompt: 'Do step 3',
               done: false,
             },
@@ -220,12 +212,10 @@ describe('markStepDone', () => {
           description: 'Do something',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
               done: true,
             },
             {
-              description: 'Step 2',
               prompt: 'Do step 2',
               done: false,
             },
@@ -269,7 +259,7 @@ describe('markStepDone', () => {
 
   test('commits changes when commit flag is true', async () => {
     const plan: PlanSchema = {
-      id: '1',
+      id: 1,
       title: 'Test Plan',
       goal: 'Test goal',
       details: 'Test details',
@@ -280,7 +270,6 @@ describe('markStepDone', () => {
           description: 'Do something',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
               done: false,
             },
@@ -405,211 +394,6 @@ describe('markStepDone', () => {
   });
 });
 
-describe('findNextActionableItem', () => {
-  test('returns task type for a pending simple task', () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Simple Task 1',
-          description: 'Do something simple',
-          done: false,
-          steps: [], // No steps
-        },
-      ],
-    };
-
-    const result = findNextActionableItem(plan);
-
-    expect(result).not.toBeNull();
-    expect(result?.type).toBe('task');
-    if (result?.type === 'task') {
-      expect(result.taskIndex).toBe(0);
-      expect(result.task.title).toBe('Simple Task 1');
-    }
-  });
-
-  test('returns step type for a pending complex task', () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Complex Task 1',
-          description: 'Do something complex',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: false,
-            },
-            {
-              prompt: 'Do step 2',
-              done: false,
-            },
-          ],
-        },
-      ],
-    };
-
-    const result = findNextActionableItem(plan);
-
-    expect(result).not.toBeNull();
-    expect(result?.type).toBe('step');
-    if (result?.type === 'step') {
-      expect(result.taskIndex).toBe(0);
-      expect(result.stepIndex).toBe(0);
-      expect(result.task.title).toBe('Complex Task 1');
-      expect(result.step.prompt).toBe('Do step 1');
-    }
-  });
-
-  test('returns null for a fully completed plan', () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'done',
-      tasks: [
-        {
-          title: 'Simple Task 1',
-          description: 'Do something simple',
-          done: true,
-          steps: [],
-        },
-        {
-          title: 'Complex Task 2',
-          description: 'Do something complex',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: true,
-            },
-          ],
-        },
-      ],
-    };
-
-    const result = findNextActionableItem(plan);
-
-    expect(result).toBeNull();
-  });
-
-  test('handles mix of done simple tasks and pending complex tasks', () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Simple Task 1',
-          description: 'Already done',
-          done: true,
-          steps: [],
-        },
-        {
-          title: 'Complex Task 2',
-          description: 'Has pending steps',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: true,
-            },
-            {
-              prompt: 'Do step 2',
-              done: false,
-            },
-          ],
-        },
-      ],
-    };
-
-    const result = findNextActionableItem(plan);
-
-    expect(result).not.toBeNull();
-    expect(result?.type).toBe('step');
-    if (result?.type === 'step') {
-      expect(result.taskIndex).toBe(1);
-      expect(result.stepIndex).toBe(1);
-      expect(result.task.title).toBe('Complex Task 2');
-      expect(result.step.prompt).toBe('Do step 2');
-    }
-  });
-
-  test('skips completed tasks and finds next pending simple task', () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Complex Task 1',
-          description: 'Already done',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: true,
-            },
-          ],
-        },
-        {
-          title: 'Simple Task 2',
-          description: 'Pending simple task',
-          done: false,
-          steps: [],
-        },
-      ],
-    };
-
-    const result = findNextActionableItem(plan);
-
-    expect(result).not.toBeNull();
-    expect(result?.type).toBe('task');
-    if (result?.type === 'task') {
-      expect(result.taskIndex).toBe(1);
-      expect(result.task.title).toBe('Simple Task 2');
-    }
-  });
-
-  test('handles task with undefined steps as simple task', () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Task without steps',
-          description: 'No steps property',
-          done: false,
-          // steps is undefined
-        } as any,
-      ],
-    };
-
-    const result = findNextActionableItem(plan);
-
-    expect(result).not.toBeNull();
-    expect(result?.type).toBe('task');
-    if (result?.type === 'task') {
-      expect(result.taskIndex).toBe(0);
-      expect(result.task.title).toBe('Task without steps');
-    }
-  });
-});
-
 describe('markTaskDone', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -632,18 +416,18 @@ describe('markTaskDone', () => {
     getGitRootSpy.mockResolvedValue(tempDir);
 
     // Mock modules
-    await moduleMocker.mock('../logging.js', () => ({
+    await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
       warn: mock(() => {}),
       boldMarkdownHeaders: (text: string) => text,
     }));
 
-    await moduleMocker.mock('../common/git.js', () => ({
+    await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: getGitRootSpy,
     }));
 
-    await moduleMocker.mock('../common/process.js', () => ({
+    await moduleMocker.mock('../../common/process.js', () => ({
       commitAll: commitAllSpy,
       quiet: false,
     }));
@@ -871,5 +655,3 @@ describe('markTaskDone', () => {
     expect(updatedPlan.tasks[1].done).toBe(true);
   });
 });
-
-// Note: commitAll is not exported from actions.ts, so these tests are removed

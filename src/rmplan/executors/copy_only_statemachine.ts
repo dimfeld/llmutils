@@ -12,7 +12,7 @@ import {
   type PrepResult,
 } from '../../state_machine/index.ts';
 import type { SharedStore } from '../../state_machine/store.ts';
-import type { PrepareNextStepOptions } from '../actions.ts';
+import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, Executor } from './types';
 import type { Event } from '../../state_machine/events.ts';

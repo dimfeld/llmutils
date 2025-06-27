@@ -6,7 +6,7 @@ import { log } from '../../logging';
 import { createRetryRequester } from '../../apply-llm-edits/retry.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import { getGitRoot } from '../../common/git.ts';
-import type { PrepareNextStepOptions } from '../actions.ts';
+import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import { directCallOptionsSchema, OneCallExecutorName } from './schemas.js';
 
 export type OneCallExecutorOptions = z.infer<typeof directCallOptionsSchema>;

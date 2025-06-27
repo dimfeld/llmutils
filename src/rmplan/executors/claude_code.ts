@@ -6,7 +6,7 @@ import * as fs from 'fs/promises';
 import { debugLog, log } from '../../logging.ts';
 import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';
-import type { PrepareNextStepOptions } from '../actions.ts';
+import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions } from './types.ts';
 import { formatJsonMessage } from './claude_code/format.ts';

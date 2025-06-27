@@ -4,7 +4,7 @@
 import chalk from 'chalk';
 import type { Command } from 'commander';
 import { log } from '../../logging.js';
-import { preparePhase } from '../actions.js';
+import { preparePhase } from '../plans/prepare_phase.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { getCombinedTitleFromSummary } from '../display_utils.js';

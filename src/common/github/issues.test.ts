@@ -45,7 +45,7 @@ describe('getInstructionsFromGithubIssue', () => {
       });
 
       expect(result.plan).toBe('Issue body\n\nComment 1\n\nComment 2');
-      expect(result.suggestedFileName).toBe('issue-123-test-issue.plan.md');
+      expect(result.suggestedFileName).toBe('issue-123-test-issue.md');
     } finally {
       logSpy.mockRestore();
     }
@@ -75,7 +75,7 @@ describe('getInstructionsFromGithubIssue', () => {
 
       expect(result.rmprOptions).toBeNull();
       expect(result.plan).toBe('Issue body\n\nComment 1');
-      expect(result.suggestedFileName).toBe('issue-123-test-issue.plan.md');
+      expect(result.suggestedFileName).toBe('issue-123-test-issue.md');
     } finally {
       logSpy.mockRestore();
     }
