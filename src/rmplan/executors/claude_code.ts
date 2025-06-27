@@ -41,7 +41,10 @@ export class ClaudeCodeExecutor implements Executor {
   /**
    * Adds a new permission rule to the Claude settings file
    */
-  private async addPermissionToFile(toolName: string, prefix?: string): Promise<void> {
+  private async addPermissionToFile(
+    toolName: string,
+    argument?: { exact: boolean; command?: string }
+  ): Promise<void> {
     try {
       const gitRoot = await getGitRoot();
       const settingsPath = path.join(gitRoot, '.claude', 'settings.local.json');
@@ -66,7 +69,16 @@ export class ClaudeCodeExecutor implements Executor {
       settings.permissions.allow ??= [];
 
       // Add the new permission rule
-      const newRule = toolName === 'Bash' && prefix ? `Bash(${prefix}:*)` : toolName;
+      let newRule: string;
+      if (toolName === 'Bash' && argument) {
+        if (argument.exact) {
+          newRule = `Bash(${argument.command})`;
+        } else {
+          newRule = `Bash(${argument.command}:*)`;
+        }
+      } else {
+        newRule = toolName;
+      }
 
       // Only add if it doesn't already exist
       if (!settings.permissions.allow.includes(newRule)) {
@@ -183,7 +195,7 @@ export class ClaudeCodeExecutor implements Executor {
 
               // If user chose "Always Allow", add the tool to the always allowed set
               if (userChoice === 'always_allow') {
-                let prefixForBash: string | undefined;
+                let prefixForBash: { exact: boolean; command: string } | undefined;
 
                 if (tool_name === 'Bash') {
                   // For Bash tool, prompt for a prefix to allow
@@ -192,6 +204,7 @@ export class ClaudeCodeExecutor implements Executor {
                     message: 'Select the command prefix to always allow:',
                     command: command,
                   });
+
                   prefixForBash = selectedPrefix;
 
                   // Add the prefix to the array of allowed prefixes for Bash
@@ -199,21 +212,19 @@ export class ClaudeCodeExecutor implements Executor {
                     | string[]
                     | undefined;
                   if (existingPrefixes) {
-                    existingPrefixes.push(selectedPrefix);
+                    existingPrefixes.push(selectedPrefix.command);
                   } else {
-                    this.alwaysAllowedTools.set('Bash', [selectedPrefix]);
+                    this.alwaysAllowedTools.set('Bash', [selectedPrefix.command]);
                   }
                   log(
                     chalk.blue(
-                      `Bash prefix "${selectedPrefix}" added to always allowed list for this session`
+                      `Bash prefix "${selectedPrefix.command}" added to always allowed list`
                     )
                   );
                 } else {
                   // For non-Bash tools, set the value to true
                   this.alwaysAllowedTools.set(tool_name, true);
-                  log(
-                    chalk.blue(`Tool ${tool_name} added to always allowed list for this session`)
-                  );
+                  log(chalk.blue(`Tool ${tool_name} added to always allowed list`));
                 }
 
                 // Save the new permission rule to the settings file
