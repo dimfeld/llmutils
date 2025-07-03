@@ -272,6 +272,7 @@ export class ClaudeCodeExecutor implements Executor {
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     // TODO Interactive mode isn't integrated with the logging
+    interactive ??= this.sharedOptions.interactive;
     interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
 
     let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
@@ -417,6 +418,7 @@ export class ClaudeCodeExecutor implements Executor {
 
         // In interactive mode, use Bun.spawn directly with inherited stdio
         debugLog(args);
+        args.push(contextContent);
         const proc = Bun.spawn(args, {
           cwd: await getGitRoot(),
           stdio: ['inherit', 'inherit', 'inherit'],

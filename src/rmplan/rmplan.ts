@@ -226,6 +226,7 @@ function createAgentCommand(command: Command, description: string) {
     .description(description)
     .option('-m, --model <model>', 'Model to use for LLM')
     .option(`-x, --executor <name>`, 'The executor to use for plan execution')
+    .option('--ix, --interactive-executor', 'Use Claude Code executor in interactive mode')
     .addHelpText('after', `Available executors: ${executorNames}`)
     .option('--steps <steps>', 'Number of steps to execute')
     .option('--no-log', 'Do not log to file')

@@ -208,6 +208,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: currentBaseDir,
     model: agentExecutionModel,
+    interactive: options.interactiveExecutor,
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);

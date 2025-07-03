@@ -7,6 +7,7 @@ import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
  */
 export interface ExecutorCommonOptions {
   baseDir: string;
+  interactive?: boolean;
   model?: string;
 }
 
