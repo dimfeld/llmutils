@@ -23,13 +23,17 @@ async function copyWasmFiles() {
   await fs.mkdir('dist', { recursive: true });
 
   for (const wasmFile of wasmFiles) {
+    if (wasmFile.includes('/web-tree-sitter/debug') || wasmFile.includes('/web-tree-sitter/lib')) {
+      continue;
+    }
+
     const fileName = path.basename(wasmFile);
     const destPath = path.join('dist', fileName);
 
     await fs.copyFile(wasmFile, destPath);
   }
 
-  console.log(`Copied ${wasmFiles.length} .wasm files to dist/`);
+  console.log(`Copied ${wasmFiles.length} .wasm files to dist`);
 }
 
 const output = await Promise.all([

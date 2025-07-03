@@ -1,6 +1,6 @@
 import type { z } from 'zod/v4';
 import type { RmplanConfig } from '../configSchema';
-import type { PrepareNextStepOptions } from '../actions.ts';
+import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 
 /**
  * Shared options/state from the agent command, passed to the executor.

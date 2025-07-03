@@ -110,13 +110,27 @@ describe('rmplanAgent - Direct Execution Flow', () => {
       defaultModelForExecutor: () => 'test-model',
     }));
 
-    await moduleMocker.mock('../actions.js', () => ({
-      preparePhase,
-      findPendingTask: findPendingTaskSpy,
-      findNextActionableItem: findNextActionableItemSpy,
-      prepareNextStep: prepareNextStepSpy,
+    await moduleMocker.mock('../plans/mark_done.js', () => ({
       markStepDone: markStepDoneSpy,
       markTaskDone: mock(async () => ({ message: 'Done', planComplete: true })),
+    }));
+
+    await moduleMocker.mock('../plans/find_next.js', () => ({
+      findPendingTask: findPendingTaskSpy,
+      findNextActionableItem: findNextActionableItemSpy,
+    }));
+
+    await moduleMocker.mock('../plans/prepare_phase.js', () => ({
+      preparePhase,
+    }));
+
+    await moduleMocker.mock('../plans/prepare_step.js', () => ({
+      prepareNextStep: prepareNextStepSpy,
+    }));
+
+    await moduleMocker.mock('../actions.js', () => ({
+      preparePhase,
+      prepareNextStep: prepareNextStepSpy,
       executePostApplyCommand: mock(async () => true),
     }));
 

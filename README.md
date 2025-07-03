@@ -877,6 +877,38 @@ rmplan agent plan.yml --executor claude-code
 rmplan agent plan.yml --executor direct-call
 ```
 
+### Claude Code Executor: Interactive Tool Permissions
+
+**Note**: The interactive permission system is disabled by default. To enable it, set the `CLAUDE_CODE_PERMISSIONS` environment variable to `true` or configure it in your rmplan configuration file:
+
+```yaml
+# In .rmfilter/config/rmplan.local.yml
+executors:
+  claude-code:
+    permissionsMcp:
+      enabled: true
+```
+
+When enabled, the Claude Code executor includes an interactive permission system that allows you to control which tool invocations are automatically approved. When Claude attempts to use a tool during execution, you'll see a permission prompt with three options:
+
+- **Allow**: Permits this specific tool invocation only
+- **Disallow**: Denies this specific tool invocation
+- **Always Allow**: Permanently approves this tool (or command prefix for Bash tools) for automatic execution in future sessions
+
+#### Special Handling for Bash Commands
+
+The `Bash` tool receives special treatment due to its powerful nature. When you select "Always Allow" for a Bash command, an interactive prefix selection interface appears:
+
+1. The interface displays command tokens that you can navigate using arrow keys
+2. Press the right arrow to include more of the command in the approved prefix
+3. Press the left arrow to include less of the command
+4. Press 'a' to select all the words in the command
+5. Press Enter to confirm your selection
+
+#### Permission Persistence
+
+"Always Allow" rules are automatically saved to the `.claude/settings.local.json` file in your project's root directory. This ensures your preferences persist across sessions.
+
 ## Multi-Phase Project Planning
 
 The `rmplan` utility supports a detailed planning mode that enables breaking large software features into phases, with each phase delivering a working component that builds on previous phases. This approach ensures incremental, validated progress through complex implementations.
