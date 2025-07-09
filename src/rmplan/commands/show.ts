@@ -222,7 +222,8 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     plan.tasks.forEach((task, taskIdx) => {
       const totalSteps = task.steps.length;
       const doneSteps = task.steps.filter((s) => s.done).length;
-      const taskComplete = totalSteps > 0 && doneSteps === totalSteps;
+      const taskComplete =
+        (totalSteps > 0 && doneSteps === totalSteps) || (totalSteps === 0 && task.done);
       const taskIcon = taskComplete ? '✓' : totalSteps > 0 && doneSteps > 0 ? '⏳' : '○';
       const taskColor = taskComplete
         ? chalk.green
