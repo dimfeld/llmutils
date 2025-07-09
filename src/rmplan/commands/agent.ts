@@ -411,7 +411,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           const markResult = await markTaskDone(
             currentPlanFile,
             actionableItem.taskIndex,
-            { commit: options.commit },
+            { commit: true },
             currentBaseDir,
             config
           );
