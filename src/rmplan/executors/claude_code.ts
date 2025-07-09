@@ -16,6 +16,7 @@ import * as net from 'net';
 import { confirm, select } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 import { prefixPrompt } from './claude_code/prefix_prompt.ts';
+import { waitForEnter } from '../../common/terminal.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -376,14 +377,6 @@ export class ClaudeCodeExecutor implements Executor {
     try {
       const args = ['claude'];
 
-      if (!interactive) {
-        args.push('--verbose', '--output-format', 'stream-json');
-
-        if (debug) {
-          args.push('--debug');
-        }
-      }
-
       if (allowedTools.length) {
         args.push('--allowedTools', allowedTools.join(','));
       }
@@ -414,12 +407,24 @@ export class ClaudeCodeExecutor implements Executor {
 
       if (interactive) {
         await clipboard.write(contextContent);
-        log(chalk.green(`Copied prompt to clipboard to paste into Claude`));
+        log(chalk.green(`Copied prompt to clipboard.`));
 
+        log(
+          'Please start `claude` in a separate terminal window and paste the prompt into it, then press Enter here when you are done.'
+        );
+
+        await waitForEnter(false);
+
+        // This is broken right now due to issues with Bun apparently not closing readline appropriately
+        // Probably related: https://github.com/oven-sh/bun/issues/13978 and https://github.com/oven-sh/bun/issues/10694
+        /*
         // In interactive mode, use Bun.spawn directly with inherited stdio
         debugLog(args);
-        args.push(contextContent);
         const proc = Bun.spawn(args, {
+          env: {
+            ...process.env,
+            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+          },
           cwd: await getGitRoot(),
           stdio: ['inherit', 'inherit', 'inherit'],
         });
@@ -429,8 +434,13 @@ export class ClaudeCodeExecutor implements Executor {
         if (exitCode !== 0) {
           throw new Error(`Claude exited with non-zero exit code: ${exitCode}`);
         }
+        */
       } else {
-        args.push('--print', contextContent);
+        if (debug) {
+          args.push('--debug');
+        }
+
+        args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
         let splitter = createLineSplitter();
 
         log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
