@@ -19,3 +19,6 @@ probably multiline input.
 
 As part of this, we may also want to stop using the `--print` CLI argument and instead just send the initial prompt
 directly to Claude Code as the first message.
+
+Another thing that would be nice is if we can press Esc to abort the current Claude run without closing the session. Not
+sure if the current SDK interface allows for that though.
