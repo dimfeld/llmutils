@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 export const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent', 'maybe']);
 export type Priority = z.infer<typeof prioritySchema>;
 
-export const statusSchema = z.enum(['pending', 'in_progress', 'done', 'cancelled']);
+export const statusSchema = z.enum(['pending', 'in_progress', 'done', 'cancelled', 'deferred']);
 
 export const phaseSchema = z
   .object({

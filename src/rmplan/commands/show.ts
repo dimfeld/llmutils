@@ -98,9 +98,11 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       ? chalk.green
       : actualStatus === 'cancelled'
         ? chalk.strikethrough.gray
-        : actualStatus === 'in_progress'
-          ? chalk.yellow
-          : chalk.white;
+        : actualStatus === 'deferred'
+          ? chalk.dim.gray
+          : actualStatus === 'in_progress'
+            ? chalk.yellow
+            : chalk.white;
   log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
 
   const priorityColor =

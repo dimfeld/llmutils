@@ -8,7 +8,9 @@
 import { isSshSession } from './ssh_detection.js';
 import { osc52Copy, osc52Read } from './osc52.js';
 import clipboard from 'clipboardy';
-import { debugLog } from '../logging.js';
+import { debugLog, log } from '../logging.js';
+import chalk from 'chalk';
+import { waitForEnter } from './terminal.js';
 
 /**
  * Writes text to the clipboard
@@ -56,5 +58,18 @@ export async function read(): Promise<string> {
     }
   } else {
     return await clipboard.read();
+  }
+}
+
+export async function writeClipboardAndWait(prompt: string, contextContent: string) {
+  while (true) {
+    await clipboard.write(contextContent);
+    log(chalk.bold(prompt));
+    log('You may also press `c` to copy again.');
+    const pressed = await waitForEnter();
+
+    if (pressed !== 'c') {
+      break;
+    }
   }
 }

@@ -406,14 +406,12 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       if (interactive) {
-        await clipboard.write(contextContent);
-        log(chalk.green(`Copied prompt to clipboard.`));
+        await clipboard.writeClipboardAndWait(
+          chalk.green('Copied prompt to clipboard.') +
+            '\nPlease start `claude` in a separate terminal window and paste the prompt into it, then press Enter here when you are done.',
 
-        log(
-          'Please start `claude` in a separate terminal window and paste the prompt into it, then press Enter here when you are done.'
+          contextContent
         );
-
-        await waitForEnter(false);
 
         // This is broken right now due to issues with Bun apparently not closing readline appropriately
         // Probably related: https://github.com/oven-sh/bun/issues/13978 and https://github.com/oven-sh/bun/issues/10694

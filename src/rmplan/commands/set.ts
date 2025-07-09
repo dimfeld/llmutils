@@ -6,7 +6,7 @@ import type { Priority } from '../planSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 
-type Status = 'pending' | 'in_progress' | 'done' | 'cancelled';
+type Status = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
 
 export interface SetOptions {
   planFile: string;

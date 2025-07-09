@@ -167,13 +167,15 @@ export async function handleListCommand(options: any, command: any, searchTerms?
         ? chalk.green
         : actualStatus === 'cancelled'
           ? chalk.strikethrough.gray
-          : isReady
-            ? chalk.cyan
-            : actualStatus === 'in_progress'
-              ? chalk.yellow
-              : actualStatus === 'pending'
-                ? chalk.white
-                : chalk.gray;
+          : actualStatus === 'deferred'
+            ? chalk.dim.gray
+            : isReady
+              ? chalk.cyan
+              : actualStatus === 'in_progress'
+                ? chalk.yellow
+                : actualStatus === 'pending'
+                  ? chalk.white
+                  : chalk.gray;
 
     const priorityColor =
       plan.priority === 'urgent'
