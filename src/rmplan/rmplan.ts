@@ -38,7 +38,7 @@ import { loadEnv } from '../common/env.js';
 import { setDebug } from '../common/process.js';
 import { executors } from './executors/index.js';
 import { handleCommandError } from './utils/commands.js';
-import { prioritySchema } from './planSchema.js';
+import { prioritySchema, statusSchema } from './planSchema.js';
 
 function intArg(value: string | undefined): number | undefined;
 function intArg(value: string[] | undefined): number[] | undefined;
@@ -286,7 +286,7 @@ program
   .option('--reverse', 'Reverse sort order')
   .option(
     '--status <status...>',
-    'Filter by status (can specify multiple). Valid values: pending, in_progress, done, ready'
+    'Filter by status (can specify multiple). Valid values: pending, in_progress, done, cancelled, deferred, ready'
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
   .option('--files', 'Show file paths column')
@@ -387,8 +387,8 @@ program
     return value;
   })
   .option('-s, --status <status>', 'Set the status', (value) => {
-    if (!['pending', 'in_progress', 'done', 'cancelled'].includes(value)) {
-      throw new Error('Status must be one of: pending, in_progress, done, cancelled');
+    if (!statusSchema.options.includes(value as any)) {
+      throw new Error(`Status must be one of: ${statusSchema.options.join(', ')}`);
     }
     return value;
   })
