@@ -44,6 +44,10 @@ export async function findSiblingPlans(
     }
   }
 
+  // Sort both arrays by ID in ascending order
+  siblings.completed.sort((a, b) => a.id - b.id);
+  siblings.pending.sort((a, b) => a.id - b.id);
+
   return siblings;
 }
 
