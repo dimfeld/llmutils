@@ -309,15 +309,19 @@ export async function prepareNextStep(
     `**Important**: When thinking about these subtasks, consider that some part of them may have already been completed by an overeager engineer implementing the previous step. If you look at a file and it seems like a change has already been done, that is ok; just move on and don't try to make the edit again.\n`
   );
 
+  let currentSubtasks: string[] = [];
+
   if (selectedPendingSteps.length > 1) {
     promptParts.push('The current subtasks to implement are:');
     selectedPendingSteps.forEach((step, index) =>
-      promptParts.push(`- [${index + 1}] ${step.prompt}`)
+      currentSubtasks.push(`- [${index + 1}] ${step.prompt}`)
     );
   } else {
     promptParts.push('The current subtask to implement is:');
-    promptParts.push(selectedPendingSteps[0].prompt);
+    currentSubtasks.push(selectedPendingSteps[0].prompt);
   }
+
+  promptParts.push(...currentSubtasks);
 
   // Helper function to check if a string is a URL
   const isURL = (str: string): boolean => {
@@ -360,6 +364,7 @@ export async function prepareNextStep(
     const { filteredMdcFiles } = await findAdditionalDocs(gitRoot, new Set(files), {
       'no-autodocs': false,
       docsPaths: config.paths?.docs,
+      instructions: currentSubtasks,
     });
 
     // Add relevant files section
