@@ -12,6 +12,7 @@ export interface DetailedReviewComment {
 
 export interface CommentDiffContext {
   id: string;
+  file: string;
   aiComment: string;
   diffHunk: string;
 }

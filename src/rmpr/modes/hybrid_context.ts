@@ -363,6 +363,7 @@ export function insertAiCommentsAndPrepareDiffContexts(
     // Create and store the CommentDiffContext
     commentDiffContexts.push({
       id: commentId,
+      file: filePath,
       aiComment: comment.comment.body,
       diffHunk: comment.comment.diffHunk,
     });
@@ -460,6 +461,9 @@ export function createHybridContextPrompt(allDiffContexts: CommentDiffContext[])
   prompt += formatDiffContexts(allDiffContexts);
   prompt += '\n</diffContexts>\n\n';
 
+  const filePaths = allDiffContexts.map((context) => `- ${context.file}`).join('\n');
+  prompt += `The files with review comments are: \n${filePaths}\n\n`;
+
   return prompt;
 }
 
@@ -468,7 +472,7 @@ export function formatDiffContexts(diffContexts: CommentDiffContext[]) {
   return diffContexts
     .map(
       (context) =>
-        `<diffContext id="${context.id}">\n<diffInstructions>${context.aiComment}</diffInstructions>\n<diffHunk>\n${context.diffHunk}\n</diffHunk>\n</diffContext>`
+        `<diffContext id="${context.id}" file="${context.file}">\n<diffInstructions>${context.aiComment}</diffInstructions>\n<diffHunk>\n${context.diffHunk}\n</diffHunk>\n</diffContext>`
     )
     .join('\n');
 }
