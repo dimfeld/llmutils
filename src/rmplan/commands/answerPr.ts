@@ -33,7 +33,7 @@ export async function handleAnswerPrCommand(
     }
   }
 
-  options.mode ??= 'inline-comments';
+  options.mode ??= 'hybrid';
 
   await handleRmprCommand(prIdentifier, options, globalOpts, config);
 }
