@@ -359,6 +359,7 @@ export async function prepareNextStep(
     // Get additional docs using findAdditionalDocs when rmfilter is false
     const { filteredMdcFiles } = await findAdditionalDocs(gitRoot, new Set(files), {
       'no-autodocs': false,
+      docsPaths: config.paths?.docs,
     });
 
     // Add relevant files section
