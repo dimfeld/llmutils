@@ -159,7 +159,7 @@ export async function askForModelId(options?: {
     { name: 'Gemini AI Studio', value: 'gemini', executor: CopyPasteExecutor.name },
     { name: 'Grok Web', value: 'grok', executor: CopyPasteExecutor.name },
     { name: 'Claude Code', value: 'claude_code', executor: ClaudeCodeExecutor.name },
-    { name: 'Claude Code (Sonnet)', value: 'sonnnet', executor: ClaudeCodeExecutor.name },
+    { name: 'Claude Code (Sonnet)', value: 'sonnet', executor: ClaudeCodeExecutor.name },
     { name: 'Claude Code (Opus)', value: 'opus', executor: ClaudeCodeExecutor.name },
     { name: 'Paste into Agent', value: 'paste_into_agent', executor: CopyOnlyExecutor.name },
   ].map((m) =>
