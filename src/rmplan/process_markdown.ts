@@ -767,7 +767,7 @@ export async function saveMultiPhaseYaml(
 
     let phaseFilePath: string;
     if (actuallyMultiphase) {
-      phaseFilePath = path.join(outputDir, `phase-${phaseIndex}.plan.md`);
+      phaseFilePath = path.join(outputDir, `${phase.id}-phase-${phaseIndex}.plan.md`);
     } else {
       if (options.output.endsWith('.yml') || options.output.endsWith('.plan.md')) {
         phaseFilePath = options.output;
