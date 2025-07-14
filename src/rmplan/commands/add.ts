@@ -9,8 +9,9 @@ import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
 import { writePlanFile, readAllPlans, readPlanFile } from '../plans.js';
-import { prioritySchema, type PlanSchema } from '../planSchema.js';
+import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js';
 import { needArrayOrUndefined } from '../../common/cli.js';
+import { updatePlanProperties } from '../planPropertiesUpdater.js';
 
 export async function handleAddCommand(title: string[], options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -58,13 +59,23 @@ export async function handleAddCommand(title: string[], options: any, command: a
     }
   }
 
+  // Validate status if provided
+  if (options.status) {
+    const validStatuses = statusSchema.options;
+    if (!validStatuses.includes(options.status)) {
+      throw new Error(
+        `Invalid status: ${options.status}. Must be one of: ${validStatuses.join(', ')}`
+      );
+    }
+  }
+
   // Create the initial plan object adhering to PlanSchema
   const plan: PlanSchema = {
     id: planId,
     title: planTitle,
     goal: '',
     details: '',
-    status: 'pending',
+    status: options.status || 'pending',
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
     dependencies: needArrayOrUndefined(options.dependsOn),
     parent: options.parent,
@@ -72,6 +83,14 @@ export async function handleAddCommand(title: string[], options: any, command: a
     updatedAt: new Date().toISOString(),
     tasks: [],
   };
+
+  // Apply additional properties using the shared function
+  updatePlanProperties(plan, {
+    rmfilter: options.rmfilter,
+    issue: options.issue,
+    doc: options.doc,
+    assign: options.assign,
+  });
 
   // If parent is specified, update the parent plan's dependencies
   if (options.parent !== undefined) {

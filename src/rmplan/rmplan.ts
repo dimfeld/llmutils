@@ -124,6 +124,17 @@ program
   .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .option('--parent <planId>', 'Set the parent plan ID')
+  .option(
+    '-s, --status <status>',
+    'Set the initial status (pending, in_progress, done, cancelled, deferred)'
+  )
+  .option(
+    '--rmfilter <files...>',
+    'Set rmfilter files (comma-separated list or multiple arguments)'
+  )
+  .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
+  .option('--doc <paths...>', 'Add documentation file paths to the plan')
+  .option('--assign <username>', 'Assign the plan to a user')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
     options.dependsOn = intArg(options.dependsOn);

@@ -5,6 +5,7 @@ import { readAllPlans, readPlanFile, writePlanFile, resolvePlanFile } from '../p
 import type { Priority } from '../planSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { updatePlanProperties } from '../planPropertiesUpdater.js';
 
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
 
@@ -106,27 +107,15 @@ export async function handleSetCommand(
     }
   }
 
-  // Update rmfilter
-  if (options.rmfilter && options.rmfilter.length > 0) {
-    plan.rmfilter = Array.from(new Set([...(plan.rmfilter || []), ...options.rmfilter])).sort();
+  // Update properties using shared function
+  const propertiesModified = updatePlanProperties(plan, {
+    rmfilter: options.rmfilter,
+    issue: options.issue,
+    doc: options.doc,
+    assign: options.assign,
+  });
+  if (propertiesModified) {
     modified = true;
-    log(`Updated rmfilter patterns`);
-  }
-
-  // Add issue URLs
-  if (options.issue && options.issue.length > 0) {
-    if (!plan.issue) {
-      plan.issue = [];
-    }
-    for (const issueUrl of options.issue) {
-      if (!plan.issue.includes(issueUrl)) {
-        plan.issue.push(issueUrl);
-        modified = true;
-        log(`Added issue URL: ${issueUrl}`);
-      } else {
-        log(`Issue URL already exists: ${issueUrl}`);
-      }
-    }
   }
 
   // Remove issue URLs
@@ -141,22 +130,6 @@ export async function handleSetCommand(
     }
   }
 
-  // Add documentation paths
-  if (options.doc && options.doc.length > 0) {
-    if (!plan.docs) {
-      plan.docs = [];
-    }
-    for (const docUrl of options.doc) {
-      if (!plan.docs.includes(docUrl)) {
-        plan.docs.push(docUrl);
-        modified = true;
-        log(`Added documentation path: ${docUrl}`);
-      } else {
-        log(`Documentation path already exists: ${docUrl}`);
-      }
-    }
-  }
-
   // Remove documentation paths
   if (options.noDoc && options.noDoc.length > 0) {
     if (plan.docs) {
@@ -167,13 +140,6 @@ export async function handleSetCommand(
         log(`Removed ${originalLength - plan.docs.length} documentation paths`);
       }
     }
-  }
-
-  // Set assignedTo
-  if (options.assign !== undefined) {
-    plan.assignedTo = options.assign;
-    modified = true;
-    log(`Assigned to ${options.assign}`);
   }
 
   // Remove assignedTo
