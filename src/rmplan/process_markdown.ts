@@ -551,9 +551,9 @@ export async function saveMultiPhaseYaml(
   // but we end up saving to a single file instead of a subdirectory.
   const actuallyMultiphase = parsedYaml.phases.length > 1;
   let outputDir = options.output;
-  if (options.output.endsWith('.yml') || options.output.endsWith('.md')) {
+  if (options.output.endsWith('.plan.md')) {
     outputDir = options.output.slice(0, options.output.lastIndexOf('.'));
-  } else if (options.output.endsWith('.plan.md')) {
+  } else if (options.output.endsWith('.yml') || options.output.endsWith('.md')) {
     outputDir = options.output.slice(0, options.output.lastIndexOf('.plan.md'));
   }
   const outputDirComponents = outputDir.split(path.sep);
