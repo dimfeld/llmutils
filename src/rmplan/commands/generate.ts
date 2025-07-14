@@ -18,11 +18,13 @@ import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../../rmpr/comment_options.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.ts';
+import { generateNumericPlanId, slugify } from '../id_utils.js';
 import {
   generateSuggestedFilename,
   readAllPlans,
   readPlanFile,
   resolvePlanFile,
+  writePlanFile,
 } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
@@ -31,6 +33,91 @@ import {
   type ExtractMarkdownToYamlOptions,
 } from '../process_markdown.ts';
 import { planPrompt, simplePlanPrompt } from '../prompt.js';
+import { updatePlanProperties } from '../planPropertiesUpdater.js';
+
+/**
+ * Creates a stub plan YAML file with the given plan text in the details field
+ * @param planText The plan text to store in the details field
+ * @param config The effective configuration
+ * @param title Optional title for the plan (will be extracted from planText if not provided)
+ * @param issueUrls Optional array of issue URLs to include in the plan
+ * @returns Object containing the created plan data and file path
+ */
+async function createStubPlanFromText(
+  planText: string,
+  config: any,
+  title?: string,
+  issueUrls?: string[]
+): Promise<{ data: PlanSchema; path: string }> {
+  const gitRoot = (await getGitRoot()) || process.cwd();
+
+  // Determine the target directory for the new plan file
+  let targetDir: string;
+  if (config.paths?.tasks) {
+    if (path.isAbsolute(config.paths.tasks)) {
+      targetDir = config.paths.tasks;
+    } else {
+      targetDir = path.join(gitRoot, config.paths.tasks);
+    }
+  } else {
+    targetDir = process.cwd();
+  }
+
+  // Ensure the target directory exists
+  await fs.mkdir(targetDir, { recursive: true });
+
+  // Generate a unique numeric plan ID
+  const planId = await generateNumericPlanId(targetDir);
+
+  // Extract title from plan text if not provided
+  let planTitle = title;
+  if (!planTitle) {
+    // Try to extract title from first line if it starts with #
+    const firstLine = planText.split('\n')[0];
+    if (firstLine.startsWith('#')) {
+      planTitle = firstLine.replace(/^#+\s*/, '').trim();
+    } else {
+      // Generate a title from the first few words
+      const words = planText.split(/\s+/).slice(0, 8);
+      planTitle = words
+        .join(' ')
+        .replace(/[^\w\s-]/g, '')
+        .trim();
+    }
+  }
+
+  // Create filename using plan ID + slugified title
+  const slugifiedTitle = slugify(planTitle);
+  const filename = `${planId}-${slugifiedTitle}.plan.md`;
+
+  // Construct the full path to the new plan file
+  const filePath = path.join(targetDir, filename);
+
+  // Create the initial plan object adhering to PlanSchema
+  const plan: PlanSchema = {
+    id: planId,
+    title: planTitle,
+    goal: '',
+    details: planText,
+    status: 'pending',
+    priority: 'medium',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tasks: [],
+  };
+
+  // Add issue URLs if provided
+  if (issueUrls && issueUrls.length > 0) {
+    plan.issue = issueUrls;
+  }
+
+  // Write the plan to the new file
+  await writePlanFile(filePath, plan);
+
+  log(chalk.green('✓ Created plan stub:'), filePath, 'for ID', chalk.green(planId));
+
+  return { data: plan, path: filePath };
+}
 
 export async function handleGenerateCommand(
   planArg: string | undefined,
@@ -141,26 +228,10 @@ export async function handleGenerateCommand(
       await clipboard.write(planText);
       log(chalk.green('✓ Plan copied to clipboard'));
 
-      // Generate suggested filename using Gemini Flash 2.0
-      let suggestedFilename = await generateSuggestedFilename(planText, '.md');
-
-      // Prompt for save location
-      let savePath = await input({
-        message: 'Save plan to this file (or clear the line to skip): ',
-        required: false,
-        default: suggestedFilename,
-      });
-
-      if (savePath) {
-        try {
-          const tasksDir = await resolveTasksDir(config);
-          planFile = path.resolve(tasksDir, savePath);
-          await Bun.write(planFile, planText);
-          log('Plan saved to:', savePath);
-        } catch (err) {
-          throw new Error(`Failed to save plan to file: ${err as Error}`);
-        }
-      }
+      // Create stub plan file with the plan text in details
+      const stubPlanResult = await createStubPlanFromText(planText, config);
+      planFile = stubPlanResult.path;
+      parsedPlan = stubPlanResult.data;
     } catch (err) {
       throw new Error(`Failed to get plan from editor: ${err as Error}`);
     }
@@ -173,31 +244,25 @@ export async function handleGenerateCommand(
     // Construct the issue URL
     issueUrlsForExtract.push(issueResult.issue.url);
 
-    let tasksDir = await resolveTasksDir(config);
-    let savePath = await input({
-      message: 'Save plan to this file (or clear the line to skip): ',
-      required: false,
-      default: issueResult.suggestedFileName,
-    });
-
-    if (savePath) {
-      try {
-        planFile = path.resolve(tasksDir, savePath);
-        await Bun.write(planFile, planText);
-        log('Plan saved to:', savePath);
-      } catch (err) {
-        throw new Error(`Failed to save plan to file: ${err as Error}`);
-      }
-    }
+    // Create stub plan file with the issue text in details
+    const stubPlanResult = await createStubPlanFromText(planText, config, undefined, [
+      issueResult.issue.url,
+    ]);
+    planFile = stubPlanResult.path;
+    parsedPlan = stubPlanResult.data;
   }
 
   // Special handling for stub YAML plans
   let stubPlan: { data: PlanSchema; path: string } | undefined;
   if (parsedPlan && planFile) {
-    // We detected a stub plan earlier, now we need to load it properly
-    try {
-      stubPlan = { data: parsedPlan, path: planFile };
+    // Set up stub plan for use in the rest of the flow
+    stubPlan = { data: parsedPlan, path: planFile };
 
+    // Check if this is a stub plan that was loaded from existing file (not created by us)
+    const wasCreatedByUs = options.planEditor || options.issue;
+
+    if (!wasCreatedByUs) {
+      // This is an existing stub plan file, process it normally
       const { goal, details } = stubPlan.data;
       if (!goal && !details) {
         throw new Error('Stub plan must have at least a goal or details to generate tasks.');
@@ -236,8 +301,9 @@ export async function handleGenerateCommand(
       planText = planParts.join('\n');
 
       log(chalk.blue('🔄 Detected stub plan. Generating detailed tasks for:'), planFile);
-    } catch (err) {
-      throw new Error(`Failed to process stub plan: ${err as Error}`);
+    } else {
+      // This was created by us, planText is already set correctly
+      log(chalk.blue('🔄 Created stub plan. Generating detailed tasks for:'), planFile);
     }
   }
 
