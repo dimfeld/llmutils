@@ -205,7 +205,9 @@ export async function preparePhase(
       parsedTasks = parsed.tasks;
     } catch (err) {
       // Save raw LLM output for debugging
-      const errorFilePath = phaseYamlFile.replace('.yaml', '.llm_error.txt');
+      const errorFilePath = phaseYamlFile
+        .replace('.yaml', '.llm_error.txt')
+        .replace('.md', '.llm_error.txt');
 
       try {
         await Bun.write(errorFilePath, text);
