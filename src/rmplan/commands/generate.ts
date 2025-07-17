@@ -136,6 +136,31 @@ export async function handleGenerateCommand(
     planArg = undefined;
   }
 
+  // Handle --use-yaml option which skips generation and uses the file as if it was pasted
+  if (options.useYaml) {
+    const yamlContent = await Bun.file(options.useYaml).text();
+    
+    // Determine output path based on plan argument or generate default
+    let outputPath: string;
+    if (planArg || options.plan) {
+      const planFile = await resolvePlanFile(planArg || options.plan, globalOpts.config);
+      outputPath = planFile;
+    } else {
+      outputPath = 'rmplan-output';
+    }
+    
+    // Process the YAML as if it was pasted by the user
+    const extractOptions: ExtractMarkdownToYamlOptions = {
+      output: outputPath,
+      planRmfilterArgs: userCliRmfilterArgs,
+      issueUrls: [],
+      commit: options.commit,
+    };
+    
+    await extractMarkdownToYaml(yamlContent, config, options.quiet ?? false, extractOptions);
+    return;
+  }
+
   let planOptionsSet = [planArg, options.plan, options.planEditor, options.issue].reduce(
     (acc, val) => acc + (val ? 1 : 0),
     0

@@ -87,6 +87,7 @@ program
     'Do not automatically run the extract command after generating the prompt'
   )
   .option('--commit', 'Commit changes to jj/git after successful plan generation')
+  .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planArg, options, command) => {
@@ -318,6 +319,7 @@ program
   .option('--next', 'Prepare the next plan that is ready to be implemented')
   .option('--current', 'Prepare the current plan (in_progress or next ready plan)')
   .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
+  .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (yamlFile, options, command) => {

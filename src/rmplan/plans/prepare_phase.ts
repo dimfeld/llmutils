@@ -41,7 +41,7 @@ import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 export async function preparePhase(
   phaseYamlFile: string,
   config: RmplanConfig,
-  options: { force?: boolean; model?: string; rmfilterArgs?: string[]; direct?: boolean } = {}
+  options: { force?: boolean; model?: string; rmfilterArgs?: string[]; direct?: boolean; useYaml?: string } = {}
 ): Promise<void> {
   try {
     // Load the target phase YAML file
@@ -155,7 +155,11 @@ export async function preparePhase(
     // 7. Call LLM or use clipboard/paste mode
     let text: string;
 
-    if (options.direct) {
+    if (options.useYaml) {
+      // Use provided YAML file as LLM output
+      text = await Bun.file(options.useYaml).text();
+      log(chalk.green('✓ Using YAML from file:'), options.useYaml);
+    } else if (options.direct) {
       // Direct LLM call
       const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
       const model = await createModel(modelId, config);

@@ -24,6 +24,15 @@ export async function handlePrepareCommand(
   // Load RmplanConfig using loadEffectiveConfig
   const config = await loadEffectiveConfig(globalOpts.config);
 
+  // Handle --use-yaml option which uses the file as LLM output
+  if (options.useYaml) {
+    // When using --use-yaml, we need a phase file to update
+    if (!yamlFile && !options.next && !options.current) {
+      throw new Error('When using --use-yaml, you must specify a phase file to update');
+    }
+    // We'll handle this after resolving the phase file below
+  }
+
   let phaseYamlFile: string;
 
   if (options.next || options.current) {
@@ -61,5 +70,6 @@ export async function handlePrepareCommand(
     model: options.model,
     rmfilterArgs: rmfilterArgs,
     direct: options.direct,
+    useYaml: options.useYaml,
   });
 }
