@@ -12,7 +12,7 @@ dependencies: []
 planGeneratedAt: 2025-07-20T00:53:52.277Z
 promptsGeneratedAt: 2025-07-20T00:59:04.282Z
 createdAt: 2025-07-20T00:24:53.615Z
-updatedAt: 2025-07-20T00:59:26.588Z
+updatedAt: 2025-07-20T01:00:50.017Z
 project:
   title: Add `direct_mode` Configuration Option
   goal: The project's goal is to introduce a new configuration option,
@@ -76,13 +76,13 @@ tasks:
       - prompt: >
           In `src/rmplan/configSchema.ts`, add a new optional object named
           `planning` to the `rmplanConfigSchema`.
-        done: false
+        done: true
       - prompt: >
           Within the new `planning` object in `rmplanConfigSchema`, add an
           optional boolean field named `direct_mode`. This field will control
           the default behavior for direct mode in the `generate` and `prepare`
           commands.
-        done: false
+        done: true
   - title: Update `generate` and `prepare` Commands to Use New Config
     description: Modify the `generate` and `prepare` command functions to
       incorporate the new configuration setting. The implementation will
@@ -185,6 +185,14 @@ tasks:
           `--no-direct` flags, and provide a clear YAML snippet showing how to
           use it in the `rmplan.yml` config file.
         done: false
+changedFiles:
+  - src/common/model_factory.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/configSchema.ts
+  - src/rmplan/executors/schemas.ts
+  - src/rmplan/llm_utils/run_and_apply.ts
+  - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan
 ---
