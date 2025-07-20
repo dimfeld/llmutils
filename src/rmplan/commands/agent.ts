@@ -266,7 +266,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           planFilePath: currentPlanFile,
           planData,
           executor,
-          commit: options.commit,
+          commit: true,
           dryRun: options.dryRun,
         });
         return;
