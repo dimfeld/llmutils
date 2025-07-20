@@ -394,4 +394,96 @@ workspaceCreation: {}
       expect(config.workspaceCreation).toEqual({});
     });
   });
+
+  describe('config with planning.direct_mode configuration', () => {
+    test('loadEffectiveConfig should parse and validate planning.direct_mode: true', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+defaultExecutor: direct-call
+planning:
+  direct_mode: true
+paths:
+  tasks: "./tasks"
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Check that planning.direct_mode is properly parsed
+      expect(config.planning).toBeDefined();
+      expect(config.planning?.direct_mode).toBe(true);
+    });
+
+    test('loadEffectiveConfig should parse and validate planning.direct_mode: false', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+defaultExecutor: direct-call
+planning:
+  direct_mode: false
+paths:
+  tasks: "./tasks"
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Check that planning.direct_mode is properly parsed
+      expect(config.planning).toBeDefined();
+      expect(config.planning?.direct_mode).toBe(false);
+    });
+
+    test('loadEffectiveConfig should handle missing planning section', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+defaultExecutor: direct-call
+paths:
+  tasks: "./tasks"
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Check that planning is undefined when not specified
+      expect(config.planning).toBeUndefined();
+    });
+
+    test('loadEffectiveConfig merges planning section from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+defaultExecutor: direct-call
+planning:
+  direct_mode: false
+paths:
+  tasks: "./tasks"
+`
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        `
+planning:
+  direct_mode: true
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Local config should override main config for planning.direct_mode
+      expect(config.planning).toBeDefined();
+      expect(config.planning?.direct_mode).toBe(true);
+    });
+  });
 });

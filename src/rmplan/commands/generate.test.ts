@@ -155,7 +155,7 @@ describe.skip('handleGenerateCommand', () => {
     const originalArgv = process.argv;
     process.argv = [...process.argv, '--', 'src/**/*.ts'];
 
-    await handleGenerateCommand(options, command);
+    await handleGenerateCommand(planPath, options, command);
 
     // Restore process.argv
     process.argv = originalArgv;
@@ -193,7 +193,7 @@ describe.skip('handleGenerateCommand', () => {
       },
     };
 
-    await handleGenerateCommand(options, command);
+    await handleGenerateCommand(planPath, options, command);
 
     // Should write simple planning prompt to clipboard
     expect(clipboardWriteSpy).toHaveBeenCalled();
@@ -229,7 +229,7 @@ describe.skip('handleGenerateCommand', () => {
       },
     };
 
-    await handleGenerateCommand(options, command);
+    await handleGenerateCommand(planPath, options, command);
 
     // Should have called findFilesCore
     expect(findFilesCoreSpyLocal).toHaveBeenCalled();
@@ -285,7 +285,7 @@ describe.skip('handleGenerateCommand', () => {
     // Set EDITOR environment variable
     process.env.EDITOR = 'test-editor';
 
-    await handleGenerateCommand(options, command);
+    await handleGenerateCommand(planPath, options, command);
 
     // Should have written plan to clipboard
     expect(clipboardWriteSpy).toHaveBeenCalledWith(expect.stringContaining('Test Plan'));
@@ -347,7 +347,7 @@ Task description`);
       },
     };
 
-    await handleGenerateCommand(options, command);
+    await handleGenerateCommand(planPath, options, command);
 
     // Should wait for enter for extract
     expect(waitForEnterSpy).toHaveBeenCalled();
@@ -373,7 +373,7 @@ Task description`);
       },
     };
 
-    await handleGenerateCommand(options, command);
+    await handleGenerateCommand(planPath, options, command);
 
     // Should NOT have called commit since extract is false
     expect(logSpawnSpy).not.toHaveBeenCalledWith(
@@ -426,7 +426,7 @@ Task description`);
     const originalArgv = process.argv;
     process.argv = [...process.argv, '--', 'src/**/*.ts'];
 
-    await handleGenerateCommand(options, command);
+    await handleGenerateCommand(planPath, options, command);
 
     // Restore process.argv
     process.argv = originalArgv;
@@ -436,5 +436,408 @@ Task description`);
       expect.arrayContaining(['rmfilter']),
       expect.any(Object)
     );
+  });
+});
+
+describe('handleGenerateCommand direct_mode configuration logic', () => {
+  let tempDir: string;
+  let tasksDir: string;
+
+  // Mock functions
+  const logSpy = mock(() => {});
+  const errorSpy = mock(() => {});
+  const logSpawnSpy = mock(() => ({ exited: Promise.resolve(0) }));
+  const clipboardWriteSpy = mock(async () => {});
+  const clipboardReadSpy = mock(async () => 'clipboard content');
+  const runStreamingPromptSpy = mock(async () => {
+    // Just return the YAML directly since we're testing the direct mode logic
+    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+id: test-plan-001
+title: Test Plan
+goal: Test goal
+details: Test details
+status: pending
+createdAt: 2024-01-01T00:00:00Z
+updatedAt: 2024-01-01T00:00:00Z
+phases:
+  - id: phase-1
+    title: Test Phase
+    goal: Phase goal
+    status: pending
+    tasks:
+      - id: task-1
+        title: Test Task
+        description: Task description
+        status: pending`;
+
+    // Write to clipboard to simulate what runStreamingPrompt would do
+    await clipboardWriteSpy(yamlContent);
+
+    return { text: yamlContent };
+  });
+  const waitForEnterSpy = mock(
+    async () => `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+id: test-plan-001
+title: Test Plan
+goal: Test goal
+details: Test details
+status: pending
+createdAt: 2024-01-01T00:00:00Z
+updatedAt: 2024-01-01T00:00:00Z
+phases:
+  - id: phase-1
+    title: Test Phase
+    goal: Phase goal
+    status: pending
+    tasks:
+      - id: task-1
+        title: Test Task
+        description: Task description
+        status: pending
+`
+  );
+
+  beforeEach(async () => {
+    // Clear mocks
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    logSpawnSpy.mockClear();
+    clipboardWriteSpy.mockClear();
+    clipboardReadSpy.mockClear();
+    runStreamingPromptSpy.mockClear();
+    waitForEnterSpy.mockClear();
+
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-generate-directmode-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    // Mock modules
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/clipboard.js', () => ({
+      write: clipboardWriteSpy,
+      read: clipboardReadSpy,
+    }));
+
+    await moduleMocker.mock('../../common/run_and_apply.js', () => ({
+      runStreamingPrompt: runStreamingPromptSpy,
+    }));
+
+    await moduleMocker.mock('../../rmplan/llm_utils/run_and_apply.js', () => ({
+      runStreamingPrompt: runStreamingPromptSpy,
+      DEFAULT_RUN_MODEL: 'test-model',
+    }));
+
+    await moduleMocker.mock('ai', () => ({
+      generateText: async () => ({ text: 'editor-test-plan' }),
+    }));
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      input: async (config: any) => {
+        // Return the default value provided
+        return config.default || '';
+      },
+    }));
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: waitForEnterSpy,
+    }));
+
+    // Mock utils
+    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
+      getGitRoot: async () => tempDir,
+      setDebug: () => {},
+      logSpawn: logSpawnSpy,
+    }));
+
+    // Mock process for logSpawn
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: logSpawnSpy,
+    }));
+
+    // Mock git
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDir,
+    }));
+
+    // Mock model factory
+    await moduleMocker.mock('../../common/model_factory.js', () => ({
+      getModel: () => 'test-model',
+      createModel: () => ({
+        doStream: mock(async () => ({
+          fullStream: (async function* () {
+            yield { type: 'text-delta', textDelta: 'Generated YAML content' };
+          })(),
+          text: Promise.resolve(
+            '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: test-plan-001\ntitle: Test Plan\ngoal: Test goal\ndetails: Test details\nstatus: pending\ncreatedAt: 2024-01-01T00:00:00Z\nupdatedAt: 2024-01-01T00:00:00Z\nphases:\n  - id: phase-1\n    title: Test Phase\n    goal: Phase goal\n    status: pending\n    tasks:\n      - id: task-1\n        title: Test Task\n        description: Task description\n        status: pending'
+          ),
+        })),
+      }),
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('no flag, no config - direct should be false', async () => {
+    // Mock config loader with no direct_mode setting
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+        },
+      }),
+    }));
+
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+
+    const options = {
+      extract: false,
+      // No direct flag specified
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(planPath, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    // Should run rmfilter with --copy flag
+    expect(logSpawnSpy).toHaveBeenCalled();
+    const callArgs = logSpawnSpy.mock.calls[0];
+    expect(callArgs[0]).toContain('rmfilter');
+    expect(callArgs[0]).toContain('--copy');
+  });
+
+  test('no flag, config direct_mode: true - direct should be true', async () => {
+    // Mock config loader with direct_mode: true
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+          stepGeneration: 'test-model',
+        },
+        planning: {
+          direct_mode: true,
+        },
+      }),
+    }));
+
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+
+    const options = {
+      extract: true, // Enable extract to test direct mode
+      // No direct flag specified
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(planPath, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    // Should run rmfilter
+    expect(logSpawnSpy).toHaveBeenCalled();
+    // Should run LLM directly (not wait for enter)
+    expect(runStreamingPromptSpy).toHaveBeenCalled();
+    expect(waitForEnterSpy).not.toHaveBeenCalled();
+  });
+
+  test('no flag, config direct_mode: false - direct should be false', async () => {
+    // Mock config loader with direct_mode: false
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+        },
+        planning: {
+          direct_mode: false,
+        },
+      }),
+    }));
+
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+
+    const options = {
+      extract: false,
+      // No direct flag specified
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(planPath, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    // Should run rmfilter with --copy flag
+    expect(logSpawnSpy).toHaveBeenCalled();
+    const callArgs = logSpawnSpy.mock.calls[0];
+    expect(callArgs[0]).toContain('rmfilter');
+    expect(callArgs[0]).toContain('--copy');
+  });
+
+  test('--direct flag overrides config direct_mode: false', async () => {
+    // Mock config loader with direct_mode: false
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+          stepGeneration: 'test-model',
+        },
+        planning: {
+          direct_mode: false,
+        },
+      }),
+    }));
+
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+
+    const options = {
+      extract: true, // Enable extract to test direct mode
+      direct: true, // CLI flag set to true
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(planPath, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    // Should run rmfilter
+    expect(logSpawnSpy).toHaveBeenCalled();
+    // Should run LLM directly (not wait for enter)
+    expect(runStreamingPromptSpy).toHaveBeenCalled();
+    expect(waitForEnterSpy).not.toHaveBeenCalled();
+  });
+
+  test('--no-direct flag overrides config direct_mode: true', async () => {
+    // Mock config loader with direct_mode: true
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+        },
+        planning: {
+          direct_mode: true,
+        },
+      }),
+    }));
+
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+
+    const options = {
+      extract: true, // Enable extract to test direct mode
+      direct: false, // CLI flag set to false (--no-direct)
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(planPath, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    // Should run rmfilter
+    expect(logSpawnSpy).toHaveBeenCalled();
+    // Should wait for enter (not direct mode)
+    expect(waitForEnterSpy).toHaveBeenCalled();
+    expect(runStreamingPromptSpy).not.toHaveBeenCalled();
   });
 });

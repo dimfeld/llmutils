@@ -12,7 +12,7 @@ dependencies: []
 planGeneratedAt: 2025-07-20T00:53:52.277Z
 promptsGeneratedAt: 2025-07-20T00:59:04.282Z
 createdAt: 2025-07-20T00:24:53.615Z
-updatedAt: 2025-07-20T01:05:22.117Z
+updatedAt: 2025-07-20T05:13:36.603Z
 project:
   title: Add `direct_mode` Configuration Option
   goal: The project's goal is to introduce a new configuration option,
@@ -139,7 +139,7 @@ tasks:
           the basic test structure with mocks for dependencies like
           `configLoader` and `preparePhase`, using `generate.test.ts` as a
           template.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/prepare.test.ts`, add a test suite to verify
           the `direct_mode` logic. Write individual tests for each precedence
@@ -157,17 +157,17 @@ tasks:
 
           Use `moduleMocker` to provide different mock configurations for each
           test.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/generate.test.ts`, add a similar test suite to
           verify the `direct_mode` logic for the `handleGenerateCommand`
           function, covering the same set of precedence scenarios.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/configLoader.test.ts`, add a test to
           `loadEffectiveConfig` to ensure that a configuration containing
           `planning: { direct_mode: true }` is parsed and validated correctly.
-        done: false
+        done: true
   - title: Update Project Documentation
     description: Update the `README.md` file and any other relevant user-facing
       documentation. The documentation will clearly explain the new
@@ -186,8 +186,11 @@ tasks:
           use it in the `rmplan.yml` config file.
         done: false
 changedFiles:
+  - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/prepare.test.ts
   - src/rmplan/commands/prepare.ts
+  - src/rmplan/configLoader.test.ts
   - src/rmplan/configLoader.ts
 rmfilter:
   - src/rmplan
