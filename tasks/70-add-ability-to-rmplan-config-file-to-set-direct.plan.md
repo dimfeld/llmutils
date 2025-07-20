@@ -12,7 +12,7 @@ dependencies: []
 planGeneratedAt: 2025-07-20T00:53:52.277Z
 promptsGeneratedAt: 2025-07-20T00:59:04.282Z
 createdAt: 2025-07-20T00:24:53.615Z
-updatedAt: 2025-07-20T01:00:50.017Z
+updatedAt: 2025-07-20T01:05:22.117Z
 project:
   title: Add `direct_mode` Configuration Option
   goal: The project's goal is to introduce a new configuration option,
@@ -100,7 +100,7 @@ tasks:
           override a `direct_mode: true` setting from the configuration file.
           Commander will automatically handle the boolean logic for `--direct`
           and `--no-direct`.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/generate.ts`, modify the
           `handleGenerateCommand` function to determine the effective `direct`
@@ -116,13 +116,13 @@ tasks:
 
           Pass this calculated value to the relevant logic that handles direct
           execution.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/prepare.ts`, apply the same precedence logic
           to the `handlePrepareCommand` function to determine the effective
           `direct` mode. This calculated boolean value should then be passed to
           the `preparePhase` function in its options object.
-        done: false
+        done: true
   - title: Implement Tests for New Configuration Logic
     description: Add new unit and integration tests to verify the correct behavior
       of the `direct_mode` feature. The tests will cover scenarios where the
@@ -186,13 +186,9 @@ tasks:
           use it in the `rmplan.yml` config file.
         done: false
 changedFiles:
-  - src/common/model_factory.ts
-  - src/rmplan/commands/agent.ts
   - src/rmplan/commands/generate.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/executors/schemas.ts
-  - src/rmplan/llm_utils/run_and_apply.ts
-  - src/rmplan/rmplan.ts
+  - src/rmplan/commands/prepare.ts
+  - src/rmplan/configLoader.ts
 rmfilter:
   - src/rmplan
 ---

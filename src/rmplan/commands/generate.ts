@@ -134,10 +134,8 @@ export async function handleGenerateCommand(
   // 1. Command-line flag (--direct or --no-direct)
   // 2. Config setting (config.planning?.direct_mode)
   // 3. Default to false
-  const effectiveDirectMode = 
-    options.direct !== undefined 
-      ? options.direct 
-      : config.planning?.direct_mode ?? false;
+  const effectiveDirectMode =
+    options.direct !== undefined ? options.direct : (config.planning?.direct_mode ?? false);
 
   // Find '--' in process.argv to get extra args for rmfilter
   const doubleDashIdx = process.argv.indexOf('--');

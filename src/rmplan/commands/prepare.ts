@@ -28,10 +28,8 @@ export async function handlePrepareCommand(
   // 1. Command-line flag (--direct or --no-direct)
   // 2. Config setting (config.planning?.direct_mode)
   // 3. Default to false
-  const effectiveDirectMode = 
-    options.direct !== undefined 
-      ? options.direct 
-      : config.planning?.direct_mode ?? false;
+  const effectiveDirectMode =
+    options.direct !== undefined ? options.direct : (config.planning?.direct_mode ?? false);
 
   // Handle --use-yaml option which uses the file as LLM output
   if (options.useYaml) {
