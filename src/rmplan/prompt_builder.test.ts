@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -11,6 +11,7 @@ import {
 } from './prompt_builder.js';
 import type { PlanSchema } from './planSchema.js';
 import type { RmplanConfig } from './configSchema.js';
+import type { Executor } from './executors/types.js';
 
 describe('prompt_builder', () => {
   describe('buildProjectContextSection', () => {
@@ -192,6 +193,11 @@ describe('prompt_builder', () => {
       },
     };
 
+    // Create a mock executor
+    const mockExecutor: Executor = {
+      execute: mock(async () => {}),
+    };
+
     beforeEach(async () => {
       tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'prompt-builder-test-'));
       // Create a .git directory to make it a git repo
@@ -214,6 +220,7 @@ describe('prompt_builder', () => {
       };
 
       const result = await buildExecutionPrompt({
+        executor: mockExecutor,
         planData,
         planFilePath: path.join(tempDir, 'test-plan.yml'),
         baseDir: tempDir,
@@ -245,6 +252,7 @@ describe('prompt_builder', () => {
       };
 
       const result = await buildExecutionPrompt({
+        executor: mockExecutor,
         planData,
         planFilePath: path.join(tempDir, 'test-plan.yml'),
         baseDir: tempDir,
@@ -275,6 +283,7 @@ describe('prompt_builder', () => {
       };
 
       const result = await buildExecutionPrompt({
+        executor: mockExecutor,
         planData,
         planFilePath: path.join(tempDir, 'test-plan.yml'),
         baseDir: tempDir,
@@ -285,6 +294,32 @@ describe('prompt_builder', () => {
       expect(result).toContain('## Project Details:\n\nProject Details');
       expect(result).toContain('# Current Phase Goal: Phase Goal');
       expect(result).toContain('## Phase Details:\n\nPhase Details');
+    });
+
+    test('includes execution guidelines in all prompts', async () => {
+      const planData: PlanSchema = {
+        title: 'Test Plan',
+        goal: 'Plan Goal',
+        details: 'Plan Details',
+        tasks: [],
+      };
+
+      const result = await buildExecutionPrompt({
+        executor: mockExecutor,
+        planData,
+        planFilePath: path.join(tempDir, 'test-plan.yml'),
+        baseDir: tempDir,
+        config: mockConfig,
+      });
+
+      // Check that execution guidelines are included
+      expect(result).toContain('## Execution Guidelines');
+      expect(result).toContain('### 1. Understand the Codebase Context');
+      expect(result).toContain('### 2. Track Your Progress');
+      expect(result).toContain('### 3. Follow Best Practices');
+      expect(result).toContain('### 4. Verify Your Work');
+      expect(result).toContain('### 5. Self-Review Checklist');
+      expect(result).toContain('Quality is more important than speed');
     });
   });
 });

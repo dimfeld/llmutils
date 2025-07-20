@@ -39,6 +39,7 @@ export interface Executor {
   prepareStepOptions?: () => Partial<PrepareNextStepOptions>;
 
   forceReviewCommentsMode?: 'inline-edits' | 'separate-context';
+  todoDirections?: string;
 
   /**
    * Prefix to use when listing file paths in prompts.

@@ -360,6 +360,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
         // Build the prompt for the simple task using the unified function
         const taskPrompt = await buildExecutionPrompt({
+          executor,
           planData,
           planFilePath: currentPlanFile,
           baseDir: currentBaseDir,
@@ -604,6 +605,7 @@ async function executeStubPlan({
 
   // Build execution prompt using the unified function
   const directPrompt = await buildExecutionPrompt({
+    executor,
     planData,
     planFilePath,
     baseDir,

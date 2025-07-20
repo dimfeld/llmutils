@@ -31,6 +31,7 @@ export class ClaudeCodeExecutor implements Executor {
 
   // readonly forceReviewCommentsMode = 'separate-context';
   readonly filePathPrefix = '@';
+  readonly todoDirections = '- Use the TodoWrite tool to maintain your TODO list.';
   private alwaysAllowedTools = new Map<string, true | string[]>();
 
   constructor(

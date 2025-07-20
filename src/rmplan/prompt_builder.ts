@@ -3,11 +3,13 @@ import type { PlanSchema } from './planSchema.js';
 import type { RmplanConfig } from './configSchema.js';
 import { buildPlanContextPrompt, isURL } from './context_helpers.js';
 import { getGitRoot } from '../common/git.js';
+import type { Executor } from './executors/types.js';
 
 /**
  * Options for building execution prompts
  */
 export interface ExecutionPromptOptions {
+  executor: Executor;
   planData: PlanSchema;
   planFilePath: string;
   baseDir: string;
@@ -135,6 +137,7 @@ export async function buildFileListSection(
  */
 export async function buildExecutionPrompt(options: ExecutionPromptOptions): Promise<string> {
   const {
+    executor,
     planData,
     planFilePath,
     baseDir,
@@ -206,7 +209,7 @@ export async function buildExecutionPrompt(options: ExecutionPromptOptions): Pro
   }
 
   // Add execution guidelines
-  const executionGuidelines = buildExecutionGuidelines();
+  const executionGuidelines = buildExecutionGuidelines(executor);
   promptParts.push(executionGuidelines);
 
   return promptParts.join('\n');
@@ -215,33 +218,32 @@ export async function buildExecutionPrompt(options: ExecutionPromptOptions): Pro
 /**
  * Build execution guidelines section
  */
-function buildExecutionGuidelines(): string {
+function buildExecutionGuidelines(executor: Executor): string {
+  let todoDirections = executor.todoDirections;
+  if (todoDirections) {
+    todoDirections = `### Track Your Progress
+Create a TODO list to organize your work:
+- Break down the task into specific, actionable items
+- Include items for code changes, tests, and verification
+- Track which items are completed as you progress
+- Update the list if you discover additional work needed
+${todoDirections}
+`;
+  }
+
   return `
 ## Execution Guidelines
 
-### 1. Understand the Codebase Context
+### Understand the Codebase Context
 Before implementing changes:
 - Examine existing patterns and conventions in the codebase
 - Look for similar implementations or components that can serve as examples
 - Understand the project structure and where your changes fit
 - Review any relevant tests to understand expected behavior
 
-### 2. Track Your Progress
-Create a TODO list to organize your work:
-- Break down the task into specific, actionable items
-- Include items for code changes, tests, and verification
-- Track which items are completed as you progress
-- Update the list if you discover additional work needed
+${todoDirections}
 
-Example TODO structure:
-- [ ] Analyze existing code patterns for similar functionality
-- [ ] Implement core feature logic
-- [ ] Add/update tests for new functionality
-- [ ] Run tests and fix any failures
-- [ ] Check linting and fix any issues
-- [ ] Verify changes match codebase conventions
-
-### 3. Follow Best Practices
+### Follow Best Practices
 Ensure your implementation:
 - Matches the existing code style and patterns
 - Uses the same libraries and utilities already in the codebase
@@ -249,14 +251,14 @@ Ensure your implementation:
 - Maintains consistent error handling patterns
 - Includes appropriate type annotations
 
-### 4. Verify Your Work
+### Verify Your Work
 After implementing changes:
 - Run the build command to ensure compilation succeeds
 - Execute tests to verify functionality
 - Run linting tools to check code quality
 - Fix any issues before considering the task complete
 
-### 5. Self-Review Checklist
+### Self-Review Checklist
 Before marking the task as done, verify:
 - [ ] Changes align with the plan's goals and requirements
 - [ ] Code follows existing patterns in the codebase
