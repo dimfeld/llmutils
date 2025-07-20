@@ -487,7 +487,7 @@ export async function handleGenerateCommand(
 
       if (options.direct) {
         // Direct LLM call
-        const modelId = config.models?.execution || DEFAULT_RUN_MODEL;
+        const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;
         const model = await createModel(modelId, config);
 
         log('Generating plan using model:', modelId);
