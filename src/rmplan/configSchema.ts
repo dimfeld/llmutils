@@ -143,6 +143,15 @@ export const rmplanConfigSchema = z
     defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
+    /** Planning-related configuration options */
+    planning: z
+      .object({
+        direct_mode: z
+          .boolean()
+          .optional()
+          .describe('Default behavior for direct mode in generate and prepare commands'),
+      })
+      .optional(),
     /**
      * Executor-specific options mapped by executor name.
      * Each executor has its own schema:
