@@ -6,13 +6,13 @@ goal: This phase will deliver the complete functionality by updating the
   configuration model, modifying the CLI commands to respect the new setting,
   adding comprehensive tests, and documenting the feature.
 id: 70
-status: in_progress
+status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-07-20T00:53:52.277Z
 promptsGeneratedAt: 2025-07-20T00:59:04.282Z
 createdAt: 2025-07-20T00:24:53.615Z
-updatedAt: 2025-07-20T05:13:36.603Z
+updatedAt: 2025-07-20T05:14:36.700Z
 project:
   title: Add `direct_mode` Configuration Option
   goal: The project's goal is to introduce a new configuration option,
@@ -184,8 +184,9 @@ tasks:
           commands, detail the precedence logic with the `--direct` and
           `--no-direct` flags, and provide a clear YAML snippet showing how to
           use it in the `rmplan.yml` config file.
-        done: false
+        done: true
 changedFiles:
+  - docs/direct_mode_feature.md
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/prepare.test.ts
