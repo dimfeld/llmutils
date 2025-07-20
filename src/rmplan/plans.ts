@@ -1,5 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import * as path from 'node:path';
+import { Glob } from 'bun';
 import { join, resolve } from 'node:path';
 import * as yaml from 'yaml';
 import { debugLog, warn } from '../logging.js';
@@ -34,7 +35,7 @@ let cachedPlans = new Map<
   {
     plans: Map<number, PlanSchema & { filename: string }>;
     maxNumericId: number;
-    duplicates: number[];
+    duplicates: Record<number, string[]>;
   }
 >();
 
@@ -51,7 +52,7 @@ export async function readAllPlans(
 ): Promise<{
   plans: Map<number, PlanSchema & { filename: string }>;
   maxNumericId: number;
-  duplicates: number[];
+  duplicates: Record<number, string[]>;
 }> {
   let existing = readCache ? cachedPlans.get(directory) : undefined;
   if (existing) {
@@ -61,8 +62,7 @@ export async function readAllPlans(
   const plans = new Map<number, PlanSchema & { filename: string }>();
   const promises: Promise<void>[] = [];
   let maxNumericId = 0;
-  const duplicates: number[] = [];
-  const seenIds = new Set<number>();
+  const seenIds = new Map<number, string[]>();
 
   debugLog(`Starting to scan directory for plan files: ${directory}`);
 
@@ -99,13 +99,11 @@ export async function readAllPlans(
         }
       }
 
-      // Check for duplicate IDs
+      // Track all files for each ID
       if (seenIds.has(idKey)) {
-        if (!duplicates.includes(idKey)) {
-          duplicates.push(idKey);
-        }
+        seenIds.get(idKey)!.push(fullPath);
       } else {
-        seenIds.add(idKey);
+        seenIds.set(idKey, [fullPath]);
       }
 
       plans.set(idKey, {
@@ -121,25 +119,24 @@ export async function readAllPlans(
     }
   }
 
-  async function scanDirectory(dir: string) {
-    debugLog(`Scanning directory: ${dir}`);
-    const entries = await readdir(dir, { recursive: true });
-
-    for (const entry of entries) {
-      const fullPath = join(dir, entry);
-
-      if (entry.endsWith('.plan.md') || entry.endsWith('.yml') || entry.endsWith('.yaml')) {
-        debugLog(`Found plan file: ${fullPath}`);
-        promises.push(readFile(fullPath));
-      } else {
-        debugLog(`Skipping non-YAML file: ${fullPath}`);
-      }
-    }
+  const glob = new Glob('**/*.{plan.md,yml,yaml}');
+  for await (const entry of glob.scan(directory)) {
+    const fullPath = join(directory, entry);
+    promises.push(readFile(fullPath));
   }
 
-  await scanDirectory(directory);
+  // await scanDirectory(directory);
   await Promise.all(promises);
   debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
+  
+  // Build duplicates object from seenIds - only include IDs that have more than one file
+  const duplicates: Record<number, string[]> = {};
+  for (const [id, files] of seenIds.entries()) {
+    if (files.length > 1) {
+      duplicates[id] = files;
+    }
+  }
+  
   const retVal = { plans, maxNumericId, duplicates };
   cachedPlans.set(directory, retVal);
   return retVal;
@@ -231,7 +228,7 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
   const { plans, duplicates } = await readAllPlans(tasksDir);
 
   // Check if the requested plan ID is a duplicate
-  if (duplicates.includes(numericPlanArg)) {
+  if (duplicates[numericPlanArg]) {
     throw new Error(
       `Plan ID ${numericPlanArg} is duplicated in multiple files. Please run 'rmplan renumber' to fix this issue.`
     );

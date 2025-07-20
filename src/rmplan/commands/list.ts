@@ -11,6 +11,7 @@ import { getCombinedTitleFromSummary } from '../display_utils.js';
 import { isPlanReady, readAllPlans } from '../plans.js';
 
 export async function handleListCommand(options: any, command: any, searchTerms?: string[]) {
+  console.time('rmplan list');
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -318,13 +319,21 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   log(`Showing ${planArray.length} of ${plans.size} plan(s)`);
 
   // Display duplicate IDs if any exist
-  if (duplicates.length > 0) {
+  const duplicateIds = Object.keys(duplicates).map(Number).sort((a, b) => a - b);
+  if (duplicateIds.length > 0) {
     log('');
     log(chalk.yellow.bold('⚠️  Duplicate plan IDs found:'));
-    for (const duplicateId of duplicates) {
-      log(chalk.yellow(`   - ID ${duplicateId}`));
+    for (const duplicateId of duplicateIds) {
+      log(chalk.yellow(`   - ID ${duplicateId}:`));
+      const filePaths = duplicates[duplicateId];
+      for (const filePath of filePaths) {
+        const relativePath = path.relative(searchDir, filePath);
+        log(chalk.gray(`     • ${relativePath}`));
+      }
     }
     log('');
     log(chalk.cyan('Run'), chalk.bold('rmplan renumber'), chalk.cyan('to fix duplicate IDs.'));
   }
+
+  console.timeEnd('rmplan list');
 }

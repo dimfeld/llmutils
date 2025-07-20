@@ -28,7 +28,7 @@ const mockConfig = {
 const mockPlansResult = {
   plans: new Map(),
   maxNumericId: 5,
-  duplicates: [],
+  duplicates: {},
 };
 
 describe('handleImportCommand', () => {
@@ -175,7 +175,7 @@ describe('handleImportCommand', () => {
     const mockPlansWithImported = {
       plans: new Map([[1, { filename: '/test/imported-plan.yml' }]]),
       maxNumericId: 5,
-      duplicates: [],
+      duplicates: {},
     };
 
     const mockImportedPlan: PlanSchema = {
@@ -320,7 +320,7 @@ describe('handleImportCommand', () => {
         [3, { ...existingPlan, filename: '/test/git/root/tasks/issue-123-test-issue.yml' }],
       ]),
       maxNumericId: 5,
-      duplicates: [],
+      duplicates: {},
     };
 
     // Mock the new dependencies
@@ -450,7 +450,7 @@ describe('handleImportCommand', () => {
     const mockPlansWithDuplicate = {
       plans: new Map([[1, mockExistingPlan]]),
       maxNumericId: 5,
-      duplicates: [],
+      duplicates: {},
     };
 
     // Mock the new dependencies
