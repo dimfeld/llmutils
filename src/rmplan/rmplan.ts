@@ -88,6 +88,7 @@ program
   )
   .option('--commit', 'Commit changes to jj/git after successful plan generation')
   .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
+  .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planArg, options, command) => {

@@ -18,6 +18,8 @@ import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../../rmpr/comment_options.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.ts';
+import { createModel } from '../../common/model_factory.js';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
 import {
   generateSuggestedFilename,
@@ -434,9 +436,11 @@ export async function handleGenerateCommand(
         );
       }
 
-      // Copy the prompt directly to clipboard without running rmfilter
-      await clipboard.write(promptString);
-      log('Prompt copied to clipboard');
+      if (!options.direct) {
+        // Copy the prompt directly to clipboard without running rmfilter
+        await clipboard.write(promptString);
+        log('Prompt copied to clipboard');
+      }
       exitRes = 0;
     } else {
       // Collect docs from stub plan
@@ -479,13 +483,36 @@ export async function handleGenerateCommand(
     }
 
     if (exitRes === 0 && options.extract !== false) {
-      log(
-        chalk.bold(
-          `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
-        )
-      );
+      let input: string;
 
-      let input = await waitForEnter(true);
+      if (options.direct) {
+        // Direct LLM call
+        const modelId = config.models?.execution || DEFAULT_RUN_MODEL;
+        const model = await createModel(modelId, config);
+
+        log('Generating plan using model:', modelId);
+
+        const result = await runStreamingPrompt({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: promptString,
+            },
+          ],
+          temperature: 0.2,
+        });
+        input = result.text;
+      } else {
+        // Original clipboard/paste mode
+        log(
+          chalk.bold(
+            `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} to extract the copied Markdown to a YAML plan file, or Ctrl+C to exit.`
+          )
+        );
+
+        input = await waitForEnter(true);
+      }
 
       let outputPath: string;
       if (planFile) {
