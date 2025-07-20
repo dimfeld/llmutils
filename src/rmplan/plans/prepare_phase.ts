@@ -41,7 +41,13 @@ import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 export async function preparePhase(
   phaseYamlFile: string,
   config: RmplanConfig,
-  options: { force?: boolean; model?: string; rmfilterArgs?: string[]; direct?: boolean; useYaml?: string } = {}
+  options: {
+    force?: boolean;
+    model?: string;
+    rmfilterArgs?: string[];
+    direct?: boolean;
+    useYaml?: string;
+  } = {}
 ): Promise<void> {
   try {
     // Load the target phase YAML file

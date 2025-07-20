@@ -4,10 +4,10 @@ title: Update planning prompts from generate command to include instructions
   about generating acceptance criteria in the details
 goal: ""
 id: 71
-status: in_progress
+status: done
 priority: medium
 createdAt: 2025-07-20T00:32:32.122Z
-updatedAt: 2025-07-20T00:33:03.969Z
+updatedAt: 2025-07-20T00:37:34.757Z
 tasks: []
 rmfilter:
   - src/rmplan/commands/generate.ts

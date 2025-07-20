@@ -58,7 +58,7 @@ export const planMarkdownExampleFormat = `
 [low|medium|high|urgent]
 
 ### Details
-[Detailed description and analysis]
+[Detailed description and analysis, including acceptance criteria for the project]
 
 ---
 
@@ -94,7 +94,7 @@ export const phaseBasedMarkdownExampleFormat = `
 [low|medium|high|urgent]
 
 ## Details
-[Overall project details and analysis]
+[Overall project details and analysis, including acceptance criteria for the project]
 
 ## Phase 1: [Phase Title]
 
@@ -108,7 +108,7 @@ export const phaseBasedMarkdownExampleFormat = `
 [None or comma-separated list, e.g., Phase 2, Phase 3]
 
 ### Details
-[Phase description]
+[Phase description including what will be accomplished and acceptance criteria for this phase]
 
 ### Tasks
 
@@ -132,7 +132,7 @@ export const phaseBasedMarkdownExampleFormat = `
 [None or comma-separated list, e.g., Phase 1]
 
 ### Details
-[Phase description]
+[Phase description including what will be accomplished and acceptance criteria for this phase]
 
 ### Tasks
 
@@ -209,7 +209,11 @@ The goal is to output a high-level phase-based plan. Focus on the overall struct
 
 When generating the final output, create a phase-based plan with:
 - A title: A concise single-sentence title that captures the essence of the project
-- An overall goal and project details
+- An overall goal and project details. The details section should include:
+  - A comprehensive analysis of the work to be done
+  - Acceptance criteria for the overall project (what conditions must be met for the project to be considered complete)
+  - Technical considerations and approach
+  - Any important constraints or assumptions
 - A priority: Assign a priority level (low, medium, high, or urgent) based on:
   - low: Nice-to-have features or improvements with no pressing timeline
   - medium: Important features that should be done but aren't blocking critical functionality
@@ -220,7 +224,10 @@ When generating the final output, create a phase-based plan with:
   - A phase-specific goal
   - A phase priority: May differ from overall priority based on phase urgency
   - Dependencies on other phases (if any)
-  - Phase details
+  - Phase details that include:
+    - What will be accomplished in this phase
+    - Acceptance criteria specific to this phase
+    - How this phase contributes to the overall project goal
   - A list of tasks with titles and descriptions
 
 IMPORTANT: In this high-level plan, tasks must include BOTH a title and a description.
@@ -266,7 +273,7 @@ When testing, prefer to use real tests and not mock functions or modules. Prefer
 
 The goal is to output prompts, but context, etc is important as well. Include plenty of information about which files to edit, what to do and how to do it, but you do not need to output code samples.
 
-When generating the final output with the prompts, output a title (a concise single-sentence title for the project), an overall goal, project details, a priority level, and then a list of tasks.
+When generating the final output with the prompts, output a title (a concise single-sentence title for the project), an overall goal, project details (including acceptance criteria for the overall project), a priority level, and then a list of tasks.
 
 For the priority level, choose one of the following based on importance and urgency:
 - low: Nice-to-have features or improvements with no pressing timeline
