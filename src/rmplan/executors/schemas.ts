@@ -37,7 +37,7 @@ export const copyOnlyOptionsSchema = z.object({});
 export const copyPasteOptionsSchema = z.object({
   executionModel: z
     .string()
-    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro-preview-06-05'.")
+    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.")
     .optional(),
 });
 
@@ -47,6 +47,6 @@ export const copyPasteOptionsSchema = z.object({
 export const directCallOptionsSchema = z.object({
   executionModel: z
     .string()
-    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro-preview-06-05'.")
+    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.")
     .optional(),
 });

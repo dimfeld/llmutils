@@ -6,7 +6,7 @@ import { askForModelId, createModel } from '../../common/model_factory.ts';
 import { log } from '../../logging.ts';
 import { streamResultToConsole } from './llm.js';
 
-export const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro-preview-06-05';
+export const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro';
 
 /** Represents a single message in a structured LLM prompt. */
 export interface LlmPromptMessage {

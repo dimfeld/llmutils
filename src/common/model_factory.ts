@@ -132,8 +132,8 @@ export async function askForModelId(options?: {
   onlyDirectCall?: boolean;
 }): Promise<{ value: string; executor: string } | null> {
   let availableModels = [
-    'google/gemini-2.5-pro-preview-06-05',
-    'google/gemini-2.5-flash-preview-05-20',
+    'google/gemini-2.5-pro',
+    'google/gemini-2.5-flash',
     'google/gemini-2.0-flash',
     'openai/o4-mini',
     'openai/gpt-4.1',
@@ -153,8 +153,8 @@ export async function askForModelId(options?: {
     'openrouter/openai/gpt-4.1-mini',
     'openrouter/openai/gpt-4.1-nano',
     'openrouter/openai/o4-mini',
-    'openrouter/google/gemini-2.5-pro-preview',
-    'openrouter/google/gemini-2.5-flash-preview',
+    'openrouter/google/gemini-2.5-pro',
+    'openrouter/google/gemini-2.5-flash',
     { name: 'Claude Web', value: 'claude', executor: CopyPasteExecutor.name },
     { name: 'Gemini AI Studio', value: 'gemini', executor: CopyPasteExecutor.name },
     { name: 'Grok Web', value: 'grok', executor: CopyPasteExecutor.name },
