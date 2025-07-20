@@ -3,10 +3,10 @@
 title: Encourage more planning and self-verification when running a task
 goal: ""
 id: 69
-status: in_progress
+status: done
 priority: medium
 createdAt: 2025-07-20T00:16:47.678Z
-updatedAt: 2025-07-20T05:21:03.976Z
+updatedAt: 2025-07-20T05:22:35.487Z
 tasks: []
 rmfilter:
   - src/rmplan/commands/agent.ts
