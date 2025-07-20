@@ -24,6 +24,15 @@ export async function handlePrepareCommand(
   // Load RmplanConfig using loadEffectiveConfig
   const config = await loadEffectiveConfig(globalOpts.config);
 
+  // Determine effective direct mode setting with precedence:
+  // 1. Command-line flag (--direct or --no-direct)
+  // 2. Config setting (config.planning?.direct_mode)
+  // 3. Default to false
+  const effectiveDirectMode = 
+    options.direct !== undefined 
+      ? options.direct 
+      : config.planning?.direct_mode ?? false;
+
   // Handle --use-yaml option which uses the file as LLM output
   if (options.useYaml) {
     // When using --use-yaml, we need a phase file to update
@@ -69,7 +78,7 @@ export async function handlePrepareCommand(
     force: options.force,
     model: options.model,
     rmfilterArgs: rmfilterArgs,
-    direct: options.direct,
+    direct: effectiveDirectMode,
     useYaml: options.useYaml,
   });
 }

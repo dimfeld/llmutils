@@ -130,6 +130,15 @@ export async function handleGenerateCommand(
   const config = await loadEffectiveConfig(globalOpts.config);
   const gitRoot = (await getGitRoot()) || process.cwd();
 
+  // Determine effective direct mode setting with precedence:
+  // 1. Command-line flag (--direct or --no-direct)
+  // 2. Config setting (config.planning?.direct_mode)
+  // 3. Default to false
+  const effectiveDirectMode = 
+    options.direct !== undefined 
+      ? options.direct 
+      : config.planning?.direct_mode ?? false;
+
   // Find '--' in process.argv to get extra args for rmfilter
   const doubleDashIdx = process.argv.indexOf('--');
   const userCliRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
@@ -436,7 +445,7 @@ export async function handleGenerateCommand(
         );
       }
 
-      if (!options.direct) {
+      if (!effectiveDirectMode) {
         // Copy the prompt directly to clipboard without running rmfilter
         await clipboard.write(promptString);
         log('Prompt copied to clipboard');
@@ -485,7 +494,7 @@ export async function handleGenerateCommand(
     if (exitRes === 0 && options.extract !== false) {
       let input: string;
 
-      if (options.direct) {
+      if (effectiveDirectMode) {
         // Direct LLM call
         const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;
         const model = await createModel(modelId, config);
