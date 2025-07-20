@@ -298,9 +298,6 @@ export async function handleGenerateCommand(
     if (!wasCreatedByUs) {
       // This is an existing stub plan file, process it normally
       const { goal, details } = stubPlan.data;
-      if (!goal && !details) {
-        throw new Error('Stub plan must have at least a goal or details to generate tasks.');
-      }
 
       // Construct planText from stub's title, goal, and details
       const planParts: string[] = [];
