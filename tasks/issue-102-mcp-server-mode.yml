@@ -10,21 +10,19 @@ issue:
 createdAt: 2025-06-07T02:05:24.730Z
 updatedAt: 2025-06-07T07:26:21.250Z
 tasks: []
+docs:
+- https://raw.githubusercontent.com/punkpeye/fastmcp/refs/heads/main/README.md
 ---
 
 Allow running as an MCP server. Tools should include:
 
-- plan extraction from markdown
-- generate prompts for task
-- list all tasks, ready tasks, tasks upstream/downstream of a particular task 
-- list details for a task
-- get next task
-- get next step/prompt in a task
-- mark task done
-- update plan for a task
-- Get parent/siblings of a task
+- list all plans, ready plans, plans upstream/downstream of a particular plan, etc.
+- get details for a plan
+- get next ready plan
+- update task status
+- update information on a task (set command)
 
 Also expose the planning prompts as prompt resources.
 
 
-Consider https://www.npmjs.com/package/fastmcp for the MCP server framework.
+Consider https://www.npmjs.com/package/fastmcp for the MCP server framework, which we are already using elsewhere..
