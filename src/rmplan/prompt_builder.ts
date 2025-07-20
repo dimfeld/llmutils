@@ -205,5 +205,65 @@ export async function buildExecutionPrompt(options: ExecutionPromptOptions): Pro
     promptParts.push(docSection);
   }
 
+  // Add execution guidelines
+  const executionGuidelines = buildExecutionGuidelines();
+  promptParts.push(executionGuidelines);
+
   return promptParts.join('\n');
+}
+
+/**
+ * Build execution guidelines section
+ */
+function buildExecutionGuidelines(): string {
+  return `
+## Execution Guidelines
+
+### 1. Understand the Codebase Context
+Before implementing changes:
+- Examine existing patterns and conventions in the codebase
+- Look for similar implementations or components that can serve as examples
+- Understand the project structure and where your changes fit
+- Review any relevant tests to understand expected behavior
+
+### 2. Track Your Progress
+Create a TODO list to organize your work:
+- Break down the task into specific, actionable items
+- Include items for code changes, tests, and verification
+- Track which items are completed as you progress
+- Update the list if you discover additional work needed
+
+Example TODO structure:
+- [ ] Analyze existing code patterns for similar functionality
+- [ ] Implement core feature logic
+- [ ] Add/update tests for new functionality
+- [ ] Run tests and fix any failures
+- [ ] Check linting and fix any issues
+- [ ] Verify changes match codebase conventions
+
+### 3. Follow Best Practices
+Ensure your implementation:
+- Matches the existing code style and patterns
+- Uses the same libraries and utilities already in the codebase
+- Follows the project's naming conventions
+- Maintains consistent error handling patterns
+- Includes appropriate type annotations
+
+### 4. Verify Your Work
+After implementing changes:
+- Run the build command to ensure compilation succeeds
+- Execute tests to verify functionality
+- Run linting tools to check code quality
+- Fix any issues before considering the task complete
+
+### 5. Self-Review Checklist
+Before marking the task as done, verify:
+- [ ] Changes align with the plan's goals and requirements
+- [ ] Code follows existing patterns in the codebase
+- [ ] All tests pass successfully
+- [ ] Linting checks pass without errors
+- [ ] No unnecessary files or debug code included
+- [ ] Changes are focused and don't include unrelated modifications
+
+Remember: Quality is more important than speed. Take time to understand the codebase and verify your changes work correctly within the existing system.`;
 }

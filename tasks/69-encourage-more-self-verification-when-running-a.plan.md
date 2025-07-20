@@ -3,14 +3,14 @@
 title: Encourage more planning and self-verification when running a task
 goal: ""
 id: 69
-status: pending
+status: in_progress
 priority: medium
 createdAt: 2025-07-20T00:16:47.678Z
-updatedAt: 2025-07-20T00:16:47.678Z
+updatedAt: 2025-07-20T05:21:03.976Z
 tasks: []
 rmfilter:
-- src/rmplan/commands/agent.ts
-- --with-imports
+  - src/rmplan/commands/agent.ts
+  - --with-imports
 ---
 
 We want to make sure that the agent does not just generate code and not check it. So we want to add a second step where
