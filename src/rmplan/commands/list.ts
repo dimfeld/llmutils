@@ -215,6 +215,8 @@ export async function handleListCommand(options: any, command: any, searchTerms?
             return chalk.green(`${depId}✓`);
           } else if (depStatus === 'in_progress') {
             return chalk.yellow(`${depId}…`);
+          } else if (depStatus === 'cancelled') {
+            return chalk.gray(`${depId}✗`);
           } else {
             return `${depId}`;
           }
