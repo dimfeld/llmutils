@@ -128,7 +128,7 @@ export async function readAllPlans(
   // await scanDirectory(directory);
   await Promise.all(promises);
   debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
-  
+
   // Build duplicates object from seenIds - only include IDs that have more than one file
   const duplicates: Record<number, string[]> = {};
   for (const [id, files] of seenIds.entries()) {
@@ -136,7 +136,7 @@ export async function readAllPlans(
       duplicates[id] = files;
     }
   }
-  
+
   const retVal = { plans, maxNumericId, duplicates };
   cachedPlans.set(directory, retVal);
   return retVal;

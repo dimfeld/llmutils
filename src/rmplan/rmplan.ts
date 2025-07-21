@@ -33,8 +33,6 @@
  * ```
  */
 
-console.time('starting');
-
 import { Command } from 'commander';
 import { loadEnv } from '../common/env.js';
 import { setDebug } from '../common/process.js';
@@ -488,13 +486,9 @@ workspaceCommand
   });
 
 async function run() {
-  console.time('run');
   await loadEnv();
   await program.parseAsync(process.argv);
-  console.timeEnd('run');
 }
-
-console.timeEnd('starting');
 
 run().catch((e) => {
   console.error(e);
