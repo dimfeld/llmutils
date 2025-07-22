@@ -772,7 +772,12 @@ export async function saveMultiPhaseYaml(
     ) as PlanSchema;
 
     let phaseFilePath: string;
+    const stubPlanTitle = options.stubPlan?.data.title?.trim();
     if (actuallyMultiphase) {
+      let baseTitle = stubPlanTitle || projectInfo?.title?.trim();
+      if (baseTitle) {
+        orderedContent.title = `${baseTitle} - ${orderedContent.title}`;
+      }
       phaseFilePath = path.join(outputDir, `${phase.id}-phase-${phaseIndex}.plan.md`);
     } else {
       if (options.output.endsWith('.yml') || options.output.endsWith('.plan.md')) {
@@ -780,9 +785,14 @@ export async function saveMultiPhaseYaml(
       } else {
         phaseFilePath = `${outputDir}.plan.md`;
       }
-      const stubPlanTitle = options.stubPlan?.data.title?.trim();
       const stubPlanGoal = options.stubPlan?.data.goal?.trim();
       const stubPlanDetails = options.stubPlan?.data.details?.trim();
+
+      const projectInfoDetails = projectInfo?.details?.trim();
+      if (projectInfoDetails) {
+        projectInfo.details = undefined;
+        orderedContent.details = [projectInfoDetails, orderedContent.details].join('\n\n');
+      }
 
       if (stubPlanTitle) {
         orderedContent.title = stubPlanTitle;
@@ -841,12 +851,8 @@ export async function saveMultiPhaseYaml(
         }
       }
 
-      // Also update title and goal if they exist in projectInfo
-      if (projectInfo.title) {
-        stubPlan.data.title = projectInfo.title;
-      }
-
-      if (projectInfo.goal && !stubPlan.data.goal) {
+      // Add the goal if the stub doesn't already have one.
+      if (projectInfo.goal && !stubPlan.data.goal?.trim()) {
         stubPlan.data.goal = projectInfo.goal;
       }
     }

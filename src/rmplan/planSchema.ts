@@ -31,7 +31,7 @@ export const phaseSchema = z
       .object({
         title: z.string(),
         goal: z.string(),
-        details: z.string(),
+        details: z.string().optional(),
       })
       .optional(),
     tasks: z.array(
