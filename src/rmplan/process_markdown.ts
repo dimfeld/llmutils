@@ -555,9 +555,9 @@ export async function saveMultiPhaseYaml(
 
   let outputDir = options.output;
   if (options.output.endsWith('.plan.md')) {
-    outputDir = options.output.slice(0, options.output.lastIndexOf('.'));
-  } else if (options.output.endsWith('.yml') || options.output.endsWith('.md')) {
     outputDir = options.output.slice(0, options.output.lastIndexOf('.plan.md'));
+  } else if (options.output.endsWith('.yml') || options.output.endsWith('.md')) {
+    outputDir = options.output.slice(0, options.output.lastIndexOf('.'));
   }
   const outputDirComponents = outputDir.split(path.sep);
   if (actuallyMultiphase && !Number.isNaN(Number(outputDirComponents.at(-1)))) {
