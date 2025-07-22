@@ -17,6 +17,17 @@ function escapeXmlAttr(value: string): string {
   return value.replace(/"/g, '&quot;');
 }
 
+// Helper function to trim quotes from a string
+function trimQuotes(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
 export interface AdditionalDocsOptions {
   instructions?: string[];
   instruction?: string[];
@@ -213,12 +224,15 @@ export async function gatherDocsInternal(
   }
 
   // Initialize combined documents data
-  const allDocumentsData: { content: string; description?: string }[] = [];
+  const allDocumentsData: { content: string; description?: string; filename?: string }[] = [];
 
   // Populate from manually specified --docs files
-  manualDocsContent.forEach((content) => {
+  manualDocsContent.forEach((content, index) => {
     if (content.trim()) {
-      allDocumentsData.push({ content: content.trim() });
+      allDocumentsData.push({
+        content: content.trim(),
+        filename: docFilesPaths[index],
+      });
     }
   });
 
@@ -246,7 +260,8 @@ export async function gatherDocsInternal(
     if (mdcFile.content.trim()) {
       allDocumentsData.push({
         content: mdcFile.content.trim(),
-        description: mdcFile.data.description,
+        description: mdcFile.data.description ? trimQuotes(mdcFile.data.description) : undefined,
+        filename: path.relative(gitRoot, mdcFile.filePath),
       });
     }
   }
@@ -256,7 +271,8 @@ export async function gatherDocsInternal(
     const documentTags = allDocumentsData
       .map((doc) => {
         const descAttr = doc.description ? ` description="${escapeXmlAttr(doc.description)}"` : '';
-        return `<document${descAttr}><![CDATA[\n${doc.content}\n]]></document>`;
+        const filenameAttr = doc.filename ? ` filename="${escapeXmlAttr(doc.filename)}"` : '';
+        return `<document${filenameAttr}${descAttr}><![CDATA[\n${doc.content}\n]]></document>`;
       })
       .join('\n');
     docsOutputTag = `<documents>\n${documentTags}\n</documents>`;
@@ -279,6 +295,7 @@ export async function gatherDocsInternal(
     for (const file of matches) {
       try {
         manualRulesContent.push(await Bun.file(file).text());
+        ruleFilesPaths.push(path.relative(gitRoot, file));
       } catch (e) {
         error(`Error reading rules file: ${file}`);
         process.exit(1);
@@ -291,18 +308,25 @@ export async function gatherDocsInternal(
     try {
       const cursorrulesContent = await Bun.file(cursorrulesPath).text();
       manualRulesContent.push(cursorrulesContent);
+      ruleFilesPaths.push('.cursorrules');
     } catch (error) {
       // It's ok if .cursorrules doesn't exist
     }
   }
 
   // Initialize combined rules data
-  const allRulesData: { content: string; description?: string }[] = [];
+  const allRulesData: { content: string; description?: string; filename?: string }[] = [];
 
   // Populate from manually specified --rules files and .cursorrules
-  manualRulesContent.forEach((content) => {
+  manualRulesContent.forEach((content, index) => {
     if (content.trim()) {
-      allRulesData.push({ content: content.trim() });
+      // Note: for .cursorrules, we don't have a corresponding ruleFilesPaths entry
+      // so filename might be undefined for some entries
+      const filename = ruleFilesPaths[index];
+      allRulesData.push({
+        content: content.trim(),
+        filename,
+      });
     }
   });
 
@@ -311,7 +335,8 @@ export async function gatherDocsInternal(
     if (mdcFile.content.trim()) {
       allRulesData.push({
         content: mdcFile.content.trim(),
-        description: mdcFile.data.description,
+        description: mdcFile.data.description ? trimQuotes(mdcFile.data.description) : undefined,
+        filename: path.relative(gitRoot, mdcFile.filePath),
       });
     }
   }
@@ -324,7 +349,8 @@ export async function gatherDocsInternal(
         const descAttr = rule.description
           ? ` description="${escapeXmlAttr(rule.description)}"`
           : '';
-        return `<rule${descAttr}><![CDATA[\n${rule.content}\n]]></rule>`;
+        const filenameAttr = rule.filename ? ` filename="${escapeXmlAttr(rule.filename)}"` : '';
+        return `<rule${filenameAttr}${descAttr}><![CDATA[\n${rule.content}\n]]></rule>`;
       })
       .join('\n');
     rulesOutputTag = `<rules>\n${ruleTags}\n</rules>`;

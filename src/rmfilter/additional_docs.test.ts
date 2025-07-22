@@ -156,6 +156,11 @@ describe('getAdditionalDocs', () => {
     content: 'MDC No Description Content',
     data: { type: 'docs' }, // No description
   };
+  const mockMdcQuotedDesc: MdcFile = {
+    filePath: '/project/root/.cursor/rules/quoted_desc.mdc',
+    content: 'MDC Quoted Description Content',
+    data: { type: 'docs', description: '"This entire description is quoted"' },
+  };
 
   it('should include MDC file with type "docs" and description', async () => {
     const result = await gatherDocsInternal(baseDir, {}, [mockMdcDoc]);
@@ -183,7 +188,14 @@ describe('getAdditionalDocs', () => {
   it('should handle MDC file with missing description', async () => {
     const result = await gatherDocsInternal(baseDir, {}, [mockMdcNoDesc]);
     expect(result.docsTag).toBe(
-      '<documents>\n<document><![CDATA[\nMDC No Description Content\n]]></document>\n</documents>'
+      '<documents>\n<document filename="../../../../../project/root/.cursor/rules/no_desc.mdc"><![CDATA[\nMDC No Description Content\n]]></document>\n</documents>'
+    );
+  });
+
+  it('should trim quotes that wrap the entire description', async () => {
+    const result = await gatherDocsInternal(baseDir, {}, [mockMdcQuotedDesc]);
+    expect(result.docsTag).toBe(
+      '<documents>\n<document filename="../../../../../project/root/.cursor/rules/quoted_desc.mdc" description="This entire description is quoted"><![CDATA[\nMDC Quoted Description Content\n]]></document>\n</documents>'
     );
   });
 
