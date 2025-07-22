@@ -550,6 +550,9 @@ export async function saveMultiPhaseYaml(
   // code since it will bring in the goal and details from both the global and phase,
   // but we end up saving to a single file instead of a subdirectory.
   const actuallyMultiphase = parsedYaml.phases.length > 1;
+  const stubPlan = options.stubPlan;
+  const putProjectInfoInStubPlan = actuallyMultiphase && stubPlan != null;
+
   let outputDir = options.output;
   if (options.output.endsWith('.plan.md')) {
     outputDir = options.output.slice(0, options.output.lastIndexOf('.'));
@@ -579,6 +582,7 @@ export async function saveMultiPhaseYaml(
     title: parsedYaml.title || '',
     details: parsedYaml.details || '',
   };
+  const hasProjectInfo = !!(projectInfo.goal || projectInfo.title || projectInfo.details);
 
   // Process phases
   const phaseIndexToId = new Map<number, number>();
@@ -622,8 +626,8 @@ export async function saveMultiPhaseYaml(
 
     phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;
 
-    // Add overall project information to each phase
-    if (projectInfo.goal || projectInfo.title || projectInfo.details) {
+    // Add overall project information right here if it's a single phase
+    if (!putProjectInfoInStubPlan && hasProjectInfo) {
       phase.project = projectInfo;
     }
 
@@ -809,11 +813,43 @@ export async function saveMultiPhaseYaml(
     throw new Error('Failed to write any phase YAML files');
   }
 
-  if (options.stubPlan?.data && actuallyMultiphase) {
-    options.stubPlan.data.dependencies ??= [];
-    options.stubPlan.data.dependencies.push(...phaseIndexToId.values().map((id) => id));
-    options.stubPlan.data.container = true;
-    await writePlanFile(options.stubPlan.path, options.stubPlan.data);
+  if (putProjectInfoInStubPlan) {
+    stubPlan.data.dependencies ??= [];
+    stubPlan.data.dependencies.push(...phaseIndexToId.values().map((id) => id));
+    stubPlan.data.container = true;
+
+    if (hasProjectInfo) {
+      const stubPlanDetails = stubPlan.data.details?.trim();
+
+      if (projectInfo.details) {
+        let projectDetails = projectInfo.details.trim();
+        if (projectInfo.title) {
+          projectDetails = `## ${projectInfo.title}\n\n${projectDetails}`;
+        }
+
+        if (stubPlanDetails) {
+          stubPlan.data.details = [
+            '# Original Plan Details',
+            stubPlanDetails,
+            '# Processed Plan Details',
+            projectDetails,
+          ].join('\n\n');
+        } else {
+          stubPlan.data.details = projectDetails;
+        }
+      }
+
+      // Also update title and goal if they exist in projectInfo
+      if (projectInfo.title) {
+        stubPlan.data.title = projectInfo.title;
+      }
+
+      if (projectInfo.goal && !stubPlan.data.goal) {
+        stubPlan.data.goal = projectInfo.goal;
+      }
+    }
+
+    await writePlanFile(stubPlan.path, stubPlan.data);
     log(chalk.green(`✓ Converted stub plan to container`));
   }
 
