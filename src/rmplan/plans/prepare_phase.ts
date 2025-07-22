@@ -376,7 +376,7 @@ async function gatherPhaseGenerationContext(
     let siblingPlansInfo: PhaseGenerationContext['siblingPlansInfo'];
     if (currentPhaseData.parent) {
       try {
-        const siblings = await findSiblingPlans(
+        const { siblings } = await findSiblingPlans(
           currentPhaseData.id || 0,
           currentPhaseData.parent,
           projectPlanDir

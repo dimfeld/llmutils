@@ -241,14 +241,18 @@ export async function prepareNextStep(
   const currentPlanFilename = path.relative(root, planFile);
   promptParts.push(`## Current Plan File: ${currentPlanFilename}\n`);
 
-  if (planData.project?.goal) {
+  const tasksDir = await resolveTasksDir(config);
+  const { siblings, parent } = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
+
+  let projectInfo = planData.project ?? parent;
+  if (projectInfo?.goal) {
     promptParts.push(
-      `# Project Goal: ${planData.project.goal}\n`,
+      `# Project Goal: ${projectInfo.goal}\n`,
       'These instructions define a particular step of a feature implementation for this project'
     );
 
-    if (planData.project.details) {
-      promptParts.push(`## Project Details:\n\n${planData.project.details}\n`);
+    if (projectInfo.details) {
+      promptParts.push(`## Project Details:\n\n${projectInfo.details}\n`);
     }
 
     promptParts.push(
@@ -263,9 +267,6 @@ export async function prepareNextStep(
 
   // Add sibling plan context if there's a parent
   if (planData.parent) {
-    const tasksDir = await resolveTasksDir(config);
-    const siblings = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
-
     if (siblings.completed.length > 0 || siblings.pending.length > 0) {
       promptParts.push('\n## Related Plans (Same Parent)\n');
       promptParts.push(

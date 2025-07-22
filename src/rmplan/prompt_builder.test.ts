@@ -7,7 +7,7 @@ import {
   buildTaskSection,
   buildDocumentationSection,
   buildFileListSection,
-  buildExecutionPrompt,
+  buildExecutionPromptWithoutSteps,
 } from './prompt_builder.js';
 import type { PlanSchema } from './planSchema.js';
 import type { RmplanConfig } from './configSchema.js';
@@ -219,7 +219,7 @@ describe('prompt_builder', () => {
         docs: ['https://example.com/docs'],
       };
 
-      const result = await buildExecutionPrompt({
+      const result = await buildExecutionPromptWithoutSteps({
         executor: mockExecutor,
         planData,
         planFilePath: path.join(tempDir, 'test-plan.yml'),
@@ -251,7 +251,7 @@ describe('prompt_builder', () => {
         files: ['task/file1.ts', 'task/file2.ts'],
       };
 
-      const result = await buildExecutionPrompt({
+      const result = await buildExecutionPromptWithoutSteps({
         executor: mockExecutor,
         planData,
         planFilePath: path.join(tempDir, 'test-plan.yml'),
@@ -282,7 +282,7 @@ describe('prompt_builder', () => {
         },
       };
 
-      const result = await buildExecutionPrompt({
+      const result = await buildExecutionPromptWithoutSteps({
         executor: mockExecutor,
         planData,
         planFilePath: path.join(tempDir, 'test-plan.yml'),
@@ -304,7 +304,7 @@ describe('prompt_builder', () => {
         tasks: [],
       };
 
-      const result = await buildExecutionPrompt({
+      const result = await buildExecutionPromptWithoutSteps({
         executor: mockExecutor,
         planData,
         planFilePath: path.join(tempDir, 'test-plan.yml'),

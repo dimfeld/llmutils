@@ -29,7 +29,7 @@ import { markStepDone, markTaskDone } from '../plans/mark_done.js';
 import { preparePhase } from '../plans/prepare_phase.js';
 import { prepareNextStep } from '../plans/prepare_step.js';
 import type { PlanSchema } from '../planSchema.js';
-import { buildExecutionPrompt } from '../prompt_builder.js';
+import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { createWorkspace } from '../workspace/workspace_manager.js';
@@ -359,7 +359,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         }
 
         // Build the prompt for the simple task using the unified function
-        const taskPrompt = await buildExecutionPrompt({
+        const taskPrompt = await buildExecutionPromptWithoutSteps({
           executor,
           planData,
           planFilePath: currentPlanFile,
@@ -604,7 +604,7 @@ async function executeStubPlan({
   await writePlanFile(planFilePath, planData);
 
   // Build execution prompt using the unified function
-  const directPrompt = await buildExecutionPrompt({
+  const directPrompt = await buildExecutionPromptWithoutSteps({
     executor,
     planData,
     planFilePath,

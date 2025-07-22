@@ -135,7 +135,9 @@ export async function buildFileListSection(
 /**
  * Build a unified execution prompt for stub plans and simple tasks
  */
-export async function buildExecutionPrompt(options: ExecutionPromptOptions): Promise<string> {
+export async function buildExecutionPromptWithoutSteps(
+  options: ExecutionPromptOptions
+): Promise<string> {
   const {
     executor,
     planData,

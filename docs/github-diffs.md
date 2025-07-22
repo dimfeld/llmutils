@@ -142,18 +142,15 @@ export default annotateDiffWithComments;
 ### How It Works
 
 1. **Input Structure**:
-
    - `diff`: A string containing the unified diff (e.g., from GitHub’s `/repos/{owner}/{repo}/pulls/{pull_number}.diff`).
    - `threads`: An array of `PullRequestReviewThread` objects, each with `path`, `diffSide`, `line`, `startLine`, `originalLine`, `originalStartLine`, `isOutdated`, and `comments` (containing comment bodies).
 
 2. **Diff Parsing**:
-
    - Splits the diff into lines and processes headers (`diff --git`) to track the current file.
    - Parses hunk headers (e.g., `@@ -10,5 +12,6 @@`) to track line numbers for the left (`-`) and right (`+`) sides.
    - Builds a `lineMap` mapping file paths to arrays of `DiffLine` objects, each with the line content and optional `leftLineNum`/`rightLineNum`.
 
 3. **Comment Placement**:
-
    - For each thread, checks if the file (`path`) exists in the diff.
    - Uses `line`/`startLine` if `isOutdated` is `false`, or `originalLine`/`originalStartLine` if `isOutdated` is `true`.
    - Determines if the comment is single-line (`startLine` is `null` or equals `line`) or multi-line.

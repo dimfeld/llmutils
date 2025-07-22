@@ -41,7 +41,6 @@ This repository contains command-line utilities for managing context with chat-o
 The codebase is organized into several main modules with improved modularity and clear separation of concerns:
 
 1. **common**: Centralized shared utilities and infrastructure
-
    - CLI utilities (`cli.ts`), file system operations (`fs.ts`), Git integration (`git.ts`)
    - Process management (`process.ts`), terminal interaction (`terminal.ts`)
    - Clipboard support with OSC52 (`clipboard.ts`, `osc52.ts`)
@@ -49,13 +48,11 @@ The codebase is organized into several main modules with improved modularity and
    - GitHub integration utilities in `github/` subdirectory
 
 2. **rmfilter**: Prepares code context for LLMs with support for different edit formats (diff, whole-file, XML)
-
    - Uses repomix for context preparation
    - Supports dependency analysis to include related files
    - Handles configuration via YAML files with preset support
 
 3. **rmplan**: Manages step-by-step project plans with LLM integration, organized by sub-commands
-
    - Modular command structure in `commands/` directory with separate files per sub-command
    - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
    - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `prepare.ts`, `split.ts`
@@ -63,25 +60,21 @@ The codebase is organized into several main modules with improved modularity and
    - Executor system in `executors/` for different LLM integration approaches
 
 4. **apply-llm-edits**: Processes LLM-generated edits and applies them to the codebase
-
    - Supports different edit formats (unified diff, search/replace, XML, whole-file)
    - Handles interactive retry mechanisms for failed edits
    - Offers options for dry-runs and partial application
 
 5. **dependency_graph**: Analyzes file import relationships
-
    - Resolves import paths and walks import trees
    - Essential for the `--with-imports` and `--with-all-imports` options
 
 6. **editor**: Contains parsing and prompting logic for different edit formats
-
    - diff-editor: For classic diff-style edits
    - udiff-simple: For unified diff format
    - whole-file: For complete file replacements
    - xml: For XML-formatted edits
 
 7. **state_machine**: Provides an event-driven state machine implementation
-
    - Manages state transitions with explicit type safety
    - Supports hierarchical state machines with sub-machines
    - Includes OpenTelemetry integration for observability

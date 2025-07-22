@@ -188,7 +188,7 @@ ${phaseExampleFormatGeneric}
 
 6.  **Indentation:** Use exactly 2 spaces for YAML indentation levels.
 
-7.  **String quoting:** Use double quotes for YAML strings when necessary, especially for strings containing colons.
+7.  **String quoting:** Use quotes for YAML strings when necessary. Single-line strings containing colons always need to be quoted.
 
 8.  **Output Format:** Output *only* the raw, valid YAML string. Do **not** include any introductory text, explanations, comments, or Markdown fences (like \`\`\`yaml or \`\`\`).
 

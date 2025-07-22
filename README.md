@@ -94,7 +94,6 @@ llmutils now includes built-in OSC52 clipboard support for improved functionalit
 - **Automatic SSH Detection**: Automatically detects when you're running in an SSH session by checking environment variables like `SSH_CLIENT` and `SSH_CONNECTION`.
 
 - **Clipboard Integration**:
-
   - **Copy Operations**: When running in an SSH session, automatically uses OSC52 escape sequences to copy content to your local machine's clipboard.
   - **Read Operations**: First attempts to read from the local clipboard using OSC52, with an automatic fallback to standard mechanisms if OSC52 fails or times out.
 
@@ -685,7 +684,6 @@ workspaceCreation:
 **Key Features:**
 
 - **Automatic Workspace Management**:
-
   - Automatically clones your repository
   - Creates a task-specific branch
   - Runs configurable post-clone commands
@@ -927,7 +925,6 @@ Phase-based planning is designed for projects that are too large or complex to i
 The multi-phase workflow consists of three main commands:
 
 1. **`rmplan generate --input plan.md --output feature_plan.md`**: Generates a high-level markdown plan with phases. This command now outputs a structured markdown document containing:
-
    - Overall project goal and details
    - Multiple phases, each with goals, dependencies, and high-level tasks
 

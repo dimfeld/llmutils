@@ -14,11 +14,14 @@ export async function findSiblingPlans(
   parentId: number | undefined,
   tasksDir: string
 ): Promise<{
-  completed: Array<{ id: number; title: string; filename: string }>;
-  pending: Array<{ id: number; title: string; filename: string }>;
+  siblings: {
+    completed: Array<{ id: number; title: string; filename: string }>;
+    pending: Array<{ id: number; title: string; filename: string }>;
+  };
+  parent: PlanSchema | undefined;
 }> {
   if (!parentId) {
-    return { completed: [], pending: [] };
+    return { siblings: { completed: [], pending: [] }, parent: undefined };
   }
 
   const { plans: allPlans } = await readAllPlans(tasksDir);
@@ -48,7 +51,7 @@ export async function findSiblingPlans(
   siblings.completed.sort((a, b) => a.id - b.id);
   siblings.pending.sort((a, b) => a.id - b.id);
 
-  return siblings;
+  return { siblings, parent: allPlans.get(parentId) };
 }
 
 interface ParentPlanInfo {
@@ -129,7 +132,7 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
         contextPrompt += `\n`;
 
         // Add sibling plans information
-        const siblings = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
+        const { siblings } = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
 
         if (siblings.completed.length > 0 || siblings.pending.length > 0) {
           contextPrompt += `## Sibling Plans (Same Parent)\n\n`;
