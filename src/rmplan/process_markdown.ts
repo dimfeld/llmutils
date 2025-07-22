@@ -196,6 +196,8 @@ ${phaseExampleFormatGeneric}
 
 10. Multi-line strings MUST be properly indented.
 
+11. Phase details should include everything under the details header and subheader. Generally this is everyfrom from the Details header up to the Tasks header.
+
 **Important for multi-phase plans:**
 - Each phase should have an id like "project-1", "project-2" etc.
 `;

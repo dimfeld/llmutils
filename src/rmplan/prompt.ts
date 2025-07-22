@@ -2,23 +2,6 @@ import type { PlanSchema } from './planSchema.js';
 import yaml from 'yaml';
 import path from 'path';
 
-export const planExampleFormat = `
-title: A concise single-sentence title for the project plan
-goal: the goal of the project plan
-details: details and analysis about the plan
-priority: medium # Options: low, medium, high, urgent
-tasks:
-  - title: the title of a task
-    description: more information about the task
-    files:
-      - src/index.ts
-      - other files
-    steps:
-      - prompt: |
-          This is a multiline prompt
-          describing what to do.
-      - prompt: Another step`;
-
 export const planExampleFormatGeneric = `title: [single-line string - a concise title for the plan]
 goal: [single-line string]
 details: [single-line or multi-line string]
@@ -38,7 +21,7 @@ priority: [low|medium|high|urgent - based on importance and time sensitivity]
 phases:
   - title: [phase title - a concise single-sentence title]
     goal: [phase goal]
-    details: [phase details]
+    details: [phase details, a multi-line string including boundaries on the implementation and acceptance criteria]
     priority: [low|medium|high|urgent - based on importance and time sensitivity]
     dependencies: [list of phase IDs this phase depends on, or empty list]
     tasks:
@@ -58,7 +41,7 @@ export const planMarkdownExampleFormat = `
 [low|medium|high|urgent]
 
 ### Details
-[Detailed description and analysis, including acceptance criteria for the project]
+[Detailed description and analysis, including boundaries on the implementation and acceptance criteria for the project]
 
 ---
 
