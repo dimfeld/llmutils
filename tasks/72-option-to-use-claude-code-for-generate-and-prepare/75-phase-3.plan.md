@@ -5,7 +5,7 @@ title: Option to use Claude Code for generate and prepare commands - Refinement
 goal: To refactor any duplicated code, enhance robustness, and document the new
   feature for end-users.
 id: 75
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - 73
@@ -14,7 +14,7 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T23:24:55.730Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T23:29:06.269Z
+updatedAt: 2025-07-23T23:30:14.228Z
 tasks:
   - title: Refactor Common Command Logic
     description: Review the `generate` and `prepare` command handlers for any
@@ -89,8 +89,9 @@ tasks:
           generation process, and provide clear command-line examples for both
           use cases. Also, mention that this feature requires the `claude-code`
           CLI tool to be installed and available in the system's PATH.
-        done: false
+        done: true
 changedFiles:
+  - README.md
   - src/rmplan/claude_utils.test.ts
   - src/rmplan/claude_utils.ts
   - src/rmplan/commands/generate.test.ts
