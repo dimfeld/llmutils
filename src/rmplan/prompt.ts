@@ -567,3 +567,47 @@ ${yaml.stringify(plan.tasks, null, 2)}
 
   return prompt;
 }
+
+export function generateClaudeCodePlanningPrompt(planText: string): string {
+  return `This is a description for an upcoming feature that I want you to analyze and prepare a plan for.
+
+# Project Description
+
+${planText}
+
+# Instructions
+
+Please analyze this project description and the codebase. Your task is to:
+
+1. Use your tools to explore the codebase and understand the existing code structure
+2. Identify which files would need to be created or modified to implement this feature
+3. Think about how to break this down into logical phases and tasks
+4. Consider dependencies between different parts of the implementation
+5. Identify any potential challenges or considerations
+
+Once you've analyzed the codebase, I'll ask you to generate a detailed implementation plan in a specific format.
+
+For now, please:
+- Explore the relevant parts of the codebase
+- Understand the existing patterns and conventions
+- Identify the key files and components that will be involved
+- Think about the best approach to implement this feature
+
+When you're done with your analysis, let me know and I'll provide the next instruction.`;
+}
+
+export function generateClaudeCodeGenerationPrompt(): string {
+  return `Based on your analysis of the codebase and the project description, please now generate a detailed implementation plan.
+
+The plan should be formatted as follows:
+- Break the project into phases (or a single phase for smaller features)
+- Each phase should have a clear goal, details, and tasks
+- Focus on logical progression and incremental functionality
+- Include acceptance criteria for each phase
+
+Please output the plan in the exact Markdown format specified below:
+
+${phaseBasedMarkdownExampleFormat}
+
+Generate the complete plan now.`;
+}

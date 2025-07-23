@@ -12,7 +12,7 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T08:27:01.067Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T08:36:48.952Z
+updatedAt: 2025-07-23T08:39:23.436Z
 tasks:
   - title: Create a Claude Code Orchestration Service
     description: Create a new service that orchestrates the two-step interaction
@@ -106,25 +106,25 @@ tasks:
           text as input and produce a detailed prompt instructing Claude Code to
           analyze the codebase using its tools and prepare a plan, but to wait
           for a final command before generating the output.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/prompt.ts`, create and export a second, simpler
           function named `generateClaudeCodeGenerationPrompt`. This function
           will return a concise prompt that instructs Claude to output the final
           plan in the required YAML format based on its preceding analysis.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/commands/generate.ts`, inside the `if (options.claude)`
           block, call the two new prompt generation functions to create the
           planning and generation prompts.
-        done: false
+        done: true
       - prompt: >
           Pass the two generated prompts to the `runClaudeCodeGeneration`
           orchestrator function. The result of this call will be the final YAML
           output from Claude, which should then be passed to the
           `extractMarkdownToYaml` function for processing, similar to how the
           direct LLM path works.
-        done: false
+        done: true
   - title: Add Integration Tests for the `generate` Command's Claude Path
     description: Create new integration tests that specifically target the
       `generate` command with the `--claude` flag. These tests should verify
