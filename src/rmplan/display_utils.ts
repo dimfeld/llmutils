@@ -49,7 +49,7 @@ type PartialPlan = {
   project?: {
     title: string;
     goal: string;
-    details: string;
+    details?: string;
   };
 };
 
