@@ -13,7 +13,7 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T20:53:16.796Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T20:53:16.807Z
+updatedAt: 2025-07-23T20:54:16.136Z
 tasks:
   - title: Add a `--claude` Flag to the `prepare` Command
     description: Modify the command-line interface definition in
@@ -28,7 +28,7 @@ tasks:
           command. Add a new option `.option('--claude', 'Use Claude Code for
           two-step planning and generation')` to it. This should mirror the flag
           already present on the `generate` command.
-        done: false
+        done: true
   - title: Integrate the Orchestration Service into the `prepare` Command
     description: Update the `prepare` command's handler and the underlying
       `preparePhase` function to use the Claude Code orchestration service when
@@ -134,6 +134,12 @@ tasks:
           been correctly updated with the `files` and `steps` from your mocked
           YAML output, while other plan properties remain unchanged.
         done: false
+changedFiles:
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/executors/claude_code_orchestrator.ts
+  - src/rmplan/prompt.ts
+  - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/prepare.ts
