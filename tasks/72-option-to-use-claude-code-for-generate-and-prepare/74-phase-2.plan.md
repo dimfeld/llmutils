@@ -5,7 +5,7 @@ title: Option to use Claude Code for generate and prepare commands - Implement
 goal: To extend the Claude Code functionality to the `prepare` command, reusing
   the orchestration service built in Phase 1.
 id: 74
-status: in_progress
+status: done
 priority: high
 dependencies:
   - 73
@@ -13,7 +13,7 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T20:53:16.796Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T21:07:44.258Z
+updatedAt: 2025-07-23T21:11:35.573Z
 tasks:
   - title: Add a `--claude` Flag to the `prepare` Command
     description: Modify the command-line interface definition in
@@ -112,33 +112,34 @@ tasks:
           Create a new test file `src/rmplan/plans/prepare_phase.test.ts`. Use
           the `ModuleMocker` for mocking dependencies like
           `runClaudeCodeGeneration`.
-        done: false
+        done: true
       - prompt: >
           Write a test case for the `preparePhase` function when called with the
           `claude: true` option. Set up a temporary plan file with tasks that
           only have titles and descriptions.
-        done: false
+        done: true
       - prompt: >
           In your test, mock the `runClaudeCodeGeneration` function to resolve
           with a predefined YAML string. This string should represent a `tasks`
           array containing `files` and `steps` for the tasks in your temporary
           plan file.
-        done: false
+        done: true
       - prompt: >
           Call `preparePhase` with the path to your temporary plan file and
           `claude: true`. After the function completes, read the content of the
           temporary plan file.
-        done: false
+        done: true
       - prompt: >
           Parse the updated plan file content and assert that the tasks have
           been correctly updated with the `files` and `steps` from your mocked
           YAML output, while other plan properties remain unchanged.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/prepare.ts
   - src/rmplan/executors/claude_code_orchestrator.ts
+  - src/rmplan/plans/prepare_phase.test.ts
   - src/rmplan/plans/prepare_phase.ts
   - src/rmplan/prompt.ts
   - src/rmplan/{prompt.ts => prompt.ts.bak}
