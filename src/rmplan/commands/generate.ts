@@ -126,6 +126,18 @@ export async function handleGenerateCommand(
   options: any,
   command: any
 ) {
+  // Available options:
+  // - plan: Plan to use
+  // - planEditor: Open plan in editor
+  // - issue: Issue URL or number to use for the plan text
+  // - simple: Generate a single-phase plan
+  // - autofind: Automatically find relevant files
+  // - quiet: Suppress informational output
+  // - extract: Run extract command after generating (default true)
+  // - commit: Commit changes after successful plan generation
+  // - useYaml: Skip generation and use existing YAML file
+  // - direct: Call LLM directly instead of copying to clipboard
+  // - claude: Use Claude Code for two-step planning and generation
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const gitRoot = (await getGitRoot()) || process.cwd();
