@@ -21,7 +21,7 @@ priority: [low|medium|high|urgent - based on importance and time sensitivity]
 phases:
   - title: [phase title - a concise single-sentence title]
     goal: [phase goal]
-    details: [phase details, a multi-line string including boundaries on the implementation and acceptance criteria]
+    details: [phase details, a multi-line string including constraints on the implementation and acceptance criteria]
     priority: [low|medium|high|urgent - based on importance and time sensitivity]
     dependencies: [list of phase IDs this phase depends on, or empty list]
     tasks:
@@ -41,7 +41,7 @@ export const planMarkdownExampleFormat = `
 [low|medium|high|urgent]
 
 ### Details
-[Detailed description and analysis, including boundaries on the implementation and acceptance criteria for the project]
+[Detailed description and analysis, including constraints on the implementation and acceptance criteria for the project]
 
 ---
 
@@ -77,7 +77,7 @@ export const phaseBasedMarkdownExampleFormat = `
 [low|medium|high|urgent]
 
 ## Details
-[Overall project details and analysis, including acceptance criteria for the project]
+[Overall project details and analysis, including constraints on the implementation and acceptance criteria for the project]
 
 ## Phase 1: [Phase Title]
 
@@ -91,7 +91,7 @@ export const phaseBasedMarkdownExampleFormat = `
 [None or comma-separated list, e.g., Phase 2, Phase 3]
 
 ### Details
-[Phase description including what will be accomplished and acceptance criteria for this phase]
+[Phase description including what will be accomplished, constraints on the implementation, and acceptance criteria for this phase]
 
 ### Tasks
 
