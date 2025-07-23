@@ -36,6 +36,7 @@ import {
 } from '../process_markdown.ts';
 import { planPrompt, simplePlanPrompt } from '../prompt.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
+import { runClaudeCodeGeneration } from '../executors/claude_code_orchestrator.js';
 
 /**
  * Creates a stub plan YAML file with the given plan text in the details field
@@ -501,7 +502,18 @@ export async function handleGenerateCommand(
     if (exitRes === 0 && options.extract !== false) {
       let input: string;
 
-      if (effectiveDirectMode) {
+      if (options.claude) {
+        // Use Claude Code orchestration service
+        log(chalk.blue('🤖 Using Claude Code for two-step planning and generation'));
+
+        // TODO: The prompt generation logic will be adapted in the next task
+        // For now, add a placeholder call
+        log('Claude Code orchestration will be invoked here');
+
+        // Placeholder: In the next task, we'll properly call runClaudeCodeGeneration
+        // with the planning and generation prompts
+        input = ''; // Temporary placeholder
+      } else if (effectiveDirectMode) {
         // Direct LLM call
         const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;
         const model = await createModel(modelId, config);

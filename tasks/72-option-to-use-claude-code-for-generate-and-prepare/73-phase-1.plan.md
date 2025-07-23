@@ -12,7 +12,7 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T08:27:01.067Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T08:35:08.427Z
+updatedAt: 2025-07-23T08:36:48.952Z
 tasks:
   - title: Create a Claude Code Orchestration Service
     description: Create a new service that orchestrates the two-step interaction
@@ -76,7 +76,7 @@ tasks:
       - prompt: >
           In `src/rmplan/commands/generate.ts`, import the
           `runClaudeCodeGeneration` function from the new orchestration service.
-        done: false
+        done: true
       - prompt: >
           Within the `handleGenerateCommand` function, add a conditional block
           that checks if `options.claude` is true.
@@ -85,13 +85,13 @@ tasks:
           `runClaudeCodeGeneration` orchestrator. The existing logic for direct
           LLM calls and clipboard-based interaction should be moved into the
           `else` part of this conditional.
-        done: false
+        done: true
       - prompt: >
           Inside the `if (options.claude)` block, you will eventually call the
           orchestrator. For now, you can add a log statement or a placeholder
           call, as the prompt generation logic will be adapted in the next task.
           The key is to establish the new control flow based on the flag.
-        done: false
+        done: true
   - title: Adapt the `generate` Prompt for Two-Step Invocation
     description: "Refactor the prompt construction for the `generate` command to
       split it into two parts: a planning section and a final output generation
