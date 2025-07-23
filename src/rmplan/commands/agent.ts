@@ -378,7 +378,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           log(boldMarkdownHeaders('\n## Dry Run - Generated Prompt\n'));
           log(taskPrompt);
           log('\n--dry-run mode: Would execute the above prompt');
-          continue;
+          break;
         }
 
         try {
@@ -514,7 +514,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           log(contextContent);
         }
         log('\n--dry-run mode: Would execute the above context');
-        continue;
+        break;
       }
 
       try {

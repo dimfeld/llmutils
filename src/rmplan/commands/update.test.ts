@@ -1516,3 +1516,173 @@ Test goal
     );
   });
 });
+
+describe('handleUpdateCommand direct mode', () => {
+  let tempDir: string;
+  let tasksDir: string;
+  const moduleMocker = new ModuleMocker(import.meta);
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-update-direct-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+    moduleMocker.clear();
+  });
+
+  test('should run LLM directly when --direct flag is set', async () => {
+    const planPath = path.join(tasksDir, 'test-plan.yml');
+    const planContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+id: 123
+title: Test Plan
+goal: Test goal
+status: pending
+priority: medium
+tasks:
+  - title: Task 1
+    description: First task
+    steps:
+      - prompt: Do something
+        done: false`;
+
+    await Bun.write(planPath, planContent);
+
+    // Mock dependencies
+    const mockRunStreamingPrompt = mock(async ({ model, messages }: any) => {
+      expect(messages[0].content).toContain('# Plan Update Task');
+      expect(messages[0].content).toContain('Add a new task for testing');
+      return { text: '# Updated plan content\n\nyaml:\nid: 123\ntitle: Updated Plan' };
+    });
+
+    const mockCreateModel = mock(async (modelId: string) => {
+      expect(modelId).toBe('test-model');
+      return 'test-model-instance';
+    });
+
+    const mockExtractMarkdownToYaml = mock(async (inputText: string) => {
+      expect(inputText).toContain('# Updated plan content');
+    });
+
+    const mockClipboardWrite = mock(async () => {});
+
+    await moduleMocker.mock('../llm_utils/run_and_apply.js', () => ({
+      runStreamingPrompt: mockRunStreamingPrompt,
+      DEFAULT_RUN_MODEL: 'default-model',
+    }));
+
+    await moduleMocker.mock('../../common/model_factory.js', () => ({
+      createModel: mockCreateModel,
+    }));
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      extractMarkdownToYaml: mockExtractMarkdownToYaml,
+      convertYamlToMarkdown: () => '# Test Plan\n\n## Goal\nTest goal',
+    }));
+
+    await moduleMocker.mock('../../common/clipboard.js', () => ({
+      write: mockClipboardWrite,
+    }));
+
+    await moduleMocker.mock('../../rmfilter/rmfilter.js', () => ({
+      runRmfilterProgrammatically: async () => '# Plan Update Task\n\nAdd a new task for testing',
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: { tasks: tasksDir },
+        models: { execution: 'test-model' },
+      }),
+    }));
+
+    const { handleUpdateCommand } = await import('./update.js');
+
+    const options = {
+      description: 'Add a new task for testing',
+      direct: true,
+      model: 'test-model',
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, 'rmplan.yml') }),
+      },
+    };
+
+    await handleUpdateCommand('test-plan.yml', options, command);
+
+    expect(mockRunStreamingPrompt).toHaveBeenCalledTimes(1);
+    expect(mockCreateModel).toHaveBeenCalledWith('test-model');
+    expect(mockExtractMarkdownToYaml).toHaveBeenCalledTimes(1);
+    expect(mockClipboardWrite).toHaveBeenCalledTimes(1);
+  });
+
+  test('should use manual mode when --direct is not set', async () => {
+    const planPath = path.join(tasksDir, 'test-plan.yml');
+    const planContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+id: 123
+title: Test Plan
+goal: Test goal
+status: pending
+priority: medium
+tasks:
+  - title: Task 1
+    description: First task
+    steps:
+      - prompt: Do something
+        done: false`;
+
+    await Bun.write(planPath, planContent);
+
+    // Mock dependencies
+    const mockWaitForEnter = mock(async () => '# Updated plan from user');
+    const mockClipboardWrite = mock(async () => {});
+    const mockExtractMarkdownToYaml = mock(async () => {});
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: mockWaitForEnter,
+    }));
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      extractMarkdownToYaml: mockExtractMarkdownToYaml,
+      convertYamlToMarkdown: () => '# Test Plan\n\n## Goal\nTest goal',
+    }));
+
+    await moduleMocker.mock('../../common/clipboard.js', () => ({
+      write: mockClipboardWrite,
+    }));
+
+    await moduleMocker.mock('../../rmfilter/rmfilter.js', () => ({
+      runRmfilterProgrammatically: async () => '# Plan Update Task\n\nAdd a new task for testing',
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: { tasks: tasksDir },
+      }),
+    }));
+
+    const { handleUpdateCommand } = await import('./update.js');
+
+    const options = {
+      description: 'Add a new task for testing',
+      // direct not set, should default to false
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, 'rmplan.yml') }),
+      },
+    };
+
+    await handleUpdateCommand('test-plan.yml', options, command);
+
+    expect(mockWaitForEnter).toHaveBeenCalledTimes(1);
+    expect(mockClipboardWrite).toHaveBeenCalledWith(
+      '# Plan Update Task\n\nAdd a new task for testing'
+    );
+    expect(mockExtractMarkdownToYaml).toHaveBeenCalledTimes(1);
+  });
+});

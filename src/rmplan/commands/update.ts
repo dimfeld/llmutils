@@ -12,12 +12,21 @@ import { resolvePlanFile, readPlanFile } from '../plans.js';
 import { convertYamlToMarkdown, extractMarkdownToYaml } from '../process_markdown.js';
 import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
 import * as clipboard from '../../common/clipboard.js';
+import { createModel } from '../../common/model_factory.js';
+import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 
 export async function handleUpdateCommand(planFile: string, options: any, command: any) {
   const globalOpts = command.parent.opts();
   const gitRoot = (await getGitRoot()) || process.cwd();
 
   const config = await loadEffectiveConfig(globalOpts.config);
+
+  // Determine effective direct mode setting with precedence:
+  // 1. Command-line flag (--direct or --no-direct)
+  // 2. Config setting (config.planning?.direct_mode)
+  // 3. Default to false
+  const effectiveDirectMode =
+    options.direct !== undefined ? options.direct : (config.planning?.direct_mode ?? false);
   const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
 
   log(`Update command called with plan file: ${resolvedPlanFile}`);
@@ -118,20 +127,46 @@ export async function handleUpdateCommand(planFile: string, options: any, comman
   // Run rmfilter programmatically
   const rmfilterResult = await runRmfilterProgrammatically(rmfilterArgs, gitRoot);
 
-  // Copy the result to clipboard
-  await clipboard.write(rmfilterResult);
+  let llmResponse: string;
 
-  log('Update prompt with context has been copied to clipboard.');
-  log('Next steps:');
-  log('1. Paste the prompt into your LLM chat interface');
-  log('2. Copy the updated plan from the LLM response');
-  log("3. Press Enter when you've copied the response");
+  if (effectiveDirectMode) {
+    // Direct mode: run the LLM directly
+    const modelId = options.model || config.models?.execution || DEFAULT_RUN_MODEL;
+    log(`Running update directly using model: ${modelId}`);
 
-  // Wait for user to paste the LLM's response
-  const llmResponse = await waitForEnter(true);
+    const model = await createModel(modelId);
 
-  if (!llmResponse || !llmResponse.trim()) {
-    throw new Error('No response from LLM was provided');
+    const result = await runStreamingPrompt({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: rmfilterResult,
+        },
+      ],
+    });
+
+    llmResponse = result.text;
+
+    // Also copy to clipboard for convenience
+    await clipboard.write(llmResponse);
+    log('Updated plan has been copied to clipboard.');
+  } else {
+    // Manual mode: copy to clipboard and wait for user
+    await clipboard.write(rmfilterResult);
+
+    log('Update prompt with context has been copied to clipboard.');
+    log('Next steps:');
+    log('1. Paste the prompt into your LLM chat interface');
+    log('2. Copy the updated plan from the LLM response');
+    log("3. Press Enter when you've copied the response");
+
+    // Wait for user to paste the LLM's response
+    llmResponse = await waitForEnter(true);
+
+    if (!llmResponse || !llmResponse.trim()) {
+      throw new Error('No response from LLM was provided');
+    }
   }
 
   // Extract the YAML from the markdown response and update the plan

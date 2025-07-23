@@ -384,6 +384,10 @@ program
   .command('update <planFile> [description]')
   .description('Update an existing plan using natural language description of changes')
   .option('--editor', 'Open editor to provide the update description')
+  .option('-m, --model <model>', 'Model to use for LLM (only used with --direct)')
+  .option('--direct', 'Execute update directly using LLM instead of copy-paste workflow')
+  .option('--no-direct', 'Use copy-paste workflow (default)')
+  .option('--commit', 'Commit changes after updating the plan')
   .action(async (planFile, description, options, command) => {
     const { handleUpdateCommand } = await import('./commands/update.js');
     await handleUpdateCommand(planFile, { ...options, description }, command).catch(

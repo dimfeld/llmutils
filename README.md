@@ -422,6 +422,9 @@ rmplan split tasks/complex-refactor.yml --output-dir ./refactor-phases -- docs/a
 # Update an existing plan with natural language changes
 rmplan update tasks/feature.yml "Add error handling to the API calls"
 
+# Update using direct mode (runs LLM automatically)
+rmplan update tasks/feature.yml "Add error handling" --direct --model claude-3-5-sonnet-20241022
+
 # Update using plan ID and open editor for description
 rmplan update my-feature-123 --editor
 
@@ -1160,6 +1163,9 @@ rmplan split tasks/big-refactor.yml --output-dir ./refactor-phases
 
 # Update an existing plan with new requirements
 rmplan update tasks/feature.yml "Add a new task for database setup and remove the placeholder task"
+
+# Update using direct mode with a specific model
+rmplan update tasks/feature.yml "Add error handling" --direct --model gpt-4o
 
 # Update a plan using an editor for the description
 rmplan update 123.yml --editor
