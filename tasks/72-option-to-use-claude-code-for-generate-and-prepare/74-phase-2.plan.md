@@ -13,7 +13,7 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T20:53:16.796Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T20:58:05.693Z
+updatedAt: 2025-07-23T21:07:44.258Z
 tasks:
   - title: Add a `--claude` Flag to the `prepare` Command
     description: Modify the command-line interface definition in
@@ -73,7 +73,7 @@ tasks:
           content of `generatePhaseStepsPrompt` to create a planning-only
           prompt, instructing the AI to analyze the context and codebase but to
           wait for a follow-up instruction before generating the YAML output.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/prompt.ts`, create and export a new function
           `generateClaudeCodePhaseStepsGenerationPrompt(): string`. This
@@ -81,26 +81,26 @@ tasks:
           the `tasks` array in YAML format based on its prior analysis,
           including the `files` and `steps` for each task. The output format
           guidelines from `generatePhaseStepsPrompt` should be included.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/plans/prepare_phase.ts`, within the `if
           (options.claude)` block, call the two new prompt functions
           (`generateClaudeCodePhaseStepsPlanningPrompt` and
           `generateClaudeCodePhaseStepsGenerationPrompt`) to create the
           `planningPrompt` and `generationPrompt`.
-        done: false
+        done: true
       - prompt: >
           Inside the `if (options.claude)` block, call the
           `runClaudeCodeGeneration` orchestrator with the generated prompts and
           necessary configuration.
-        done: false
+        done: true
       - prompt: >
           After receiving the YAML string from the orchestrator, parse it to get
           the new task details. Merge these details (the `files` and `steps`
           arrays) into the original plan's tasks, preserving completed tasks and
           other metadata. Finally, write the updated plan object back to the
           file using `writePlanFile`.
-        done: false
+        done: true
   - title: Add Integration Tests for the `prepare` Command's Claude Path
     description: Create new integration tests for the `prepare` command with the
       `--claude` flag to verify its correct functionality and output. This will
@@ -141,6 +141,7 @@ changedFiles:
   - src/rmplan/executors/claude_code_orchestrator.ts
   - src/rmplan/plans/prepare_phase.ts
   - src/rmplan/prompt.ts
+  - src/rmplan/{prompt.ts => prompt.ts.bak}
   - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan/commands/generate.ts

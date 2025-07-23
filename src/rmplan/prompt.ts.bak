@@ -612,9 +612,7 @@ ${phaseBasedMarkdownExampleFormat}
 Generate the complete plan now.`;
 }
 
-export function generateClaudeCodePhaseStepsPlanningPrompt(
-  context: PhaseGenerationContext
-): string {
+export function generateClaudeCodePhaseStepsPlanningPrompt(context: PhaseGenerationContext): string {
   // Build the same context sections as generatePhaseStepsPrompt
   const previousPhasesSection =
     context.previousPhasesInfo.length > 0
@@ -823,4 +821,224 @@ IMPORTANT:
 - Ensure all fields are properly populated
 - Use proper YAML syntax with correct indentation
 - Multi-line prompts should use the pipe (|) character`;
+}
+
+export function generateClaudeCodePhaseStepsPlanningPrompt(
+  context: PhaseGenerationContext
+): string {
+  // Format previous phases info
+  const previousPhasesSection =
+    context.previousPhasesInfo.length > 0
+      ? `# Previous Completed Phases
+
+${context.previousPhasesInfo
+  .map(
+    (phase) =>
+      `## ${phase.title} (ID: ${phase.id})
+**Goal:** ${phase.goal}
+**Description:** ${phase.description}`
+  )
+  .join('\n\n')}
+
+# Files Changed in Previous Phases
+${context.changedFilesFromDependencies.join('\n')}
+`
+      : '';
+
+  // Format current phase tasks
+  const tasksSection = context.currentPhaseTasks
+    .map(
+      (task, index) =>
+        `### Task ${index + 1}: ${task.title}
+**Description:** ${task.description}`
+    )
+    .join('\n\n');
+
+  // Build the overall project context section only if we have meaningful content
+  const hasProjectContext =
+    context.overallProjectGoal || context.overallProjectDetails || context.overallProjectTitle;
+
+  let projectContextSection = '';
+  if (hasProjectContext) {
+    const contextParts: string[] = ['## Overall Project Context\n'];
+
+    if (context.overallProjectTitle) {
+      contextParts.push(`**Project Title:** ${context.overallProjectTitle}\n`);
+    }
+    if (context.overallProjectGoal) {
+      contextParts.push(`**Project Goal:** ${context.overallProjectGoal}\n`);
+    }
+    if (context.overallProjectDetails) {
+      contextParts.push(`**Project Details:** ${context.overallProjectDetails}\n`);
+    }
+
+    projectContextSection = contextParts.join('\n') + '\n';
+  }
+
+  // Build parent plan section
+  let parentPlanSection = '';
+  if (context.parentPlanInfo) {
+    parentPlanSection = `## Parent Plan Context
+
+**Parent Plan:** ${context.parentPlanInfo.title} (ID: ${context.parentPlanInfo.id})
+**Parent Goal:** ${context.parentPlanInfo.goal}
+**Parent Details:** ${context.parentPlanInfo.details}
+`;
+
+    if (context.parentPlanInfo.docURLs && context.parentPlanInfo.docURLs.length > 0) {
+      parentPlanSection += `**Parent Documentation URLs:**\n`;
+      context.parentPlanInfo.docURLs.forEach((url) => {
+        parentPlanSection += `- ${url}\n`;
+      });
+    }
+
+    parentPlanSection += '\n';
+  }
+
+  // Build sibling plans section
+  let siblingPlansSection = '';
+  if (
+    context.siblingPlansInfo &&
+    (context.siblingPlansInfo.completed.length > 0 || context.siblingPlansInfo.pending.length > 0)
+  ) {
+    siblingPlansSection = `## Related Plans (Same Parent)\n\n`;
+    siblingPlansSection += `These plans are part of the same parent plan. Reference them for additional context about the overall project structure.\n\n`;
+
+    if (context.siblingPlansInfo.completed.length > 0) {
+      siblingPlansSection += `### Completed Related Plans:\n`;
+      context.siblingPlansInfo.completed.forEach((sibling) => {
+        siblingPlansSection += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+      });
+      siblingPlansSection += '\n';
+    }
+
+    if (context.siblingPlansInfo.pending.length > 0) {
+      siblingPlansSection += `### Pending Related Plans:\n`;
+      context.siblingPlansInfo.pending.forEach((sibling) => {
+        siblingPlansSection += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+      });
+      siblingPlansSection += '\n';
+    }
+  }
+
+  // Build documentation URLs section for current phase
+  let docURLsSection = '';
+  if (context.currentPhaseDocURLs && context.currentPhaseDocURLs.length > 0) {
+    docURLsSection = `## Documentation URLs\n\n`;
+    context.currentPhaseDocURLs.forEach((url) => {
+      docURLsSection += `- ${url}\n`;
+    });
+    docURLsSection += '\n';
+  }
+
+  // Add current plan filename if available
+  let currentPlanSection = '';
+  if (context.currentPlanFilename) {
+    currentPlanSection = `## Current Plan File: ${context.currentPlanFilename}\n\n`;
+  }
+
+  return `# Phase Implementation Analysis
+
+You are analyzing a specific phase of a project to prepare detailed implementation steps.
+
+${currentPlanSection}${projectContextSection}${parentPlanSection}${siblingPlansSection}${previousPhasesSection}
+
+## Current Phase Details
+
+**Phase Goal:** ${context.currentPhaseGoal || context.currentPhaseTitle}
+
+**Phase Details:** ${context.currentPhaseDetails}
+
+${docURLsSection}## Tasks to Implement
+
+${tasksSection}
+
+## Instructions
+
+Please analyze this phase and the codebase. Your task is to:
+
+1. Use your tools to explore the codebase and understand the existing code structure relevant to these tasks
+2. Identify which specific files would need to be created or modified for each task
+3. Consider how each task builds upon previous work (if any)
+4. Think about the detailed implementation steps needed for each task
+5. Consider test-driven development approaches where appropriate
+6. Identify any potential challenges or dependencies between tasks
+
+Once you've analyzed the codebase and understood the requirements, I'll ask you to generate the detailed implementation steps in a specific format.
+
+For now, please:
+- Explore the relevant parts of the codebase for these tasks
+- Understand the existing patterns and conventions that should be followed
+- Identify the key files and components that will be involved in each task
+- Think about the best sequence of steps to implement each task
+
+When you're done with your analysis, let me know and I'll provide the next instruction.`;
+}
+
+export function generateClaudeCodePhaseStepsGenerationPrompt(): string {
+  return `Based on your analysis of the codebase and the phase tasks, please now generate the detailed implementation steps.
+
+For each task in the phase, you need to generate:
+1. **files**: The specific files that need to be created or modified for this task
+2. **steps**: Implementation steps -- each step should be a prompt a few sentences long
+
+### Guidelines:
+
+1. **Test-Driven Development**:
+   - Include test creation/modification as early steps when appropriate
+   - Prefer to not use mocks unless you have to, since they often end up just testing the mocks. Prefer dependency injection.
+
+2. **Incremental Progress**: Each step should be self-contained, achievable, and verifiable
+
+3. **Build on Previous Work**: Reference and utilize code/patterns from completed phases and existing codebase
+
+4. **Description**:
+   - Most of the details on the task should go into the description.
+   - Work from the existing task description, but you can add details if needed.
+   - Reference relevant patterns from the codebase and other information which provides context for the steps.
+
+5. **File Selection**:
+   - Be specific about which files need modification
+   - Consider files changed in previous phases when they're relevant
+
+6. **Step Prompts**:
+   - Write clear, actionable prompts for each step
+   - Each step should be at most a few sentences long and related to the information in the task's description.
+   - The agent implementing the code is smart and has access to the entire codebase, so you should be clear on what to do, but not overly prescriptive.
+   - No need to supply sample code in your prompts unless it illustrates a specific code pattern.
+   - If a task is designed to create documentation, make sure to save the documentation in a file so that the later tasks can reference it.
+
+### Output Format
+
+Generate a YAML snippet containing ONLY the tasks array with fully populated implementation details:
+
+\`\`\`yaml
+tasks:
+  - title: [Task 1 Title]
+    description: [Task 1 Description]
+    files:
+      - path/to/file1.ts
+      - path/to/file2.ts
+    steps:
+      - prompt: |
+          [Detailed, multi-line prompt for step 1]
+          [Include specific requirements and context]
+      - prompt: |
+          [Detailed prompt for step 2]
+  - title: [Task 2 Title]
+    description: [Task 2 Description]
+    files:
+      - path/to/file3.ts
+    steps:
+      - prompt: |
+          [Detailed prompt for this task]
+\`\`\`
+
+IMPORTANT:
+- Output ONLY the YAML tasks array, no other text
+- Ensure all fields are properly populated
+- Use proper YAML syntax with correct indentation
+- Multi-line prompts should use the pipe (|) character
+
+Generate the complete tasks array now.`;
 }
