@@ -13,7 +13,7 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T20:53:16.796Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T20:54:16.136Z
+updatedAt: 2025-07-23T20:58:05.693Z
 tasks:
   - title: Add a `--claude` Flag to the `prepare` Command
     description: Modify the command-line interface definition in
@@ -42,20 +42,20 @@ tasks:
           In `src/rmplan/commands/prepare.ts`, modify the `handlePrepareCommand`
           function. Pass the `claude` option from the command's `options` object
           into the `preparePhase` function call's options.
-        done: false
+        done: true
       - prompt: >
           In `src/rmplan/plans/prepare_phase.ts`, update the
           `PreparePhaseOptions` interface to include an optional `claude?:
           boolean` property. Also, update the `preparePhase` function signature
           to accept this new option.
-        done: false
+        done: true
       - prompt: >
           Inside the `preparePhase` function in
           `src/rmplan/plans/prepare_phase.ts`, add a conditional block `if
           (options.claude) { ... }`. The existing logic for direct/clipboard
           mode should be moved into the `else` block. The new `if` block will
           house the Claude Code invocation logic.
-        done: false
+        done: true
   - title: Adapt the `prepare` Prompt for Two-Step Invocation
     description: Refactor the prompt construction for the `prepare` command to split
       it into a planning section and a final output generation instruction,
@@ -137,7 +137,9 @@ tasks:
 changedFiles:
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/prepare.ts
   - src/rmplan/executors/claude_code_orchestrator.ts
+  - src/rmplan/plans/prepare_phase.ts
   - src/rmplan/prompt.ts
   - src/rmplan/rmplan.ts
 rmfilter:

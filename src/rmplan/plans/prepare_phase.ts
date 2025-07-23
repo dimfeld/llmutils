@@ -16,6 +16,7 @@ import { findSiblingPlans, isURL } from '../context_helpers.js';
 import { fixYaml } from '../fix_yaml.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import { runClaudeCodeGeneration } from '../executors/claude_code_orchestrator.js';
 
 /**
  * Prepares a phase by generating detailed implementation steps and prompts for all tasks.
@@ -47,6 +48,7 @@ export async function preparePhase(
     rmfilterArgs?: string[];
     direct?: boolean;
     useYaml?: string;
+    claude?: boolean;
   } = {}
 ): Promise<void> {
   try {
@@ -165,6 +167,26 @@ export async function preparePhase(
       // Use provided YAML file as LLM output
       text = await Bun.file(options.useYaml).text();
       log(chalk.green('✓ Using YAML from file:'), options.useYaml);
+    } else if (options.claude) {
+      // Use Claude Code orchestration service
+      log(chalk.blue('🤖 Using Claude Code for two-step planning and generation'));
+
+      // Generate the two prompts for Claude Code
+      const planningPrompt = generateClaudeCodePreparePlanningPrompt(phaseStepsPrompt);
+      const generationPrompt = generateClaudeCodePrepareGenerationPrompt();
+
+      // Call the orchestrator with both prompts
+      const result = await runClaudeCodeGeneration({
+        planningPrompt,
+        generationPrompt,
+        options: {
+          includeDefaultTools: true,
+        },
+        model: options.model || config.models?.stepGeneration,
+      });
+
+      // The result should contain the generated tasks in YAML format
+      text = result;
     } else if (options.direct) {
       // Direct LLM call
       const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
@@ -419,4 +441,81 @@ async function gatherPhaseGenerationContext(
     }
     throw e;
   }
+}
+
+/**
+ * Generates the planning prompt for Claude Code when preparing a phase.
+ * This prompt asks Claude to analyze the phase context and codebase.
+ */
+function generateClaudeCodePreparePlanningPrompt(phaseStepsPrompt: string): string {
+  return `This is a phase that needs detailed implementation steps generated. I want you to analyze the phase context and the codebase to prepare for generating detailed steps.
+
+${phaseStepsPrompt}
+
+# Instructions
+
+Please analyze this phase and the codebase. Your task is to:
+
+1. Use your tools to explore the codebase and understand the existing code structure
+2. Identify which files would need to be created or modified to implement this phase
+3. Think about how to break down each task into detailed implementation steps
+4. Consider the order of operations and any dependencies between steps
+5. Identify any potential challenges or edge cases
+
+Once you've analyzed the codebase, I'll ask you to generate the detailed implementation steps in the required YAML format.
+
+For now, please:
+- Explore the relevant parts of the codebase mentioned in the context
+- Understand the existing patterns and conventions
+- Identify the key files and components that will be involved
+- Think about the best approach to implement each task
+
+When you're done with your analysis, let me know and I'll provide the next instruction.`;
+}
+
+/**
+ * Generates the generation prompt for Claude Code when preparing a phase.
+ * This prompt asks Claude to generate the detailed steps in YAML format.
+ */
+function generateClaudeCodePrepareGenerationPrompt(): string {
+  return `Based on your analysis of the codebase and the phase context, please now generate detailed implementation steps for each task.
+
+The output should be a YAML structure with a "tasks" array at the top level. Each task should include:
+- title: The task title (preserve exactly as provided)
+- description: The task description (preserve exactly as provided)
+- files: Array of file paths that need to be created or modified
+- docs: Optional array of documentation URLs or file paths
+- steps: Array of implementation steps
+
+Each step should have:
+- prompt: A detailed instruction for what to implement
+- files: Optional array of specific files for this step
+
+Format the output as follows:
+
+\`\`\`yaml
+tasks:
+  - title: [Task title]
+    description: [Task description]
+    files:
+      - [file paths]
+    steps:
+      - prompt: |
+          [Detailed implementation instruction]
+        files:
+          - [optional specific files for this step]
+      - prompt: |
+          [Next implementation instruction]
+\`\`\`
+
+## Important Notes
+
+- Generate specific, actionable steps that can be directly implemented
+- Include all necessary details like function names, variable names, and specific code patterns
+- Consider error handling, edge cases, and testing requirements
+- Maintain consistency with existing code patterns you discovered
+- Output ONLY the raw YAML string without any surrounding text, explanations, or markdown code fences
+- Do not include \`\`\`yaml or \`\`\` markers in your output
+
+Please generate the detailed implementation steps now.`;
 }

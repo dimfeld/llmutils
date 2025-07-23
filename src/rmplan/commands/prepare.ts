@@ -78,5 +78,6 @@ export async function handlePrepareCommand(
     rmfilterArgs: rmfilterArgs,
     direct: effectiveDirectMode,
     useYaml: options.useYaml,
+    claude: options.claude,
   });
 }
