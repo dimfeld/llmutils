@@ -439,6 +439,209 @@ Task description`);
   });
 });
 
+describe('handleGenerateCommand with --claude flag', () => {
+  let tempDir: string;
+  let tasksDir: string;
+
+  // Mock functions
+  const logSpy = mock(() => {});
+  const errorSpy = mock(() => {});
+  const logSpawnSpy = mock(() => ({ exited: Promise.resolve(0) }));
+  const clipboardWriteSpy = mock(async () => {});
+  const clipboardReadSpy = mock(async () => 'clipboard content');
+  const waitForEnterSpy = mock(async () => 'enter pressed');
+  const runClaudeCodeGenerationSpy = mock(async () => 'Generated YAML content');
+  const extractMarkdownToYamlSpy = mock(async () => {});
+
+  beforeEach(async () => {
+    // Clear mocks
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    logSpawnSpy.mockClear();
+    clipboardWriteSpy.mockClear();
+    clipboardReadSpy.mockClear();
+    waitForEnterSpy.mockClear();
+    runClaudeCodeGenerationSpy.mockClear();
+    extractMarkdownToYamlSpy.mockClear();
+
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-generate-claude-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    // Mock modules
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/clipboard.js', () => ({
+      write: clipboardWriteSpy,
+      read: clipboardReadSpy,
+    }));
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: waitForEnterSpy,
+    }));
+
+    await moduleMocker.mock('../orchestrator/claude-code.js', () => ({
+      runClaudeCodeGeneration: runClaudeCodeGenerationSpy,
+    }));
+
+    await moduleMocker.mock('../extract.js', () => ({
+      extractMarkdownToYaml: extractMarkdownToYamlSpy,
+    }));
+
+    // Mock config loader
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+        },
+      }),
+    }));
+
+    // Mock utils
+    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
+      getGitRoot: async () => tempDir,
+      setDebug: () => {},
+      logSpawn: logSpawnSpy,
+    }));
+
+    // Mock process for logSpawn
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: logSpawnSpy,
+    }));
+
+    // Mock git
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDir,
+    }));
+
+    // Mock model factory
+    await moduleMocker.mock('../../common/model_factory.js', () => ({
+      getModel: () => 'test-model',
+      createModel: () => ({}),
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('calls runClaudeCodeGeneration with planning and generation prompts', async () => {
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan for Claude.');
+
+    const options = {
+      plan: planPath,
+      claude: true,
+      extract: false,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(planPath, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    // Verify runClaudeCodeGeneration was called
+    expect(runClaudeCodeGenerationSpy).toHaveBeenCalledTimes(1);
+
+    // Verify the arguments include two distinct prompts
+    const callArgs = runClaudeCodeGenerationSpy.mock.calls[0];
+    expect(callArgs).toHaveLength(2);
+
+    // Check for key phrases in planning prompt
+    expect(callArgs[0]).toEqual(expect.stringContaining('planning'));
+    expect(callArgs[0]).toEqual(expect.stringContaining('Test Plan'));
+
+    // Check for key phrases in generation prompt
+    expect(callArgs[1]).toEqual(expect.stringContaining('YAML'));
+    expect(callArgs[1]).toEqual(expect.stringContaining('generate'));
+  });
+
+  test('pipes Claude output to extractMarkdownToYaml when extract is true', async () => {
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan for extraction.');
+
+    // Mock runClaudeCodeGeneration to return valid YAML
+    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+id: test-plan-001
+title: Test Plan from Claude
+goal: Test goal from Claude
+details: Test details from Claude
+status: pending
+createdAt: 2024-01-01T00:00:00Z
+updatedAt: 2024-01-01T00:00:00Z
+phases:
+  - id: phase-1
+    title: Test Phase
+    goal: Phase goal
+    status: pending
+    tasks:
+      - id: task-1
+        title: Test Task
+        description: Task description
+        status: pending`;
+
+    runClaudeCodeGenerationSpy.mockResolvedValueOnce(yamlContent);
+
+    const options = {
+      plan: planPath,
+      claude: true,
+      extract: true,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleGenerateCommand(planPath, options, command);
+
+    // Verify runClaudeCodeGeneration was called
+    expect(runClaudeCodeGenerationSpy).toHaveBeenCalledTimes(1);
+
+    // Verify extractMarkdownToYaml was called with the YAML string
+    expect(extractMarkdownToYamlSpy).toHaveBeenCalledTimes(1);
+    expect(extractMarkdownToYamlSpy).toHaveBeenCalledWith(
+      yamlContent,
+      expect.any(Object),
+      expect.any(Object)
+    );
+  });
+});
+
 describe('handleGenerateCommand direct_mode configuration logic', () => {
   let tempDir: string;
   let tasksDir: string;

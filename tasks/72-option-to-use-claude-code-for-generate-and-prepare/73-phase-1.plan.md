@@ -5,14 +5,14 @@ title: Option to use Claude Code for generate and prepare commands - Implement
 goal: To implement the core logic for the two-step Claude Code invocation and
   integrate it into the `generate` command, activated by a new `--claude` flag.
 id: 73
-status: in_progress
+status: done
 priority: high
 dependencies: []
 parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T08:27:01.067Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T08:39:23.436Z
+updatedAt: 2025-07-23T08:41:42.209Z
 tasks:
   - title: Create a Claude Code Orchestration Service
     description: Create a new service that orchestrates the two-step interaction
@@ -136,7 +136,7 @@ tasks:
       - prompt: >
           In `src/rmplan/commands/generate.test.ts`, create a new `describe`
           block for testing the `generate` command with the `--claude` flag.
-        done: false
+        done: true
       - prompt: >
           Write a test case that calls `handleGenerateCommand` with the
           `--claude` option and a path to a mock plan file.
@@ -145,7 +145,7 @@ tasks:
           is called once and that its arguments include two distinct prompts:
           one for planning and one for generation. Use `expect.stringContaining`
           to check for key phrases in each prompt.
-        done: false
+        done: true
       - prompt: >
           Write a second test where you mock the `runClaudeCodeGeneration`
           orchestrator to return a complete, valid YAML plan as a string.
@@ -153,8 +153,9 @@ tasks:
           Verify that the `extractMarkdownToYaml` function is subsequently
           called with this YAML string, confirming that the output from the
           Claude path is correctly piped to the final processing step.
-        done: false
+        done: true
 changedFiles:
+  - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/executors/claude_code_orchestrator.ts
   - src/rmplan/prompt.ts
