@@ -5,14 +5,14 @@ title: Option to use Claude Code for generate and prepare commands - Implement
 goal: To implement the core logic for the two-step Claude Code invocation and
   integrate it into the `generate` command, activated by a new `--claude` flag.
 id: 73
-status: pending
+status: in_progress
 priority: high
 dependencies: []
 parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T08:27:01.067Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T08:27:01.067Z
+updatedAt: 2025-07-23T08:33:49.574Z
 tasks:
   - title: Create a Claude Code Orchestration Service
     description: Create a new service that orchestrates the two-step interaction
@@ -30,7 +30,7 @@ tasks:
           Define an exported async function `runClaudeCodeGeneration` that
           accepts a configuration object containing a planning prompt, a
           generation prompt, and the standard `ClaudeCodeExecutorOptions`.
-        done: false
+        done: true
       - prompt: >
           In `runClaudeCodeGeneration`, instantiate the `ClaudeCodeExecutor`
           with its required options.
@@ -40,16 +40,16 @@ tasks:
           it to perform initial analysis.
 
           Save the session ID received here.
-        done: false
+        done: true
       - prompt: >
           Immediately following the first call, invoke the `execute` method on
           the same executor instance again, this time with the generation
-          prompt. Pass the ['-r', sessionId] arguments in addition to the regular arguments
-          to enable resuming the session.
+          prompt. Pass the ['-r', sessionId] arguments in addition to the
+          regular arguments to enable resuming the session.
 
           The result of this second call, which contains the final generated
           plan, should be returned by the `runClaudeCodeGeneration` function.
-        done: false
+        done: true
   - title: Add a `--claude` Flag to the `generate` Command
     description: Modify the command-line interface definition to add a new boolean
       `--claude` flag to the `generate` command.
@@ -154,6 +154,9 @@ tasks:
           called with this YAML string, confirming that the output from the
           Claude path is correctly piped to the final processing step.
         done: false
+changedFiles:
+  - src/rmplan/executors/claude_code_orchestrator.ts
+  - src/rmplan/prompt.ts
 rmfilter:
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/prepare.ts
