@@ -450,7 +450,7 @@ describe('handleGenerateCommand with --claude flag', () => {
   const clipboardWriteSpy = mock(async () => {});
   const clipboardReadSpy = mock(async () => 'clipboard content');
   const waitForEnterSpy = mock(async () => 'enter pressed');
-  const runClaudeCodeGenerationSpy = mock(async () => 'Generated YAML content');
+  const invokeClaudeCodeForGenerationSpy = mock(async () => 'Generated YAML content');
   const extractMarkdownToYamlSpy = mock(async () => {});
 
   beforeEach(async () => {
@@ -461,7 +461,7 @@ describe('handleGenerateCommand with --claude flag', () => {
     clipboardWriteSpy.mockClear();
     clipboardReadSpy.mockClear();
     waitForEnterSpy.mockClear();
-    runClaudeCodeGenerationSpy.mockClear();
+    invokeClaudeCodeForGenerationSpy.mockClear();
     extractMarkdownToYamlSpy.mockClear();
 
     // Clear plan cache
@@ -488,8 +488,8 @@ describe('handleGenerateCommand with --claude flag', () => {
       waitForEnter: waitForEnterSpy,
     }));
 
-    await moduleMocker.mock('../orchestrator/claude-code.js', () => ({
-      runClaudeCodeGeneration: runClaudeCodeGenerationSpy,
+    await moduleMocker.mock('../claude_utils.js', () => ({
+      invokeClaudeCodeForGeneration: invokeClaudeCodeForGenerationSpy,
     }));
 
     await moduleMocker.mock('../extract.js', () => ({
@@ -540,7 +540,7 @@ describe('handleGenerateCommand with --claude flag', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('calls runClaudeCodeGeneration with planning and generation prompts', async () => {
+  test('calls invokeClaudeCodeForGeneration with planning and generation prompts', async () => {
     const planPath = path.join(tempDir, 'test-plan.md');
     await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan for Claude.');
 
@@ -569,12 +569,12 @@ describe('handleGenerateCommand with --claude flag', () => {
     // Restore process.argv
     process.argv = originalArgv;
 
-    // Verify runClaudeCodeGeneration was called
-    expect(runClaudeCodeGenerationSpy).toHaveBeenCalledTimes(1);
+    // Verify invokeClaudeCodeForGeneration was called
+    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
 
-    // Verify the arguments include two distinct prompts
-    const callArgs = runClaudeCodeGenerationSpy.mock.calls[0];
-    expect(callArgs).toHaveLength(2);
+    // Verify the arguments include two distinct prompts and options
+    const callArgs = invokeClaudeCodeForGenerationSpy.mock.calls[0];
+    expect(callArgs).toHaveLength(3);
 
     // Check for key phrases in planning prompt
     expect(callArgs[0]).toEqual(expect.stringContaining('planning'));
@@ -583,13 +583,19 @@ describe('handleGenerateCommand with --claude flag', () => {
     // Check for key phrases in generation prompt
     expect(callArgs[1]).toEqual(expect.stringContaining('YAML'));
     expect(callArgs[1]).toEqual(expect.stringContaining('generate'));
+
+    // Check options
+    expect(callArgs[2]).toEqual({
+      model: 'test-model',
+      includeDefaultTools: true,
+    });
   });
 
   test('pipes Claude output to extractMarkdownToYaml when extract is true', async () => {
     const planPath = path.join(tempDir, 'test-plan.md');
     await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan for extraction.');
 
-    // Mock runClaudeCodeGeneration to return valid YAML
+    // Mock invokeClaudeCodeForGeneration to return valid YAML
     const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 id: test-plan-001
 title: Test Plan from Claude
@@ -609,7 +615,7 @@ phases:
         description: Task description
         status: pending`;
 
-    runClaudeCodeGenerationSpy.mockResolvedValueOnce(yamlContent);
+    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce(yamlContent);
 
     const options = {
       plan: planPath,
@@ -629,8 +635,8 @@ phases:
 
     await handleGenerateCommand(planPath, options, command);
 
-    // Verify runClaudeCodeGeneration was called
-    expect(runClaudeCodeGenerationSpy).toHaveBeenCalledTimes(1);
+    // Verify invokeClaudeCodeForGeneration was called
+    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
 
     // Verify extractMarkdownToYaml was called with the YAML string
     expect(extractMarkdownToYamlSpy).toHaveBeenCalledTimes(1);

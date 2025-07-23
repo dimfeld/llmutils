@@ -15,8 +15,8 @@ const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
 const warnSpy = mock(() => {});
 
-// Mock runClaudeCodeGeneration
-const runClaudeCodeGenerationSpy = mock(async () => {
+// Mock invokeClaudeCodeForGeneration
+const invokeClaudeCodeForGenerationSpy = mock(async () => {
   // Return predefined YAML with tasks containing files and steps
   return `tasks:
   - title: "Task 1"
@@ -57,7 +57,7 @@ describe('preparePhase with Claude option', () => {
     logSpy.mockClear();
     errorSpy.mockClear();
     warnSpy.mockClear();
-    runClaudeCodeGenerationSpy.mockClear();
+    invokeClaudeCodeForGenerationSpy.mockClear();
     runRmfilterProgrammaticallySpy.mockClear();
     getGitRootSpy.mockClear();
     createModelSpy.mockClear();
@@ -77,8 +77,8 @@ describe('preparePhase with Claude option', () => {
       warn: warnSpy,
     }));
 
-    await moduleMocker.mock('../executors/claude_code_orchestrator.js', () => ({
-      runClaudeCodeGeneration: runClaudeCodeGenerationSpy,
+    await moduleMocker.mock('../claude_utils.js', () => ({
+      invokeClaudeCodeForGeneration: invokeClaudeCodeForGenerationSpy,
     }));
 
     await moduleMocker.mock('../../rmfilter/rmfilter.js', () => ({
@@ -142,13 +142,17 @@ describe('preparePhase with Claude option', () => {
     // Read the updated plan file using readPlanFile which handles front matter format
     const updatedPlan = await readPlanFile(planFilePath);
 
-    // Assert that runClaudeCodeGeneration was called
-    expect(runClaudeCodeGenerationSpy).toHaveBeenCalledTimes(1);
-    const claudeCall = runClaudeCodeGenerationSpy.mock.calls[0] as any;
-    expect(claudeCall[0]).toHaveProperty('planningPrompt');
-    expect(claudeCall[0]).toHaveProperty('generationPrompt');
-    expect(claudeCall[0].options).toEqual({ includeDefaultTools: true });
-    expect(claudeCall[0].model).toBe('test-model');
+    // Assert that invokeClaudeCodeForGeneration was called
+    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
+    const claudeCall = invokeClaudeCodeForGenerationSpy.mock.calls[0] as any;
+    // Now we expect 3 arguments: planningPrompt, generationPrompt, options
+    expect(claudeCall).toHaveLength(3);
+    expect(claudeCall[0]).toContain('planning'); // Planning prompt
+    expect(claudeCall[1]).toContain('YAML'); // Generation prompt
+    expect(claudeCall[2]).toEqual({
+      model: 'test-model',
+      includeDefaultTools: true,
+    });
 
     // Assert that the tasks have been updated with files and steps
     expect(updatedPlan.tasks).toHaveLength(2);
@@ -222,9 +226,9 @@ describe('preparePhase with Claude option', () => {
       model: 'custom-model',
     });
 
-    // Assert that runClaudeCodeGeneration was called with custom model
-    expect(runClaudeCodeGenerationSpy).toHaveBeenCalledTimes(1);
-    const claudeCall = runClaudeCodeGenerationSpy.mock.calls[0] as any;
-    expect(claudeCall[0].model).toBe('custom-model');
+    // Assert that invokeClaudeCodeForGeneration was called with custom model
+    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
+    const claudeCall = invokeClaudeCodeForGenerationSpy.mock.calls[0] as any;
+    expect(claudeCall[2].model).toBe('custom-model');
   });
 });

@@ -20,7 +20,7 @@ import { findSiblingPlans, isURL } from '../context_helpers.js';
 import { fixYaml } from '../fix_yaml.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
-import { runClaudeCodeGeneration } from '../executors/claude_code_orchestrator.js';
+import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
 
 /**
  * Prepares a phase by generating detailed implementation steps and prompts for all tasks.
@@ -172,25 +172,15 @@ export async function preparePhase(
       text = await Bun.file(options.useYaml).text();
       log(chalk.green('✓ Using YAML from file:'), options.useYaml);
     } else if (options.claude) {
-      // Use Claude Code orchestration service
-      log(chalk.blue('🤖 Using Claude Code for two-step planning and generation'));
-
       // Generate the two prompts for Claude Code
       const planningPrompt = generateClaudeCodePhaseStepsPlanningPrompt(phaseGenCtx);
       const generationPrompt = generateClaudeCodePhaseStepsGenerationPrompt();
 
-      // Call the orchestrator with both prompts
-      const result = await runClaudeCodeGeneration({
-        planningPrompt,
-        generationPrompt,
-        options: {
-          includeDefaultTools: true,
-        },
+      // Use the shared Claude Code invocation helper
+      text = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
         model: options.model || config.models?.stepGeneration,
+        includeDefaultTools: true,
       });
-
-      // The result should contain the generated tasks in YAML format
-      text = result;
     } else if (options.direct) {
       // Direct LLM call
       const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
