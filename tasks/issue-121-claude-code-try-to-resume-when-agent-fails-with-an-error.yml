@@ -7,10 +7,9 @@ details: >-
   with a nonzero code more than 3 times in a short amount of time (2 minutes?)
   then quit with an error.
 
-
-  rmfilter: src/executors/claude_code.ts --with-imports
+  Update: Cancelling this since Claude Code handles this pretty well internally now.
 id: 46
-status: pending
+status: cancelled
 priority: medium
 issue:
   - https://github.com/dimfeld/llmutils/issues/121

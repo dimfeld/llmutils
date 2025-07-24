@@ -290,6 +290,10 @@ export async function findNextPlan(
   const readyCandidates = candidates.filter((plan) => {
     const status = plan.status || 'pending';
 
+    if (plan.priority === 'maybe') {
+      return false;
+    }
+
     // In-progress plans are always ready
     if (status === 'in_progress') {
       return true;

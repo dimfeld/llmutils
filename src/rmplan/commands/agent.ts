@@ -337,6 +337,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         planData.status = 'in_progress';
         planData.updatedAt = new Date().toISOString();
         await writePlanFile(currentPlanFile, planData);
+
+        // If this plan has a parent, mark it as in_progress too
+        if (planData.parent) {
+          await markParentInProgress(planData.parent, config);
+        }
       }
 
       const actionableItem = findNextActionableItem(planData);
@@ -603,6 +608,11 @@ async function executeStubPlan({
   planData.updatedAt = new Date().toISOString();
   await writePlanFile(planFilePath, planData);
 
+  // If this plan has a parent, mark it as in_progress too
+  if (planData.parent) {
+    await markParentInProgress(planData.parent, config);
+  }
+
   // Build execution prompt using the unified function
   const directPrompt = await buildExecutionPromptWithoutSteps({
     executor,
@@ -660,6 +670,37 @@ async function executeStubPlan({
       log('Changes committed successfully');
     } else {
       throw new Error('Commit failed');
+    }
+  }
+}
+
+/**
+ * Marks a parent plan as in_progress if it's currently pending.
+ * Recursively marks all ancestor plans as in_progress as well.
+ */
+async function markParentInProgress(parentId: number, config: RmplanConfig): Promise<void> {
+  const tasksDir = await resolveTasksDir(config);
+  // Force re-read to get updated statuses
+  clearPlanCache();
+  const { plans: allPlans } = await readAllPlans(tasksDir);
+
+  // Get the parent plan
+  const parentPlan = allPlans.get(parentId);
+  if (!parentPlan) {
+    warn(`Parent plan with ID ${parentId} not found`);
+    return;
+  }
+
+  // Only update if parent is still pending
+  if (parentPlan.status === 'pending') {
+    parentPlan.status = 'in_progress';
+    parentPlan.updatedAt = new Date().toISOString();
+    await writePlanFile(parentPlan.filename, parentPlan);
+    log(chalk.yellow(`↻ Parent plan "${parentPlan.title}" marked as in_progress`));
+
+    // Recursively mark parent's parent if it exists
+    if (parentPlan.parent) {
+      await markParentInProgress(parentPlan.parent, config);
     }
   }
 }

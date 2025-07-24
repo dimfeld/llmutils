@@ -1,22 +1,19 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Documentation and Refinement
 goal: To update all relevant project documentation to reflect the new hybrid
   comment mode and the changes to line number handling, and to review and refine
   the prompts for optimal performance.
-details: >
-  With the core functionality implemented, this phase focuses on ensuring the
-  changes are well-documented and the user-facing aspects, particularly LLM
-  prompts, are polished.
 id: 30
-status: pending
+status: deferred
 priority: low
+dependencies:
+  - 29
 issue:
   - https://github.com/dimfeld/llmutils/issues/112
-dependencies:
-  - "29"
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-02T19:27:55.318Z
+updatedAt: 2025-07-24T18:50:28.668Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -107,3 +104,6 @@ rmfilter:
   - src/common/github
   - --with-imports
   - docs/github-diffs.md
+---
+
+With the core functionality implemented, this phase focuses on ensuring the changes are well-documented and the user-facing aspects, particularly LLM prompts, are polished.

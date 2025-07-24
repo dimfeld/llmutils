@@ -1,13 +1,14 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: "answer-pr: mode that creates tasks from the pending PR comments"
-goal: Make it easier to answer PRs and deal with chunks of related comments one at a time
+goal: Make it easier to answer PRs and deal with chunks of related comments one
+  at a time
 id: 64
 status: pending
-priority: medium
+priority: low
 createdAt: 2025-06-11T20:06:34.141Z
-updatedAt: 2025-06-11T20:06:34.141Z
+updatedAt: 2025-07-24T18:48:55.037Z
 tasks: []
 ---
 
-We should be able to take a bunch of selected review comments, use a language model to put them into groups, and then either create a new plan file with the resulting tasks from those or add the tasks to an existing plan file. The steps in the tasks should contain enough information for the executor to find the relevant code chunk and make the change. 
+We should be able to take a bunch of selected review comments, use a language model to put them into groups, and then either create a new plan file with the resulting tasks from those or add the tasks to an existing plan file. The steps in the tasks should contain enough information for the executor to find the relevant code chunk and make the change.
