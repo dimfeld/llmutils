@@ -720,6 +720,23 @@ ${context.changedFilesFromDependencies.join('\n')}
     currentPlanSection = `## Current Plan File: ${context.currentPlanFilename}\n\n`;
   }
 
+  // Build potential files and directories section from rmfilterArgsFromPlan
+  let potentialFilesSection = '';
+  if (context.rmfilterArgsFromPlan && context.rmfilterArgsFromPlan.length > 0) {
+    const filesAndDirs = context.rmfilterArgsFromPlan
+      .filter((arg) => !arg.startsWith('-')) // Exclude flags
+      .filter((arg) => arg.length > 0); // Exclude empty strings
+
+    if (filesAndDirs.length > 0) {
+      potentialFilesSection = `## Potential Files and Directories\n\n`;
+      potentialFilesSection += `The following files and directories were identified as potentially relevant:\n\n`;
+      filesAndDirs.forEach((item) => {
+        potentialFilesSection += `- ${item}\n`;
+      });
+      potentialFilesSection += '\n';
+    }
+  }
+
   return `# Phase Implementation Analysis
 
 You are analyzing a specific phase of a larger project to prepare for generating detailed implementation steps.
@@ -732,7 +749,7 @@ ${currentPlanSection}${projectContextSection}${parentPlanSection}${siblingPlansS
 
 **Phase Details:** ${context.currentPhaseDetails}
 
-${docURLsSection}## Tasks to Implement
+${docURLsSection}${potentialFilesSection}## Tasks to Implement
 
 ${tasksSection}
 
