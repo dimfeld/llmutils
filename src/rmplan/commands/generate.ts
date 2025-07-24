@@ -34,8 +34,14 @@ import {
   findYamlStart,
   type ExtractMarkdownToYamlOptions,
 } from '../process_markdown.ts';
-import { planPrompt, simplePlanPrompt } from '../prompt.js';
+import {
+  planPrompt,
+  simplePlanPrompt,
+  generateClaudeCodePlanningPrompt,
+  generateClaudeCodeGenerationPrompt,
+} from '../prompt.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
+import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
 
 /**
  * Creates a stub plan YAML file with the given plan text in the details field
@@ -126,6 +132,18 @@ export async function handleGenerateCommand(
   options: any,
   command: any
 ) {
+  // Available options:
+  // - plan: Plan to use
+  // - planEditor: Open plan in editor
+  // - issue: Issue URL or number to use for the plan text
+  // - simple: Generate a single-phase plan
+  // - autofind: Automatically find relevant files
+  // - quiet: Suppress informational output
+  // - extract: Run extract command after generating (default true)
+  // - commit: Commit changes after successful plan generation
+  // - useYaml: Skip generation and use existing YAML file
+  // - direct: Call LLM directly instead of copying to clipboard
+  // - claude: Use Claude Code for two-step planning and generation
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const gitRoot = (await getGitRoot()) || process.cwd();
@@ -489,7 +507,17 @@ export async function handleGenerateCommand(
     if (exitRes === 0 && options.extract !== false) {
       let input: string;
 
-      if (effectiveDirectMode) {
+      if (options.claude) {
+        // Generate the two prompts for Claude Code
+        const planningPrompt = generateClaudeCodePlanningPrompt(fullPlanText);
+        const generationPrompt = generateClaudeCodeGenerationPrompt();
+
+        // Use the shared Claude Code invocation helper
+        input = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
+          model: config.models?.stepGeneration,
+          includeDefaultTools: true,
+        });
+      } else if (effectiveDirectMode) {
         // Direct LLM call
         const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;
         const model = await createModel(modelId, config);

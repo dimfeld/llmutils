@@ -316,6 +316,35 @@ Then repeat steps 5 through 7 until the task is done.
 
 Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
 
+### Using with Claude Code
+
+The `generate` and `prepare` commands support a `--claude` flag that leverages Anthropic's Claude Code model for enhanced planning and generation capabilities. This feature uses a two-step invocation process:
+
+1. **Planning Phase**: Claude Code first analyzes the task and creates a structured plan
+2. **Generation Phase**: Using the same session context, Claude Code generates the final output in the required format
+
+This two-step approach produces more thoughtful and accurate results compared to single-pass generation, as Claude Code can reason about the task structure before generating detailed implementation steps.
+
+**Requirements**: The `claude-code` CLI tool must be installed and available in your system's PATH.
+
+**Examples**:
+
+```bash
+# Generate a plan using Claude Code instead of the default model
+rmplan generate --plan tasks/feature.md --claude -- src/**/*.ts
+
+# Generate from a GitHub issue using Claude Code
+rmplan generate --issue 42 --claude -- src/api/**/*.ts
+
+# Prepare detailed steps for a phase using Claude Code
+rmplan prepare tasks/phase-1.yml --claude
+
+# You can combine with other options as usual
+rmplan generate --plan-editor --claude --commit -- src/**/*.ts
+```
+
+The `--claude` flag works seamlessly with all other options for both commands. When not specified, the commands use their default behavior of calling the configured LLM directly.
+
 ### Additional Commands
 
 The `prepare` command is used to generate detailed steps and prompts for a phase plan that doesn't already have them. This is useful when you have a high-level plan outline but need to expand it with specific implementation steps.

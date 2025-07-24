@@ -90,6 +90,7 @@ program
   .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
   .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
+  .option('--claude', 'Use Claude Code for two-step planning and generation')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planArg, options, command) => {
@@ -323,6 +324,7 @@ program
   .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
   .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
+  .option('--claude', 'Use Claude Code for two-step planning and generation')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (yamlFile, options, command) => {

@@ -5,7 +5,7 @@ import yaml from 'yaml';
 import { getGitRoot } from '../common/git.js';
 import { createModel } from '../common/model_factory.js';
 import { commitAll } from '../common/process.js';
-import { boldMarkdownHeaders, error, log, warn } from '../logging.js';
+import { boldMarkdownHeaders, debugLog, error, log, warn } from '../logging.js';
 import { resolveTasksDir, type RmplanConfig } from './configSchema.js';
 import { fixYaml } from './fix_yaml.js';
 import { generateAlphanumericId, generateNumericPlanId } from './id_utils.js';
@@ -257,7 +257,7 @@ export function findYamlStart(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     // Match a line that looks like a YAML key: starts with a letter, followed by word chars/hyphens, then colon
-    if (/^[a-zA-Z][a-zA-Z0-9_-]*:/.test(line)) {
+    if (/^(- )?[a-zA-Z][a-zA-Z0-9_-]*:/.test(line)) {
       startIndex = text.indexOf(lines[i]);
       break;
     }
@@ -265,6 +265,7 @@ export function findYamlStart(text: string): string {
 
   // Remove potential introductory lines before the actual YAML content
   if (startIndex >= 0) {
+    debugLog(`Found YAML start index: ${startIndex}`);
     text = text.slice(startIndex);
   }
 

@@ -9,13 +9,18 @@ import { error, log, warn } from '../../logging.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findYamlStart } from '../process_markdown.js';
 import type { PhaseGenerationContext } from '../prompt.js';
-import { generatePhaseStepsPrompt } from '../prompt.js';
+import {
+  generatePhaseStepsPrompt,
+  generateClaudeCodePhaseStepsPlanningPrompt,
+  generateClaudeCodePhaseStepsGenerationPrompt,
+} from '../prompt.js';
 import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
 import { type RmplanConfig } from '../configSchema.js';
 import { findSiblingPlans, isURL } from '../context_helpers.js';
 import { fixYaml } from '../fix_yaml.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
 
 /**
  * Prepares a phase by generating detailed implementation steps and prompts for all tasks.
@@ -47,6 +52,7 @@ export async function preparePhase(
     rmfilterArgs?: string[];
     direct?: boolean;
     useYaml?: string;
+    claude?: boolean;
   } = {}
 ): Promise<void> {
   try {
@@ -165,6 +171,16 @@ export async function preparePhase(
       // Use provided YAML file as LLM output
       text = await Bun.file(options.useYaml).text();
       log(chalk.green('✓ Using YAML from file:'), options.useYaml);
+    } else if (options.claude) {
+      // Generate the two prompts for Claude Code
+      const planningPrompt = generateClaudeCodePhaseStepsPlanningPrompt(phaseGenCtx);
+      const generationPrompt = generateClaudeCodePhaseStepsGenerationPrompt();
+
+      // Use the shared Claude Code invocation helper
+      text = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
+        model: options.model || config.models?.stepGeneration,
+        includeDefaultTools: true,
+      });
     } else if (options.direct) {
       // Direct LLM call
       const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
@@ -276,7 +292,7 @@ async function gatherPhaseGenerationContext(
     // Check if the phase has project-level fields
     if (currentPhaseData.project) {
       overallProjectGoal = currentPhaseData.project.goal;
-      overallProjectDetails = currentPhaseData.project.details;
+      overallProjectDetails = currentPhaseData.project.details || '';
       overallProjectTitle = currentPhaseData.project.title;
     }
 
