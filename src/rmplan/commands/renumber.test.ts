@@ -264,26 +264,26 @@ describe('rmplan renumber', () => {
     };
 
     // Write all plans with unique filenames
-    await writeTestPlan(path.join(tasksDir, 'set1-parent.yml'), set1ParentPlan);
-    await writeTestPlan(path.join(tasksDir, 'set1-plan1.yml'), set1Plan1);
-    await writeTestPlan(path.join(tasksDir, 'set1-plan2.yml'), set1Plan2);
-    await writeTestPlan(path.join(tasksDir, 'set1-plan3.yml'), set1Plan3);
-    await writeTestPlan(path.join(tasksDir, 'set2-parent.yml'), set2ParentPlan);
-    await writeTestPlan(path.join(tasksDir, 'set2-plan1.yml'), set2Plan1);
-    await writeTestPlan(path.join(tasksDir, 'set2-plan2.yml'), set2Plan2);
-    await writeTestPlan(path.join(tasksDir, 'set2-plan3.yml'), set2Plan3);
+    await writeTestPlan(path.join(tasksDir, '1-set1-parent.yml'), set1ParentPlan);
+    await writeTestPlan(path.join(tasksDir, '1-set1/2-plan1.yml'), set1Plan1);
+    await writeTestPlan(path.join(tasksDir, '1-set1/3-plan2.yml'), set1Plan2);
+    await writeTestPlan(path.join(tasksDir, '1-set1/4-plan3.yml'), set1Plan3);
+    await writeTestPlan(path.join(tasksDir, '1-set2-parent.yml'), set2ParentPlan);
+    await writeTestPlan(path.join(tasksDir, '1-set2/2-plan1.yml'), set2Plan1);
+    await writeTestPlan(path.join(tasksDir, '1-set2/3-plan2.yml'), set2Plan2);
+    await writeTestPlan(path.join(tasksDir, '1-set2/4-plan3.yml'), set2Plan3);
 
     await handleRenumber({}, createMockCommand());
 
     // Read all updated plans
-    const updatedSet1ParentPlan = await readPlanFile(path.join(tasksDir, 'set1-parent.yml'));
-    const updatedSet1Plan1 = await readPlanFile(path.join(tasksDir, 'set1-plan1.yml'));
-    const updatedSet1Plan2 = await readPlanFile(path.join(tasksDir, 'set1-plan2.yml'));
-    const updatedSet1Plan3 = await readPlanFile(path.join(tasksDir, 'set1-plan3.yml'));
-    const updatedSet2ParentPlan = await readPlanFile(path.join(tasksDir, 'set2-parent.yml'));
-    const updatedSet2Plan1 = await readPlanFile(path.join(tasksDir, 'set2-plan1.yml'));
-    const updatedSet2Plan2 = await readPlanFile(path.join(tasksDir, 'set2-plan2.yml'));
-    const updatedSet2Plan3 = await readPlanFile(path.join(tasksDir, 'set2-plan3.yml'));
+    const updatedSet1ParentPlan = await readPlanFile(path.join(tasksDir, '1-set1-parent.yml'));
+    const updatedSet1Plan1 = await readPlanFile(path.join(tasksDir, '1-set1/2-plan1.yml'));
+    const updatedSet1Plan2 = await readPlanFile(path.join(tasksDir, '1-set1/3-plan2.yml'));
+    const updatedSet1Plan3 = await readPlanFile(path.join(tasksDir, '1-set1/4-plan3.yml'));
+    const updatedSet2ParentPlan = await readPlanFile(path.join(tasksDir, '5-set2-parent.yml'));
+    const updatedSet2Plan1 = await readPlanFile(path.join(tasksDir, '5-set2/6-plan1.yml'));
+    const updatedSet2Plan2 = await readPlanFile(path.join(tasksDir, '5-set2/7-plan2.yml'));
+    const updatedSet2Plan3 = await readPlanFile(path.join(tasksDir, '5-set2/8-plan3.yml'));
 
     // First set should keep IDs 1, 2, 3, 4 (older timestamps)
     expect(updatedSet1ParentPlan.id).toBe(1);

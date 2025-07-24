@@ -194,7 +194,8 @@ export async function handleRenumber(options: any, command: any) {
           let renumbered = idMappings.get(depStr);
           if (renumbered != undefined) {
             hasUpdates = true;
-            // Return the new ID as a string to match the format
+            // Add this as a potential new parent which we'll compare later.
+            // This is kind of dumb but works fine.
             newParents.set(renumbered, [
               ...(newParents.get(renumbered) || []),
               { from: originalId!, to: plan.id },
@@ -202,11 +203,14 @@ export async function handleRenumber(options: any, command: any) {
             return renumbered;
           }
 
-          // If not renumbered, keep original
+          // Add this as a potential new parent which we'll compare later.
+          // This is kind of dumb but works fine.
           newParents.set(Number(dep), [
             ...(newParents.get(Number(dep)) || []),
             { from: originalId!, to: plan.id },
           ]);
+
+          // If not renumbered, keep original
           return dep;
         });
 
@@ -220,11 +224,13 @@ export async function handleRenumber(options: any, command: any) {
       }
     }
 
+    const oldParent = new Map<string, number>();
     for (const [filePath, plan] of allPlans) {
       let newParentList = newParents.get(Number(plan.id)) ?? [];
       for (const newParent of newParentList) {
         if (newParent && plan.parent === newParent.from) {
           plan.parent = newParent.to;
+          oldParent.set(filePath, newParent.from);
           plansToWrite.add(filePath);
           log(`  ✓ Updated parent in ${path.basename(filePath)}`);
         }
@@ -244,6 +250,27 @@ export async function handleRenumber(options: any, command: any) {
           let suffix = parsed.base.slice(`${oldId}-`.length);
 
           writeFilePath = path.join(parsed.dir, `${plan.id}-${suffix}`);
+        }
+      }
+
+      // Check if directory starts with old parent ID and update it
+      const oldParentId = oldParent.get(filePath);
+      if (oldParentId && plan.parent) {
+        let currentPath = path.parse(writeFilePath);
+        const dirParts = currentPath.dir.split(path.sep);
+
+        // Find if any directory part starts with the old parent ID
+        const updatedDirParts = dirParts.map((part) => {
+          if (part.startsWith(`${oldParentId}-`)) {
+            // Replace old parent ID with new parent ID
+            return `${plan.parent}-${part.slice(`${oldParentId}-`.length)}`;
+          }
+          return part;
+        });
+
+        const newDir = updatedDirParts.join(path.sep);
+        if (newDir !== currentPath.dir) {
+          writeFilePath = path.join(newDir, currentPath.base);
         }
       }
 
