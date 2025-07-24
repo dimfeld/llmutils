@@ -2,7 +2,7 @@ import { spawnAndLogOutput, createLineSplitter } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';
 import { log, debugLog } from '../../logging.ts';
 import type { ClaudeCodeExecutorOptions } from './claude_code.ts';
-import { formatJsonMessage } from './claude_code/format.ts';
+import { formatJsonMessage, type Message } from './claude_code/format.ts';
 import chalk from 'chalk';
 
 export interface ClaudeCodeGenerationConfig {
@@ -175,10 +175,14 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
     },
     cwd: gitRoot,
     formatStdout: (output) => {
-      // Capture the raw output for return
-      generationOutput += output;
-
       const lines = splitter(output);
+      let messages = lines.map((line) => JSON.parse(line) as Message);
+
+      const resultMessage = messages.find((m) => m.type === 'result');
+      if (resultMessage && resultMessage.subtype === 'success') {
+        generationOutput = resultMessage.result;
+      }
+
       const formatted = lines.map(formatJsonMessage).filter(Boolean).join('\n\n');
       return formatted ? formatted + '\n\n' : '';
     },

@@ -5,7 +5,7 @@ import { debugLog } from '../../../logging.ts';
 import { createTwoFilesPatch, diffLines } from 'diff';
 
 // Represents the top-level message object
-type Message =
+export type Message =
   // An assistant message
   | {
       type: 'assistant';
