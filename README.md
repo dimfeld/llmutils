@@ -72,7 +72,7 @@ This project assumes you have these tools installed:
 - [llm](https://llm.datasette.io/en/stable/index.html)
 - [fzf](https://github.com/junegunn/fzf) (for rmfind)
 - [bat](https://github.com/sharkdp/bat) (for rmfind and rmrun)
-- [claude-cli](https://github.com/anthropics/claude-cli) (for Claude Code support)
+- [claude Code](https://github.com/anthropics/claude-code) (optional, for Claude Code support)
 
 ### Build Instructions
 
