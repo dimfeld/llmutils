@@ -69,7 +69,6 @@ This project assumes you have these tools installed:
 - [Bun](https://bun.sh/)
 - [ripgrep](https://github.com/BurntSushi/ripgrep)
 - [repomix](https://github.com/yamadashy/repomix)
-- [llm](https://llm.datasette.io/en/stable/index.html)
 - [fzf](https://github.com/junegunn/fzf) (for rmfind)
 - [bat](https://github.com/sharkdp/bat) (for rmfind and rmrun)
 - [claude Code](https://github.com/anthropics/claude-code) (optional, for Claude Code support)
