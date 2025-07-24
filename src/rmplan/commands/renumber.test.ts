@@ -151,9 +151,23 @@ describe('rmplan renumber', () => {
   });
 
   test('renumbers two sets of conflicting plans with dependencies preserved', async () => {
-    // Create first set of plans with IDs 1, 2, 3
-    const set1Plan1: PlanSchema = {
+    // Create first set of plans with IDs 1, 2, 3, 4
+    const set1ParentPlan: PlanSchema = {
       id: 1,
+      title: 'Set 1',
+      goal: 'Goal for set 1',
+      details: 'Details for set 1',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: [2, 3, 4],
+      createdAt: new Date('2024-01-01').toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+
+    const set1Plan1: PlanSchema = {
+      id: 2,
+      parent: 1,
       title: 'Set 1 - Plan 1',
       goal: 'Goal 1-1',
       details: 'Details 1-1',
@@ -166,34 +180,50 @@ describe('rmplan renumber', () => {
     };
 
     const set1Plan2: PlanSchema = {
-      id: 2,
+      id: 3,
+      parent: 1,
       title: 'Set 1 - Plan 2',
       goal: 'Goal 1-2',
       details: 'Details 1-2',
       status: 'pending',
       priority: 'medium',
-      dependencies: [1], // depends on plan 1
+      dependencies: [2], // depends on plan 1
       createdAt: new Date('2024-01-02').toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
 
     const set1Plan3: PlanSchema = {
-      id: 3,
+      id: 4,
+      parent: 1,
       title: 'Set 1 - Plan 3',
       goal: 'Goal 1-3',
       details: 'Details 1-3',
       status: 'pending',
       priority: 'medium',
-      dependencies: [1, 2], // depends on plans 1 and 2
+      dependencies: [2, 3], // depends on plans 1 and 2
       createdAt: new Date('2024-01-03').toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
 
-    // Create second set of plans with IDs 1, 2, 3 (conflicting)
-    const set2Plan1: PlanSchema = {
+    // Create second set of plans with IDs 1, 2, 3, 4 (conflicting)
+    const set2ParentPlan: PlanSchema = {
       id: 1,
+      title: 'Set 2',
+      goal: 'Goal for set 2',
+      details: 'Details for set 2',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: [2, 3, 4],
+      createdAt: new Date('2024-02-01').toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+
+    const set2Plan1: PlanSchema = {
+      id: 2,
+      parent: 1,
       title: 'Set 2 - Plan 1',
       goal: 'Goal 2-1',
       details: 'Details 2-1',
@@ -206,35 +236,39 @@ describe('rmplan renumber', () => {
     };
 
     const set2Plan2: PlanSchema = {
-      id: 2,
+      id: 3,
+      parent: 1,
       title: 'Set 2 - Plan 2',
       goal: 'Goal 2-2',
       details: 'Details 2-2',
       status: 'pending',
       priority: 'medium',
-      dependencies: [1], // depends on plan 1
+      dependencies: [2], // depends on plan 1
       createdAt: new Date('2024-02-02').toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
 
     const set2Plan3: PlanSchema = {
-      id: 3,
+      id: 4,
+      parent: 1,
       title: 'Set 2 - Plan 3',
       goal: 'Goal 2-3',
       details: 'Details 2-3',
       status: 'pending',
       priority: 'medium',
-      dependencies: [1, 2], // depends on plans 1 and 2
+      dependencies: [2, 3], // depends on plans 1 and 2
       createdAt: new Date('2024-02-03').toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
 
     // Write all plans with unique filenames
+    await writeTestPlan(path.join(tasksDir, 'set1-parent.yml'), set1ParentPlan);
     await writeTestPlan(path.join(tasksDir, 'set1-plan1.yml'), set1Plan1);
     await writeTestPlan(path.join(tasksDir, 'set1-plan2.yml'), set1Plan2);
     await writeTestPlan(path.join(tasksDir, 'set1-plan3.yml'), set1Plan3);
+    await writeTestPlan(path.join(tasksDir, 'set2-parent.yml'), set2ParentPlan);
     await writeTestPlan(path.join(tasksDir, 'set2-plan1.yml'), set2Plan1);
     await writeTestPlan(path.join(tasksDir, 'set2-plan2.yml'), set2Plan2);
     await writeTestPlan(path.join(tasksDir, 'set2-plan3.yml'), set2Plan3);
@@ -242,31 +276,43 @@ describe('rmplan renumber', () => {
     await handleRenumber({}, createMockCommand());
 
     // Read all updated plans
+    const updatedSet1ParentPlan = await readPlanFile(path.join(tasksDir, 'set1-parent.yml'));
     const updatedSet1Plan1 = await readPlanFile(path.join(tasksDir, 'set1-plan1.yml'));
     const updatedSet1Plan2 = await readPlanFile(path.join(tasksDir, 'set1-plan2.yml'));
     const updatedSet1Plan3 = await readPlanFile(path.join(tasksDir, 'set1-plan3.yml'));
+    const updatedSet2ParentPlan = await readPlanFile(path.join(tasksDir, 'set2-parent.yml'));
     const updatedSet2Plan1 = await readPlanFile(path.join(tasksDir, 'set2-plan1.yml'));
     const updatedSet2Plan2 = await readPlanFile(path.join(tasksDir, 'set2-plan2.yml'));
     const updatedSet2Plan3 = await readPlanFile(path.join(tasksDir, 'set2-plan3.yml'));
 
-    // First set should keep IDs 1, 2, 3 (older timestamps)
-    expect(updatedSet1Plan1.id).toBe(1);
-    expect(updatedSet1Plan2.id).toBe(2);
-    expect(updatedSet1Plan3.id).toBe(3);
+    // First set should keep IDs 1, 2, 3, 4 (older timestamps)
+    expect(updatedSet1ParentPlan.id).toBe(1);
+    expect(updatedSet1Plan1.parent).toBe(1);
+    expect(updatedSet1Plan2.parent).toBe(1);
+    expect(updatedSet1Plan3.parent).toBe(1);
+    expect(updatedSet1Plan1.id).toBe(2);
+    expect(updatedSet1Plan2.id).toBe(3);
+    expect(updatedSet1Plan3.id).toBe(4);
 
-    // Second set should be renumbered to 4, 5, 6
-    expect(updatedSet2Plan1.id).toBe(4);
-    expect(updatedSet2Plan2.id).toBe(5);
-    expect(updatedSet2Plan3.id).toBe(6);
+    // Second set should be renumbered to 4, 5, 6, 7
+    expect(updatedSet2ParentPlan.id).toBe(5);
+    expect(updatedSet2Plan1.parent).toBe(5);
+    expect(updatedSet2Plan2.parent).toBe(5);
+    expect(updatedSet2Plan3.parent).toBe(5);
+    expect(updatedSet2Plan1.id).toBe(6);
+    expect(updatedSet2Plan2.id).toBe(7);
+    expect(updatedSet2Plan3.id).toBe(8);
 
     // Check that dependencies are preserved within set 1
+    expect(updatedSet1ParentPlan.dependencies).toEqual([2, 3, 4]);
     expect(updatedSet1Plan1.dependencies).toEqual([]);
-    expect(updatedSet1Plan2.dependencies).toEqual([1]); // still depends on plan 1
-    expect(updatedSet1Plan3.dependencies).toEqual([1, 2]); // still depends on plans 1 and 2
+    expect(updatedSet1Plan2.dependencies).toEqual([2]);
+    expect(updatedSet1Plan3.dependencies).toEqual([2, 3]);
 
     // Check that dependencies are updated correctly for set 2
+    expect(updatedSet2ParentPlan.dependencies).toEqual([6, 7, 8]);
     expect(updatedSet2Plan1.dependencies).toEqual([]);
-    expect(updatedSet2Plan2.dependencies).toEqual([4]); // updated from 1 to 4
-    expect(updatedSet2Plan3.dependencies).toEqual([4, 5]); // updated from [1, 2] to [4, 5]
+    expect(updatedSet2Plan2.dependencies).toEqual([6]);
+    expect(updatedSet2Plan3.dependencies).toEqual([6, 7]);
   });
 });

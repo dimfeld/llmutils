@@ -158,8 +158,12 @@ export async function handleRenumber(options: any, command: any) {
   if (!options.dryRun) {
     log('\nRenumbering plans...');
 
+    // Map of the plan ID after numbering to its new parent
+    const newParents = new Map<number, { from: number; to: number }[]>();
+
     // Update the dependencies in all plans
     for (const [filePath, plan] of allPlans) {
+      let originalId = plan.id;
       let isRenumbered = newFileIds.has(filePath);
       if (isRenumbered) {
         const { id, reason } = newFileIds.get(filePath)!;
@@ -178,6 +182,8 @@ export async function handleRenumber(options: any, command: any) {
             // other plans that are also being renumbered, and that plans not being
             // renumbered because of a conflict will not depend on other plans that are
             // being renumbered.
+            //
+            // So if current plan plan was not renumbered, then nothing changed.
             return dep;
           }
 
@@ -189,10 +195,18 @@ export async function handleRenumber(options: any, command: any) {
           if (renumbered != undefined) {
             hasUpdates = true;
             // Return the new ID as a string to match the format
+            newParents.set(renumbered, [
+              ...(newParents.get(renumbered) || []),
+              { from: originalId!, to: plan.id },
+            ]);
             return renumbered;
           }
 
           // If not renumbered, keep original
+          newParents.set(Number(dep), [
+            ...(newParents.get(Number(dep)) || []),
+            { from: originalId!, to: plan.id },
+          ]);
           return dep;
         });
 
@@ -202,6 +216,17 @@ export async function handleRenumber(options: any, command: any) {
         if (hasUpdates) {
           plansToWrite.add(filePath);
           log(`  ✓ Updated dependencies in ${path.basename(filePath)}`);
+        }
+      }
+    }
+
+    for (const [filePath, plan] of allPlans) {
+      let newParentList = newParents.get(Number(plan.id)) ?? [];
+      for (const newParent of newParentList) {
+        if (newParent && plan.parent === newParent.from) {
+          plan.parent = newParent.to;
+          plansToWrite.add(filePath);
+          log(`  ✓ Updated parent in ${path.basename(filePath)}`);
         }
       }
     }
