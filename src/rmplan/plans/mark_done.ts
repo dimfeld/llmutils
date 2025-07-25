@@ -178,7 +178,7 @@ export async function markStepDone(
     try {
       const parentPlan = await checkAndMarkParentDone(planData.parent, config, baseDir);
 
-      if (parentPlan && options.commit) {
+      if (parentPlan && parentPlan.status === 'done' && options.commit) {
         const title = parentPlan.title ? ` "${parentPlan.title}"` : '';
         await commitAll(`Mark plan${title} as done (ID: ${parentPlan.id}}`, baseDir);
       }

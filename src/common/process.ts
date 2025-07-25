@@ -17,7 +17,7 @@
 
 import type { SpawnOptions } from 'bun';
 import { debugLog, log, writeStderr, writeStdout } from '../logging.js';
-import { getUsingJj } from './git.js';
+import { getUsingJj, hasUncommittedChanges } from './git.js';
 
 // Debug and quiet flags for process operations
 export let debug = false;
@@ -215,6 +215,10 @@ export function createLineSplitter(): (input: string) => string[] {
  * @returns Promise resolving to the exit code of the commit command (0 for success)
  */
 export async function commitAll(message: string, cwd?: string): Promise<number> {
+  if ((await hasUncommittedChanges(cwd)) === false) {
+    return 0;
+  }
+
   const usingJj = await getUsingJj();
 
   if (usingJj) {
