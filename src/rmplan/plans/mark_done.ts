@@ -7,6 +7,7 @@ import { getChangedFiles, type GetChangedFilesOptions } from '../../rmfilter/add
 import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
 import { clearPlanCache, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import { type PendingTaskResult, findPendingTask, findNextActionableItem } from './find_next.js';
+import type { PlanSchema } from '../planSchema.js';
 
 /**
  * Marks one or more steps as completed in a plan file and updates plan metadata.
@@ -175,7 +176,12 @@ export async function markStepDone(
   // 8. Check if parent plan should be marked done
   if (planComplete && planData.parent && config) {
     try {
-      await checkAndMarkParentDone(planData.parent, config, baseDir);
+      const parentPlan = await checkAndMarkParentDone(planData.parent, config, baseDir);
+
+      if (parentPlan && options.commit) {
+        const title = parentPlan.title ? ` "${parentPlan.title}"` : '';
+        await commitAll(`Mark plan${title} as done (ID: ${parentPlan.id}}`, baseDir);
+      }
     } catch (err) {
       // Log but don't fail the operation
       warn(`Failed to check parent plan: ${err instanceof Error ? err.message : String(err)}`);
@@ -321,7 +327,7 @@ async function checkAndMarkParentDone(
   parentId: number,
   config: RmplanConfig,
   baseDir?: string
-): Promise<void> {
+): Promise<PlanSchema | undefined> {
   const tasksDir = await resolveTasksDir(config);
   // Force re-read to get updated statuses
   clearPlanCache();
@@ -369,4 +375,6 @@ async function checkAndMarkParentDone(
       await checkAndMarkParentDone(parentPlan.parent, config, baseDir);
     }
   }
+
+  return parentPlan;
 }
