@@ -349,7 +349,9 @@ async function checkAndMarkParentDone(
   const children = Array.from(allPlans.values()).filter((plan) => plan.parent === parentId);
 
   // Check if all children are done
-  const allChildrenDone = children.every((child) => child.status === 'done');
+  const allChildrenDone = children.every(
+    (child) => child.status === 'done' || child.status === 'cancelled'
+  );
 
   if (allChildrenDone && children.length > 0) {
     // Mark parent as done
