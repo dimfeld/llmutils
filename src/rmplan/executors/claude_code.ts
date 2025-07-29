@@ -18,6 +18,12 @@ import { stringify } from 'yaml';
 import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 import { waitForEnter } from '../../common/terminal.ts';
 import { wrapWithOrchestration } from './claude_code/orchestrator_prompt.ts';
+import { generateAgentFiles, removeAgentFiles } from './claude_code/agent_generator.ts';
+import {
+  getImplementerPrompt,
+  getTesterPrompt,
+  getReviewerPrompt,
+} from './claude_code/agent_prompts.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -385,6 +391,13 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
+    // Generate agent files if plan information is provided
+    if (planInfo && planInfo.planId) {
+      const agentDefinitions = [getImplementerPrompt(), getTesterPrompt(), getReviewerPrompt()];
+      await generateAgentFiles(planInfo.planId, agentDefinitions);
+      log(chalk.blue(`Created agent files for plan ${planInfo.planId}`));
+    }
+
     try {
       const args = ['claude'];
 
@@ -482,6 +495,12 @@ export class ClaudeCodeExecutor implements Executor {
       // Clean up temporary MCP configuration directory if it was created
       if (tempMcpConfigDir) {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
+      }
+
+      // Clean up agent files if they were created
+      if (planInfo && planInfo.planId) {
+        await removeAgentFiles(planInfo.planId);
+        debugLog(`Removed agent files for plan ${planInfo.planId}`);
       }
     }
   }

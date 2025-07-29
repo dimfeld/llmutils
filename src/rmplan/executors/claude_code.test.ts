@@ -87,6 +87,178 @@ describe('ClaudeCodeExecutor', () => {
     await expect(copyOnlyExecutor.execute('test content', mockPlanInfo)).resolves.toBeUndefined();
   });
 
+  test('creates and cleans up agent files when plan information is provided', async () => {
+    const mockGenerateAgentFiles = mock(() => Promise.resolve());
+    const mockRemoveAgentFiles = mock(() => Promise.resolve());
+
+    // Mock the agent generator functions
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      generateAgentFiles: mockGenerateAgentFiles,
+      removeAgentFiles: mockRemoveAgentFiles,
+    }));
+
+    // Mock the agent prompts
+    await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+      getImplementerPrompt: mock(() => ({
+        name: 'implementer',
+        description: 'test',
+        prompt: 'test',
+      })),
+      getTesterPrompt: mock(() => ({ name: 'tester', description: 'test', prompt: 'test' })),
+      getReviewerPrompt: mock(() => ({ name: 'reviewer', description: 'test', prompt: 'test' })),
+    }));
+
+    // Mock other dependencies
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/test/base')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: mock((content: string) => content),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    await executor.execute('test content', mockPlanInfo);
+
+    // Verify agent files were generated
+    expect(mockGenerateAgentFiles).toHaveBeenCalledTimes(1);
+    expect(mockGenerateAgentFiles).toHaveBeenCalledWith('123', [
+      { name: 'implementer', description: 'test', prompt: 'test' },
+      { name: 'tester', description: 'test', prompt: 'test' },
+      { name: 'reviewer', description: 'test', prompt: 'test' },
+    ]);
+
+    // Verify agent files were cleaned up
+    expect(mockRemoveAgentFiles).toHaveBeenCalledTimes(1);
+    expect(mockRemoveAgentFiles).toHaveBeenCalledWith('123');
+  });
+
+  test('cleans up agent files even when execution fails', async () => {
+    const mockGenerateAgentFiles = mock(() => Promise.resolve());
+    const mockRemoveAgentFiles = mock(() => Promise.resolve());
+
+    // Mock the agent generator functions
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      generateAgentFiles: mockGenerateAgentFiles,
+      removeAgentFiles: mockRemoveAgentFiles,
+    }));
+
+    // Mock the agent prompts
+    await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+      getImplementerPrompt: mock(() => ({
+        name: 'implementer',
+        description: 'test',
+        prompt: 'test',
+      })),
+      getTesterPrompt: mock(() => ({ name: 'tester', description: 'test', prompt: 'test' })),
+      getReviewerPrompt: mock(() => ({ name: 'reviewer', description: 'test', prompt: 'test' })),
+    }));
+
+    // Mock other dependencies to simulate failure
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 1 })), // Non-zero exit code
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/test/base')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: mock((content: string) => content),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Execute should throw due to non-zero exit code
+    await expect(executor.execute('test content', mockPlanInfo)).rejects.toThrow(
+      'Claude exited with non-zero exit code: 1'
+    );
+
+    // Verify agent files were still cleaned up despite the error
+    expect(mockGenerateAgentFiles).toHaveBeenCalledTimes(1);
+    expect(mockRemoveAgentFiles).toHaveBeenCalledTimes(1);
+    expect(mockRemoveAgentFiles).toHaveBeenCalledWith('123');
+  });
+
+  test('does not create agent files when plan information is not provided', async () => {
+    const mockGenerateAgentFiles = mock(() => Promise.resolve());
+    const mockRemoveAgentFiles = mock(() => Promise.resolve());
+
+    // Mock the agent generator functions
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      generateAgentFiles: mockGenerateAgentFiles,
+      removeAgentFiles: mockRemoveAgentFiles,
+    }));
+
+    // Mock other dependencies
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/test/base')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Execute without plan information
+    await executor.execute('test content', undefined as any);
+
+    // Verify agent files were not generated or cleaned up
+    expect(mockGenerateAgentFiles).not.toHaveBeenCalled();
+    expect(mockRemoveAgentFiles).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });
