@@ -6,7 +6,7 @@ goal: To make the agent file cleanup mechanism resilient to premature
   application termination by implementing a global SIGINT handler and a cleanup
   task registry.
 id: 79
-status: in_progress
+status: done
 priority: high
 dependencies:
   - 78
@@ -14,7 +14,7 @@ parent: 77
 planGeneratedAt: 2025-07-29T19:14:39.578Z
 promptsGeneratedAt: 2025-07-29T20:38:48.963Z
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T20:41:39.767Z
+updatedAt: 2025-07-29T20:45:59.096Z
 tasks:
   - title: Create a Centralized Cleanup Handler Registry
     description: >
@@ -138,7 +138,7 @@ tasks:
 
           and import fs (not fs/promises) from 'node:fs' for synchronous
           operations.
-        done: false
+        done: true
       - prompt: >
           In the execute() method of src/rmplan/executors/claude_code.ts, after
           calling generateAgentFiles(),
@@ -148,7 +148,7 @@ tasks:
 
           Store the returned unregister function in a variable declared before
           the try block.
-        done: false
+        done: true
       - prompt: >
           Update the cleanup function to use fs.readdirSync to find files
           matching the pattern
@@ -157,14 +157,14 @@ tasks:
           to remove each file.
 
           Wrap the operations in try-catch to handle errors gracefully.
-        done: false
+        done: true
       - prompt: >
           In the finally block of execute(), call the stored unregister function
           if it exists
 
           to remove the cleanup handler from the registry, ensuring it only runs
           on abnormal termination.
-        done: false
+        done: true
       - prompt: >
           Update src/rmplan/executors/claude_code.test.ts to add tests verifying
           that the cleanup
@@ -173,7 +173,7 @@ tasks:
           the finally block.
 
           Mock the CleanupRegistry to verify the register and unregister calls.
-        done: false
+        done: true
 changedFiles:
   - src/common/cleanup_registry.test.ts
   - src/common/cleanup_registry.ts

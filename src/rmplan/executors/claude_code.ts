@@ -3,7 +3,9 @@ import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import * as fsSync from 'node:fs';
 import { debugLog, log } from '../../logging.ts';
+import { CleanupRegistry } from '../../common/cleanup_registry.ts';
 import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
@@ -288,6 +290,10 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
+    let unregisterCleanup: (() => void) | undefined;
+
+    // Get git root early since we'll need it for cleanup handler
+    const gitRoot = await getGitRoot();
 
     // TODO Interactive mode isn't integrated with the logging
     interactive ??= this.sharedOptions.interactive;
@@ -400,6 +406,36 @@ export class ClaudeCodeExecutor implements Executor {
       ];
       await generateAgentFiles(planInfo.planId, agentDefinitions);
       log(chalk.blue(`Created agent files for plan ${planInfo.planId}`));
+
+      // Register cleanup handler for agent files
+      const cleanupRegistry = CleanupRegistry.getInstance();
+      unregisterCleanup = cleanupRegistry.register(() => {
+        try {
+          const agentsDir = path.join(gitRoot, '.claude', 'agents');
+
+          // Use synchronous operations since this may be called from signal handlers
+          try {
+            const files = fsSync.readdirSync(agentsDir);
+            const matchingFiles = files.filter((file) =>
+              file.match(new RegExp(`^rmplan-${planInfo.planId}-.*\\.md$`))
+            );
+
+            for (const file of matchingFiles) {
+              const filePath = path.join(agentsDir, file);
+              try {
+                fsSync.unlinkSync(filePath);
+              } catch (err) {
+                debugLog(`Failed to remove agent file ${filePath}:`, err);
+              }
+            }
+          } catch (err) {
+            // Directory might not exist
+            debugLog('Error reading agents directory during cleanup:', err);
+          }
+        } catch (err) {
+          debugLog('Error during agent file cleanup:', err);
+        }
+      });
     }
 
     try {
@@ -451,7 +487,7 @@ export class ClaudeCodeExecutor implements Executor {
             ...process.env,
             ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           },
-          cwd: await getGitRoot(),
+          cwd: gitRoot,
           stdio: ['inherit', 'inherit', 'inherit'],
         });
 
@@ -475,7 +511,7 @@ export class ClaudeCodeExecutor implements Executor {
             ...process.env,
             ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           },
-          cwd: await getGitRoot(),
+          cwd: gitRoot,
           formatStdout: (output) => {
             let lines = splitter(output);
             return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
@@ -505,6 +541,11 @@ export class ClaudeCodeExecutor implements Executor {
       if (planInfo && planInfo.planId) {
         await removeAgentFiles(planInfo.planId);
         debugLog(`Removed agent files for plan ${planInfo.planId}`);
+      }
+
+      // Unregister the cleanup handler since we've cleaned up normally
+      if (unregisterCleanup) {
+        unregisterCleanup();
       }
     }
   }

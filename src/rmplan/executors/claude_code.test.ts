@@ -90,6 +90,18 @@ describe('ClaudeCodeExecutor', () => {
   test('creates and cleans up agent files when plan information is provided', async () => {
     const mockGenerateAgentFiles = mock(() => Promise.resolve());
     const mockRemoveAgentFiles = mock(() => Promise.resolve());
+    const mockUnregister = mock();
+    const mockRegister = mock(() => mockUnregister);
+    const mockGetInstance = mock(() => ({
+      register: mockRegister,
+    }));
+
+    // Mock CleanupRegistry
+    await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
+      CleanupRegistry: {
+        getInstance: mockGetInstance,
+      },
+    }));
 
     // Mock the agent generator functions
     await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
@@ -159,11 +171,27 @@ describe('ClaudeCodeExecutor', () => {
     // Verify agent files were cleaned up
     expect(mockRemoveAgentFiles).toHaveBeenCalledTimes(1);
     expect(mockRemoveAgentFiles).toHaveBeenCalledWith('123');
+
+    // Verify cleanup handler was registered and unregistered
+    expect(mockRegister).toHaveBeenCalledTimes(1);
+    expect(mockUnregister).toHaveBeenCalledTimes(1);
   });
 
   test('cleans up agent files even when execution fails', async () => {
     const mockGenerateAgentFiles = mock(() => Promise.resolve());
     const mockRemoveAgentFiles = mock(() => Promise.resolve());
+    const mockUnregister = mock();
+    const mockRegister = mock(() => mockUnregister);
+    const mockGetInstance = mock(() => ({
+      register: mockRegister,
+    }));
+
+    // Mock CleanupRegistry
+    await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
+      CleanupRegistry: {
+        getInstance: mockGetInstance,
+      },
+    }));
 
     // Mock the agent generator functions
     await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
@@ -229,6 +257,10 @@ describe('ClaudeCodeExecutor', () => {
     expect(mockGenerateAgentFiles).toHaveBeenCalledTimes(1);
     expect(mockRemoveAgentFiles).toHaveBeenCalledTimes(1);
     expect(mockRemoveAgentFiles).toHaveBeenCalledWith('123');
+
+    // Verify cleanup handler was registered and unregistered even on failure
+    expect(mockRegister).toHaveBeenCalledTimes(1);
+    expect(mockUnregister).toHaveBeenCalledTimes(1);
   });
 
   test('does not create agent files when plan information is not provided', async () => {
