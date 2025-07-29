@@ -70,18 +70,18 @@ describe('agent_generator', () => {
       for (const agent of agents) {
         const fileName = `rmplan-test-plan-456-${agent.name}.md`;
         const filePath = path.join(agentsDir, fileName);
-        
+
         const content = await fs.readFile(filePath, 'utf-8');
-        
+
         // Check YAML frontmatter
         expect(content).toContain('---');
         expect(content).toContain(`name: rmplan-test-plan-456-${agent.name}`);
         expect(content).toContain(`description: ${agent.description}`);
         expect(content).toContain('---');
-        
+
         // Check prompt content
         expect(content).toContain(agent.prompt);
-        
+
         // Verify exact format
         const expectedContent = `---
 name: rmplan-test-plan-456-${agent.name}
@@ -114,7 +114,7 @@ ${agent.prompt}
       // Check that file was updated
       const filePath = path.join(agentsDir, 'rmplan-test-plan-789-implementer.md');
       const content = await fs.readFile(filePath, 'utf-8');
-      
+
       expect(content).toContain('Updated description');
       expect(content).toContain('Updated prompt');
       expect(content).not.toContain('Original');
@@ -185,7 +185,7 @@ ${agent.prompt}
     test('handles empty agents array', async () => {
       // Should not throw when given empty array
       await generateAgentFiles('empty-plan', []);
-      
+
       // Directory should still be created
       const stats = await fs.stat(agentsDir);
       expect(stats.isDirectory()).toBe(true);
@@ -202,7 +202,7 @@ ${agent.prompt}
 
       const fileName = 'rmplan-space-plan-code reviewer.md';
       const filePath = path.join(agentsDir, fileName);
-      
+
       const content = await fs.readFile(filePath, 'utf-8');
       expect(content).toContain('name: rmplan-space-plan-code reviewer');
     });
@@ -227,7 +227,7 @@ function example() {
 
       const filePath = path.join(agentsDir, 'rmplan-multi-plan-multi.md');
       const content = await fs.readFile(filePath, 'utf-8');
-      
+
       expect(content).toContain('This is a multi-line prompt.');
       expect(content).toContain('function example()');
     });

@@ -12,7 +12,7 @@ parent: 77
 planGeneratedAt: 2025-07-29T19:14:39.578Z
 promptsGeneratedAt: 2025-07-29T19:24:27.635Z
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T19:34:37.031Z
+updatedAt: 2025-07-29T19:38:00.449Z
 tasks:
   - title: Update Executor Function Signature to Accept Plan Information
     description: >
@@ -89,35 +89,35 @@ tasks:
 
           Define an interface AgentDefinition with fields: name (string),
           description (string), and prompt (string).
-        done: false
+        done: true
       - prompt: >
           Implement a function generateAgentFiles that takes planId (string) and
           an array of AgentDefinition objects.
 
           The function should create the .claude/agents directory relative to
           the git root if it doesn't exist.
-        done: false
+        done: true
       - prompt: >
           In generateAgentFiles, for each agent definition, create a markdown
           file with the filename pattern `rmplan-${planId}-${agent.name}.md`.
 
           Write YAML frontmatter with name and description, followed by the
           prompt content.
-        done: false
+        done: true
       - prompt: >
           Implement a function removeAgentFiles that takes a planId and removes
           all agent files matching the pattern `rmplan-${planId}-*.md` from the
           .claude/agents directory.
 
           Handle cases where files might not exist gracefully.
-        done: false
+        done: true
       - prompt: >
           Create comprehensive tests in agent_generator.test.ts that verify
           agent file creation, content format, and removal.
 
           Use a temporary directory for testing and verify file contents match
           expected format.
-        done: false
+        done: true
   - title: Define Prompts for Implementer, Tester, and Reviewer Agents
     description: >
       The specific prompt content for each of the three agents will be defined.
@@ -247,6 +247,8 @@ changedFiles:
   - src/rmplan/agent_runner.ts
   - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts
+  - src/rmplan/executors/claude_code/agent_generator.test.ts
+  - src/rmplan/executors/claude_code/agent_generator.ts
   - src/rmplan/executors/claude_code.test.ts
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/copy_only.ts
