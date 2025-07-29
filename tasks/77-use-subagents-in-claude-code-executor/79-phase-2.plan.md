@@ -14,7 +14,7 @@ parent: 77
 planGeneratedAt: 2025-07-29T19:14:39.578Z
 promptsGeneratedAt: 2025-07-29T20:38:48.963Z
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T20:40:48.240Z
+updatedAt: 2025-07-29T20:41:39.767Z
 tasks:
   - title: Create a Centralized Cleanup Handler Registry
     description: >
@@ -94,7 +94,7 @@ tasks:
           top of src/rmplan/rmplan.ts
 
           alongside other imports.
-        done: false
+        done: true
       - prompt: >
           In the run() function of src/rmplan/rmplan.ts, right after loadEnv()
           is called,
@@ -106,7 +106,7 @@ tasks:
           process.exit(130)
 
           after cleanup to follow Unix convention.
-        done: false
+        done: true
   - title: Integrate the Executor with the Cleanup Registry
     description: >
       The Claude Code executor will be modified to register its agent file
@@ -192,6 +192,7 @@ changedFiles:
   - src/rmplan/executors/one-call.ts
   - src/rmplan/executors/types.ts
   - src/rmplan/prompt_builder.test.ts
+  - src/rmplan/rmplan.ts
   - src/rmpr/main.ts
 rmfilter:
   - src/rmplan/executors/claude_code
