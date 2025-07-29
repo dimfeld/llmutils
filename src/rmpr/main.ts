@@ -478,7 +478,11 @@ export async function handleRmprCommand(
     process.exit(0);
   }
 
-  await executor.execute(llmPrompt);
+  await executor.execute(llmPrompt, {
+    planId: 'pr-review',
+    planTitle: `PR Review: ${pullRequest.title}`,
+    planFilePath: 'N/A',
+  });
 
   if (
     (options.mode === 'inline-comments' || options.mode === 'hybrid') &&

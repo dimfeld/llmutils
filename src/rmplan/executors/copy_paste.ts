@@ -8,7 +8,7 @@ import { log } from '../../logging';
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { ExecutorCommonOptions, Executor } from './types';
+import type { ExecutorCommonOptions, Executor, ExecutePlanInfo } from './types';
 import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 import { copyPasteOptionsSchema, CopyPasteExecutorName } from './schemas.js';
 
@@ -49,7 +49,8 @@ export class CopyPasteExecutor implements Executor {
     return options;
   }
 
-  async execute(contextContent: string) {
+  async execute(contextContent: string, _planInfo: ExecutePlanInfo) {
+    // This executor doesn't use plan information
     await clipboard.write(contextContent);
 
     log(

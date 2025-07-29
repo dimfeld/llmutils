@@ -388,7 +388,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
         try {
           log(boldMarkdownHeaders('\n## Execution\n'));
-          await executor.execute(taskPrompt);
+          await executor.execute(taskPrompt, {
+            planId: planData.id?.toString() ?? 'unknown',
+            planTitle: planData.title ?? 'Untitled Plan',
+            planFilePath: currentPlanFile,
+          });
         } catch (err) {
           error('Task execution failed:', err);
           hasError = true;
@@ -524,7 +528,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
       try {
         log(boldMarkdownHeaders('\n## Execution\n'));
-        await executor.execute(contextContent);
+        await executor.execute(contextContent, {
+          planId: planData.id?.toString() ?? 'unknown',
+          planTitle: planData.title ?? 'Untitled Plan',
+          planFilePath: currentPlanFile,
+        });
       } catch (err) {
         error('Execution step failed:', err);
         hasError = true;
@@ -638,7 +646,11 @@ async function executeStubPlan({
   }
 
   // Execute the consolidated prompt
-  await executor.execute(directPrompt);
+  await executor.execute(directPrompt, {
+    planId: planData.id?.toString() ?? 'unknown',
+    planTitle: planData.title ?? 'Untitled Plan',
+    planFilePath: planFilePath,
+  });
 
   // Execute post-apply commands if configured and no error occurred
   if (config.postApplyCommands && config.postApplyCommands.length > 0) {

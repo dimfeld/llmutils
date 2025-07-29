@@ -11,6 +11,18 @@ export interface ExecutorCommonOptions {
   model?: string;
 }
 
+/**
+ * Plan information passed to the executor during execution.
+ */
+export interface ExecutePlanInfo {
+  /** The plan ID */
+  planId: string;
+  /** The plan title */
+  planTitle: string;
+  /** The path to the plan file */
+  planFilePath: string;
+}
+
 export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {
   new (
     executorOptions: z.infer<SCHEMA>,
@@ -50,12 +62,7 @@ export interface Executor {
   /**
    * The asynchronous function that executes the generated context.
    * @param contextContent - The string content for execution (output from `rmfilter` or direct prompt).
-   * @param executorOptions - Parsed and validated options specific to this executor.
-   * @param sharedOptions - Shared options/state from the agent command.
-   * @param rmplanConfig - The loaded rmplan configuration.
-   * @param retryRequester - Function to request LLM retries for `applyLlmEdits`.
-   * @param baseApplyLlmEditsOptions - Base options for `applyLlmEdits`, which the executor can extend or override.
-   *                                   Does not include `content` or `retryRequester`.
+   * @param planInfo - Plan information containing planId, planTitle, and planFilePath.
    */
-  execute: (contextContent: string) => Promise<void>;
+  execute: (contextContent: string, planInfo: ExecutePlanInfo) => Promise<void>;
 }

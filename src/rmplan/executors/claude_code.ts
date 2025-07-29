@@ -8,7 +8,7 @@ import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/proce
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { Executor, ExecutorCommonOptions } from './types.ts';
+import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
 import { formatJsonMessage } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
@@ -33,6 +33,7 @@ export class ClaudeCodeExecutor implements Executor {
   readonly filePathPrefix = '@';
   readonly todoDirections = '- Use the TodoWrite tool to maintain your TODO list.';
   private alwaysAllowedTools = new Map<string, true | string[]>();
+  private planInfo?: ExecutePlanInfo;
 
   constructor(
     public options: ClaudeCodeExecutorOptions,
@@ -270,7 +271,9 @@ export class ClaudeCodeExecutor implements Executor {
     return server;
   }
 
-  async execute(contextContent: string) {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo) {
+    // Store plan information for use in agent file generation
+    this.planInfo = planInfo;
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     // TODO Interactive mode isn't integrated with the logging
