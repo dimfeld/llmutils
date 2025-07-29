@@ -12,7 +12,7 @@ parent: 77
 planGeneratedAt: 2025-07-29T19:14:39.578Z
 promptsGeneratedAt: 2025-07-29T19:24:27.635Z
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T19:39:44.860Z
+updatedAt: 2025-07-29T19:41:44.975Z
 tasks:
   - title: Update Executor Function Signature to Accept Plan Information
     description: >
@@ -178,7 +178,7 @@ tasks:
 
           This function takes the original contextContent and planId, and
           returns a modified prompt with orchestration instructions prepended.
-        done: false
+        done: true
       - prompt: >
           In wrapWithOrchestration, add instructions that tell Claude to use the
           Task tool to invoke the subagents in sequence.
@@ -186,7 +186,7 @@ tasks:
           Specify the exact agent names using the planId:
           rmplan-${planId}-implementer, rmplan-${planId}-tester,
           rmplan-${planId}-reviewer.
-        done: false
+        done: true
       - prompt: >
           Include instructions for an iterative loop: implement with the
           implementer agent, test with the tester agent, and if tests fail or
@@ -195,14 +195,14 @@ tasks:
 
           Emphasize that the main agent should coordinate but not implement
           directly.
-        done: false
+        done: true
       - prompt: >
           Update claude_code.ts to use wrapWithOrchestration to modify the
           contextContent before execution.
 
           Only apply orchestration when subagents are being used (when plan
           information is provided).
-        done: false
+        done: true
   - title: Integrate Agent Lifecycle Management into the Executor
     description: >
       The executor logic will be updated to manage the full lifecycle of the
@@ -250,6 +250,7 @@ changedFiles:
   - src/rmplan/executors/claude_code/agent_generator.test.ts
   - src/rmplan/executors/claude_code/agent_generator.ts
   - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
   - src/rmplan/executors/claude_code.test.ts
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/copy_only.ts

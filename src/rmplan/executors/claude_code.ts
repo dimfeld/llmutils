@@ -275,12 +275,12 @@ export class ClaudeCodeExecutor implements Executor {
   async execute(contextContent: string, planInfo: ExecutePlanInfo) {
     // Store plan information for use in agent file generation
     this.planInfo = planInfo;
-    
+
     // Apply orchestration wrapper when plan information is provided
     if (planInfo && planInfo.planId) {
       contextContent = wrapWithOrchestration(contextContent, planInfo.planId);
     }
-    
+
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
 
     // TODO Interactive mode isn't integrated with the logging
