@@ -425,7 +425,7 @@ export class ClaudeCodeExecutor implements Executor {
               try {
                 fsSync.unlinkSync(filePath);
               } catch (err) {
-                debugLog(`Failed to remove agent file ${filePath}:`, err);
+                console.error(`Failed to remove agent file ${filePath}:`, err);
               }
             }
           } catch (err) {
