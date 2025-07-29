@@ -99,13 +99,21 @@ describe('ClaudeCodeExecutor', () => {
 
     // Mock the agent prompts
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: mock(() => ({
+      getImplementerPrompt: mock((context: string) => ({
         name: 'implementer',
         description: 'test',
         prompt: 'test',
       })),
-      getTesterPrompt: mock(() => ({ name: 'tester', description: 'test', prompt: 'test' })),
-      getReviewerPrompt: mock(() => ({ name: 'reviewer', description: 'test', prompt: 'test' })),
+      getTesterPrompt: mock((context: string) => ({
+        name: 'tester',
+        description: 'test',
+        prompt: 'test',
+      })),
+      getReviewerPrompt: mock((context: string) => ({
+        name: 'reviewer',
+        description: 'test',
+        prompt: 'test',
+      })),
     }));
 
     // Mock other dependencies
@@ -165,13 +173,21 @@ describe('ClaudeCodeExecutor', () => {
 
     // Mock the agent prompts
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: mock(() => ({
+      getImplementerPrompt: mock((context: string) => ({
         name: 'implementer',
         description: 'test',
         prompt: 'test',
       })),
-      getTesterPrompt: mock(() => ({ name: 'tester', description: 'test', prompt: 'test' })),
-      getReviewerPrompt: mock(() => ({ name: 'reviewer', description: 'test', prompt: 'test' })),
+      getTesterPrompt: mock((context: string) => ({
+        name: 'tester',
+        description: 'test',
+        prompt: 'test',
+      })),
+      getReviewerPrompt: mock((context: string) => ({
+        name: 'reviewer',
+        description: 'test',
+        prompt: 'test',
+      })),
     }));
 
     // Mock other dependencies to simulate failure

@@ -393,7 +393,11 @@ export class ClaudeCodeExecutor implements Executor {
 
     // Generate agent files if plan information is provided
     if (planInfo && planInfo.planId) {
-      const agentDefinitions = [getImplementerPrompt(), getTesterPrompt(), getReviewerPrompt()];
+      const agentDefinitions = [
+        getImplementerPrompt(contextContent),
+        getTesterPrompt(contextContent),
+        getReviewerPrompt(contextContent),
+      ];
       await generateAgentFiles(planInfo.planId, agentDefinitions);
       log(chalk.blue(`Created agent files for plan ${planInfo.planId}`));
     }
