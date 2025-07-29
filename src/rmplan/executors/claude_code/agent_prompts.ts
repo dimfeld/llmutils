@@ -42,7 +42,7 @@ ${contextContent}
 4. Test your implementation as you go
 5. Ensure all checks and validations pass before marking work as complete
 
-Remember: You are implementing functionality, not writing tests or documentation. Focus on clean, working code that follows project conventions.`,
+Remember: You are implementing functionality with tests, not writing documentation. Focus on clean, working code that follows project conventions.`,
   };
 }
 
