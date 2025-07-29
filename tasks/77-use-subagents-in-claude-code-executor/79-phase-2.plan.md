@@ -14,7 +14,7 @@ parent: 77
 planGeneratedAt: 2025-07-29T19:14:39.578Z
 promptsGeneratedAt: 2025-07-29T20:38:48.963Z
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T20:38:49.267Z
+updatedAt: 2025-07-29T20:40:48.240Z
 tasks:
   - title: Create a Centralized Cleanup Handler Registry
     description: >
@@ -45,7 +45,7 @@ tasks:
 
           handling errors during cleanup execution, and ensuring cleanup
           functions run only once.
-        done: false
+        done: true
       - prompt: >
           Create src/common/cleanup_registry.ts implementing a singleton
           CleanupRegistry class.
@@ -58,7 +58,7 @@ tasks:
 
           that runs all handlers synchronously and clears the registry
           afterwards.
-        done: false
+        done: true
       - prompt: >
           Update the CleanupRegistry to handle errors gracefully during
           executeAll() by wrapping
@@ -67,7 +67,7 @@ tasks:
           that occur
 
           during cleanup execution.
-        done: false
+        done: true
   - title: Implement a Global SIGINT Handler
     description: >
       At the application's main entry point in src/rmplan/rmplan.ts,
@@ -174,6 +174,25 @@ tasks:
 
           Mock the CleanupRegistry to verify the register and unregister calls.
         done: false
+changedFiles:
+  - src/common/cleanup_registry.test.ts
+  - src/common/cleanup_registry.ts
+  - src/rmplan/agent_runner.test.ts
+  - src/rmplan/agent_runner.ts
+  - src/rmplan/commands/agent.test.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/executors/claude_code/agent_generator.test.ts
+  - src/rmplan/executors/claude_code/agent_generator.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/copy_only.ts
+  - src/rmplan/executors/copy_paste.ts
+  - src/rmplan/executors/one-call.ts
+  - src/rmplan/executors/types.ts
+  - src/rmplan/prompt_builder.test.ts
+  - src/rmpr/main.ts
 rmfilter:
   - src/rmplan/executors/claude_code
   - --
