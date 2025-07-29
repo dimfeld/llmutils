@@ -12,7 +12,7 @@ parent: 77
 planGeneratedAt: 2025-07-29T19:14:39.578Z
 promptsGeneratedAt: 2025-07-29T19:24:27.635Z
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T19:24:27.934Z
+updatedAt: 2025-07-29T19:34:37.031Z
 tasks:
   - title: Update Executor Function Signature to Accept Plan Information
     description: >
@@ -38,28 +38,28 @@ tasks:
 
           Add a new interface called ExecutePlanInfo that includes planId
           (string), planTitle (string), and planFilePath (string).
-        done: false
+        done: true
       - prompt: >
           Update the ClaudeCodeExecutor class in claude_code.ts to match the new
           execute signature. 
 
           Store the plan information as instance variables for use in the agent
           file generation.
-        done: false
+        done: true
       - prompt: >
           Update all other executor implementations (copy_only.ts,
           copy_paste.ts, one-call.ts) to match the new execute signature.
 
           They can ignore the plan parameter since they don't need it, but must
           accept it to maintain interface compatibility.
-        done: false
+        done: true
       - prompt: >
           Create or update tests in claude_code.test.ts to verify the executor
           correctly receives and stores plan information.
 
           Test that the execute method is called with both contextContent and
           plan information parameters.
-        done: false
+        done: true
       - prompt: >
           Update agent.ts to pass plan information when calling
           executor.execute(). 
@@ -69,7 +69,7 @@ tasks:
 
           Update both the step execution branch and the simple task execution
           branch.
-        done: false
+        done: true
   - title: Implement Dynamic Agent File Generation
     description: >
       A utility function will be created to dynamically generate the agent
@@ -242,6 +242,19 @@ tasks:
           Test both successful execution and error scenarios to ensure cleanup
           always occurs.
         done: false
+changedFiles:
+  - src/rmplan/agent_runner.test.ts
+  - src/rmplan/agent_runner.ts
+  - src/rmplan/commands/agent.test.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/copy_only.ts
+  - src/rmplan/executors/copy_paste.ts
+  - src/rmplan/executors/one-call.ts
+  - src/rmplan/executors/types.ts
+  - src/rmplan/prompt_builder.test.ts
+  - src/rmpr/main.ts
 rmfilter:
   - src/rmplan/executors/claude_code
   - --
