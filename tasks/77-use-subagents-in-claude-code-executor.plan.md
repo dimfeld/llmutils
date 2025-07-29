@@ -5,15 +5,35 @@ goal: The overall goal is to enhance the Claude Code executor to support a
   multi-agent workflow by dynamically creating, using, and cleaning up dedicated
   subagents for implementation, testing, and review tasks.
 id: 77
-status: in_progress
+status: done
 priority: medium
 container: true
 dependencies:
   - 78
   - 79
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T19:24:27.972Z
+updatedAt: 2025-07-29T20:45:59.240Z
 tasks: []
+changedFiles:
+  - src/common/cleanup_registry.test.ts
+  - src/common/cleanup_registry.ts
+  - src/rmplan/agent_runner.test.ts
+  - src/rmplan/agent_runner.ts
+  - src/rmplan/commands/agent.test.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/executors/claude_code/agent_generator.test.ts
+  - src/rmplan/executors/claude_code/agent_generator.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/copy_only.ts
+  - src/rmplan/executors/copy_paste.ts
+  - src/rmplan/executors/one-call.ts
+  - src/rmplan/executors/types.ts
+  - src/rmplan/prompt_builder.test.ts
+  - src/rmplan/rmplan.ts
+  - src/rmpr/main.ts
 rmfilter:
   - src/rmplan/executors/claude_code
   - --
