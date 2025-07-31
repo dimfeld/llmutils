@@ -852,7 +852,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     const globalCliOptions = {};
 
     await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
-      `Plan file ${invalidPlanFile} does not have a valid ID`
+      `Plan file ${invalidPlanFile} does not have a valid numeric ID`
     );
   });
 
@@ -905,5 +905,209 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     // Verify rmplanAgent was called with all execution options intact
     expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+  });
+
+  test('handles findNextReadyDependency throwing error', async () => {
+    findNextReadyDependencySpy.mockRejectedValue(new Error('Dependency traversal failed'));
+
+    const options = { nextReady: '100' };
+    const globalCliOptions = {};
+
+    await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
+      'Dependency traversal failed'
+    );
+
+    // Verify rmplanAgent was NOT called when dependency finding fails
+    expect(rmplanAgentSpy).not.toHaveBeenCalled();
+  });
+
+  test('handles plan file resolution errors', async () => {
+    // Mock resolvePlanFile to throw an error when trying to resolve the parent plan file
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: mock(async (planFile: string) => {
+        if (planFile.includes('non-existent')) {
+          throw new Error('File not found');
+        }
+        return planFile;
+      }),
+      readPlanFile: async (filePath: string) => {
+        const content = await fs.readFile(filePath, 'utf-8');
+        return yaml.parse(content) as PlanSchema;
+      },
+    }));
+
+    const options = { nextReady: '/path/to/non-existent-plan.yml' };
+    const globalCliOptions = {};
+
+    await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
+      'File not found'
+    );
+
+    // Verify findNextReadyDependency was NOT called when plan resolution fails
+    expect(findNextReadyDependencySpy).not.toHaveBeenCalled();
+    expect(rmplanAgentSpy).not.toHaveBeenCalled();
+  });
+
+  test('logs specific plan details when dependency is found', async () => {
+    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+      filename: string;
+    };
+    readyPlan.filename = readyPlanFile;
+    readyPlan.goal = 'Implement authentication system';
+    readyPlan.details = 'Add OAuth and session management';
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system',
+    });
+
+    const options = { nextReady: '100' };
+    const globalCliOptions = {};
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify detailed success messages were logged
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system')
+    );
+
+    // Verify rmplanAgent was called with the ready plan's filename
+    expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+  });
+
+  test('preserves logging options when redirecting to dependency', async () => {
+    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+      filename: string;
+    };
+    readyPlan.filename = readyPlanFile;
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
+    });
+
+    const options = {
+      nextReady: '100',
+      'no-log': true,
+      verbose: true,
+    };
+    const globalCliOptions = {};
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify rmplanAgent was called with logging options intact
+    expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+  });
+
+  test('works with complex globalCliOptions', async () => {
+    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+      filename: string;
+    };
+    readyPlan.filename = readyPlanFile;
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
+    });
+
+    const options = { nextReady: '100' };
+    const globalCliOptions = {
+      config: {
+        paths: {
+          tasks: path.join(tempDir, 'tasks'),
+          workspace: path.join(tempDir, 'workspaces'),
+        },
+        models: {
+          execution: 'claude-3-5-sonnet',
+        },
+        postApplyCommands: [
+          { title: 'Test command', command: 'echo test' },
+        ],
+      },
+    };
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify complex global CLI options are passed through
+    expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+  });
+
+  test('handles plan with string ID correctly', async () => {
+    // Create a plan with string ID
+    const stringIdPlanFile = path.join(tempDir, 'tasks', 'string-plan.yml');
+    const stringIdPlan: PlanSchema = {
+      id: 'feature-123',
+      title: 'String ID Plan',
+      goal: 'Test string ID handling',
+      details: 'Test details',
+      status: 'pending',
+      tasks: [{ title: 'Test task', description: 'Test description' }],
+      filename: stringIdPlanFile,
+    };
+    await fs.writeFile(stringIdPlanFile, yaml.stringify(stringIdPlan));
+
+    // Update the mock to handle string IDs
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: mock(async (planFile: string) => planFile),
+      readPlanFile: async (filePath: string) => {
+        const content = await fs.readFile(filePath, 'utf-8');
+        return yaml.parse(content) as PlanSchema;
+      },
+    }));
+
+    const options = { nextReady: stringIdPlanFile };
+    const globalCliOptions = {};
+
+    await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
+      `Plan file ${stringIdPlanFile} does not have a valid numeric ID`
+    );
+
+    // Verify findNextReadyDependency was NOT called for invalid ID
+    expect(findNextReadyDependencySpy).not.toHaveBeenCalled();
+
+    // Verify rmplanAgent was NOT called
+    expect(rmplanAgentSpy).not.toHaveBeenCalled();
+  });
+
+  test('ensures workspace operations use the redirected plan filename', async () => {
+    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+      filename: string;
+    };
+    readyPlan.filename = readyPlanFile;
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
+    });
+
+    const options = {
+      nextReady: '100',
+      workspace: 'test-workspace-123',
+      autoWorkspace: true,
+      newWorkspace: true,
+    };
+    const globalCliOptions = {};
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify rmplanAgent was called with the redirected plan file (not the parent)
+    expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+
+    // Verify the success message mentions the correct plan
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
+    );
+
+    // Verify all workspace options are preserved when redirecting
+    const callArgs = rmplanAgentSpy.mock.calls[0];
+    expect(callArgs[1]).toEqual(expect.objectContaining({
+      workspace: 'test-workspace-123',
+      autoWorkspace: true,
+      newWorkspace: true,
+      nextReady: '100', // Original flag should remain
+    }));
   });
 });

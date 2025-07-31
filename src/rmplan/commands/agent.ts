@@ -63,8 +63,8 @@ export async function handleAgentCommand(
       // Try to resolve as a file path and get the plan ID
       const planFile = await resolvePlanFile(options.nextReady, globalCliOptions.config);
       const plan = await readPlanFile(planFile);
-      if (!plan.id) {
-        throw new Error(`Plan file ${planFile} does not have a valid ID`);
+      if (!plan.id || typeof plan.id !== 'number') {
+        throw new Error(`Plan file ${planFile} does not have a valid numeric ID`);
       }
       parentPlanId = plan.id;
     }
