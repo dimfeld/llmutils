@@ -12,7 +12,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T01:05:58.835Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T01:05:59.151Z
+updatedAt: 2025-07-31T02:26:11.346Z
 tasks:
   - title: Define and Access Plan State
     description: >
@@ -35,7 +35,7 @@ tasks:
 
           Follow the TypeScript patterns from the codebase with proper JSDoc
           documentation.
-        done: false
+        done: true
       - prompt: >
           Create corresponding tests in plan_state_utils.test.ts using Bun test
           framework.
@@ -43,7 +43,7 @@ tasks:
           Test all state checking functions with various plan states.
 
           Follow the test patterns from find_next.test.ts.
-        done: false
+        done: true
   - title: Implement Dependency Graph Traversal
     description: >
       Create a function that takes a plan identifier and recursively or
@@ -162,6 +162,28 @@ tasks:
 
           Use the test setup patterns from rmplan.integration.test.ts.
         done: false
+changedFiles:
+  - src/common/cleanup_registry.test.ts
+  - src/common/cleanup_registry.ts
+  - src/rmplan/agent_runner.test.ts
+  - src/rmplan/agent_runner.ts
+  - src/rmplan/commands/agent.test.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/executors/claude_code/agent_generator.test.ts
+  - src/rmplan/executors/claude_code/agent_generator.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/copy_only.ts
+  - src/rmplan/executors/copy_paste.ts
+  - src/rmplan/executors/one-call.ts
+  - src/rmplan/executors/types.ts
+  - src/rmplan/plans/plan_state_utils.test.ts
+  - src/rmplan/plans/plan_state_utils.ts
+  - src/rmplan/prompt_builder.test.ts
+  - src/rmplan/rmplan.ts
+  - src/rmpr/main.ts
 rmfilter:
   - src/rmplan
 ---
