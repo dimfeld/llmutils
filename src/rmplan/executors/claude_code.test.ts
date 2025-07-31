@@ -1898,6 +1898,90 @@ describe('ClaudeCodeExecutor', () => {
     });
   });
 
+  test('logs the correct message format when auto-approving', async () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: true },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Add files to trackedFiles
+    const trackedFiles = (executor as any).trackedFiles as Set<string>;
+    trackedFiles.add('/tmp/test/file1.txt');
+    trackedFiles.add('/tmp/test/file2.txt');
+
+    // Mock console to capture log output
+    const consoleSpy = mock();
+    const originalLog = console.log;
+    console.log = consoleSpy;
+
+    // Mock the permission socket server creation and handling
+    let permissionRequestHandler: (message: any) => Promise<void>;
+    const mockSocket = {
+      on: mock((event: string, handler: any) => {
+        if (event === 'data') {
+          permissionRequestHandler = async (message: any) => {
+            const buffer = Buffer.from(JSON.stringify(message));
+            await handler(buffer);
+          };
+        }
+      }),
+      write: mock(),
+    };
+
+    const mockServer = {
+      listen: mock((path: string, callback: () => void) => {
+        callback();
+      }),
+      on: mock(),
+      close: mock((callback: () => void) => {
+        callback();
+      }),
+    };
+
+    await moduleMocker.mock('net', () => ({
+      createServer: mock((handler: any) => {
+        handler(mockSocket);
+        return mockServer;
+      }),
+    }));
+
+    // Mock other dependencies
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+    }));
+
+    await moduleMocker.mock('fs/promises', () => ({
+      mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+      rm: mock(() => Promise.resolve()),
+    }));
+
+    // Create the permission socket server
+    const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+    // Test auto-approval and verify log message
+    await permissionRequestHandler({
+      type: 'permission_request',
+      tool_name: 'Bash',
+      input: { command: 'rm /tmp/test/file1.txt /tmp/test/file2.txt' },
+    });
+
+    // Verify that the correct log message was generated
+    // The log function from ../../logging.ts is called, which internally calls console.log
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Auto-approving rm command for tracked file(s): /tmp/test/file1.txt, /tmp/test/file2.txt')
+    );
+
+    // Clean up
+    console.log = originalLog;
+    server.close(() => {});
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });
