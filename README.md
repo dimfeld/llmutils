@@ -8,7 +8,7 @@ The scripts are:
 - `apply-llm-edits` - Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
 - `rmrun` - Send the rmfilter output to a language model and apply the edits back.
 - `rmfind` - Find relevant files to use with rmfilter
-- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, importing from GitHub issues, validating, splitting, and executing tasks. Includes multi-phase planning for breaking large features into incremental deliverables.
+- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, importing from GitHub issues, validating, splitting, and executing tasks. Includes multi-phase planning for breaking large features into incremental deliverables and automated dependency-based execution for complex project workflows.
 - `rmpr` - Handle pull request comments and reviews with AI assistance
 
 All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
@@ -294,6 +294,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
 - **Plan Inspection**: Display detailed information about plans including dependencies with resolution, tasks with completion status, and metadata.
 - **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, `run`, and `prepare` commands.
+- **Dependency-Based Execution**: Use `--next-ready <parentPlan>` to automatically find and execute the next actionable dependency in complex multi-phase projects, with intelligent prioritization and comprehensive error feedback.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
 - **Manual Workspace Management**: Use the `workspace add` command to explicitly create workspaces with or without plan associations, and `workspace list` to view all workspaces and their lock status.
@@ -484,6 +485,9 @@ rmplan show my-feature-123
 # Show the next plan that is ready to be implemented
 rmplan show --next
 
+# Show the next ready dependency of a parent plan
+rmplan show --next-ready 100
+
 # Automatically execute steps in a plan, choosing a specific model
 rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
 # Or use the 'run' alias
@@ -535,6 +539,153 @@ rmplan workspace add path/to/my-plan.yml
 
 # Create a workspace with a plan by ID and a custom workspace ID
 rmplan workspace add my-plan-id --id my-dev-space
+```
+
+## Working with Plan Dependencies
+
+The `--next-ready` feature enables automated workflow management for complex, multi-phase projects by automatically finding the next actionable task in your dependency chain. This eliminates the need to manually track which plans are ready to work on, allowing you to focus on implementation rather than project coordination.
+
+### Overview
+
+When working with large projects, you often break work into phases with clear dependencies:
+
+- Phase 1: Database schema → Phase 2: API endpoints → Phase 3: Frontend components
+- Phase 4: Authentication (parallel to Phase 1) → Phase 5: Auth integration (depends on Phase 3 & 4)
+
+The `--next-ready` flag automatically traverses your dependency graph using breadth-first search to find the next plan that is ready to be implemented (all dependencies complete, has actionable tasks, appropriate priority).
+
+### Key Benefits
+
+- **Automated Discovery**: No manual tracking of which plans are ready
+- **Intelligent Prioritization**: Considers status, priority level, and plan ID for consistent ordering
+- **Comprehensive Feedback**: Clear explanations when no ready dependencies exist
+- **Seamless Integration**: Works with all existing rmplan commands and options
+
+### Usage Examples
+
+#### Basic Dependency Workflow
+
+```bash
+# Show the next ready dependency without executing
+rmplan show --next-ready 100
+# Output: Found ready plan: Database Schema Setup (ID: 101)
+
+# Generate planning prompt for the next ready dependency
+rmplan generate --next-ready 100 -- src/database/**/*.ts
+# Operates on plan 101 instead of 100
+
+# Prepare detailed steps for the ready dependency
+rmplan prepare --next-ready 100 --direct
+
+# Execute the next ready dependency automatically
+rmplan agent --next-ready 100
+# or using the run alias
+rmplan run --next-ready 100
+```
+
+#### Integration with Existing Options
+
+```bash
+# Generate with file context and auto-commit
+rmplan generate --next-ready parent-plan --commit -- src/**/*.ts --grep auth
+
+# Execute with workspace isolation and specific step count
+rmplan agent --next-ready 100 --workspace feature-work --steps 2
+
+# Use Claude Code executor for the ready dependency
+rmplan run --next-ready 100 --executor claude-code --dry-run
+
+# Prepare with custom model
+rmplan prepare --next-ready parent-plan --claude --direct
+```
+
+#### Continuous Workflow
+
+```bash
+# 1. Start with parent plan containing dependencies
+rmplan show 100
+# Parent Plan: "User Authentication System" (5 dependencies)
+
+# 2. Work on first ready dependency
+rmplan agent --next-ready 100
+# Executes: "Database Schema Setup" (ID: 101)
+
+# 3. After completion, next dependency becomes ready
+rmplan show --next-ready 100  
+# Found ready plan: API Endpoints (ID: 102)
+
+# 4. Continue until all dependencies complete
+rmplan agent --next-ready 100
+# Executes: "API Endpoints" (ID: 102)
+
+# 5. Eventually returns to parent plan
+rmplan show --next-ready 100
+# All dependencies complete - ready to work on parent plan
+```
+
+### Error Handling and Feedback
+
+The feature provides detailed guidance when dependencies aren't ready:
+
+```bash
+# No dependencies exist
+rmplan show --next-ready 100
+# → No dependencies found for this plan
+
+# All dependencies complete
+rmplan show --next-ready 100  
+# → All dependencies are complete - ready to work on the parent plan
+
+# Dependencies need preparation
+rmplan show --next-ready 100
+# → 2 dependencies have no actionable tasks
+# → Try: Run 'rmplan prepare' to add detailed steps
+
+# Dependencies are blocked
+rmplan show --next-ready 100
+# → 3 dependencies are blocked by incomplete prerequisites  
+# → Try: Work on the blocking dependencies first
+```
+
+### Organizing Plans for Dependencies
+
+To maximize effectiveness:
+
+**1. Clear Dependency Chains**
+```yaml
+# Child plans specify their dependencies
+id: 102
+title: "API Endpoints"  
+dependencies: [101]  # Depends on Database Schema (101)
+parent: 100         # Part of larger feature (100)
+```
+
+**2. Appropriate Priorities**
+```yaml
+priority: high    # Critical path items
+priority: medium  # Normal implementation  
+priority: low     # Nice-to-have features
+priority: maybe   # Optional (excluded from --next-ready)
+```
+
+**3. Prepared Tasks**
+```bash
+# Ensure dependencies have actionable tasks
+rmplan prepare 101  # Database schema
+rmplan prepare 102  # API endpoints
+rmplan prepare 103  # Frontend components
+
+# Now --next-ready can execute them automatically
+rmplan agent --next-ready 100
+```
+
+### Debugging
+
+Use `--debug` to see detailed dependency discovery logging:
+
+```bash
+rmplan show --next-ready 100 --debug
+# Shows: BFS traversal, filtering decisions, readiness checks, sorting logic
 ```
 
 #### Workspace Commands
@@ -1156,6 +1307,9 @@ rmplan generate --plan tasks/0002-refactor-it.md -- src/api/**/*.ts
 # Or read the plan from a Github issue
 rmplan generate --issue 28 -- src/api/**/*.ts
 
+# Generate a plan for the next ready dependency of a parent plan
+rmplan generate --next-ready 100 -- src/api/**/*.ts
+
 # Import GitHub issues as stub plans for later detailed planning
 rmplan import --issue 123
 rmplan import  # Interactive mode to select multiple issues
@@ -1175,6 +1329,9 @@ rmplan agent tasks/0002-refactor-it-plan.yml
 
 # Automatically execute steps using a custom configuration file
 rmplan agent tasks/0003-new-feature.yml --config path/to/my-rmplan-config.yml
+
+# Execute the next ready dependency of a parent plan automatically
+rmplan agent --next-ready 100
 
 # Use Claude Code executor for a more integrated experience
 rmplan agent tasks/0003-new-feature.yml --executor claude-code
