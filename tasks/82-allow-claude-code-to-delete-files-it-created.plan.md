@@ -6,14 +6,14 @@ goal: The project aims to add a configuration option to the Claude code executor
   command that targets a file previously created or modified by the agent within
   the same session.
 id: 82
-status: pending
+status: in_progress
 priority: medium
 container: true
 dependencies:
   - 83
   - 84
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T07:52:58.950Z
+updatedAt: 2025-07-31T08:03:03.973Z
 tasks: []
 rmfilter:
   - src/rmplan/executors/

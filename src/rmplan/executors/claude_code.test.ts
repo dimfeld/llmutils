@@ -39,7 +39,7 @@ describe('ClaudeCodeExecutor', () => {
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/base')),
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
     }));
 
     await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -136,7 +136,7 @@ describe('ClaudeCodeExecutor', () => {
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/base')),
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
     }));
 
     await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -226,7 +226,7 @@ describe('ClaudeCodeExecutor', () => {
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/base')),
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
     }));
 
     await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -281,7 +281,7 @@ describe('ClaudeCodeExecutor', () => {
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/base')),
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
     }));
 
     await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -305,6 +305,168 @@ describe('ClaudeCodeExecutor', () => {
     // Verify agent files were not generated or cleaned up
     expect(mockGenerateAgentFiles).not.toHaveBeenCalled();
     expect(mockRemoveAgentFiles).not.toHaveBeenCalled();
+  });
+
+  test('initializes trackedFiles Set property', () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Verify trackedFiles property exists and is a Set
+    expect((executor as any).trackedFiles).toBeInstanceOf(Set);
+    expect((executor as any).trackedFiles.size).toBe(0);
+  });
+
+  test('clears trackedFiles at the start of execute method', async () => {
+    // Mock the necessary dependencies
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Manually add some items to trackedFiles to simulate previous state
+    (executor as any).trackedFiles.add('/test/file1.ts');
+    (executor as any).trackedFiles.add('/test/file2.ts');
+    expect((executor as any).trackedFiles.size).toBe(2);
+
+    // Execute the method - it should clear trackedFiles at the start
+    await executor.execute('test content', mockPlanInfo);
+
+    // Verify trackedFiles was cleared (should be empty since no actual file operations happen in mocked execution)
+    expect((executor as any).trackedFiles.size).toBe(0);
+  });
+
+  test('maintains proper state isolation across multiple execution cycles', async () => {
+    // Mock the necessary dependencies
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // First execution cycle
+    (executor as any).trackedFiles.add('/first/file1.ts');
+    (executor as any).trackedFiles.add('/first/file2.ts');
+    expect((executor as any).trackedFiles.size).toBe(2);
+
+    await executor.execute('first content', mockPlanInfo);
+    expect((executor as any).trackedFiles.size).toBe(0);
+
+    // Second execution cycle - simulate adding files again
+    (executor as any).trackedFiles.add('/second/file1.ts');
+    (executor as any).trackedFiles.add('/second/file2.ts');
+    (executor as any).trackedFiles.add('/second/file3.ts');
+    expect((executor as any).trackedFiles.size).toBe(3);
+
+    await executor.execute('second content', {
+      planId: '456',
+      planTitle: 'Second Test Plan',
+      planFilePath: '/test/plans/second-plan.md',
+    });
+    expect((executor as any).trackedFiles.size).toBe(0);
+
+    // Third execution cycle without planInfo
+    (executor as any).trackedFiles.add('/third/file.ts');
+    expect((executor as any).trackedFiles.size).toBe(1);
+
+    await executor.execute('third content', undefined as any);
+    expect((executor as any).trackedFiles.size).toBe(0);
+  });
+
+  test('trackedFiles Set maintains unique file paths', async () => {
+    // Mock the necessary dependencies
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Test that Set maintains uniqueness
+    const trackedFiles = (executor as any).trackedFiles as Set<string>;
+    
+    // Add duplicate paths
+    trackedFiles.add('/test/file1.ts');
+    trackedFiles.add('/test/file2.ts');
+    trackedFiles.add('/test/file1.ts'); // duplicate
+    trackedFiles.add('/test/file3.ts');
+    trackedFiles.add('/test/file2.ts'); // duplicate
+    
+    // Should only have 3 unique files
+    expect(trackedFiles.size).toBe(3);
+    expect(trackedFiles.has('/test/file1.ts')).toBe(true);
+    expect(trackedFiles.has('/test/file2.ts')).toBe(true);
+    expect(trackedFiles.has('/test/file3.ts')).toBe(true);
+    expect(trackedFiles.has('/test/nonexistent.ts')).toBe(false);
+
+    // Execute should clear the Set
+    await executor.execute('test content', mockPlanInfo);
+    expect(trackedFiles.size).toBe(0);
+    expect(trackedFiles.has('/test/file1.ts')).toBe(false);
   });
 
   afterEach(() => {

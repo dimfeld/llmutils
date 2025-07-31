@@ -42,6 +42,7 @@ export class ClaudeCodeExecutor implements Executor {
   readonly filePathPrefix = '@';
   readonly todoDirections = '- Use the TodoWrite tool to maintain your TODO list.';
   private alwaysAllowedTools = new Map<string, true | string[]>();
+  private trackedFiles = new Set<string>();
   private planInfo?: ExecutePlanInfo;
 
   constructor(
@@ -285,6 +286,9 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string, planInfo: ExecutePlanInfo) {
+    // Clear tracked files set for proper state isolation between runs
+    this.trackedFiles.clear();
+    
     // Store plan information for use in agent file generation
     this.planInfo = planInfo;
 
