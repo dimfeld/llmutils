@@ -1539,7 +1539,7 @@ describe('ClaudeCodeExecutor', () => {
       // that the response is not immediately called with approval
       expect(response).not.toHaveBeenCalledWith(
         JSON.stringify({
-          type: 'permission_response',  
+          type: 'permission_response',
           approved: true,
         }) + '\n'
       );
@@ -1974,11 +1974,130 @@ describe('ClaudeCodeExecutor', () => {
     // Verify that the correct log message was generated
     // The log function from ../../logging.ts is called, which internally calls console.log
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Auto-approving rm command for tracked file(s): /tmp/test/file1.txt, /tmp/test/file2.txt')
+      expect.stringContaining(
+        'Auto-approving rm command for tracked file(s): /tmp/test/file1.txt, /tmp/test/file2.txt'
+      )
     );
 
     // Clean up
     console.log = originalLog;
+    server.close(() => {});
+  });
+
+  test('handles invalid command input gracefully', async () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Add files to trackedFiles
+    const trackedFiles = (executor as any).trackedFiles as Set<string>;
+    trackedFiles.add('/tmp/test/file.txt');
+
+    // Mock the permission socket server creation and handling
+    let permissionRequestHandler: (message: any) => Promise<void>;
+    const mockSocket = {
+      on: mock((event: string, handler: any) => {
+        if (event === 'data') {
+          permissionRequestHandler = async (message: any) => {
+            const buffer = Buffer.from(JSON.stringify(message));
+            await handler(buffer);
+          };
+        }
+      }),
+      write: mock(),
+    };
+
+    const mockServer = {
+      listen: mock((path: string, callback: () => void) => {
+        callback();
+      }),
+      on: mock(),
+      close: mock((callback: () => void) => {
+        callback();
+      }),
+    };
+
+    await moduleMocker.mock('net', () => ({
+      createServer: mock((handler: any) => {
+        handler(mockSocket);
+        return mockServer;
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+    }));
+
+    await moduleMocker.mock('fs/promises', () => ({
+      mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+      rm: mock(() => Promise.resolve()),
+    }));
+
+    // Create the permission socket server
+    const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+    // Test with non-string command (should not auto-approve and continue to normal flow)
+    const response = mock();
+    mockSocket.write = response;
+
+    await permissionRequestHandler({
+      type: 'permission_request',
+      tool_name: 'Bash',
+      input: { command: null }, // Invalid command type
+    });
+
+    // Should not auto-approve and continue to normal permission flow (which times out with 'no')
+    expect(response).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'permission_response',
+        approved: false,
+      }) + '\n'
+    );
+
+    // Test with undefined command
+    const response2 = mock();
+    mockSocket.write = response2;
+
+    await permissionRequestHandler({
+      type: 'permission_request',
+      tool_name: 'Bash',
+      input: { command: undefined }, // Invalid command type
+    });
+
+    // Should not auto-approve and continue to normal permission flow (which times out with 'no')
+    expect(response2).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'permission_response',
+        approved: false,
+      }) + '\n'
+    );
+
+    // Test with missing command field
+    const response3 = mock();
+    mockSocket.write = response3;
+
+    await permissionRequestHandler({
+      type: 'permission_request',
+      tool_name: 'Bash',
+      input: {}, // Missing command field
+    });
+
+    // Should not auto-approve and continue to normal permission flow (which times out with 'no')
+    expect(response3).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'permission_response',
+        approved: false,
+      }) + '\n'
+    );
+
+    // Clean up
     server.close(() => {});
   });
 
