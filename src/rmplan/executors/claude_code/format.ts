@@ -252,8 +252,11 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
         debugLog('Unknown message type:', content.type);
         outputLines.push(`### ${content.type as string} [${timestamp}]`, formatValue(content));
       }
-      return { message: outputLines.join('\n\n'), filePaths: filePaths.length > 0 ? filePaths : undefined };
     }
+    return {
+      message: outputLines.join('\n\n'),
+      filePaths: filePaths.length > 0 ? filePaths : undefined,
+    };
   }
 
   return { message: `Unknown message: ${JSON.stringify(message)}` };

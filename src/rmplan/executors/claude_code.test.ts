@@ -469,6 +469,394 @@ describe('ClaudeCodeExecutor', () => {
     expect(trackedFiles.has('/test/file1.ts')).toBe(false);
   });
 
+  describe('file tracking integration', () => {
+    test('adds file paths from formatJsonMessage to trackedFiles set', async () => {
+      // Mock formatJsonMessage to return file paths
+      const mockFormatJsonMessage = mock((line: string) => {
+        if (line === 'write-line') {
+          return {
+            message: 'Write tool invoked',
+            filePaths: ['/test/created.ts', '/test/utils.ts'],
+          };
+        } else if (line === 'edit-line') {
+          return {
+            message: 'Edit tool invoked',
+            filePaths: ['/test/modified.ts'],
+          };
+        }
+        return { message: line };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('write-line\nedit-line');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['write-line', 'edit-line']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify trackedFiles contains the expected absolute paths
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/test/created.ts')).toBe(true);
+      expect(trackedFiles.has('/test/utils.ts')).toBe(true);
+      expect(trackedFiles.has('/test/modified.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(3);
+    });
+
+    test('resolves relative file paths to absolute paths using git root', async () => {
+      // Mock formatJsonMessage to return relative file paths
+      const mockFormatJsonMessage = mock((line: string) => {
+        return {
+          message: 'Tool invoked',
+          filePaths: ['src/components/Button.tsx', 'lib/utils.ts'],
+        };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('test-line');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['test-line']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-workspace')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify trackedFiles contains absolute paths resolved from git root
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/tmp/test-workspace/src/components/Button.tsx')).toBe(true);
+      expect(trackedFiles.has('/tmp/test-workspace/lib/utils.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(2);
+    });
+
+    test('handles already absolute file paths correctly', async () => {
+      // Mock formatJsonMessage to return absolute file paths
+      const mockFormatJsonMessage = mock((line: string) => {
+        return {
+          message: 'Tool invoked',
+          filePaths: ['/absolute/path/file1.ts', '/another/absolute/file2.ts'],
+        };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('test-line');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['test-line']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-workspace')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify trackedFiles contains the absolute paths as-is
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/absolute/path/file1.ts')).toBe(true);
+      expect(trackedFiles.has('/another/absolute/file2.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(2);
+    });
+
+    test('ignores formatJsonMessage results without filePaths', async () => {
+      // Mock formatJsonMessage to return mixed results with and without filePaths
+      const mockFormatJsonMessage = mock((line: string) => {
+        if (line === 'line-with-files') {
+          return {
+            message: 'Has files',
+            filePaths: ['/test/file.ts'],
+          };
+        }
+        return { message: 'No files' }; // No filePaths property
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('line-with-files\nline-without-files');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => [
+          'line-with-files',
+          'line-without-files',
+        ]),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify only files from results with filePaths are tracked
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/test/file.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(1);
+    });
+
+    test('accumulates file paths across multiple formatJsonMessage calls', async () => {
+      let callCount = 0;
+      const mockFormatJsonMessage = mock((line: string) => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            message: 'First call',
+            filePaths: ['/first/file.ts', '/first/utils.ts'],
+          };
+        } else if (callCount === 2) {
+          return {
+            message: 'Second call',
+            filePaths: ['/second/component.tsx'],
+          };
+        } else if (callCount === 3) {
+          return {
+            message: 'Third call',
+            filePaths: ['/third/service.ts', '/first/file.ts'], // duplicate path
+          };
+        }
+        return { message: line };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('line1\nline2\nline3');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['line1', 'line2', 'line3']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify all unique files are tracked
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/first/file.ts')).toBe(true);
+      expect(trackedFiles.has('/first/utils.ts')).toBe(true);
+      expect(trackedFiles.has('/second/component.tsx')).toBe(true);
+      expect(trackedFiles.has('/third/service.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(4); // Set automatically handles duplicates
+    });
+
+    test('handles empty filePaths arrays gracefully', async () => {
+      // Mock formatJsonMessage to return empty filePaths array
+      const mockFormatJsonMessage = mock((line: string) => {
+        return {
+          message: 'Tool invoked',
+          filePaths: [], // empty array
+        };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('test-line');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['test-line']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify no files are tracked
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.size).toBe(0);
+    });
+
+    test('handles undefined or null filePaths gracefully', async () => {
+      // Mock formatJsonMessage to return null/undefined filePaths
+      let callCount = 0;
+      const mockFormatJsonMessage = mock((line: string) => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            message: 'First call',
+            filePaths: null as any,
+          };
+        } else if (callCount === 2) {
+          return {
+            message: 'Second call',
+            filePaths: undefined,
+          };
+        }
+        return { message: line };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('line1\nline2');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['line1', 'line2']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Should not crash and no files should be tracked
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.size).toBe(0);
+    });
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });
