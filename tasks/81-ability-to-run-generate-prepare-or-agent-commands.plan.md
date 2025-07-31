@@ -8,7 +8,7 @@ goal: The project aims to introduce a new command-line flag that allows users to
   first dependency in a "ready" or "pending" state and execute the command on
   it.
 id: 81
-status: in_progress
+status: done
 priority: medium
 container: true
 dependencies:
@@ -16,8 +16,50 @@ dependencies:
   - 83
   - 84
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T01:05:59.187Z
+updatedAt: 2025-07-31T19:19:30.618Z
 tasks: []
+changedFiles:
+  - src/rmplan/commands/agent.test.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/cli_integration.test.ts
+  - src/rmplan/commands/cli_parsing.test.ts
+  - src/rmplan/commands/find_next_dependency.test.ts
+  - src/rmplan/commands/find_next_dependency.ts
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/integration.test.ts
+  - src/rmplan/commands/next_ready_integration.test.ts
+  - src/rmplan/commands/prepare.test.ts
+  - src/rmplan/commands/prepare.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/dependency_traversal.test.ts
+  - src/rmplan/dependency_traversal.ts
+  - src/rmplan/executors/claude_code/agent_generator.test.ts
+  - src/rmplan/plans/plan_state_utils.test.ts
+  - src/rmplan/plans/plan_state_utils.ts
+  - src/rmplan/rmplan.ts
+  - src/common/cleanup_registry.test.ts
+  - src/common/cleanup_registry.ts
+  - src/rmplan/agent_runner.test.ts
+  - src/rmplan/agent_runner.ts
+  - src/rmplan/executors/claude_code/agent_generator.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/copy_only.ts
+  - src/rmplan/executors/copy_paste.ts
+  - src/rmplan/executors/one-call.ts
+  - src/rmplan/executors/types.ts
+  - src/rmplan/prompt_builder.test.ts
+  - src/rmpr/main.ts
+  - README.md
+  - docs/next-ready-feature.md
+  - src/rmfilter/additional_docs.test.ts
+  - src/rmplan/cleanup.test.ts
+  - src/rmplan/parent_completion.test.ts
+  - src/rmplan/plans.ts
+  - src/rmpr/modes/hybrid_context.test.ts
 rmfilter:
   - src/rmplan
 ---
