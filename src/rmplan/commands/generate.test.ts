@@ -571,14 +571,14 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
   test('successfully finds and operates on a ready dependency with file path', async () => {
     const parentPlanPath = '/mock/parent/plan.plan.md';
-    
+
     // Mock the plan file resolution and reading
     resolvePlanFileSpy.mockResolvedValueOnce(parentPlanPath);
     readPlanFileSpy.mockResolvedValueOnce({
       id: 123,
       title: 'Parent Plan',
       goal: 'Parent goal',
-      details: 'Parent details', 
+      details: 'Parent details',
       status: 'in_progress',
       priority: 'high',
       createdAt: '2024-01-01T00:00:00Z',
@@ -620,7 +620,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     // Should resolve the plan file
     expect(resolvePlanFileSpy).toHaveBeenCalledWith(parentPlanPath, undefined);
-    
+
     // Should read the plan to get its ID
     expect(readPlanFileSpy).toHaveBeenCalledWith(parentPlanPath);
 
@@ -694,7 +694,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
   test('handles parent plan file without valid ID', async () => {
     const invalidPlanPath = '/mock/invalid/plan.plan.md';
-    
+
     // Mock the plan file resolution and reading to return a plan without ID
     resolvePlanFileSpy.mockResolvedValueOnce(invalidPlanPath);
     readPlanFileSpy.mockResolvedValueOnce({
@@ -1110,6 +1110,7 @@ phases:
     await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
 
     const options = {
+      plan: planPath, // Add required plan option
       extract: false,
       // No direct flag specified
       parent: {
@@ -1211,6 +1212,7 @@ phases:
     await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
 
     const options = {
+      plan: planPath, // Add required plan option
       extract: false,
       // No direct flag specified
       parent: {

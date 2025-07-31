@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T07:17:59.983Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T07:35:18.564Z
+updatedAt: 2025-07-31T07:51:33.812Z
 tasks:
   - title: Add New CLI Flag to Command Parser
     description: >
@@ -64,24 +64,24 @@ tasks:
           the --next-ready flag behavior. Include tests for: finding a ready
           dependency successfully, handling when no ready dependencies exist,
           and handling invalid parent plan IDs.
-        done: false
+        done: true
       - prompt: >
           In handleGenerateCommand, add logic at the beginning to check if
           options.nextReady is present. If it is, resolve the parent plan file
           using resolvePlanFile, then call findNextReadyDependency with the
           parent plan's ID and the tasks directory.
-        done: false
+        done: true
       - prompt: >
           Handle the result from findNextReadyDependency. If a plan is found,
           update the planArg to use the found plan's filename and log a message
           indicating which dependency was found. If no plan is found, log the
           message from the result and return early from the function.
-        done: false
+        done: true
       - prompt: >
           Ensure the existing flow continues normally after the --next-ready
           logic, so that if a dependency is found, it's processed as if it was
           passed directly as the plan argument.
-        done: false
+        done: true
   - title: Modify `prepare` Command to Use New Logic
     description: >
       Update the prepare command's implementation in
@@ -214,6 +214,7 @@ changedFiles:
   - src/rmplan/commands/cli_parsing.test.ts
   - src/rmplan/commands/find_next_dependency.test.ts
   - src/rmplan/commands/find_next_dependency.ts
+  - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/integration.test.ts
   - src/rmplan/commands/next_ready_integration.test.ts
@@ -221,6 +222,7 @@ changedFiles:
   - src/rmplan/commands/show.ts
   - src/rmplan/dependency_traversal.test.ts
   - src/rmplan/dependency_traversal.ts
+  - src/rmplan/executors/claude_code/agent_generator.test.ts
   - src/rmplan/plans/plan_state_utils.test.ts
   - src/rmplan/plans/plan_state_utils.ts
   - src/rmplan/rmplan.ts
