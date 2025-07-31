@@ -469,6 +469,9 @@ export class ClaudeCodeExecutor implements Executor {
       ) {
         log(`Using model: ${this.sharedOptions.model}\n`);
         args.push('--model', this.sharedOptions.model);
+      } else {
+        log('Using default model: sonnet\n');
+        args.push('--model', 'sonnet');
       }
 
       if (interactive) {
