@@ -283,7 +283,7 @@ export class ClaudeCodeExecutor implements Executor {
             }
 
             // Check for auto-approval of tracked file deletions
-            if (tool_name === 'Bash') {
+            if (this.options.autoApproveCreatedFileDeletion === true && tool_name === 'Bash') {
               if (typeof input.command !== 'string') {
                 // Skip auto-approval logic - let normal permission flow handle it
                 // Continue to the existing user prompt logic below
