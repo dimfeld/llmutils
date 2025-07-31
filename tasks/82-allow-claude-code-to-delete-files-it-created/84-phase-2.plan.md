@@ -5,7 +5,7 @@ title: Allow Claude Code to delete files it created - Introduce Configuration,
 goal: To make the auto-approval feature configurable, add informative logging,
   and update the project documentation.
 id: 84
-status: in_progress
+status: done
 priority: high
 dependencies:
   - 83
@@ -13,7 +13,7 @@ parent: 82
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T09:31:35.989Z
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T09:53:22.023Z
+updatedAt: 2025-07-31T09:57:13.194Z
 tasks:
   - title: Add a configuration option to enable or disable auto-approval
     description: >
@@ -137,8 +137,9 @@ tasks:
 
           Explain that this allows Claude Code to automatically delete files it
           created without prompting.
-        done: false
+        done: true
 changedFiles:
+  - README.md
   - src/rmplan/executors/build.test.ts
   - src/rmplan/executors/claude_code/format.test.ts
   - src/rmplan/executors/claude_code/format.ts
