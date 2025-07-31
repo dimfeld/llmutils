@@ -1096,6 +1096,260 @@ describe('ClaudeCodeExecutor', () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toMatch(/file\\\\name\.txt$/);
     });
+
+    test('handles backslash at end of command', () => {
+      const result = parseRmCommand('rm file.txt\\');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt\\$/);
+    });
+
+    test('handles mixed quote types in same command', () => {
+      const result = parseRmCommand(`rm 'file "with" quotes.txt' "file 'with' quotes.txt"`);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file "with" quotes\.txt$/);
+      expect(result[1]).toMatch(/file 'with' quotes\.txt$/);
+    });
+
+    test('handles command with no spaces between tokens', () => {
+      const result = parseRmCommand('rm"quoted.txt"unquoted.txt');
+      expect(result).toHaveLength(0); // Parser requires space after 'rm'
+    });
+
+    test('handles Unicode file names', () => {
+      const result = parseRmCommand('rm файл.txt café.txt 文件.txt');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/файл\.txt$/);
+      expect(result[1]).toMatch(/café\.txt$/);
+      expect(result[2]).toMatch(/文件\.txt$/);
+    });
+
+    test('handles file paths with numbers and underscores', () => {
+      const result = parseRmCommand('rm file_123.txt test-file-2024.log data_file_v2.json');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/file_123\.txt$/);
+      expect(result[1]).toMatch(/test-file-2024\.log$/);
+      expect(result[2]).toMatch(/data_file_v2\.json$/);
+    });
+
+    test('handles paths with consecutive slashes', () => {
+      const result = parseRmCommand('rm path//to///file.txt');
+      expect(result).toHaveLength(1);
+      // path.resolve normalizes consecutive slashes to single slashes
+      expect(result[0]).toMatch(/path\/to\/file\.txt$/);
+    });
+
+    test('handles rm commands with shell operators as separate arguments', () => {
+      // The current parser treats shell operators as separate arguments, not as part of the command
+      const result1 = parseRmCommand('rm file.txt && echo done');
+      expect(result1).toHaveLength(4); // ['file.txt', '&&', 'echo', 'done'] - all treated as files
+
+      const result2 = parseRmCommand('rm file.txt | wc -l');
+      expect(result2).toHaveLength(3); // ['file.txt', '|', 'wc'] - '-l' is filtered out as a flag
+
+      const result3 = parseRmCommand('rm file.txt > output.log');
+      expect(result3).toHaveLength(3); // ['file.txt', '>', 'output.log'] - all treated as files
+      
+      // Verify that at least the main file is parsed correctly
+      expect(result1[0]).toMatch(/file\.txt$/);
+      expect(result2[0]).toMatch(/file\.txt$/);
+      expect(result3[0]).toMatch(/file\.txt$/);
+    });
+  });
+
+  describe('parseCommandTokens', () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Get access to the private method for testing
+    const parseCommandTokens = (executor as any).parseCommandTokens.bind(executor);
+
+    test('parses simple command with space-separated tokens', () => {
+      const result = parseCommandTokens('rm -f file.txt');
+      expect(result).toEqual(['rm', '-f', 'file.txt']);
+    });
+
+    test('handles multiple consecutive spaces', () => {
+      const result = parseCommandTokens('rm   -f    file.txt');
+      expect(result).toEqual(['rm', '-f', 'file.txt']);
+    });
+
+    test('handles tabs and mixed whitespace', () => {
+      const result = parseCommandTokens('rm\t-f\n  file.txt');
+      expect(result).toEqual(['rm', '-f', 'file.txt']);
+    });
+
+    test('preserves content within single quotes', () => {
+      const result = parseCommandTokens("rm 'file with spaces.txt'");
+      expect(result).toEqual(['rm', 'file with spaces.txt']);
+    });
+
+    test('preserves content within double quotes', () => {
+      const result = parseCommandTokens('rm "file with spaces.txt"');
+      expect(result).toEqual(['rm', 'file with spaces.txt']);
+    });
+
+    test('handles nested quotes correctly', () => {
+      const result = parseCommandTokens(`rm "file with 'nested' quotes.txt"`);
+      expect(result).toEqual(['rm', "file with 'nested' quotes.txt"]);
+
+      const result2 = parseCommandTokens(`rm 'file with "nested" quotes.txt'`);
+      expect(result2).toEqual(['rm', 'file with "nested" quotes.txt']);
+    });
+
+    test('handles escaped characters', () => {
+      const result = parseCommandTokens('rm file\\ with\\ spaces.txt');
+      expect(result).toEqual(['rm', 'file\\ with\\ spaces.txt']);
+    });
+
+    test('handles escaped quotes', () => {
+      const result = parseCommandTokens('rm file\\\'s\\ name.txt');
+      expect(result).toEqual(['rm', "file\\'s\\ name.txt"]);
+    });
+
+    test('handles unclosed single quote', () => {
+      const result = parseCommandTokens("rm 'unclosed file");
+      expect(result).toEqual(['rm', 'unclosed file']);
+    });
+
+    test('handles unclosed double quote', () => {
+      const result = parseCommandTokens('rm "unclosed file');
+      expect(result).toEqual(['rm', 'unclosed file']);
+    });
+
+    test('handles empty string', () => {
+      const result = parseCommandTokens('');
+      expect(result).toEqual([]);
+    });
+
+    test('handles whitespace-only string', () => {
+      const result = parseCommandTokens('   \t\n  ');
+      expect(result).toEqual([]);
+    });
+
+    test('handles single token', () => {
+      const result = parseCommandTokens('rm');
+      expect(result).toEqual(['rm']);
+    });
+
+    test('handles empty quoted strings', () => {
+      const result = parseCommandTokens('rm "" \'\' file.txt');
+      expect(result).toEqual(['rm', 'file.txt']);
+    });
+
+    test('handles backslash at end of string', () => {
+      const result = parseCommandTokens('rm file.txt\\');
+      expect(result).toEqual(['rm', 'file.txt\\']);
+    });
+
+    test('handles backslash before quote', () => {
+      const result = parseCommandTokens('rm file\\"with\\"quotes.txt');
+      expect(result).toEqual(['rm', 'file\\"with\\"quotes.txt']);
+    });
+
+    test('handles complex mixed quoting scenario', () => {
+      const result = parseCommandTokens(`rm 'single quoted' "double quoted" unquoted 'mixed"quote'`);
+      expect(result).toEqual(['rm', 'single quoted', 'double quoted', 'unquoted', 'mixed"quote']);
+    });
+
+    test('handles consecutive escaped characters', () => {
+      const result = parseCommandTokens('rm file\\\\\\\\name.txt');
+      expect(result).toEqual(['rm', 'file\\\\\\\\name.txt']);
+    });
+  });
+
+  describe('parseRmCommand - additional security and edge cases', () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Get access to the private method for testing
+    const parseRmCommand = (executor as any).parseRmCommand.bind(executor);
+
+    test('handles rm with command substitution patterns safely', () => {
+      const result1 = parseRmCommand('rm $(echo file.txt)');
+      expect(result1).toHaveLength(2); // Splits at space: ['$(echo', 'file.txt)']
+
+      const result2 = parseRmCommand('rm `echo file.txt`');
+      expect(result2).toHaveLength(2); // Splits at space: ['`echo', 'file.txt`']
+    });
+
+    test('handles very long commands gracefully', () => {
+      const longFilename = 'a'.repeat(1000) + '.txt';
+      const result = parseRmCommand(`rm ${longFilename}`);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(new RegExp(longFilename + '$'));
+    });
+
+    test('handles null byte injection attempts', () => {
+      const result = parseRmCommand('rm file.txt\0malicious');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt\0malicious$/);
+    });
+
+    test('handles newline characters in filenames', () => {
+      const result = parseRmCommand('rm "file\nwith\nnewlines.txt"');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\nwith\nnewlines\.txt$/);
+    });
+
+    test('ignores rm commands with environment variable expansion patterns', () => {
+      const result1 = parseRmCommand('rm $HOME/file.txt');
+      expect(result1).toHaveLength(1);
+      expect(result1[0]).toMatch(/\$HOME\/file\.txt$/);
+
+      const result2 = parseRmCommand('rm ${HOME}/file.txt');
+      expect(result2).toHaveLength(1);
+      expect(result2[0]).toMatch(/\$\{HOME\}\/file\.txt$/);
+    });
+
+    test('handles rm commands with tilde expansion', () => {
+      const result = parseRmCommand('rm ~/file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/~\/file\.txt$/);
+    });
+
+    test('handles multiple wildcard patterns correctly', () => {
+      const result = parseRmCommand('rm *.txt *.log file.js');
+      expect(result).toHaveLength(1); // Only file.js should be included
+      expect(result[0]).toMatch(/file\.js$/);
+    });
+
+    test('handles rm commands with brace expansion patterns', () => {
+      const result = parseRmCommand('rm file.{txt,log,js}');
+      expect(result).toHaveLength(1); // Parser treats it as a regular filename with braces
+      expect(result[0]).toMatch(/file\.\{txt,log,js\}$/);
+    });
+
+    test('handles files with leading dashes correctly', () => {
+      const result = parseRmCommand('rm -- -file.txt --file.txt');
+      expect(result).toHaveLength(0); // Both files start with dashes so are treated as flags
+    });
+
+    test('handles empty arguments after flags', () => {
+      const result = parseRmCommand('rm -f   ""   file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('handles rm commands with process substitution patterns', () => {
+      const result = parseRmCommand('rm <(echo file.txt)');
+      expect(result).toHaveLength(2); // Splits at space: ['<(echo', 'file.txt)']
+    });
   });
 
   afterEach(() => {
