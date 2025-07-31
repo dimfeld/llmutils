@@ -282,6 +282,27 @@ export class ClaudeCodeExecutor implements Executor {
               }
             }
 
+            // Check for auto-approval of tracked file deletions
+            if (tool_name === 'Bash') {
+              const command = input.command as string;
+              const filePaths = this.parseRmCommand(command);
+              
+              if (filePaths.length > 0) {
+                // Check if all file paths are tracked files
+                const allFilesTracked = filePaths.every(filePath => this.trackedFiles.has(filePath));
+                
+                if (allFilesTracked) {
+                  log(chalk.green(`Auto-approving rm command for tracked file(s): ${filePaths.join(', ')}`));
+                  const response = {
+                    type: 'permission_response',
+                    approved: true,
+                  };
+                  socket.write(JSON.stringify(response) + '\n');
+                  return;
+                }
+              }
+            }
+
             // Format the input as human-readable YAML
             let formattedInput = stringify(input);
             if (formattedInput.length > 500) {
