@@ -12,7 +12,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T01:05:58.835Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T02:40:10.679Z
+updatedAt: 2025-07-31T03:25:09.337Z
 tasks:
   - title: Define and Access Plan State
     description: >
@@ -109,7 +109,7 @@ tasks:
 
           Check each dependency using isPlanReady logic - a plan is ready if
           it's pending and all its dependencies are done.
-        done: false
+        done: true
       - prompt: >
           Add proper TypeScript types for the return value (plan with filename
           or null).
@@ -118,13 +118,13 @@ tasks:
           return values.
 
           Handle edge cases like invalid plan IDs or plans with no dependencies.
-        done: false
+        done: true
       - prompt: >
           Export the function and any related types so they can be used by CLI
           commands in later phases.
 
           Follow the export patterns from find_next.ts.
-        done: false
+        done: true
   - title: Add Comprehensive Tests for Core Logic
     description: >
       Write a suite of unit and integration tests for the dependency discovery
@@ -169,6 +169,8 @@ changedFiles:
   - src/rmplan/agent_runner.ts
   - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/find_next_dependency.test.ts
+  - src/rmplan/commands/find_next_dependency.ts
   - src/rmplan/dependency_traversal.test.ts
   - src/rmplan/dependency_traversal.ts
   - src/rmplan/executors/claude_code/agent_generator.test.ts

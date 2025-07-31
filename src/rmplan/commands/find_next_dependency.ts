@@ -124,7 +124,3 @@ export async function findNextReadyDependency(
     };
   }
 }
-
-// Re-export the result type for convenience
-export type { PlanSchema };
-
