@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T07:17:59.983Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T07:58:44.708Z
+updatedAt: 2025-07-31T08:10:02.100Z
 tasks:
   - title: Add New CLI Flag to Command Parser
     description: >
@@ -138,28 +138,28 @@ tasks:
           Include tests that verify workspace operations work correctly with the
           redirected plan, and that all existing agent options remain
           compatible.
-        done: false
+        done: true
       - prompt: >
           In handleAgentCommand, add validation to ensure that when --next-ready
           is used, a plan file argument is provided (it becomes the parent plan
           ID). Throw an appropriate error if missing.
-        done: false
+        done: true
       - prompt: >
           In rmplanAgent function, add logic after resolvePlanFile but before
           any workspace operations to check for options.nextReady. If present,
           load the parent plan, call findNextReadyDependency, and update
           currentPlanFile to the found dependency's filename.
-        done: false
+        done: true
       - prompt: >
           Handle the case where no ready dependency is found by logging an
           informative message, closing any open log file, and returning early.
           Ensure the message is consistent with the other commands.
-        done: false
+        done: true
       - prompt: >
           Verify that all subsequent operations in the agent command (workspace
           creation, executor setup, plan execution) use the updated
           currentPlanFile value when --next-ready redirects to a dependency.
-        done: false
+        done: true
   - title: Add End-to-End CLI Tests
     description: >
       Create comprehensive end-to-end tests that execute the actual CLI commands
@@ -210,6 +210,7 @@ tasks:
           --dry-run for the agent command, ensuring proper option composition.
         done: false
 changedFiles:
+  - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/cli_parsing.test.ts
   - src/rmplan/commands/find_next_dependency.test.ts

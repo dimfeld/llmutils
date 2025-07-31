@@ -51,7 +51,7 @@ export async function handleAgentCommand(
     if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
       throw new Error('--next-ready requires a parent plan ID or file path');
     }
-    
+
     // Find the next ready dependency of the specified parent plan
     const tasksDir = await resolveTasksDir(config);
     // Convert string ID to number or resolve plan file to get numeric ID

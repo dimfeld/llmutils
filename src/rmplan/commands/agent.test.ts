@@ -958,7 +958,8 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     findNextReadyDependencySpy.mockResolvedValue({
       plan: readyPlan,
-      message: 'Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system',
+      message:
+        'Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system',
     });
 
     const options = { nextReady: '100' };
@@ -971,7 +972,9 @@ describe('handleAgentCommand - --next-ready flag', () => {
       expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
     );
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system')
+      expect.stringContaining(
+        'Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system'
+      )
     );
 
     // Verify rmplanAgent was called with the ready plan's filename
@@ -1023,9 +1026,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
         models: {
           execution: 'claude-3-5-sonnet',
         },
-        postApplyCommands: [
-          { title: 'Test command', command: 'echo test' },
-        ],
+        postApplyCommands: [{ title: 'Test command', command: 'echo test' }],
       },
     };
 
@@ -1103,11 +1104,13 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     // Verify all workspace options are preserved when redirecting
     const callArgs = rmplanAgentSpy.mock.calls[0];
-    expect(callArgs[1]).toEqual(expect.objectContaining({
-      workspace: 'test-workspace-123',
-      autoWorkspace: true,
-      newWorkspace: true,
-      nextReady: '100', // Original flag should remain
-    }));
+    expect(callArgs[1]).toEqual(
+      expect.objectContaining({
+        workspace: 'test-workspace-123',
+        autoWorkspace: true,
+        newWorkspace: true,
+        nextReady: '100', // Original flag should remain
+      })
+    );
   });
 });
