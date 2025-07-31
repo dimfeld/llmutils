@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T18:25:01.862Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T18:26:18.165Z
+updatedAt: 2025-07-31T18:43:56.768Z
 tasks:
   - title: Enhance Error Handling and User Feedback
     description: >
@@ -55,25 +55,25 @@ tasks:
           all error message scenarios, including invalid plan IDs, missing
           directories, and cases where no dependencies are ready. Ensure tests
           check for specific, helpful error message content.
-        done: false
+        done: true
       - prompt: >
           Enhance error messages in find_next_dependency.ts to be more
           descriptive and actionable. For "Plan not found" errors, suggest using
           'rmplan list' or checking the plan ID. For "No ready dependencies"
           errors, explain the specific reason (all done, blocked by incomplete
           dependencies, etc.).
-        done: false
+        done: true
       - prompt: >
           Review error handling in the agent, generate, and prepare commands
           where --next-ready is used. Ensure they properly display the error
           messages from findNextReadyDependency and add any command-specific
           guidance where appropriate.
-        done: false
+        done: true
       - prompt: >
           Add error handling for --next-ready to the show command if it's
           missing. Ensure consistent error message formatting across all
           commands using chalk colors (yellow for warnings, red for errors).
-        done: false
+        done: true
   - title: Add Logging for Dependency Selection
     description: >
       Implement comprehensive debug logging throughout the dependency discovery
@@ -221,6 +221,26 @@ tasks:
           the existing command examples where appropriate to show how it
           integrates with the normal workflow.
         done: false
+changedFiles:
+  - src/rmplan/commands/agent.test.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/cli_integration.test.ts
+  - src/rmplan/commands/cli_parsing.test.ts
+  - src/rmplan/commands/find_next_dependency.test.ts
+  - src/rmplan/commands/find_next_dependency.ts
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/integration.test.ts
+  - src/rmplan/commands/next_ready_integration.test.ts
+  - src/rmplan/commands/prepare.test.ts
+  - src/rmplan/commands/prepare.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/dependency_traversal.test.ts
+  - src/rmplan/dependency_traversal.ts
+  - src/rmplan/executors/claude_code/agent_generator.test.ts
+  - src/rmplan/plans/plan_state_utils.test.ts
+  - src/rmplan/plans/plan_state_utils.ts
+  - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan
 ---
