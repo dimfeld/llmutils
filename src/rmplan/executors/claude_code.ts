@@ -284,6 +284,8 @@ export class ClaudeCodeExecutor implements Executor {
     // Store plan information for use in agent file generation
     this.planInfo = planInfo;
 
+    let originalContextContent = contextContent;
+
     // Apply orchestration wrapper when plan information is provided
     if (planInfo && planInfo.planId) {
       contextContent = wrapWithOrchestration(contextContent, planInfo.planId);
@@ -400,9 +402,9 @@ export class ClaudeCodeExecutor implements Executor {
     // Generate agent files if plan information is provided
     if (planInfo && planInfo.planId) {
       const agentDefinitions = [
-        getImplementerPrompt(contextContent),
-        getTesterPrompt(contextContent),
-        getReviewerPrompt(contextContent),
+        getImplementerPrompt(originalContextContent),
+        getTesterPrompt(originalContextContent),
+        getReviewerPrompt(originalContextContent),
       ];
       await generateAgentFiles(planInfo.planId, agentDefinitions);
       log(chalk.blue(`Created agent files for plan ${planInfo.planId}`));
