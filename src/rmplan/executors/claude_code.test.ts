@@ -857,6 +857,247 @@ describe('ClaudeCodeExecutor', () => {
     });
   });
 
+  describe('parseRmCommand', () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Get access to the private method for testing
+    const parseRmCommand = (executor as any).parseRmCommand.bind(executor);
+
+    test('parses basic rm command with single file', () => {
+      const result = parseRmCommand('rm file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('parses rm command with -f flag', () => {
+      const result = parseRmCommand('rm -f file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('parses rm command with -r flag', () => {
+      const result = parseRmCommand('rm -r directory');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/directory$/);
+    });
+
+    test('parses rm command with -rf flag', () => {
+      const result = parseRmCommand('rm -rf directory');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/directory$/);
+    });
+
+    test('parses rm command with -fr flag (reverse order)', () => {
+      const result = parseRmCommand('rm -fr directory');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/directory$/);
+    });
+
+    test('parses rm command with multiple flags', () => {
+      const result = parseRmCommand('rm -vrf directory');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/directory$/);
+    });
+
+    test('parses rm command with multiple files', () => {
+      const result = parseRmCommand('rm file1.txt file2.txt file3.txt');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+      expect(result[2]).toMatch(/file3\.txt$/);
+    });
+
+    test('parses rm command with flags and multiple files', () => {
+      const result = parseRmCommand('rm -f file1.txt file2.txt');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+    });
+
+    test('handles single-quoted paths', () => {
+      const result = parseRmCommand("rm 'file with spaces.txt'");
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file with spaces\.txt$/);
+    });
+
+    test('handles double-quoted paths', () => {
+      const result = parseRmCommand('rm "file with spaces.txt"');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file with spaces\.txt$/);
+    });
+
+    test('handles mixed quoted and unquoted paths', () => {
+      const result = parseRmCommand('rm file1.txt "file with spaces.txt" \'another file.txt\'');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file with spaces\.txt$/);
+      expect(result[2]).toMatch(/another file\.txt$/);
+    });
+
+    test('handles paths with escaped spaces', () => {
+      const result = parseRmCommand('rm file\\ with\\ spaces.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\\ with\\ spaces\.txt$/);
+    });
+
+    test('handles absolute paths', () => {
+      const result = parseRmCommand('rm /absolute/path/file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBe('/absolute/path/file.txt');
+    });
+
+    test('converts relative paths to absolute paths', () => {
+      const result = parseRmCommand('rm relative/path/file.txt');
+      expect(result).toHaveLength(1);
+      expect(path.isAbsolute(result[0])).toBe(true);
+      expect(result[0]).toMatch(/relative\/path\/file\.txt$/);
+    });
+
+    test('handles nested quotes correctly', () => {
+      const result = parseRmCommand('rm "file\'s name.txt"');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file's name\.txt$/);
+    });
+
+    test('handles escaped quotes', () => {
+      const result = parseRmCommand('rm file\\\'s\\ name.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\\'s\\ name\.txt$/);
+    });
+
+    test('ignores wildcard patterns for safety', () => {
+      const result = parseRmCommand('rm *.txt');
+      expect(result).toHaveLength(0);
+    });
+
+    test('ignores question mark patterns for safety', () => {
+      const result = parseRmCommand('rm file?.txt');
+      expect(result).toHaveLength(0);
+    });
+
+    test('ignores bracket patterns for safety', () => {
+      const result = parseRmCommand('rm file[123].txt');
+      expect(result).toHaveLength(0);
+    });
+
+    test('ignores mixed wildcards and regular files', () => {
+      const result = parseRmCommand('rm file1.txt *.log file2.txt');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+    });
+
+    test('handles empty command', () => {
+      const result = parseRmCommand('');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles non-rm commands', () => {
+      const result = parseRmCommand('ls -la');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles commands starting with rm but not rm itself', () => {
+      const result = parseRmCommand('rmdir directory');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles rm command with no arguments', () => {
+      const result = parseRmCommand('rm');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles rm command with only flags', () => {
+      const result = parseRmCommand('rm -rf');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles extra whitespace', () => {
+      const result = parseRmCommand('  rm   -f    file1.txt   file2.txt  ');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+    });
+
+    test('handles tab characters as whitespace', () => {
+      const result = parseRmCommand('rm\t-f\tfile1.txt\tfile2.txt');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+    });
+
+    test('handles complex paths with directories', () => {
+      const result = parseRmCommand('rm src/components/Button.tsx lib/utils/helper.ts');
+      expect(result).toHaveLength(2);
+      expect(path.isAbsolute(result[0])).toBe(true);
+      expect(path.isAbsolute(result[1])).toBe(true);
+      expect(result[0]).toMatch(/src\/components\/Button\.tsx$/);
+      expect(result[1]).toMatch(/lib\/utils\/helper\.ts$/);
+    });
+
+    test('handles paths starting with dot', () => {
+      const result = parseRmCommand('rm ./file.txt ../other.txt');
+      expect(result).toHaveLength(2);
+      expect(path.isAbsolute(result[0])).toBe(true);
+      expect(path.isAbsolute(result[1])).toBe(true);
+    });
+
+    test('handles paths with special characters', () => {
+      const result = parseRmCommand('rm file-name.txt file_name.txt file@name.txt');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/file-name\.txt$/);
+      expect(result[1]).toMatch(/file_name\.txt$/);
+      expect(result[2]).toMatch(/file@name\.txt$/);
+    });
+
+    test('handles rm command with long flag format', () => {
+      const result = parseRmCommand('rm --force file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('preserves case sensitivity in file names', () => {
+      const result = parseRmCommand('rm File.TXT MixedCase.js');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/File\.TXT$/);
+      expect(result[1]).toMatch(/MixedCase\.js$/);
+    });
+
+    test('handles very long file paths', () => {
+      const longPath = 'very/deep/nested/directory/structure/with/many/levels/file.txt';
+      const result = parseRmCommand(`rm ${longPath}`);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(new RegExp(longPath.replace(/\//g, '\\/') + '$'));
+    });
+
+    test('handles empty quoted strings', () => {
+      const result = parseRmCommand('rm file.txt "" \'\'');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('handles unclosed quotes by treating them as literal characters', () => {
+      const result = parseRmCommand('rm "unclosed');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/unclosed$/);
+    });
+
+    test('handles complex escaping scenarios', () => {
+      const result = parseRmCommand('rm file\\\\name.txt'); // Double backslash
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\\\\name\.txt$/);
+    });
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });
