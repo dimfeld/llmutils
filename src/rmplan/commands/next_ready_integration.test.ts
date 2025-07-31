@@ -235,12 +235,12 @@ describe('--next-ready CLI flag integration tests', () => {
 
       // Should handle gracefully by logging and returning early
       await handleGenerateCommand(undefined, options, command);
-      
+
       // Should have logged the "not found" message
       expect(logSpy).toHaveBeenCalled();
       const calls = logSpy.mock.calls;
-      const hasNotFoundMessage = calls.some(call => 
-        call.some(arg => arg && arg.toString().includes('Plan not found: 999'))
+      const hasNotFoundMessage = calls.some((call) =>
+        call.some((arg) => arg && arg.toString().includes('Plan not found: 999'))
       );
       expect(hasNotFoundMessage).toBe(true);
     });
@@ -289,7 +289,7 @@ describe('--next-ready CLI flag integration tests', () => {
 
       // Should have logged success message
       expect(logSpy).toHaveBeenCalled();
-      
+
       // Should have called preparePhase with the ready dependency
       expect(preparePhaseSpy).toHaveBeenCalledWith(
         path.join(tasksDir, '2-ready.yml'),
@@ -301,7 +301,6 @@ describe('--next-ready CLI flag integration tests', () => {
 
   describe('agent command with --next-ready', () => {
     test('should find next ready dependency and set up for execution', async () => {
-      
       // Create test plans
       await createPlanFile({
         id: 1,
@@ -329,29 +328,29 @@ describe('--next-ready CLI flag integration tests', () => {
 
       const globalOpts = {};
 
-      // This test will timeout because it tries to execute the agent, 
+      // This test will timeout because it tries to execute the agent,
       // but we can verify the resolution logic works by checking for specific error handling
       // or by mocking at a different level. For now, let's test that the function finds the plan.
-      
+
       let foundDependency = false;
       let errorThrown = false;
-      
+
       try {
         // We'll use a timeout to prevent the test from hanging
-        const timeoutPromise = new Promise((_, reject) => 
+        const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Test timeout')), 1000)
         );
-        
+
         const testPromise = handleAgentCommand('', options, globalOpts);
-        
+
         await Promise.race([testPromise, timeoutPromise]);
       } catch (error) {
         errorThrown = true;
         // The error might be due to trying to execute the plan, which is expected
         // We check if the function got far enough to find the dependency
         const logCalls = logSpy.mock.calls;
-        foundDependency = logCalls.some(call => 
-          call.some(arg => arg && arg.toString().includes('Found ready dependency'))
+        foundDependency = logCalls.some((call) =>
+          call.some((arg) => arg && arg.toString().includes('Found ready dependency'))
         );
       }
 

@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T07:17:59.983Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T07:18:00.293Z
+updatedAt: 2025-07-31T07:35:18.564Z
 tasks:
   - title: Add New CLI Flag to Command Parser
     description: >
@@ -33,17 +33,17 @@ tasks:
           definition. The option should accept a plan ID or file path as its
           value and have a description explaining that it finds and operates on
           the next ready dependency of the specified parent plan.
-        done: false
+        done: true
       - prompt: >
           Add the same --next-ready <planId> option to the prepare command
           definition, maintaining consistency with the generate command's
           implementation.
-        done: false
+        done: true
       - prompt: >
           Add the --next-ready <planId> option to both the agent and run
           commands (since run is an alias for agent). Use the createAgentCommand
           function to add this option so it applies to both commands.
-        done: false
+        done: true
   - title: Modify `generate` Command to Use New Logic
     description: >
       Update the generate command's implementation in
@@ -209,6 +209,21 @@ tasks:
           other options like --direct for generate/prepare commands, and
           --dry-run for the agent command, ensuring proper option composition.
         done: false
+changedFiles:
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/cli_parsing.test.ts
+  - src/rmplan/commands/find_next_dependency.test.ts
+  - src/rmplan/commands/find_next_dependency.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/integration.test.ts
+  - src/rmplan/commands/next_ready_integration.test.ts
+  - src/rmplan/commands/prepare.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/dependency_traversal.test.ts
+  - src/rmplan/dependency_traversal.ts
+  - src/rmplan/plans/plan_state_utils.test.ts
+  - src/rmplan/plans/plan_state_utils.ts
+  - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan
 ---

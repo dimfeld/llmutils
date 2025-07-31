@@ -165,10 +165,13 @@ export async function handleGenerateCommand(
   }
 
   // Validate input options first
-  let planOptionsSet = [planArg, options.plan, options.planEditor, options.issue, options.nextReady].reduce(
-    (acc, val) => acc + (val ? 1 : 0),
-    0
-  );
+  let planOptionsSet = [
+    planArg,
+    options.plan,
+    options.planEditor,
+    options.issue,
+    options.nextReady,
+  ].reduce((acc, val) => acc + (val ? 1 : 0), 0);
 
   // Manual conflict check for --plan, --plan-editor, --issue, and --next-ready
   if (planOptionsSet !== 1) {
@@ -189,19 +192,22 @@ export async function handleGenerateCommand(
       // Try to resolve as a file path and get the plan ID
       const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
       const plan = await readPlanFile(planFile);
+      if (!plan.id) {
+        throw new Error(`Plan file ${planFile} does not have a valid ID`);
+      }
       parentPlanId = plan.id;
     }
-    
+
     const result = await findNextReadyDependency(parentPlanId, tasksDir);
-    
+
     if (!result.plan) {
       log(chalk.yellow(result.message));
       return;
     }
-    
+
     log(chalk.green(`Found ready dependency: ${result.plan.id} - ${result.plan.title}`));
     log(chalk.gray(result.message));
-    
+
     // Set the resolved plan as the target
     options.plan = result.plan.filename;
     planArg = undefined; // Clear planArg since we're using options.plan
