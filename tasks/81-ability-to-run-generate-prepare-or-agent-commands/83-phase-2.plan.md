@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T07:17:59.983Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T07:51:33.812Z
+updatedAt: 2025-07-31T07:58:44.708Z
 tasks:
   - title: Add New CLI Flag to Command Parser
     description: >
@@ -101,24 +101,24 @@ tasks:
           Add tests to prepare.test.ts for the --next-ready flag, following the
           existing test patterns. Include scenarios for successful dependency
           discovery, no ready dependencies, and error cases.
-        done: false
+        done: true
       - prompt: >
           In handlePrepareCommand, add a new conditional block to handle
           options.nextReady before the existing options.next || options.current
           check. Resolve the parent plan file, read the plan to get its ID, and
           call findNextReadyDependency.
-        done: false
+        done: true
       - prompt: >
           Process the result from findNextReadyDependency similar to how --next
           and --current are handled. If a plan is found, set phaseYamlFile to
           the found plan's filename and log a success message. If not found, log
           an appropriate message and return.
-        done: false
+        done: true
       - prompt: >
           Ensure the --next-ready logic integrates cleanly with the existing
           flow, particularly with options like --use-yaml and the rmfilter
           argument handling.
-        done: false
+        done: true
   - title: Modify `agent` Command to Use New Logic
     description: >
       Update the agent command's implementation in src/rmplan/commands/agent.ts
@@ -218,6 +218,7 @@ changedFiles:
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/integration.test.ts
   - src/rmplan/commands/next_ready_integration.test.ts
+  - src/rmplan/commands/prepare.test.ts
   - src/rmplan/commands/prepare.ts
   - src/rmplan/commands/show.ts
   - src/rmplan/dependency_traversal.test.ts
