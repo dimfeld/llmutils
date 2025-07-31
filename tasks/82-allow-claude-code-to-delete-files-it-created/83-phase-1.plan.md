@@ -5,14 +5,14 @@ title: Allow Claude Code to delete files it created - Implement Core File
 goal: To implement the fundamental mechanism for tracking created/modified files
   and auto-approving their deletion, without the user-facing configuration.
 id: 83
-status: in_progress
+status: done
 priority: high
 dependencies: []
 parent: 82
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T08:03:03.643Z
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T08:35:23.257Z
+updatedAt: 2025-07-31T08:45:28.376Z
 tasks:
   - title: Add a file tracking set to the executor state
     description: >
@@ -130,21 +130,21 @@ tasks:
 
           tool_name is 'Bash' and use parseRmCommand to extract file paths from
           the command.
-        done: false
+        done: true
       - prompt: >
           If rm file paths are found, check each against the trackedFiles set
           and auto-approve
 
           the command if all paths are tracked files, logging the auto-approval
           action.
-        done: false
+        done: true
       - prompt: >
           Add integration tests that verify the end-to-end flow: track a file
           via Write/Edit,
 
           then confirm that rm commands for that file are auto-approved without
           user prompts.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/executors/claude_code/format.test.ts
   - src/rmplan/executors/claude_code/format.ts
