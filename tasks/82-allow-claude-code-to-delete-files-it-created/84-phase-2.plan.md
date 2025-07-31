@@ -13,7 +13,7 @@ parent: 82
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T09:31:35.989Z
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T09:49:07.280Z
+updatedAt: 2025-07-31T09:53:22.023Z
 tasks:
   - title: Add a configuration option to enable or disable auto-approval
     description: >
@@ -95,27 +95,27 @@ tasks:
 
           auto-approval does not occur (the request goes through normal
           permission flow).
-        done: false
+        done: true
       - prompt: >
           Add a test case that verifies auto-approval is disabled by default
           when the configuration option is not specified.
 
           This ensures backward compatibility for existing configurations that
           don't include the new flag.
-        done: false
+        done: true
       - prompt: >
           Add a test case that verifies auto-approval works when
           autoApproveCreatedFileDeletion is explicitly set to true.
 
           This should reuse the existing auto-approval test logic but explicitly
           set the configuration flag.
-        done: false
+        done: true
       - prompt: >
           Update any existing auto-approval tests to explicitly set
           autoApproveCreatedFileDeletion to true,
 
           since the feature will now be disabled by default.
-        done: false
+        done: true
   - title: Update project documentation
     description: >
       The README.md file will be updated to describe the new
