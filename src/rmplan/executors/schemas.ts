@@ -16,6 +16,13 @@ export const claudeCodeOptionsSchema = z.object({
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
   interactive: z.boolean().optional(),
+  autoApproveCreatedFileDeletion: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      'When enabled, automatically approve deletion of files created or modified by the agent in the current session'
+    ),
   permissionsMcp: z
     .object({
       enabled: z.boolean(),
