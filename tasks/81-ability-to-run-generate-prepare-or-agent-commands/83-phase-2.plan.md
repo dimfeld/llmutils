@@ -5,7 +5,7 @@ title: Ability to run, generate, prepare, or agent commands on the next ready
 goal: To expose the new dependency discovery logic through a command-line flag
   for the `generate`, `prepare`, and `agent` commands.
 id: 83
-status: in_progress
+status: done
 priority: high
 dependencies:
   - 82
@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T07:17:59.983Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T08:10:02.100Z
+updatedAt: 2025-07-31T08:23:46.441Z
 tasks:
   - title: Add New CLI Flag to Command Parser
     description: >
@@ -180,38 +180,39 @@ tasks:
           --next-ready flag across all three commands. Set up a test harness
           that can execute the actual rmplan CLI commands and capture their
           output.
-        done: false
+        done: true
       - prompt: >
           Implement test cases for the generate command with --next-ready.
           Create plan hierarchies with various states, execute rmplan generate
           --next-ready [parentId], and verify it generates for the correct
           dependency plan.
-        done: false
+        done: true
       - prompt: >
           Implement test cases for the prepare command with --next-ready. Test
           scenarios including plans with in-progress dependencies (which should
           be selected first), multiple ready dependencies (to verify priority
           ordering), and plans with no ready dependencies.
-        done: false
+        done: true
       - prompt: >
           Implement test cases for the agent command with --next-ready. Since
           agent modifies plan states, verify that it correctly executes on the
           dependency plan and that plan states are updated appropriately.
-        done: false
+        done: true
       - prompt: >
           Add edge case tests including: using --next-ready with non-existent
           parent plans, plans that have no dependencies at all, and plans where
           all dependencies are already completed. Verify appropriate error
           messages in each case.
-        done: false
+        done: true
       - prompt: >
           Add a test that verifies the --next-ready flag works correctly with
           other options like --direct for generate/prepare commands, and
           --dry-run for the agent command, ensuring proper option composition.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/cli_integration.test.ts
   - src/rmplan/commands/cli_parsing.test.ts
   - src/rmplan/commands/find_next_dependency.test.ts
   - src/rmplan/commands/find_next_dependency.ts

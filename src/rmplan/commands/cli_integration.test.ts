@@ -55,7 +55,8 @@ describe('CLI integration tests for --next-ready flag', () => {
     const filePath = path.join(tasksDir, plan.filename);
 
     // Create a proper plan object according to the schema
-    const schemaLine = '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
+    const schemaLine =
+      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
     const planData: any = {
       id: plan.id,
       title: plan.title,
@@ -114,9 +115,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Execute generate command with --next-ready
-      const result = await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should succeed
       expect(result.exitCode).toBe(0);
@@ -166,9 +168,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Execute generate command with --next-ready
-      const result = await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should succeed and find the urgent priority dependency
       expect(result.exitCode).toBe(0);
@@ -206,9 +209,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Execute generate command with --next-ready
-      const result = await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should succeed (finds the in_progress plan)
       expect(result.exitCode).toBe(0);
@@ -219,9 +223,10 @@ describe('CLI integration tests for --next-ready flag', () => {
 
     test('should handle non-existent parent plan gracefully', async () => {
       // Execute generate command with non-existent parent plan
-      const result = await $`bun ${rmplanPath} generate --next-ready 999 --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} generate --next-ready 999 --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should succeed but output the error message (generate command logs error but continues)
       expect(result.exitCode).toBe(0);
@@ -249,9 +254,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Execute generate command with --next-ready and --direct
-      const result = await $`bun ${rmplanPath} generate --next-ready 1 --direct --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} generate --next-ready 1 --direct --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should succeed and indicate direct mode
       expect(result.exitCode).toBe(0);
@@ -334,9 +340,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Execute agent command with --next-ready and --dry-run
-      const result = await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // The command may fail, but should show that it found the dependency
       const output = result.stdout.toString() + result.stderr.toString();
@@ -355,9 +362,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Execute agent command with --next-ready
-      const result = await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should output the error message
       const output = result.stdout.toString() + result.stderr.toString();
@@ -369,15 +377,16 @@ describe('CLI integration tests for --next-ready flag', () => {
     test('should handle non-existent parent plans', async () => {
       // Test all three commands with non-existent parent
       const commands = [
-        ['generate', '--no-extract'],  
+        ['generate', '--no-extract'],
         ['prepare', '--', 'src/**/*.ts'],
         ['agent', '--dry-run', '--non-interactive'],
       ];
 
       for (const [command, ...extraArgs] of commands) {
-        const result = await $`bun ${rmplanPath} ${command} --next-ready 999 ${extraArgs} --config ${configPath}`
-          .cwd(tempDir)
-          .nothrow();
+        const result =
+          await $`bun ${rmplanPath} ${command} --next-ready 999 ${extraArgs} --config ${configPath}`
+            .cwd(tempDir)
+            .nothrow();
 
         // Commands may succeed but log the error message
         const output = result.stdout.toString() + result.stderr.toString();
@@ -396,22 +405,30 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Test generate command
-      const generateResult = await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
-      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      const generateResult =
+        await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
+      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
 
-      // Test prepare command 
+      // Test prepare command
       const prepareResult = await $`bun ${rmplanPath} prepare --next-ready 1 --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
 
       // Test agent command
-      const agentResult = await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
-      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      const agentResult =
+        await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
+      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
     });
 
     test('should handle plans where all dependencies are completed', async () => {
@@ -442,22 +459,30 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Test generate command
-      const generateResult = await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
-      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      const generateResult =
+        await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
+      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
 
-      // Test prepare command 
+      // Test prepare command
       const prepareResult = await $`bun ${rmplanPath} prepare --next-ready 1 --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
 
       // Test agent command
-      const agentResult = await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
-      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      const agentResult =
+        await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
+      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
     });
 
     test('should handle circular dependencies gracefully', async () => {
@@ -490,22 +515,30 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Test generate command
-      const generateResult = await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
-      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      const generateResult =
+        await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
+      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
 
-      // Test prepare command 
+      // Test prepare command
       const prepareResult = await $`bun ${rmplanPath} prepare --next-ready 1 --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
 
       // Test agent command
-      const agentResult = await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
-      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain('No ready or pending dependencies found');
+      const agentResult =
+        await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
+      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain(
+        'No ready or pending dependencies found'
+      );
     });
   });
 
@@ -530,9 +563,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Test --next-ready with --direct
-      const result = await $`bun ${rmplanPath} generate --next-ready 1 --direct --no-extract --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} generate --next-ready 1 --direct --no-extract --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toString();
@@ -589,9 +623,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Test --next-ready with --dry-run
-      const result = await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       const output = result.stdout.toString() + result.stderr.toString();
       expect(output).toContain('Found ready dependency');
@@ -618,9 +653,10 @@ describe('CLI integration tests for --next-ready flag', () => {
       });
 
       // Test --next-ready with multiple options
-      const result = await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --direct --steps 1 --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --direct --steps 1 --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       const output = result.stdout.toString() + result.stderr.toString();
       expect(output).toContain('Found ready dependency');
