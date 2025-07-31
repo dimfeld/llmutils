@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { rmplanAgent } from './agent.js';
+import { rmplanAgent, handleAgentCommand } from './agent.js';
 import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
@@ -584,5 +584,326 @@ describe('rmplanAgent - Direct Execution Flow', () => {
 
     // Since preparePhase generated steps, execution should happen
     expect(executorExecuteSpy).toHaveBeenCalled();
+  });
+});
+
+describe('handleAgentCommand - --next-ready flag', () => {
+  let tempDir: string;
+  let parentPlanFile: string;
+  let readyPlanFile: string;
+  let inProgressPlanFile: string;
+  let notReadyPlanFile: string;
+
+  // Mock functions specifically for --next-ready tests
+  const findNextReadyDependencySpy = mock();
+  const rmplanAgentSpy = mock();
+
+  beforeEach(async () => {
+    // Clear all mocks
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    warnSpy.mockClear();
+    findNextReadyDependencySpy.mockClear();
+    rmplanAgentSpy.mockClear();
+
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-next-ready-test-'));
+    const tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    parentPlanFile = path.join(tasksDir, '100-parent-plan.yml');
+    readyPlanFile = path.join(tasksDir, '101-ready-plan.yml');
+    inProgressPlanFile = path.join(tasksDir, '102-in-progress-plan.yml');
+    notReadyPlanFile = path.join(tasksDir, '103-not-ready-plan.yml');
+
+    // Create parent plan
+    const parentPlan: PlanSchema = {
+      id: 100,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'pending',
+      tasks: [],
+      dependencies: [101, 102],
+      filename: parentPlanFile,
+    };
+
+    // Create ready dependency plan
+    const readyPlan: PlanSchema = {
+      id: 101,
+      title: 'Ready Dependency Plan',
+      goal: 'Ready goal',
+      details: 'Ready details',
+      status: 'pending',
+      tasks: [{ title: 'Ready task', description: 'Ready task description' }],
+      filename: readyPlanFile,
+    };
+
+    // Create in-progress dependency plan
+    const inProgressPlan: PlanSchema = {
+      id: 102,
+      title: 'In Progress Plan',
+      goal: 'In progress goal',
+      details: 'In progress details',
+      status: 'in_progress',
+      tasks: [{ title: 'In progress task', description: 'In progress task description' }],
+      filename: inProgressPlanFile,
+    };
+
+    // Create not ready dependency plan (has unfulfilled dependencies)
+    const notReadyPlan: PlanSchema = {
+      id: 103,
+      title: 'Not Ready Plan',
+      goal: 'Not ready goal',
+      details: 'Not ready details',
+      status: 'pending',
+      dependencies: [999], // Non-existent dependency
+      tasks: [{ title: 'Not ready task', description: 'Not ready task description' }],
+      filename: notReadyPlanFile,
+    };
+
+    await fs.writeFile(parentPlanFile, yaml.stringify(parentPlan));
+    await fs.writeFile(readyPlanFile, yaml.stringify(readyPlan));
+    await fs.writeFile(inProgressPlanFile, yaml.stringify(inProgressPlan));
+    await fs.writeFile(notReadyPlanFile, yaml.stringify(notReadyPlan));
+
+    // Mock dependencies
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: warnSpy,
+      openLogFile: mock(() => {}),
+      closeLogFile: mock(async () => {}),
+      boldMarkdownHeaders: (text: string) => text,
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({})),
+    }));
+
+    await moduleMocker.mock('../configSchema.js', () => ({
+      resolveTasksDir: mock(async () => tasksDir),
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: mock(async (planFile: string) => planFile),
+      readPlanFile: async (filePath: string) => {
+        const content = await fs.readFile(filePath, 'utf-8');
+        return yaml.parse(content) as PlanSchema;
+      },
+    }));
+
+    await moduleMocker.mock('./find_next_dependency.js', () => ({
+      findNextReadyDependency: findNextReadyDependencySpy,
+    }));
+
+    await moduleMocker.mock('./agent.js', () => ({
+      rmplanAgent: rmplanAgentSpy,
+      handleAgentCommand: handleAgentCommand, // Use the real implementation
+    }));
+
+    await moduleMocker.mock('chalk', () => ({
+      default: {
+        green: (text: string) => text,
+        yellow: (text: string) => text,
+        gray: (text: string) => text,
+      },
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up temporary directory
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('throws error when --next-ready is provided without a value', async () => {
+    const options = { nextReady: true }; // Boolean true instead of string value
+    const globalCliOptions = {};
+
+    await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
+      '--next-ready requires a parent plan ID or file path'
+    );
+  });
+
+  test('throws error when --next-ready is provided with empty string', async () => {
+    const options = { nextReady: '' };
+    const globalCliOptions = {};
+
+    await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
+      '--next-ready requires a parent plan ID or file path'
+    );
+  });
+
+  test('finds ready dependency using numeric parent plan ID', async () => {
+    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+      filename: string;
+    };
+    readyPlan.filename = readyPlanFile;
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
+    });
+
+    const options = { nextReady: '100' }; // Parent plan ID
+    const globalCliOptions = {};
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify findNextReadyDependency was called with correct parent plan ID
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
+
+    // Verify success messages were logged
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found ready plan: Ready Dependency Plan (ID: 101)')
+    );
+
+    // Verify rmplanAgent was called with the ready plan's filename
+    expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+  });
+
+  test('finds ready dependency using parent plan file path', async () => {
+    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+      filename: string;
+    };
+    readyPlan.filename = readyPlanFile;
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
+    });
+
+    const options = { nextReady: parentPlanFile }; // Parent plan file path
+    const globalCliOptions = {};
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify findNextReadyDependency was called with correct parent plan ID (100)
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
+
+    // Verify success messages were logged
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
+    );
+
+    // Verify rmplanAgent was called with the ready plan's filename
+    expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+  });
+
+  test('handles no ready dependencies found', async () => {
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: null,
+      message: 'No ready dependencies found',
+    });
+
+    const options = { nextReady: '100' };
+    const globalCliOptions = {};
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify findNextReadyDependency was called
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
+
+    // Verify warning message was logged
+    expect(logSpy).toHaveBeenCalledWith('No ready dependencies found');
+
+    // Verify rmplanAgent was NOT called
+    expect(rmplanAgentSpy).not.toHaveBeenCalled();
+  });
+
+  test('handles invalid parent plan ID', async () => {
+    const options = { nextReady: '999' }; // Non-existent plan ID
+    const globalCliOptions = {};
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: null,
+      message: 'Plan not found: 999',
+    });
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify warning message was logged
+    expect(logSpy).toHaveBeenCalledWith('Plan not found: 999');
+
+    // Verify rmplanAgent was NOT called
+    expect(rmplanAgentSpy).not.toHaveBeenCalled();
+  });
+
+  test('throws error when parent plan file does not have valid ID', async () => {
+    // Create a plan file without an ID
+    const invalidPlanFile = path.join(tempDir, 'tasks', '999-invalid-plan.yml');
+    const invalidPlan: Partial<PlanSchema> = {
+      title: 'Invalid Plan',
+      goal: 'No ID',
+      status: 'pending',
+    };
+    await fs.writeFile(invalidPlanFile, yaml.stringify(invalidPlan));
+
+    const options = { nextReady: invalidPlanFile };
+    const globalCliOptions = {};
+
+    await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
+      `Plan file ${invalidPlanFile} does not have a valid ID`
+    );
+  });
+
+  test('works with workspace options', async () => {
+    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+      filename: string;
+    };
+    readyPlan.filename = readyPlanFile;
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
+    });
+
+    const options = {
+      nextReady: '100',
+      workspace: 'test-workspace',
+      autoWorkspace: true,
+    };
+    const globalCliOptions = {};
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify rmplanAgent was called with all options intact
+    expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+  });
+
+  test('works with execution options', async () => {
+    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+      filename: string;
+    };
+    readyPlan.filename = readyPlanFile;
+
+    findNextReadyDependencySpy.mockResolvedValue({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
+    });
+
+    const options = {
+      nextReady: '100',
+      executor: 'claude',
+      model: 'claude-3-5-sonnet-20241022',
+      steps: '5',
+      dryRun: true,
+      nonInteractive: true,
+    };
+    const globalCliOptions = {};
+
+    await handleAgentCommand(undefined, options, globalCliOptions);
+
+    // Verify rmplanAgent was called with all execution options intact
+    expect(rmplanAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
   });
 });
