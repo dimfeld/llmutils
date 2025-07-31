@@ -8,7 +8,8 @@ import { preparePhase } from '../plans/prepare_phase.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { getCombinedTitleFromSummary } from '../display_utils.js';
-import { findNextPlan, resolvePlanFile } from '../plans.js';
+import { findNextPlan, resolvePlanFile, readPlanFile } from '../plans.js';
+import { findNextReadyDependency } from './find_next_dependency.js';
 
 export async function handlePrepareCommand(
   yamlFile: string | undefined,
@@ -34,7 +35,7 @@ export async function handlePrepareCommand(
   // Handle --use-yaml option which uses the file as LLM output
   if (options.useYaml) {
     // When using --use-yaml, we need a phase file to update
-    if (!yamlFile && !options.next && !options.current) {
+    if (!yamlFile && !options.next && !options.current && !options.nextReady) {
       throw new Error('When using --use-yaml, you must specify a phase file to update');
     }
     // We'll handle this after resolving the phase file below
@@ -42,7 +43,35 @@ export async function handlePrepareCommand(
 
   let phaseYamlFile: string;
 
-  if (options.next || options.current) {
+  if (options.nextReady) {
+    // Find the next ready dependency of the specified parent plan
+    const tasksDir = await resolveTasksDir(config);
+    // Convert string ID to number or resolve plan file to get numeric ID
+    let parentPlanId: number;
+    const planIdNumber = parseInt(options.nextReady, 10);
+    if (!isNaN(planIdNumber)) {
+      parentPlanId = planIdNumber;
+    } else {
+      // Try to resolve as a file path and get the plan ID
+      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
+      const plan = await readPlanFile(planFile);
+      if (!plan.id) {
+        throw new Error(`Plan file ${planFile} does not have a valid ID`);
+      }
+      parentPlanId = plan.id;
+    }
+
+    const result = await findNextReadyDependency(parentPlanId, tasksDir);
+
+    if (!result.plan) {
+      log(result.message);
+      return;
+    }
+
+    log(chalk.green(`Found ready dependency: ${result.plan.id} - ${result.plan.title}`));
+    log(chalk.gray(result.message));
+    phaseYamlFile = result.plan.filename;
+  } else if (options.next || options.current) {
     // Find the next ready plan or current plan
     const tasksDir = await resolveTasksDir(config);
     const plan = await findNextPlan(tasksDir, {
@@ -66,7 +95,9 @@ export async function handlePrepareCommand(
     phaseYamlFile = plan.filename;
   } else {
     if (!yamlFile) {
-      throw new Error('Please provide a plan file or use --next/--current to find a plan');
+      throw new Error(
+        'Please provide a plan file or use --next/--current/--next-ready to find a plan'
+      );
     }
     // Resolve plan file (ID or path)
     phaseYamlFile = await resolvePlanFile(yamlFile, globalOpts.config);

@@ -168,12 +168,15 @@ export class ClaudeCodeExecutor implements Executor {
             process.stdout.write('\x07');
 
             // Create a promise that resolves with the default response after timeout
+            let promptActive = true;
             const timeoutPromise = this.options.permissionsMcp?.timeout
               ? new Promise<string>((resolve) => {
                   const defaultResponse = this.options.permissionsMcp?.defaultResponse ?? 'no';
                   setTimeout(() => {
-                    log(`Permission prompt timed out, using default: ${defaultResponse}`);
-                    resolve(defaultResponse === 'yes' ? 'allow' : 'disallow');
+                    if (promptActive) {
+                      log(`\nPermission prompt timed out, using default: ${defaultResponse}`);
+                      resolve(defaultResponse === 'yes' ? 'allow' : 'disallow');
+                    }
                   }, this.options.permissionsMcp!.timeout);
                 })
               : null;
@@ -201,6 +204,7 @@ export class ClaudeCodeExecutor implements Executor {
                 [promptPromise, timeoutPromise as Promise<string>].filter(Boolean)
               );
               controller.abort(); // Cancel the prompt if timeout wins
+              promptActive = false;
 
               // Set approved based on the user's choice
               approved = userChoice === 'allow' || userChoice === 'always_allow';

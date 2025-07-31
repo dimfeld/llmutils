@@ -72,6 +72,7 @@ describe('insertAiCommentsAndPrepareDiffContexts', () => {
       id: 'comment-1',
       aiComment: 'This needs to be fixed',
       diffHunk: comment.comment.diffHunk,
+      file: 'src/example.ts',
     });
 
     // Check no errors
@@ -640,6 +641,7 @@ describe('createHybridContextPrompt', () => {
     const diffContexts: CommentDiffContext[] = [
       {
         id: 'comment-1',
+        file: 'src/example.ts',
         aiComment: 'This needs to be fixed',
         diffHunk: '@@ -1,3 +1,3 @@\n function example() {\n-  const a = 1;\n+  const a = 2;',
       },
@@ -649,7 +651,7 @@ describe('createHybridContextPrompt', () => {
 
     // Check prompt structure
     expect(prompt).toContain('<diffContexts>');
-    expect(prompt).toContain('<diffContext id="comment-1">');
+    expect(prompt).toContain('<diffContext id="comment-1" file="src/example.ts">');
     expect(prompt).toContain('<diffHunk>');
     expect(prompt).toContain('@@ -1,3 +1,3 @@');
     expect(prompt).toContain('</diffHunk>');
@@ -664,11 +666,13 @@ describe('createHybridContextPrompt', () => {
     const diffContexts: CommentDiffContext[] = [
       {
         id: 'comment-1',
+        file: 'src/file1.ts',
         aiComment: 'Fix this',
         diffHunk: 'diff1',
       },
       {
         id: 'comment-2',
+        file: 'src/file2.ts',
         aiComment: 'And this',
         diffHunk: 'diff2',
       },
@@ -677,8 +681,8 @@ describe('createHybridContextPrompt', () => {
     const prompt = createHybridContextPrompt(diffContexts);
 
     // Check both diff contexts are included
-    expect(prompt).toContain('<diffContext id="comment-1">');
-    expect(prompt).toContain('<diffContext id="comment-2">');
+    expect(prompt).toContain('<diffContext id="comment-1" file="src/file1.ts">');
+    expect(prompt).toContain('<diffContext id="comment-2" file="src/file2.ts">');
   });
 
   test('includes instructional prompt at the beginning', () => {
@@ -704,11 +708,13 @@ describe('createHybridContextPrompt', () => {
     const diffContexts: CommentDiffContext[] = [
       {
         id: 'abc-123',
+        file: 'src/test1.ts',
         aiComment: '// AI (id: abc-123): First comment',
         diffHunk: 'diff for first',
       },
       {
         id: 'def-456',
+        file: 'src/test2.ts',
         aiComment: '// AI (id: def-456): Second comment',
         diffHunk: 'diff for second',
       },
@@ -718,7 +724,7 @@ describe('createHybridContextPrompt', () => {
 
     // Verify that IDs in diffContext tags match what we expect
     // Note: The prompt contains a template example with <comment_id>, so we filter that out
-    const diffContextIds = [...prompt.matchAll(/<diffContext id="([^"]+)">/g)]
+    const diffContextIds = [...prompt.matchAll(/<diffContext id="([^"]+)"[^>]*>/g)]
       .map((m) => m[1])
       .filter((id) => id !== '<comment_id>');
     expect(diffContextIds).toEqual(['abc-123', 'def-456']);

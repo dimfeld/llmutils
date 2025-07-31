@@ -299,3 +299,462 @@ describe('handlePrepareCommand', () => {
     });
   });
 });
+
+describe('handlePrepareCommand with --next-ready flag', () => {
+  let tempDir: string;
+  let tasksDir: string;
+
+  // Mock functions
+  const logSpy = mock(() => {});
+  const errorSpy = mock(() => {});
+  const warnSpy = mock(() => {});
+  const findNextReadyDependencySpy = mock(async () => ({
+    plan: null,
+    message: 'No ready dependencies found',
+  }));
+  const resolvePlanFileSpy = mock(async () => '/mock/plan/path.plan.md');
+  const readPlanFileSpy = mock(async () => ({ id: 123, title: 'Mock Plan' }));
+  const preparePhaseSpy = mock(async () => {});
+
+  beforeEach(async () => {
+    // Clear mocks
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    warnSpy.mockClear();
+    findNextReadyDependencySpy.mockClear();
+    resolvePlanFileSpy.mockClear();
+    readPlanFileSpy.mockClear();
+    preparePhaseSpy.mockClear();
+
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-prepare-nextready-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    // Mock modules
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: warnSpy,
+    }));
+
+    await moduleMocker.mock('./find_next_dependency.js', () => ({
+      findNextReadyDependency: findNextReadyDependencySpy,
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      ...require('../plans.js'),
+      resolvePlanFile: resolvePlanFileSpy,
+      readPlanFile: readPlanFileSpy,
+      clearPlanCache: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../plans/prepare_phase.js', () => ({
+      preparePhase: preparePhaseSpy,
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../configSchema.ts', () => ({
+      resolveTasksDir: async () => tasksDir,
+    }));
+
+    // Mock git
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDir,
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up temp directory if it exists
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  test('successfully finds and operates on a ready dependency with numeric ID', async () => {
+    // Mock findNextReadyDependency to return a ready plan
+    const readyPlan: PlanSchema & { filename: string } = {
+      id: 456,
+      title: 'Ready Dependency Plan',
+      goal: 'Test dependency goal',
+      details: 'Test dependency details',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tasks: [],
+      filename: '456-ready-dependency-plan.plan.md',
+    };
+
+    findNextReadyDependencySpy.mockResolvedValueOnce({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 456)',
+    });
+
+    const options = {
+      nextReady: '123', // Parent plan ID
+      force: false,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handlePrepareCommand(undefined, options, command);
+
+    // Should call findNextReadyDependency with the parent plan ID
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir);
+
+    // Should log the success message
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found ready dependency: 456 - Ready Dependency Plan')
+    );
+
+    // Should call preparePhase with the found plan's filename
+    expect(preparePhaseSpy).toHaveBeenCalledWith(
+      '456-ready-dependency-plan.plan.md',
+      expect.any(Object),
+      expect.any(Object)
+    );
+  });
+
+  test('successfully finds and operates on a ready dependency with file path', async () => {
+    const parentPlanPath = '/mock/parent/plan.plan.md';
+
+    // Mock the plan file resolution and reading
+    resolvePlanFileSpy.mockResolvedValueOnce(parentPlanPath);
+    readPlanFileSpy.mockResolvedValueOnce({
+      id: 123,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'in_progress',
+      priority: 'high',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tasks: [],
+    });
+
+    // Mock findNextReadyDependency to return a ready plan
+    const readyPlan: PlanSchema & { filename: string } = {
+      id: 456,
+      title: 'Ready Dependency Plan',
+      goal: 'Test dependency goal',
+      details: 'Test dependency details',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tasks: [],
+      filename: '456-ready-dependency-plan.plan.md',
+    };
+
+    findNextReadyDependencySpy.mockResolvedValueOnce({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 456)',
+    });
+
+    const options = {
+      nextReady: parentPlanPath, // Parent plan file path
+      force: false,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handlePrepareCommand(undefined, options, command);
+
+    // Should resolve the plan file
+    expect(resolvePlanFileSpy).toHaveBeenCalledWith(parentPlanPath, undefined);
+
+    // Should read the plan to get its ID
+    expect(readPlanFileSpy).toHaveBeenCalledWith(parentPlanPath);
+
+    // Should call findNextReadyDependency with the parent plan ID (extracted from file)
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir);
+
+    // Should log the success message
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found ready dependency: 456 - Ready Dependency Plan')
+    );
+
+    // Should call preparePhase with the found plan's filename
+    expect(preparePhaseSpy).toHaveBeenCalledWith(
+      '456-ready-dependency-plan.plan.md',
+      expect.any(Object),
+      expect.any(Object)
+    );
+  });
+
+  test('handles case when no ready dependencies exist', async () => {
+    // Mock findNextReadyDependency to return no plan
+    findNextReadyDependencySpy.mockResolvedValueOnce({
+      plan: null,
+      message: 'No ready or pending dependencies found',
+    });
+
+    const options = {
+      nextReady: '123', // Parent plan ID
+      force: false,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handlePrepareCommand(undefined, options, command);
+
+    // Should call findNextReadyDependency
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir);
+
+    // Should log the no dependencies message
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('No ready or pending dependencies found')
+    );
+
+    // Should NOT call preparePhase
+    expect(preparePhaseSpy).not.toHaveBeenCalled();
+  });
+
+  test('handles invalid parent plan ID', async () => {
+    // Mock findNextReadyDependency to return plan not found
+    findNextReadyDependencySpy.mockResolvedValueOnce({
+      plan: null,
+      message: 'Plan not found: 999',
+    });
+
+    const options = {
+      nextReady: '999', // Invalid parent plan ID
+      force: false,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handlePrepareCommand(undefined, options, command);
+
+    // Should call findNextReadyDependency
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(999, tasksDir);
+
+    // Should log the plan not found message
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Plan not found: 999'));
+
+    // Should NOT call preparePhase
+    expect(preparePhaseSpy).not.toHaveBeenCalled();
+  });
+
+  test('handles parent plan file without valid ID', async () => {
+    const invalidPlanPath = '/mock/invalid/plan.plan.md';
+
+    // Mock the plan file resolution and reading to return a plan without ID
+    resolvePlanFileSpy.mockResolvedValueOnce(invalidPlanPath);
+    readPlanFileSpy.mockResolvedValueOnce({
+      title: 'Parent Plan Without ID',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'in_progress',
+      priority: 'high',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tasks: [],
+      // No id field
+    });
+
+    const options = {
+      nextReady: invalidPlanPath,
+      force: false,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Should throw an error about missing plan ID
+    await expect(handlePrepareCommand(undefined, options, command)).rejects.toThrow(
+      'does not have a valid ID'
+    );
+  });
+
+  test('integrates with --use-yaml option', async () => {
+    // Mock findNextReadyDependency to return a ready plan
+    const readyPlan: PlanSchema & { filename: string } = {
+      id: 456,
+      title: 'Ready Dependency Plan',
+      goal: 'Test dependency goal',
+      details: 'Test dependency details',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tasks: [],
+      filename: '456-ready-dependency-plan.plan.md',
+    };
+
+    findNextReadyDependencySpy.mockResolvedValueOnce({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 456)',
+    });
+
+    const options = {
+      nextReady: '123', // Parent plan ID
+      useYaml: true,
+      force: false,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handlePrepareCommand(undefined, options, command);
+
+    // Should call findNextReadyDependency with the parent plan ID
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir);
+
+    // Should call preparePhase with useYaml: true
+    expect(preparePhaseSpy).toHaveBeenCalledWith(
+      '456-ready-dependency-plan.plan.md',
+      expect.any(Object),
+      expect.objectContaining({
+        useYaml: true,
+      })
+    );
+  });
+
+  test('passes rmfilter arguments correctly', async () => {
+    // Mock findNextReadyDependency to return a ready plan
+    const readyPlan: PlanSchema & { filename: string } = {
+      id: 456,
+      title: 'Ready Dependency Plan',
+      goal: 'Test dependency goal',
+      details: 'Test dependency details',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tasks: [],
+      filename: '456-ready-dependency-plan.plan.md',
+    };
+
+    findNextReadyDependencySpy.mockResolvedValueOnce({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 456)',
+    });
+
+    const options = {
+      nextReady: '123', // Parent plan ID
+      force: false,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Mock process.argv to include rmfilter args
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts', '--with-imports'];
+
+    await handlePrepareCommand(undefined, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    // Should call preparePhase with rmfilter args
+    expect(preparePhaseSpy).toHaveBeenCalledWith(
+      '456-ready-dependency-plan.plan.md',
+      expect.any(Object),
+      expect.objectContaining({
+        rmfilterArgs: ['src/**/*.ts', '--with-imports'],
+      })
+    );
+  });
+
+  test('respects direct mode configuration', async () => {
+    // Mock config with direct_mode: true
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+        },
+        planning: {
+          direct_mode: true,
+        },
+      }),
+    }));
+
+    // Mock findNextReadyDependency to return a ready plan
+    const readyPlan: PlanSchema & { filename: string } = {
+      id: 456,
+      title: 'Ready Dependency Plan',
+      goal: 'Test dependency goal',
+      details: 'Test dependency details',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tasks: [],
+      filename: '456-ready-dependency-plan.plan.md',
+    };
+
+    findNextReadyDependencySpy.mockResolvedValueOnce({
+      plan: readyPlan,
+      message: 'Found ready plan: Ready Dependency Plan (ID: 456)',
+    });
+
+    const options = {
+      nextReady: '123', // Parent plan ID
+      force: false,
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handlePrepareCommand(undefined, options, command);
+
+    // Should call preparePhase with direct: true from config
+    expect(preparePhaseSpy).toHaveBeenCalledWith(
+      '456-ready-dependency-plan.plan.md',
+      expect.any(Object),
+      expect.objectContaining({
+        direct: true,
+      })
+    );
+  });
+});

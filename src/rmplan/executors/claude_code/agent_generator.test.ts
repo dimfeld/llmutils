@@ -25,7 +25,9 @@ describe('agent_generator', () => {
   afterEach(async () => {
     // Clean up
     moduleMocker.clear();
-    await rm(tempDir, { recursive: true, force: true });
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   describe('generateAgentFiles', () => {

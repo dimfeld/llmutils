@@ -34,16 +34,81 @@ import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { createWorkspace } from '../workspace/workspace_manager.js';
 import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
+import { findNextPlan } from '../plans.js';
+import { getCombinedTitleFromSummary } from '../display_utils.js';
+import { findNextReadyDependency } from './find_next_dependency.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
   options: any,
   globalCliOptions: any
 ) {
-  if (!planFile) {
-    throw new Error('Plan file is required');
+  const config = await loadEffectiveConfig(globalCliOptions.config);
+  let resolvedPlanFile: string;
+
+  if ('nextReady' in options) {
+    // Validate that --next-ready has a value (parent plan ID or file path)
+    if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
+      throw new Error('--next-ready requires a parent plan ID or file path');
+    }
+
+    // Find the next ready dependency of the specified parent plan
+    const tasksDir = await resolveTasksDir(config);
+    // Convert string ID to number or resolve plan file to get numeric ID
+    let parentPlanId: number;
+    const planIdNumber = parseInt(options.nextReady, 10);
+    if (!isNaN(planIdNumber)) {
+      parentPlanId = planIdNumber;
+    } else {
+      // Try to resolve as a file path and get the plan ID
+      const planFile = await resolvePlanFile(options.nextReady, globalCliOptions.config);
+      const plan = await readPlanFile(planFile);
+      if (!plan.id || typeof plan.id !== 'number') {
+        throw new Error(`Plan file ${planFile} does not have a valid numeric ID`);
+      }
+      parentPlanId = plan.id;
+    }
+
+    const result = await findNextReadyDependency(parentPlanId, tasksDir);
+
+    if (!result.plan) {
+      log(result.message);
+      return;
+    }
+
+    log(chalk.green(`Found ready dependency: ${result.plan.id} - ${result.plan.title}`));
+    log(chalk.gray(result.message));
+    resolvedPlanFile = result.plan.filename;
+  } else if (options.next || options.current) {
+    // Find the next ready plan or current plan
+    const tasksDir = await resolveTasksDir(config);
+    const plan = await findNextPlan(tasksDir, {
+      includePending: true,
+      includeInProgress: options.current,
+    });
+
+    if (!plan) {
+      if (options.current) {
+        log('No current plans found. No plans are in progress or ready to be implemented.');
+      } else {
+        log('No ready plans found. All pending plans have incomplete dependencies.');
+      }
+      return;
+    }
+
+    const message = options.current
+      ? `Found current plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
+      : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
+    log(chalk.green(message));
+    resolvedPlanFile = plan.filename;
+  } else {
+    if (!planFile) {
+      throw new Error('Plan file is required, or use --next/--current/--next-ready to find a plan');
+    }
+    resolvedPlanFile = planFile;
   }
-  await rmplanAgent(planFile, options, globalCliOptions);
+
+  await rmplanAgent(resolvedPlanFile, options, globalCliOptions);
 }
 
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {

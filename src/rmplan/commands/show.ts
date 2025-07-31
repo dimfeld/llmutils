@@ -19,6 +19,7 @@ import {
   resolvePlanFile,
 } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { findNextReadyDependency } from './find_next_dependency.js';
 
 export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -27,7 +28,40 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
   let resolvedPlanFile: string;
 
-  if (options.next || options.current) {
+  if (options.nextReady) {
+    // Validate that --next-ready has a value (parent plan ID or file path)
+    if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
+      throw new Error('--next-ready requires a parent plan ID or file path');
+    }
+
+    // Find the next ready dependency of the specified parent plan
+    const tasksDir = await resolveTasksDir(config);
+    // Convert string ID to number or resolve plan file to get numeric ID
+    let parentPlanId: number;
+    const planIdNumber = parseInt(options.nextReady, 10);
+    if (!isNaN(planIdNumber)) {
+      parentPlanId = planIdNumber;
+    } else {
+      // Try to resolve as a file path and get the plan ID
+      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
+      const plan = await readPlanFile(planFile);
+      if (!plan.id || typeof plan.id !== 'number') {
+        throw new Error(`Plan file ${planFile} does not have a valid numeric ID`);
+      }
+      parentPlanId = plan.id;
+    }
+
+    const result = await findNextReadyDependency(parentPlanId, tasksDir);
+
+    if (!result.plan) {
+      log(result.message);
+      return;
+    }
+
+    log(chalk.green(`Found ready dependency: ${result.plan.id} - ${result.plan.title}`));
+    log(chalk.gray(result.message));
+    resolvedPlanFile = result.plan.filename;
+  } else if (options.next || options.current) {
     // Find the next ready plan or current plan
     const tasksDir = await resolveTasksDir(config);
     const plan = await findNextPlan(tasksDir, {
@@ -51,7 +85,9 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     resolvedPlanFile = plan.filename;
   } else {
     if (!planFile) {
-      throw new Error('Please provide a plan file or use --next/--current to find a plan');
+      throw new Error(
+        'Please provide a plan file or use --next/--current/--next-ready to find a plan'
+      );
     }
     resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
   }
