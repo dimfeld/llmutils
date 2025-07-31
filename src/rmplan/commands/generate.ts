@@ -42,6 +42,7 @@ import {
 } from '../prompt.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
+import { findNextReadyDependency } from './find_next_dependency.js';
 
 /**
  * Creates a stub plan YAML file with the given plan text in the details field
@@ -163,6 +164,49 @@ export async function handleGenerateCommand(
     planArg = undefined;
   }
 
+  // Validate input options first
+  let planOptionsSet = [planArg, options.plan, options.planEditor, options.issue, options.nextReady].reduce(
+    (acc, val) => acc + (val ? 1 : 0),
+    0
+  );
+
+  // Manual conflict check for --plan, --plan-editor, --issue, and --next-ready
+  if (planOptionsSet !== 1) {
+    throw new Error(
+      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, or --next-ready <planId>'
+    );
+  }
+
+  // Handle --next-ready option - find and operate on next ready dependency
+  if (options.nextReady) {
+    const tasksDir = await resolveTasksDir(config);
+    // Convert string ID to number or resolve plan file to get numeric ID
+    let parentPlanId: number;
+    const planIdNumber = parseInt(options.nextReady, 10);
+    if (!isNaN(planIdNumber)) {
+      parentPlanId = planIdNumber;
+    } else {
+      // Try to resolve as a file path and get the plan ID
+      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
+      const plan = await readPlanFile(planFile);
+      parentPlanId = plan.id;
+    }
+    
+    const result = await findNextReadyDependency(parentPlanId, tasksDir);
+    
+    if (!result.plan) {
+      log(chalk.yellow(result.message));
+      return;
+    }
+    
+    log(chalk.green(`Found ready dependency: ${result.plan.id} - ${result.plan.title}`));
+    log(chalk.gray(result.message));
+    
+    // Set the resolved plan as the target
+    options.plan = result.plan.filename;
+    planArg = undefined; // Clear planArg since we're using options.plan
+  }
+
   // Handle --use-yaml option which skips generation and uses the file as if it was pasted
   if (options.useYaml) {
     const yamlContent = await Bun.file(options.useYaml).text();
@@ -186,18 +230,6 @@ export async function handleGenerateCommand(
 
     await extractMarkdownToYaml(yamlContent, config, options.quiet ?? false, extractOptions);
     return;
-  }
-
-  let planOptionsSet = [planArg, options.plan, options.planEditor, options.issue].reduce(
-    (acc, val) => acc + (val ? 1 : 0),
-    0
-  );
-
-  // Manual conflict check for --plan and --plan-editor
-  if (planOptionsSet !== 1) {
-    throw new Error(
-      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, or --issue <url|number>'
-    );
   }
 
   if (planArg) {

@@ -341,6 +341,7 @@ program
   .description('Display detailed information about a plan. Can be a file path or plan ID.')
   .option('--next', 'Show the next plan that is ready to be implemented')
   .option('--current', 'Show the current plan (in_progress or next ready plan)')
+  .option('--next-ready <planId>', 'Find and show the next ready dependency of the specified parent plan')
   .option('--copy-details', 'Copy the plan details to the clipboard')
   .option('--full', 'Display full details without truncation')
   .action(async (planFile, options, command) => {
