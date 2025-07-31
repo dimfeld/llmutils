@@ -1355,13 +1355,14 @@ describe('ClaudeCodeExecutor', () => {
   });
 
   describe('auto-approval for tracked file deletions', () => {
-    test('auto-approves rm command for tracked files', async () => {
+    test('auto-approves rm command for tracked files when flag is enabled', async () => {
       const executor = new ClaudeCodeExecutor(
         {
           allowedTools: [],
           disallowedTools: [],
           allowAllTools: false,
           permissionsMcp: { enabled: true },
+          autoApproveCreatedFileDeletion: true,
         },
         mockSharedOptions,
         mockConfig
@@ -1803,13 +1804,14 @@ describe('ClaudeCodeExecutor', () => {
       server.close(() => {});
     });
 
-    test('auto-approval works with various rm command formats', async () => {
+    test('auto-approval works with various rm command formats when flag is enabled', async () => {
       const executor = new ClaudeCodeExecutor(
         {
           allowedTools: [],
           disallowedTools: [],
           allowAllTools: false,
           permissionsMcp: { enabled: true },
+          autoApproveCreatedFileDeletion: true,
         },
         mockSharedOptions,
         mockConfig
@@ -1898,13 +1900,14 @@ describe('ClaudeCodeExecutor', () => {
     });
   });
 
-  test('logs the correct message format when auto-approving', async () => {
+  test('logs the correct message format when auto-approving with flag enabled', async () => {
     const executor = new ClaudeCodeExecutor(
       {
         allowedTools: [],
         disallowedTools: [],
         allowAllTools: false,
         permissionsMcp: { enabled: true },
+        autoApproveCreatedFileDeletion: true,
       },
       mockSharedOptions,
       mockConfig
@@ -2099,6 +2102,406 @@ describe('ClaudeCodeExecutor', () => {
 
     // Clean up
     server.close(() => {});
+  });
+
+  describe('configuration flag testing', () => {
+    test('does not auto-approve when autoApproveCreatedFileDeletion is false', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+          autoApproveCreatedFileDeletion: false,
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add files to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise((resolve, reject) => {
+            // Simulate a timeout by never resolving
+          });
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that tracked files are NOT auto-approved when flag is false
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/tracked-file.txt' },
+      });
+
+      // Should not have been auto-approved and should fall through to normal permission flow
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('does not auto-approve when autoApproveCreatedFileDeletion is undefined', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+          // autoApproveCreatedFileDeletion not set (undefined)
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add files to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise((resolve, reject) => {
+            // Simulate a timeout by never resolving
+          });
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that tracked files are NOT auto-approved when flag is undefined
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/tracked-file.txt' },
+      });
+
+      // Should not have been auto-approved and should fall through to normal permission flow
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('only auto-approves when flag is explicitly true', async () => {
+      // Test with various falsy and truthy values that are not exactly true
+      const testCases = [
+        { flag: false, shouldAutoApprove: false },
+        { flag: 0, shouldAutoApprove: false },
+        { flag: '', shouldAutoApprove: false },
+        { flag: null, shouldAutoApprove: false },
+        { flag: undefined, shouldAutoApprove: false },
+        { flag: 1, shouldAutoApprove: false }, // truthy but not true
+        { flag: 'true', shouldAutoApprove: false }, // string but not boolean true
+        { flag: true, shouldAutoApprove: true }, // only this should work
+      ];
+
+      for (const { flag, shouldAutoApprove } of testCases) {
+        const executor = new ClaudeCodeExecutor(
+          {
+            allowedTools: [],
+            disallowedTools: [],
+            allowAllTools: false,
+            permissionsMcp: { enabled: true, timeout: 50, defaultResponse: 'no' },
+            autoApproveCreatedFileDeletion: flag as any,
+          },
+          mockSharedOptions,
+          mockConfig
+        );
+
+        // Add files to trackedFiles
+        const trackedFiles = (executor as any).trackedFiles as Set<string>;
+        trackedFiles.add('/tmp/test/tracked-file.txt');
+
+        // Mock the permission socket server creation and handling
+        let permissionRequestHandler: (message: any) => Promise<void>;
+        const mockSocket = {
+          on: mock((event: string, handler: any) => {
+            if (event === 'data') {
+              permissionRequestHandler = async (message: any) => {
+                const buffer = Buffer.from(JSON.stringify(message));
+                await handler(buffer);
+              };
+            }
+          }),
+          write: mock(),
+        };
+
+        const mockServer = {
+          listen: mock((path: string, callback: () => void) => {
+            callback();
+          }),
+          on: mock(),
+          close: mock((callback: () => void) => {
+            callback();
+          }),
+        };
+
+        await moduleMocker.mock('net', () => ({
+          createServer: mock((handler: any) => {
+            handler(mockSocket);
+            return mockServer;
+          }),
+        }));
+
+        if (!shouldAutoApprove) {
+          // Mock inquirer prompts to simulate timeout for non-auto-approved cases
+          await moduleMocker.mock('@inquirer/prompts', () => ({
+            select: mock(() => {
+              return new Promise((resolve, reject) => {
+                // Simulate a timeout by never resolving
+              });
+            }),
+          }));
+        }
+
+        // Mock other dependencies
+        await moduleMocker.mock('../../common/git.ts', () => ({
+          getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+        }));
+
+        await moduleMocker.mock('fs/promises', () => ({
+          mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+          rm: mock(() => Promise.resolve()),
+        }));
+
+        // Create the permission socket server
+        const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+        // Test the behavior
+        const response = mock();
+        mockSocket.write = response;
+
+        await permissionRequestHandler({
+          type: 'permission_request',
+          tool_name: 'Bash',
+          input: { command: 'rm /tmp/test/tracked-file.txt' },
+        });
+
+        if (shouldAutoApprove) {
+          // Should have been auto-approved
+          expect(response).toHaveBeenCalledWith(
+            JSON.stringify({
+              type: 'permission_response',
+              approved: true,
+            }) + '\n'
+          );
+        } else {
+          // Should not have been auto-approved
+          expect(response).not.toHaveBeenCalledWith(
+            JSON.stringify({
+              type: 'permission_response',
+              approved: true,
+            }) + '\n'
+          );
+        }
+
+        // Clean up
+        server.close(() => {});
+        moduleMocker.clear();
+      }
+    });
+
+    test('backward compatibility - feature is disabled by default', async () => {
+      // Create executor without autoApproveCreatedFileDeletion option
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add files to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Verify that autoApproveCreatedFileDeletion is undefined by default
+      expect((executor as any).options.autoApproveCreatedFileDeletion).toBeUndefined();
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise((resolve, reject) => {
+            // Simulate a timeout by never resolving
+          });
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that even tracked files are NOT auto-approved by default
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/tracked-file.txt' },
+      });
+
+      // Should not have been auto-approved since feature is disabled by default
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
   });
 
   afterEach(() => {
