@@ -56,17 +56,7 @@ describe('claudeCodeOptionsSchema', () => {
     });
 
     test('rejects non-boolean values', () => {
-      const testCases = [
-        'true',
-        'false',
-        1,
-        0,
-        null,
-        {},
-        [],
-        'yes',
-        'no',
-      ];
+      const testCases = ['true', 'false', 1, 0, null, {}, [], 'yes', 'no'];
 
       for (const testCase of testCases) {
         const result = claudeCodeOptionsSchema.safeParse({
@@ -181,9 +171,11 @@ describe('claudeCodeOptionsSchema', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues.some(issue => 
-          issue.path.includes('permissionsMcp') && issue.path.includes('enabled')
-        )).toBe(true);
+        expect(
+          result.error.issues.some(
+            (issue) => issue.path.includes('permissionsMcp') && issue.path.includes('enabled')
+          )
+        ).toBe(true);
       }
     });
   });
@@ -191,16 +183,16 @@ describe('claudeCodeOptionsSchema', () => {
   describe('type inference', () => {
     test('inferred type includes autoApproveCreatedFileDeletion as optional boolean', () => {
       type ClaudeCodeOptions = z.infer<typeof claudeCodeOptionsSchema>;
-      
+
       // This is a compile-time test - if this compiles, the types are correct
       const options1: ClaudeCodeOptions = {
         autoApproveCreatedFileDeletion: true,
       };
-      
+
       const options2: ClaudeCodeOptions = {
         autoApproveCreatedFileDeletion: false,
       };
-      
+
       const options3: ClaudeCodeOptions = {
         // autoApproveCreatedFileDeletion is optional, so can be omitted
       };
@@ -226,7 +218,7 @@ describe('other executor schemas', () => {
     const result2 = copyPasteOptionsSchema.safeParse({
       executionModel: 'google/gemini-2.5-pro',
     });
-    
+
     expect(result2.success).toBe(true);
     if (result2.success) {
       expect(result2.data.executionModel).toBe('google/gemini-2.5-pro');
@@ -240,7 +232,7 @@ describe('other executor schemas', () => {
     const result2 = directCallOptionsSchema.safeParse({
       executionModel: 'google/gemini-2.5-pro',
     });
-    
+
     expect(result2.success).toBe(true);
     if (result2.success) {
       expect(result2.data.executionModel).toBe('google/gemini-2.5-pro');
@@ -261,9 +253,9 @@ describe('claudeCodeOptionsSchema integration with configuration validation', ()
   test('schema description includes helpful information', () => {
     const schemaShape = claudeCodeOptionsSchema.shape;
     const autoApproveField = schemaShape.autoApproveCreatedFileDeletion;
-    
+
     expect(autoApproveField).toBeDefined();
-    
+
     // Access the description using the description property
     const description = autoApproveField.description;
     expect(typeof description).toBe('string');
@@ -277,14 +269,14 @@ describe('claudeCodeOptionsSchema integration with configuration validation', ()
     const partialConfigs = [
       { autoApproveCreatedFileDeletion: true },
       { allowAllTools: true, autoApproveCreatedFileDeletion: false },
-      { 
-        permissionsMcp: { enabled: true }, 
-        autoApproveCreatedFileDeletion: true 
+      {
+        permissionsMcp: { enabled: true },
+        autoApproveCreatedFileDeletion: true,
       },
-      { 
-        allowedTools: ['Write'], 
+      {
+        allowedTools: ['Write'],
         autoApproveCreatedFileDeletion: false,
-        interactive: true 
+        interactive: true,
       },
     ];
 
@@ -303,21 +295,21 @@ describe('claudeCodeOptionsSchema integration with configuration validation', ()
       autoApproveCreatedFileDeletion: true,
       permissionsMcp: { enabled: false },
     });
-    
+
     expect(result1.success).toBe(true);
 
     // Test that autoApproveCreatedFileDeletion works when permissionsMcp is not provided
     const result2 = claudeCodeOptionsSchema.safeParse({
       autoApproveCreatedFileDeletion: true,
     });
-    
+
     expect(result2.success).toBe(true);
 
     // Test that the schema accepts boolean but rejects truthy/falsy values
     const result3 = claudeCodeOptionsSchema.safeParse({
       autoApproveCreatedFileDeletion: 1, // truthy but not boolean
     });
-    
+
     expect(result3.success).toBe(false);
   });
 });

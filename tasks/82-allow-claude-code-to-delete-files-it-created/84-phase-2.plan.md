@@ -13,7 +13,7 @@ parent: 82
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T09:31:35.989Z
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T09:31:36.278Z
+updatedAt: 2025-07-31T09:39:35.945Z
 tasks:
   - title: Add a configuration option to enable or disable auto-approval
     description: >
@@ -35,7 +35,7 @@ tasks:
 
           Follow the existing pattern used for other optional boolean properties
           in the schema.
-        done: false
+        done: true
   - title: Connect the configuration flag to the auto-approval logic
     description: >
       The auto-approval logic implemented in Phase 1 (lines 285-315 of
@@ -138,6 +138,14 @@ tasks:
           Explain that this allows Claude Code to automatically delete files it
           created without prompting.
         done: false
+changedFiles:
+  - src/rmplan/executors/build.test.ts
+  - src/rmplan/executors/claude_code/format.test.ts
+  - src/rmplan/executors/claude_code/format.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/schemas.test.ts
+  - src/rmplan/executors/schemas.ts
 rmfilter:
   - src/rmplan/executors/
 ---
