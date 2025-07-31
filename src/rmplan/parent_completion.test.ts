@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { markTaskDone, markStepDone } from './actions.js';
+import { markTaskDone, markStepDone } from './plans/mark_done.js';
 import { clearPlanCache, readPlanFile, writePlanFile } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import type { RmplanConfig } from './configSchema.js';

@@ -5,7 +5,7 @@ title: Ability to run, generate, prepare, or agent commands on the next ready
 goal: To enhance the user experience with improved error handling and to provide
   clear documentation for the new feature.
 id: 84
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - 83
@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T18:25:01.862Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T19:06:26.506Z
+updatedAt: 2025-07-31T19:19:30.403Z
 tasks:
   - title: Enhance Error Handling and User Feedback
     description: >
@@ -207,21 +207,25 @@ tasks:
           explaining the problem it solves, how it works internally, readiness
           criteria, and comprehensive examples for each command that supports
           it.
-        done: false
+        done: true
       - prompt: >
           Add a new section to README.md titled "Working with Plan Dependencies"
           after the existing rmplan usage examples. Include a brief introduction
           and overview, then incorporate the key content from
           docs/next-ready-feature.md, focusing on practical usage examples and
           workflow integration.
-        done: false
+        done: true
       - prompt: >
           Update the main rmplan feature list in README.md to mention the new
           dependency-based execution capability. Add --next-ready examples to
           the existing command examples where appropriate to show how it
           integrates with the normal workflow.
-        done: false
+        done: true
 changedFiles:
+  - README.md
+  - docs/next-ready-feature.md
+  - src/rmfilter/additional_docs.test.ts
+  - src/rmplan/cleanup.test.ts
   - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/cli_integration.test.ts
@@ -239,9 +243,12 @@ changedFiles:
   - src/rmplan/dependency_traversal.ts
   - src/rmplan/executors/claude_code/agent_generator.test.ts
   - src/rmplan/executors/claude_code.ts
+  - src/rmplan/parent_completion.test.ts
   - src/rmplan/plans/plan_state_utils.test.ts
   - src/rmplan/plans/plan_state_utils.ts
+  - src/rmplan/plans.ts
   - src/rmplan/rmplan.ts
+  - src/rmpr/modes/hybrid_context.test.ts
 rmfilter:
   - src/rmplan
 ---

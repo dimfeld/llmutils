@@ -506,6 +506,11 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
     parsed = yaml.parse(content);
   }
 
+  // Ensure parsed is a valid object
+  if (!parsed || typeof parsed !== 'object') {
+    parsed = {};
+  }
+
   // If we have a markdown body, add it to the details field
   if (markdownBody) {
     // If there's already a details field in the YAML, combine them

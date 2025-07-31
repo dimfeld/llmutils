@@ -7,12 +7,13 @@ The `--next-ready` feature in rmplan enables automated workflow management by al
 When working with large software projects, you often break work into multiple phases or components with clear dependencies between them. For example:
 
 - Phase 1: Set up database schema
-- Phase 2: Create API endpoints (depends on Phase 1)  
+- Phase 2: Create API endpoints (depends on Phase 1)
 - Phase 3: Build frontend components (depends on Phase 2)
 - Phase 4: Add authentication (depends on Phase 1)
 - Phase 5: Integrate auth with frontend (depends on Phase 3 and Phase 4)
 
 Without automated dependency management, you need to manually track:
+
 - Which phases are complete
 - Which phases are ready to start (all dependencies done)
 - Which phase to work on next when multiple are ready
@@ -190,13 +191,13 @@ title: "Set up database schema"
 dependencies: []  # No dependencies, can start immediately
 
 # plan-102.yml - API Layer
-id: 102  
+id: 102
 title: "Create API endpoints"
 dependencies: [101]  # Depends on database schema
 
 # plan-103.yml - Frontend
 id: 103
-title: "Build user interface" 
+title: "Build user interface"
 dependencies: [102]  # Depends on API layer
 ```
 
@@ -209,7 +210,7 @@ Set appropriate priorities to guide execution order when multiple dependencies a
 priority: high
 
 # Medium priority - normal implementation
-priority: medium  
+priority: medium
 
 # Low priority - nice-to-have features
 priority: low
@@ -225,7 +226,7 @@ Ensure dependencies have actionable tasks, not just stubs:
 ```bash
 # Prepare all dependencies with detailed steps
 rmplan prepare 101  # Database schema plan
-rmplan prepare 102  # API endpoints plan  
+rmplan prepare 102  # API endpoints plan
 rmplan prepare 103  # Frontend plan
 
 # Now --next-ready can find and execute them automatically
@@ -239,11 +240,11 @@ Structure parent plans to represent complete features or milestones:
 ```yaml
 # Parent plan coordinates multiple phases
 id: 100
-title: "User Authentication System"
+title: 'User Authentication System'
 status: pending
-dependencies: []  # Parent doesn't depend on children
+dependencies: [] # Parent doesn't depend on children
 
-# Child plans implement specific components  
+# Child plans implement specific components
 # Each child can have: parent: 100
 ```
 
@@ -256,6 +257,7 @@ rmplan show --next-ready 100 --debug
 ```
 
 This shows:
+
 - BFS traversal through the dependency graph
 - Filtering decisions (why plans are included/excluded)
 - Readiness checks for each candidate
@@ -293,7 +295,7 @@ rmplan agent --next-ready sprint-1-plan --workspace $(whoami)
 # Parent plan coordinates work across repositories
 # Each dependency can specify different rmfilter targets
 rmplan generate --next-ready infra-plan -- infrastructure/**/*.tf
-rmplan generate --next-ready app-plan -- src/**/*.ts  
+rmplan generate --next-ready app-plan -- src/**/*.ts
 rmplan generate --next-ready docs-plan -- docs/**/*.md
 ```
 

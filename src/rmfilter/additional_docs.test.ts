@@ -69,7 +69,7 @@ describe('getAdditionalDocs', () => {
     const result = await gatherDocsInternal(baseDir, { docs: ['manual_doc.md'] });
 
     expect(result.docsTag).toBe(
-      '<documents>\n<document><![CDATA[\nManual doc content.\n]]></document>\n</documents>'
+      '<documents>\n<document filename="../../../../../project/root/manual_doc.md"><![CDATA[\nManual doc content.\n]]></document>\n</documents>'
     );
     expect(result.rulesTag).toBe('');
   });
@@ -82,7 +82,7 @@ describe('getAdditionalDocs', () => {
     const result = await gatherDocsInternal(baseDir, { docs: ['*.md'] });
 
     expect(result.docsTag).toBe(
-      '<documents>\n<document><![CDATA[\nDoc 1\n]]></document>\n<document><![CDATA[\nDoc 2\n]]></document>\n</documents>'
+      '<documents>\n<document filename="../../../../../project/root/doc1.md"><![CDATA[\nDoc 1\n]]></document>\n<document filename="../../../../../project/root/doc2.md"><![CDATA[\nDoc 2\n]]></document>\n</documents>'
     );
   });
 
@@ -94,7 +94,7 @@ describe('getAdditionalDocs', () => {
     const result = await gatherDocsInternal(baseDir, { rules: ['manual_rule.txt'] });
 
     expect(result.rulesTag).toBe(
-      '<rules>\n<rule><![CDATA[\nManual rule content.\n]]></rule>\n</rules>'
+      '<rules>\n<rule filename="../../../../../project/root/manual_rule.txt"><![CDATA[\nManual rule content.\n]]></rule>\n</rules>'
     );
     expect(result.docsTag).toBe('');
   });
@@ -109,7 +109,7 @@ describe('getAdditionalDocs', () => {
     const result = await gatherDocsInternal(baseDir, { rules: ['*.txt'] });
 
     expect(result.rulesTag).toBe(
-      '<rules>\n<rule><![CDATA[\nRule 1\n]]></rule>\n<rule><![CDATA[\nRule 2\n]]></rule>\n</rules>'
+      '<rules>\n<rule filename="../../../../../project/root/rule1.txt"><![CDATA[\nRule 1\n]]></rule>\n<rule filename="../../../../../project/root/rule2.txt"><![CDATA[\nRule 2\n]]></rule>\n</rules>'
     );
   });
 
@@ -121,7 +121,7 @@ describe('getAdditionalDocs', () => {
     const result = await gatherDocsInternal(baseDir, {});
 
     expect(result.rulesTag).toBe(
-      '<rules>\n<rule><![CDATA[\nCursor rule content.\n]]></rule>\n</rules>'
+      '<rules>\n<rule filename=".cursorrules"><![CDATA[\nCursor rule content.\n]]></rule>\n</rules>'
     );
   });
 
@@ -165,7 +165,7 @@ describe('getAdditionalDocs', () => {
   it('should include MDC file with type "docs" and description', async () => {
     const result = await gatherDocsInternal(baseDir, {}, [mockMdcDoc]);
     expect(result.docsTag).toBe(
-      '<documents>\n<document description="An MDC Document"><![CDATA[\nMDC Doc Content\n]]></document>\n</documents>'
+      '<documents>\n<document filename="../../../../../project/root/.cursor/rules/doc_rule.mdc" description="An MDC Document"><![CDATA[\nMDC Doc Content\n]]></document>\n</documents>'
     );
     expect(result.rulesTag).toBe('');
   });
@@ -173,7 +173,7 @@ describe('getAdditionalDocs', () => {
   it('should include MDC file with type "rules" and description (with escaped quotes)', async () => {
     const result = await gatherDocsInternal(baseDir, {}, [mockMdcRule]);
     expect(result.rulesTag).toBe(
-      '<rules>\n<rule description="An MDC Rule with &quot;quotes&quot;"><![CDATA[\nMDC Rule Content\n]]></rule>\n</rules>'
+      '<rules>\n<rule filename="../../../../../project/root/.cursor/rules/style_rule.mdc" description="An MDC Rule with &quot;quotes&quot;"><![CDATA[\nMDC Rule Content\n]]></rule>\n</rules>'
     );
     expect(result.docsTag).toBe('');
   });
@@ -181,7 +181,7 @@ describe('getAdditionalDocs', () => {
   it('should default MDC file type to "docs" if missing', async () => {
     const result = await gatherDocsInternal(baseDir, {}, [mockMdcDefaultType]);
     expect(result.rulesTag).toBe(
-      '<rules>\n<rule description="Default type is rule"><![CDATA[\nMDC Default Type Content\n]]></rule>\n</rules>'
+      '<rules>\n<rule filename="../../../../../project/root/.cursor/rules/default_rule.mdc" description="Default type is rule"><![CDATA[\nMDC Default Type Content\n]]></rule>\n</rules>'
     );
   });
 
@@ -211,8 +211,8 @@ describe('getAdditionalDocs', () => {
 
     expect(result.docsTag).toBe(
       '<documents>\n' +
-        '<document><![CDATA[\nManual doc.\n]]></document>\n' +
-        '<document description="An MDC Document"><![CDATA[\nMDC Doc Content\n]]></document>\n' +
+        '<document filename="../../../../../project/root/manual_doc.md"><![CDATA[\nManual doc.\n]]></document>\n' +
+        '<document filename="../../../../../project/root/.cursor/rules/doc_rule.mdc" description="An MDC Document"><![CDATA[\nMDC Doc Content\n]]></document>\n' +
         '</documents>'
     );
   });
@@ -227,9 +227,9 @@ describe('getAdditionalDocs', () => {
 
     expect(result.rulesTag).toBe(
       '<rules>\n' +
-        '<rule><![CDATA[\nManual rule.\n]]></rule>\n' + // Manual rule first
-        '<rule><![CDATA[\nCursor rule.\n]]></rule>\n' + // Then .cursorrules
-        '<rule description="An MDC Rule with &quot;quotes&quot;"><![CDATA[\nMDC Rule Content\n]]></rule>\n' + // Then MDC rule
+        '<rule filename="../../../../../project/root/.cursor/rules/style_rule.mdc"><![CDATA[\nManual rule.\n]]></rule>\n' + // Manual rule first
+        '<rule filename="../../../../../project/root/manual_rule.txt"><![CDATA[\nCursor rule.\n]]></rule>\n' + // Then .cursorrules
+        '<rule filename="../../../../../project/root/.cursor/rules/style_rule.mdc" description="An MDC Rule with &quot;quotes&quot;"><![CDATA[\nMDC Rule Content\n]]></rule>\n' + // Then MDC rule
         '</rules>'
     );
   });
@@ -250,7 +250,7 @@ describe('getAdditionalDocs', () => {
     const result = await gatherDocsInternal(baseDir, { docs: ['manual_doc.md'] }, []); // Pass empty array
 
     expect(result.docsTag).toBe(
-      '<documents>\n<document><![CDATA[\nManual doc content.\n]]></document>\n</documents>'
+      '<documents>\n<document filename="../../../../../project/root/manual_doc.md"><![CDATA[\nManual doc content.\n]]></document>\n</documents>'
     );
     expect(result.rulesTag).toBe('');
   });

@@ -611,7 +611,7 @@ rmplan agent --next-ready 100
 # Executes: "Database Schema Setup" (ID: 101)
 
 # 3. After completion, next dependency becomes ready
-rmplan show --next-ready 100  
+rmplan show --next-ready 100
 # Found ready plan: API Endpoints (ID: 102)
 
 # 4. Continue until all dependencies complete
@@ -633,7 +633,7 @@ rmplan show --next-ready 100
 # → No dependencies found for this plan
 
 # All dependencies complete
-rmplan show --next-ready 100  
+rmplan show --next-ready 100
 # → All dependencies are complete - ready to work on the parent plan
 
 # Dependencies need preparation
@@ -643,7 +643,7 @@ rmplan show --next-ready 100
 
 # Dependencies are blocked
 rmplan show --next-ready 100
-# → 3 dependencies are blocked by incomplete prerequisites  
+# → 3 dependencies are blocked by incomplete prerequisites
 # → Try: Work on the blocking dependencies first
 ```
 
@@ -652,23 +652,26 @@ rmplan show --next-ready 100
 To maximize effectiveness:
 
 **1. Clear Dependency Chains**
+
 ```yaml
 # Child plans specify their dependencies
 id: 102
-title: "API Endpoints"  
-dependencies: [101]  # Depends on Database Schema (101)
-parent: 100         # Part of larger feature (100)
+title: 'API Endpoints'
+dependencies: [101] # Depends on Database Schema (101)
+parent: 100 # Part of larger feature (100)
 ```
 
 **2. Appropriate Priorities**
+
 ```yaml
 priority: high    # Critical path items
-priority: medium  # Normal implementation  
+priority: medium  # Normal implementation
 priority: low     # Nice-to-have features
 priority: maybe   # Optional (excluded from --next-ready)
 ```
 
 **3. Prepared Tasks**
+
 ```bash
 # Ensure dependencies have actionable tasks
 rmplan prepare 101  # Database schema

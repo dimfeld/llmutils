@@ -2,7 +2,7 @@ import { test, expect, mock, describe } from 'bun:test';
 import { cleanComments } from './cleanup';
 import type { RmplanConfig } from './configSchema.ts';
 import type { PlanSchema } from './planSchema.ts';
-import { prepareNextStep } from './actions.ts';
+import { prepareNextStep } from './plans/prepare_step.js';
 import yaml from 'yaml';
 
 describe('cleanComments', () => {
