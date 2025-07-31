@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
+import type { ExecutorCommonOptions, Executor, ExecutorFactory, ExecutePlanInfo } from './types';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { applyLlmEdits, type ApplyLlmEditsOptions } from '../../apply-llm-edits/apply';
 import { log } from '../../logging';
@@ -48,7 +48,8 @@ export class OneCallExecutor implements Executor {
     return options;
   }
 
-  async execute(contextContent: string) {
+  async execute(contextContent: string, _planInfo: ExecutePlanInfo) {
+    // This executor doesn't use plan information
     const retryRequester = createRetryRequester(this.executionModel);
     const { text: llmOutput } = await runStreamingPrompt({
       input: contextContent,

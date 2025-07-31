@@ -32,7 +32,11 @@ test('runPlanContextWithExecutor - successful execution', async () => {
 
   // Verify
   expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(executorName, commonOpts, rmplanConfig);
-  expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent);
+  expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent, {
+    planId: 'standalone',
+    planTitle: 'Standalone Execution',
+    planFilePath: 'N/A',
+  });
   expect(mockError).not.toHaveBeenCalled();
 });
 
@@ -88,7 +92,11 @@ test('runPlanContextWithExecutor - executor.execute throws error', async () => {
   expect(mockError).toHaveBeenCalledWith(
     'Failed to execute with executor test-executor: Execution failed'
   );
-  expect(failingExecutor.execute).toHaveBeenCalledWith(contextContent);
+  expect(failingExecutor.execute).toHaveBeenCalledWith(contextContent, {
+    planId: 'standalone',
+    planTitle: 'Standalone Execution',
+    planFilePath: 'N/A',
+  });
 });
 
 test('runPlanContextWithExecutor - verifies parameter passing', async () => {
@@ -118,7 +126,11 @@ test('runPlanContextWithExecutor - verifies parameter passing', async () => {
 
   // Verify exact parameter passing
   expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(executorName, commonOpts, rmplanConfig);
-  expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent);
+  expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent, {
+    planId: 'standalone',
+    planTitle: 'Standalone Execution',
+    planFilePath: 'N/A',
+  });
 });
 
 beforeEach(async () => {

@@ -314,11 +314,10 @@ describe('prompt_builder', () => {
 
       // Check that execution guidelines are included
       expect(result).toContain('## Execution Guidelines');
-      expect(result).toContain('### 1. Understand the Codebase Context');
-      expect(result).toContain('### 2. Track Your Progress');
-      expect(result).toContain('### 3. Follow Best Practices');
-      expect(result).toContain('### 4. Verify Your Work');
-      expect(result).toContain('### 5. Self-Review Checklist');
+      expect(result).toContain('### Understand the Codebase Context');
+      expect(result).toContain('### Follow Best Practices');
+      expect(result).toContain('### Verify Your Work');
+      expect(result).toContain('### Self-Review Checklist');
       expect(result).toContain('Quality is more important than speed');
     });
   });

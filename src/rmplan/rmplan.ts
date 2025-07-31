@@ -39,6 +39,7 @@ import { setDebug } from '../common/process.js';
 import { executors } from './executors/index.js';
 import { handleCommandError } from './utils/commands.js';
 import { prioritySchema, statusSchema } from './planSchema.js';
+import { CleanupRegistry } from '../common/cleanup_registry.js';
 
 function intArg(value: string | undefined): number | undefined;
 function intArg(value: string[] | undefined): number[] | undefined;
@@ -493,6 +494,29 @@ workspaceCommand
 
 async function run() {
   await loadEnv();
+
+  // Set up signal handlers for cleanup
+  const cleanupRegistry = CleanupRegistry.getInstance();
+
+  process.on('exit', () => {
+    cleanupRegistry.executeAll();
+  });
+
+  process.on('SIGINT', () => {
+    cleanupRegistry.executeAll();
+    process.exit(130); // Unix convention for SIGINT
+  });
+
+  process.on('SIGTERM', () => {
+    cleanupRegistry.executeAll();
+    process.exit();
+  });
+
+  process.on('SIGHUP', () => {
+    cleanupRegistry.executeAll();
+    process.exit();
+  });
+
   await program.parseAsync(process.argv);
 }
 

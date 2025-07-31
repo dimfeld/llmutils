@@ -3,12 +3,14 @@ import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import * as fsSync from 'node:fs';
 import { debugLog, log } from '../../logging.ts';
+import { CleanupRegistry } from '../../common/cleanup_registry.ts';
 import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { Executor, ExecutorCommonOptions } from './types.ts';
+import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
 import { formatJsonMessage } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
@@ -17,6 +19,13 @@ import { confirm, select } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 import { waitForEnter } from '../../common/terminal.ts';
+import { wrapWithOrchestration } from './claude_code/orchestrator_prompt.ts';
+import { generateAgentFiles, removeAgentFiles } from './claude_code/agent_generator.ts';
+import {
+  getImplementerPrompt,
+  getTesterPrompt,
+  getReviewerPrompt,
+} from './claude_code/agent_prompts.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -33,6 +42,7 @@ export class ClaudeCodeExecutor implements Executor {
   readonly filePathPrefix = '@';
   readonly todoDirections = '- Use the TodoWrite tool to maintain your TODO list.';
   private alwaysAllowedTools = new Map<string, true | string[]>();
+  private planInfo?: ExecutePlanInfo;
 
   constructor(
     public options: ClaudeCodeExecutorOptions,
@@ -270,8 +280,22 @@ export class ClaudeCodeExecutor implements Executor {
     return server;
   }
 
-  async execute(contextContent: string) {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo) {
+    // Store plan information for use in agent file generation
+    this.planInfo = planInfo;
+
+    let originalContextContent = contextContent;
+
+    // Apply orchestration wrapper when plan information is provided
+    if (planInfo && planInfo.planId) {
+      contextContent = wrapWithOrchestration(contextContent, planInfo.planId);
+    }
+
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
+    let unregisterCleanup: (() => void) | undefined;
+
+    // Get git root early since we'll need it for cleanup handler
+    const gitRoot = await getGitRoot();
 
     // TODO Interactive mode isn't integrated with the logging
     interactive ??= this.sharedOptions.interactive;
@@ -375,6 +399,47 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
+    // Generate agent files if plan information is provided
+    if (planInfo && planInfo.planId) {
+      const agentDefinitions = [
+        getImplementerPrompt(originalContextContent),
+        getTesterPrompt(originalContextContent),
+        getReviewerPrompt(originalContextContent),
+      ];
+      await generateAgentFiles(planInfo.planId, agentDefinitions);
+      log(chalk.blue(`Created agent files for plan ${planInfo.planId}`));
+
+      // Register cleanup handler for agent files
+      const cleanupRegistry = CleanupRegistry.getInstance();
+      unregisterCleanup = cleanupRegistry.register(() => {
+        try {
+          const agentsDir = path.join(gitRoot, '.claude', 'agents');
+
+          // Use synchronous operations since this may be called from signal handlers
+          try {
+            const files = fsSync.readdirSync(agentsDir);
+            const matchingFiles = files.filter((file) =>
+              file.match(new RegExp(`^rmplan-${planInfo.planId}-.*\\.md$`))
+            );
+
+            for (const file of matchingFiles) {
+              const filePath = path.join(agentsDir, file);
+              try {
+                fsSync.unlinkSync(filePath);
+              } catch (err) {
+                console.error(`Failed to remove agent file ${filePath}:`, err);
+              }
+            }
+          } catch (err) {
+            // Directory might not exist
+            debugLog('Error reading agents directory during cleanup:', err);
+          }
+        } catch (err) {
+          debugLog('Error during agent file cleanup:', err);
+        }
+      });
+    }
+
     try {
       const args = ['claude'];
 
@@ -424,7 +489,7 @@ export class ClaudeCodeExecutor implements Executor {
             ...process.env,
             ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           },
-          cwd: await getGitRoot(),
+          cwd: gitRoot,
           stdio: ['inherit', 'inherit', 'inherit'],
         });
 
@@ -448,7 +513,7 @@ export class ClaudeCodeExecutor implements Executor {
             ...process.env,
             ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           },
-          cwd: await getGitRoot(),
+          cwd: gitRoot,
           formatStdout: (output) => {
             let lines = splitter(output);
             return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
@@ -472,6 +537,17 @@ export class ClaudeCodeExecutor implements Executor {
       // Clean up temporary MCP configuration directory if it was created
       if (tempMcpConfigDir) {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
+      }
+
+      // Clean up agent files if they were created
+      if (planInfo && planInfo.planId) {
+        await removeAgentFiles(planInfo.planId);
+        debugLog(`Removed agent files for plan ${planInfo.planId}`);
+      }
+
+      // Unregister the cleanup handler since we've cleaned up normally
+      if (unregisterCleanup) {
+        unregisterCleanup();
       }
     }
   }

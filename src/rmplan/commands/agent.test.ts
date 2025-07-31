@@ -71,7 +71,7 @@ describe('rmplanAgent - Parent Plan Status Updates', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-agent-test-'));
     const tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
-    
+
     parentPlanFile = path.join(tasksDir, '100-parent-plan.yml');
     childPlanFile = path.join(tasksDir, '101-child-plan.yml');
 
@@ -262,7 +262,9 @@ describe('rmplanAgent - Parent Plan Status Updates', () => {
     expect(parentPlan.status).toBe('in_progress');
 
     // Verify log was called to indicate parent was marked
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Parent plan "Parent Plan" marked as in_progress'));
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Parent plan "Parent Plan" marked as in_progress')
+    );
   });
 
   test('does not mark already in_progress parent', async () => {
@@ -291,7 +293,9 @@ describe('rmplanAgent - Parent Plan Status Updates', () => {
     expect(updatedParentPlan.status).toBe('in_progress');
 
     // Verify log was NOT called to indicate parent was marked
-    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Parent plan "Parent Plan" marked as in_progress'));
+    expect(logSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Parent plan "Parent Plan" marked as in_progress')
+    );
   });
 });
 
@@ -318,7 +322,7 @@ describe('rmplanAgent - Direct Execution Flow', () => {
     findNextActionableItemSpy.mockClear();
     prepareNextStepSpy.mockClear();
     markStepDoneSpy.mockClear();
-    
+
     // Reset mocks to default behavior
     findNextActionableItemSpy.mockReturnValue(null);
 
@@ -468,10 +472,10 @@ describe('rmplanAgent - Direct Execution Flow', () => {
 
     // Mock findNextActionableItem to return the simple task, then null to end loop
     findNextActionableItemSpy
-      .mockReturnValueOnce({ 
-        type: 'task', 
-        taskIndex: 0, 
-        task: { title: 'Main Task', description: 'The main implementation task' }
+      .mockReturnValueOnce({
+        type: 'task',
+        taskIndex: 0,
+        task: { title: 'Main Task', description: 'The main implementation task' },
       })
       .mockReturnValueOnce(null);
 
@@ -537,7 +541,7 @@ describe('rmplanAgent - Direct Execution Flow', () => {
   });
 
   test('non-interactive mode defaults to generate steps', async () => {
-    // In non-interactive mode, after preparePhase generates steps, 
+    // In non-interactive mode, after preparePhase generates steps,
     // the plan would have steps to execute. Mock this behavior.
     preparePhase.mockImplementation(async () => {
       // Simulate that preparePhase adds steps to the plan
@@ -549,11 +553,11 @@ describe('rmplanAgent - Direct Execution Flow', () => {
 
     // After preparePhase, findNextActionableItem would find the generated steps
     findNextActionableItemSpy
-      .mockReturnValueOnce({ 
-        type: 'step', 
-        taskIndex: 0, 
+      .mockReturnValueOnce({
+        type: 'step',
+        taskIndex: 0,
         stepIndex: 0,
-        task: { title: 'Main Task', steps: [{ title: 'Generated step 1' }] }
+        task: { title: 'Main Task', steps: [{ title: 'Generated step 1' }] },
       })
       .mockReturnValueOnce(null);
 

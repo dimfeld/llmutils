@@ -5,7 +5,7 @@ import { waitForEnter } from '../../common/terminal.ts';
 import { log } from '../../logging';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { ExecutorCommonOptions, Executor } from './types';
+import type { ExecutorCommonOptions, Executor, ExecutePlanInfo } from './types';
 import { copyOnlyOptionsSchema, CopyOnlyExecutorName } from './schemas.js';
 
 export type CopyOnlyExecutorOptions = z.infer<typeof copyOnlyOptionsSchema>;
@@ -31,7 +31,8 @@ export class CopyOnlyExecutor implements Executor {
     return { rmfilter: false };
   }
 
-  async execute(contextContent: string) {
+  async execute(contextContent: string, _planInfo: ExecutePlanInfo) {
+    // This executor doesn't use plan information
     while (true) {
       await clipboard.write(contextContent);
       log(
