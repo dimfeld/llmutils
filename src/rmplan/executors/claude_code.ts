@@ -54,39 +54,39 @@ export class ClaudeCodeExecutor implements Executor {
   /**
    * Parses an rm command to extract file paths and normalize them to absolute paths.
    * Handles various rm command formats including flags and quoted paths.
-   * 
+   *
    * @param command - The bash command string to parse
    * @returns Array of absolute file paths that would be deleted, or empty array if not an rm command
    */
   private parseRmCommand(command: string): string[] {
     const trimmedCommand = command.trim();
-    
+
     // Match rm commands - ensure it starts with 'rm' as a complete word
     if (!trimmedCommand.match(/^rm(\s|$)/)) {
       return [];
     }
-    
+
     // Split the command into tokens while preserving quoted strings
     const tokens = this.parseCommandTokens(trimmedCommand);
-    
+
     if (tokens.length === 0 || tokens[0] !== 'rm') {
       return [];
     }
-    
+
     // Filter out the 'rm' command and any flags to get just the file paths
     const filePaths: string[] = [];
-    
+
     for (let i = 1; i < tokens.length; i++) {
       const token = tokens[i];
-      
+
       // Skip flags (starting with - or --)
       if (token.startsWith('-')) {
         continue;
       }
-      
+
       filePaths.push(token);
     }
-    
+
     // Normalize paths to absolute paths
     const normalizedPaths: string[] = [];
     for (const pathStr of filePaths) {
@@ -94,12 +94,12 @@ export class ClaudeCodeExecutor implements Executor {
       if (!pathStr.trim()) {
         continue;
       }
-      
+
       // Skip wildcard patterns or complex shell expansions for safety
       if (pathStr.includes('*') || pathStr.includes('?') || pathStr.includes('[')) {
         continue;
       }
-      
+
       // Convert to absolute path
       let absolutePath: string;
       if (path.isAbsolute(pathStr)) {
@@ -109,16 +109,16 @@ export class ClaudeCodeExecutor implements Executor {
         // In a real scenario, we might need to track the actual cwd from the bash session
         absolutePath = path.resolve(process.cwd(), pathStr);
       }
-      
+
       normalizedPaths.push(absolutePath);
     }
-    
+
     return normalizedPaths;
   }
 
   /**
    * Parses command tokens while handling quotes and escaping properly.
-   * 
+   *
    * @param command - The command string to parse
    * @returns Array of tokens
    */
@@ -128,32 +128,32 @@ export class ClaudeCodeExecutor implements Executor {
     let inSingleQuote = false;
     let inDoubleQuote = false;
     let escaped = false;
-    
+
     for (let i = 0; i < command.length; i++) {
       const char = command[i];
-      
+
       if (escaped) {
         currentToken += char;
         escaped = false;
         continue;
       }
-      
+
       if (char === '\\') {
         escaped = true;
         currentToken += char;
         continue;
       }
-      
+
       if (char === "'" && !inDoubleQuote) {
         inSingleQuote = !inSingleQuote;
         continue;
       }
-      
+
       if (char === '"' && !inSingleQuote) {
         inDoubleQuote = !inDoubleQuote;
         continue;
       }
-      
+
       if (!inSingleQuote && !inDoubleQuote && /\s/.test(char)) {
         // We've hit whitespace outside of quotes - end of current token
         if (currentToken.trim()) {
@@ -162,15 +162,15 @@ export class ClaudeCodeExecutor implements Executor {
         }
         continue;
       }
-      
+
       currentToken += char;
     }
-    
+
     // Add the final token if there is one
     if (currentToken.trim()) {
       tokens.push(currentToken.trim());
     }
-    
+
     return tokens;
   }
 

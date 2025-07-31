@@ -44,7 +44,7 @@ const testCases = [
 
 for (const testCase of testCases) {
   const result = parseRmCommand(testCase);
-  console.log(`"${testCase}" -> [${result.map(p => `"${p}"`).join(', ')}]`);
+  console.log(`"${testCase}" -> [${result.map((p) => `"${p}"`).join(', ')}]`);
 }
 
 console.log('\nDone!');

@@ -969,7 +969,7 @@ describe('ClaudeCodeExecutor', () => {
     });
 
     test('handles escaped quotes', () => {
-      const result = parseRmCommand('rm file\\\'s\\ name.txt');
+      const result = parseRmCommand("rm file\\'s\\ name.txt");
       expect(result).toHaveLength(1);
       expect(result[0]).toMatch(/file\\'s\\ name\.txt$/);
     });
@@ -1148,7 +1148,7 @@ describe('ClaudeCodeExecutor', () => {
 
       const result3 = parseRmCommand('rm file.txt > output.log');
       expect(result3).toHaveLength(3); // ['file.txt', '>', 'output.log'] - all treated as files
-      
+
       // Verify that at least the main file is parsed correctly
       expect(result1[0]).toMatch(/file\.txt$/);
       expect(result2[0]).toMatch(/file\.txt$/);
@@ -1210,7 +1210,7 @@ describe('ClaudeCodeExecutor', () => {
     });
 
     test('handles escaped quotes', () => {
-      const result = parseCommandTokens('rm file\\\'s\\ name.txt');
+      const result = parseCommandTokens("rm file\\'s\\ name.txt");
       expect(result).toEqual(['rm', "file\\'s\\ name.txt"]);
     });
 
@@ -1255,7 +1255,9 @@ describe('ClaudeCodeExecutor', () => {
     });
 
     test('handles complex mixed quoting scenario', () => {
-      const result = parseCommandTokens(`rm 'single quoted' "double quoted" unquoted 'mixed"quote'`);
+      const result = parseCommandTokens(
+        `rm 'single quoted' "double quoted" unquoted 'mixed"quote'`
+      );
       expect(result).toEqual(['rm', 'single quoted', 'double quoted', 'unquoted', 'mixed"quote']);
     });
 
