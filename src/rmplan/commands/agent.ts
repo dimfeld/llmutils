@@ -72,7 +72,7 @@ export async function handleAgentCommand(
     const result = await findNextReadyDependency(parentPlanId, tasksDir);
 
     if (!result.plan) {
-      log(chalk.yellow(result.message));
+      log(result.message);
       return;
     }
 

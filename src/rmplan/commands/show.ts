@@ -29,6 +29,11 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   let resolvedPlanFile: string;
 
   if (options.nextReady) {
+    // Validate that --next-ready has a value (parent plan ID or file path)
+    if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
+      throw new Error('--next-ready requires a parent plan ID or file path');
+    }
+
     // Find the next ready dependency of the specified parent plan
     const tasksDir = await resolveTasksDir(config);
     // Convert string ID to number or resolve plan file to get numeric ID
@@ -40,8 +45,8 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       // Try to resolve as a file path and get the plan ID
       const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
       const plan = await readPlanFile(planFile);
-      if (!plan.id) {
-        throw new Error(`Plan file ${planFile} does not have a valid ID`);
+      if (!plan.id || typeof plan.id !== 'number') {
+        throw new Error(`Plan file ${planFile} does not have a valid numeric ID`);
       }
       parentPlanId = plan.id;
     }
@@ -49,7 +54,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     const result = await findNextReadyDependency(parentPlanId, tasksDir);
 
     if (!result.plan) {
-      log(chalk.yellow(result.message));
+      log(result.message);
       return;
     }
 

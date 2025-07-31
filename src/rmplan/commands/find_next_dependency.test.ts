@@ -99,7 +99,7 @@ describe('findNextReadyDependency', () => {
     const result = await findNextReadyDependency(1, testDir);
 
     expect(result.plan).toBeNull();
-    expect(result.message).toContain('No ready or pending dependencies found');
+    expect(result.message).toContain('No dependencies found for this plan');
   });
 
   test('handles invalid plan ID', async () => {
@@ -307,7 +307,7 @@ describe('findNextReadyDependency', () => {
 
     // Should handle the circular dependency without infinite loop
     expect(result.plan).toBeNull();
-    expect(result.message).toContain('No ready or pending dependencies found');
+    expect(result.message).toContain('dependencies are blocked by incomplete prerequisites');
   });
 
   test('skips pending plans with no tasks', async () => {
@@ -469,7 +469,7 @@ describe('findNextReadyDependency', () => {
     const result = await findNextReadyDependency(1, testDir);
 
     expect(result.plan).toBeNull();
-    expect(result.message).toContain('No ready or pending dependencies found');
+    expect(result.message).toContain('All dependencies are complete');
   });
 
   test('handles both dependencies array and parent field together', async () => {
@@ -695,5 +695,206 @@ describe('findNextReadyDependency', () => {
     expect(result.plan?.id).toBe(2);
     expect(result.plan?.title).toBe('In Progress Low Priority');
     expect(result.message).toContain('Found in-progress plan');
+  });
+
+  // Error handling tests
+  describe('error handling and messages', () => {
+    test('provides helpful message for invalid plan ID', async () => {
+      const result = await findNextReadyDependency(999, testDir);
+
+      expect(result.plan).toBeNull();
+      expect(result.message).toContain('Plan not found: 999');
+      expect(result.message).toContain('rmplan list');
+      expect(result.message).toContain('Check the plan ID is correct');
+    });
+
+    test('provides helpful message for invalid directory with permission suggestion', async () => {
+      const result = await findNextReadyDependency(1, '/root/restricted/directory');
+
+      expect(result.plan).toBeNull();
+      expect(result.message).toContain('Directory not found');
+      expect(result.message).toContain('Check the path is correct');
+      expect(result.message).toContain('permissions');
+    });
+
+    test('provides detailed message when no dependencies are ready - all done', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Done Dependency 1',
+        filename: '2-done1.yml',
+        status: 'done',
+        tasks: [{ title: 'Done task 1', description: 'Completed', done: true }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Done Dependency 2',
+        filename: '3-done2.yml',
+        status: 'done',
+        tasks: [{ title: 'Done task 2', description: 'Completed', done: true }],
+      });
+
+      const result = await findNextReadyDependency(1, testDir);
+
+      expect(result.plan).toBeNull();
+      expect(result.message).toContain('All dependencies are complete');
+      expect(result.message).toContain('ready to work on the parent plan');
+    });
+
+    test('provides detailed message when dependencies are blocked by incomplete prerequisites', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Blocked Dependency',
+        filename: '2-blocked.yml',
+        status: 'pending',
+        dependencies: [3],
+        tasks: [{ title: 'Blocked task', description: 'Cannot start yet' }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Incomplete Prerequisite',
+        filename: '3-incomplete.yml',
+        status: 'pending',
+        dependencies: [4], // Has unfulfilled dependency
+        tasks: [{ title: 'Incomplete task', description: 'Still blocked' }],
+      });
+
+      await createPlanFile({
+        id: 4,
+        title: 'Deep Incomplete',
+        filename: '4-deep.yml',
+        status: 'pending',
+        dependencies: [5], // Another level of blocking
+        tasks: [{ title: 'Deep task', description: 'Multiple levels down' }],
+      });
+
+      await createPlanFile({
+        id: 5,
+        title: 'Ready Base Plan',
+        filename: '5-ready.yml',
+        status: 'pending',
+        // No dependencies - this should be ready
+        tasks: [{ title: 'Ready task', description: 'Can start immediately' }],
+      });
+
+      const result = await findNextReadyDependency(1, testDir);
+
+      expect(result.plan).not.toBeNull(); // Should find plan 5 as it has no dependencies
+      expect(result.plan?.id).toBe(5);
+      expect(result.plan?.title).toBe('Ready Base Plan');
+    });
+
+    test('explains when dependencies are blocked by tasks without steps', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'No Tasks Plan',
+        filename: '2-no-tasks.yml',
+        status: 'pending',
+        tasks: [], // No tasks defined - should be skipped
+      });
+
+      const result = await findNextReadyDependency(1, testDir);
+
+      expect(result.plan).toBeNull();
+      expect(result.message).toContain('dependencies have no actionable tasks');
+      expect(result.message).toContain('rmplan prepare');
+    });
+
+    test('explains when all dependencies have maybe priority', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Maybe Dependency 1',
+        filename: '2-maybe1.yml',
+        status: 'pending',
+        priority: 'maybe',
+        tasks: [{ title: 'Maybe task 1', description: 'Uncertain work' }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Maybe Dependency 2',
+        filename: '3-maybe2.yml',
+        status: 'pending',
+        priority: 'maybe',
+        tasks: [{ title: 'Maybe task 2', description: 'Uncertain work' }],
+      });
+
+      const result = await findNextReadyDependency(1, testDir);
+
+      expect(result.plan).toBeNull();
+      expect(result.message).toContain('dependencies have \"maybe\" priority');
+      expect(result.message).toContain('Review and update priorities');
+    });
+
+    test('provides clear message format with consistent styling', async () => {
+      // Test that error messages use consistent formatting
+      const result = await findNextReadyDependency(999, testDir);
+
+      // Should contain structured, actionable guidance
+      expect(result.message).toMatch(/Plan not found: 999/);
+      expect(result.message).toContain('→'); // Should use arrow for suggestions
+      expect(result.message).toMatch(/Try:/); // Should provide clear next steps
+    });
+
+    test('handles corrupted directory gracefully', async () => {
+      // Use a completely non-existent path
+      const fakeDirPath = '/absolutely/nonexistent/path/that/will/never/exist';
+
+      const result = await findNextReadyDependency(1, fakeDirPath);
+
+      expect(result.plan).toBeNull();
+      expect(result.message).toContain('Directory not found');
+      expect(result.message).toContain('Check the path is correct');
+    });
+
+    test('handles empty directory with helpful message', async () => {
+      const emptyDir = await fs.mkdtemp(path.join(os.tmpdir(), 'empty-test-'));
+
+      const result = await findNextReadyDependency(1, emptyDir);
+
+      expect(result.plan).toBeNull();
+      expect(result.message).toContain('Plan not found: 1');
+      expect(result.message).toContain('rmplan list');
+
+      // Clean up
+      await fs.rm(emptyDir, { recursive: true, force: true });
+    });
   });
 });

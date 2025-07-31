@@ -4,6 +4,7 @@ import { isPlanReady } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { debugLog } from '../../logging.js';
 import * as fs from 'node:fs/promises';
+import chalk from 'chalk';
 
 /**
  * Result type for findNextReadyDependency function
@@ -59,7 +60,11 @@ export async function findNextReadyDependency(
   } catch (err) {
     return {
       plan: null,
-      message: `Directory not found: ${directory}`,
+      message: chalk.red(`Directory not found: ${directory}`) + 
+        '\n' + chalk.yellow('→ Try:') +
+        '\n  • Check the path is correct' +
+        '\n  • Check directory permissions' +
+        '\n  • Use an absolute path if using relative paths',
     };
   }
 
@@ -71,7 +76,11 @@ export async function findNextReadyDependency(
   if (!parentPlan) {
     return {
       plan: null,
-      message: `Plan not found: ${parentPlanId}`,
+      message: chalk.red(`Plan not found: ${parentPlanId}`) +
+        '\n' + chalk.yellow('→ Try:') +
+        '\n  • Run ' + chalk.cyan('rmplan list') + ' to see available plans' +
+        '\n  • Check the plan ID is correct' +
+        '\n  • Ensure the plan file exists in the specified directory',
     };
   }
 
@@ -141,9 +150,50 @@ export async function findNextReadyDependency(
   });
 
   if (readyCandidates.length === 0) {
+    // Provide detailed explanation of why no dependencies are ready
+    const allDependencyPlans = Array.from(allDependencies)
+      .map((id) => plans.get(id))
+      .filter((plan): plan is PlanSchema & { filename: string } => plan !== null);
+
+    let reason = '';
+    
+    if (allDependencyPlans.length === 0) {
+      reason = 'No dependencies found for this plan';
+    } else {
+      const doneCount = allDependencyPlans.filter(p => (p?.status || 'pending') === 'done').length;
+      const pendingNoTasks = allDependencyPlans.filter(p => 
+        ((p?.status || 'pending') === 'pending') && (!p?.tasks || p.tasks.length === 0)
+      ).length;
+      const maybeCount = allDependencyPlans.filter(p => p?.priority === 'maybe').length;
+      const blockedCount = allDependencyPlans.filter(p => {
+        const status = p?.status || 'pending';
+        if (status !== 'pending') return false;
+        if (!p?.dependencies || p.dependencies.length === 0) return false;
+        return p.dependencies.some(depId => {
+          const depPlan = plans.get(depId);
+          return !depPlan || (depPlan.status || 'pending') !== 'done';
+        });
+      }).length;
+
+      if (doneCount === allDependencyPlans.length) {
+        reason = chalk.green('All dependencies are complete') + ' - ready to work on the parent plan';
+      } else if (pendingNoTasks > 0) {
+        reason = `${pendingNoTasks} dependencies have no actionable tasks`;
+        reason += '\n' + chalk.yellow('→ Try:') + ' Run ' + chalk.cyan('rmplan prepare') + ' to add detailed steps';
+      } else if (maybeCount === allDependencyPlans.length - doneCount) {
+        reason = 'All pending dependencies have "maybe" priority';
+        reason += '\n' + chalk.yellow('→ Try:') + ' Review and update priorities for dependencies that should be implemented';
+      } else if (blockedCount > 0) {
+        reason = `${blockedCount} dependencies are blocked by incomplete prerequisites`;
+        reason += '\n' + chalk.yellow('→ Try:') + ' Work on the blocking dependencies first, or check the dependency chain';
+      } else {
+        reason = 'Dependencies exist but none are ready to work on';
+      }
+    }
+
     return {
       plan: null,
-      message: 'No ready or pending dependencies found',
+      message: chalk.yellow('No ready dependencies found') + '\n' + reason,
     };
   }
 
