@@ -184,9 +184,8 @@ describe('createExecutor', () => {
       defaultExecutor: 'claude-code',
       executors: {
         'claude-code': {
-          autoApproveCreatedFileDeletion: true,
           allowedTools: ['Write', 'Edit', 'Bash'],
-          permissionsMcp: { enabled: true },
+          permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true },
         },
       },
     };
@@ -199,9 +198,9 @@ describe('createExecutor', () => {
       expect(result.executor).toBeDefined();
       // Verify the options include the autoApproveCreatedFileDeletion property
       const options = (result.executor as any).options;
-      expect(options.autoApproveCreatedFileDeletion).toBe(true);
       expect(options.allowedTools).toEqual(['Write', 'Edit', 'Bash']);
       expect(options.permissionsMcp?.enabled).toBe(true);
+      expect(options.permissionsMcp?.autoApproveCreatedFileDeletion).toBe(true);
     }
   });
 
@@ -220,7 +219,7 @@ describe('createExecutor', () => {
     expect('error' in result).toBe(false);
     if (!('error' in result)) {
       const options = (result.executor as any).options;
-      expect(options.autoApproveCreatedFileDeletion).toBeUndefined();
+      expect(options.permissionsMcp?.autoApproveCreatedFileDeletion).toBeUndefined();
       expect(options.allowedTools).toEqual(['Write']);
     }
   });
@@ -230,13 +229,19 @@ describe('createExecutor', () => {
       defaultExecutor: 'claude-code',
       executors: {
         'claude-code': {
-          autoApproveCreatedFileDeletion: false,
+          permissionsMcp: {
+            enabled: true,
+            autoApproveCreatedFileDeletion: false,
+          },
         },
       },
     };
 
     const cliOptions = {
-      autoApproveCreatedFileDeletion: true,
+      permissionsMcp: {
+        enabled: true,
+        autoApproveCreatedFileDeletion: true,
+      },
     };
 
     const result = createExecutor('claude-code', cliOptions, mockSharedOptions, mockConfig);
@@ -244,7 +249,7 @@ describe('createExecutor', () => {
     expect('error' in result).toBe(false);
     if (!('error' in result)) {
       const options = (result.executor as any).options;
-      expect(options.autoApproveCreatedFileDeletion).toBe(true); // CLI option takes precedence
+      expect(options.permissionsMcp?.autoApproveCreatedFileDeletion).toBe(true); // CLI option takes precedence
     }
   });
 });

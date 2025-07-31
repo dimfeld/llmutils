@@ -1102,7 +1102,8 @@ To enable this feature, configure the `autoApproveCreatedFileDeletion` option in
 # In .rmfilter/config/rmplan.local.yml
 executors:
   claude-code:
-    autoApproveCreatedFileDeletion: true
+    permissionsMcp:
+      autoApproveCreatedFileDeletion: true
 ```
 
 **How it works:**

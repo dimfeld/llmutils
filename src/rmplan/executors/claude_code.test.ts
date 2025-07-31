@@ -1361,8 +1361,7 @@ describe('ClaudeCodeExecutor', () => {
           allowedTools: [],
           disallowedTools: [],
           allowAllTools: false,
-          permissionsMcp: { enabled: true },
-          autoApproveCreatedFileDeletion: true,
+          permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true },
         },
         mockSharedOptions,
         mockConfig
@@ -1810,8 +1809,7 @@ describe('ClaudeCodeExecutor', () => {
           allowedTools: [],
           disallowedTools: [],
           allowAllTools: false,
-          permissionsMcp: { enabled: true },
-          autoApproveCreatedFileDeletion: true,
+          permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true },
         },
         mockSharedOptions,
         mockConfig
@@ -1906,8 +1904,7 @@ describe('ClaudeCodeExecutor', () => {
         allowedTools: [],
         disallowedTools: [],
         allowAllTools: false,
-        permissionsMcp: { enabled: true },
-        autoApproveCreatedFileDeletion: true,
+        permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true },
       },
       mockSharedOptions,
       mockConfig
@@ -2111,8 +2108,12 @@ describe('ClaudeCodeExecutor', () => {
           allowedTools: [],
           disallowedTools: [],
           allowAllTools: false,
-          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
-          autoApproveCreatedFileDeletion: false,
+          permissionsMcp: {
+            enabled: true,
+            timeout: 100,
+            defaultResponse: 'no',
+            autoApproveCreatedFileDeletion: false,
+          },
         },
         mockSharedOptions,
         mockConfig
@@ -2308,8 +2309,12 @@ describe('ClaudeCodeExecutor', () => {
             allowedTools: [],
             disallowedTools: [],
             allowAllTools: false,
-            permissionsMcp: { enabled: true, timeout: 50, defaultResponse: 'no' },
-            autoApproveCreatedFileDeletion: flag as any,
+            permissionsMcp: {
+              enabled: true,
+              timeout: 50,
+              defaultResponse: 'no',
+              autoApproveCreatedFileDeletion: flag as any,
+            },
           },
           mockSharedOptions,
           mockConfig
@@ -2428,7 +2433,9 @@ describe('ClaudeCodeExecutor', () => {
       trackedFiles.add('/tmp/test/tracked-file.txt');
 
       // Verify that autoApproveCreatedFileDeletion is undefined by default
-      expect((executor as any).options.autoApproveCreatedFileDeletion).toBeUndefined();
+      expect(
+        (executor as any).options.permissionsMcp?.autoApproveCreatedFileDeletion
+      ).toBeUndefined();
 
       // Mock the permission socket server creation and handling
       let permissionRequestHandler: (message: any) => Promise<void>;
