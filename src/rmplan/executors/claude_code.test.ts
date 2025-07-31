@@ -2372,7 +2372,9 @@ describe('ClaudeCodeExecutor', () => {
         }));
 
         // Create the permission socket server
-        const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+        const server = await (executor as any).createPermissionSocketServer(
+          '/tmp/test-socket.sock'
+        );
 
         // Test the behavior
         const response = mock();
