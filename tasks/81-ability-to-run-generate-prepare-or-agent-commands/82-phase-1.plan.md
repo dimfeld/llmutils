@@ -12,7 +12,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T01:05:58.835Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T02:26:11.346Z
+updatedAt: 2025-07-31T02:40:10.679Z
 tasks:
   - title: Define and Access Plan State
     description: >
@@ -67,14 +67,14 @@ tasks:
 
           Include circular dependency detection using a visited set, similar to
           collectDependenciesInOrder.
-        done: false
+        done: true
       - prompt: >
           Add a helper function to get all direct dependencies of a plan (both
           from dependencies array and child plans).
 
           This should query the allPlans map to find plans where parent equals
           the current plan ID.
-        done: false
+        done: true
       - prompt: >
           Create comprehensive tests in dependency_traversal.test.ts covering:
           simple dependencies, parent-child relationships,
@@ -84,7 +84,7 @@ tasks:
 
           Use temporary directories and the test patterns from
           parent_completion.test.ts.
-        done: false
+        done: true
   - title: Create the "Find Next Ready Dependency" Function
     description: >
       Develop the main function that orchestrates the process of finding the
@@ -169,6 +169,8 @@ changedFiles:
   - src/rmplan/agent_runner.ts
   - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts
+  - src/rmplan/dependency_traversal.test.ts
+  - src/rmplan/dependency_traversal.ts
   - src/rmplan/executors/claude_code/agent_generator.test.ts
   - src/rmplan/executors/claude_code/agent_generator.ts
   - src/rmplan/executors/claude_code/agent_prompts.ts
