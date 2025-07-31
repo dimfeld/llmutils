@@ -5,14 +5,14 @@ title: Ability to run, generate, prepare, or agent commands on the next ready
 goal: To create the backend functionality that can identify the next ready or
   pending dependency for a given parent plan.
 id: 82
-status: in_progress
+status: done
 priority: high
 dependencies: []
 parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T01:05:58.835Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T03:25:09.337Z
+updatedAt: 2025-07-31T03:34:49.445Z
 tasks:
   - title: Define and Access Plan State
     description: >
@@ -145,14 +145,14 @@ tasks:
 
           returning null when no dependencies exist, handling completed
           dependencies, and respecting priority order.
-        done: false
+        done: true
       - prompt: >
           Add tests for complex scenarios: nested dependencies (dependencies of
           dependencies), mixed parent-child and explicit dependencies,
 
           circular dependency handling, and plans with 'maybe' priority (which
           should be skipped).
-        done: false
+        done: true
       - prompt: >
           Create integration.test.ts that tests the complete flow with realistic
           plan structures.
@@ -161,7 +161,7 @@ tasks:
           proper BFS ordering, and state transitions.
 
           Use the test setup patterns from rmplan.integration.test.ts.
-        done: false
+        done: true
 changedFiles:
   - src/common/cleanup_registry.test.ts
   - src/common/cleanup_registry.ts
@@ -171,6 +171,7 @@ changedFiles:
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/find_next_dependency.test.ts
   - src/rmplan/commands/find_next_dependency.ts
+  - src/rmplan/commands/integration.test.ts
   - src/rmplan/dependency_traversal.test.ts
   - src/rmplan/dependency_traversal.ts
   - src/rmplan/executors/claude_code/agent_generator.test.ts

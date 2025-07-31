@@ -515,4 +515,185 @@ describe('findNextReadyDependency', () => {
     expect(result.plan).not.toBeNull();
     expect([3, 4]).toContain(result.plan?.id);
   });
+
+  test('respects priority order when multiple plans are ready', async () => {
+    await createPlanFile({
+      id: 1,
+      title: 'Parent Plan',
+      filename: '1-parent.yml',
+      status: 'in_progress',
+      dependencies: [2, 3, 4, 5],
+      tasks: [{ title: 'Parent task', description: 'Main work' }],
+    });
+
+    await createPlanFile({
+      id: 2,
+      title: 'Low Priority',
+      filename: '2-low.yml',
+      status: 'pending',
+      priority: 'low',
+      tasks: [{ title: 'Low task', description: 'Low priority work' }],
+    });
+
+    await createPlanFile({
+      id: 3,
+      title: 'High Priority',
+      filename: '3-high.yml',
+      status: 'pending',
+      priority: 'high',
+      tasks: [{ title: 'High task', description: 'High priority work' }],
+    });
+
+    await createPlanFile({
+      id: 4,
+      title: 'Medium Priority',
+      filename: '4-medium.yml',
+      status: 'pending',
+      priority: 'medium',
+      tasks: [{ title: 'Medium task', description: 'Medium priority work' }],
+    });
+
+    await createPlanFile({
+      id: 5,
+      title: 'Urgent Priority',
+      filename: '5-urgent.yml',
+      status: 'pending',
+      priority: 'urgent',
+      tasks: [{ title: 'Urgent task', description: 'Urgent work' }],
+    });
+
+    const result = await findNextReadyDependency(1, testDir);
+
+    // Should find the urgent priority plan first
+    expect(result.plan).not.toBeNull();
+    expect(result.plan?.id).toBe(5);
+    expect(result.plan?.title).toBe('Urgent Priority');
+  });
+
+  test('skips plans with maybe priority', async () => {
+    await createPlanFile({
+      id: 1,
+      title: 'Parent Plan',
+      filename: '1-parent.yml',
+      status: 'in_progress',
+      dependencies: [2, 3, 4],
+      tasks: [{ title: 'Parent task', description: 'Main work' }],
+    });
+
+    await createPlanFile({
+      id: 2,
+      title: 'Maybe Priority Plan',
+      filename: '2-maybe.yml',
+      status: 'pending',
+      priority: 'maybe',
+      tasks: [{ title: 'Maybe task', description: 'Not sure if needed' }],
+    });
+
+    await createPlanFile({
+      id: 3,
+      title: 'Another Maybe',
+      filename: '3-maybe.yml',
+      status: 'pending',
+      priority: 'maybe',
+      dependencies: [2], // Even if dependencies are done
+      tasks: [{ title: 'Another maybe', description: 'Also uncertain' }],
+    });
+
+    await createPlanFile({
+      id: 4,
+      title: 'Regular Plan',
+      filename: '4-regular.yml',
+      status: 'pending',
+      tasks: [{ title: 'Regular task', description: 'Should be found' }],
+    });
+
+    const result = await findNextReadyDependency(1, testDir);
+
+    // Should skip the 'maybe' priority plans and find plan 4
+    expect(result.plan).not.toBeNull();
+    expect(result.plan?.id).toBe(4);
+    expect(result.plan?.title).toBe('Regular Plan');
+  });
+
+  test('handles no priority as lowest priority', async () => {
+    await createPlanFile({
+      id: 1,
+      title: 'Parent Plan',
+      filename: '1-parent.yml',
+      status: 'in_progress',
+      dependencies: [2, 3, 4],
+      tasks: [{ title: 'Parent task', description: 'Main work' }],
+    });
+
+    await createPlanFile({
+      id: 2,
+      title: 'No Priority',
+      filename: '2-no-priority.yml',
+      status: 'pending',
+      // No priority field
+      tasks: [{ title: 'No priority task', description: 'Default priority' }],
+    });
+
+    await createPlanFile({
+      id: 3,
+      title: 'Low Priority',
+      filename: '3-low.yml',
+      status: 'pending',
+      priority: 'low',
+      tasks: [{ title: 'Low task', description: 'Low priority' }],
+    });
+
+    await createPlanFile({
+      id: 4,
+      title: 'Medium Priority',
+      filename: '4-medium.yml',
+      status: 'pending',
+      priority: 'medium',
+      tasks: [{ title: 'Medium task', description: 'Medium priority' }],
+    });
+
+    const result = await findNextReadyDependency(1, testDir);
+
+    // Should find the medium priority plan first (highest priority among ready plans)
+    expect(result.plan).not.toBeNull();
+    expect(result.plan?.id).toBe(4);
+    expect(result.plan?.title).toBe('Medium Priority');
+  });
+
+  test('in-progress plans take precedence over priority', async () => {
+    await createPlanFile({
+      id: 1,
+      title: 'Parent Plan',
+      filename: '1-parent.yml',
+      status: 'in_progress',
+      dependencies: [2, 3],
+      tasks: [{ title: 'Parent task', description: 'Main work' }],
+    });
+
+    await createPlanFile({
+      id: 2,
+      title: 'In Progress Low Priority',
+      filename: '2-in-progress-low.yml',
+      status: 'in_progress',
+      priority: 'low',
+      tasks: [{ title: 'Active task', description: 'Currently working' }],
+    });
+
+    await createPlanFile({
+      id: 3,
+      title: 'Pending Urgent Priority',
+      filename: '3-pending-urgent.yml',
+      status: 'pending',
+      priority: 'urgent',
+      tasks: [{ title: 'Urgent task', description: 'Very important but not started' }],
+    });
+
+    const result = await findNextReadyDependency(1, testDir);
+
+    // Should find the in-progress plan even though it has lower priority
+    expect(result.plan).not.toBeNull();
+    expect(result.plan?.id).toBe(2);
+    expect(result.plan?.title).toBe('In Progress Low Priority');
+    expect(result.message).toContain('Found in-progress plan');
+  });
 });

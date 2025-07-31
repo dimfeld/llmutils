@@ -1,4 +1,4 @@
-import { traversePlanDependencies } from '../dependency_traversal.js';
+import { traversePlanDependencies, getDirectDependencies } from '../dependency_traversal.js';
 import { readAllPlans } from '../plans.js';
 import { isPlanReady } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -75,52 +75,126 @@ export async function findNextReadyDependency(
     };
   }
 
-  // Use the traversal function to find candidates
-  const traversalResult = await traversePlanDependencies(parentPlanId, directory);
+  // Collect all dependencies using BFS
+  const allDependencies = new Set<number>();
+  const queue: number[] = [parentPlanId];
+  const visited = new Set<number>();
 
-  if (traversalResult.planId === null) {
-    // No ready dependencies found
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+
+    // Check for circular dependencies
+    if (visited.has(currentId)) {
+      continue;
+    }
+    visited.add(currentId);
+
+    // Skip the starting plan itself
+    if (currentId !== parentPlanId) {
+      allDependencies.add(currentId);
+    }
+
+    // Add direct dependencies to the queue
+    const directDeps = getDirectDependencies(currentId, plans);
+    queue.push(...directDeps);
+  }
+
+  // Filter candidates to only include pending or in_progress plans
+  const candidates = Array.from(allDependencies)
+    .map((id) => plans.get(id))
+    .filter((plan): plan is PlanSchema & { filename: string } => {
+      if (!plan) return false;
+      const status = plan.status || 'pending';
+      return status === 'pending' || status === 'in_progress';
+    });
+
+  // Filter out plans with 'maybe' priority and check readiness
+  const readyCandidates = candidates.filter((plan) => {
+    // Skip plans with 'maybe' priority
+    if (plan.priority === 'maybe') {
+      debugLog(`[find_next_dependency] Skipping plan ${plan.id} with 'maybe' priority`);
+      return false;
+    }
+
+    const status = plan.status || 'pending';
+
+    // In-progress plans are always ready
+    if (status === 'in_progress') {
+      return true;
+    }
+
+    // For pending plans, check for tasks and dependencies
+    if (!plan.tasks || plan.tasks.length === 0) {
+      debugLog(`[find_next_dependency] Skipping pending plan ${plan.id} - no tasks defined`);
+      return false;
+    }
+
+    // Check if all dependencies are done
+    if (!plan.dependencies || plan.dependencies.length === 0) {
+      return true;
+    }
+
+    return plan.dependencies.every((depId) => {
+      const depPlan = plans.get(depId);
+      return depPlan && depPlan.status === 'done';
+    });
+  });
+
+  if (readyCandidates.length === 0) {
     return {
       plan: null,
-      message: traversalResult.message || 'No ready or pending dependencies found',
+      message: 'No ready or pending dependencies found',
     };
   }
 
-  // Get the full plan object
-  const readyPlan = plans.get(traversalResult.planId);
-  if (!readyPlan) {
-    // This shouldn't happen if traversal is working correctly, but handle it gracefully
-    return {
-      plan: null,
-      message: `Internal error: Could not load plan ${traversalResult.planId}`,
-    };
-  }
+  // Sort by status first (in_progress > pending), then priority, then by ID
+  readyCandidates.sort((a, b) => {
+    // Status order - in_progress comes first
+    const aStatus = a.status || 'pending';
+    const bStatus = b.status || 'pending';
 
-  // For in-progress plans, they are immediately actionable
-  if (readyPlan.status === 'in_progress') {
-    debugLog(`[find_next_dependency] Found in-progress plan ${readyPlan.id}: ${readyPlan.title}`);
-    return {
-      plan: readyPlan,
-      message: `Found in-progress plan: ${readyPlan.title} (ID: ${readyPlan.id})`,
-    };
-  }
+    if (aStatus !== bStatus) {
+      // in_progress should come before pending
+      if (aStatus === 'in_progress') return -1;
+      if (bStatus === 'in_progress') return 1;
+    }
 
-  // For pending plans, double-check that they are actually ready using isPlanReady
-  // This provides an additional validation layer
-  if (isPlanReady(readyPlan, plans)) {
-    debugLog(`[find_next_dependency] Confirmed plan ${readyPlan.id} is ready: ${readyPlan.title}`);
-    return {
-      plan: readyPlan,
-      message: `Found ready plan: ${readyPlan.title} (ID: ${readyPlan.id})`,
-    };
-  } else {
-    // If isPlanReady disagrees with traversal, log for debugging
+    // Define priority order - higher number means higher priority
+    const priorityOrder: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
+    const aPriority = a.priority ? priorityOrder[a.priority] || 0 : 0;
+    const bPriority = b.priority ? priorityOrder[b.priority] || 0 : 0;
+
+    // Sort by priority descending (highest first)
+    if (aPriority !== bPriority) {
+      return bPriority - aPriority;
+    }
+
+    // If priorities are the same, sort by ID ascending
+    const aId = a.id || 0;
+    const bId = b.id || 0;
+
+    if (typeof aId === 'number' && typeof bId === 'number') {
+      return aId - bId;
+    }
+    return 0;
+  });
+
+  const selectedPlan = readyCandidates[0];
+
+  // Return appropriate message based on plan status
+  if (selectedPlan.status === 'in_progress') {
     debugLog(
-      `[find_next_dependency] Warning: Traversal found plan ${readyPlan.id} but isPlanReady returned false`
+      `[find_next_dependency] Found in-progress plan ${selectedPlan.id}: ${selectedPlan.title}`
     );
     return {
-      plan: null,
-      message: `No dependencies are ready to be worked on`,
+      plan: selectedPlan,
+      message: `Found in-progress plan: ${selectedPlan.title} (ID: ${selectedPlan.id})`,
+    };
+  } else {
+    debugLog(`[find_next_dependency] Found ready plan ${selectedPlan.id}: ${selectedPlan.title}`);
+    return {
+      plan: selectedPlan,
+      message: `Found ready plan: ${selectedPlan.title} (ID: ${selectedPlan.id})`,
     };
   }
 }
