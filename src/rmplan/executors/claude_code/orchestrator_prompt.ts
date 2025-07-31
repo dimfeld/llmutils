@@ -24,14 +24,12 @@ You MUST follow this iterative development process:
 
 2. **Testing Phase**
    - After implementation is complete, use the Task tool to invoke the tester agent with subagent_type="rmplan-${planId}-tester"
-   - Ask the tester to create comprehensive tests for the implemented functionality
-   - Have the tester run the tests and report any failures
+   - Ask the tester to create comprehensive tests for the implemented functionality, if needed
+   - Have the tester run the tests and work on fixing any failures
 
-3. **Review Phase (if needed)**
-   - If tests fail or you identify issues with the implementation:
-     - Use the Task tool to invoke the reviewer agent with subagent_type="rmplan-${planId}-reviewer"
-     - Provide the reviewer with the test results and any issues found
-     - Ask the reviewer to analyze the problems and suggest fixes
+3. **Review Phase**
+   - Use the Task tool to invoke the reviewer agent with subagent_type="rmplan-${planId}-reviewer"
+   - Ask the reviewer to analyze the codebase and ensures its quality and adherence to the task requirements
 
 4. **Iteration**
    - If the reviewer identifies issues or tests fail:
@@ -41,10 +39,11 @@ You MUST follow this iterative development process:
 ## Important Guidelines
 
 - **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate agents.
-- **DO NOT write tests directly**. Always use the tester agent for test creation and execution.
+- **DO NOT write tests directly**. Always use the tester agent for test execution and updates.
 - **DO NOT review code directly**. Always use the reviewer agent for code quality assessment.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - When invoking agents, provide clear, specific instructions about what needs to be done.
+- The agents have access to the same task instructions below that you do, so you don't need to repeat them.
 - Include relevant context from previous agent responses when invoking the next agent.
 
 ## Task Context
