@@ -1,10 +1,11 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { PlanSchema } from '../planSchema.js';
 import yaml from 'yaml';
+import { ModuleMocker } from '../../testing.js';
 
 describe('findNextReadyDependency', () => {
   let testDir: string;
@@ -895,6 +896,484 @@ describe('findNextReadyDependency', () => {
 
       // Clean up
       await fs.rm(emptyDir, { recursive: true, force: true });
+    });
+  });
+
+  // Debug logging tests
+  describe('debug logging', () => {
+    let moduleMocker: ModuleMocker;
+    let mockDebugLog: any;
+    let capturedLogs: string[];
+
+    beforeEach(async () => {
+      moduleMocker = new ModuleMocker(import.meta);
+      capturedLogs = [];
+      mockDebugLog = mock((message: string) => {
+        capturedLogs.push(message);
+      });
+
+      await moduleMocker.mock('../../logging.js', () => ({
+        debugLog: mockDebugLog,
+      }));
+    });
+
+    afterEach(() => {
+      moduleMocker.clear();
+    });
+
+    test('logs BFS traversal with plan examination and dependency discovery', async () => {
+      // Create a dependency chain: 1 -> 2 -> 3
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Middle Dependency',
+        filename: '2-middle.yml',
+        status: 'done',
+        dependencies: [3],
+        tasks: [{ title: 'Middle task', description: 'Completed', done: true }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Leaf Dependency',
+        filename: '3-leaf.yml',
+        status: 'pending',
+        tasks: [{ title: 'Leaf task', description: 'Ready to work' }],
+      });
+
+      await findNextReadyDependency(1, testDir);
+
+      // Verify parent plan discovery logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes('[find_next_dependency] Parent plan found: Parent Plan (1)')
+        )
+      ).toBe(true);
+
+      // Verify BFS traversal logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes('[find_next_dependency] Starting BFS traversal from plan 1')
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) => log.includes('[find_next_dependency] BFS: Examining plan 1'))
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes('[find_next_dependency] BFS: Skipping plan 1 - is parent plan')
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) => log.includes('[find_next_dependency] BFS: Examining plan 2'))
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes('[find_next_dependency] BFS: Added plan 2 to dependencies')
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes('[find_next_dependency] BFS: Found 1 direct dependencies for plan 2: [3]')
+        )
+      ).toBe(true);
+
+      // Verify BFS completion logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes('[find_next_dependency] BFS complete: Found 2 total dependencies: [2, 3]')
+        )
+      ).toBe(true);
+    });
+
+    test('logs candidate filtering with status explanations', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3, 4],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Done Plan',
+        filename: '2-done.yml',
+        status: 'done',
+        tasks: [{ title: 'Done task', description: 'Completed', done: true }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Pending Plan',
+        filename: '3-pending.yml',
+        status: 'pending',
+        tasks: [{ title: 'Pending task', description: 'Ready to work' }],
+      });
+
+      await createPlanFile({
+        id: 4,
+        title: 'In Progress Plan',
+        filename: '4-in-progress.yml',
+        status: 'in_progress',
+        tasks: [{ title: 'Active task', description: 'Currently working' }],
+      });
+
+      await findNextReadyDependency(1, testDir);
+
+      // Verify status filtering logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Filtering candidates by status (pending or in_progress)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Filtering: Excluding plan 2 "Done Plan" (status: done)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Filtering: Including plan 3 "Pending Plan" (status: pending)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Filtering: Including plan 4 "In Progress Plan" (status: in_progress)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes('[find_next_dependency] Status filtering complete: 2 candidates remain')
+        )
+      ).toBe(true);
+    });
+
+    test('logs readiness filtering with priority and task explanations', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3, 4, 5],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Maybe Priority Plan',
+        filename: '2-maybe.yml',
+        status: 'pending',
+        priority: 'maybe',
+        tasks: [{ title: 'Maybe task', description: 'Uncertain work' }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'No Tasks Plan',
+        filename: '3-no-tasks.yml',
+        status: 'pending',
+        tasks: [],
+      });
+
+      await createPlanFile({
+        id: 4,
+        title: 'Blocked Plan',
+        filename: '4-blocked.yml',
+        status: 'pending',
+        dependencies: [6], // Depends on non-existent plan
+        tasks: [{ title: 'Blocked task', description: 'Cannot start' }],
+      });
+
+      await createPlanFile({
+        id: 5,
+        title: 'Ready Plan',
+        filename: '5-ready.yml',
+        status: 'pending',
+        tasks: [{ title: 'Ready task', description: 'Can start' }],
+      });
+
+      await findNextReadyDependency(1, testDir);
+
+      // Verify readiness filtering logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Filtering candidates for readiness (priority, tasks, dependencies)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Readiness: Excluding plan 2 "Maybe Priority Plan" - has \'maybe\' priority'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Readiness: Excluding plan 3 "No Tasks Plan" - no tasks defined'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Readiness: Including plan 5 "Ready Plan" - no dependencies to block it'
+          )
+        )
+      ).toBe(true);
+    });
+
+    test('logs sorting logic and final selection with explanations', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3, 4],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Low Priority Plan',
+        filename: '2-low.yml',
+        status: 'pending',
+        priority: 'low',
+        tasks: [{ title: 'Low task', description: 'Low priority work' }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'High Priority Plan',
+        filename: '3-high.yml',
+        status: 'pending',
+        priority: 'high',
+        tasks: [{ title: 'High task', description: 'High priority work' }],
+      });
+
+      await createPlanFile({
+        id: 4,
+        title: 'In Progress Plan',
+        filename: '4-in-progress.yml',
+        status: 'in_progress',
+        priority: 'low',
+        tasks: [{ title: 'Active task', description: 'Currently working' }],
+      });
+
+      await findNextReadyDependency(1, testDir);
+
+      // Verify sorting logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Sorting 3 candidates by: status (in_progress > pending), priority (high > low), ID (ascending)'
+          )
+        )
+      ).toBe(true);
+
+      // Verify before sort logging shows all candidates
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Before sort [0]: Plan 2 "Low Priority Plan" (status: pending, priority: low)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Before sort [1]: Plan 3 "High Priority Plan" (status: pending, priority: high)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Before sort [2]: Plan 4 "In Progress Plan" (status: in_progress, priority: low)'
+          )
+        )
+      ).toBe(true);
+
+      // Verify after sort logging shows proper ordering (in_progress first, then by priority)
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] After sort [0]: Plan 4 "In Progress Plan" (status: in_progress, priority: low)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] After sort [1]: Plan 3 "High Priority Plan" (status: pending, priority: high)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] After sort [2]: Plan 2 "Low Priority Plan" (status: pending, priority: low)'
+          )
+        )
+      ).toBe(true);
+
+      // Verify final selection logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] SELECTED: Plan 4 "In Progress Plan" (status: in_progress, priority: low)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Selection reason: First candidate after sorting by status > priority > ID'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes('[find_next_dependency] Returning in-progress plan 4: In Progress Plan')
+        )
+      ).toBe(true);
+    });
+
+    test('logs circular dependency detection', async () => {
+      // Create circular dependency: 1 -> 2 -> 3 -> 2
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Circular Plan A',
+        filename: '2-circular-a.yml',
+        status: 'pending',
+        dependencies: [3],
+        tasks: [{ title: 'Circular task A', description: 'Part of loop' }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Circular Plan B',
+        filename: '3-circular-b.yml',
+        status: 'pending',
+        dependencies: [2], // Creates circular reference
+        tasks: [{ title: 'Circular task B', description: 'Points back' }],
+      });
+
+      await findNextReadyDependency(1, testDir);
+
+      // Verify circular dependency detection logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] BFS: Skipping plan 2 - already visited (circular reference)'
+          )
+        )
+      ).toBe(true);
+    });
+
+    test('logs no ready candidates analysis', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Done Plan',
+        filename: '2-done.yml',
+        status: 'done',
+        tasks: [{ title: 'Done task', description: 'Completed', done: true }],
+      });
+
+      await findNextReadyDependency(1, testDir);
+
+      // Verify no ready candidates logging
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] No ready candidates found - analyzing why dependencies are not ready'
+          )
+        )
+      ).toBe(true);
+    });
+
+    test('logs dependency blocking analysis', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Blocked Plan',
+        filename: '2-blocked.yml',
+        status: 'pending',
+        dependencies: [3],
+        tasks: [{ title: 'Blocked task', description: 'Cannot start' }],
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Incomplete Plan',
+        filename: '3-incomplete.yml',
+        status: 'pending',
+        tasks: [{ title: 'Incomplete task', description: 'Still working' }],
+      });
+
+      await findNextReadyDependency(1, testDir);
+
+      // Verify dependency blocking analysis
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Readiness: Plan 2 "Blocked Plan" blocked by dependency 3 (status: pending)'
+          )
+        )
+      ).toBe(true);
+      expect(
+        capturedLogs.some((log) =>
+          log.includes(
+            '[find_next_dependency] Readiness: Excluding plan 2 "Blocked Plan" - has incomplete dependencies'
+          )
+        )
+      ).toBe(true);
     });
   });
 });

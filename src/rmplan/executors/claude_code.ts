@@ -172,7 +172,7 @@ export class ClaudeCodeExecutor implements Executor {
               ? new Promise<string>((resolve) => {
                   const defaultResponse = this.options.permissionsMcp?.defaultResponse ?? 'no';
                   setTimeout(() => {
-                    log(`Permission prompt timed out, using default: ${defaultResponse}`);
+                    log(`\nPermission prompt timed out, using default: ${defaultResponse}`);
                     resolve(defaultResponse === 'yes' ? 'allow' : 'disallow');
                   }, this.options.permissionsMcp!.timeout);
                 })

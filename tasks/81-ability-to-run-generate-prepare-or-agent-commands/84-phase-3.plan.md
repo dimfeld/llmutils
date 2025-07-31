@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T18:25:01.862Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T18:43:56.768Z
+updatedAt: 2025-07-31T18:57:12.240Z
 tasks:
   - title: Enhance Error Handling and User Feedback
     description: >
@@ -111,25 +111,25 @@ tasks:
           find_next_dependency.ts, logging each plan ID being examined, whether
           it's being added to dependencies, and if it's skipped due to circular
           reference detection.
-        done: false
+        done: true
       - prompt: >
           Enhance logging in the candidate filtering section to show why each
           plan is included or excluded. Log when plans are filtered out due to
           status (done/cancelled), priority (maybe), or missing tasks. Include
           plan IDs and titles for context.
-        done: false
+        done: true
       - prompt: >
           Add logging to the sorting logic that shows the sort criteria being
           applied (status, priority, ID) and the final sorted order. Log the
           selection of the final candidate with a clear summary of why it was
           chosen.
-        done: false
+        done: true
       - prompt: >
           Create tests that verify the logging output contains expected
           information for various scenarios (successful selection, no
           dependencies found, circular dependencies handled). Use debug mode in
           tests to capture and verify log messages.
-        done: false
+        done: true
   - title: Update Command-Line Help Text
     description: >
       Review and enhance the command-line help documentation for all commands
@@ -238,6 +238,7 @@ changedFiles:
   - src/rmplan/dependency_traversal.test.ts
   - src/rmplan/dependency_traversal.ts
   - src/rmplan/executors/claude_code/agent_generator.test.ts
+  - src/rmplan/executors/claude_code.ts
   - src/rmplan/plans/plan_state_utils.test.ts
   - src/rmplan/plans/plan_state_utils.ts
   - src/rmplan/rmplan.ts

@@ -315,7 +315,8 @@ describe('CLI integration tests for --next-ready flag', () => {
 
       // Should output the error message
       const output = result.stdout.toString() + result.stderr.toString();
-      expect(output).toContain('No ready or pending dependencies found');
+      expect(output).toContain('No ready dependencies found');
+      expect(output).toContain('No dependencies found for this plan');
     });
   });
 
@@ -369,7 +370,8 @@ describe('CLI integration tests for --next-ready flag', () => {
 
       // Should output the error message
       const output = result.stdout.toString() + result.stderr.toString();
-      expect(output).toContain('No ready or pending dependencies found');
+      expect(output).toContain('No ready dependencies found');
+      expect(output).toContain('No dependencies found for this plan');
     });
   });
 
@@ -409,26 +411,26 @@ describe('CLI integration tests for --next-ready flag', () => {
         await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
-      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const generateOutput = generateResult.stdout.toString() + generateResult.stderr.toString();
+      expect(generateOutput).toContain('No ready dependencies found');
+      expect(generateOutput).toContain('No dependencies found for this plan');
 
       // Test prepare command
       const prepareResult = await $`bun ${rmplanPath} prepare --next-ready 1 --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const prepareOutput = prepareResult.stdout.toString() + prepareResult.stderr.toString();
+      expect(prepareOutput).toContain('No ready dependencies found');
+      expect(prepareOutput).toContain('No dependencies found for this plan');
 
       // Test agent command
       const agentResult =
         await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
-      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const agentOutput = agentResult.stdout.toString() + agentResult.stderr.toString();
+      expect(agentOutput).toContain('No ready dependencies found');
+      expect(agentOutput).toContain('No dependencies found for this plan');
     });
 
     test('should handle plans where all dependencies are completed', async () => {
@@ -463,26 +465,26 @@ describe('CLI integration tests for --next-ready flag', () => {
         await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
-      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const generateOutput = generateResult.stdout.toString() + generateResult.stderr.toString();
+      expect(generateOutput).toContain('No ready dependencies found');
+      expect(generateOutput).toContain('All dependencies are complete');
 
       // Test prepare command
       const prepareResult = await $`bun ${rmplanPath} prepare --next-ready 1 --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const prepareOutput = prepareResult.stdout.toString() + prepareResult.stderr.toString();
+      expect(prepareOutput).toContain('No ready dependencies found');
+      expect(prepareOutput).toContain('All dependencies are complete');
 
       // Test agent command
       const agentResult =
         await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
-      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const agentOutput = agentResult.stdout.toString() + agentResult.stderr.toString();
+      expect(agentOutput).toContain('No ready dependencies found');
+      expect(agentOutput).toContain('All dependencies are complete');
     });
 
     test('should handle circular dependencies gracefully', async () => {
@@ -519,26 +521,26 @@ describe('CLI integration tests for --next-ready flag', () => {
         await $`bun ${rmplanPath} generate --next-ready 1 --no-extract --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
-      expect(generateResult.stdout.toString() + generateResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const generateOutput = generateResult.stdout.toString() + generateResult.stderr.toString();
+      expect(generateOutput).toContain('No ready dependencies found');
+      expect(generateOutput).toContain('dependencies are blocked by incomplete prerequisites');
 
       // Test prepare command
       const prepareResult = await $`bun ${rmplanPath} prepare --next-ready 1 --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      expect(prepareResult.stdout.toString() + prepareResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const prepareOutput = prepareResult.stdout.toString() + prepareResult.stderr.toString();
+      expect(prepareOutput).toContain('No ready dependencies found');
+      expect(prepareOutput).toContain('dependencies are blocked by incomplete prerequisites');
 
       // Test agent command
       const agentResult =
         await $`bun ${rmplanPath} agent --next-ready 1 --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
-      expect(agentResult.stdout.toString() + agentResult.stderr.toString()).toContain(
-        'No ready or pending dependencies found'
-      );
+      const agentOutput = agentResult.stdout.toString() + agentResult.stderr.toString();
+      expect(agentOutput).toContain('No ready dependencies found');
+      expect(agentOutput).toContain('dependencies are blocked by incomplete prerequisites');
     });
   });
 

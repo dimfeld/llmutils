@@ -76,6 +76,7 @@ export async function findNextReadyDependency(
   // Check if parent plan exists
   const parentPlan = plans.get(parentPlanId);
   if (!parentPlan) {
+    debugLog(`[find_next_dependency] Parent plan ${parentPlanId} not found`);
     return {
       plan: null,
       message:
@@ -90,16 +91,23 @@ export async function findNextReadyDependency(
     };
   }
 
+  debugLog(`[find_next_dependency] Parent plan found: ${parentPlan.title} (${parentPlan.id})`);
+
   // Collect all dependencies using BFS
+  debugLog(`[find_next_dependency] Starting BFS traversal from plan ${parentPlanId}`);
   const allDependencies = new Set<number>();
   const queue: number[] = [parentPlanId];
   const visited = new Set<number>();
 
   while (queue.length > 0) {
     const currentId = queue.shift()!;
+    debugLog(`[find_next_dependency] BFS: Examining plan ${currentId}`);
 
     // Check for circular dependencies
     if (visited.has(currentId)) {
+      debugLog(
+        `[find_next_dependency] BFS: Skipping plan ${currentId} - already visited (circular reference)`
+      );
       continue;
     }
     visited.add(currentId);
@@ -107,27 +115,63 @@ export async function findNextReadyDependency(
     // Skip the starting plan itself
     if (currentId !== parentPlanId) {
       allDependencies.add(currentId);
+      debugLog(`[find_next_dependency] BFS: Added plan ${currentId} to dependencies`);
+    } else {
+      debugLog(`[find_next_dependency] BFS: Skipping plan ${currentId} - is parent plan`);
     }
 
     // Add direct dependencies to the queue
     const directDeps = getDirectDependencies(currentId, plans);
+    debugLog(
+      `[find_next_dependency] BFS: Found ${directDeps.length} direct dependencies for plan ${currentId}: [${directDeps.join(', ')}]`
+    );
     queue.push(...directDeps);
   }
 
+  debugLog(
+    `[find_next_dependency] BFS complete: Found ${allDependencies.size} total dependencies: [${Array.from(allDependencies).join(', ')}]`
+  );
+
   // Filter candidates to only include pending or in_progress plans
+  debugLog(`[find_next_dependency] Filtering candidates by status (pending or in_progress)`);
   const candidates = Array.from(allDependencies)
-    .map((id) => plans.get(id))
-    .filter((plan): plan is PlanSchema & { filename: string } => {
-      if (!plan) return false;
-      const status = plan.status || 'pending';
-      return status === 'pending' || status === 'in_progress';
-    });
+    .map((id) => ({ id, plan: plans.get(id) }))
+    .filter((item): item is { id: number; plan: PlanSchema & { filename: string } } => {
+      if (!item.plan) {
+        debugLog(`[find_next_dependency] Filtering: Plan ${item.id} not found in plans map`);
+        return false;
+      }
+      const status = item.plan.status || 'pending';
+      const included = status === 'pending' || status === 'in_progress';
+      if (included) {
+        debugLog(
+          `[find_next_dependency] Filtering: Including plan ${item.plan.id} "${item.plan.title}" (status: ${status})`
+        );
+      } else {
+        debugLog(
+          `[find_next_dependency] Filtering: Excluding plan ${item.plan.id} "${item.plan.title}" (status: ${status})`
+        );
+      }
+      return included;
+    })
+    .map((item) => item.plan);
+
+  debugLog(
+    `[find_next_dependency] Status filtering complete: ${candidates.length} candidates remain`
+  );
 
   // Filter out plans with 'maybe' priority and check readiness
+  debugLog(
+    `[find_next_dependency] Filtering candidates for readiness (priority, tasks, dependencies)`
+  );
   const readyCandidates = candidates.filter((plan) => {
+    const planInfo = `${plan.id} "${plan.title}"`;
+
     // Skip plans with 'maybe' priority
     if (plan.priority === 'maybe') {
-      debugLog(`[find_next_dependency] Skipping plan ${plan.id} with 'maybe' priority`);
+      debugLog(
+        `[find_next_dependency] Readiness: Excluding plan ${planInfo} - has 'maybe' priority`
+      );
       return false;
     }
 
@@ -135,27 +179,58 @@ export async function findNextReadyDependency(
 
     // In-progress plans are always ready
     if (status === 'in_progress') {
+      debugLog(`[find_next_dependency] Readiness: Including plan ${planInfo} - is in_progress`);
       return true;
     }
 
     // For pending plans, check for tasks and dependencies
     if (!plan.tasks || plan.tasks.length === 0) {
-      debugLog(`[find_next_dependency] Skipping pending plan ${plan.id} - no tasks defined`);
+      debugLog(`[find_next_dependency] Readiness: Excluding plan ${planInfo} - no tasks defined`);
       return false;
     }
 
     // Check if all dependencies are done
     if (!plan.dependencies || plan.dependencies.length === 0) {
+      debugLog(
+        `[find_next_dependency] Readiness: Including plan ${planInfo} - no dependencies to block it`
+      );
       return true;
     }
 
-    return plan.dependencies.every((depId) => {
+    const allDepsReady = plan.dependencies.every((depId) => {
       const depPlan = plans.get(depId);
-      return depPlan && depPlan.status === 'done';
+      const depReady = depPlan && depPlan.status === 'done';
+      if (!depReady) {
+        const depStatus = depPlan ? depPlan.status || 'pending' : 'missing';
+        debugLog(
+          `[find_next_dependency] Readiness: Plan ${planInfo} blocked by dependency ${depId} (status: ${depStatus})`
+        );
+      }
+      return depReady;
     });
+
+    if (allDepsReady) {
+      debugLog(
+        `[find_next_dependency] Readiness: Including plan ${planInfo} - all ${plan.dependencies.length} dependencies are done`
+      );
+    } else {
+      debugLog(
+        `[find_next_dependency] Readiness: Excluding plan ${planInfo} - has incomplete dependencies`
+      );
+    }
+
+    return allDepsReady;
   });
 
+  debugLog(
+    `[find_next_dependency] Readiness filtering complete: ${readyCandidates.length} ready candidates remain`
+  );
+
   if (readyCandidates.length === 0) {
+    debugLog(
+      `[find_next_dependency] No ready candidates found - analyzing why dependencies are not ready`
+    );
+
     // Provide detailed explanation of why no dependencies are ready
     const allDependencyPlans = Array.from(allDependencies)
       .map((id) => plans.get(id))
@@ -218,6 +293,19 @@ export async function findNextReadyDependency(
   }
 
   // Sort by status first (in_progress > pending), then priority, then by ID
+  debugLog(
+    `[find_next_dependency] Sorting ${readyCandidates.length} candidates by: status (in_progress > pending), priority (high > low), ID (ascending)`
+  );
+
+  // Log candidates before sorting
+  readyCandidates.forEach((plan, index) => {
+    const status = plan.status || 'pending';
+    const priority = plan.priority || 'none';
+    debugLog(
+      `[find_next_dependency] Before sort [${index}]: Plan ${plan.id} "${plan.title}" (status: ${status}, priority: ${priority})`
+    );
+  });
+
   readyCandidates.sort((a, b) => {
     // Status order - in_progress comes first
     const aStatus = a.status || 'pending';
@@ -249,19 +337,39 @@ export async function findNextReadyDependency(
     return 0;
   });
 
+  // Log candidates after sorting
+  readyCandidates.forEach((plan, index) => {
+    const status = plan.status || 'pending';
+    const priority = plan.priority || 'none';
+    debugLog(
+      `[find_next_dependency] After sort [${index}]: Plan ${plan.id} "${plan.title}" (status: ${status}, priority: ${priority})`
+    );
+  });
+
   const selectedPlan = readyCandidates[0];
+  const status = selectedPlan.status || 'pending';
+  const priority = selectedPlan.priority || 'none';
+
+  debugLog(
+    `[find_next_dependency] SELECTED: Plan ${selectedPlan.id} "${selectedPlan.title}" (status: ${status}, priority: ${priority})`
+  );
+  debugLog(
+    `[find_next_dependency] Selection reason: First candidate after sorting by status > priority > ID`
+  );
 
   // Return appropriate message based on plan status
   if (selectedPlan.status === 'in_progress') {
     debugLog(
-      `[find_next_dependency] Found in-progress plan ${selectedPlan.id}: ${selectedPlan.title}`
+      `[find_next_dependency] Returning in-progress plan ${selectedPlan.id}: ${selectedPlan.title}`
     );
     return {
       plan: selectedPlan,
       message: `Found in-progress plan: ${selectedPlan.title} (ID: ${selectedPlan.id})`,
     };
   } else {
-    debugLog(`[find_next_dependency] Found ready plan ${selectedPlan.id}: ${selectedPlan.title}`);
+    debugLog(
+      `[find_next_dependency] Returning ready plan ${selectedPlan.id}: ${selectedPlan.title}`
+    );
     return {
       plan: selectedPlan,
       message: `Found ready plan: ${selectedPlan.title} (ID: ${selectedPlan.id})`,
