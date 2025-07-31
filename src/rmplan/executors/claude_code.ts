@@ -527,7 +527,22 @@ export class ClaudeCodeExecutor implements Executor {
           cwd: gitRoot,
           formatStdout: (output) => {
             let lines = splitter(output);
-            return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
+            const formattedResults = lines.map(formatJsonMessage);
+            
+            // Extract file paths and add them to trackedFiles set
+            for (const result of formattedResults) {
+              if (result.filePaths) {
+                for (const filePath of result.filePaths) {
+                  // Resolve to absolute path
+                  const absolutePath = path.isAbsolute(filePath) 
+                    ? filePath 
+                    : path.resolve(gitRoot, filePath);
+                  this.trackedFiles.add(absolutePath);
+                }
+              }
+            }
+            
+            return formattedResults.map(r => r.message || '').join('\n\n') + '\n\n';
           },
         });
 
