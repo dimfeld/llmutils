@@ -176,7 +176,7 @@ export async function handleGenerateCommand(
   // Manual conflict check for --plan, --plan-editor, --issue, and --next-ready
   if (planOptionsSet !== 1) {
     throw new Error(
-      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, or --next-ready <planId>'
+      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, or --next-ready <planIdOrPath>'
     );
   }
 

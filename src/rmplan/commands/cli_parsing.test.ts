@@ -28,8 +28,8 @@ describe('CLI Parsing for --next-ready flag', () => {
       .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
       .option('--claude', 'Use Claude Code for two-step planning and generation')
       .option(
-        '--next-ready <planId>',
-        'Find and operate on the next ready dependency of the specified parent plan'
+        '--next-ready <planIdOrPath>',
+        'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
       )
       .allowExcessArguments(true)
       .allowUnknownOption(true);
@@ -59,8 +59,8 @@ describe('CLI Parsing for --next-ready flag', () => {
       .option('--next', 'Prepare the next plan that is ready to be implemented')
       .option('--current', 'Prepare the current plan (in_progress or next ready plan)')
       .option(
-        '--next-ready <planId>',
-        'Find and operate on the next ready dependency of the specified parent plan'
+        '--next-ready <planIdOrPath>',
+        'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
       )
       .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
       .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
@@ -105,8 +105,8 @@ describe('CLI Parsing for --next-ready flag', () => {
       .option('--next', 'Execute the next plan that is ready to be implemented')
       .option('--current', 'Execute the current plan (in_progress or next ready plan)')
       .option(
-        '--next-ready <planId>',
-        'Find and operate on the next ready dependency of the specified parent plan'
+        '--next-ready <planIdOrPath>',
+        'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
       )
       .option('--with-dependencies', 'Also execute all dependencies first in the correct order')
       .option(
@@ -135,8 +135,8 @@ describe('CLI Parsing for --next-ready flag', () => {
       .option('--next', 'Show the next plan that is ready to be implemented')
       .option('--current', 'Show the current plan (in_progress or next ready plan)')
       .option(
-        '--next-ready <planId>',
-        'Find and show the next ready dependency of the specified parent plan'
+        '--next-ready <planIdOrPath>',
+        'Find and show the next ready dependency of the specified parent plan (accepts plan ID or file path)'
       )
       .option('--copy-details', 'Copy the plan details to the clipboard')
       .option('--full', 'Display full details without truncation');
@@ -155,8 +155,8 @@ describe('CLI Parsing for --next-ready flag', () => {
     const generateCommand = program
       .command('generate [plan]')
       .option(
-        '--next-ready <planId>',
-        'Find and operate on the next ready dependency of the specified parent plan'
+        '--next-ready <planIdOrPath>',
+        'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
       );
 
     // Test numeric ID
@@ -168,8 +168,8 @@ describe('CLI Parsing for --next-ready flag', () => {
     const generateCommand2 = program
       .command('generate [plan]')
       .option(
-        '--next-ready <planId>',
-        'Find and operate on the next ready dependency of the specified parent plan'
+        '--next-ready <planIdOrPath>',
+        'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
       );
 
     generateCommand2.parse(['generate', '--next-ready', '/path/to/plan.yml'], { from: 'user' });

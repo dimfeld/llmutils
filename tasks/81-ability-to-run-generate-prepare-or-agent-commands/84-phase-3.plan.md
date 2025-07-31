@@ -13,7 +13,7 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T18:25:01.862Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T18:57:12.240Z
+updatedAt: 2025-07-31T19:06:26.506Z
 tasks:
   - title: Enhance Error Handling and User Feedback
     description: >
@@ -161,13 +161,13 @@ tasks:
           all commands. Ensure each description clearly explains that the flag
           finds and operates on the next ready dependency of the specified
           parent plan, accepting either a plan ID or file path.
-        done: false
+        done: true
       - prompt: >
           Update any command descriptions that mention --next-ready to ensure
           they accurately reflect the new capability. Verify the help text
           formatting is consistent across all commands and follows the project's
           documentation style.
-        done: false
+        done: true
   - title: Update Project Documentation
     description: >
       Create comprehensive documentation for the new --next-ready feature in the

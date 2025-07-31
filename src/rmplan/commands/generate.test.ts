@@ -402,7 +402,7 @@ Task description`);
     };
 
     await expect(handleGenerateCommand(undefined, options, command)).rejects.toThrow(
-      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, or --next-ready <planId>'
+      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, or --next-ready <planIdOrPath>'
     );
   });
 
