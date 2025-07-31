@@ -12,7 +12,7 @@ parent: 82
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T08:03:03.643Z
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T08:03:03.937Z
+updatedAt: 2025-07-31T08:10:54.972Z
 tasks:
   - title: Add a file tracking set to the executor state
     description: >
@@ -32,19 +32,19 @@ tasks:
 
           a trackedFiles Set property exists and is properly initialized when
           the executor is created.
-        done: false
+        done: true
       - prompt: >
           Add a private property `trackedFiles: Set<string>` to the
           ClaudeCodeExecutor class
 
           and initialize it as an empty Set in the constructor.
-        done: false
+        done: true
       - prompt: >
           Update the execute method to ensure the trackedFiles set is cleared at
           the beginning
 
           of each execution session for proper state isolation between runs.
-        done: false
+        done: true
   - title: Track file paths written by Write, Edit, and MultiEdit
     description: >
       The formatJsonMessage function currently parses tool use requests from
@@ -145,6 +145,9 @@ tasks:
           then confirm that rm commands for that file are auto-approved without
           user prompts.
         done: false
+changedFiles:
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
 rmfilter:
   - src/rmplan/executors/
 ---

@@ -448,14 +448,14 @@ describe('ClaudeCodeExecutor', () => {
 
     // Test that Set maintains uniqueness
     const trackedFiles = (executor as any).trackedFiles as Set<string>;
-    
+
     // Add duplicate paths
     trackedFiles.add('/test/file1.ts');
     trackedFiles.add('/test/file2.ts');
     trackedFiles.add('/test/file1.ts'); // duplicate
     trackedFiles.add('/test/file3.ts');
     trackedFiles.add('/test/file2.ts'); // duplicate
-    
+
     // Should only have 3 unique files
     expect(trackedFiles.size).toBe(3);
     expect(trackedFiles.has('/test/file1.ts')).toBe(true);
