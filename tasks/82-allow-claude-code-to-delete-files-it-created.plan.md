@@ -6,15 +6,25 @@ goal: The project aims to add a configuration option to the Claude code executor
   command that targets a file previously created or modified by the agent within
   the same session.
 id: 82
-status: in_progress
+status: done
 priority: medium
 container: true
 dependencies:
   - 83
   - 84
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T08:03:03.973Z
+updatedAt: 2025-07-31T09:57:13.296Z
 tasks: []
+changedFiles:
+  - README.md
+  - src/rmplan/executors/build.test.ts
+  - src/rmplan/executors/claude_code/format.test.ts
+  - src/rmplan/executors/claude_code/format.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/schemas.test.ts
+  - src/rmplan/executors/schemas.ts
+  - test_parseRmCommand.ts
 rmfilter:
   - src/rmplan/executors/
 ---
