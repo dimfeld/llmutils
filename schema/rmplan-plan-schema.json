@@ -118,8 +118,7 @@
       },
       "required": [
         "title",
-        "goal",
-        "details"
+        "goal"
       ],
       "additionalProperties": false
     },
