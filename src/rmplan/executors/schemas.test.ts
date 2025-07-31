@@ -78,7 +78,10 @@ describe('claudeCodeOptionsSchema', () => {
         expect(result.success).toBe(false);
         if (!result.success) {
           expect(result.error.issues).toHaveLength(1);
-          expect(result.error.issues[0].path).toEqual(['permissionsMcp', 'autoApproveCreatedFileDeletion']);
+          expect(result.error.issues[0].path).toEqual([
+            'permissionsMcp',
+            'autoApproveCreatedFileDeletion',
+          ]);
           expect(result.error.issues[0].code).toBe(z.ZodIssueCode.invalid_type);
         }
       }
@@ -163,7 +166,6 @@ describe('claudeCodeOptionsSchema', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.includeDefaultTools).toBeUndefined();
-        expect(result.data.autoApproveCreatedFileDeletion).toBeUndefined();
         expect(result.data.allowedTools).toBeUndefined();
         expect(result.data.allowAllTools).toBeUndefined();
         expect(result.data.disallowedTools).toBeUndefined();
@@ -171,48 +173,6 @@ describe('claudeCodeOptionsSchema', () => {
         expect(result.data.interactive).toBeUndefined();
         expect(result.data.permissionsMcp).toBeUndefined();
       }
-    });
-
-    test('rejects invalid permissionsMcp structure when autoApproveCreatedFileDeletion is set', () => {
-      const result = claudeCodeOptionsSchema.safeParse({
-        autoApproveCreatedFileDeletion: true,
-        permissionsMcp: {
-          enabled: 'true', // Invalid type
-        },
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(
-          result.error.issues.some(
-            (issue) => issue.path.includes('permissionsMcp') && issue.path.includes('enabled')
-          )
-        ).toBe(true);
-      }
-    });
-  });
-
-  describe('type inference', () => {
-    test('inferred type includes autoApproveCreatedFileDeletion as optional boolean', () => {
-      type ClaudeCodeOptions = z.infer<typeof claudeCodeOptionsSchema>;
-
-      // This is a compile-time test - if this compiles, the types are correct
-      const options1: ClaudeCodeOptions = {
-        autoApproveCreatedFileDeletion: true,
-      };
-
-      const options2: ClaudeCodeOptions = {
-        autoApproveCreatedFileDeletion: false,
-      };
-
-      const options3: ClaudeCodeOptions = {
-        // autoApproveCreatedFileDeletion is optional, so can be omitted
-      };
-
-      // Runtime verification that the types work
-      expect(typeof options1.autoApproveCreatedFileDeletion).toBe('boolean');
-      expect(typeof options2.autoApproveCreatedFileDeletion).toBe('boolean');
-      expect(options3.autoApproveCreatedFileDeletion).toBeUndefined();
     });
   });
 });
@@ -267,7 +227,7 @@ describe('claudeCodeOptionsSchema integration with configuration validation', ()
     const permissionsMcpField = schemaShape.permissionsMcp;
 
     expect(permissionsMcpField).toBeDefined();
-    
+
     // Test that we can parse a config with the nested field and verify the description is present
     const testConfig = {
       permissionsMcp: {
@@ -275,10 +235,10 @@ describe('claudeCodeOptionsSchema integration with configuration validation', ()
         autoApproveCreatedFileDeletion: true,
       },
     };
-    
+
     const result = claudeCodeOptionsSchema.safeParse(testConfig);
     expect(result.success).toBe(true);
-    
+
     // The description exists in the schema definition - we can verify it's working by testing the config
     if (result.success) {
       expect(result.data.permissionsMcp?.autoApproveCreatedFileDeletion).toBe(true);
@@ -289,7 +249,10 @@ describe('claudeCodeOptionsSchema integration with configuration validation', ()
     // Test various partial configurations that might be found in real config files
     const partialConfigs = [
       { permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true } },
-      { allowAllTools: true, permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: false } },
+      {
+        allowAllTools: true,
+        permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: false },
+      },
       {
         permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true },
       },
@@ -312,9 +275,9 @@ describe('claudeCodeOptionsSchema integration with configuration validation', ()
   test('validates edge cases for property combinations', () => {
     // Test that autoApproveCreatedFileDeletion works with permissionsMcp disabled
     const result1 = claudeCodeOptionsSchema.safeParse({
-      permissionsMcp: { 
+      permissionsMcp: {
         enabled: false,
-        autoApproveCreatedFileDeletion: true 
+        autoApproveCreatedFileDeletion: true,
       },
     });
 
