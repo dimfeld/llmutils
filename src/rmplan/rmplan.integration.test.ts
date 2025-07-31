@@ -41,6 +41,7 @@ describe('rmplan CLI integration tests', () => {
 
   test('rmplan add creates a new plan', async () => {
     const result = await $`bun ${rmplanPath} add "Integration Test Plan" --config ${configPath}`
+      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
       .cwd(tempDir)
       .text();
 
@@ -69,7 +70,10 @@ describe('rmplan CLI integration tests', () => {
     };
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const result = await $`bun ${rmplanPath} list --config ${configPath}`.cwd(tempDir).text();
+    const result = await $`bun ${rmplanPath} list --config ${configPath}`
+      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
+      .cwd(tempDir)
+      .text();
 
     expect(result).toContain('List Test Plan');
     expect(result).toContain('pending');
@@ -100,7 +104,10 @@ describe('rmplan CLI integration tests', () => {
     };
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const result = await $`bun ${rmplanPath} show 1 --config ${configPath}`.cwd(tempDir).text();
+    const result = await $`bun ${rmplanPath} show 1 --config ${configPath}`
+      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
+      .cwd(tempDir)
+      .text();
 
     expect(result).toContain('Show Test Plan');
     expect(result).toContain('Test showing plan details');
@@ -138,6 +145,7 @@ describe('rmplan CLI integration tests', () => {
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
     const result = await $`bun ${rmplanPath} done 1 --steps 1 --config ${configPath}`
+      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
       .cwd(tempDir)
       .text();
 
@@ -192,6 +200,7 @@ describe('rmplan CLI integration tests', () => {
 
     // Test filtering by done status
     const result = await $`bun ${rmplanPath} list --status done --config ${configPath}`
+      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
       .cwd(tempDir)
       .text();
 
@@ -239,6 +248,7 @@ describe('rmplan CLI integration tests', () => {
     }
 
     const result = await $`bun ${rmplanPath} show --next --config ${configPath}`
+      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
       .cwd(tempDir)
       .text();
 
@@ -253,6 +263,7 @@ describe('rmplan CLI integration tests', () => {
     // Create a plan with dependencies and priority
     const result =
       await $`bun ${rmplanPath} add "Dependent Plan" --depends-on 1 --depends-on 3 --priority high --config ${configPath} --debug`
+        .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
         .cwd(tempDir)
         .text();
 
