@@ -92,6 +92,7 @@ program
   .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
   .option('--claude', 'Use Claude Code for two-step planning and generation')
+  .option('--next-ready <planId>', 'Find and operate on the next ready dependency of the specified parent plan')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (planArg, options, command) => {
@@ -259,6 +260,7 @@ function createAgentCommand(command: Command, description: string) {
     .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
     .option('--next', 'Execute the next plan that is ready to be implemented')
     .option('--current', 'Execute the current plan (in_progress or next ready plan)')
+    .option('--next-ready <planId>', 'Find and operate on the next ready dependency of the specified parent plan')
     .option('--with-dependencies', 'Also execute all dependencies first in the correct order')
     .option(
       '--direct',
@@ -322,6 +324,7 @@ program
   .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
   .option('--next', 'Prepare the next plan that is ready to be implemented')
   .option('--current', 'Prepare the current plan (in_progress or next ready plan)')
+  .option('--next-ready <planId>', 'Find and operate on the next ready dependency of the specified parent plan')
   .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
   .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
