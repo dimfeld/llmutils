@@ -4,12 +4,12 @@ title: Allow Claude Code to delete files it created - Introduce Configuration,
   Logging, and Documentation
 goal: To make the auto-approval feature configurable, add informative logging,
   and update the project documentation.
-id: 84
+id: 89
 status: done
 priority: high
 dependencies:
-  - 83
-parent: 82
+  - 88
+parent: 87
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T09:31:35.989Z
 createdAt: 2025-07-31T07:52:58.950Z

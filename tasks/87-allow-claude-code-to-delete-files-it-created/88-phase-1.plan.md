@@ -4,11 +4,11 @@ title: Allow Claude Code to delete files it created - Implement Core File
   Tracking and Auto-Approval Logic
 goal: To implement the fundamental mechanism for tracking created/modified files
   and auto-approving their deletion, without the user-facing configuration.
-id: 83
+id: 88
 status: done
 priority: high
 dependencies: []
-parent: 82
+parent: 87
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T08:03:03.643Z
 createdAt: 2025-07-31T07:52:58.950Z

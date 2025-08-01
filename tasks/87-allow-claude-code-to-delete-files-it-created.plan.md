@@ -5,13 +5,13 @@ goal: The project aims to add a configuration option to the Claude code executor
   that, when enabled, permits it to automatically approve any `rm` or `rm -f`
   command that targets a file previously created or modified by the agent within
   the same session.
-id: 82
+id: 87
 status: done
 priority: medium
 container: true
 dependencies:
-  - 83
-  - 84
+  - 88
+  - 89
 createdAt: 2025-07-31T07:52:58.950Z
 updatedAt: 2025-07-31T09:57:13.296Z
 tasks: []
