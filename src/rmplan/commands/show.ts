@@ -58,8 +58,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       return;
     }
 
-    log(chalk.green(`Found ready dependency: ${result.plan.id} - ${result.plan.title}`));
-    log(chalk.gray(result.message));
+    log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
     resolvedPlanFile = result.plan.filename;
   } else if (options.next || options.current) {
     // Find the next ready plan or current plan

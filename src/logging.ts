@@ -1,9 +1,11 @@
 import chalk from 'chalk';
 import { getLoggerAdapter, runWithLogger } from './logging/adapter.js';
 import { ConsoleAdapter } from './logging/console.js';
+import { SilentAdapter } from './logging/silent.js';
 
 // Default console adapter that will be used when no other adapter is set
-const defaultConsoleAdapter = new ConsoleAdapter();
+const suppressConsole = process.env.NODE_ENV === 'test' && !process.env.TEST_ALLOW_CONSOLE;
+const defaultConsoleAdapter = suppressConsole ? new SilentAdapter() : new ConsoleAdapter();
 
 // Re-export common functions to make it available to consumers
 export { openLogFile, closeLogFile, writeToLogFile } from './logging/common.js';

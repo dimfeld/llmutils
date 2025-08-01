@@ -60,7 +60,7 @@ export type Message =
 // Cache for tool use IDs mapped to their names
 const toolUseCache = new Map<string, string>();
 
-export function formatJsonMessage(input: string) {
+export function formatJsonMessage(input: string): { message?: string; filePaths?: string[] } {
   // TODOS implemented:
   // - Cache tool use IDs across calls so that we can print the tool names with the results
   // - When reading and writing files, just show number of lines read and written
@@ -69,8 +69,10 @@ export function formatJsonMessage(input: string) {
   debugLog(input);
 
   if (input.startsWith('[DEBUG]')) {
-    return;
+    return {};
   }
+
+  const filePaths: string[] = [];
   const message = JSON.parse(input) as Message;
 
   // Get the current timestamp in HH:MM:SS format
@@ -89,7 +91,7 @@ export function formatJsonMessage(input: string) {
         `Session ID: ${message.session_id}`,
         result
       );
-      return outputLines.join('\n');
+      return { message: outputLines.join('\n') };
     }
   } else if (message.type === 'system' && message.subtype === 'init') {
     outputLines.push(
@@ -104,7 +106,7 @@ export function formatJsonMessage(input: string) {
       );
     }
 
-    return outputLines.join('\n');
+    return { message: outputLines.join('\n') };
   } else if (message.type === 'assistant' || message.type === 'user') {
     const m = message.message;
 
@@ -136,6 +138,7 @@ export function formatJsonMessage(input: string) {
           'content' in content.input
         ) {
           const filePath = content.input.file_path as string;
+          filePaths.push(filePath);
           const fileContent = content.input.content as string;
           const lineCount = fileContent.split('\n').length;
           outputLines.push(
@@ -156,6 +159,8 @@ export function formatJsonMessage(input: string) {
             file_path: string;
           };
 
+          filePaths.push(file_path);
+
           // Create a diff between the old and new strings
           const diff = createTwoFilesPatch('old', 'new', old_string, new_string);
 
@@ -163,6 +168,18 @@ export function formatJsonMessage(input: string) {
             chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
             `File path: ${file_path}\n`,
             diff
+          );
+        } else if (
+          content.name === 'MultiEdit' &&
+          content.input &&
+          typeof content.input === 'object' &&
+          'file_path' in content.input
+        ) {
+          const filePath = content.input.file_path as string;
+          filePaths.push(filePath);
+          outputLines.push(
+            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+            yaml.stringify(content.input ?? {})
           );
         } else if (
           content.name === 'TodoWrite' &&
@@ -193,8 +210,9 @@ export function formatJsonMessage(input: string) {
           });
           outputLines.push(todoLines.join('\n'));
         } else {
+          const color = content.name === 'Task' ? chalk.red : chalk.cyan;
           outputLines.push(
-            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+            color(`### Invoke Tool: ${content.name} [${timestamp}]`),
             yaml.stringify(content.input ?? {})
           );
         }
@@ -227,19 +245,20 @@ export function formatJsonMessage(input: string) {
           formattedResult = formatValue(result);
         }
 
-        outputLines.push(
-          chalk.magenta(`### Tool Result: ${toolName} [${timestamp}]`),
-          formattedResult
-        );
+        const color = toolName === 'Task' ? chalk.red : chalk.magenta;
+        outputLines.push(color(`### Tool Result: ${toolName} [${timestamp}]`), formattedResult);
       } else {
         debugLog('Unknown message type:', content.type);
         outputLines.push(`### ${content.type as string} [${timestamp}]`, formatValue(content));
       }
-      return outputLines.join('\n\n');
     }
+    return {
+      message: outputLines.join('\n\n'),
+      filePaths: filePaths.length > 0 ? filePaths : undefined,
+    };
   }
 
-  return `Unknown message: ${JSON.stringify(message)}`;
+  return { message: `Unknown message: ${JSON.stringify(message)}` };
 }
 
 function formatValue(value: unknown): string {

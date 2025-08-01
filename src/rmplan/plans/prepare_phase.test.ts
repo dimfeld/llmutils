@@ -147,7 +147,7 @@ describe('preparePhase with Claude option', () => {
     const claudeCall = invokeClaudeCodeForGenerationSpy.mock.calls[0] as any;
     // Now we expect 3 arguments: planningPrompt, generationPrompt, options
     expect(claudeCall).toHaveLength(3);
-    expect(claudeCall[0]).toContain('planning'); // Planning prompt
+    expect(claudeCall[0]).toContain('Phase Implementation Analysis'); // Planning prompt
     expect(claudeCall[1]).toContain('YAML'); // Generation prompt
     expect(claudeCall[2]).toEqual({
       model: 'test-model',

@@ -142,6 +142,9 @@ The codebase uses Bun's built-in test runner. Tests typically:
 - Apply transformations using the utilities
 - Verify the output matches expectations
 
+By default, console logging is suppressed in tests. You can enable it for debugging by running with
+`TEST_ALLOW_CONSOLE=true` in the environment.
+
 When adding new features, ensure test coverage for:
 
 - Happy path functionality

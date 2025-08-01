@@ -1092,6 +1092,30 @@ The `Bash` tool receives special treatment due to its powerful nature. When you 
 
 "Always Allow" rules are automatically saved to the `.claude/settings.local.json` file in your project's root directory. This ensures your preferences persist across sessions.
 
+#### Automatic File Deletion Approval
+
+The Claude Code executor includes an optional feature to automatically approve deletion of files that were created or modified by Claude Code within the same session. This reduces the number of manual approvals needed for routine cleanup tasks.
+
+To enable this feature, configure the `autoApproveCreatedFileDeletion` option in your rmplan configuration file:
+
+```yaml
+# In .rmfilter/config/rmplan.local.yml
+executors:
+  claude-code:
+    permissionsMcp:
+      autoApproveCreatedFileDeletion: true
+```
+
+**How it works:**
+
+- When enabled, Claude Code tracks all files that are created or modified using the `Write`, `Edit`, or `MultiEdit` tools during the session
+- If Claude Code attempts to run `rm <path>` or `rm -f <path>` on any of these tracked files, the command is automatically approved
+- When a deletion is auto-approved, a log message is displayed indicating which file was automatically approved for deletion
+- Files not created or modified by Claude Code in the current session will still require manual approval
+- The feature is disabled by default (`false`) for security
+
+This feature is particularly useful when Claude Code creates temporary test files, configuration files, or other artifacts that need to be cleaned up as part of the implementation process.
+
 ## Multi-Phase Project Planning
 
 The `rmplan` utility supports a detailed planning mode that enables breaking large software features into phases, with each phase delivering a working component that builds on previous phases. This approach ensures incremental, validated progress through complex implementations.

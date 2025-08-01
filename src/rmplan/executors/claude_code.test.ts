@@ -1,10 +1,11 @@
-import { test, describe, expect, mock, afterEach } from 'bun:test';
+import { test, describe, expect, mock, afterEach, spyOn } from 'bun:test';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { ClaudeCodeExecutor } from './claude_code.ts';
 import type { ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import { ModuleMocker } from '../../testing.js';
+import * as logging from '../../logging.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -39,7 +40,7 @@ describe('ClaudeCodeExecutor', () => {
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/base')),
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
     }));
 
     await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -136,7 +137,7 @@ describe('ClaudeCodeExecutor', () => {
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/base')),
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
     }));
 
     await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -226,7 +227,7 @@ describe('ClaudeCodeExecutor', () => {
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/base')),
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
     }));
 
     await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -281,7 +282,7 @@ describe('ClaudeCodeExecutor', () => {
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/base')),
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
     }));
 
     await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -305,6 +306,2209 @@ describe('ClaudeCodeExecutor', () => {
     // Verify agent files were not generated or cleaned up
     expect(mockGenerateAgentFiles).not.toHaveBeenCalled();
     expect(mockRemoveAgentFiles).not.toHaveBeenCalled();
+  });
+
+  test('initializes trackedFiles Set property', () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Verify trackedFiles property exists and is a Set
+    expect((executor as any).trackedFiles).toBeInstanceOf(Set);
+    expect((executor as any).trackedFiles.size).toBe(0);
+  });
+
+  test('clears trackedFiles at the start of execute method', async () => {
+    // Mock the necessary dependencies
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Manually add some items to trackedFiles to simulate previous state
+    (executor as any).trackedFiles.add('/test/file1.ts');
+    (executor as any).trackedFiles.add('/test/file2.ts');
+    expect((executor as any).trackedFiles.size).toBe(2);
+
+    // Execute the method - it should clear trackedFiles at the start
+    await executor.execute('test content', mockPlanInfo);
+
+    // Verify trackedFiles was cleared (should be empty since no actual file operations happen in mocked execution)
+    expect((executor as any).trackedFiles.size).toBe(0);
+  });
+
+  test('maintains proper state isolation across multiple execution cycles', async () => {
+    // Mock the necessary dependencies
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // First execution cycle
+    (executor as any).trackedFiles.add('/first/file1.ts');
+    (executor as any).trackedFiles.add('/first/file2.ts');
+    expect((executor as any).trackedFiles.size).toBe(2);
+
+    await executor.execute('first content', mockPlanInfo);
+    expect((executor as any).trackedFiles.size).toBe(0);
+
+    // Second execution cycle - simulate adding files again
+    (executor as any).trackedFiles.add('/second/file1.ts');
+    (executor as any).trackedFiles.add('/second/file2.ts');
+    (executor as any).trackedFiles.add('/second/file3.ts');
+    expect((executor as any).trackedFiles.size).toBe(3);
+
+    await executor.execute('second content', {
+      planId: '456',
+      planTitle: 'Second Test Plan',
+      planFilePath: '/test/plans/second-plan.md',
+    });
+    expect((executor as any).trackedFiles.size).toBe(0);
+
+    // Third execution cycle without planInfo
+    (executor as any).trackedFiles.add('/third/file.ts');
+    expect((executor as any).trackedFiles.size).toBe(1);
+
+    await executor.execute('third content', undefined as any);
+    expect((executor as any).trackedFiles.size).toBe(0);
+  });
+
+  test('trackedFiles Set maintains unique file paths', async () => {
+    // Mock the necessary dependencies
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((line: string) => line),
+    }));
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Test that Set maintains uniqueness
+    const trackedFiles = (executor as any).trackedFiles as Set<string>;
+
+    // Add duplicate paths
+    trackedFiles.add('/test/file1.ts');
+    trackedFiles.add('/test/file2.ts');
+    trackedFiles.add('/test/file1.ts'); // duplicate
+    trackedFiles.add('/test/file3.ts');
+    trackedFiles.add('/test/file2.ts'); // duplicate
+
+    // Should only have 3 unique files
+    expect(trackedFiles.size).toBe(3);
+    expect(trackedFiles.has('/test/file1.ts')).toBe(true);
+    expect(trackedFiles.has('/test/file2.ts')).toBe(true);
+    expect(trackedFiles.has('/test/file3.ts')).toBe(true);
+    expect(trackedFiles.has('/test/nonexistent.ts')).toBe(false);
+
+    // Execute should clear the Set
+    await executor.execute('test content', mockPlanInfo);
+    expect(trackedFiles.size).toBe(0);
+    expect(trackedFiles.has('/test/file1.ts')).toBe(false);
+  });
+
+  describe('file tracking integration', () => {
+    test('adds file paths from formatJsonMessage to trackedFiles set', async () => {
+      // Mock formatJsonMessage to return file paths
+      const mockFormatJsonMessage = mock((line: string) => {
+        if (line === 'write-line') {
+          return {
+            message: 'Write tool invoked',
+            filePaths: ['/test/created.ts', '/test/utils.ts'],
+          };
+        } else if (line === 'edit-line') {
+          return {
+            message: 'Edit tool invoked',
+            filePaths: ['/test/modified.ts'],
+          };
+        }
+        return { message: line };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('write-line\nedit-line');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['write-line', 'edit-line']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify trackedFiles contains the expected absolute paths
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/test/created.ts')).toBe(true);
+      expect(trackedFiles.has('/test/utils.ts')).toBe(true);
+      expect(trackedFiles.has('/test/modified.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(3);
+    });
+
+    test('resolves relative file paths to absolute paths using git root', async () => {
+      // Mock formatJsonMessage to return relative file paths
+      const mockFormatJsonMessage = mock((line: string) => {
+        return {
+          message: 'Tool invoked',
+          filePaths: ['src/components/Button.tsx', 'lib/utils.ts'],
+        };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('test-line');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['test-line']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-workspace')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify trackedFiles contains absolute paths resolved from git root
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/tmp/test-workspace/src/components/Button.tsx')).toBe(true);
+      expect(trackedFiles.has('/tmp/test-workspace/lib/utils.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(2);
+    });
+
+    test('handles already absolute file paths correctly', async () => {
+      // Mock formatJsonMessage to return absolute file paths
+      const mockFormatJsonMessage = mock((line: string) => {
+        return {
+          message: 'Tool invoked',
+          filePaths: ['/absolute/path/file1.ts', '/another/absolute/file2.ts'],
+        };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('test-line');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['test-line']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-workspace')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify trackedFiles contains the absolute paths as-is
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/absolute/path/file1.ts')).toBe(true);
+      expect(trackedFiles.has('/another/absolute/file2.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(2);
+    });
+
+    test('ignores formatJsonMessage results without filePaths', async () => {
+      // Mock formatJsonMessage to return mixed results with and without filePaths
+      const mockFormatJsonMessage = mock((line: string) => {
+        if (line === 'line-with-files') {
+          return {
+            message: 'Has files',
+            filePaths: ['/test/file.ts'],
+          };
+        }
+        return { message: 'No files' }; // No filePaths property
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('line-with-files\nline-without-files');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => [
+          'line-with-files',
+          'line-without-files',
+        ]),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify only files from results with filePaths are tracked
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/test/file.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(1);
+    });
+
+    test('accumulates file paths across multiple formatJsonMessage calls', async () => {
+      let callCount = 0;
+      const mockFormatJsonMessage = mock((line: string) => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            message: 'First call',
+            filePaths: ['/first/file.ts', '/first/utils.ts'],
+          };
+        } else if (callCount === 2) {
+          return {
+            message: 'Second call',
+            filePaths: ['/second/component.tsx'],
+          };
+        } else if (callCount === 3) {
+          return {
+            message: 'Third call',
+            filePaths: ['/third/service.ts', '/first/file.ts'], // duplicate path
+          };
+        }
+        return { message: line };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('line1\nline2\nline3');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['line1', 'line2', 'line3']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify all unique files are tracked
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.has('/first/file.ts')).toBe(true);
+      expect(trackedFiles.has('/first/utils.ts')).toBe(true);
+      expect(trackedFiles.has('/second/component.tsx')).toBe(true);
+      expect(trackedFiles.has('/third/service.ts')).toBe(true);
+      expect(trackedFiles.size).toBe(4); // Set automatically handles duplicates
+    });
+
+    test('handles empty filePaths arrays gracefully', async () => {
+      // Mock formatJsonMessage to return empty filePaths array
+      const mockFormatJsonMessage = mock((line: string) => {
+        return {
+          message: 'Tool invoked',
+          filePaths: [], // empty array
+        };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('test-line');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['test-line']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify no files are tracked
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.size).toBe(0);
+    });
+
+    test('handles undefined or null filePaths gracefully', async () => {
+      // Mock formatJsonMessage to return null/undefined filePaths
+      let callCount = 0;
+      const mockFormatJsonMessage = mock((line: string) => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            message: 'First call',
+            filePaths: null as any,
+          };
+        } else if (callCount === 2) {
+          return {
+            message: 'Second call',
+            filePaths: undefined,
+          };
+        }
+        return { message: line };
+      });
+
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          // Simulate calling formatStdout with test output
+          if (options && options.formatStdout) {
+            options.formatStdout('line1\nline2');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => ['line1', 'line2']),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mockFormatJsonMessage,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      await executor.execute('test content', mockPlanInfo);
+
+      // Should not crash and no files should be tracked
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      expect(trackedFiles.size).toBe(0);
+    });
+  });
+
+  describe('parseRmCommand', () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Get access to the private method for testing
+    const parseRmCommand = (executor as any).parseRmCommand.bind(executor);
+
+    test('parses basic rm command with single file', () => {
+      const result = parseRmCommand('rm file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('parses rm command with -f flag', () => {
+      const result = parseRmCommand('rm -f file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('parses rm command with -r flag', () => {
+      const result = parseRmCommand('rm -r directory');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/directory$/);
+    });
+
+    test('parses rm command with -rf flag', () => {
+      const result = parseRmCommand('rm -rf directory');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/directory$/);
+    });
+
+    test('parses rm command with -fr flag (reverse order)', () => {
+      const result = parseRmCommand('rm -fr directory');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/directory$/);
+    });
+
+    test('parses rm command with multiple flags', () => {
+      const result = parseRmCommand('rm -vrf directory');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/directory$/);
+    });
+
+    test('parses rm command with multiple files', () => {
+      const result = parseRmCommand('rm file1.txt file2.txt file3.txt');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+      expect(result[2]).toMatch(/file3\.txt$/);
+    });
+
+    test('parses rm command with flags and multiple files', () => {
+      const result = parseRmCommand('rm -f file1.txt file2.txt');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+    });
+
+    test('handles single-quoted paths', () => {
+      const result = parseRmCommand("rm 'file with spaces.txt'");
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file with spaces\.txt$/);
+    });
+
+    test('handles double-quoted paths', () => {
+      const result = parseRmCommand('rm "file with spaces.txt"');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file with spaces\.txt$/);
+    });
+
+    test('handles mixed quoted and unquoted paths', () => {
+      const result = parseRmCommand('rm file1.txt "file with spaces.txt" \'another file.txt\'');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file with spaces\.txt$/);
+      expect(result[2]).toMatch(/another file\.txt$/);
+    });
+
+    test('handles paths with escaped spaces', () => {
+      const result = parseRmCommand('rm file\\ with\\ spaces.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\\ with\\ spaces\.txt$/);
+    });
+
+    test('handles absolute paths', () => {
+      const result = parseRmCommand('rm /absolute/path/file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBe('/absolute/path/file.txt');
+    });
+
+    test('converts relative paths to absolute paths', () => {
+      const result = parseRmCommand('rm relative/path/file.txt');
+      expect(result).toHaveLength(1);
+      expect(path.isAbsolute(result[0])).toBe(true);
+      expect(result[0]).toMatch(/relative\/path\/file\.txt$/);
+    });
+
+    test('handles nested quotes correctly', () => {
+      const result = parseRmCommand('rm "file\'s name.txt"');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file's name\.txt$/);
+    });
+
+    test('handles escaped quotes', () => {
+      const result = parseRmCommand("rm file\\'s\\ name.txt");
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\\'s\\ name\.txt$/);
+    });
+
+    test('ignores wildcard patterns for safety', () => {
+      const result = parseRmCommand('rm *.txt');
+      expect(result).toHaveLength(0);
+    });
+
+    test('ignores question mark patterns for safety', () => {
+      const result = parseRmCommand('rm file?.txt');
+      expect(result).toHaveLength(0);
+    });
+
+    test('ignores bracket patterns for safety', () => {
+      const result = parseRmCommand('rm file[123].txt');
+      expect(result).toHaveLength(0);
+    });
+
+    test('ignores mixed wildcards and regular files', () => {
+      const result = parseRmCommand('rm file1.txt *.log file2.txt');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+    });
+
+    test('handles empty command', () => {
+      const result = parseRmCommand('');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles non-rm commands', () => {
+      const result = parseRmCommand('ls -la');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles commands starting with rm but not rm itself', () => {
+      const result = parseRmCommand('rmdir directory');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles rm command with no arguments', () => {
+      const result = parseRmCommand('rm');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles rm command with only flags', () => {
+      const result = parseRmCommand('rm -rf');
+      expect(result).toHaveLength(0);
+    });
+
+    test('handles extra whitespace', () => {
+      const result = parseRmCommand('  rm   -f    file1.txt   file2.txt  ');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+    });
+
+    test('handles tab characters as whitespace', () => {
+      const result = parseRmCommand('rm\t-f\tfile1.txt\tfile2.txt');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file1\.txt$/);
+      expect(result[1]).toMatch(/file2\.txt$/);
+    });
+
+    test('handles complex paths with directories', () => {
+      const result = parseRmCommand('rm src/components/Button.tsx lib/utils/helper.ts');
+      expect(result).toHaveLength(2);
+      expect(path.isAbsolute(result[0])).toBe(true);
+      expect(path.isAbsolute(result[1])).toBe(true);
+      expect(result[0]).toMatch(/src\/components\/Button\.tsx$/);
+      expect(result[1]).toMatch(/lib\/utils\/helper\.ts$/);
+    });
+
+    test('handles paths starting with dot', () => {
+      const result = parseRmCommand('rm ./file.txt ../other.txt');
+      expect(result).toHaveLength(2);
+      expect(path.isAbsolute(result[0])).toBe(true);
+      expect(path.isAbsolute(result[1])).toBe(true);
+    });
+
+    test('handles paths with special characters', () => {
+      const result = parseRmCommand('rm file-name.txt file_name.txt file@name.txt');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/file-name\.txt$/);
+      expect(result[1]).toMatch(/file_name\.txt$/);
+      expect(result[2]).toMatch(/file@name\.txt$/);
+    });
+
+    test('handles rm command with long flag format', () => {
+      const result = parseRmCommand('rm --force file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('preserves case sensitivity in file names', () => {
+      const result = parseRmCommand('rm File.TXT MixedCase.js');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/File\.TXT$/);
+      expect(result[1]).toMatch(/MixedCase\.js$/);
+    });
+
+    test('handles very long file paths', () => {
+      const longPath = 'very/deep/nested/directory/structure/with/many/levels/file.txt';
+      const result = parseRmCommand(`rm ${longPath}`);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(new RegExp(longPath.replace(/\//g, '\\/') + '$'));
+    });
+
+    test('handles empty quoted strings', () => {
+      const result = parseRmCommand('rm file.txt "" \'\'');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('handles unclosed quotes by treating them as literal characters', () => {
+      const result = parseRmCommand('rm "unclosed');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/unclosed$/);
+    });
+
+    test('handles complex escaping scenarios', () => {
+      const result = parseRmCommand('rm file\\\\name.txt'); // Double backslash
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\\\\name\.txt$/);
+    });
+
+    test('handles backslash at end of command', () => {
+      const result = parseRmCommand('rm file.txt\\');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt\\$/);
+    });
+
+    test('handles mixed quote types in same command', () => {
+      const result = parseRmCommand(`rm 'file "with" quotes.txt' "file 'with' quotes.txt"`);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatch(/file "with" quotes\.txt$/);
+      expect(result[1]).toMatch(/file 'with' quotes\.txt$/);
+    });
+
+    test('handles command with no spaces between tokens', () => {
+      const result = parseRmCommand('rm"quoted.txt"unquoted.txt');
+      expect(result).toHaveLength(0); // Parser requires space after 'rm'
+    });
+
+    test('handles Unicode file names', () => {
+      const result = parseRmCommand('rm файл.txt café.txt 文件.txt');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/файл\.txt$/);
+      expect(result[1]).toMatch(/café\.txt$/);
+      expect(result[2]).toMatch(/文件\.txt$/);
+    });
+
+    test('handles file paths with numbers and underscores', () => {
+      const result = parseRmCommand('rm file_123.txt test-file-2024.log data_file_v2.json');
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatch(/file_123\.txt$/);
+      expect(result[1]).toMatch(/test-file-2024\.log$/);
+      expect(result[2]).toMatch(/data_file_v2\.json$/);
+    });
+
+    test('handles paths with consecutive slashes', () => {
+      const result = parseRmCommand('rm path//to///file.txt');
+      expect(result).toHaveLength(1);
+      // path.resolve normalizes consecutive slashes to single slashes
+      expect(result[0]).toMatch(/path\/to\/file\.txt$/);
+    });
+
+    test('handles rm commands with shell operators as separate arguments', () => {
+      // The current parser treats shell operators as separate arguments, not as part of the command
+      const result1 = parseRmCommand('rm file.txt && echo done');
+      expect(result1).toHaveLength(4); // ['file.txt', '&&', 'echo', 'done'] - all treated as files
+
+      const result2 = parseRmCommand('rm file.txt | wc -l');
+      expect(result2).toHaveLength(3); // ['file.txt', '|', 'wc'] - '-l' is filtered out as a flag
+
+      const result3 = parseRmCommand('rm file.txt > output.log');
+      expect(result3).toHaveLength(3); // ['file.txt', '>', 'output.log'] - all treated as files
+
+      // Verify that at least the main file is parsed correctly
+      expect(result1[0]).toMatch(/file\.txt$/);
+      expect(result2[0]).toMatch(/file\.txt$/);
+      expect(result3[0]).toMatch(/file\.txt$/);
+    });
+  });
+
+  describe('parseCommandTokens', () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Get access to the private method for testing
+    const parseCommandTokens = (executor as any).parseCommandTokens.bind(executor);
+
+    test('parses simple command with space-separated tokens', () => {
+      const result = parseCommandTokens('rm -f file.txt');
+      expect(result).toEqual(['rm', '-f', 'file.txt']);
+    });
+
+    test('handles multiple consecutive spaces', () => {
+      const result = parseCommandTokens('rm   -f    file.txt');
+      expect(result).toEqual(['rm', '-f', 'file.txt']);
+    });
+
+    test('handles tabs and mixed whitespace', () => {
+      const result = parseCommandTokens('rm\t-f\n  file.txt');
+      expect(result).toEqual(['rm', '-f', 'file.txt']);
+    });
+
+    test('preserves content within single quotes', () => {
+      const result = parseCommandTokens("rm 'file with spaces.txt'");
+      expect(result).toEqual(['rm', 'file with spaces.txt']);
+    });
+
+    test('preserves content within double quotes', () => {
+      const result = parseCommandTokens('rm "file with spaces.txt"');
+      expect(result).toEqual(['rm', 'file with spaces.txt']);
+    });
+
+    test('handles nested quotes correctly', () => {
+      const result = parseCommandTokens(`rm "file with 'nested' quotes.txt"`);
+      expect(result).toEqual(['rm', "file with 'nested' quotes.txt"]);
+
+      const result2 = parseCommandTokens(`rm 'file with "nested" quotes.txt'`);
+      expect(result2).toEqual(['rm', 'file with "nested" quotes.txt']);
+    });
+
+    test('handles escaped characters', () => {
+      const result = parseCommandTokens('rm file\\ with\\ spaces.txt');
+      expect(result).toEqual(['rm', 'file\\ with\\ spaces.txt']);
+    });
+
+    test('handles escaped quotes', () => {
+      const result = parseCommandTokens("rm file\\'s\\ name.txt");
+      expect(result).toEqual(['rm', "file\\'s\\ name.txt"]);
+    });
+
+    test('handles unclosed single quote', () => {
+      const result = parseCommandTokens("rm 'unclosed file");
+      expect(result).toEqual(['rm', 'unclosed file']);
+    });
+
+    test('handles unclosed double quote', () => {
+      const result = parseCommandTokens('rm "unclosed file');
+      expect(result).toEqual(['rm', 'unclosed file']);
+    });
+
+    test('handles empty string', () => {
+      const result = parseCommandTokens('');
+      expect(result).toEqual([]);
+    });
+
+    test('handles whitespace-only string', () => {
+      const result = parseCommandTokens('   \t\n  ');
+      expect(result).toEqual([]);
+    });
+
+    test('handles single token', () => {
+      const result = parseCommandTokens('rm');
+      expect(result).toEqual(['rm']);
+    });
+
+    test('handles empty quoted strings', () => {
+      const result = parseCommandTokens('rm "" \'\' file.txt');
+      expect(result).toEqual(['rm', 'file.txt']);
+    });
+
+    test('handles backslash at end of string', () => {
+      const result = parseCommandTokens('rm file.txt\\');
+      expect(result).toEqual(['rm', 'file.txt\\']);
+    });
+
+    test('handles backslash before quote', () => {
+      const result = parseCommandTokens('rm file\\"with\\"quotes.txt');
+      expect(result).toEqual(['rm', 'file\\"with\\"quotes.txt']);
+    });
+
+    test('handles complex mixed quoting scenario', () => {
+      const result = parseCommandTokens(
+        `rm 'single quoted' "double quoted" unquoted 'mixed"quote'`
+      );
+      expect(result).toEqual(['rm', 'single quoted', 'double quoted', 'unquoted', 'mixed"quote']);
+    });
+
+    test('handles consecutive escaped characters', () => {
+      const result = parseCommandTokens('rm file\\\\\\\\name.txt');
+      expect(result).toEqual(['rm', 'file\\\\\\\\name.txt']);
+    });
+  });
+
+  describe('parseRmCommand - additional security and edge cases', () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Get access to the private method for testing
+    const parseRmCommand = (executor as any).parseRmCommand.bind(executor);
+
+    test('handles rm with command substitution patterns safely', () => {
+      const result1 = parseRmCommand('rm $(echo file.txt)');
+      expect(result1).toHaveLength(2); // Splits at space: ['$(echo', 'file.txt)']
+
+      const result2 = parseRmCommand('rm `echo file.txt`');
+      expect(result2).toHaveLength(2); // Splits at space: ['`echo', 'file.txt`']
+    });
+
+    test('handles very long commands gracefully', () => {
+      const longFilename = 'a'.repeat(1000) + '.txt';
+      const result = parseRmCommand(`rm ${longFilename}`);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(new RegExp(longFilename + '$'));
+    });
+
+    test('handles null byte injection attempts', () => {
+      const result = parseRmCommand('rm file.txt\0malicious');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt\0malicious$/);
+    });
+
+    test('handles newline characters in filenames', () => {
+      const result = parseRmCommand('rm "file\nwith\nnewlines.txt"');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\nwith\nnewlines\.txt$/);
+    });
+
+    test('ignores rm commands with environment variable expansion patterns', () => {
+      const result1 = parseRmCommand('rm $HOME/file.txt');
+      expect(result1).toHaveLength(1);
+      expect(result1[0]).toMatch(/\$HOME\/file\.txt$/);
+
+      const result2 = parseRmCommand('rm ${HOME}/file.txt');
+      expect(result2).toHaveLength(1);
+      expect(result2[0]).toMatch(/\$\{HOME\}\/file\.txt$/);
+    });
+
+    test('handles rm commands with tilde expansion', () => {
+      const result = parseRmCommand('rm ~/file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/~\/file\.txt$/);
+    });
+
+    test('handles multiple wildcard patterns correctly', () => {
+      const result = parseRmCommand('rm *.txt *.log file.js');
+      expect(result).toHaveLength(1); // Only file.js should be included
+      expect(result[0]).toMatch(/file\.js$/);
+    });
+
+    test('handles rm commands with brace expansion patterns', () => {
+      const result = parseRmCommand('rm file.{txt,log,js}');
+      expect(result).toHaveLength(1); // Parser treats it as a regular filename with braces
+      expect(result[0]).toMatch(/file\.\{txt,log,js\}$/);
+    });
+
+    test('handles files with leading dashes correctly', () => {
+      const result = parseRmCommand('rm -- -file.txt --file.txt');
+      expect(result).toHaveLength(0); // Both files start with dashes so are treated as flags
+    });
+
+    test('handles empty arguments after flags', () => {
+      const result = parseRmCommand('rm -f   ""   file.txt');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatch(/file\.txt$/);
+    });
+
+    test('handles rm commands with process substitution patterns', () => {
+      const result = parseRmCommand('rm <(echo file.txt)');
+      expect(result).toHaveLength(2); // Splits at space: ['<(echo', 'file.txt)']
+    });
+  });
+
+  describe('auto-approval for tracked file deletions', () => {
+    test('auto-approves rm command for tracked files when flag is enabled', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Manually add files to trackedFiles to simulate they were created by Write/Edit tools
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/created-file.txt');
+      trackedFiles.add('/tmp/test/another-file.js');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test auto-approval for a single tracked file
+      const response1 = mock();
+      mockSocket.write = response1;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/created-file.txt' },
+      });
+
+      expect(response1).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Test auto-approval for multiple tracked files
+      const response2 = mock();
+      mockSocket.write = response2;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm -f /tmp/test/created-file.txt /tmp/test/another-file.js' },
+      });
+
+      expect(response2).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('does not auto-approve rm command for untracked files', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add only one file to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise((resolve, reject) => {
+            // Simulate a timeout by never resolving
+            // The timeout logic in the actual code will handle this
+          });
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that untracked files are not auto-approved
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/untracked-file.txt' },
+      });
+
+      // Should not have been auto-approved (response would be called after user prompt timeout)
+      // We can't easily test the timeout behavior in this unit test, but we can verify
+      // that the response is not immediately called with approval
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('does not auto-approve when mixing tracked and untracked files', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add only one file to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise((resolve, reject) => {
+            // Simulate a timeout by never resolving
+          });
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that mixed tracked/untracked files are not auto-approved
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/tracked-file.txt /tmp/test/untracked-file.txt' },
+      });
+
+      // Should not have been auto-approved since not ALL paths are tracked
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('does not auto-approve non-Bash tools', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add file to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that non-Bash tools are not auto-approved
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Write',
+        input: { file_path: '/tmp/test/tracked-file.txt', content: 'test' },
+      });
+
+      // Should not have been auto-approved since this is not a Bash tool
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('does not auto-approve non-rm Bash commands', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add file to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that non-rm Bash commands are not auto-approved
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'ls /tmp/test/tracked-file.txt' },
+      });
+
+      // Should not have been auto-approved since this is not an rm command
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('auto-approval works with various rm command formats when flag is enabled', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add files to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/file1.txt');
+      trackedFiles.add('/tmp/test/file2.txt');
+      trackedFiles.add('/tmp/test/dir');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test various rm command formats
+      const testCases = [
+        'rm /tmp/test/file1.txt',
+        'rm -f /tmp/test/file1.txt',
+        'rm -rf /tmp/test/dir',
+        'rm --force /tmp/test/file1.txt',
+        'rm -v /tmp/test/file1.txt /tmp/test/file2.txt',
+        'rm   -f   /tmp/test/file1.txt', // extra spaces
+      ];
+
+      for (const command of testCases) {
+        const response = mock();
+        mockSocket.write = response;
+
+        await permissionRequestHandler({
+          type: 'permission_request',
+          tool_name: 'Bash',
+          input: { command },
+        });
+
+        expect(response).toHaveBeenCalledWith(
+          JSON.stringify({
+            type: 'permission_response',
+            approved: true,
+          }) + '\n'
+        );
+      }
+
+      // Clean up
+      server.close(() => {});
+    });
+  });
+
+  test('logs the correct message format when auto-approving with flag enabled', async () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: true, autoApproveCreatedFileDeletion: true },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Add files to trackedFiles
+    const trackedFiles = (executor as any).trackedFiles as Set<string>;
+    trackedFiles.add('/tmp/test/file1.txt');
+    trackedFiles.add('/tmp/test/file2.txt');
+
+    // Mock logging to capture log output
+    const logSpy = spyOn(logging, 'log').mockImplementation(() => {});
+
+    // Mock the permission socket server creation and handling
+    let permissionRequestHandler: (message: any) => Promise<void>;
+    const mockSocket = {
+      on: mock((event: string, handler: any) => {
+        if (event === 'data') {
+          permissionRequestHandler = async (message: any) => {
+            const buffer = Buffer.from(JSON.stringify(message));
+            await handler(buffer);
+          };
+        }
+      }),
+      write: mock(),
+    };
+
+    const mockServer = {
+      listen: mock((path: string, callback: () => void) => {
+        callback();
+      }),
+      on: mock(),
+      close: mock((callback: () => void) => {
+        callback();
+      }),
+    };
+
+    await moduleMocker.mock('net', () => ({
+      createServer: mock((handler: any) => {
+        handler(mockSocket);
+        return mockServer;
+      }),
+    }));
+
+    // Mock other dependencies
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+    }));
+
+    await moduleMocker.mock('fs/promises', () => ({
+      mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+      rm: mock(() => Promise.resolve()),
+    }));
+
+    // Create the permission socket server
+    const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+    // Test auto-approval and verify log message
+    await permissionRequestHandler({
+      type: 'permission_request',
+      tool_name: 'Bash',
+      input: { command: 'rm /tmp/test/file1.txt /tmp/test/file2.txt' },
+    });
+
+    // Verify that the correct log message was generated
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Auto-approving rm command for tracked file(s): /tmp/test/file1.txt, /tmp/test/file2.txt'
+      )
+    );
+
+    // Clean up
+    logSpy.mockRestore();
+    server.close(() => {});
+  });
+
+  test('handles invalid command input gracefully', async () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    // Add files to trackedFiles
+    const trackedFiles = (executor as any).trackedFiles as Set<string>;
+    trackedFiles.add('/tmp/test/file.txt');
+
+    // Mock the permission socket server creation and handling
+    let permissionRequestHandler: (message: any) => Promise<void>;
+    const mockSocket = {
+      on: mock((event: string, handler: any) => {
+        if (event === 'data') {
+          permissionRequestHandler = async (message: any) => {
+            const buffer = Buffer.from(JSON.stringify(message));
+            await handler(buffer);
+          };
+        }
+      }),
+      write: mock(),
+    };
+
+    const mockServer = {
+      listen: mock((path: string, callback: () => void) => {
+        callback();
+      }),
+      on: mock(),
+      close: mock((callback: () => void) => {
+        callback();
+      }),
+    };
+
+    await moduleMocker.mock('net', () => ({
+      createServer: mock((handler: any) => {
+        handler(mockSocket);
+        return mockServer;
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+    }));
+
+    await moduleMocker.mock('fs/promises', () => ({
+      mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+      rm: mock(() => Promise.resolve()),
+    }));
+
+    // Create the permission socket server
+    const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+    // Test with non-string command (should not auto-approve and continue to normal flow)
+    const response = mock();
+    mockSocket.write = response;
+
+    await permissionRequestHandler({
+      type: 'permission_request',
+      tool_name: 'Bash',
+      input: { command: null }, // Invalid command type
+    });
+
+    // Should not auto-approve and continue to normal permission flow (which times out with 'no')
+    expect(response).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'permission_response',
+        approved: false,
+      }) + '\n'
+    );
+
+    // Test with undefined command
+    const response2 = mock();
+    mockSocket.write = response2;
+
+    await permissionRequestHandler({
+      type: 'permission_request',
+      tool_name: 'Bash',
+      input: { command: undefined }, // Invalid command type
+    });
+
+    // Should not auto-approve and continue to normal permission flow (which times out with 'no')
+    expect(response2).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'permission_response',
+        approved: false,
+      }) + '\n'
+    );
+
+    // Test with missing command field
+    const response3 = mock();
+    mockSocket.write = response3;
+
+    await permissionRequestHandler({
+      type: 'permission_request',
+      tool_name: 'Bash',
+      input: {}, // Missing command field
+    });
+
+    // Should not auto-approve and continue to normal permission flow (which times out with 'no')
+    expect(response3).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'permission_response',
+        approved: false,
+      }) + '\n'
+    );
+
+    // Clean up
+    server.close(() => {});
+  });
+
+  describe('configuration flag testing', () => {
+    test('does not auto-approve when autoApproveCreatedFileDeletion is false', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: {
+            enabled: true,
+            timeout: 100,
+            defaultResponse: 'no',
+            autoApproveCreatedFileDeletion: false,
+          },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add files to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise((resolve, reject) => {
+            // Simulate a timeout by never resolving
+          });
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that tracked files are NOT auto-approved when flag is false
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/tracked-file.txt' },
+      });
+
+      // Should not have been auto-approved and should fall through to normal permission flow
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('does not auto-approve when autoApproveCreatedFileDeletion is undefined', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+          // autoApproveCreatedFileDeletion not set (undefined)
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add files to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise((resolve, reject) => {
+            // Simulate a timeout by never resolving
+          });
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that tracked files are NOT auto-approved when flag is undefined
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/tracked-file.txt' },
+      });
+
+      // Should not have been auto-approved and should fall through to normal permission flow
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
+
+    test('only auto-approves when flag is explicitly true', async () => {
+      // Test with various falsy and truthy values that are not exactly true
+      const testCases = [
+        { flag: false, shouldAutoApprove: false },
+        { flag: 0, shouldAutoApprove: false },
+        { flag: '', shouldAutoApprove: false },
+        { flag: null, shouldAutoApprove: false },
+        { flag: undefined, shouldAutoApprove: false },
+        { flag: 1, shouldAutoApprove: false }, // truthy but not true
+        { flag: 'true', shouldAutoApprove: false }, // string but not boolean true
+        { flag: true, shouldAutoApprove: true }, // only this should work
+      ];
+
+      for (const { flag, shouldAutoApprove } of testCases) {
+        const executor = new ClaudeCodeExecutor(
+          {
+            allowedTools: [],
+            disallowedTools: [],
+            allowAllTools: false,
+            permissionsMcp: {
+              enabled: true,
+              timeout: 50,
+              defaultResponse: 'no',
+              autoApproveCreatedFileDeletion: flag as any,
+            },
+          },
+          mockSharedOptions,
+          mockConfig
+        );
+
+        // Add files to trackedFiles
+        const trackedFiles = (executor as any).trackedFiles as Set<string>;
+        trackedFiles.add('/tmp/test/tracked-file.txt');
+
+        // Mock the permission socket server creation and handling
+        let permissionRequestHandler: (message: any) => Promise<void>;
+        const mockSocket = {
+          on: mock((event: string, handler: any) => {
+            if (event === 'data') {
+              permissionRequestHandler = async (message: any) => {
+                const buffer = Buffer.from(JSON.stringify(message));
+                await handler(buffer);
+              };
+            }
+          }),
+          write: mock(),
+        };
+
+        const mockServer = {
+          listen: mock((path: string, callback: () => void) => {
+            callback();
+          }),
+          on: mock(),
+          close: mock((callback: () => void) => {
+            callback();
+          }),
+        };
+
+        await moduleMocker.mock('net', () => ({
+          createServer: mock((handler: any) => {
+            handler(mockSocket);
+            return mockServer;
+          }),
+        }));
+
+        if (!shouldAutoApprove) {
+          // Mock inquirer prompts to simulate timeout for non-auto-approved cases
+          await moduleMocker.mock('@inquirer/prompts', () => ({
+            select: mock(() => {
+              return new Promise((resolve, reject) => {
+                // Simulate a timeout by never resolving
+              });
+            }),
+          }));
+        }
+
+        // Mock other dependencies
+        await moduleMocker.mock('../../common/git.ts', () => ({
+          getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+        }));
+
+        await moduleMocker.mock('fs/promises', () => ({
+          mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+          rm: mock(() => Promise.resolve()),
+        }));
+
+        // Create the permission socket server
+        const server = await (executor as any).createPermissionSocketServer(
+          '/tmp/test-socket.sock'
+        );
+
+        // Test the behavior
+        const response = mock();
+        mockSocket.write = response;
+
+        await permissionRequestHandler({
+          type: 'permission_request',
+          tool_name: 'Bash',
+          input: { command: 'rm /tmp/test/tracked-file.txt' },
+        });
+
+        if (shouldAutoApprove) {
+          // Should have been auto-approved
+          expect(response).toHaveBeenCalledWith(
+            JSON.stringify({
+              type: 'permission_response',
+              approved: true,
+            }) + '\n'
+          );
+        } else {
+          // Should not have been auto-approved
+          expect(response).not.toHaveBeenCalledWith(
+            JSON.stringify({
+              type: 'permission_response',
+              approved: true,
+            }) + '\n'
+          );
+        }
+
+        // Clean up
+        server.close(() => {});
+        moduleMocker.clear();
+      }
+    });
+
+    test('backward compatibility - feature is disabled by default', async () => {
+      // Create executor without autoApproveCreatedFileDeletion option
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Add files to trackedFiles
+      const trackedFiles = (executor as any).trackedFiles as Set<string>;
+      trackedFiles.add('/tmp/test/tracked-file.txt');
+
+      // Verify that autoApproveCreatedFileDeletion is undefined by default
+      expect(
+        (executor as any).options.permissionsMcp?.autoApproveCreatedFileDeletion
+      ).toBeUndefined();
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise((resolve, reject) => {
+            // Simulate a timeout by never resolving
+          });
+        }),
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that even tracked files are NOT auto-approved by default
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'rm /tmp/test/tracked-file.txt' },
+      });
+
+      // Should not have been auto-approved since feature is disabled by default
+      expect(response).not.toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Clean up
+      server.close(() => {});
+    });
   });
 
   afterEach(() => {

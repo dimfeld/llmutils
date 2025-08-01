@@ -132,6 +132,17 @@ export async function findNextReadyDependency(
     `[find_next_dependency] BFS complete: Found ${allDependencies.size} total dependencies: [${Array.from(allDependencies).join(', ')}]`
   );
 
+  // If the parent plan has no dependencies and is not done, return it
+  if (allDependencies.size === 0 && parentPlan.status !== 'done') {
+    debugLog(
+      `[find_next_dependency] Parent plan has no dependencies and is not done, returning parent plan ${parentPlan.id}`
+    );
+    return {
+      plan: parentPlan,
+      message: chalk.green('No dependencies') + ' - ready to work on this plan',
+    };
+  }
+
   // Filter candidates to only include pending or in_progress plans
   debugLog(`[find_next_dependency] Filtering candidates by status (pending or in_progress)`);
   const candidates = Array.from(allDependencies)
@@ -259,6 +270,18 @@ export async function findNextReadyDependency(
       }).length;
 
       if (doneCount === allDependencyPlans.length) {
+        // If all dependencies are complete but the parent plan is not finished,
+        // return the parent plan itself
+        if (parentPlan.status !== 'done') {
+          debugLog(
+            `[find_next_dependency] All dependencies complete, returning parent plan ${parentPlan.id}`
+          );
+          return {
+            plan: parentPlan,
+            message:
+              chalk.green('All dependencies are complete') + ' - ready to work on the parent plan',
+          };
+        }
         reason =
           chalk.green('All dependencies are complete') + ' - ready to work on the parent plan';
       } else if (pendingNoTasks > 0) {

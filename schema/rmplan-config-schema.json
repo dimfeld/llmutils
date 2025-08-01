@@ -269,6 +269,11 @@
                 "timeout": {
                   "description": "Timeout in milliseconds for permission prompts",
                   "type": "number"
+                },
+                "autoApproveCreatedFileDeletion": {
+                  "description": "When enabled, automatically approve deletion of files created or modified by the agent in the current session",
+                  "default": false,
+                  "type": "boolean"
                 }
               },
               "required": [

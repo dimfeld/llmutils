@@ -42,6 +42,7 @@ export class ClaudeCodeExecutor implements Executor {
   readonly filePathPrefix = '@';
   readonly todoDirections = '- Use the TodoWrite tool to maintain your TODO list.';
   private alwaysAllowedTools = new Map<string, true | string[]>();
+  private trackedFiles = new Set<string>();
   private planInfo?: ExecutePlanInfo;
 
   constructor(
@@ -49,6 +50,129 @@ export class ClaudeCodeExecutor implements Executor {
     public sharedOptions: ExecutorCommonOptions,
     public rmplanConfig: RmplanConfig
   ) {}
+
+  /**
+   * Parses an rm command to extract file paths and normalize them to absolute paths.
+   * Handles various rm command formats including flags and quoted paths.
+   *
+   * @param command - The bash command string to parse
+   * @returns Array of absolute file paths that would be deleted, or empty array if not an rm command
+   */
+  private parseRmCommand(command: string): string[] {
+    const trimmedCommand = command.trim();
+
+    // Match rm commands - ensure it starts with 'rm' as a complete word
+    if (!trimmedCommand.match(/^rm(\s|$)/)) {
+      return [];
+    }
+
+    // Split the command into tokens while preserving quoted strings
+    const tokens = this.parseCommandTokens(trimmedCommand);
+
+    if (tokens.length === 0 || tokens[0] !== 'rm') {
+      return [];
+    }
+
+    // Filter out the 'rm' command and any flags to get just the file paths
+    const filePaths: string[] = [];
+
+    for (let i = 1; i < tokens.length; i++) {
+      const token = tokens[i];
+
+      // Skip flags (starting with - or --)
+      if (token.startsWith('-')) {
+        continue;
+      }
+
+      filePaths.push(token);
+    }
+
+    // Normalize paths to absolute paths
+    const normalizedPaths: string[] = [];
+    for (const pathStr of filePaths) {
+      // Skip empty paths
+      if (!pathStr.trim()) {
+        continue;
+      }
+
+      // Skip wildcard patterns or complex shell expansions for safety
+      if (pathStr.includes('*') || pathStr.includes('?') || pathStr.includes('[')) {
+        continue;
+      }
+
+      // Convert to absolute path
+      let absolutePath: string;
+      if (path.isAbsolute(pathStr)) {
+        absolutePath = pathStr;
+      } else {
+        // Use the current working directory (assume it's the git root for this context)
+        // In a real scenario, we might need to track the actual cwd from the bash session
+        absolutePath = path.resolve(process.cwd(), pathStr);
+      }
+
+      normalizedPaths.push(absolutePath);
+    }
+
+    return normalizedPaths;
+  }
+
+  /**
+   * Parses command tokens while handling quotes and escaping properly.
+   *
+   * @param command - The command string to parse
+   * @returns Array of tokens
+   */
+  private parseCommandTokens(command: string): string[] {
+    const tokens: string[] = [];
+    let currentToken = '';
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let escaped = false;
+
+    for (let i = 0; i < command.length; i++) {
+      const char = command[i];
+
+      if (escaped) {
+        currentToken += char;
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        currentToken += char;
+        continue;
+      }
+
+      if (char === "'" && !inDoubleQuote) {
+        inSingleQuote = !inSingleQuote;
+        continue;
+      }
+
+      if (char === '"' && !inSingleQuote) {
+        inDoubleQuote = !inDoubleQuote;
+        continue;
+      }
+
+      if (!inSingleQuote && !inDoubleQuote && /\s/.test(char)) {
+        // We've hit whitespace outside of quotes - end of current token
+        if (currentToken.trim()) {
+          tokens.push(currentToken.trim());
+          currentToken = '';
+        }
+        continue;
+      }
+
+      currentToken += char;
+    }
+
+    // Add the final token if there is one
+    if (currentToken.trim()) {
+      tokens.push(currentToken.trim());
+    }
+
+    return tokens;
+  }
 
   /**
    * Adds a new permission rule to the Claude settings file
@@ -155,6 +279,41 @@ export class ClaudeCodeExecutor implements Executor {
                 };
                 socket.write(JSON.stringify(response) + '\n');
                 return;
+              }
+            }
+
+            // Check for auto-approval of tracked file deletions
+            if (
+              this.options.permissionsMcp?.autoApproveCreatedFileDeletion === true &&
+              tool_name === 'Bash'
+            ) {
+              if (typeof input.command !== 'string') {
+                // Skip auto-approval logic - let normal permission flow handle it
+                // Continue to the existing user prompt logic below
+              } else {
+                const command = input.command;
+                const filePaths = this.parseRmCommand(command);
+
+                if (filePaths.length > 0) {
+                  // Check if all file paths are tracked files
+                  const allFilesTracked = filePaths.every((filePath) =>
+                    this.trackedFiles.has(filePath)
+                  );
+
+                  if (allFilesTracked) {
+                    log(
+                      chalk.green(
+                        `Auto-approving rm command for tracked file(s): ${filePaths.join(', ')}`
+                      )
+                    );
+                    const response = {
+                      type: 'permission_response',
+                      approved: true,
+                    };
+                    socket.write(JSON.stringify(response) + '\n');
+                    return;
+                  }
+                }
               }
             }
 
@@ -285,6 +444,9 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(contextContent: string, planInfo: ExecutePlanInfo) {
+    // Clear tracked files set for proper state isolation between runs
+    this.trackedFiles.clear();
+
     // Store plan information for use in agent file generation
     this.planInfo = planInfo;
 
@@ -523,7 +685,22 @@ export class ClaudeCodeExecutor implements Executor {
           cwd: gitRoot,
           formatStdout: (output) => {
             let lines = splitter(output);
-            return lines.map(formatJsonMessage).join('\n\n') + '\n\n';
+            const formattedResults = lines.map(formatJsonMessage);
+
+            // Extract file paths and add them to trackedFiles set
+            for (const result of formattedResults) {
+              if (result.filePaths) {
+                for (const filePath of result.filePaths) {
+                  // Resolve to absolute path
+                  const absolutePath = path.isAbsolute(filePath)
+                    ? filePath
+                    : path.resolve(gitRoot, filePath);
+                  this.trackedFiles.add(absolutePath);
+                }
+              }
+            }
+
+            return formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
           },
         });
 
