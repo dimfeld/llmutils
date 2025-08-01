@@ -88,7 +88,7 @@ describe('findNextReadyDependency', () => {
     expect(result.message).toContain('Found ready plan');
   });
 
-  test('returns null when no dependencies exist', async () => {
+  test('returns parent plan when no dependencies exist and plan is not done', async () => {
     await createPlanFile({
       id: 1,
       title: 'Standalone Plan',
@@ -99,8 +99,11 @@ describe('findNextReadyDependency', () => {
 
     const result = await findNextReadyDependency(1, testDir);
 
-    expect(result.plan).toBeNull();
-    expect(result.message).toContain('No dependencies found for this plan');
+    expect(result.plan).not.toBeNull();
+    expect(result.plan?.id).toBe(1);
+    expect(result.plan?.title).toBe('Standalone Plan');
+    expect(result.message).toContain('No dependencies');
+    expect(result.message).toContain('ready to work on this plan');
   });
 
   test('handles invalid plan ID', async () => {
@@ -439,6 +442,39 @@ describe('findNextReadyDependency', () => {
     expect(result.plan).not.toBeNull();
     expect(result.plan?.id).toBe(2);
     expect(result.plan?.title).toBe('Valid Dependency');
+  });
+
+  test('returns parent plan when it has no dependencies and is not done', async () => {
+    await createPlanFile({
+      id: 1,
+      title: 'Parent Plan',
+      filename: '1-parent.yml',
+      status: 'in_progress',
+      tasks: [{ title: 'Parent task', description: 'Main work' }],
+    });
+
+    const result = await findNextReadyDependency(1, testDir);
+
+    expect(result.plan).not.toBeNull();
+    expect(result.plan?.id).toBe(1);
+    expect(result.plan?.title).toBe('Parent Plan');
+    expect(result.message).toContain('No dependencies');
+    expect(result.message).toContain('ready to work on this plan');
+  });
+
+  test('does not return parent plan when it has no dependencies but is done', async () => {
+    await createPlanFile({
+      id: 1,
+      title: 'Parent Plan',
+      filename: '1-parent.yml',
+      status: 'done',
+      tasks: [{ title: 'Parent task', description: 'Main work', done: true }],
+    });
+
+    const result = await findNextReadyDependency(1, testDir);
+
+    expect(result.plan).toBeNull();
+    expect(result.message).toContain('No ready dependencies found');
   });
 
   test('returns correct message when all dependencies are done', async () => {

@@ -132,6 +132,17 @@ export async function findNextReadyDependency(
     `[find_next_dependency] BFS complete: Found ${allDependencies.size} total dependencies: [${Array.from(allDependencies).join(', ')}]`
   );
 
+  // If the parent plan has no dependencies and is not done, return it
+  if (allDependencies.size === 0 && parentPlan.status !== 'done') {
+    debugLog(
+      `[find_next_dependency] Parent plan has no dependencies and is not done, returning parent plan ${parentPlan.id}`
+    );
+    return {
+      plan: parentPlan,
+      message: chalk.green('No dependencies') + ' - ready to work on this plan',
+    };
+  }
+
   // Filter candidates to only include pending or in_progress plans
   debugLog(`[find_next_dependency] Filtering candidates by status (pending or in_progress)`);
   const candidates = Array.from(allDependencies)
