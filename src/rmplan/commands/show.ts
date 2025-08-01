@@ -51,7 +51,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       parentPlanId = plan.id;
     }
 
-    const result = await findNextReadyDependency(parentPlanId, tasksDir);
+    const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
 
     if (!result.plan) {
       log(result.message);

@@ -198,7 +198,7 @@ export async function handleGenerateCommand(
       parentPlanId = plan.id;
     }
 
-    const result = await findNextReadyDependency(parentPlanId, tasksDir);
+    const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
 
     if (!result.plan) {
       log(result.message);
@@ -218,9 +218,14 @@ export async function handleGenerateCommand(
 
     // Determine output path based on plan argument or generate default
     let outputPath: string;
+    let stubPlan: { data: PlanSchema; path: string } | undefined;
     if (planArg || options.plan) {
       const planFile = await resolvePlanFile(planArg || options.plan, globalOpts.config);
       outputPath = planFile;
+      stubPlan = {
+        data: await readPlanFile(planFile),
+        path: planFile,
+      };
     } else {
       outputPath = 'rmplan-output';
     }
@@ -231,6 +236,7 @@ export async function handleGenerateCommand(
       planRmfilterArgs: userCliRmfilterArgs,
       issueUrls: [],
       commit: options.commit,
+      stubPlan,
     };
 
     await extractMarkdownToYaml(yamlContent, config, options.quiet ?? false, extractOptions);

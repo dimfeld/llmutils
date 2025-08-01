@@ -673,6 +673,7 @@ export async function saveMultiPhaseYaml(
 
     // Update dependencies to use phase IDs
     if (phase.dependencies && Array.isArray(phase.dependencies)) {
+      console.log(phase.dependencies);
       phase.dependencies = phase.dependencies.map((dep: string) => {
         // Convert from "project-N" or similar to actual phase ID
         let match = dep.match(/-(\d+)$/) || dep.match(/Phase (\d+)$/) || dep.match(/(\d+)/);

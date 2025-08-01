@@ -36,6 +36,7 @@ export interface NextReadyDependencyResult {
  *
  * @param parentPlanId - The ID of the parent plan to find dependencies for
  * @param directory - The directory containing plan files (defaults to current directory)
+ * @param includeEmptyPlans - Whether to include plans that have no tasks defined (defaults to false)
  * @returns A NextReadyDependencyResult containing the ready plan (or null) and a descriptive message
  *
  * @example
@@ -50,7 +51,8 @@ export interface NextReadyDependencyResult {
  */
 export async function findNextReadyDependency(
   parentPlanId: number,
-  directory: string = '.'
+  directory: string = '.',
+  includeEmptyPlans: boolean = false
 ): Promise<NextReadyDependencyResult> {
   debugLog(`[find_next_dependency] Finding next ready dependency for plan ${parentPlanId}`);
 
@@ -195,9 +197,14 @@ export async function findNextReadyDependency(
     }
 
     // For pending plans, check for tasks and dependencies
-    if (!plan.tasks || plan.tasks.length === 0) {
+    if (!includeEmptyPlans && (!plan.tasks || plan.tasks.length === 0)) {
       debugLog(`[find_next_dependency] Readiness: Excluding plan ${planInfo} - no tasks defined`);
       return false;
+    }
+    
+    // Log when includeEmptyPlans is true and plan has no tasks
+    if (includeEmptyPlans && (!plan.tasks || plan.tasks.length === 0)) {
+      debugLog(`[find_next_dependency] Readiness: Including plan ${planInfo} despite no tasks (includeEmptyPlans=true)`);
     }
 
     // Check if all dependencies are done

@@ -31,8 +31,14 @@ describe('findNextReadyDependency', () => {
       title: plan.title,
       goal: plan.goal || 'Test goal',
       status: plan.status || 'pending',
-      tasks: plan.tasks || [],
     };
+
+    // Only add tasks if they exist and are not explicitly undefined
+    if (plan.tasks !== undefined) {
+      planData.tasks = plan.tasks;
+    } else {
+      planData.tasks = [];
+    }
 
     // Only add optional fields if they exist
     if (plan.dependencies && plan.dependencies.length > 0) {
@@ -969,6 +975,302 @@ describe('findNextReadyDependency', () => {
 
       // Clean up
       await fs.rm(emptyDir, { recursive: true, force: true });
+    });
+  });
+
+  // Tests for includeEmptyPlans parameter
+  describe('includeEmptyPlans parameter', () => {
+    test('excludes empty plans by default (includeEmptyPlans = false)', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Empty Plan',
+        filename: '2-empty.yml',
+        status: 'pending',
+        tasks: [], // No tasks defined
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Plan with Tasks',
+        filename: '3-with-tasks.yml',
+        status: 'pending',
+        tasks: [{ title: 'Task', description: 'Has work' }],
+      });
+
+      // Default behavior should exclude empty plans
+      const result = await findNextReadyDependency(1, testDir);
+
+      expect(result.plan).not.toBeNull();
+      expect(result.plan?.id).toBe(3); // Should skip empty plan 2
+      expect(result.plan?.title).toBe('Plan with Tasks');
+    });
+
+    test('excludes empty plans when includeEmptyPlans = false explicitly', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Empty Plan',
+        filename: '2-empty.yml',
+        status: 'pending',
+        tasks: [], // No tasks defined
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Plan with Tasks',
+        filename: '3-with-tasks.yml',
+        status: 'pending',
+        tasks: [{ title: 'Task', description: 'Has work' }],
+      });
+
+      // Explicitly set includeEmptyPlans to false
+      const result = await findNextReadyDependency(1, testDir, false);
+
+      expect(result.plan).not.toBeNull();
+      expect(result.plan?.id).toBe(3); // Should skip empty plan 2
+      expect(result.plan?.title).toBe('Plan with Tasks');
+    });
+
+    test('includes empty plans when includeEmptyPlans = true', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Empty Plan',
+        filename: '2-empty.yml',
+        status: 'pending',
+        tasks: [], // No tasks defined
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Plan with Tasks',
+        filename: '3-with-tasks.yml',
+        status: 'pending',
+        tasks: [{ title: 'Task', description: 'Has work' }],
+      });
+
+      // Set includeEmptyPlans to true
+      const result = await findNextReadyDependency(1, testDir, true);
+
+      expect(result.plan).not.toBeNull();
+      expect(result.plan?.id).toBe(2); // Should find empty plan first (BFS order)
+      expect(result.plan?.title).toBe('Empty Plan');
+    });
+
+    test('includes empty plans with empty tasks array when includeEmptyPlans = true', async () => {
+      // Simple test case: parent plan with dependency on a plan that has no tasks field
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      // Create a plan file with empty tasks array
+      const planData = {
+        id: 2,
+        title: 'Plan With Empty Tasks',
+        goal: 'Test goal',
+        status: 'pending',
+        tasks: [], // Empty tasks array
+      };
+      const filePath = path.join(testDir, '2-no-tasks-field.yml');
+      const yamlContent = yaml.stringify(planData);
+      await fs.writeFile(filePath, yamlContent, 'utf-8');
+
+      // Should include plan with empty tasks when includeEmptyPlans = true
+      const result = await findNextReadyDependency(1, testDir, true);
+
+      expect(result.plan).not.toBeNull();
+      expect(result.plan?.id).toBe(2);
+      expect(result.plan?.title).toBe('Plan With Empty Tasks');
+    });
+
+    test('respects priority order even for empty plans when includeEmptyPlans = true', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3, 4],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Low Priority Empty',
+        filename: '2-low-empty.yml',
+        status: 'pending',
+        priority: 'low',
+        tasks: [], // No tasks
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'High Priority Empty',
+        filename: '3-high-empty.yml',
+        status: 'pending',
+        priority: 'high', 
+        tasks: [], // No tasks
+      });
+
+      await createPlanFile({
+        id: 4,
+        title: 'Medium Priority with Tasks',
+        filename: '4-medium-tasks.yml',
+        status: 'pending',
+        priority: 'medium',
+        tasks: [{ title: 'Task', description: 'Has work' }],
+      });
+
+      // With includeEmptyPlans = true, should find high priority empty plan
+      const result = await findNextReadyDependency(1, testDir, true);
+
+      expect(result.plan).not.toBeNull();
+      expect(result.plan?.id).toBe(3); // High priority empty plan
+      expect(result.plan?.title).toBe('High Priority Empty');
+    });
+
+    test('in-progress empty plans take precedence when includeEmptyPlans = true', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'In Progress Empty',
+        filename: '2-in-progress-empty.yml',
+        status: 'in_progress',
+        priority: 'low',
+        tasks: [], // No tasks
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Pending High Priority with Tasks',
+        filename: '3-pending-high-tasks.yml',
+        status: 'pending',
+        priority: 'high',
+        tasks: [{ title: 'Task', description: 'Important work' }],
+      });
+
+      // Should find in-progress empty plan first
+      const result = await findNextReadyDependency(1, testDir, true);
+
+      expect(result.plan).not.toBeNull();
+      expect(result.plan?.id).toBe(2);
+      expect(result.plan?.title).toBe('In Progress Empty');
+      expect(result.message).toContain('Found in-progress plan');
+    });
+
+    test('empty plans still respect maybe priority exclusion when includeEmptyPlans = true', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Maybe Priority Empty',
+        filename: '2-maybe-empty.yml',
+        status: 'pending',
+        priority: 'maybe',
+        tasks: [], // No tasks
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Regular Priority Empty',
+        filename: '3-regular-empty.yml',
+        status: 'pending',
+        tasks: [], // No tasks
+      });
+
+      // Should skip maybe priority plan even when includeEmptyPlans = true
+      const result = await findNextReadyDependency(1, testDir, true);
+
+      expect(result.plan).not.toBeNull();
+      expect(result.plan?.id).toBe(3);
+      expect(result.plan?.title).toBe('Regular Priority Empty');
+    });
+
+    test('blocked empty plans are still excluded when includeEmptyPlans = true', async () => {
+      await createPlanFile({
+        id: 1,
+        title: 'Parent Plan',
+        filename: '1-parent.yml',
+        status: 'in_progress',
+        dependencies: [2, 3],
+        tasks: [{ title: 'Parent task', description: 'Main work' }],
+      });
+
+      await createPlanFile({
+        id: 2,
+        title: 'Blocked Empty Plan',
+        filename: '2-blocked-empty.yml',
+        status: 'pending',
+        dependencies: [4], // Depends on plan 4
+        tasks: [], // No tasks
+      });
+
+      await createPlanFile({
+        id: 3,
+        title: 'Ready Empty Plan',
+        filename: '3-ready-empty.yml',
+        status: 'pending',
+        tasks: [], // No tasks, no dependencies - should be ready
+      });
+
+      await createPlanFile({
+        id: 4,
+        title: 'Incomplete Dependency',
+        filename: '4-incomplete.yml',
+        status: 'pending',
+        tasks: [{ title: 'Incomplete task', description: 'Not done' }],
+      });
+
+      // Should find the ready empty plan, not the blocked one
+      const result = await findNextReadyDependency(1, testDir, true);
+
+      expect(result.plan).not.toBeNull();
+      expect(result.plan?.id).toBe(3);
+      expect(result.plan?.title).toBe('Ready Empty Plan');
     });
   });
 

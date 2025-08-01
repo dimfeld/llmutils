@@ -557,8 +557,8 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    // Should call findNextReadyDependency with the parent plan ID
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir);
+    // Should call findNextReadyDependency with the parent plan ID and includeEmptyPlans=true
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir, true);
 
     // Should log the success message
     expect(logSpy).toHaveBeenCalledWith(
@@ -625,7 +625,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     expect(readPlanFileSpy).toHaveBeenCalledWith(parentPlanPath);
 
     // Should call findNextReadyDependency with the parent plan ID (extracted from file)
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir);
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir, true);
 
     // Should log the success message
     expect(logSpy).toHaveBeenCalledWith(
@@ -657,7 +657,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     await handleGenerateCommand(undefined, options, command);
 
     // Should call findNextReadyDependency
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir);
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir, true);
 
     // Should log the no dependencies message
     expect(logSpy).toHaveBeenCalledWith(
@@ -686,7 +686,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     await handleGenerateCommand(undefined, options, command);
 
     // Should call findNextReadyDependency
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(999, tasksDir);
+    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(999, tasksDir, true);
 
     // Should log the plan not found message
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Plan not found: 999'));
