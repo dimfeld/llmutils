@@ -259,6 +259,18 @@ export async function findNextReadyDependency(
       }).length;
 
       if (doneCount === allDependencyPlans.length) {
+        // If all dependencies are complete but the parent plan is not finished,
+        // return the parent plan itself
+        if (parentPlan.status !== 'done') {
+          debugLog(
+            `[find_next_dependency] All dependencies complete, returning parent plan ${parentPlan.id}`
+          );
+          return {
+            plan: parentPlan,
+            message:
+              chalk.green('All dependencies are complete') + ' - ready to work on the parent plan',
+          };
+        }
         reason =
           chalk.green('All dependencies are complete') + ' - ready to work on the parent plan';
       } else if (pendingNoTasks > 0) {
