@@ -143,7 +143,7 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
           } catch {
             // Not JSON, ignore
           }
-          return formatJsonMessage(line);
+          return formatJsonMessage(line)?.message;
         })
         .filter(Boolean)
         .join('\n\n');
@@ -183,7 +183,10 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
         generationOutput = resultMessage.result;
       }
 
-      const formatted = lines.map(formatJsonMessage).filter(Boolean).join('\n\n');
+      const formatted = lines
+        .map((line) => formatJsonMessage(line).message)
+        .filter(Boolean)
+        .join('\n\n');
       return formatted ? formatted + '\n\n' : '';
     },
   });
