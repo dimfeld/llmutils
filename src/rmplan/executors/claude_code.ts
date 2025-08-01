@@ -472,15 +472,15 @@ export class ClaudeCodeExecutor implements Executor {
       isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
     }
 
-    if (interactive) {
-      // permissions MCP doesn't make sense in interactive mode
+    allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
+
+    if (interactive || allowAllTools) {
+      // permissions MCP doesn't make sense in interactive mode, or when we want to allow all tools
       isPermissionsMcpEnabled = false;
     }
 
     let tempMcpConfigDir: string | undefined = undefined;
     let dynamicMcpConfigFile: string | undefined;
-
-    allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
 
     const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
 
