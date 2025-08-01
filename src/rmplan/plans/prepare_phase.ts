@@ -15,7 +15,7 @@ import {
   generateClaudeCodePhaseStepsGenerationPrompt,
 } from '../prompt.js';
 import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
-import { type RmplanConfig } from '../configSchema.js';
+import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
 import { findSiblingPlans, isURL } from '../context_helpers.js';
 import { fixYaml } from '../fix_yaml.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
@@ -58,8 +58,9 @@ export async function preparePhase(
   try {
     // Load the target phase YAML file
     const currentPhaseData = await readPlanFile(phaseYamlFile);
+    const tasksDir = await resolveTasksDir(config);
     const projectPlanDir = path.dirname(phaseYamlFile);
-    const { plans: allPlans } = await readAllPlans(projectPlanDir);
+    const { plans: allPlans } = await readAllPlans(tasksDir);
 
     // Dependency Checking
     if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
@@ -326,8 +327,6 @@ async function gatherPhaseGenerationContext(
     // 5. Process each dependency
     if (currentPhaseData.dependencies && currentPhaseData.dependencies.length > 0) {
       // Read all plans in the directory to find dependencies by ID
-      const { plans: allPlans } = await readAllPlans(projectPlanDir);
-
       for (const dependencyId of currentPhaseData.dependencies) {
         const dependencyPlan = allPlans.get(dependencyId);
 
