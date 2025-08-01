@@ -210,8 +210,9 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
           });
           outputLines.push(todoLines.join('\n'));
         } else {
+          const color = content.name === 'Task' ? chalk.red : chalk.cyan;
           outputLines.push(
-            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
+            color(`### Invoke Tool: ${content.name} [${timestamp}]`),
             yaml.stringify(content.input ?? {})
           );
         }
@@ -244,10 +245,8 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
           formattedResult = formatValue(result);
         }
 
-        outputLines.push(
-          chalk.magenta(`### Tool Result: ${toolName} [${timestamp}]`),
-          formattedResult
-        );
+        const color = toolName === 'Task' ? chalk.red : chalk.magenta;
+        outputLines.push(color(`### Tool Result: ${toolName} [${timestamp}]`), formattedResult);
       } else {
         debugLog('Unknown message type:', content.type);
         outputLines.push(`### ${content.type as string} [${timestamp}]`, formatValue(content));
