@@ -205,8 +205,7 @@ export async function handleGenerateCommand(
       return;
     }
 
-    log(chalk.green(`Found ready dependency: ${result.plan.id} - ${result.plan.title}`));
-    log(chalk.gray(result.message));
+    log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
 
     // Set the resolved plan as the target
     options.plan = result.plan.filename;
