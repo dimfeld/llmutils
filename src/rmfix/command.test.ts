@@ -2,6 +2,7 @@ import { describe, it, expect, spyOn } from 'bun:test';
 import { prepareCommand, type OutputFormat } from './command';
 import * as CommandModule from './command';
 import { detectPackageManager } from './command';
+import * as logging from '../logging.js';
 
 describe('prepareCommand', () => {
   // Test Case 1: Simple command (not an npm script)
@@ -163,7 +164,7 @@ describe('prepareCommand', () => {
       },
     };
     const bunFileSpy = spyOn(Bun, 'file').mockReturnValue(mockFile as any);
-    const consoleWarnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    const loggingWarnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
     const dpmSpy = spyOn(CommandModule, 'detectPackageManager');
 
     const result = await prepareCommand('test', [], 'auto');
@@ -171,7 +172,7 @@ describe('prepareCommand', () => {
     expect(dpmSpy).not.toHaveBeenCalled();
 
     bunFileSpy.mockRestore();
-    consoleWarnSpy.mockRestore();
+    loggingWarnSpy.mockRestore();
     dpmSpy.mockRestore();
   });
 

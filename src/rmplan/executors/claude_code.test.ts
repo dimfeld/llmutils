@@ -1,10 +1,11 @@
-import { test, describe, expect, mock, afterEach } from 'bun:test';
+import { test, describe, expect, mock, afterEach, spyOn } from 'bun:test';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { ClaudeCodeExecutor } from './claude_code.ts';
 import type { ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import { ModuleMocker } from '../../testing.js';
+import * as logging from '../../logging.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -1915,10 +1916,8 @@ describe('ClaudeCodeExecutor', () => {
     trackedFiles.add('/tmp/test/file1.txt');
     trackedFiles.add('/tmp/test/file2.txt');
 
-    // Mock console to capture log output
-    const consoleSpy = mock();
-    const originalLog = console.log;
-    console.log = consoleSpy;
+    // Mock logging to capture log output
+    const logSpy = spyOn(logging, 'log').mockImplementation(() => {});
 
     // Mock the permission socket server creation and handling
     let permissionRequestHandler: (message: any) => Promise<void>;
@@ -1972,15 +1971,14 @@ describe('ClaudeCodeExecutor', () => {
     });
 
     // Verify that the correct log message was generated
-    // The log function from ../../logging.ts is called, which internally calls console.log
-    expect(consoleSpy).toHaveBeenCalledWith(
+    expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining(
         'Auto-approving rm command for tracked file(s): /tmp/test/file1.txt, /tmp/test/file2.txt'
       )
     );
 
     // Clean up
-    console.log = originalLog;
+    logSpy.mockRestore();
     server.close(() => {});
   });
 
