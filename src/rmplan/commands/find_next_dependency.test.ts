@@ -1137,7 +1137,7 @@ describe('findNextReadyDependency', () => {
         title: 'High Priority Empty',
         filename: '3-high-empty.yml',
         status: 'pending',
-        priority: 'high', 
+        priority: 'high',
         tasks: [], // No tasks
       });
 

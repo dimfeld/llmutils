@@ -201,10 +201,12 @@ export async function findNextReadyDependency(
       debugLog(`[find_next_dependency] Readiness: Excluding plan ${planInfo} - no tasks defined`);
       return false;
     }
-    
+
     // Log when includeEmptyPlans is true and plan has no tasks
     if (includeEmptyPlans && (!plan.tasks || plan.tasks.length === 0)) {
-      debugLog(`[find_next_dependency] Readiness: Including plan ${planInfo} despite no tasks (includeEmptyPlans=true)`);
+      debugLog(
+        `[find_next_dependency] Readiness: Including plan ${planInfo} despite no tasks (includeEmptyPlans=true)`
+      );
     }
 
     // Check if all dependencies are done
