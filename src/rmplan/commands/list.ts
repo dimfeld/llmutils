@@ -233,7 +233,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
         const taskCount = plan.tasks?.length || 0;
         if (taskCount) {
           const doneTasks = plan.tasks?.filter(
-            (task) => task.steps?.length && task.steps?.every((step) => step.done)
+            (task) => (task.steps?.length && task.steps?.every((step) => step.done)) || task.done
           );
 
           if (doneTasks?.length) {
