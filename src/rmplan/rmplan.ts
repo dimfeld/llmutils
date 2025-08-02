@@ -445,6 +445,8 @@ program
   .option('--no-doc <paths...>', 'Remove documentation file paths from the plan')
   .option('--assign <username>', 'Assign the plan to a user')
   .option('--no-assign', 'Remove the plan assignment')
+  .option('--sd, --status-description <description>', 'Set a description for the current status')
+  .option('--no-sd, --no-status-description', 'Remove the status description')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
     options.dependsOn = intArg(options.dependsOn);

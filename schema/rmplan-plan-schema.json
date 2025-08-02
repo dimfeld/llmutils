@@ -29,6 +29,9 @@
         "deferred"
       ]
     },
+    "statusDescription": {
+      "type": "string"
+    },
     "priority": {
       "type": "string",
       "enum": [

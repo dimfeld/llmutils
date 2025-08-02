@@ -13,6 +13,8 @@ export interface SetOptions {
   planFile: string;
   priority?: Priority;
   status?: Status;
+  statusDescription?: string;
+  noStatusDescription?: boolean;
   dependsOn?: number[];
   noDependsOn?: number[];
   parent?: number;
@@ -48,6 +50,30 @@ export async function handleSetCommand(
     plan.status = options.status;
     modified = true;
     log(`Updated status to ${options.status}`);
+
+    // Clear status description when changing status unless explicitly provided
+    if (!options.statusDescription && plan.statusDescription) {
+      delete plan.statusDescription;
+      log('Cleared status description (status changed)');
+    }
+  }
+
+  // Update status description
+  if (options.statusDescription) {
+    plan.statusDescription = options.statusDescription;
+    modified = true;
+    log(`Updated status description`);
+  }
+
+  // Remove status description
+  if (options.noStatusDescription) {
+    if (plan.statusDescription !== undefined) {
+      delete plan.statusDescription;
+      modified = true;
+      log('Removed status description');
+    } else {
+      log('No status description to remove');
+    }
   }
 
   // Add dependencies

@@ -140,6 +140,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
             : chalk.white;
   log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
 
+  if (plan.statusDescription) {
+    log(`${chalk.cyan('Status Description:')} ${plan.statusDescription}`);
+  }
+
   const priorityColor =
     plan.priority === 'urgent'
       ? chalk.red
