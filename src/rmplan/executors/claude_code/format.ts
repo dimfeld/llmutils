@@ -206,10 +206,18 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
                   ? chalk.yellow
                   : chalk.gray;
 
+            // Color the content based on status
+            const contentColor =
+              todo.status === 'completed'
+                ? chalk.green
+                : todo.status === 'in_progress'
+                  ? chalk.cyan
+                  : chalk.gray;
+
             // Priority may have been removed in recent versions
             const priority = todo.priority ? `[${priorityColor(todo.priority)}] ` : '';
 
-            return `  ${statusIcon} ${priority}${todo.content}`;
+            return `  ${statusIcon} ${priority}${contentColor(todo.content)}`;
           });
           outputLines.push(todoLines.join('\n'));
         } else {
