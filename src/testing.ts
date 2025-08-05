@@ -68,22 +68,6 @@ export class ModuleMocker {
     this.mocked.add(resolvedPath);
   }
 
-  // Synchronous version for immediate mocking
-  mockSync(modulePath: string, renderMocks: () => Record<string, any>) {
-    // Resolve the module path relative to the calling file
-    const resolvedPath = this.importMeta.resolveSync(modulePath);
-
-    const mocks = renderMocks();
-    void mock.module(resolvedPath, () => mocks);
-
-    this.mocks.push({
-      clear: () => {
-        // Reset to empty module
-        void mock.module(resolvedPath, () => ({}));
-      },
-    });
-  }
-
   clear() {
     this.mocks.forEach((mockResult) => mockResult.clear());
     this.mocks = [];
