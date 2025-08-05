@@ -206,7 +206,10 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
                   ? chalk.yellow
                   : chalk.gray;
 
-            return `  ${statusIcon} [${priorityColor(todo.priority)}] ${todo.content}`;
+            // Priority may have been removed in recent versions
+            const priority = todo.priority ? `[${priorityColor(todo.priority)}] ` : '';
+
+            return `  ${statusIcon} ${priority}${todo.content}`;
           });
           outputLines.push(todoLines.join('\n'));
         } else {
