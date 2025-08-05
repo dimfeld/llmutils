@@ -472,7 +472,11 @@ export class ClaudeCodeExecutor implements Executor {
       isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
     }
 
-    allowAllTools ??= (process.env.ALLOW_ALL_TOOLS ?? 'false') === 'true';
+    if (allowAllTools == null) {
+      const allowAllToolsValue = process.env.ALLOW_ALL_TOOLS ?? 'false';
+      const envAllowAllTools = ['true', '1'].includes(allowAllToolsValue.toLowerCase());
+      allowAllTools = envAllowAllTools;
+    }
 
     if (interactive || allowAllTools) {
       // permissions MCP doesn't make sense in interactive mode, or when we want to allow all tools
