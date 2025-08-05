@@ -152,19 +152,6 @@ export async function preparePhase(
       phaseStepsPrompt += `\n\n## Planning Rules\n\n${planningDocContent}`;
     }
 
-    // 6. Invoke rmfilter programmatically
-    let prompt: string;
-    try {
-      prompt = await runRmfilterProgrammatically(
-        [...rmfilterArgs, ...docsArgs, '--bare', '--instructions', phaseStepsPrompt],
-        gitRoot,
-        gitRoot
-      );
-    } catch (err) {
-      error('Failed to execute rmfilter:', err);
-      throw err;
-    }
-
     // 7. Call LLM or use clipboard/paste mode
     let text: string;
 
@@ -182,42 +169,56 @@ export async function preparePhase(
         model: options.model || config.models?.stepGeneration,
         includeDefaultTools: true,
       });
-    } else if (options.direct) {
-      // Direct LLM call
-      const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
-      const model = await createModel(modelId, config);
-
-      log('Generating detailed steps for phase using model:', modelId);
-
-      const result = await runStreamingPrompt({
-        model,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.2,
-      });
-      text = result.text;
     } else {
-      // Clipboard/paste mode
-      await clipboard.write(prompt);
-      log(chalk.green('✓ Phase preparation prompt copied to clipboard'));
-      log(
-        chalk.bold(
-          `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} with the detailed steps, or Ctrl+C to exit.`
-        )
-      );
+      let prompt: string;
+      try {
+        prompt = await runRmfilterProgrammatically(
+          [...rmfilterArgs, ...docsArgs, '--bare', '--instructions', phaseStepsPrompt],
+          gitRoot,
+          gitRoot
+        );
+      } catch (err) {
+        error('Failed to execute rmfilter:', err);
+        throw err;
+      }
 
-      text = await waitForEnter(true);
+      if (options.direct) {
+        // Direct LLM call
+        const modelId = options.model || config.models?.stepGeneration || DEFAULT_RUN_MODEL;
+        const model = await createModel(modelId, config);
 
-      if (!text || !text.trim()) {
-        throw new Error('No response was pasted.');
+        log('Generating detailed steps for phase using model:', modelId);
+
+        const result = await runStreamingPrompt({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.2,
+        });
+        text = result.text;
+      } else {
+        // Clipboard/paste mode
+        await clipboard.write(prompt);
+        log(chalk.green('✓ Phase preparation prompt copied to clipboard'));
+        log(
+          chalk.bold(
+            `\nPlease paste the prompt into the chat interface. Then ${sshAwarePasteAction()} with the detailed steps, or Ctrl+C to exit.`
+          )
+        );
+
+        text = await waitForEnter(true);
+
+        if (!text || !text.trim()) {
+          throw new Error('No response was pasted.');
+        }
       }
     }
 
-    // 9. Parse LLM Output
+    // Parse LLM Output
     let parsedTasks;
     try {
       // Extract YAML from the response (LLM might include markdown formatting)
