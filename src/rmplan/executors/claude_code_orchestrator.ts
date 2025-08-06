@@ -36,9 +36,6 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
   const defaultAllowedTools =
     (options.includeDefaultTools ?? true)
       ? [
-          'Edit',
-          'MultiEdit',
-          'Write',
           'WebFetch',
           'WebSearch',
           'Bash(cat:*)',
@@ -48,46 +45,11 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
           'Bash(grep:*)',
           'Bash(ls:*)',
           'Bash(mkdir:*)',
-          'Bash(mv:*)',
           'Bash(pwd)',
           'Bash(rg:*)',
           'Bash(sed:*)',
-          'Bash(rm test-:*)',
-          'Bash(rm -f test-:*)',
           'Bash(jj status)',
           'Bash(jj log:*)',
-          'Bash(jj commit:*)',
-          'Bash(npm test:*)',
-          'Bash(npm run build:*)',
-          'Bash(npm run check:*)',
-          'Bash(npm run typecheck:*)',
-          'Bash(npm run lint:*)',
-          'Bash(npm install)',
-          'Bash(npm add:*)',
-          'Bash(pnpm test:*)',
-          'Bash(pnpm run build:*)',
-          'Bash(pnpm run check:*)',
-          'Bash(pnpm run typecheck:*)',
-          'Bash(pnpm run lint:*)',
-          'Bash(pnpm install)',
-          'Bash(pnpm add:*)',
-          'Bash(yarn test:*)',
-          'Bash(yarn run build:*)',
-          'Bash(yarn run check:*)',
-          'Bash(yarn run typecheck:*)',
-          'Bash(yarn run lint:*)',
-          'Bash(yarn install)',
-          'Bash(yarn add:*)',
-          'Bash(bun test:*)',
-          'Bash(bun run build:*)',
-          'Bash(bun run check:*)',
-          'Bash(bun run typecheck:*)',
-          'Bash(bun run lint:*)',
-          'Bash(bun install)',
-          'Bash(bun add:*)',
-          'Bash(cargo add:*)',
-          'Bash(cargo build)',
-          'Bash(cargo test:*)',
         ]
       : [];
 
@@ -95,6 +57,14 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
   if (options.disallowedTools) {
     allowedTools = allowedTools.filter((t) => !options.disallowedTools?.includes(t));
   }
+
+  let disallowedTools = [
+    'Edit',
+    'MultiEdit',
+    'Write',
+    'NotebookEdit',
+    ...(options.disallowedTools ?? []),
+  ];
 
   if (allowedTools.length) {
     baseArgs.push('--allowedTools', allowedTools.join(','));
@@ -104,9 +74,7 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
     baseArgs.push('--dangerously-skip-permissions');
   }
 
-  if (options.disallowedTools) {
-    baseArgs.push('--disallowedTools', options.disallowedTools.join(','));
-  }
+  baseArgs.push('--disallowedTools', disallowedTools.join(','));
 
   if (options.mcpConfigFile) {
     baseArgs.push('--mcp-config', options.mcpConfigFile);
