@@ -328,7 +328,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     log(chalk.yellow.bold('⚠️  Duplicate plan IDs found:'));
     for (const duplicateId of duplicateIds) {
       log(chalk.yellow(`   - ID ${duplicateId}:`));
-      const filePaths = duplicates[duplicateId];
+      const filePaths = duplicates[duplicateId].sort((a, b) => a.localeCompare(b));
       for (const filePath of filePaths) {
         const relativePath = path.relative(searchDir, filePath);
         log(chalk.gray(`     • ${relativePath}`));
