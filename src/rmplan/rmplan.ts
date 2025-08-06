@@ -374,6 +374,10 @@ program
   .command('renumber')
   .description('Renumber plans with alphanumeric IDs or ID conflicts to sequential numeric IDs')
   .option('--dry-run', 'Show what would be renumbered without making changes')
+  .option(
+    '--prefer <files...>',
+    'Prefer not renumbering IDs for these plan file paths when resolving conflicts'
+  )
   .action(async (options, command) => {
     const { handleRenumber } = await import('./commands/renumber.js');
     await handleRenumber(options, command).catch(handleCommandError);

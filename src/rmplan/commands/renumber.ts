@@ -5,7 +5,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getGitRoot } from '../../common/git.js';
-import { log } from '../../logging.js';
+import { debugLog, log } from '../../logging.js';
 
 interface PlanToRenumber {
   filePath: string;
@@ -74,28 +74,60 @@ export async function handleRenumber(options: any, command: any) {
     }
   }
 
+  // Build a set of preferred plans and their ancestors
+  const preferredPlans = new Set<string>();
+  if (options.prefer) {
+    // Normalize the file paths
+    const preferredFilePaths = options.prefer.map((p: string) =>
+      path.isAbsolute(p) ? p : path.join(tasksDirectory, p)
+    );
+
+    for (const preferredPath of preferredFilePaths) {
+      preferredPlans.add(preferredPath);
+    }
+  }
+
+  debugLog(`Found ${preferredPlans.size} preferred plans: ${[...preferredPlans].join(', ')}`);
+
   // Find plans with conflicting IDs
   for (const [id, files] of idToFiles) {
     if (files.length > 1) {
-      // Sort by createdAt timestamp to determine which to keep
-      const plansWithTimestamps = await Promise.all(
-        files.map(async ({ plan, filePath }) => {
-          return {
-            filePath,
-            plan,
-            createdAt: plan.createdAt || new Date(0).toISOString(),
-          };
-        })
-      );
+      // First check if any of the conflicting files are in the preferred set
+      const preferredFile = files.find(({ filePath }) => preferredPlans.has(filePath));
 
-      // Sort by createdAt, keeping the oldest one
-      plansWithTimestamps.sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
+      let plansToKeepAndRenumber: typeof files;
 
-      // All except the first need renumbering
-      for (let i = 1; i < plansWithTimestamps.length; i++) {
-        const { filePath, plan } = plansWithTimestamps[i];
+      if (preferredFile) {
+        debugLog(`ID ${id}: Found preferred plan ${preferredFile.filePath}`);
+        // Keep the preferred file, renumber all others
+        plansToKeepAndRenumber = files.filter(
+          ({ filePath }) => filePath !== preferredFile.filePath
+        );
+      } else {
+        // Fall back to original logic: sort by createdAt timestamp
+        const plansWithTimestamps = await Promise.all(
+          files.map(async ({ plan, filePath }) => {
+            return {
+              filePath,
+              plan,
+              createdAt: plan.createdAt || new Date(0).toISOString(),
+            };
+          })
+        );
+
+        // Sort by createdAt, keeping the oldest one
+        plansWithTimestamps.sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+
+        // Keep the first (oldest), renumber the rest
+        plansToKeepAndRenumber = plansWithTimestamps
+          .slice(1)
+          .map(({ filePath, plan }) => ({ filePath, plan }));
+      }
+
+      // Add plans that need renumbering
+      for (const { filePath, plan } of plansToKeepAndRenumber) {
         plansToRenumber.push({
           filePath,
           currentId: plan.id!,

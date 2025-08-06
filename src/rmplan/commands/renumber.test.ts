@@ -315,4 +315,150 @@ describe('rmplan renumber', () => {
     expect(updatedSet2Plan2.dependencies).toEqual([6]);
     expect(updatedSet2Plan3.dependencies).toEqual([6, 7]);
   });
+
+  test('prefers specified plans when resolving conflicts', async () => {
+    // Create plans with conflicting IDs
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    // Create two plans with the same ID 1
+    await createPlan(1, 'Older plan - should be renumbered', '1-old.yml', oldTime);
+    await createPlan(1, 'Newer plan - should keep ID', '1-new.yml', newTime);
+
+    // Use --prefer to keep the newer plan (which would normally be renumbered)
+    await handleRenumber({ prefer: ['1-new.yml'] }, createMockCommand());
+
+    // Check that files were renamed correctly
+    const files = await fs.promises.readdir(tasksDir);
+    expect(files).toContain('1-new.yml'); // Kept its name
+    expect(files).toContain('2-old.yml'); // Renamed
+
+    // Check that IDs were updated correctly
+    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
+    expect(newPlan.id).toBe(1); // Newer plan keeps ID 1 due to preference
+    expect(newPlan.title).toBe('Newer plan - should keep ID');
+
+    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
+    expect(oldPlan.id).toBe(2); // Older plan gets renumbered despite being older
+    expect(oldPlan.title).toBe('Older plan - should be renumbered');
+  });
+
+  test('prefers parent and its children when parent is specified', async () => {
+    // Create a hierarchy with conflicts
+    const parent = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date('2024-01-02').toISOString(), // Newer
+      tasks: [],
+    };
+
+    const child = {
+      id: 2,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      status: 'pending',
+      priority: 'medium',
+      parent: 1,
+      tasks: [],
+    };
+
+    const grandchild = {
+      id: 3,
+      title: 'Grandchild Plan',
+      goal: 'Grandchild goal',
+      status: 'pending',
+      priority: 'medium',
+      parent: 2,
+      tasks: [],
+    };
+
+    const conflictingPlan = {
+      id: 1,
+      title: 'Conflicting Plan',
+      goal: 'Should be renumbered',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date('2024-01-01').toISOString(), // Older, would normally be kept
+      tasks: [],
+    };
+
+    await writeTestPlan(path.join(tasksDir, '1-parent.yml'), parent);
+    await writeTestPlan(path.join(tasksDir, '2-child.yml'), child);
+    await writeTestPlan(path.join(tasksDir, '3-grandchild.yml'), grandchild);
+    await writeTestPlan(path.join(tasksDir, '1-conflicting.yml'), conflictingPlan);
+
+    // Prefer the parent, which should also protect its children
+    await handleRenumber({ prefer: ['1-parent.yml'] }, createMockCommand());
+
+    // Parent should keep ID 1
+    const updatedParent = await readPlanFile(path.join(tasksDir, '1-parent.yml'));
+    expect(updatedParent.id).toBe(1);
+
+    // Child should keep ID 2 and parent reference should remain
+    const updatedChild = await readPlanFile(path.join(tasksDir, '2-child.yml'));
+    expect(updatedChild.id).toBe(2);
+    expect(updatedChild.parent).toBe(1);
+
+    // Grandchild should keep ID 3 and parent reference should remain
+    const updatedGrandchild = await readPlanFile(path.join(tasksDir, '3-grandchild.yml'));
+    expect(updatedGrandchild.id).toBe(3);
+    expect(updatedGrandchild.parent).toBe(2);
+
+    // Conflicting plan should be renumbered
+    const updatedConflictingPath = path.join(tasksDir, '4-conflicting.yml');
+    expect(fs.existsSync(updatedConflictingPath)).toBe(true);
+    const updatedConflicting = await readPlanFile(updatedConflictingPath);
+    expect(updatedConflicting.id).toBe(4);
+
+    // Original conflicting file should be removed
+    expect(fs.existsSync(path.join(tasksDir, '1-conflicting.yml'))).toBe(false);
+  });
+
+  test('handles multiple preferred files', async () => {
+    // Create multiple sets of conflicting plans
+    await createPlan(1, 'Plan A1', '1-a1.yml', new Date('2024-01-01').toISOString());
+    await createPlan(1, 'Plan B1', '1-b1.yml', new Date('2024-01-02').toISOString());
+    await createPlan(2, 'Plan A2', '2-a2.yml', new Date('2024-01-01').toISOString());
+    await createPlan(2, 'Plan B2', '2-b2.yml', new Date('2024-01-02').toISOString());
+
+    // Prefer the B plans (newer ones)
+    await handleRenumber({ prefer: ['1-b1.yml', '2-b2.yml'] }, createMockCommand());
+
+    // B plans should keep their IDs
+    const b1 = await readPlanFile(path.join(tasksDir, '1-b1.yml'));
+    expect(b1.id).toBe(1);
+
+    const b2 = await readPlanFile(path.join(tasksDir, '2-b2.yml'));
+    expect(b2.id).toBe(2);
+
+    // A plans should be renumbered
+    const a1 = await readPlanFile(path.join(tasksDir, '3-a1.yml'));
+    expect(a1.id).toBe(3);
+
+    const a2 = await readPlanFile(path.join(tasksDir, '4-a2.yml'));
+    expect(a2.id).toBe(4);
+  });
+
+  test('handles absolute paths in --prefer option', async () => {
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+
+    // Use absolute path for preference
+    const absolutePath = path.join(tasksDir, '1-new.yml');
+    await handleRenumber({ prefer: [absolutePath] }, createMockCommand());
+
+    // Newer plan should keep ID 1
+    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
+    expect(newPlan.id).toBe(1);
+
+    // Older plan should be renumbered
+    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
+    expect(oldPlan.id).toBe(2);
+  });
 });

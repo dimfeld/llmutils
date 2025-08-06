@@ -84,7 +84,8 @@ ${contextContent}
 - Group related tests logically
 
 ### What Makes a Good Test
-- Tests should verify real behavior and catch actual bugs
+- Tests MUST test actual code. A test that only simulates other code is worse than no test at all.
+- Tests should verify real functions and code, and catch actual bugs
 - Cover both successful cases and error scenarios
 - Test edge cases and boundary conditions
 - Ensure tests are maintainable and clear in their intent
