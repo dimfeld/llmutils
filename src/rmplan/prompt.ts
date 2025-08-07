@@ -593,6 +593,8 @@ For now, please:
 - Identify the key files and components that will be involved
 - Think about the best approach to implement this feature
 
+Do not perform any implementation or write any files yet.
+
 When you're done with your analysis, let me know and I'll provide the next instruction.`;
 }
 
@@ -772,6 +774,8 @@ For now, please:
 - Check the project structure and existing implementations
 - Identify the key files and components that will be involved
 - Think about the best approach to implement each task
+
+Do not perform any implementation or write any files yet.
 
 When you're done with your analysis, let me know and I'll provide the next instruction.`;
 }

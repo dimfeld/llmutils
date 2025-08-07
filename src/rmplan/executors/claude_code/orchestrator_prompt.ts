@@ -25,6 +25,7 @@ You MUST follow this iterative development process:
 2. **Testing Phase**
    - After implementation is complete, use the Task tool to invoke the tester agent with subagent_type="rmplan-${planId}-tester"
    - Ask the tester to create comprehensive tests for the implemented functionality, if needed
+   - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
    - Have the tester run the tests and work on fixing any failures
 
 3. **Review Phase**
