@@ -629,13 +629,14 @@ export async function saveMultiPhaseYaml(
 
     phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;
 
-    // Add overall project information right here if it's a single phase
-    if (!putProjectInfoInStubPlan && hasProjectInfo) {
-      phase.project = projectInfo;
-    }
+    if (actuallyMultiphase) {
+      if (hasProjectInfo) {
+        phase.project = projectInfo;
+      }
 
-    if (options.stubPlan?.data && actuallyMultiphase) {
-      phase.parent = options.stubPlan?.data.id;
+      if (options.stubPlan?.data) {
+        phase.parent = options.stubPlan?.data.id;
+      }
     }
 
     // Add rmfilter and issue from options
