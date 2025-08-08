@@ -5,6 +5,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { log, warn } from '../../logging.js';
+import { resolveTasksDir } from '../configSchema.js';
 
 interface MergeOptions {
   children?: string[];
@@ -15,15 +16,7 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
   const globalOpts = command.parent.opts();
   const gitRoot = (await getGitRoot()) || process.cwd();
   const config = await loadEffectiveConfig(globalOpts.config);
-
-  let tasksDir: string;
-  if (config.paths?.tasks) {
-    tasksDir = isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : join(gitRoot, config.paths.tasks);
-  } else {
-    tasksDir = gitRoot;
-  }
+  const tasksDir = await resolveTasksDir(config);
 
   // Resolve the main plan file
   const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
