@@ -16,10 +16,10 @@ describe('rmplan merge', () => {
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), 'rmplan-merge-test-'));
     tasksDir = testDir; // Use testDir as tasksDir for simplicity
-    
+
     // Clear plan cache
     clearPlanCache();
-    
+
     // Mock modules
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
@@ -28,11 +28,11 @@ describe('rmplan merge', () => {
         },
       }),
     }));
-    
+
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
     }));
-    
+
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
       warn: mock(() => {}),
@@ -44,7 +44,7 @@ describe('rmplan merge', () => {
     moduleMocker.clear();
     await rm(testDir, { recursive: true, force: true });
   });
-  
+
   afterAll(() => {
     moduleMocker.clear();
   });
@@ -126,14 +126,14 @@ describe('rmplan merge', () => {
     expect(updatedParent.tasks?.[0].title).toBe('Parent task 1');
     expect(updatedParent.tasks?.[1].title).toBe('Child 1 task');
     expect(updatedParent.tasks?.[2].title).toBe('Child 2 task');
-    
+
     // Check details were merged
     expect(updatedParent.details).toContain('Parent details');
     expect(updatedParent.details).toContain('Child 1');
     expect(updatedParent.details).toContain('Child 1 details');
     expect(updatedParent.details).toContain('Child 2');
     expect(updatedParent.details).toContain('Child 2 details');
-    
+
     // Check dependencies were merged (10, 11, 12 with duplicates removed)
     expect(updatedParent.dependencies).toEqual([10, 11, 12]);
 

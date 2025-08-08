@@ -11,15 +11,11 @@ interface MergeOptions {
   all?: boolean;
 }
 
-export async function handleMergeCommand(
-  planFile: string,
-  options: MergeOptions,
-  command: any
-) {
+export async function handleMergeCommand(planFile: string, options: MergeOptions, command: any) {
   const globalOpts = command.parent.opts();
   const gitRoot = (await getGitRoot()) || process.cwd();
   const config = await loadEffectiveConfig(globalOpts.config);
-  
+
   let tasksDir: string;
   if (config.paths?.tasks) {
     tasksDir = isAbsolute(config.paths.tasks)
@@ -52,7 +48,7 @@ export async function handleMergeCommand(
 
   // Determine which children to merge
   let childrenToMerge: (PlanSchema & { filename: string })[];
-  
+
   if (options.children && options.children.length > 0) {
     // Merge specific children by ID or filename
     childrenToMerge = [];
@@ -60,11 +56,11 @@ export async function handleMergeCommand(
       // Try to parse as number for ID lookup
       const childId = Number(childArg);
       let child: (PlanSchema & { filename: string }) | undefined;
-      
+
       if (!isNaN(childId)) {
         child = allChildren.find((c) => c.id === childId);
       }
-      
+
       // If not found by ID, try by filename
       if (!child) {
         const childPath = await resolvePlanFile(childArg, globalOpts.config).catch(() => null);
@@ -72,11 +68,11 @@ export async function handleMergeCommand(
           child = allChildren.find((c) => c.filename === childPath);
         }
       }
-      
+
       if (!child) {
         throw new Error(`Child plan not found: ${childArg}`);
       }
-      
+
       childrenToMerge.push(child);
     }
   } else {
@@ -89,7 +85,9 @@ export async function handleMergeCommand(
     return;
   }
 
-  log(`Merging ${childrenToMerge.length} child plan(s) into ${mainPlan.title || `Plan ${mainPlan.id}`}`);
+  log(
+    `Merging ${childrenToMerge.length} child plan(s) into ${mainPlan.title || `Plan ${mainPlan.id}`}`
+  );
 
   // Collect all dependencies from children
   const allChildDependencies = new Set<number>();
@@ -107,7 +105,7 @@ export async function handleMergeCommand(
   // Merge tasks from children into main plan
   const mergedTasks = [...(mainPlan.tasks || [])];
   const mergedDetails: string[] = [];
-  
+
   if (mainPlan.details) {
     mergedDetails.push(mainPlan.details);
   }
@@ -117,12 +115,12 @@ export async function handleMergeCommand(
     if (child.title || child.goal) {
       mergedDetails.push(`\n## ${child.title || child.goal}`);
     }
-    
+
     // Add child's details
     if (child.details) {
       mergedDetails.push(child.details);
     }
-    
+
     // Merge tasks
     if (child.tasks) {
       mergedTasks.push(...child.tasks);
@@ -175,5 +173,7 @@ export async function handleMergeCommand(
     }
   }
 
-  log(`Successfully merged ${childrenToMerge.length} child plan(s) into ${mainPlan.title || `Plan ${mainPlan.id}`}`);
+  log(
+    `Successfully merged ${childrenToMerge.length} child plan(s) into ${mainPlan.title || `Plan ${mainPlan.id}`}`
+  );
 }
