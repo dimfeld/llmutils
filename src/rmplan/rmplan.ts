@@ -180,6 +180,16 @@ program
   });
 
 program
+  .command('merge <planFile>')
+  .description('Merge child plans into their parent plan. Can be a file path or plan ID.')
+  .option('--children <children...>', 'Specific child plan IDs or files to merge (defaults to all direct children)')
+  .option('--all', 'Merge all direct children (default behavior)')
+  .action(async (planFile, options, command) => {
+    const { handleMergeCommand } = await import('./commands/merge.js');
+    await handleMergeCommand(planFile, options, command).catch(handleCommandError);
+  });
+
+program
   .command('next <planFile>')
   .description(
     'Prepare the next step(s) from a plan YAML for execution. Can be a file path or plan ID.'
