@@ -11,11 +11,7 @@ import { createLinearClient } from '../linear.js';
 import { loadEffectiveConfig } from '../../rmplan/configLoader.js';
 import { debugLog } from '../../logging.js';
 import type { RmplanConfig } from '../../rmplan/configSchema.js';
-import type {
-  IssueTrackerClient,
-  IssueTrackerConfig,
-  IssueTrackerRegistry,
-} from './types.js';
+import type { IssueTrackerClient, IssueTrackerConfig, IssueTrackerRegistry } from './types.js';
 
 /**
  * Registry of available issue tracker client factories
@@ -83,15 +79,13 @@ export async function getIssueTracker(config?: RmplanConfig): Promise<IssueTrack
     const envVarName = trackerType === 'github' ? 'GITHUB_TOKEN' : 'LINEAR_API_KEY';
     throw new Error(
       `${trackerType} issue tracker is not properly configured. ` +
-      `Missing environment variable: ${envVarName}. ` +
-      `Available trackers: ${availableTrackers.available.join(', ') || 'none'}`
+        `Missing environment variable: ${envVarName}. ` +
+        `Available trackers: ${availableTrackers.available.join(', ') || 'none'}`
     );
   }
 
   // Get the appropriate API key
-  const apiKey = trackerType === 'github' 
-    ? process.env.GITHUB_TOKEN 
-    : process.env.LINEAR_API_KEY;
+  const apiKey = trackerType === 'github' ? process.env.GITHUB_TOKEN : process.env.LINEAR_API_KEY;
 
   // Create the tracker configuration
   const trackerConfig: IssueTrackerConfig = {
@@ -116,10 +110,10 @@ export async function getIssueTracker(config?: RmplanConfig): Promise<IssueTrack
 export function getMissingTrackerError(requestedTracker: 'github' | 'linear'): string {
   const availableTrackers = getAvailableTrackers();
   const envVarName = requestedTracker === 'github' ? 'GITHUB_TOKEN' : 'LINEAR_API_KEY';
-  
+
   let message = `${requestedTracker} issue tracker is not properly configured.\n`;
   message += `Missing environment variable: ${envVarName}\n\n`;
-  
+
   if (availableTrackers.available.length > 0) {
     message += `Available trackers: ${availableTrackers.available.join(', ')}\n`;
     message += `Consider changing your issueTracker config to one of the available options, `;
@@ -129,7 +123,7 @@ export function getMissingTrackerError(requestedTracker: 'github' | 'linear'): s
     message += `To use GitHub: Set the GITHUB_TOKEN environment variable\n`;
     message += `To use Linear: Set the LINEAR_API_KEY environment variable`;
   }
-  
+
   return message;
 }
 
@@ -151,9 +145,9 @@ export function isTrackerAvailable(tracker: 'github' | 'linear'): boolean {
  */
 export function getDefaultTracker(): 'github' | 'linear' | null {
   const available = getAvailableTrackers();
-  
+
   if (available.github) return 'github';
   if (available.linear) return 'linear';
-  
+
   return null;
 }

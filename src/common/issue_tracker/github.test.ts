@@ -168,7 +168,7 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should implement IssueTrackerClient interface', () => {
       const trackerClient: IssueTrackerClient = client;
-      
+
       expect(typeof trackerClient.fetchIssue).toBe('function');
       expect(typeof trackerClient.fetchAllOpenIssues).toBe('function');
       expect(typeof trackerClient.parseIssueIdentifier).toBe('function');
@@ -180,7 +180,7 @@ describe('GitHubIssueTrackerClient', () => {
   describe('createGitHubClient factory function', () => {
     test('should create GitHubIssueTrackerClient instance', () => {
       const factoryClient = createGitHubClient(config);
-      
+
       expect(factoryClient).toBeInstanceOf(GitHubIssueTrackerClient);
       expect(factoryClient.getConfig()).toEqual(config);
       expect(factoryClient.getDisplayName()).toBe('GitHub');
@@ -189,10 +189,10 @@ describe('GitHubIssueTrackerClient', () => {
     test('should create different instances for different configs', () => {
       const config1 = { type: 'github' as const, apiKey: 'token1' };
       const config2 = { type: 'github' as const, apiKey: 'token2' };
-      
+
       const client1 = createGitHubClient(config1);
       const client2 = createGitHubClient(config2);
-      
+
       expect(client1).not.toBe(client2);
       expect(client1.getConfig().apiKey).toBe('token1');
       expect(client2.getConfig().apiKey).toBe('token2');
@@ -413,14 +413,18 @@ describe('GitHubIssueTrackerClient', () => {
 
       // Verify comments mapping
       expect(result.comments).toHaveLength(2);
-      
+
       const comment1 = result.comments[0];
       expect(comment1.id).toBe('98765432');
-      expect(comment1.body).toBe('Great idea! I think we should also consider system preference detection.');
+      expect(comment1.body).toBe(
+        'Great idea! I think we should also consider system preference detection.'
+      );
       expect(comment1.user?.login).toBe('reviewer');
       expect(comment1.createdAt).toBe('2024-01-16T09:15:00Z');
       expect(comment1.updatedAt).toBe('2024-01-16T09:20:00Z');
-      expect(comment1.htmlUrl).toBe('https://github.com/owner/repo/issues/42#issuecomment-98765432');
+      expect(comment1.htmlUrl).toBe(
+        'https://github.com/owner/repo/issues/42#issuecomment-98765432'
+      );
 
       const comment2 = result.comments[1];
       expect(comment2.id).toBe('98765433');
@@ -428,12 +432,14 @@ describe('GitHubIssueTrackerClient', () => {
       expect(comment2.user?.login).toBe('volunteer');
       expect(comment2.createdAt).toBe('2024-01-16T10:30:00Z');
       expect(comment2.updatedAt).toBeUndefined();
-      expect(comment2.htmlUrl).toBe('https://github.com/owner/repo/issues/42#issuecomment-98765433');
+      expect(comment2.htmlUrl).toBe(
+        'https://github.com/owner/repo/issues/42#issuecomment-98765433'
+      );
     });
 
     test('should handle issue with no body', async () => {
       const issueNoBody = { ...mockIssue, body: null };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: issueNoBody,
@@ -456,7 +462,7 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should handle issue with no user', async () => {
       const issueNoUser = { ...mockIssue, user: null };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: issueNoUser,
@@ -478,12 +484,12 @@ describe('GitHubIssueTrackerClient', () => {
     });
 
     test('should handle issue with empty arrays', async () => {
-      const issueEmptyArrays = { 
-        ...mockIssue, 
-        assignees: [], 
-        labels: [] 
+      const issueEmptyArrays = {
+        ...mockIssue,
+        assignees: [],
+        labels: [],
       };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: issueEmptyArrays,
@@ -506,11 +512,11 @@ describe('GitHubIssueTrackerClient', () => {
     });
 
     test('should handle pull requests', async () => {
-      const pullRequest = { 
-        ...mockIssue, 
-        pull_request: { url: 'https://api.github.com/repos/owner/repo/pulls/42' }
+      const pullRequest = {
+        ...mockIssue,
+        pull_request: { url: 'https://api.github.com/repos/owner/repo/pulls/42' },
       };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: pullRequest,
@@ -563,7 +569,7 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should handle comment with no body', async () => {
       const commentNoBody = { ...mockComments[0], body: null };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: mockIssue,
@@ -586,7 +592,7 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should handle comment with no user', async () => {
       const commentNoUser = { ...mockComments[0], user: null };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: mockIssue,
@@ -693,7 +699,7 @@ describe('GitHubIssueTrackerClient', () => {
     test('should handle user without name (uses login as name)', async () => {
       const userNoName = { ...mockIssue.user, name: null };
       const issueUserNoName = { ...mockIssue, user: userNoName };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: issueUserNoName,
@@ -716,11 +722,11 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should handle labels without color', async () => {
       const labelNoColor = { id: 1001, name: 'no-color', color: null };
-      const issueWithLabelNoColor = { 
-        ...mockIssue, 
-        labels: [labelNoColor] 
+      const issueWithLabelNoColor = {
+        ...mockIssue,
+        labels: [labelNoColor],
       };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: issueWithLabelNoColor,
@@ -753,18 +759,22 @@ describe('GitHubIssueTrackerClient', () => {
           ...mockIssue.user,
           id: Number.MAX_SAFE_INTEGER - 1,
         },
-        assignees: [{
-          id: Number.MAX_SAFE_INTEGER - 2,
-          login: 'test',
-          name: 'Test User',
-        }],
-        labels: [{
-          id: Number.MAX_SAFE_INTEGER - 3,
-          name: 'test-label',
-          color: 'ffffff',
-        }],
+        assignees: [
+          {
+            id: Number.MAX_SAFE_INTEGER - 2,
+            login: 'test',
+            name: 'Test User',
+          },
+        ],
+        labels: [
+          {
+            id: Number.MAX_SAFE_INTEGER - 3,
+            name: 'test-label',
+            color: 'ffffff',
+          },
+        ],
       };
-      
+
       await moduleMocker.mock('../github/issues.js', () => ({
         fetchIssueAndComments: async () => ({
           issue: largeNumberIds,
@@ -835,7 +845,7 @@ describe('GitHubIssueTrackerClient', () => {
 
       expect(factoryClient).toBeInstanceOf(GitHubIssueTrackerClient);
       expect(factoryClient.getDisplayName()).toBe('GitHub');
-      
+
       const factoryConfig = factoryClient.getConfig();
       expect(factoryConfig.type).toBe('github');
       expect(factoryConfig.apiKey).toBe('factory_token');

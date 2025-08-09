@@ -42,7 +42,7 @@ export class GitHubIssueTrackerClient implements IssueTrackerClient {
       // Try to parse as URL first
       const url = new URL(trimmedSpec);
       const pathParts = url.pathname.slice(1).split('/');
-      
+
       // GitHub URL format: /owner/repo/issues/123 or /owner/repo/pull/123
       if (pathParts.length >= 4 && (pathParts[2] === 'issues' || pathParts[2] === 'pull')) {
         return {
@@ -95,7 +95,7 @@ export class GitHubIssueTrackerClient implements IssueTrackerClient {
     debugLog(`Fetching GitHub issue: ${identifier}`);
 
     const parsed = await parsePrOrIssueNumber(identifier);
-    
+
     if (!parsed) {
       throw new Error(`Invalid GitHub issue identifier: ${identifier}`);
     }

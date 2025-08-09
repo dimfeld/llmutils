@@ -24,7 +24,7 @@ describe('Issue Tracker Factory Integration', () => {
   describe('getIssueTracker with real implementations', () => {
     test('should create GitHub client when GitHub is configured and no config provided', async () => {
       process.env.GITHUB_TOKEN = 'ghp_test_token';
-      
+
       // Mock the config loader to return default config
       await moduleMocker.mock('../../rmplan/configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
@@ -128,7 +128,7 @@ describe('Issue Tracker Factory Integration', () => {
 
       // Add Linear token
       process.env.LINEAR_API_KEY = 'linear_key';
-      
+
       // Mock the Linear client
       await moduleMocker.mock('../linear.js', () => ({
         createLinearClient: (config: any) => ({
@@ -251,7 +251,7 @@ describe('Issue Tracker Factory Integration', () => {
 
       // Test with alternative tracker available
       process.env.LINEAR_API_KEY = 'linear_key';
-      
+
       try {
         await getIssueTracker({ issueTracker: 'github' });
         expect.unreachable('Should have thrown an error');

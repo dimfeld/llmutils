@@ -4,13 +4,8 @@
 import * as path from 'node:path';
 import { checkbox } from '@inquirer/prompts';
 import { error, log, warn } from '../../logging.js';
-import {
-  getInstructionsFromGithubIssue,
-  fetchAllOpenIssues,
-  fetchIssueAndComments,
-  selectIssueComments,
-} from '../../common/github/issues.js';
-import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
+import { getIssueTracker } from '../../common/issue_tracker/factory.js';
+import type { IssueWithComments, IssueTrackerClient } from '../../common/issue_tracker/types.js';
 import {
   readAllPlans,
   writePlanFile,
@@ -20,7 +15,11 @@ import {
 } from '../plans.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getGitRoot } from '../../common/git.js';
-import { createStubPlanFromIssue, type IssueInstructionData } from '../issue_utils.js';
+import {
+  createStubPlanFromIssue,
+  getInstructionsFromIssue,
+  type IssueInstructionData,
+} from '../issue_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   parseCommandOptionsFromComment,
@@ -37,7 +36,7 @@ import { singleLineWithPrefix, limitLines } from '../../common/formatting.js';
  * @returns Selected comments that aren't already in the details
  */
 async function selectNewComments(
-  data: Awaited<ReturnType<typeof fetchIssueAndComments>>,
+  data: IssueWithComments,
   existingDetails: string
 ): Promise<string[]> {
   const LINE_PADDING = 4;
@@ -106,17 +105,16 @@ async function selectNewComments(
  * @param tasksDir - Directory where plan files are stored
  * @returns True if import was successful, false if already imported
  */
-async function importSingleIssue(issueSpecifier: string, tasksDir: string): Promise<boolean> {
+async function importSingleIssue(
+  issueSpecifier: string,
+  tasksDir: string,
+  issueTracker: IssueTrackerClient
+): Promise<boolean> {
   log(`Importing issue: ${issueSpecifier}`);
 
-  // Fetch issue and comments directly to handle selective comment import
-  const issue = await parsePrOrIssueNumber(issueSpecifier);
-  if (!issue) {
-    throw new Error(`Invalid issue spec: ${issueSpecifier}`);
-  }
-
-  const data = await fetchIssueAndComments(issue);
-  const issueUrl = data.issue.html_url;
+  // Fetch issue and comments using the generic interface
+  const data = await issueTracker.fetchIssue(issueSpecifier);
+  const issueUrl = data.issue.htmlUrl;
 
   // Check for existing plans
   const { plans } = await readAllPlans(tasksDir, false);
@@ -215,7 +213,7 @@ async function importSingleIssue(issueSpecifier: string, tasksDir: string): Prom
     return true;
   }
 
-  let issueData = await getInstructionsFromGithubIssue(issueSpecifier, false);
+  let issueData = await getInstructionsFromIssue(issueTracker, issueSpecifier, false);
 
   // Get the next available numeric ID for new plans
   const maxId = await getMaxNumericPlanId(tasksDir);
@@ -258,6 +256,9 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   const config = await loadEffectiveConfig();
   const gitRoot = (await getGitRoot()) || process.cwd();
 
+  // Get the issue tracker client
+  const issueTracker = await getIssueTracker(config);
+
   let tasksDir: string;
   if (config.paths?.tasks) {
     tasksDir = path.isAbsolute(config.paths.tasks)
@@ -270,16 +271,16 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   if (!issueSpecifier) {
     // Interactive mode: fetch all open issues and let user select multiple
     log('Fetching all open issues...');
-    const allIssues = await fetchAllOpenIssues();
+    const allIssues = await issueTracker.fetchAllOpenIssues();
 
     // Get already imported issue URLs to mark them
     const importedUrls = await getImportedIssueUrls(tasksDir);
 
     // Create choices for the checkbox prompt, marking already imported issues
     const choices = allIssues
-      .filter((issue) => !importedUrls.has(issue.html_url))
+      .filter((issue) => !importedUrls.has(issue.htmlUrl))
       .map((issue) => {
-        const name = `#${issue.number}: ${issue.title}`;
+        const name = `${issue.number}: ${issue.title}`;
         return {
           name,
           value: issue.number,
@@ -317,10 +318,10 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     let successCount = 0;
     let updateCount = 0;
     for (const issueNumber of selectedIssueNumbers) {
-      const issueUrl = allIssues.find((i) => i.number === issueNumber)?.html_url;
+      const issueUrl = allIssues.find((i) => i.number === issueNumber)?.htmlUrl;
       const wasAlreadyImported = issueUrl ? importedUrls.has(issueUrl) : false;
 
-      const success = await importSingleIssue(issueNumber.toString(), tasksDir);
+      const success = await importSingleIssue(issueNumber.toString(), tasksDir, issueTracker);
       if (success) {
         successCount++;
         if (wasAlreadyImported) {
@@ -348,7 +349,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   }
 
   // Single issue import mode
-  const success = await importSingleIssue(issueSpecifier, tasksDir);
+  const success = await importSingleIssue(issueSpecifier, tasksDir, issueTracker);
   if (success) {
     log('Use "rmplan generate" to add tasks to this plan.');
   }
