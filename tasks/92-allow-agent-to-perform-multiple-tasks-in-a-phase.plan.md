@@ -10,7 +10,7 @@ dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T03:29:48.584Z
+updatedAt: 2025-08-09T03:34:25.814Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
     description: >
@@ -62,13 +62,13 @@ tasks:
           an array of objects containing taskIndex and task for all tasks where
           done is not true. Include a proper TypeScript interface for the return
           type.
-        done: false
+        done: true
       - prompt: >
           In src/rmplan/plans/find_next.test.ts, add comprehensive tests for
           getAllIncompleteTasks including cases with: all tasks complete, no
           tasks complete, mixed completion status, empty task list, and tasks
           without the done field set.
-        done: false
+        done: true
   - title: "Task 3: Create the batch mode execution loop in the agent command"
     description: >
       In the rmplanAgent function, add a new execution path when `--batch-tasks`
@@ -346,6 +346,8 @@ changedFiles:
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
   - src/rmplan/issue_utils.ts
+  - src/rmplan/plans/find_next.test.ts
+  - src/rmplan/plans/find_next.ts
   - src/rmplan/plans/prepare_phase.ts
   - src/rmplan/rmplan.ts
 rmfilter:

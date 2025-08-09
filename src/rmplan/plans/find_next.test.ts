@@ -422,11 +422,11 @@ describe('getAllIncompleteTasks', () => {
     const result = getAllIncompleteTasks(plan);
 
     expect(result).toHaveLength(2);
-    
+
     // Check that the task references are preserved
     expect(result[0].task).toBe(task1);
     expect(result[0].taskIndex).toBe(0);
-    
+
     expect(result[1].task).toBe(task3);
     expect(result[1].taskIndex).toBe(2);
   });
