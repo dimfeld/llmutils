@@ -136,6 +136,17 @@ export async function buildFileListSection(
 /**
  * Build a unified execution prompt for stub plans and simple tasks
  */
+/**
+ * Detects if a task should be executed in batch mode based on its title or description
+ */
+function isBatchMode(task?: { title: string; description?: string }): boolean {
+  return (
+    task?.title?.includes('Batch Processing') ||
+    task?.description?.includes('batch mode') ||
+    false
+  );
+}
+
 export async function buildExecutionPromptWithoutSteps(
   options: ExecutionPromptOptions
 ): Promise<string> {
@@ -148,7 +159,7 @@ export async function buildExecutionPromptWithoutSteps(
     task,
     filePathPrefix,
     includeCurrentPlanContext = true,
-    batchMode = false,
+    batchMode = isBatchMode(task),
   } = options;
 
   const promptParts: string[] = [];
