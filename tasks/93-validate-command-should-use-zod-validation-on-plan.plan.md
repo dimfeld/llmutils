@@ -12,6 +12,7 @@ createdAt: 2025-08-09T23:01:00.114Z
 updatedAt: 2025-08-09T23:18:34.328Z
 tasks:
   - title: Update plan schemas to use strict mode
+    done: true
     description: >
       Modify `src/rmplan/planSchema.ts` to add `.strict()` to all object schemas
       including the main `phaseSchema` and nested schemas for tasks, steps, and
@@ -60,6 +61,7 @@ tasks:
           This ensures consistency across all plan-related schemas.
         done: true
   - title: Remove manual unknown key validation logic
+    done: true
     description: >
       In `src/rmplan/commands/validate.ts`, remove the custom unknown key
       checking code (lines 61-111) that manually inspects parsed objects. The
@@ -94,6 +96,7 @@ tasks:
           z.ZodIssueCode.unrecognized_keys should continue to work.
         done: true
   - title: Update error formatting and reporting
+    done: true
     description: >
       Enhance the error handling in `validatePlanFile` to properly extract and
       format unknown key errors from Zod validation results. With strict mode,
