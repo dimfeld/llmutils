@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { PlanSchema } from './planSchema.js';
+import { isTaskDone } from './plans.js';
 
 // Extract the task merging logic for unit testing
 function mergeTasksPreservingCompleted(
@@ -9,7 +10,7 @@ function mergeTasksPreservingCompleted(
   // Build a map of original completed tasks (all steps done)
   const completedTasks = new Map<number, (typeof originalTasks)[0]>();
   originalTasks.forEach((task, index) => {
-    if (task.steps.length > 0 && task.steps.every((step) => step.done)) {
+    if (isTaskDone(task)) {
       completedTasks.set(index, task);
     }
   });
