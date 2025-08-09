@@ -1,4 +1,5 @@
 import type { PlanSchema } from '../planSchema.js';
+import { isTaskDone } from '../plans.js';
 
 // Interface for the result of finding a pending task
 export interface PendingTaskResult {
@@ -135,7 +136,7 @@ export function getAllIncompleteTasks(plan: PlanSchema): IncompleteTaskResult[] 
     const task = plan.tasks[taskIndex];
 
     // Include tasks where done is false or undefined
-    if (!task.done) {
+    if (!isTaskDone(task)) {
       incompleteTasks.push({
         taskIndex,
         task,

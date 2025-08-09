@@ -21,15 +21,7 @@ export interface ExecutionPromptOptions {
   };
   filePathPrefix?: string;
   includeCurrentPlanContext?: boolean;
-}
-
-/**
- * Detects if the execution is in batch mode based on the task context
- */
-function isBatchMode(task?: { title: string; description?: string }): boolean {
-  return (
-    task?.title?.includes('Batch Processing') || task?.description?.includes('batch mode') || false
-  );
+  batchMode?: boolean;
 }
 
 /**
@@ -156,6 +148,7 @@ export async function buildExecutionPromptWithoutSteps(
     task,
     filePathPrefix,
     includeCurrentPlanContext = true,
+    batchMode = false,
   } = options;
 
   const promptParts: string[] = [];
@@ -186,7 +179,7 @@ export async function buildExecutionPromptWithoutSteps(
     }
 
     // Add plan file reference for batch mode
-    if (isBatchMode(task)) {
+    if (batchMode) {
       const gitRoot = await getGitRoot(baseDir);
       const relativePlanPath = path.isAbsolute(planFilePath)
         ? path.relative(gitRoot, planFilePath)

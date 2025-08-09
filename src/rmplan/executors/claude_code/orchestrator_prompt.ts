@@ -139,6 +139,7 @@ function buildImportantGuidelines(options: OrchestrationOptions): string {
 
   const batchModeGuidelines = options.batchMode
     ? `
+- Subagents will have access to the entire list of incomplete tasks from the plan file, so be sure to include which tasks to focus on in your subagent instructions.
 - You must update the plan file to mark completed tasks as done before stopping.
 - **Be selective**: Don't attempt all tasks at once - choose a reasonable subset that works well together.`
     : '';

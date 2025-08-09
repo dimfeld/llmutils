@@ -17,6 +17,7 @@ ${contextContent}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to implement together. When working with multiple tasks:
+- The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those.
 - Work on them efficiently by considering shared code, utilities, and patterns
 - Look for opportunities to implement common functionality once and reuse it
 - Avoid duplicating similar logic across different tasks
@@ -75,6 +76,7 @@ ${contextContent}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
+- The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those.
 - Create comprehensive tests that cover all functionality from all provided tasks
 - Look for integration points between different tasks and test their interactions
 - Avoid duplicating similar test setups - consolidate shared test infrastructure
@@ -151,6 +153,7 @@ ${contextContent}
 
 ## Reviewing Multiple Tasks:
 You may be reviewing a single task or multiple related tasks implemented together. When reviewing batched changes:
+- The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those.
 - Review the implementation holistically to ensure all tasks are properly implemented
 - Check that multiple tasks work together correctly without conflicts or inconsistencies
 - Verify that shared code and utilities are used appropriately across tasks
