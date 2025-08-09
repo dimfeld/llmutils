@@ -13,7 +13,7 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T01:34:29.253Z
+updatedAt: 2025-08-09T01:40:45.436Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
     description: >
@@ -104,20 +104,20 @@ tasks:
 
           initializes the LinearClient from @linear/sdk with the API key, and
           caches the client instance for reuse.
-        done: false
+        done: true
       - prompt: >
           Add error handling that throws a descriptive error if LINEAR_API_KEY
           is not set when attempting to create the client.
 
           Include a helper function to check if Linear is configured (API key
           present).
-        done: false
+        done: true
       - prompt: >
           Create tests that verify the client initialization works with a valid
           API key, throws appropriate errors when the key is missing,
 
           and properly caches the client instance across multiple calls.
-        done: false
+        done: true
   - title: Develop Linear Issue Fetching Logic
     description: >
       Implement functions to fetch an issue and its comments from the Linear API
@@ -337,6 +337,8 @@ changedFiles:
   - src/common/issue_tracker/index.ts
   - src/common/issue_tracker/types.test.ts
   - src/common/issue_tracker/types.ts
+  - src/common/linear_client.test.ts
+  - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/configLoader.test.ts

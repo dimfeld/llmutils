@@ -14,18 +14,18 @@ export function isLinearConfigured(): boolean {
 
 /**
  * Gets or creates a Linear SDK client instance.
- * 
+ *
  * This function reads the LINEAR_API_KEY from environment variables and initializes
  * the LinearClient from @linear/sdk. The client instance is cached for reuse across
  * multiple calls to avoid unnecessary reinitialization.
- * 
+ *
  * @returns {LinearClient} The Linear SDK client instance
  * @throws {Error} When LINEAR_API_KEY environment variable is not set
- * 
+ *
  * @example
  * ```typescript
  * import { getLinearClient } from './linear_client';
- * 
+ *
  * try {
  *   const client = getLinearClient();
  *   const issue = await client.issue('TEAM-123');
@@ -46,8 +46,8 @@ export function getLinearClient(): LinearClient {
   if (!apiKey) {
     throw new Error(
       'LINEAR_API_KEY environment variable is not set. ' +
-      'Please set your Linear API key to use Linear integration. ' +
-      'You can obtain an API key from: https://linear.app/settings/api'
+        'Please set your Linear API key to use Linear integration. ' +
+        'You can obtain an API key from: https://linear.app/settings/api'
     );
   }
 
@@ -65,7 +65,7 @@ export function getLinearClient(): LinearClient {
     const errorMessage = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Failed to initialize Linear client: ${errorMessage}. ` +
-      'Please check that your LINEAR_API_KEY is valid.'
+        'Please check that your LINEAR_API_KEY is valid.'
     );
   }
 }
@@ -73,7 +73,7 @@ export function getLinearClient(): LinearClient {
 /**
  * Clears the cached Linear client instance.
  * This is primarily useful for testing scenarios where you need to reset the client state.
- * 
+ *
  * @internal
  */
 export function clearLinearClientCache(): void {

@@ -53,25 +53,21 @@ describe('Linear Client', () => {
 
       expect(() => getLinearClient()).toThrow(
         'LINEAR_API_KEY environment variable is not set. ' +
-        'Please set your Linear API key to use Linear integration. ' +
-        'You can obtain an API key from: https://linear.app/settings/api'
+          'Please set your Linear API key to use Linear integration. ' +
+          'You can obtain an API key from: https://linear.app/settings/api'
       );
     });
 
     test('should throw error when LINEAR_API_KEY is empty string', async () => {
       process.env.LINEAR_API_KEY = '';
 
-      expect(() => getLinearClient()).toThrow(
-        'LINEAR_API_KEY environment variable is not set.'
-      );
+      expect(() => getLinearClient()).toThrow('LINEAR_API_KEY environment variable is not set.');
     });
 
     test('should throw error when LINEAR_API_KEY is whitespace only', async () => {
       process.env.LINEAR_API_KEY = '   ';
 
-      expect(() => getLinearClient()).toThrow(
-        'LINEAR_API_KEY environment variable is not set.'
-      );
+      expect(() => getLinearClient()).toThrow('LINEAR_API_KEY environment variable is not set.');
     });
 
     test('should create LinearClient with valid API key', async () => {
@@ -84,7 +80,7 @@ describe('Linear Client', () => {
       };
 
       await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: mock(function(options: any) {
+        LinearClient: mock(function (options: any) {
           expect(options.apiKey).toBe('test-api-key');
           return mockLinearClient;
         }),
@@ -102,7 +98,7 @@ describe('Linear Client', () => {
         testMethod: mock(() => 'mocked'),
       };
 
-      const LinearClientConstructor = mock(function(options: any) {
+      const LinearClientConstructor = mock(function (options: any) {
         return mockLinearClient;
       });
 
@@ -126,14 +122,14 @@ describe('Linear Client', () => {
       process.env.LINEAR_API_KEY = 'invalid-api-key';
 
       await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: mock(function(options: any) {
+        LinearClient: mock(function (options: any) {
           throw new Error('Invalid API key format');
         }),
       }));
 
       expect(() => getLinearClient()).toThrow(
         'Failed to initialize Linear client: Invalid API key format. ' +
-        'Please check that your LINEAR_API_KEY is valid.'
+          'Please check that your LINEAR_API_KEY is valid.'
       );
     });
 
@@ -141,14 +137,14 @@ describe('Linear Client', () => {
       process.env.LINEAR_API_KEY = 'invalid-api-key';
 
       await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: mock(function(options: any) {
+        LinearClient: mock(function (options: any) {
           throw 'Some non-Error exception';
         }),
       }));
 
       expect(() => getLinearClient()).toThrow(
         'Failed to initialize Linear client: Some non-Error exception. ' +
-        'Please check that your LINEAR_API_KEY is valid.'
+          'Please check that your LINEAR_API_KEY is valid.'
       );
     });
   });
@@ -168,7 +164,7 @@ describe('Linear Client', () => {
       };
 
       let callCount = 0;
-      const LinearClientConstructor = mock(function(options: any) {
+      const LinearClientConstructor = mock(function (options: any) {
         callCount++;
         return callCount === 1 ? mockLinearClient1 : mockLinearClient2;
       });
@@ -206,7 +202,7 @@ describe('Linear Client', () => {
       const mockClient1 = { apiKey: 'key1' };
       let constructorCallCount = 0;
 
-      const LinearClientConstructor = mock(function(options: any) {
+      const LinearClientConstructor = mock(function (options: any) {
         constructorCallCount++;
         expect(options.apiKey).toBe(process.env.LINEAR_API_KEY);
         return constructorCallCount === 1 ? mockClient1 : { apiKey: options.apiKey };
@@ -234,7 +230,7 @@ describe('Linear Client', () => {
       process.env.LINEAR_API_KEY = 'test-key-with-config';
 
       const mockClient = { configured: true };
-      const LinearClientConstructor = mock(function(options: any) {
+      const LinearClientConstructor = mock(function (options: any) {
         // Verify the constructor receives the expected configuration structure
         expect(options).toEqual({
           apiKey: 'test-key-with-config',
