@@ -95,7 +95,7 @@ async function selectNewComments(
     choices: withIndex,
   });
 
-  return chosen.sort((a, b) => a - b).map((a) => newComments[a].value);
+  return chosen.sort((a, b) => a - b).map((index) => newComments[index].value);
 }
 
 /**

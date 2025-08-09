@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../testing.js';
 import type { PlanSchema } from '../planSchema.js';
+import type { IssueTrackerClient, IssueWithComments, Issue } from '../../common/issue_tracker/types.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -20,7 +21,7 @@ const mockIssueData = {
 };
 
 // Mock issue with comments data for the generic interface
-const mockIssueWithComments = {
+const mockIssueWithComments: IssueWithComments = {
   issue: {
     id: '123',
     number: 123,
@@ -30,12 +31,16 @@ const mockIssueWithComments = {
     state: 'open',
     createdAt: '2023-01-01T00:00:00Z',
     updatedAt: '2023-01-01T00:00:00Z',
+    author: {
+      login: 'testuser',
+      name: 'Test User',
+    },
   },
   comments: [],
 };
 
-// Mock GitHub issues list
-const mockGitHubIssues = [
+// Mock issues list for the generic interface
+const mockIssues: Issue[] = [
   {
     id: '123',
     number: 123,
@@ -44,6 +49,10 @@ const mockGitHubIssues = [
     state: 'open',
     createdAt: '2023-01-01T00:00:00Z',
     updatedAt: '2023-01-01T00:00:00Z',
+    author: {
+      login: 'testuser',
+      name: 'Test User',
+    },
   },
   {
     id: '456',
@@ -53,19 +62,24 @@ const mockGitHubIssues = [
     state: 'open',
     createdAt: '2023-01-01T00:00:00Z',
     updatedAt: '2023-01-01T00:00:00Z',
+    author: {
+      login: 'testuser2',
+      name: 'Test User 2',
+    },
   },
 ];
 
 // Mock issue tracker client
-const mockIssueTracker = {
+const mockIssueTracker: IssueTrackerClient = {
   fetchIssue: mock(() => Promise.resolve(mockIssueWithComments)),
-  fetchAllOpenIssues: mock(() => Promise.resolve(mockGitHubIssues)),
+  fetchAllOpenIssues: mock(() => Promise.resolve(mockIssues)),
   parseIssueIdentifier: mock(() => ({ identifier: '123' })),
   getDisplayName: mock(() => 'GitHub'),
   getConfig: mock(() => ({ type: 'github' })),
 };
 
 const mockConfig = {
+  issueTracker: 'github',
   paths: {
     tasks: 'tasks',
   },
@@ -144,51 +158,57 @@ describe('handleImportCommand', () => {
   test('should import a single issue when --issue flag is provided', async () => {
     await handleImportCommand(undefined, { issue: '123' });
 
-    const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
     const { writePlanFile } = await import('../plans.js');
 
-    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('123', false);
+    expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
+    expect(mockIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
     expect(writePlanFile).toHaveBeenCalled();
   });
 
   test('should import a single issue when issue argument is provided', async () => {
-    // Mock fetchIssueAndComments for single issue import
-    await moduleMocker.mock('../../common/github/issues.js', () => ({
-      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
-      fetchIssueAndComments: mock(() =>
-        Promise.resolve({
-          issue: mockIssueData.issue,
-          comments: [],
-        })
-      ),
-    }));
-
-    // Mock parsePrOrIssueNumber to return proper issue data
-    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
-      parsePrOrIssueNumber: mock(() =>
-        Promise.resolve({ owner: 'owner', repo: 'repo', number: 456 })
-      ),
-    }));
-
     await handleImportCommand('456');
 
-    const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
     const { writePlanFile } = await import('../plans.js');
 
-    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('456', false);
+    expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
+    expect(mockIssueTracker.fetchIssue).toHaveBeenCalledWith('456');
     expect(writePlanFile).toHaveBeenCalled();
   });
 
   test('should enter interactive mode when no issue is specified', async () => {
-    // Mock fetchAllOpenIssues
-    await moduleMocker.mock('../../common/github/issues.js', () => ({
-      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+    // Override the issue tracker to return specific issues for this test
+    const testIssueTracker = {
+      ...mockIssueTracker,
       fetchAllOpenIssues: mock(() =>
         Promise.resolve([
-          { html_url: 'https://github.com/owner/repo/issues/100', title: 'Issue 100', number: 100 },
-          { html_url: 'https://github.com/owner/repo/issues/101', title: 'Issue 101', number: 101 },
+          {
+            id: '100',
+            number: 100,
+            title: 'Issue 100',
+            htmlUrl: 'https://github.com/owner/repo/issues/100',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+          {
+            id: '101',
+            number: 101,
+            title: 'Issue 101',
+            htmlUrl: 'https://github.com/owner/repo/issues/101',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
         ])
       ),
+    };
+
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
     // Mock the checkbox to return no selections to avoid actual import
@@ -198,18 +218,19 @@ describe('handleImportCommand', () => {
 
     await handleImportCommand();
 
-    const { fetchAllOpenIssues } = await import('../../common/github/issues.js');
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
     const { log } = await import('../../logging.js');
     const { checkbox } = await import('@inquirer/prompts');
 
-    expect(fetchAllOpenIssues).toHaveBeenCalled();
+    expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
+    expect(testIssueTracker.fetchAllOpenIssues).toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('Fetching all open issues...');
     expect(log).toHaveBeenCalledWith('Found 2 open issues.');
     expect(checkbox).toHaveBeenCalledWith({
       message: 'Select issues to import:',
       choices: [
-        { name: '#100: Issue 100', value: 100 },
-        { name: '#101: Issue 101', value: 101 },
+        { name: '100: Issue 100', value: 100 },
+        { name: '101: Issue 101', value: 101 },
       ],
     });
     expect(log).toHaveBeenCalledWith('No issues selected for import.');
@@ -231,15 +252,47 @@ describe('handleImportCommand', () => {
       tasks: [],
     };
 
-    await moduleMocker.mock('../../common/github/issues.js', () => ({
-      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+    // Override the issue tracker to return specific issues for this test
+    const testIssueTracker = {
+      ...mockIssueTracker,
       fetchAllOpenIssues: mock(() =>
         Promise.resolve([
-          { html_url: 'https://github.com/owner/repo/issues/100', title: 'Issue 100', number: 100 },
-          { html_url: 'https://github.com/owner/repo/issues/101', title: 'Issue 101', number: 101 },
-          { html_url: 'https://github.com/owner/repo/issues/102', title: 'Issue 102', number: 102 },
+          {
+            id: '100',
+            number: 100,
+            title: 'Issue 100',
+            htmlUrl: 'https://github.com/owner/repo/issues/100',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+          {
+            id: '101',
+            number: 101,
+            title: 'Issue 101',
+            htmlUrl: 'https://github.com/owner/repo/issues/101',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+          {
+            id: '102',
+            number: 102,
+            title: 'Issue 102',
+            htmlUrl: 'https://github.com/owner/repo/issues/102',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
         ])
       ),
+    };
+
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
     await moduleMocker.mock('../plans.js', () => ({
@@ -259,11 +312,12 @@ describe('handleImportCommand', () => {
 
     await handleImportCommand();
 
-    const { fetchAllOpenIssues } = await import('../../common/github/issues.js');
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
     const { log } = await import('../../logging.js');
     const { checkbox } = await import('@inquirer/prompts');
 
-    expect(fetchAllOpenIssues).toHaveBeenCalled();
+    expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
+    expect(testIssueTracker.fetchAllOpenIssues).toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('Fetching all open issues...');
     expect(log).toHaveBeenCalledWith(
       'Found 3 open issues (1 already imported). Re-importing will update existing plans.'
@@ -273,38 +327,45 @@ describe('handleImportCommand', () => {
     expect(checkbox).toHaveBeenCalledWith({
       message: 'Select issues to import:',
       choices: [
-        { name: '#101: Issue 101', value: 101 },
-        { name: '#102: Issue 102', value: 102 },
+        { name: '101: Issue 101', value: 101 },
+        { name: '102: Issue 102', value: 102 },
       ],
     });
   });
 
   test('should import selected issues in interactive mode', async () => {
-    // Mock fetchAllOpenIssues to return available issues
-    await moduleMocker.mock('../../common/github/issues.js', () => ({
-      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
+    // Override the issue tracker to return specific issues for this test
+    const testIssueTracker = {
+      ...mockIssueTracker,
       fetchAllOpenIssues: mock(() =>
         Promise.resolve([
-          { html_url: 'https://github.com/owner/repo/issues/100', title: 'Issue 100', number: 100 },
-          { html_url: 'https://github.com/owner/repo/issues/101', title: 'Issue 101', number: 101 },
+          {
+            id: '100',
+            number: 100,
+            title: 'Issue 100',
+            htmlUrl: 'https://github.com/owner/repo/issues/100',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+          {
+            id: '101',
+            number: 101,
+            title: 'Issue 101',
+            htmlUrl: 'https://github.com/owner/repo/issues/101',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
         ])
       ),
-      fetchIssueAndComments: mock(() =>
-        Promise.resolve({
-          issue: mockIssueData.issue,
-          comments: [],
-        })
-      ),
-    }));
+      fetchIssue: mock(() => Promise.resolve(mockIssueWithComments)),
+    };
 
-    // Mock parsePrOrIssueNumber to return proper issue data for both issues
-    let callCount = 0;
-    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
-      parsePrOrIssueNumber: mock(() => {
-        const issueNumbers = ['100', '101'];
-        const number = parseInt(issueNumbers[callCount++ % 2]);
-        return Promise.resolve({ owner: 'owner', repo: 'repo', number });
-      }),
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
     // Override the plans mock to include getImportedIssueUrls for this test
@@ -323,7 +384,7 @@ describe('handleImportCommand', () => {
 
     await handleImportCommand();
 
-    const { getInstructionsFromGithubIssue } = await import('../../common/github/issues.js');
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
     const { writePlanFile } = await import('../plans.js');
     const { log } = await import('../../logging.js');
     const { checkbox } = await import('@inquirer/prompts');
@@ -332,14 +393,16 @@ describe('handleImportCommand', () => {
     expect(checkbox).toHaveBeenCalledWith({
       message: 'Select issues to import:',
       choices: [
-        { name: '#100: Issue 100', value: 100 },
-        { name: '#101: Issue 101', value: 101 },
+        { name: '100: Issue 100', value: 100 },
+        { name: '101: Issue 101', value: 101 },
       ],
     });
 
+    expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
+    expect(testIssueTracker.fetchAllOpenIssues).toHaveBeenCalled();
     // Verify each selected issue was imported
-    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('100', false);
-    expect(getInstructionsFromGithubIssue).toHaveBeenCalledWith('101', false);
+    expect(testIssueTracker.fetchIssue).toHaveBeenCalledWith('100');
+    expect(testIssueTracker.fetchIssue).toHaveBeenCalledWith('101');
     expect(writePlanFile).toHaveBeenCalledTimes(2);
     expect(log).toHaveBeenCalledWith('Importing 2 selected issues...');
     expect(log).toHaveBeenCalledWith('Successfully imported 2 new issues.');
@@ -368,23 +431,45 @@ describe('handleImportCommand', () => {
       duplicates: {},
     };
 
-    // Mock the new dependencies
-    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
-      parsePrOrIssueNumber: mock(() =>
-        Promise.resolve({ owner: 'owner', repo: 'repo', number: 123 })
-      ),
-    }));
+    // Create a mock issue with comments for this test
+    const issueWithComments: IssueWithComments = {
+      issue: {
+        id: '123',
+        number: 123,
+        title: 'Test Issue',
+        body: 'This is a test issue description',
+        htmlUrl: 'https://github.com/owner/repo/issues/123',
+        state: 'open',
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z',
+        author: { login: 'testuser', name: 'Test User' },
+      },
+      comments: [
+        {
+          id: 'comment1',
+          body: 'This is a new comment',
+          createdAt: '2023-01-01T00:00:00Z',
+          updatedAt: '2023-01-01T00:00:00Z',
+          user: { login: 'user1', name: 'User 1' },
+        },
+        {
+          id: 'comment2',
+          body: 'Old description',
+          createdAt: '2023-01-01T00:00:00Z',
+          updatedAt: '2023-01-01T00:00:00Z',
+          user: { login: 'user2', name: 'User 2' },
+        }, // This one is already in details
+      ],
+    };
 
-    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
-      parseCommandOptionsFromComment: mock(() => ({
-        options: { rmfilter: ['--include', '*.ts'] },
-      })),
-      combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
-    }));
+    // Override the issue tracker to return the issue with comments
+    const testIssueTracker = {
+      ...mockIssueTracker,
+      fetchIssue: mock(() => Promise.resolve(issueWithComments)),
+    };
 
-    await moduleMocker.mock('../../common/formatting.js', () => ({
-      singleLineWithPrefix: mock((prefix, text) => prefix + text),
-      limitLines: mock((text) => text),
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
     await moduleMocker.mock('../plans.js', () => ({
@@ -397,30 +482,19 @@ describe('handleImportCommand', () => {
       ),
     }));
 
-    // Mock fetchIssueAndComments with a new comment
-    await moduleMocker.mock('../../common/github/issues.js', () => ({
-      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
-      fetchIssueAndComments: mock(() =>
-        Promise.resolve({
-          issue: mockIssueData.issue,
-          comments: [
-            { body: 'This is a new comment', user: { login: 'user1' } },
-            { body: 'Old description', user: { login: 'user2' } }, // This one is already in details
-          ],
-        })
-      ),
-    }));
-
-    // Mock checkbox to select the new comment
+    // Mock checkbox to select the issue body (which will be the first item since it's not in existing details)
     await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(() => Promise.resolve([0])), // Select the first (new) comment
+      checkbox: mock(() => Promise.resolve([0])), // Select the first item (issue body)
     }));
 
     await handleImportCommand('123');
 
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
     const { writePlanFile } = await import('../plans.js');
     const { log } = await import('../../logging.js');
 
+    expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
+    expect(testIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
     expect(log).toHaveBeenCalledWith(
       'Updating existing plan for issue: https://github.com/owner/repo/issues/123'
     );
@@ -433,11 +507,10 @@ describe('handleImportCommand', () => {
       id: 3, // Preserves existing ID
       title: 'Test Issue', // Updated from issue
       goal: 'Implement: Old Title', // Preserved
-      details: 'Old description\n\nThis is a new comment', // Old details + new comment
+      details: 'Old description\n\nThis is a test issue description', // Old details + issue body (since body is not in existing details)
       status: 'in_progress', // Preserved
       issue: ['https://github.com/owner/repo/issues/123'], // Preserved
       tasks: [{ id: 1, description: 'Existing task' }], // Preserved
-      rmfilter: ['--include', '*.ts'], // Updated from issue
       createdAt: '2024-01-01T00:00:00Z', // Preserved
     });
     expect(planData.updatedAt).not.toBe('2024-01-01T00:00:00Z'); // Should be updated
@@ -445,25 +518,17 @@ describe('handleImportCommand', () => {
   });
 
   test('should create stub plan file with correct metadata', async () => {
-    // Mock fetchIssueAndComments for single issue import
-    await moduleMocker.mock('../../common/github/issues.js', () => ({
-      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
-      fetchIssueAndComments: mock(() =>
-        Promise.resolve({
-          issue: mockIssueData.issue,
-          comments: [],
-        })
-      ),
-    }));
-
     await handleImportCommand('123');
 
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
     const { writePlanFile } = await import('../plans.js');
 
+    expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
+    expect(mockIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
     expect(writePlanFile).toHaveBeenCalled();
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
 
-    expect(filePath).toBe('/test/git/root/tasks/issue-123-test-issue.plan.md');
+    expect(filePath).toBe('/test/git/root/tasks/6-issue-123-test-issue.plan.md');
     expect(planData).toMatchObject({
       id: 6, // maxId + 1
       title: 'Test Issue',
@@ -479,12 +544,12 @@ describe('handleImportCommand', () => {
   });
 
   test('should update existing plan when importing duplicate issue', async () => {
-    // Setup mock to return a plan with the same issue URL
+    // Setup mock to return a plan with the same issue URL and content already matching the issue
     const mockExistingPlan: PlanSchema & { filename: string } = {
       id: 1,
-      title: 'Test Issue', // Same as mockIssueData so no title change
+      title: 'Test Issue', // Same as issue title so no title change
       goal: 'Existing plan',
-      details: 'Existing details',
+      details: 'This is a test issue description', // Same as issue body so no new content
       issue: ['https://github.com/owner/repo/issues/123'], // Same URL as mockIssueData
       tasks: [],
       filename: '/test/git/root/tasks/existing-plan.yml',
@@ -498,23 +563,30 @@ describe('handleImportCommand', () => {
       duplicates: {},
     };
 
-    // Mock the new dependencies
-    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
-      parsePrOrIssueNumber: mock(() =>
-        Promise.resolve({ owner: 'owner', repo: 'repo', number: 123 })
-      ),
-    }));
+    // Create a mock issue without new comments
+    const issueWithoutComments: IssueWithComments = {
+      issue: {
+        id: '123',
+        number: 123,
+        title: 'Test Issue',
+        body: 'This is a test issue description',
+        htmlUrl: 'https://github.com/owner/repo/issues/123',
+        state: 'open',
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z',
+        author: { login: 'testuser', name: 'Test User' },
+      },
+      comments: [], // No comments
+    };
 
-    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
-      parseCommandOptionsFromComment: mock(() => ({
-        options: { rmfilter: ['--include', '*.ts'] },
-      })),
-      combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
-    }));
+    // Override the issue tracker
+    const testIssueTracker = {
+      ...mockIssueTracker,
+      fetchIssue: mock(() => Promise.resolve(issueWithoutComments)),
+    };
 
-    await moduleMocker.mock('../../common/formatting.js', () => ({
-      singleLineWithPrefix: mock((prefix, text) => prefix + text),
-      limitLines: mock((text) => text),
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
     await moduleMocker.mock('../plans.js', () => ({
@@ -524,22 +596,14 @@ describe('handleImportCommand', () => {
       readPlanFile: mock(() => Promise.resolve(mockExistingPlan)),
     }));
 
-    // Mock fetchIssueAndComments with no new comments
-    await moduleMocker.mock('../../common/github/issues.js', () => ({
-      getInstructionsFromGithubIssue: mock(() => Promise.resolve(mockIssueData)),
-      fetchIssueAndComments: mock(() =>
-        Promise.resolve({
-          issue: mockIssueData.issue,
-          comments: [], // No comments
-        })
-      ),
-    }));
-
     await handleImportCommand('123');
 
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
     const { writePlanFile } = await import('../plans.js');
     const { log } = await import('../../logging.js');
 
+    expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
+    expect(testIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
     expect(writePlanFile).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(
       'Updating existing plan for issue: https://github.com/owner/repo/issues/123'
