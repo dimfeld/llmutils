@@ -40,6 +40,11 @@ describe('Linear Client', () => {
       process.env.LINEAR_API_KEY = undefined;
       expect(isLinearConfigured()).toBe(false);
     });
+
+    test('should return false when LINEAR_API_KEY is whitespace only', () => {
+      process.env.LINEAR_API_KEY = '   ';
+      expect(isLinearConfigured()).toBe(false);
+    });
   });
 
   describe('getLinearClient', () => {
@@ -55,6 +60,14 @@ describe('Linear Client', () => {
 
     test('should throw error when LINEAR_API_KEY is empty string', async () => {
       process.env.LINEAR_API_KEY = '';
+
+      expect(() => getLinearClient()).toThrow(
+        'LINEAR_API_KEY environment variable is not set.'
+      );
+    });
+
+    test('should throw error when LINEAR_API_KEY is whitespace only', async () => {
+      process.env.LINEAR_API_KEY = '   ';
 
       expect(() => getLinearClient()).toThrow(
         'LINEAR_API_KEY environment variable is not set.'
@@ -215,6 +228,27 @@ describe('Linear Client', () => {
       expect(constructorCallCount).toBe(2);
       expect(client2.apiKey).toBe('key2');
       expect(client1).not.toBe(client2);
+    });
+
+    test('should pass through all configuration options to LinearClient constructor', async () => {
+      process.env.LINEAR_API_KEY = 'test-key-with-config';
+
+      const mockClient = { configured: true };
+      const LinearClientConstructor = mock(function(options: any) {
+        // Verify the constructor receives the expected configuration structure
+        expect(options).toEqual({
+          apiKey: 'test-key-with-config',
+        });
+        return mockClient;
+      });
+
+      await moduleMocker.mock('@linear/sdk', () => ({
+        LinearClient: LinearClientConstructor,
+      }));
+
+      const client = getLinearClient();
+      expect(client).toBe(mockClient);
+      expect(LinearClientConstructor).toHaveBeenCalledTimes(1);
     });
   });
 });

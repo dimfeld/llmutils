@@ -6,10 +6,10 @@ let cachedLinearClient: LinearClient | null = null;
 
 /**
  * Checks if Linear is configured by verifying that the LINEAR_API_KEY environment variable is set.
- * @returns {boolean} True if LINEAR_API_KEY is present, false otherwise
+ * @returns {boolean} True if LINEAR_API_KEY is present and not just whitespace, false otherwise
  */
 export function isLinearConfigured(): boolean {
-  return Boolean(process.env.LINEAR_API_KEY);
+  return Boolean(process.env.LINEAR_API_KEY?.trim());
 }
 
 /**
@@ -42,7 +42,7 @@ export function getLinearClient(): LinearClient {
   }
 
   // Check if Linear API key is configured
-  const apiKey = process.env.LINEAR_API_KEY;
+  const apiKey = process.env.LINEAR_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
       'LINEAR_API_KEY environment variable is not set. ' +
