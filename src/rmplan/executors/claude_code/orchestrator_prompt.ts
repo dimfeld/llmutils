@@ -100,6 +100,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - After all selected tasks are successfully completed, tested, and reviewed, use the Edit tool to update the plan file
    - Mark each completed task with \`done: true\` in the YAML structure
    - Only mark tasks as done if they are fully complete and working
+   - Make sure to commit after updating the plan file
 
 6. **Iteration**`
     : `4. **Iteration**`;
