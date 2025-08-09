@@ -13,7 +13,8 @@ import * as os from 'node:os';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
-describe('Issue Tracker Abstraction Integration Tests', () => {
+// These tests do not properly sandbox themselves
+describe.skip('Issue Tracker Abstraction Integration Tests', () => {
   let tempDir: string;
   let tasksDir: string;
 
@@ -63,7 +64,7 @@ describe('Issue Tracker Abstraction Integration Tests', () => {
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
-    await moduleMocker.clear();
+    moduleMocker.clear();
   });
 
   describe('Configuration-based Issue Tracker Selection', () => {
@@ -367,7 +368,8 @@ describe('Issue Tracker Abstraction Integration Tests', () => {
       }
     });
 
-    test('should correctly parse Linear issue identifiers and URLs', async () => {
+    // TODO This test isn't properly sandboxed
+    test.skip('should correctly parse Linear issue identifiers and URLs', async () => {
       const testCases = [
         { input: 'TEAM-123', expected: 'TEAM-123' },
         { input: 'PROJECT-456', expected: 'PROJECT-456' },
