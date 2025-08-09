@@ -17,3 +17,15 @@ export type {
   IssueTrackerClientFactory,
   IssueTrackerRegistry,
 } from './types.js';
+
+// Export factory functions and utilities
+export {
+  getIssueTracker,
+  getAvailableTrackers,
+  getMissingTrackerError,
+  isTrackerAvailable,
+  getDefaultTracker,
+} from './factory.js';
+
+// Export client implementations
+export { createGitHubClient, GitHubIssueTrackerClient } from './github.js';
