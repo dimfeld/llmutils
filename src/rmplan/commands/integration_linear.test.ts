@@ -393,7 +393,7 @@ describe('Linear Integration Tests', () => {
       expect(getInstructionsFromIssue).toHaveBeenCalledWith(
         mockLinearClient,
         'TEAM-789',
-        undefined
+        false
       );
 
       const [_, planData] = (writePlanFile as any).mock.calls[0];
@@ -654,6 +654,11 @@ describe('Linear Integration Tests', () => {
         })),
       }));
 
+      // Mock user selecting new issue body and comment (returns indices)
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(() => Promise.resolve([0, 1])), // Select first two items (issue body + comment)
+      }));
+
       await handleImportCommand('TEAM-999');
 
       const { writePlanFile } = await import('../plans.js');
@@ -661,7 +666,7 @@ describe('Linear Integration Tests', () => {
 
       expect(writePlanFile).toHaveBeenCalled();
       expect(log).toHaveBeenCalledWith(
-        expect.stringContaining('Issue already imported')
+        expect.stringContaining('Updating existing plan for issue:')
       );
 
       // Verify the plan was updated with new content
@@ -868,14 +873,17 @@ describe('Linear Integration Tests', () => {
           }),
         }));
 
-        const { writePlanFile } = await import('../plans.js');
-        // Clear mock calls for next iteration
-        if (writePlanFile && typeof (writePlanFile as any).mockClear === 'function') {
-          (writePlanFile as any).mockClear();
-        }
+        await moduleMocker.mock('../plans.js', () => ({
+          readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })),
+          writePlanFile: mock(() => Promise.resolve()),
+          getMaxNumericPlanId: mock(() => Promise.resolve(0)),
+          readPlanFile: mock(() => Promise.resolve({ issue: [] })),
+          getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
+        }));
 
         await handleImportCommand(`TEAM-${testCase.state.toUpperCase()}`);
 
+        const { writePlanFile } = await import('../plans.js');
         expect(writePlanFile).toHaveBeenCalled();
         const [_, planData] = (writePlanFile as any).mock.calls[0];
         

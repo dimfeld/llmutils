@@ -90,7 +90,11 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       // Fetch related data
       const [state, labels] = await Promise.all([issue.state, issue.labels()]);
 
+      debugLog('Fetched issue', issue);
+
       // Map Linear issue data to generic IssueData format
+      const creator = await issue.creator;
+      const assignee = await issue.assignee;
       const issueData: IssueData = {
         id: issue.id,
         number: issue.identifier, // Linear uses identifiers like "TEAM-123"
@@ -98,8 +102,8 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
         body: issue.description || undefined,
         htmlUrl: issue.url,
         state: state?.name || 'Unknown',
-        user: issue.creator ? this.mapLinearUserToUserData(issue.creator) : undefined,
-        assignees: issue.assignee ? [this.mapLinearUserToUserData(issue.assignee)] : undefined,
+        user: creator ? this.mapLinearUserToUserData(creator) : undefined,
+        assignees: [this.mapLinearUserToUserData(assignee)].filter((x) => x !== undefined),
         labels: labels?.nodes?.length
           ? labels.nodes.map((label: any) => ({
               id: label.id,
@@ -113,15 +117,20 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       };
 
       // Map Linear comments to generic CommentData format
-      const commentData: CommentData[] = comments.map((comment) => ({
-        id: comment.id,
-        body: comment.body || '',
-        user: comment.user ? this.mapLinearUserToUserData(comment.user) : undefined,
-        createdAt: comment.createdAt.toISOString(),
-        updatedAt: comment.updatedAt?.toISOString(),
-        // Linear comments don't have direct HTML URLs
-        htmlUrl: undefined,
-      }));
+      const commentData: CommentData[] = await Promise.all(
+        comments.map(async (comment) => {
+          const user = await comment.user;
+          return {
+            id: comment.id,
+            body: comment.body || '',
+            user: user ? this.mapLinearUserToUserData(user) : undefined,
+            createdAt: comment.createdAt.toISOString(),
+            updatedAt: comment.updatedAt?.toISOString(),
+            // Linear comments don't have direct HTML URLs
+            htmlUrl: undefined,
+          };
+        })
+      );
 
       debugLog(
         `Successfully fetched Linear issue ${parsed.identifier} with ${commentData.length} comments`
@@ -177,8 +186,10 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
             body: issue.description || undefined,
             htmlUrl: issue.url,
             state: state?.name || 'Unknown',
-            user: issue.creator ? this.mapLinearUserToUserData(issue.creator) : undefined,
-            assignees: issue.assignee ? [this.mapLinearUserToUserData(issue.assignee)] : undefined,
+            user: this.mapLinearUserToUserData(await issue.creator),
+            assignees: [this.mapLinearUserToUserData(await issue.assignee)].filter(
+              (x) => x != undefined
+            ),
             labels: labels?.nodes?.length
               ? labels.nodes.map((label: any) => ({
                   id: label.id,
@@ -219,7 +230,12 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
   /**
    * Map a Linear user object to the generic UserData format
    */
-  private mapLinearUserToUserData(linearUser: any): UserData {
+  private mapLinearUserToUserData(linearUser: any): UserData | undefined {
+    if (!linearUser) {
+      return undefined;
+    }
+
+    debugLog('Mapping Linear user:', linearUser);
     return {
       id: linearUser.id,
       name: linearUser.name || linearUser.displayName,
