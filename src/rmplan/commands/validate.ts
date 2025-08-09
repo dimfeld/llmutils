@@ -53,71 +53,10 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
       }
     }
 
-    // Validate with the regular schema first
+    // Validate with the strict schema
     const result = phaseSchema.safeParse(parsed);
 
-    // If validation passes, check for unknown keys manually
     if (result.success) {
-      const unknownKeys: string[] = [];
-
-      // Check for unknown keys at the root level
-      const knownRootKeys = Object.keys(phaseSchema.shape);
-      for (const key in parsed) {
-        if (!knownRootKeys.includes(key)) {
-          unknownKeys.push(key);
-        }
-      }
-
-      // Check for unknown keys in tasks
-      if (parsed.tasks && Array.isArray(parsed.tasks)) {
-        parsed.tasks.forEach((task: any, taskIndex: number) => {
-          const knownTaskKeys = [
-            'title',
-            'description',
-            'files',
-            'examples',
-            'docs',
-            'steps',
-            'done',
-          ];
-          for (const key in task) {
-            if (!knownTaskKeys.includes(key)) {
-              unknownKeys.push(`tasks[${taskIndex}].${key}`);
-            }
-          }
-
-          // Check for unknown keys in steps
-          if (task.steps && Array.isArray(task.steps)) {
-            task.steps.forEach((step: any, stepIndex: number) => {
-              const knownStepKeys = ['prompt', 'examples', 'done'];
-              for (const key in step) {
-                if (!knownStepKeys.includes(key)) {
-                  unknownKeys.push(`tasks[${taskIndex}].steps[${stepIndex}].${key}`);
-                }
-              }
-            });
-          }
-        });
-      }
-
-      // Check for unknown keys in project
-      if (parsed.project && typeof parsed.project === 'object') {
-        const knownProjectKeys = ['title', 'goal', 'details'];
-        for (const key in parsed.project) {
-          if (!knownProjectKeys.includes(key)) {
-            unknownKeys.push(`project.${key}`);
-          }
-        }
-      }
-
-      if (unknownKeys.length > 0) {
-        return {
-          filename,
-          isValid: false,
-          unknownKeys,
-        };
-      }
-
       return { filename, isValid: true };
     } else {
       const errors: string[] = [];
@@ -125,7 +64,12 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
 
       result.error.issues.forEach((issue) => {
         if (issue.code === z.ZodIssueCode.unrecognized_keys) {
-          unknownKeys.push(...issue.keys);
+          // For unrecognized keys, combine the path with the unknown keys
+          const basePath = issue.path.length > 0 ? issue.path.join('.') : '';
+          issue.keys.forEach((key) => {
+            const fullPath = basePath ? `${basePath}.${key}` : key;
+            unknownKeys.push(fullPath);
+          });
         } else {
           const path = issue.path.length > 0 ? issue.path.join('.') : 'root';
           errors.push(`${path}: ${issue.message}`);

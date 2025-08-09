@@ -1,13 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
-import { ModuleMocker } from '../../testing.js';
+import { ModuleMocker } from '../../../testing.js';
 import type { IssueTrackerClient, IssueWithComments } from '../../common/issue_tracker/types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { z } from 'zod/v4';
-import { phaseSchema } from '../planSchema.js';
+import { phaseSchema } from '../../planSchema.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 

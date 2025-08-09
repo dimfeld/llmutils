@@ -3,13 +3,13 @@
 title: validate command should use zod validation on plan files instead of custom code
 goal: Convert plan schemas to strict mode and remove manual validation logic
 id: 93
-status: pending
+status: in_progress
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-08-09T23:13:19.739Z
 promptsGeneratedAt: 2025-08-09T23:15:52.375Z
 createdAt: 2025-08-09T23:01:00.114Z
-updatedAt: 2025-08-09T23:15:52.375Z
+updatedAt: 2025-08-09T23:18:34.328Z
 tasks:
   - title: Update plan schemas to use strict mode
     description: >

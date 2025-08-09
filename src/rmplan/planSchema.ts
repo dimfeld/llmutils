@@ -34,6 +34,7 @@ export const phaseSchema = z
         goal: z.string(),
         details: z.string().optional(),
       })
+      .strict()
       .optional(),
     tasks: z.array(
       z.object({
@@ -49,15 +50,16 @@ export const phaseSchema = z
               prompt: z.string(),
               examples: z.array(z.string()).optional(),
               done: z.boolean().default(false),
-            })
+            }).strict()
           )
           .default([]),
-      })
+      }).strict()
     ),
     baseBranch: z.string().optional(),
     changedFiles: z.array(z.string()).default([]).optional(),
     rmfilter: z.array(z.string()).default([]).optional(),
   })
+  .strict()
   .describe('rmplan phase file schema');
 
 export type PhaseSchema = z.infer<typeof phaseSchema>;
@@ -74,6 +76,7 @@ export const multiPhasePlanSchema = z
     details: z.string().optional(),
     phases: z.array(phaseSchema),
   })
+  .strict()
   .describe('Multi-phase plan structure for split command');
 
 export type MultiPhasePlanSchema = z.infer<typeof multiPhasePlanSchema>;
