@@ -421,7 +421,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
         // Format all incomplete tasks into a single prompt for the executor
         const taskDescriptions = incompleteTasks
-          .map((taskResult, index) => {
+          .map((taskResult) => {
             const { taskIndex, task } = taskResult;
             let taskDescription = `Task ${taskIndex + 1}: ${task.title}`;
             if (task.description) {
@@ -449,7 +449,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           baseDir: currentBaseDir,
           config,
           task: {
-            title: `Batch Processing: ${incompleteTasks.length} Tasks`,
+            title: `${incompleteTasks.length} Tasks`,
             description: `You are working in batch mode. Please select and complete a logical subset of the following incomplete tasks that makes sense to work on together:\n\n${taskDescriptions}\n\nAfter completing your work, mark the completed tasks as 'done: true' in the plan file at: ${currentPlanFile}`,
             files: [], // Files will be included via plan context
           },
