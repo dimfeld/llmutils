@@ -8,6 +8,12 @@ export interface PendingTaskResult {
   step: PlanSchema['tasks'][number]['steps'][number];
 }
 
+// Interface for incomplete task result
+export interface IncompleteTaskResult {
+  taskIndex: number;
+  task: PlanSchema['tasks'][number];
+}
+
 // Discriminated union for actionable items (either a step or a simple task)
 export type ActionableItem =
   | {
@@ -112,4 +118,30 @@ export function findNextActionableItem(plan: PlanSchema): ActionableItem | null 
   }
 
   return null;
+}
+
+/**
+ * Gets all incomplete tasks in a plan, which are tasks where done is false or undefined.
+ * This function is used by the batch mode to collect all pending work that can be
+ * processed together.
+ *
+ * @param plan - The plan schema to search through
+ * @returns Array of IncompleteTaskResult objects containing taskIndex and task for all incomplete tasks
+ */
+export function getAllIncompleteTasks(plan: PlanSchema): IncompleteTaskResult[] {
+  const incompleteTasks: IncompleteTaskResult[] = [];
+
+  for (let taskIndex = 0; taskIndex < plan.tasks.length; taskIndex++) {
+    const task = plan.tasks[taskIndex];
+
+    // Include tasks where done is false or undefined
+    if (!task.done) {
+      incompleteTasks.push({
+        taskIndex,
+        task,
+      });
+    }
+  }
+
+  return incompleteTasks;
 }
