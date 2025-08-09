@@ -837,7 +837,7 @@ async function executeBatchMode({
         config,
         task: {
           title: `${incompleteTasks.length} Tasks`,
-          description: `Please select and complete a logical subset of the following incomplete tasks that makes sense to work on together:\n\n${taskDescriptions}\n\nAfter completing your work, mark the completed tasks as 'done: true' in the plan file at: ${currentPlanFile}`,
+          description: `Please select and complete a logical subset of the following incomplete tasks that makes sense to work on together:\n\n${taskDescriptions}\n\nAfter completing your work, mark the completed tasks as 'done: true' in the plan file at: ${currentPlanFile}. Find the tasks in the file by title.`,
           files: [], // Files will be included via plan context
         },
         filePathPrefix: executor.filePathPrefix,
@@ -848,7 +848,7 @@ async function executeBatchMode({
       if (dryRun) {
         log(boldMarkdownHeaders('\n## Batch Mode Dry Run - Generated Prompt\n'));
         log(batchPrompt);
-        log('\n--dry-run mode: Would execute the above batch prompt');
+        log('\n--dry-run mode: Would execute the above prompt');
         break;
       }
 

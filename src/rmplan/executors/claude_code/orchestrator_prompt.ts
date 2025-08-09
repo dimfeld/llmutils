@@ -33,20 +33,19 @@ When selecting which tasks to batch together, consider:
 
 After successfully completing your selected tasks, you MUST use the Edit tool to update the plan file at: @${options.planFilePath || 'PLAN_FILE_PATH_NOT_PROVIDED'}
 
-For each completed task, update the YAML structure by setting \`done: true\`. Here's an example:
+For each completed task, update the YAML structure by setting \`done: true\`. Find each task item using the title. Here's an example:
 
 \`\`\`yaml
 tasks:
-  - id: "task-1"
-    name: "Implement user authentication"
+  - title: "Implement user authentication"
     description: "Add login/logout functionality"
     done: true  # Already completed
     
-  - id: "task-2"
-    name: "Add password validation"
+  - title: "Add password validation"
     description: "Implement password strength checking"
-    done: false   # Change this to done: true when completed
+    # Add done: true here if this has been completed
 \`\`\`
+
 
 **CRITICAL**: Only mark tasks as \`done: true\` after they have been successfully implemented, tested, and reviewed. Do not mark tasks as done if:
 - Implementation failed or is incomplete
