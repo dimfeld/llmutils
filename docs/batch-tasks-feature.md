@@ -48,6 +48,7 @@ In batch mode, the rmplan agent operates differently from normal single-task exe
 ### Task Selection Logic
 
 The orchestrator considers several factors when selecting tasks for a batch:
+
 - **Functional Relationship**: Tasks that work on related components or features
 - **Dependency Order**: Ensuring prerequisite tasks are completed before dependent tasks
 - **Context Efficiency**: Tasks that benefit from shared understanding or setup
@@ -56,16 +57,19 @@ The orchestrator considers several factors when selecting tasks for a batch:
 ## Benefits
 
 ### Efficiency Improvements
+
 - **Reduced Context Switching**: Working on related tasks together maintains better understanding of the codebase and requirements
 - **Shared Setup**: Common initialization, imports, and understanding can be reused across tasks in the batch
 - **Better Coordination**: Related changes can be implemented with better awareness of interdependencies
 
 ### Context Preservation
+
 - **Maintained Understanding**: The agent retains knowledge about the codebase and recent changes throughout the batch
 - **Consistent Approach**: Related tasks benefit from consistent implementation patterns and decisions
 - **Reduced Redundancy**: Avoid re-analyzing the same code or requirements multiple times
 
 ### Quality Benefits
+
 - **Holistic Implementation**: Related features can be implemented with better overall design coherence
 - **Cross-Task Validation**: The agent can ensure consistency and compatibility across related changes
 - **Efficient Testing**: Test suites can be run once for multiple related changes
@@ -75,54 +79,58 @@ The orchestrator considers several factors when selecting tasks for a batch:
 ### Ideal Scenarios
 
 **Multiple Small Tasks**: Plans with many small, independent tasks that can be grouped logically:
+
 ```yaml
 tasks:
-  - id: "1"
-    title: "Add validation to user input"
+  - id: '1'
+    title: 'Add validation to user input'
     done: false
-  - id: "2" 
-    title: "Add error handling for network requests"
+  - id: '2'
+    title: 'Add error handling for network requests'
     done: false
-  - id: "3"
-    title: "Update error messages for consistency"
+  - id: '3'
+    title: 'Update error messages for consistency'
     done: false
 ```
 
 **Related Functionality**: Tasks that work on the same component or feature:
+
 ```yaml
 tasks:
-  - id: "1"
-    title: "Implement user authentication API"
+  - id: '1'
+    title: 'Implement user authentication API'
     done: false
-  - id: "2"
-    title: "Add authentication middleware"
+  - id: '2'
+    title: 'Add authentication middleware'
     done: false
-  - id: "3"
-    title: "Create login/logout endpoints"
+  - id: '3'
+    title: 'Create login/logout endpoints'
     done: false
 ```
 
 **Implementation + Testing Pairs**: Tasks where implementation and testing can be done together:
+
 ```yaml
 tasks:
-  - id: "1"
-    title: "Add new payment processing method"
+  - id: '1'
+    title: 'Add new payment processing method'
     done: false
-  - id: "2"
-    title: "Write tests for payment processing"
+  - id: '2'
+    title: 'Write tests for payment processing'
     done: false
 ```
 
 ### When to Avoid Batch Mode
 
 **Complex Independent Tasks**: Large, complex tasks that require deep focus and shouldn't be mixed:
+
 ```yaml
 tasks:
-  - id: "1"
-    title: "Redesign entire database schema"
+  - id: '1'
+    title: 'Redesign entire database schema'
     done: false
-  - id: "2"
-    title: "Implement complete UI overhaul"
+  - id: '2'
+    title: 'Implement complete UI overhaul'
     done: false
 ```
 
@@ -130,58 +138,58 @@ tasks:
 
 ## Comparison with Normal Mode
 
-| Aspect | Normal Mode | Batch Mode |
-|--------|-------------|------------|
-| **Task Selection** | Processes one task at a time | Intelligently selects multiple related tasks |
-| **Context** | Fresh context for each task | Shared context across batch |
-| **Plan Updates** | Manual or external updates | Automatic plan file updates |
-| **Efficiency** | Lower for many small tasks | Higher for related task groups |
-| **Control** | Precise control over each step | Delegated decision-making to orchestrator |
-| **Best For** | Complex individual tasks | Many small or related tasks |
+| Aspect             | Normal Mode                    | Batch Mode                                   |
+| ------------------ | ------------------------------ | -------------------------------------------- |
+| **Task Selection** | Processes one task at a time   | Intelligently selects multiple related tasks |
+| **Context**        | Fresh context for each task    | Shared context across batch                  |
+| **Plan Updates**   | Manual or external updates     | Automatic plan file updates                  |
+| **Efficiency**     | Lower for many small tasks     | Higher for related task groups               |
+| **Control**        | Precise control over each step | Delegated decision-making to orchestrator    |
+| **Best For**       | Complex individual tasks       | Many small or related tasks                  |
 
 ## Practical Example
 
 ### Before Batch Execution
 
 ```yaml
-goal: "Improve user authentication system"
+goal: 'Improve user authentication system'
 tasks:
-  - id: "1"
-    title: "Add password strength validation"
+  - id: '1'
+    title: 'Add password strength validation'
     done: false
-  - id: "2"
-    title: "Implement rate limiting for login attempts"
+  - id: '2'
+    title: 'Implement rate limiting for login attempts'
     done: false
-  - id: "3"
-    title: "Add session timeout configuration"
+  - id: '3'
+    title: 'Add session timeout configuration'
     done: false
-  - id: "4"
-    title: "Update login error messages"
+  - id: '4'
+    title: 'Update login error messages'
     done: false
-  - id: "5"
-    title: "Write tests for authentication improvements"
+  - id: '5'
+    title: 'Write tests for authentication improvements'
     done: false
 ```
 
 ### After Batch Execution
 
 ```yaml
-goal: "Improve user authentication system"
+goal: 'Improve user authentication system'
 tasks:
-  - id: "1"
-    title: "Add password strength validation"
+  - id: '1'
+    title: 'Add password strength validation'
     done: true
-  - id: "2"
-    title: "Implement rate limiting for login attempts"
+  - id: '2'
+    title: 'Implement rate limiting for login attempts'
     done: true
-  - id: "3"
-    title: "Add session timeout configuration"
+  - id: '3'
+    title: 'Add session timeout configuration'
     done: false
-  - id: "4"
-    title: "Update login error messages"
+  - id: '4'
+    title: 'Update login error messages'
     done: true
-  - id: "5"
-    title: "Write tests for authentication improvements"
+  - id: '5'
+    title: 'Write tests for authentication improvements'
     done: true
 ```
 

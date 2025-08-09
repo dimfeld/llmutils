@@ -4,13 +4,13 @@ title: Allow agent to perform multiple tasks in a phase at once
 goal: Implement the end-to-end functionality for the new batch task execution
   mode, from CLI flag to final plan modification.
 id: 92
-status: in_progress
+status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T05:10:30.530Z
+updatedAt: 2025-08-09T05:16:01.780Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
     description: >
@@ -296,23 +296,24 @@ tasks:
           to intelligently select and execute multiple related tasks in a single
           operation, improving efficiency for plans with many small or related
           tasks.
-        done: false
+        done: true
       - prompt: >
           Add sections covering: Usage (with example commands), How it Works
           (explaining the orchestrator's role in task selection and plan
           updates), Benefits (efficiency, context preservation), When to Use
           (multiple small tasks, related functionality), and Comparison with
           Normal Mode.
-        done: false
+        done: true
       - prompt: >
           Include a practical example showing a plan YAML before and after batch
           execution, demonstrating how tasks are marked as done: true, and add
           any important notes about limitations or best practices for using
           batch mode effectively.
-        done: false
+        done: true
 changedFiles:
   - BATCH_TASKS_TESTING_SUMMARY.md
   - README.md
+  - docs/batch-tasks-feature.md
   - docs/linear-integration.md
   - integration_test.ts
   - package.json
