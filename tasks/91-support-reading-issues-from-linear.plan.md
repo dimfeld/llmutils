@@ -13,7 +13,7 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T01:52:15.100Z
+updatedAt: 2025-08-09T02:18:35.518Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
     description: >
@@ -182,7 +182,7 @@ tasks:
 
           Map the GitHub API responses to the generic interfaces, maintaining
           backward compatibility.
-        done: false
+        done: true
       - prompt: >
           Create factory.ts with a getIssueTracker function that reads the
           issueTracker config value and returns either the GitHub or Linear
@@ -190,19 +190,19 @@ tasks:
 
           Include validation that the selected tracker is properly configured
           (GITHUB_TOKEN or LINEAR_API_KEY present).
-        done: false
+        done: true
       - prompt: >
           Add a helper function in factory.ts to check which trackers are
           available based on configured API keys,
 
           useful for providing helpful error messages to users.
-        done: false
+        done: true
       - prompt: >
           Create tests for the factory that verify it returns the correct
           implementation based on config, handles missing API keys gracefully,
 
           and provides clear error messages when misconfigured.
-        done: false
+        done: true
   - title: Refactor `import` Command to Use Abstraction Layer
     description: >
       Update the `rmplan import` command to use the new issue tracker
@@ -334,6 +334,11 @@ tasks:
         done: false
 changedFiles:
   - package.json
+  - src/common/issue_tracker/factory.integration.test.ts
+  - src/common/issue_tracker/factory.test.ts
+  - src/common/issue_tracker/factory.ts
+  - src/common/issue_tracker/github.test.ts
+  - src/common/issue_tracker/github.ts
   - src/common/issue_tracker/index.ts
   - src/common/issue_tracker/types.test.ts
   - src/common/issue_tracker/types.ts
@@ -343,9 +348,13 @@ changedFiles:
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/import.integration.test.ts
+  - src/rmplan/commands/import.test.ts
+  - src/rmplan/commands/import.ts
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
+  - src/rmplan/issue_utils.ts
 rmfilter:
   - src/rmplan
   - src/common/github*

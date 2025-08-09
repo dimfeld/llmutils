@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../testing.js';
-import type { IssueTrackerClient, IssueWithComments, Issue } from '../../common/issue_tracker/types.js';
+import type {
+  IssueTrackerClient,
+  IssueWithComments,
+  Issue,
+} from '../../common/issue_tracker/types.js';
 import type { PlanSchema } from '../planSchema.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -250,7 +254,9 @@ describe('handleImportCommand Integration Tests', () => {
       issue: ['https://linear.app/team/issue/LIN-123'],
     });
 
-    expect(log).toHaveBeenCalledWith('Created stub plan file: /test/git/root/tasks/6-linear-123-linear-issue-example.plan.md');
+    expect(log).toHaveBeenCalledWith(
+      'Created stub plan file: /test/git/root/tasks/6-linear-123-linear-issue-example.plan.md'
+    );
   });
 
   test('should work with GitHub configuration', async () => {
@@ -293,7 +299,9 @@ describe('handleImportCommand Integration Tests', () => {
       issue: ['https://github.com/owner/repo/issues/456'],
     });
 
-    expect(log).toHaveBeenCalledWith('Created stub plan file: /test/git/root/tasks/6-issue-456-github-issue-example.plan.md');
+    expect(log).toHaveBeenCalledWith(
+      'Created stub plan file: /test/git/root/tasks/6-issue-456-github-issue-example.plan.md'
+    );
   });
 
   test('should work with Linear in interactive mode', async () => {
@@ -332,10 +340,10 @@ describe('handleImportCommand Integration Tests', () => {
 
     expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
     expect(mockLinearClient.fetchAllOpenIssues).toHaveBeenCalled();
-    
+
     expect(log).toHaveBeenCalledWith('Fetching all open issues...');
     expect(log).toHaveBeenCalledWith('Found 2 open issues.');
-    
+
     expect(checkbox).toHaveBeenCalledWith({
       message: 'Select issues to import:',
       choices: [
@@ -384,10 +392,10 @@ describe('handleImportCommand Integration Tests', () => {
 
     expect(getIssueTracker).toHaveBeenCalledWith(githubConfig);
     expect(mockGitHubClient.fetchAllOpenIssues).toHaveBeenCalled();
-    
+
     expect(log).toHaveBeenCalledWith('Fetching all open issues...');
     expect(log).toHaveBeenCalledWith('Found 2 open issues.');
-    
+
     expect(checkbox).toHaveBeenCalledWith({
       message: 'Select issues to import:',
       choices: [
@@ -412,7 +420,9 @@ describe('handleImportCommand Integration Tests', () => {
 
     // Mock factory to throw an error (e.g., missing API key)
     await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
-      getIssueTracker: mock(() => Promise.reject(new Error('GITHUB_TOKEN environment variable is required'))),
+      getIssueTracker: mock(() =>
+        Promise.reject(new Error('GITHUB_TOKEN environment variable is required'))
+      ),
     }));
 
     let thrownError;

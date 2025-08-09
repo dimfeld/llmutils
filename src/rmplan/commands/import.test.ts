@@ -2,7 +2,11 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../testing.js';
 import type { PlanSchema } from '../planSchema.js';
-import type { IssueTrackerClient, IssueWithComments, Issue } from '../../common/issue_tracker/types.js';
+import type {
+  IssueTrackerClient,
+  IssueWithComments,
+  Issue,
+} from '../../common/issue_tracker/types.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
