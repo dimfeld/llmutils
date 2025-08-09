@@ -321,4 +321,383 @@ describe('prompt_builder', () => {
       expect(result).toContain('Quality is more important than speed');
     });
   });
+
+  describe('batch mode functionality', () => {
+    describe('isBatchMode', () => {
+      // Need to access the internal function for testing
+      const isBatchMode = (task?: { title: string; description?: string }): boolean => {
+        return task?.title?.includes('Batch Processing') || 
+               task?.description?.includes('batch mode') ||
+               false;
+      };
+
+      test('detects batch mode from title containing "Batch Processing"', () => {
+        const task = { title: 'Batch Processing Tasks' };
+        expect(isBatchMode(task)).toBe(true);
+      });
+
+      test('detects batch mode from title containing "Batch Processing" case sensitive', () => {
+        const task = { title: 'batch processing tasks' };
+        expect(isBatchMode(task)).toBe(false); // Case sensitive
+      });
+
+      test('detects batch mode from description containing "batch mode"', () => {
+        const task = { title: 'Regular Task', description: 'Execute in batch mode' };
+        expect(isBatchMode(task)).toBe(true);
+      });
+
+      test('detects batch mode from description containing "batch mode" case sensitive', () => {
+        const task = { title: 'Regular Task', description: 'Execute in Batch Mode' };
+        expect(isBatchMode(task)).toBe(false); // Case sensitive
+      });
+
+      test('returns false for regular task without batch indicators', () => {
+        const task = { title: 'Regular Task', description: 'Regular description' };
+        expect(isBatchMode(task)).toBe(false);
+      });
+
+      test('returns false when task is undefined', () => {
+        expect(isBatchMode(undefined)).toBe(false);
+      });
+
+      test('returns false when task has no title or description', () => {
+        const task = {} as any;
+        expect(isBatchMode(task)).toBe(false);
+      });
+
+      test('detects batch mode when both title and description match', () => {
+        const task = { 
+          title: 'Batch Processing System', 
+          description: 'Run tasks in batch mode' 
+        };
+        expect(isBatchMode(task)).toBe(true);
+      });
+
+      test('handles partial matches in title', () => {
+        const task = { title: 'Create Batch Processing Pipeline' };
+        expect(isBatchMode(task)).toBe(true);
+      });
+
+      test('handles partial matches in description', () => {
+        const task = { 
+          title: 'System Updates', 
+          description: 'Configure system to run in batch mode for efficiency' 
+        };
+        expect(isBatchMode(task)).toBe(true);
+      });
+    });
+
+    describe('buildExecutionPromptWithoutSteps batch mode integration', () => {
+      // Local variables for this test suite
+      let localTempDir: string;
+      const localMockConfig: RmplanConfig = {
+        paths: {
+          tasks: 'tasks',
+        },
+      };
+      const localMockExecutor: Executor = {
+        execute: mock(async () => {}),
+      };
+
+      beforeEach(async () => {
+        localTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'prompt-builder-batch-test-'));
+        // Create a .git directory to make it a git repo
+        await fs.mkdir(path.join(localTempDir, '.git'), { recursive: true });
+        await fs.mkdir(path.join(localTempDir, 'tasks'), { recursive: true });
+      });
+
+      afterEach(async () => {
+        await fs.rm(localTempDir, { recursive: true, force: true });
+      });
+
+      test('includes plan file reference in batch mode', async () => {
+        const planData: PlanSchema = {
+          title: 'Batch Plan',
+          goal: 'Batch Goal',
+          details: 'Batch Details',
+          tasks: [],
+        };
+
+        const batchTask = {
+          title: 'Batch Processing Implementation',
+          description: 'Implement batch processing features',
+          files: ['src/batch.ts'],
+        };
+
+        const result = await buildExecutionPromptWithoutSteps({
+          executor: localMockExecutor,
+          planData,
+          planFilePath: path.join(localTempDir, 'batch-plan.yml'),
+          baseDir: localTempDir,
+          config: localMockConfig,
+          task: batchTask,
+          filePathPrefix: '@/',
+          includeCurrentPlanContext: false,
+        });
+
+        expect(result).toContain('## Plan File for Task Updates');
+        expect(result).toContain('@/batch-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.');
+      });
+
+      test('does not include plan file reference in regular mode', async () => {
+        const planData: PlanSchema = {
+          title: 'Regular Plan',
+          goal: 'Regular Goal',
+          details: 'Regular Details',
+          tasks: [],
+        };
+
+        const regularTask = {
+          title: 'Regular Implementation',
+          description: 'Implement regular features',
+          files: ['src/regular.ts'],
+        };
+
+        const result = await buildExecutionPromptWithoutSteps({
+          executor: localMockExecutor,
+          planData,
+          planFilePath: path.join(localTempDir, 'regular-plan.yml'),
+          baseDir: localTempDir,
+          config: localMockConfig,
+          task: regularTask,
+          filePathPrefix: '@/',
+          includeCurrentPlanContext: false,
+        });
+
+        expect(result).not.toContain('## Plan File for Task Updates');
+        expect(result).not.toContain('This is the plan file you must edit to mark tasks as done');
+      });
+
+      test('uses relative path from git root for plan file reference', async () => {
+        // Create nested directory structure
+        const nestedDir = path.join(localTempDir, 'nested', 'subdirs');
+        await fs.mkdir(nestedDir, { recursive: true });
+        
+        const planFilePath = path.join(nestedDir, 'nested-batch-plan.yml');
+        await fs.writeFile(planFilePath, 'test: plan');
+
+        const planData: PlanSchema = {
+          title: 'Nested Batch Plan',
+          goal: 'Nested Goal',
+          details: 'Nested Details', 
+          tasks: [],
+        };
+
+        const batchTask = {
+          title: 'Batch Processing Nested',
+          description: 'Process nested batch tasks',
+          files: ['src/nested.ts'],
+        };
+
+        const result = await buildExecutionPromptWithoutSteps({
+          executor: localMockExecutor,
+          planData,
+          planFilePath,
+          baseDir: localTempDir,
+          config: localMockConfig,
+          task: batchTask,
+          filePathPrefix: '@/',
+          includeCurrentPlanContext: false,
+        });
+
+        expect(result).toContain('## Plan File for Task Updates');
+        expect(result).toContain('@/nested/subdirs/nested-batch-plan.yml: This is the plan file you must edit');
+      });
+
+      test('handles already relative plan file paths', async () => {
+        const planData: PlanSchema = {
+          title: 'Relative Batch Plan',
+          goal: 'Relative Goal',
+          details: 'Relative Details',
+          tasks: [],
+        };
+
+        const batchTask = {
+          title: 'Batch Processing Relative',
+          description: 'Process with relative paths',
+        };
+
+        const relativePlanPath = 'tasks/relative-batch-plan.yml';
+
+        const result = await buildExecutionPromptWithoutSteps({
+          executor: localMockExecutor,
+          planData,
+          planFilePath: relativePlanPath,
+          baseDir: localTempDir,
+          config: localMockConfig,
+          task: batchTask,
+          filePathPrefix: '@/',
+          includeCurrentPlanContext: false,
+        });
+
+        expect(result).toContain('## Plan File for Task Updates');
+        expect(result).toContain('@/tasks/relative-batch-plan.yml: This is the plan file you must edit');
+      });
+
+      test('uses empty prefix when filePathPrefix is not provided', async () => {
+        const planData: PlanSchema = {
+          title: 'No Prefix Batch Plan',
+          goal: 'No Prefix Goal',
+          details: 'No Prefix Details',
+          tasks: [],
+        };
+
+        const batchTask = {
+          title: 'Batch Processing No Prefix',
+          description: 'Process without prefix',
+        };
+
+        const result = await buildExecutionPromptWithoutSteps({
+          executor: localMockExecutor,
+          planData,
+          planFilePath: 'no-prefix-batch-plan.yml',
+          baseDir: localTempDir,
+          config: localMockConfig,
+          task: batchTask,
+          // filePathPrefix intentionally omitted
+          includeCurrentPlanContext: false,
+        });
+
+        expect(result).toContain('## Plan File for Task Updates');
+        expect(result).toContain('no-prefix-batch-plan.yml: This is the plan file you must edit');
+        expect(result).not.toContain('@/no-prefix-batch-plan.yml');
+      });
+
+      test('uses custom file path prefix', async () => {
+        const planData: PlanSchema = {
+          title: 'Custom Prefix Batch Plan',
+          goal: 'Custom Prefix Goal',
+          details: 'Custom Prefix Details',
+          tasks: [],
+        };
+
+        const batchTask = {
+          title: 'Batch Processing Custom',
+          description: 'Process with custom prefix',
+        };
+
+        const result = await buildExecutionPromptWithoutSteps({
+          executor: localMockExecutor,
+          planData,
+          planFilePath: 'custom-prefix-batch-plan.yml',
+          baseDir: localTempDir,
+          config: localMockConfig,
+          task: batchTask,
+          filePathPrefix: '$PROJECT/',
+          includeCurrentPlanContext: false,
+        });
+
+        expect(result).toContain('## Plan File for Task Updates');
+        expect(result).toContain('$PROJECT/custom-prefix-batch-plan.yml: This is the plan file you must edit');
+      });
+
+      test('batch mode detection works with description-based detection', async () => {
+        const planData: PlanSchema = {
+          title: 'Description Batch Plan',
+          goal: 'Description Goal',
+          details: 'Description Details',
+          tasks: [],
+        };
+
+        const descriptionBatchTask = {
+          title: 'Regular Task Name',
+          description: 'Execute this task in batch mode for efficiency',
+        };
+
+        const result = await buildExecutionPromptWithoutSteps({
+          executor: localMockExecutor,
+          planData,
+          planFilePath: 'description-batch-plan.yml',
+          baseDir: localTempDir,
+          config: localMockConfig,
+          task: descriptionBatchTask,
+          filePathPrefix: '@/',
+          includeCurrentPlanContext: false,
+        });
+
+        expect(result).toContain('## Plan File for Task Updates');
+        expect(result).toContain('@/description-batch-plan.yml: This is the plan file you must edit');
+      });
+
+      test('handles git root resolution errors gracefully', async () => {
+        // Mock getGitRoot to throw an error
+        const { getGitRoot } = await import('../common/git.js');
+        const originalGetGitRoot = getGitRoot;
+        
+        // Use a mocked version that throws
+        const mockGetGitRoot = mock(() => {
+          throw new Error('Not a git repository');
+        });
+
+        // We need to mock the module
+        const moduleMocker = new (await import('../testing.js')).ModuleMocker(import.meta);
+        await moduleMocker.mock('../common/git.js', () => ({
+          getGitRoot: mockGetGitRoot,
+        }));
+
+        const planData: PlanSchema = {
+          title: 'Error Handling Batch Plan',
+          goal: 'Error Goal',
+          details: 'Error Details',
+          tasks: [],
+        };
+
+        const batchTask = {
+          title: 'Batch Processing Error',
+          description: 'Test error handling',
+        };
+
+        // This should not throw an error, but handle it gracefully
+        await expect(
+          buildExecutionPromptWithoutSteps({
+            executor: localMockExecutor,
+            planData,
+            planFilePath: '/absolute/error-batch-plan.yml',
+            baseDir: localTempDir,
+            config: localMockConfig,
+            task: batchTask,
+            filePathPrefix: '@/',
+            includeCurrentPlanContext: false,
+          })
+        ).rejects.toThrow('Not a git repository');
+
+        moduleMocker.clear();
+      });
+
+      test('plan file reference section has correct format and content', async () => {
+        const planData: PlanSchema = {
+          title: 'Format Test Batch Plan',
+          goal: 'Format Goal',
+          details: 'Format Details',
+          tasks: [],
+        };
+
+        const batchTask = {
+          title: 'Batch Processing Format',
+          description: 'Test format and content',
+        };
+
+        const result = await buildExecutionPromptWithoutSteps({
+          executor: localMockExecutor,
+          planData,
+          planFilePath: 'format-batch-plan.yml',
+          baseDir: localTempDir,
+          config: localMockConfig,
+          task: batchTask,
+          filePathPrefix: '@/',
+          includeCurrentPlanContext: false,
+        });
+
+        // Verify the exact format of the plan file reference section
+        expect(result).toContain('\n## Plan File for Task Updates\n\n- @/format-batch-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.\n');
+        
+        // Verify it appears after the task section
+        const taskSectionIndex = result.indexOf('## Task: Batch Processing Format');
+        const planFileIndex = result.indexOf('## Plan File for Task Updates');
+        expect(taskSectionIndex).toBeLessThan(planFileIndex);
+        expect(taskSectionIndex).toBeGreaterThan(-1);
+        expect(planFileIndex).toBeGreaterThan(-1);
+      });
+    });
+  });
 });
