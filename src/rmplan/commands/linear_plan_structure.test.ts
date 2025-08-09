@@ -1,10 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../testing.js';
-import type {
-  IssueTrackerClient,
-  IssueWithComments,
-} from '../../common/issue_tracker/types.js';
+import type { IssueTrackerClient, IssueWithComments } from '../../common/issue_tracker/types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -51,11 +48,14 @@ describe('Linear Plan File Structure Tests', () => {
     }));
 
     await moduleMocker.mock('../plans.js', () => ({
-      readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })),
+      readAllPlans: mock(() =>
+        Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
+      ),
       writePlanFile: mock(async (filePath: string, planData: any) => {
         // Actually write the file to the filesystem for validation
         const yamlContent = yaml.stringify(planData);
-        const schemaLine = '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
+        const schemaLine =
+          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
         await fs.writeFile(filePath, schemaLine + yamlContent);
         actualWrittenFiles.set(filePath, planData);
       }),
@@ -65,10 +65,12 @@ describe('Linear Plan File Structure Tests', () => {
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() => Promise.resolve({
-        issueTracker: 'linear' as const,
-        paths: { tasks: 'tasks' },
-      })),
+      loadEffectiveConfig: mock(() =>
+        Promise.resolve({
+          issueTracker: 'linear' as const,
+          paths: { tasks: 'tasks' },
+        })
+      ),
     }));
   });
 
@@ -151,18 +153,20 @@ describe('Linear Plan File Structure Tests', () => {
     }));
 
     await moduleMocker.mock('../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() => Promise.resolve({
-        suggestedFileName: 'team-struct-implement-new-feature-with-validation.md',
-        issue: {
-          title: 'Implement new feature with validation',
-          html_url: 'https://linear.app/company/issue/TEAM-STRUCT',
-          number: 'TEAM-STRUCT',
-        },
-        plan: '## Overview\n\nThis feature needs to be implemented with proper validation.\n\n## Requirements\n\n- Input validation\n- Error handling\n- Unit tests\n\n---\n\n**Comments:**\n\n> Make sure to include comprehensive error handling.\n> — Bob Wilson\n\n> Also consider adding integration tests.\n> — John Doe',
-        rmprOptions: {
-          rmfilter: ['--include', '*.ts', '--with-imports'],
-        },
-      })),
+      getInstructionsFromIssue: mock(() =>
+        Promise.resolve({
+          suggestedFileName: 'team-struct-implement-new-feature-with-validation.md',
+          issue: {
+            title: 'Implement new feature with validation',
+            html_url: 'https://linear.app/company/issue/TEAM-STRUCT',
+            number: 'TEAM-STRUCT',
+          },
+          plan: '## Overview\n\nThis feature needs to be implemented with proper validation.\n\n## Requirements\n\n- Input validation\n- Error handling\n- Unit tests\n\n---\n\n**Comments:**\n\n> Make sure to include comprehensive error handling.\n> — Bob Wilson\n\n> Also consider adding integration tests.\n> — John Doe',
+          rmprOptions: {
+            rmfilter: ['--include', '*.ts', '--with-imports'],
+          },
+        })
+      ),
       createStubPlanFromIssue: mock((issueData, id) => ({
         id,
         title: issueData.issue.title,
@@ -218,7 +222,7 @@ describe('Linear Plan File Structure Tests', () => {
     // Extract and parse YAML content (skip schema comment line)
     const yamlContent = fileContent.split('\n').slice(1).join('\n');
     const parsedYaml = yaml.parse(yamlContent);
-    
+
     expect(parsedYaml).toEqual(planData);
   });
 
@@ -254,18 +258,20 @@ describe('Linear Plan File Structure Tests', () => {
     }));
 
     await moduleMocker.mock('../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() => Promise.resolve({
-        suggestedFileName: 'team-minimal-simple-task.md',
-        issue: {
-          title: 'Simple task',
-          html_url: 'https://linear.app/company/issue/TEAM-MINIMAL',
-          number: 'TEAM-MINIMAL',
-        },
-        plan: 'Simple task', // Fallback to title when no description
-        rmprOptions: {
-          rmfilter: [],
-        },
-      })),
+      getInstructionsFromIssue: mock(() =>
+        Promise.resolve({
+          suggestedFileName: 'team-minimal-simple-task.md',
+          issue: {
+            title: 'Simple task',
+            html_url: 'https://linear.app/company/issue/TEAM-MINIMAL',
+            number: 'TEAM-MINIMAL',
+          },
+          plan: 'Simple task', // Fallback to title when no description
+          rmprOptions: {
+            rmfilter: [],
+          },
+        })
+      ),
       createStubPlanFromIssue: mock((issueData, id) => ({
         id,
         title: issueData.issue.title,
@@ -300,12 +306,12 @@ describe('Linear Plan File Structure Tests', () => {
     // Verify optional fields are handled correctly
     expect(planData.priority).toBeUndefined();
     expect(planData.assignedTo).toBeUndefined();
-    
+
     // Verify the file is valid YAML
     const fileContent = await fs.readFile(filePath, 'utf-8');
     const yamlContent = fileContent.split('\n').slice(1).join('\n');
     const parsedYaml = yaml.parse(yamlContent);
-    
+
     expect(parsedYaml).toEqual(planData);
   });
 
@@ -368,9 +374,9 @@ describe('Linear Plan File Structure Tests', () => {
     await moduleMocker.mock('../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() => {
         const issue = mockLinearIssueWithMetadata.issue;
-        const labels = issue.labels?.map(l => l.name).join(', ') || '';
-        const assignees = issue.assignees?.map(a => a.name).join(', ') || '';
-        
+        const labels = issue.labels?.map((l) => l.name).join(', ') || '';
+        const assignees = issue.assignees?.map((a) => a.name).join(', ') || '';
+
         return Promise.resolve({
           suggestedFileName: 'team-meta-security-enhancement-with-priority-labels.md',
           issue: {
@@ -428,7 +434,7 @@ describe('Linear Plan File Structure Tests', () => {
     // Verify the file structure is valid
     const fileContent = await fs.readFile(filePath, 'utf-8');
     expect(fileContent).toMatch(/^# yaml-language-server: \$schema=/);
-    
+
     const yamlContent = fileContent.split('\n').slice(1).join('\n');
     const parsedYaml = yaml.parse(yamlContent);
     expect(parsedYaml).toEqual(planData);
@@ -436,7 +442,11 @@ describe('Linear Plan File Structure Tests', () => {
 
   test('should handle large Linear issues with proper content truncation', async () => {
     const generateLongContent = (base: string, length: number) => {
-      return base + ' '.repeat(Math.max(0, length - base.length)) + Array(50).fill('Additional details about this issue.').join(' ');
+      return (
+        base +
+        ' '.repeat(Math.max(0, length - base.length)) +
+        Array(50).fill('Additional details about this issue.').join(' ')
+      );
     };
 
     const mockLargeLinearIssue: IssueWithComments = {
@@ -444,7 +454,10 @@ describe('Linear Plan File Structure Tests', () => {
         id: 'issue-uuid-large',
         number: 'TEAM-LARGE',
         title: 'Complex system refactoring project',
-        body: generateLongContent('## Large Issue Description\n\nThis is a very detailed description of a complex system refactoring project that involves multiple components, services, and databases. ', 5000),
+        body: generateLongContent(
+          '## Large Issue Description\n\nThis is a very detailed description of a complex system refactoring project that involves multiple components, services, and databases. ',
+          5000
+        ),
         htmlUrl: 'https://linear.app/company/issue/TEAM-LARGE',
         state: 'Open',
         createdAt: '2024-01-15T10:30:00.000Z',
@@ -459,7 +472,10 @@ describe('Linear Plan File Structure Tests', () => {
       },
       comments: Array.from({ length: 15 }, (_, i) => ({
         id: `comment-large-${i}`,
-        body: generateLongContent(`Comment ${i + 1}: This is a detailed comment about various aspects of the refactoring project. `, 200),
+        body: generateLongContent(
+          `Comment ${i + 1}: This is a detailed comment about various aspects of the refactoring project. `,
+          200
+        ),
         createdAt: new Date(2024, 0, 16, 9 + i, 0).toISOString(),
         updatedAt: new Date(2024, 0, 16, 9 + i, 0).toISOString(),
         user: {
@@ -490,7 +506,7 @@ describe('Linear Plan File Structure Tests', () => {
         const commentsText = commentsToShow
           .map((c, i) => `> Comment ${i + 1}: This is a detailed comment...\n> — ${c.user?.name}`)
           .join('\n\n');
-        
+
         return Promise.resolve({
           suggestedFileName: 'team-large-complex-system-refactoring-project.md',
           issue: {
@@ -542,9 +558,9 @@ describe('Linear Plan File Structure Tests', () => {
     // Verify the file is still valid YAML despite large content
     const fileContent = await fs.readFile(filePath, 'utf-8');
     const yamlContent = fileContent.split('\n').slice(1).join('\n');
-    
+
     expect(() => yaml.parse(yamlContent)).not.toThrow();
-    
+
     const parsedYaml = yaml.parse(yamlContent);
     expect(parsedYaml.title).toBe(planData.title);
     expect(parsedYaml.details.length).toBeGreaterThan(1000); // Ensure large content is preserved
@@ -585,18 +601,20 @@ describe('Linear Plan File Structure Tests', () => {
     }));
 
     await moduleMocker.mock('../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() => Promise.resolve({
-        suggestedFileName: 'team-url-url-format-validation-test.md',
-        issue: {
-          title: 'URL format validation test',
-          html_url: 'https://linear.app/company/issue/TEAM-URL',
-          number: 'TEAM-URL',
-        },
-        plan: 'Test URL formats in Linear issues.',
-        rmprOptions: {
-          rmfilter: ['--include', '*.ts'],
-        },
-      })),
+      getInstructionsFromIssue: mock(() =>
+        Promise.resolve({
+          suggestedFileName: 'team-url-url-format-validation-test.md',
+          issue: {
+            title: 'URL format validation test',
+            html_url: 'https://linear.app/company/issue/TEAM-URL',
+            number: 'TEAM-URL',
+          },
+          plan: 'Test URL formats in Linear issues.',
+          rmprOptions: {
+            rmfilter: ['--include', '*.ts'],
+          },
+        })
+      ),
       createStubPlanFromIssue: mock((issueData, id) => ({
         id,
         title: issueData.issue.title,
@@ -619,10 +637,10 @@ describe('Linear Plan File Structure Tests', () => {
     // Verify the issue URL is properly formatted and valid
     expect(planData.issue).toHaveLength(1);
     expect(planData.issue[0]).toBe('https://linear.app/company/issue/TEAM-URL');
-    
+
     // Verify URL is valid format
     expect(() => new URL(planData.issue[0])).not.toThrow();
-    
+
     // Verify Linear URL pattern
     expect(planData.issue[0]).toMatch(/^https:\/\/linear\.app\/[^\/]+\/issue\/[A-Z]+-[0-9A-Z]+$/);
 

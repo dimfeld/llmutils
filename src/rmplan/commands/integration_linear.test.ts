@@ -104,7 +104,7 @@ describe('Linear Integration Tests', () => {
           },
           {
             id: 'comment-2',
-            body: 'Good point! Let\'s also consider implementing 2FA.',
+            body: "Good point! Let's also consider implementing 2FA.",
             createdAt: '2024-01-16T10:30:00.000Z',
             updatedAt: '2024-01-16T10:30:00.000Z',
             user: {
@@ -139,7 +139,9 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../plans.js', () => ({
-        readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 5, duplicates: {} })),
+        readAllPlans: mock(() =>
+          Promise.resolve({ plans: new Map(), maxNumericId: 5, duplicates: {} })
+        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(5)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -147,18 +149,20 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../issue_utils.js', () => ({
-        getInstructionsFromIssue: mock(() => Promise.resolve({
-          suggestedFileName: 'team-123-implement-user-authentication.md',
-          issue: {
-            title: 'Implement user authentication',
-            html_url: 'https://linear.app/company/issue/TEAM-123',
-            number: 'TEAM-123',
-          },
-          plan: '## Problem\n\nUsers need to authenticate to access the system.\n\n## Solution\n\nImplement JWT-based authentication with refresh tokens.\n\n---\n\n**Comments:**\n\n> I think we should use OAuth 2.0 for social login integration.\n> — Bob Wilson\n\n> Good point! Let\'s also consider implementing 2FA.\n> — John Doe',
-          rmprOptions: {
-            rmfilter: ['--include', '*.ts'],
-          },
-        })),
+        getInstructionsFromIssue: mock(() =>
+          Promise.resolve({
+            suggestedFileName: 'team-123-implement-user-authentication.md',
+            issue: {
+              title: 'Implement user authentication',
+              html_url: 'https://linear.app/company/issue/TEAM-123',
+              number: 'TEAM-123',
+            },
+            plan: "## Problem\n\nUsers need to authenticate to access the system.\n\n## Solution\n\nImplement JWT-based authentication with refresh tokens.\n\n---\n\n**Comments:**\n\n> I think we should use OAuth 2.0 for social login integration.\n> — Bob Wilson\n\n> Good point! Let's also consider implementing 2FA.\n> — John Doe",
+            rmprOptions: {
+              rmfilter: ['--include', '*.ts'],
+            },
+          })
+        ),
         createStubPlanFromIssue: mock((issueData, id) => ({
           id,
           title: issueData.issue.title,
@@ -196,9 +200,7 @@ describe('Linear Integration Tests', () => {
         rmfilter: ['--include', '*.ts'],
       });
 
-      expect(log).toHaveBeenCalledWith(
-        expect.stringContaining('Created stub plan file')
-      );
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('Created stub plan file'));
     });
 
     test('should handle Linear issue without comments', async () => {
@@ -243,7 +245,9 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../plans.js', () => ({
-        readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })),
+        readAllPlans: mock(() =>
+          Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
+        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(0)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -251,18 +255,20 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../issue_utils.js', () => ({
-        getInstructionsFromIssue: mock(() => Promise.resolve({
-          suggestedFileName: 'team-456-fix-login-bug.md',
-          issue: {
-            title: 'Fix login bug',
-            html_url: 'https://linear.app/company/issue/TEAM-456',
-            number: 'TEAM-456',
-          },
-          plan: 'The login form is not working correctly.',
-          rmprOptions: {
-            rmfilter: ['--include', '*.ts'],
-          },
-        })),
+        getInstructionsFromIssue: mock(() =>
+          Promise.resolve({
+            suggestedFileName: 'team-456-fix-login-bug.md',
+            issue: {
+              title: 'Fix login bug',
+              html_url: 'https://linear.app/company/issue/TEAM-456',
+              number: 'TEAM-456',
+            },
+            plan: 'The login form is not working correctly.',
+            rmprOptions: {
+              rmfilter: ['--include', '*.ts'],
+            },
+          })
+        ),
         createStubPlanFromIssue: mock((issueData, id) => ({
           id,
           title: issueData.issue.title,
@@ -295,9 +301,9 @@ describe('Linear Integration Tests', () => {
           createdAt: new Date(2024, 0, 15, 10, i).toISOString(),
           updatedAt: new Date(2024, 0, 15, 10, i).toISOString(),
           user: {
-            id: `user-${i % 3 + 1}`,
-            name: `User ${i % 3 + 1}`,
-            email: `user${i % 3 + 1}@company.com`,
+            id: `user-${(i % 3) + 1}`,
+            name: `User ${(i % 3) + 1}`,
+            email: `user${(i % 3) + 1}@company.com`,
           },
         }));
       };
@@ -343,7 +349,9 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../plans.js', () => ({
-        readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })),
+        readAllPlans: mock(() =>
+          Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
+        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(0)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -353,10 +361,11 @@ describe('Linear Integration Tests', () => {
       await moduleMocker.mock('../issue_utils.js', () => ({
         getInstructionsFromIssue: mock((client, identifier, include) => {
           // Simulate processing many comments
-          const comments = mockLinearIssueWithManyComments.comments.slice(0, 10) // Limit to first 10 for processing
-            .map(c => `> ${c.body}\n> — ${c.user?.name || 'Unknown'}`)
+          const comments = mockLinearIssueWithManyComments.comments
+            .slice(0, 10) // Limit to first 10 for processing
+            .map((c) => `> ${c.body}\n> — ${c.user?.name || 'Unknown'}`)
             .join('\n\n');
-          
+
           return Promise.resolve({
             suggestedFileName: 'team-789-complex-refactoring-task.md',
             issue: {
@@ -390,11 +399,7 @@ describe('Linear Integration Tests', () => {
       const { getInstructionsFromIssue } = await import('../issue_utils.js');
 
       expect(writePlanFile).toHaveBeenCalled();
-      expect(getInstructionsFromIssue).toHaveBeenCalledWith(
-        mockLinearClient,
-        'TEAM-789',
-        false
-      );
+      expect(getInstructionsFromIssue).toHaveBeenCalledWith(mockLinearClient, 'TEAM-789', false);
 
       const [_, planData] = (writePlanFile as any).mock.calls[0];
       expect(planData.details).toContain('Comments (showing first 10 of 25)');
@@ -445,9 +450,9 @@ describe('Linear Integration Tests', () => {
 
       const mockLinearClient: IssueTrackerClient = {
         fetchIssue: mock((identifier: string) => {
-          const issue = mockLinearIssues.find(i => i.number === identifier);
+          const issue = mockLinearIssues.find((i) => i.number === identifier);
           if (!issue) throw new Error('Issue not found');
-          
+
           return Promise.resolve({
             issue,
             comments: [
@@ -486,7 +491,9 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../plans.js', () => ({
-        readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })),
+        readAllPlans: mock(() =>
+          Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
+        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(0)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -496,7 +503,7 @@ describe('Linear Integration Tests', () => {
       let callCount = 0;
       await moduleMocker.mock('../issue_utils.js', () => ({
         getInstructionsFromIssue: mock((client, identifier) => {
-          const issue = mockLinearIssues.find(i => i.number === identifier);
+          const issue = mockLinearIssues.find((i) => i.number === identifier);
           return Promise.resolve({
             suggestedFileName: `${identifier.toLowerCase()}-${issue?.title.toLowerCase().replace(/\s+/g, '-')}.md`,
             issue: {
@@ -553,7 +560,7 @@ describe('Linear Integration Tests', () => {
     test('should update existing plan when importing duplicate Linear issue', async () => {
       const existingPlanId = 'existing-plan-123';
       const existingPlanPath = path.join(tasksDir, `${existingPlanId}.plan.md`);
-      
+
       // Create an existing plan file
       const existingPlan: PlanSchema = {
         id: 42,
@@ -562,9 +569,7 @@ describe('Linear Integration Tests', () => {
         details: 'Old details',
         status: 'in_progress',
         issue: ['https://linear.app/company/issue/TEAM-999'],
-        tasks: [
-          { title: 'Old task 1', description: 'Old description', done: false },
-        ],
+        tasks: [{ title: 'Old task 1', description: 'Old description', done: false }],
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T00:00:00.000Z',
         rmfilter: ['--include', '*.js'],
@@ -618,28 +623,34 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../plans.js', () => ({
-        readAllPlans: mock(() => Promise.resolve({ 
-          plans: new Map([[42, existingPlan]]), 
-          maxNumericId: 42, 
-          duplicates: {} 
-        })),
+        readAllPlans: mock(() =>
+          Promise.resolve({
+            plans: new Map([[42, existingPlan]]),
+            maxNumericId: 42,
+            duplicates: {},
+          })
+        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(42)),
         readPlanFile: mock(() => Promise.resolve(existingPlan)),
-        getImportedIssueUrls: mock(() => Promise.resolve(new Set(['https://linear.app/company/issue/TEAM-999']))),
+        getImportedIssueUrls: mock(() =>
+          Promise.resolve(new Set(['https://linear.app/company/issue/TEAM-999']))
+        ),
       }));
 
       await moduleMocker.mock('../issue_utils.js', () => ({
-        getInstructionsFromIssue: mock(() => Promise.resolve({
-          suggestedFileName: 'team-999-updated-issue-title.md',
-          issue: {
-            title: 'Updated Issue Title',
-            html_url: 'https://linear.app/company/issue/TEAM-999',
-            number: 'TEAM-999',
-          },
-          plan: 'Updated issue description with new requirements.\n\n---\n\n**Comments:**\n\n> Latest update on the requirements.\n> — Jane Smith',
-          rmprOptions: { rmfilter: ['--include', '*.ts'] },
-        })),
+        getInstructionsFromIssue: mock(() =>
+          Promise.resolve({
+            suggestedFileName: 'team-999-updated-issue-title.md',
+            issue: {
+              title: 'Updated Issue Title',
+              html_url: 'https://linear.app/company/issue/TEAM-999',
+              number: 'TEAM-999',
+            },
+            plan: 'Updated issue description with new requirements.\n\n---\n\n**Comments:**\n\n> Latest update on the requirements.\n> — Jane Smith',
+            rmprOptions: { rmfilter: ['--include', '*.ts'] },
+          })
+        ),
         createStubPlanFromIssue: mock((issueData, id) => ({
           id,
           title: issueData.issue.title,
@@ -726,7 +737,9 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../plans.js', () => ({
-        readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })),
+        readAllPlans: mock(() =>
+          Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
+        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(0)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -736,9 +749,9 @@ describe('Linear Integration Tests', () => {
       await moduleMocker.mock('../issue_utils.js', () => ({
         getInstructionsFromIssue: mock((client, identifier) => {
           const issue = mockLinearIssueWithPriority.issue;
-          const labels = issue.labels?.map(l => l.name).join(', ') || '';
-          const assignees = issue.assignees?.map(a => a.name).join(', ') || '';
-          
+          const labels = issue.labels?.map((l) => l.name).join(', ') || '';
+          const assignees = issue.assignees?.map((a) => a.name).join(', ') || '';
+
           return Promise.resolve({
             suggestedFileName: 'team-priority-high-priority-security-fix.md',
             issue: {
@@ -808,7 +821,9 @@ describe('Linear Integration Tests', () => {
         const mockClient: IssueTrackerClient = {
           fetchIssue: mock(() => Promise.resolve(mockIssue)),
           fetchAllOpenIssues: mock(() => Promise.resolve([])),
-          parseIssueIdentifier: mock(() => ({ identifier: `TEAM-${testCase.state.toUpperCase()}` })),
+          parseIssueIdentifier: mock(() => ({
+            identifier: `TEAM-${testCase.state.toUpperCase()}`,
+          })),
           getDisplayName: mock(() => 'Linear'),
           getConfig: mock(() => ({ type: 'linear' })),
         };
@@ -818,20 +833,22 @@ describe('Linear Integration Tests', () => {
         }));
 
         await moduleMocker.mock('../issue_utils.js', () => ({
-          getInstructionsFromIssue: mock(() => Promise.resolve({
-            suggestedFileName: `team-${testCase.state.toLowerCase()}-issue.md`,
-            issue: {
-              title: mockIssue.issue.title,
-              html_url: mockIssue.issue.htmlUrl,
-              number: mockIssue.issue.number,
-            },
-            plan: mockIssue.issue.body,
-            rmprOptions: { rmfilter: ['--include', '*.ts'] },
-          })),
+          getInstructionsFromIssue: mock(() =>
+            Promise.resolve({
+              suggestedFileName: `team-${testCase.state.toLowerCase()}-issue.md`,
+              issue: {
+                title: mockIssue.issue.title,
+                html_url: mockIssue.issue.htmlUrl,
+                number: mockIssue.issue.number,
+              },
+              plan: mockIssue.issue.body,
+              rmprOptions: { rmfilter: ['--include', '*.ts'] },
+            })
+          ),
           createStubPlanFromIssue: mock((issueData, id) => {
             let planStatus = 'pending';
             let priority = 'medium';
-            
+
             // Map Linear states to plan status and priority
             switch (testCase.state) {
               case 'Done':
@@ -856,7 +873,7 @@ describe('Linear Integration Tests', () => {
                 priority = 'urgent';
                 break;
             }
-            
+
             return {
               id,
               title: issueData.issue.title,
@@ -874,7 +891,9 @@ describe('Linear Integration Tests', () => {
         }));
 
         await moduleMocker.mock('../plans.js', () => ({
-          readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })),
+          readAllPlans: mock(() =>
+            Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
+          ),
           writePlanFile: mock(() => Promise.resolve()),
           getMaxNumericPlanId: mock(() => Promise.resolve(0)),
           readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -886,7 +905,7 @@ describe('Linear Integration Tests', () => {
         const { writePlanFile } = await import('../plans.js');
         expect(writePlanFile).toHaveBeenCalled();
         const [_, planData] = (writePlanFile as any).mock.calls[0];
-        
+
         expect(planData.details).toContain(`Issue with state: ${testCase.state}`);
         // The priority mapping is handled in createStubPlanFromIssue mock
         expect(planData.priority).toBeDefined();

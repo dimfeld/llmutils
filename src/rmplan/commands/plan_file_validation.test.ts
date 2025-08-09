@@ -1,10 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../testing.js';
-import type {
-  IssueTrackerClient,
-  IssueWithComments,
-} from '../../common/issue_tracker/types.js';
+import type { IssueTrackerClient, IssueWithComments } from '../../common/issue_tracker/types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -50,11 +47,14 @@ describe('Plan File Validation Tests', () => {
     }));
 
     await moduleMocker.mock('../plans.js', () => ({
-      readAllPlans: mock(() => Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })),
+      readAllPlans: mock(() =>
+        Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
+      ),
       writePlanFile: mock(async (filePath: string, planData: any) => {
         // Actually write the file to the filesystem for validation
         const yamlContent = yaml.stringify(planData);
-        const schemaLine = '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
+        const schemaLine =
+          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
         await fs.writeFile(filePath, schemaLine + yamlContent);
         actualWrittenFiles.set(filePath, planData);
       }),
@@ -97,10 +97,12 @@ describe('Plan File Validation Tests', () => {
     };
 
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() => Promise.resolve({
-        issueTracker: 'linear' as const,
-        paths: { tasks: 'tasks' },
-      })),
+      loadEffectiveConfig: mock(() =>
+        Promise.resolve({
+          issueTracker: 'linear' as const,
+          paths: { tasks: 'tasks' },
+        })
+      ),
     }));
 
     await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
@@ -108,18 +110,20 @@ describe('Plan File Validation Tests', () => {
     }));
 
     await moduleMocker.mock('../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() => Promise.resolve({
-        suggestedFileName: 'valid-123-schema-validation-test.md',
-        issue: {
-          title: 'Schema validation test',
-          html_url: 'https://linear.app/company/issue/VALID-123',
-          number: 'VALID-123',
-        },
-        plan: 'Test schema validation for Linear issues.',
-        rmprOptions: {
-          rmfilter: ['--include', '*.ts'],
-        },
-      })),
+      getInstructionsFromIssue: mock(() =>
+        Promise.resolve({
+          suggestedFileName: 'valid-123-schema-validation-test.md',
+          issue: {
+            title: 'Schema validation test',
+            html_url: 'https://linear.app/company/issue/VALID-123',
+            number: 'VALID-123',
+          },
+          plan: 'Test schema validation for Linear issues.',
+          rmprOptions: {
+            rmfilter: ['--include', '*.ts'],
+          },
+        })
+      ),
       createStubPlanFromIssue: mock((issueData, id) => ({
         id,
         title: issueData.issue.title,
@@ -148,11 +152,11 @@ describe('Plan File Validation Tests', () => {
 
     // Validate against the actual plan schema
     const validationResult = phaseSchema.safeParse(planData);
-    
+
     if (!validationResult.success) {
       console.error('Schema validation errors:', validationResult.error.issues);
     }
-    
+
     expect(validationResult.success).toBe(true);
 
     // Verify all required schema fields are present and valid
@@ -177,7 +181,7 @@ describe('Plan File Validation Tests', () => {
     const fileContent = await fs.readFile(filePath, 'utf-8');
     const yamlContent = fileContent.split('\n').slice(1).join('\n');
     const parsedYaml = yaml.parse(yamlContent);
-    
+
     expect(parsedYaml).toEqual(planData);
   });
 
@@ -207,10 +211,12 @@ describe('Plan File Validation Tests', () => {
     };
 
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() => Promise.resolve({
-        issueTracker: 'github' as const,
-        paths: { tasks: 'tasks' },
-      })),
+      loadEffectiveConfig: mock(() =>
+        Promise.resolve({
+          issueTracker: 'github' as const,
+          paths: { tasks: 'tasks' },
+        })
+      ),
     }));
 
     await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
@@ -218,18 +224,20 @@ describe('Plan File Validation Tests', () => {
     }));
 
     await moduleMocker.mock('../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() => Promise.resolve({
-        suggestedFileName: 'issue-123-github-schema-validation-test.md',
-        issue: {
-          title: 'GitHub schema validation test',
-          html_url: 'https://github.com/owner/repo/issues/123',
-          number: 123,
-        },
-        plan: 'Test schema validation for GitHub issues.',
-        rmprOptions: {
-          rmfilter: ['--include', '*.js'],
-        },
-      })),
+      getInstructionsFromIssue: mock(() =>
+        Promise.resolve({
+          suggestedFileName: 'issue-123-github-schema-validation-test.md',
+          issue: {
+            title: 'GitHub schema validation test',
+            html_url: 'https://github.com/owner/repo/issues/123',
+            number: 123,
+          },
+          plan: 'Test schema validation for GitHub issues.',
+          rmprOptions: {
+            rmfilter: ['--include', '*.js'],
+          },
+        })
+      ),
       createStubPlanFromIssue: mock((issueData, id) => ({
         id,
         title: issueData.issue.title,
@@ -259,11 +267,11 @@ describe('Plan File Validation Tests', () => {
 
     // Validate against the actual plan schema
     const validationResult = phaseSchema.safeParse(planData);
-    
+
     if (!validationResult.success) {
       console.error('Schema validation errors:', validationResult.error.issues);
     }
-    
+
     expect(validationResult.success).toBe(true);
 
     // Verify GitHub-specific structure
@@ -274,7 +282,7 @@ describe('Plan File Validation Tests', () => {
     const fileContent = await fs.readFile(filePath, 'utf-8');
     const yamlContent = fileContent.split('\n').slice(1).join('\n');
     const parsedYaml = yaml.parse(yamlContent);
-    
+
     expect(parsedYaml).toEqual(planData);
   });
 
@@ -312,10 +320,12 @@ describe('Plan File Validation Tests', () => {
     };
 
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() => Promise.resolve({
-        issueTracker: 'linear' as const,
-        paths: { tasks: 'tasks' },
-      })),
+      loadEffectiveConfig: mock(() =>
+        Promise.resolve({
+          issueTracker: 'linear' as const,
+          paths: { tasks: 'tasks' },
+        })
+      ),
     }));
 
     await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
@@ -323,18 +333,24 @@ describe('Plan File Validation Tests', () => {
     }));
 
     await moduleMocker.mock('../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() => Promise.resolve({
-        suggestedFileName: 'edge-999-edge-case-test-with-special-characters.md',
-        issue: {
-          title: 'Edge case test with special characters: "quotes", \'apostrophes\', & symbols',
-          html_url: 'https://linear.app/company/issue/EDGE-999',
-          number: 'EDGE-999',
-        },
-        plan: mockEdgeCaseIssue.issue.body + '\n\n---\n\n**Comments:**\n\n> ' + mockEdgeCaseIssue.comments[0].body.replace(/\n/g, '\n> ') + '\n> — Special & Characters',
-        rmprOptions: {
-          rmfilter: ['--include', '*.ts', '--exclude', '**/*.spec.ts'],
-        },
-      })),
+      getInstructionsFromIssue: mock(() =>
+        Promise.resolve({
+          suggestedFileName: 'edge-999-edge-case-test-with-special-characters.md',
+          issue: {
+            title: 'Edge case test with special characters: "quotes", \'apostrophes\', & symbols',
+            html_url: 'https://linear.app/company/issue/EDGE-999',
+            number: 'EDGE-999',
+          },
+          plan:
+            mockEdgeCaseIssue.issue.body +
+            '\n\n---\n\n**Comments:**\n\n> ' +
+            mockEdgeCaseIssue.comments[0].body.replace(/\n/g, '\n> ') +
+            '\n> — Special & Characters',
+          rmprOptions: {
+            rmfilter: ['--include', '*.ts', '--exclude', '**/*.spec.ts'],
+          },
+        })
+      ),
       createStubPlanFromIssue: mock((issueData, id) => ({
         id,
         title: issueData.issue.title,
@@ -370,7 +386,7 @@ describe('Plan File Validation Tests', () => {
     expect(planData.title).toContain('"quotes"');
     expect(planData.title).toContain("'apostrophes'");
     expect(planData.title).toContain('& symbols');
-    
+
     expect(planData.details).toContain('你好世界 🚀');
     expect(planData.details).toContain('<script>alert("xss")</script>');
     expect(planData.details).toContain('Special & Characters');
@@ -383,10 +399,10 @@ describe('Plan File Validation Tests', () => {
     // Verify the file can be parsed correctly despite special characters
     const fileContent = await fs.readFile(filePath, 'utf-8');
     const yamlContent = fileContent.split('\n').slice(1).join('\n');
-    
+
     // Should not throw on parsing
     expect(() => yaml.parse(yamlContent)).not.toThrow();
-    
+
     const parsedYaml = yaml.parse(yamlContent);
     expect(parsedYaml.title).toBe(planData.title);
     expect(parsedYaml.details).toBe(planData.details);
@@ -419,10 +435,12 @@ describe('Plan File Validation Tests', () => {
     };
 
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() => Promise.resolve({
-        issueTracker: 'linear' as const,
-        paths: { tasks: 'tasks' },
-      })),
+      loadEffectiveConfig: mock(() =>
+        Promise.resolve({
+          issueTracker: 'linear' as const,
+          paths: { tasks: 'tasks' },
+        })
+      ),
     }));
 
     await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
@@ -430,18 +448,20 @@ describe('Plan File Validation Tests', () => {
     }));
 
     await moduleMocker.mock('../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() => Promise.resolve({
-        suggestedFileName: 'types-123-data-type-validation-test.md',
-        issue: {
-          title: 'Data type validation test',
-          html_url: 'https://linear.app/company/issue/TYPES-123',
-          number: 'TYPES-123',
-        },
-        plan: 'Test proper data type handling.',
-        rmprOptions: {
-          rmfilter: ['--include', '*.ts'],
-        },
-      })),
+      getInstructionsFromIssue: mock(() =>
+        Promise.resolve({
+          suggestedFileName: 'types-123-data-type-validation-test.md',
+          issue: {
+            title: 'Data type validation test',
+            html_url: 'https://linear.app/company/issue/TYPES-123',
+            number: 'TYPES-123',
+          },
+          plan: 'Test proper data type handling.',
+          rmprOptions: {
+            rmfilter: ['--include', '*.ts'],
+          },
+        })
+      ),
       createStubPlanFromIssue: mock((issueData, id) => ({
         id: 42, // number type
         title: issueData.issue.title, // string type
@@ -454,7 +474,8 @@ describe('Plan File Validation Tests', () => {
         issue: [issueData.issue.html_url], // array of strings (URLs)
         docs: ['doc1.md', 'doc2.md'], // array of strings
         assignedTo: 'Team Lead', // string type
-        tasks: [ // array of objects
+        tasks: [
+          // array of objects
           {
             title: 'Task 1', // string
             description: 'First task', // string
@@ -531,11 +552,11 @@ describe('Plan File Validation Tests', () => {
     // Numbers should remain numbers, not become strings
     expect(typeof parsedYaml.id).toBe('number');
     expect(parsedYaml.id).toBe(42);
-    
+
     // Booleans should remain booleans
     expect(typeof parsedYaml.container).toBe('boolean');
     expect(parsedYaml.container).toBe(false);
-    
+
     expect(typeof parsedYaml.tasks[0].done).toBe('boolean');
     expect(parsedYaml.tasks[0].done).toBe(false);
     expect(parsedYaml.tasks[1].done).toBe(true);

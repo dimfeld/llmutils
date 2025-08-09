@@ -13,7 +13,7 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T02:27:55.876Z
+updatedAt: 2025-08-09T02:59:19.944Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
     description: >
@@ -276,27 +276,27 @@ tasks:
 
           including importing single issues, batch importing, and updating
           existing plans from Linear.
-        done: false
+        done: true
       - prompt: >
           Add tests for edge cases like Linear issues without comments, issues
           with many comments,
 
           and handling of Linear-specific fields like priority and status.
-        done: false
+        done: true
       - prompt: >
           Create integration.test.ts that tests the issue tracker abstraction
           works correctly for both services,
 
           verifying that switching between GitHub and Linear via config works as
           expected.
-        done: false
+        done: true
       - prompt: >
           Add tests that verify the plan files created from Linear issues have
           the correct structure,
 
           including proper issue URLs and formatted content from Linear's
           markdown.
-        done: false
+        done: true
   - title: Update Project Documentation
     description: >
       Document the new Linear integration feature in the project's `README.md`
@@ -352,6 +352,10 @@ changedFiles:
   - src/rmplan/commands/import.integration.test.ts
   - src/rmplan/commands/import.test.ts
   - src/rmplan/commands/import.ts
+  - src/rmplan/commands/integration_linear.test.ts
+  - src/rmplan/commands/issue_tracker_integration.test.ts
+  - src/rmplan/commands/linear_plan_structure.test.ts
+  - src/rmplan/commands/plan_file_validation.test.ts
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
