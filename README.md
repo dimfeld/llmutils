@@ -286,7 +286,7 @@ You can find the task plans for this repository under the "tasks" directory.
 
 - **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
 - **Plan Creation**: Use the `add` command to quickly create new plan stub files with metadata like dependencies and priority.
-- **Issue Import**: Use the `import` command to convert GitHub issues into structured plan files, with support for both single-issue and interactive multi-issue import modes, automatic duplicate prevention, and selective content inclusion.
+- **Issue Import**: Use the `import` command to convert GitHub or Linear issues into structured plan files, with support for both single-issue and interactive multi-issue import modes, automatic duplicate prevention, and selective content inclusion.
 - **Plan Splitting**: Use the `split` command to intelligently break down large, complex plans into multiple phase-based plans using an LLM.
 - **Research Integration**: Use the `research` command to generate research prompts based on a plan's goals and append findings back to the plan for enhanced context.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
@@ -1036,6 +1036,66 @@ rmplan answer-pr --mode hybrid --commit --comment
 rmplan answer-pr --mode inline-comments  # Uses inline-comments mode but keeps commit and comment from config
 ```
 
+### Linear Integration
+
+`rmplan` includes native support for Linear issues alongside GitHub integration. Any rmplan command that reads from GitHub issues can instead read from Linear by configuring your project to use Linear as the issue tracker.
+
+**Configuration in `.rmfilter/config/rmplan.yml`:**
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+
+# Set Linear as your issue tracker
+issueTracker: 'linear'
+```
+
+**Environment Setup:**
+
+To use Linear integration, you need to set the `LINEAR_API_KEY` environment variable:
+
+```bash
+# Get your API key from https://linear.app/settings/api
+export LINEAR_API_KEY="lin_api_1234567890abcdef"
+```
+
+**Supported Linear Features:**
+
+- Import Linear issues as rmplan task files using `rmplan import`
+- Generate plans directly from Linear issues using `rmplan generate --issue`
+- Support for Linear issue ID formats like `TEAM-123`
+- Support for Linear URLs: `https://linear.app/workspace/issue/TEAM-123`
+- Full comment support - comments from Linear issues are included in imported plans
+- Interactive multi-issue selection for bulk importing
+
+**Example Usage:**
+
+```bash
+# Import a specific Linear issue by ID
+rmplan import TEAM-123
+
+# Import using a Linear URL
+rmplan import https://linear.app/workspace/issue/TEAM-123
+
+# Generate a plan directly from a Linear issue
+rmplan generate --issue TEAM-456 -- src/**/*.ts
+
+# Interactive mode to select and import multiple Linear issues
+rmplan import
+```
+
+**Linear Issue ID Format:**
+
+Linear issues use the format `TEAM-123` where:
+
+- `TEAM` is your Linear team identifier (uppercase letters and numbers)
+- `123` is the issue number
+
+**Limitations:**
+
+- Linear doesn't support pull requests, so PR-related rmplan commands remain GitHub-only
+- Linear issue states may differ from GitHub (e.g., "In Progress" vs "open")
+- Linear comments don't support the same rich formatting as GitHub comments
+
 ### Executors
 
 The executor system in rmplan provides a flexible way to execute plan steps with different AI models or tools. Executors handle the interaction with language models, applying edits to the codebase, and integrating with external tools.
@@ -1334,12 +1394,42 @@ rmplan generate --plan tasks/0002-refactor-it.md -- src/api/**/*.ts
 # Or read the plan from a Github issue
 rmplan generate --issue 28 -- src/api/**/*.ts
 
+# Or read the plan from a Linear issue
+rmplan generate --issue TEAM-456 -- src/api/**/*.ts
+# This creates a plan file with Linear-specific metadata:
+# - issue: ["https://linear.app/workspace/issue/TEAM-456"]
+# - Includes all Linear comments formatted with author attribution
+
 # Generate a plan for the next ready dependency of a parent plan
 rmplan generate --next-ready 100 -- src/api/**/*.ts
 
 # Import GitHub issues as stub plans for later detailed planning
 rmplan import --issue 123
 rmplan import  # Interactive mode to select multiple issues
+
+# Import Linear issues (requires issueTracker: 'linear' in config)
+# rmplan import TEAM-789
+# ✓ Connected to Linear workspace: MyCompany
+# ✓ Found Linear issue: TEAM-789 - Fix authentication bug
+# ✓ Processing issue comments (2 found)
+# ✓ Generated plan file: tasks/team-789-fix-authentication-bug.yml
+
+rmplan import https://linear.app/workspace/issue/TEAM-123
+
+# Interactive Linear import with sample output:
+# rmplan import
+# ✓ Connected to Linear workspace: MyCompany
+# ✓ Found 12 open Linear issues
+#
+# Select issues to import (Space to select, Enter to confirm):
+# ❯ ◯ TEAM-123 - Implement user authentication
+#   ◯ TEAM-124 - Add password reset functionality
+#   ◯ TEAM-125 - Create user profile page
+#   ◯ PROJ-001 - Database migration for user roles
+#
+# Selected 2 issues for import
+# ✓ Imported: tasks/team-123-implement-user-authentication.yml
+# ✓ Imported: tasks/team-124-add-password-reset-functionality.yml
 
 # Read the plan from the clipboard, convert to YAML, and write to a file
 # Note: The `generate` command will do this automatically if you want.

@@ -156,7 +156,7 @@ program
   .description('Import GitHub issues and create corresponding local plan files')
   .option('--issue <url|number>', 'Issue URL or number to import')
   .action(async (issue, options, command) => {
-    const { handleImportCommand } = await import('./commands/import.js');
+    const { handleImportCommand } = await import('./commands/import/import.js');
     await handleImportCommand(issue, options, command).catch(handleCommandError);
   });
 

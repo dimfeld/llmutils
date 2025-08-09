@@ -9,7 +9,7 @@ import * as path from 'path';
 import yaml from 'yaml';
 import * as clipboard from '../../common/clipboard.ts';
 import { getGitRoot } from '../../common/git.js';
-import { getInstructionsFromGithubIssue } from '../../common/github/issues.js';
+import { getIssueTracker } from '../../common/issue_tracker/factory.js';
 import { logSpawn } from '../../common/process.js';
 import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 import { waitForEnter } from '../../common/terminal.js';
@@ -40,9 +40,11 @@ import {
   generateClaudeCodePlanningPrompt,
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
+import { getInstructionsFromIssue, type IssueInstructionData } from '../issue_utils.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
+import { isURL } from '../context_helpers.ts';
 
 /**
  * Creates a stub plan YAML file with the given plan text in the details field
@@ -249,7 +251,7 @@ export async function handleGenerateCommand(
 
   let planText: string | undefined;
   let combinedRmprOptions: RmprOptions | null = null;
-  let issueResult: Awaited<ReturnType<typeof getInstructionsFromGithubIssue>> | undefined;
+  let issueResult: IssueInstructionData | undefined;
   let issueUrlsForExtract: string[] = [];
 
   let planFile: string | undefined = options.plan;
@@ -331,17 +333,21 @@ export async function handleGenerateCommand(
       throw new Error(`Failed to get plan from editor: ${err as Error}`);
     }
   } else if (options.issue) {
-    issueResult = await getInstructionsFromGithubIssue(options.issue);
+    // Get the issue tracker client
+    const issueTracker = await getIssueTracker(config);
+
+    // Use the generic issue utilities
+    issueResult = await getInstructionsFromIssue(issueTracker, options.issue);
     planText = issueResult.plan;
     // Extract combinedRmprOptions from the result if it exists
     combinedRmprOptions = issueResult.rmprOptions ?? null;
 
     // Construct the issue URL
-    issueUrlsForExtract.push(issueResult.issue.url);
+    issueUrlsForExtract.push(issueResult.issue.html_url);
 
     // Create stub plan file with the issue text in details
     const stubPlanResult = await createStubPlanFromText(planText, config, undefined, [
-      issueResult.issue.url,
+      issueResult.issue.html_url,
     ]);
     planFile = stubPlanResult.path;
     parsedPlan = stubPlanResult.data;
@@ -422,7 +428,10 @@ export async function handleGenerateCommand(
 
   // planText now contains the loaded plan
   const promptString = options.simple ? simplePlanPrompt(fullPlanText) : planPrompt(fullPlanText);
-  const tmpPromptPath = path.join(os.tmpdir(), `rmplan-prompt-${Date.now()}.md`);
+  const tmpDir = os.tmpdir();
+  const tmpPromptPath = path.join(tmpDir, `rmplan-prompt-${Date.now()}.md`);
+  const rmfilterOutputPath = path.join(tmpDir, `rmfilter-output-${Date.now()}.xml`);
+
   let exitRes: number | undefined;
   let wrotePrompt = false;
   try {
@@ -476,7 +485,7 @@ export async function handleGenerateCommand(
       if (!argList?.length) continue;
       // Add a separator if some options already exist
       if (allRmfilterOptions.length) allRmfilterOptions.push('--');
-      allRmfilterOptions.push(...argList);
+      allRmfilterOptions.push(...argList.flatMap((arg) => arg.split(' ')));
     }
 
     // Check if no files are provided to rmfilter
@@ -512,7 +521,9 @@ export async function handleGenerateCommand(
       const docsArgs: string[] = [];
       if (stubPlan?.data?.docs) {
         stubPlan?.data.docs.forEach((doc) => {
-          docsArgs.push('--docs', doc);
+          if (!isURL(doc)) {
+            docsArgs.push('--docs', doc);
+          }
         });
       }
 
@@ -539,6 +550,8 @@ export async function handleGenerateCommand(
         '--copy',
         '--instructions',
         `@${tmpPromptPath}`,
+        '--output',
+        rmfilterOutputPath,
       ];
       const proc = logSpawn(rmfilterFullArgs, {
         cwd: gitRoot,
@@ -564,6 +577,7 @@ export async function handleGenerateCommand(
         // Direct LLM call
         const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;
         const model = await createModel(modelId, config);
+        const rmfilterOutput = await Bun.file(rmfilterOutputPath).text();
 
         log('Generating plan using model:', modelId);
 
@@ -572,10 +586,10 @@ export async function handleGenerateCommand(
           messages: [
             {
               role: 'user',
-              content: promptString,
+              content: rmfilterOutput,
             },
           ],
-          temperature: 0.2,
+          temperature: 0.1,
         });
         input = result.text;
       } else {
@@ -615,9 +629,15 @@ export async function handleGenerateCommand(
   } finally {
     if (wrotePrompt) {
       try {
-        await Bun.file(tmpPromptPath).unlink();
+        await fs.rm(tmpPromptPath);
       } catch (e) {
         warn('Warning: failed to clean up temp file:', tmpPromptPath);
+      }
+
+      try {
+        await fs.rm(rmfilterOutputPath);
+      } catch (e) {
+        warn('Warning: failed to clean up temp file:', rmfilterOutputPath);
       }
     }
   }
