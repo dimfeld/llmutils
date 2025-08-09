@@ -24,6 +24,15 @@ export interface ExecutionPromptOptions {
 }
 
 /**
+ * Detects if the execution is in batch mode based on the task context
+ */
+function isBatchMode(task?: { title: string; description?: string }): boolean {
+  return task?.title?.includes('Batch Processing') || 
+         task?.description?.includes('batch mode') ||
+         false;
+}
+
+/**
  * Build the project or phase context section of a prompt
  */
 export function buildProjectContextSection(planData: PlanSchema): string {
@@ -174,6 +183,17 @@ export async function buildExecutionPromptWithoutSteps(
     const taskSection = buildTaskSection(task);
     if (taskSection) {
       promptParts.push(taskSection);
+    }
+
+    // Add plan file reference for batch mode
+    if (isBatchMode(task)) {
+      const gitRoot = await getGitRoot(baseDir);
+      const relativePlanPath = path.isAbsolute(planFilePath)
+        ? path.relative(gitRoot, planFilePath)
+        : planFilePath;
+      const prefix = filePathPrefix || '';
+      const planFileReference = `\n## Plan File for Task Updates\n\n- ${prefix}${relativePlanPath}: This is the plan file you must edit to mark tasks as done after completing them.\n`;
+      promptParts.push(planFileReference);
     }
 
     // Add task files if available
