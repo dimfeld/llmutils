@@ -1344,3 +1344,372 @@ phases:
     expect(runStreamingPromptSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('handleGenerateCommand with --issue flag (Issue Tracker Abstraction)', () => {
+  let tempDir: string;
+  let tasksDir: string;
+
+  // Mock functions
+  const logSpy = mock(() => {});
+  const errorSpy = mock(() => {});
+  const logSpawnSpy = mock(() => ({ exited: Promise.resolve(0) }));
+  const clipboardWriteSpy = mock(async () => {});
+
+  // Mock issue tracker clients
+  const mockGitHubClient = {
+    fetchIssue: mock(async () => ({
+      issue: {
+        id: '123',
+        number: 123,
+        title: 'GitHub Test Issue',
+        body: 'This is a GitHub test issue body',
+        htmlUrl: 'https://github.com/owner/repo/issues/123',
+        state: 'open',
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z',
+        author: { login: 'githubuser', name: 'GitHub User' },
+      },
+      comments: [],
+    })),
+    getDisplayName: mock(() => 'GitHub'),
+    getConfig: mock(() => ({ type: 'github' })),
+    parseIssueIdentifier: mock(() => ({ identifier: '123' })),
+  };
+
+  const mockLinearClient = {
+    fetchIssue: mock(async () => ({
+      issue: {
+        id: 'LIN-456',
+        number: 'LIN-456',
+        title: 'Linear Test Issue',
+        body: 'This is a Linear test issue body',
+        htmlUrl: 'https://linear.app/team/issue/LIN-456',
+        state: 'open',
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z',
+        author: { login: 'linearuser', name: 'Linear User' },
+      },
+      comments: [],
+    })),
+    getDisplayName: mock(() => 'Linear'),
+    getConfig: mock(() => ({ type: 'linear' })),
+    parseIssueIdentifier: mock(() => ({ identifier: 'LIN-456' })),
+  };
+
+  beforeEach(async () => {
+    // Clear mocks
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    logSpawnSpy.mockClear();
+    clipboardWriteSpy.mockClear();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-generate-issue-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    // Mock modules
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/clipboard.js', () => ({
+      write: clipboardWriteSpy,
+      read: mock(async () => 'clipboard content'),
+    }));
+
+    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
+      getGitRoot: async () => tempDir,
+      setDebug: () => {},
+      logSpawn: logSpawnSpy,
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: logSpawnSpy,
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDir,
+    }));
+
+    // Mock issue_utils to return different data based on the issue tracker
+    await moduleMocker.mock('../issue_utils.js', () => ({
+      getInstructionsFromIssue: mock(async (issueTracker, issueSpec) => {
+        const displayName = issueTracker.getDisplayName();
+        if (displayName === 'GitHub') {
+          return {
+            suggestedFileName: 'issue-123-github-test-issue.md',
+            issue: {
+              title: 'GitHub Test Issue',
+              html_url: 'https://github.com/owner/repo/issues/123',
+              number: 123,
+            },
+            plan: 'This is a GitHub test issue body',
+            rmprOptions: { rmfilter: ['--include', '*.ts'] },
+          };
+        } else if (displayName === 'Linear') {
+          return {
+            suggestedFileName: 'issue-lin-456-linear-test-issue.md',
+            issue: {
+              title: 'Linear Test Issue',
+              html_url: 'https://linear.app/team/issue/LIN-456',
+              number: 'LIN-456',
+            },
+            plan: 'This is a Linear test issue body',
+            rmprOptions: { rmfilter: ['--include', '*.ts'] },
+          };
+        }
+        throw new Error('Unknown issue tracker');
+      }),
+    }));
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(() => Promise.resolve([0, 1])), // Select title and body
+    }));
+
+    await moduleMocker.mock('../../common/formatting.js', () => ({
+      singleLineWithPrefix: mock((prefix, text) => `${prefix}${text}`),
+      limitLines: mock((text) => text),
+    }));
+
+    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+      parseCommandOptionsFromComment: mock(() => ({ options: { rmfilter: ['--include', '*.ts'] } })),
+      combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('should work with GitHub issue tracker via --issue flag', async () => {
+    const githubConfig = {
+      issueTracker: 'github',
+      paths: { tasks: tasksDir },
+      models: { planning: 'test-model' },
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => githubConfig,
+    }));
+
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
+    }));
+
+    const options = {
+      issue: '123',
+      extract: false,
+      parent: { opts: () => ({}) },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: { opts: () => ({}) },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(undefined, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
+    expect(getIssueTracker).toHaveBeenCalledWith(githubConfig);
+    expect(mockGitHubClient.fetchIssue).toHaveBeenCalledWith('123');
+    expect(logSpawnSpy).toHaveBeenCalled();
+  });
+
+  test('should work with Linear issue tracker via --issue flag', async () => {
+    const linearConfig = {
+      issueTracker: 'linear',
+      paths: { tasks: tasksDir },
+      models: { planning: 'test-model' },
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => linearConfig,
+    }));
+
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
+    }));
+
+    const options = {
+      issue: 'LIN-456',
+      extract: false,
+      parent: { opts: () => ({}) },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: { opts: () => ({}) },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(undefined, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
+    expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
+    expect(mockLinearClient.fetchIssue).toHaveBeenCalledWith('LIN-456');
+    expect(logSpawnSpy).toHaveBeenCalled();
+  });
+
+  test('should handle issue tracker factory errors gracefully', async () => {
+    const invalidConfig = {
+      issueTracker: 'github',
+      paths: { tasks: tasksDir },
+      models: { planning: 'test-model' },
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => invalidConfig,
+    }));
+
+    // Mock factory to throw an error (e.g., missing API key)
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() =>
+        Promise.reject(new Error('GITHUB_TOKEN environment variable is required'))
+      ),
+    }));
+
+    const options = {
+      issue: '123',
+      extract: false,
+      parent: { opts: () => ({}) },
+    };
+
+    const command = {
+      args: [],
+      parent: { opts: () => ({}) },
+    };
+
+    let thrownError;
+    try {
+      await handleGenerateCommand(undefined, options, command);
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeDefined();
+    expect((thrownError as Error).message).toBe('GITHUB_TOKEN environment variable is required');
+  });
+
+  test('should handle issue fetching errors from tracker client', async () => {
+    const githubConfig = {
+      issueTracker: 'github',
+      paths: { tasks: tasksDir },
+      models: { planning: 'test-model' },
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => githubConfig,
+    }));
+
+    // Mock client to throw error when fetching issue
+    const errorClient = {
+      ...mockGitHubClient,
+      fetchIssue: mock(() => Promise.reject(new Error('Issue not found: 999'))),
+    };
+
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(errorClient)),
+    }));
+
+    const options = {
+      issue: '999',
+      extract: false,
+      parent: { opts: () => ({}) },
+    };
+
+    const command = {
+      args: [],
+      parent: { opts: () => ({}) },
+    };
+
+    let thrownError;
+    try {
+      await handleGenerateCommand(undefined, options, command);
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeDefined();
+    expect((thrownError as Error).message).toBe('Issue not found: 999');
+  });
+
+  test('should properly pass rmprOptions from issue to rmfilter command', async () => {
+    const githubConfig = {
+      issueTracker: 'github',
+      paths: { tasks: tasksDir },
+      models: { planning: 'test-model' },
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => githubConfig,
+    }));
+
+    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
+    }));
+
+    // Mock issue_utils to return specific rmprOptions
+    await moduleMocker.mock('../issue_utils.js', () => ({
+      getInstructionsFromIssue: mock(async () => ({
+        suggestedFileName: 'issue-123-test.md',
+        issue: {
+          title: 'Test Issue',
+          html_url: 'https://github.com/owner/repo/issues/123',
+          number: 123,
+        },
+        plan: 'Test plan content',
+        rmprOptions: { rmfilter: ['--include', '*.js', '--exclude', 'node_modules/**'] },
+      })),
+    }));
+
+    const options = {
+      issue: '123',
+      extract: false,
+      parent: { opts: () => ({}) },
+    };
+
+    const command = {
+      args: ['src/**/*.ts'],
+      parent: { opts: () => ({}) },
+    };
+
+    // Update process.argv to include the files
+    const originalArgv = process.argv;
+    process.argv = [...process.argv, '--', 'src/**/*.ts'];
+
+    await handleGenerateCommand(undefined, options, command);
+
+    // Restore process.argv
+    process.argv = originalArgv;
+
+    expect(logSpawnSpy).toHaveBeenCalled();
+    
+    // Check that the rmfilter command includes the options from the issue
+    const callArgs = logSpawnSpy.mock.calls[0];
+    expect(callArgs[0]).toContain('rmfilter');
+    expect(callArgs[0]).toContain('--include');
+    expect(callArgs[0]).toContain('*.js');
+    expect(callArgs[0]).toContain('--exclude');
+    expect(callArgs[0]).toContain('node_modules/**');
+  });
+});
