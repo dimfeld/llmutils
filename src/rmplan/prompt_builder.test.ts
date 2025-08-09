@@ -323,72 +323,6 @@ describe('prompt_builder', () => {
   });
 
   describe('batch mode functionality', () => {
-    describe('isBatchMode', () => {
-      // Need to access the internal function for testing
-      const isBatchMode = (task?: { title: string; description?: string }): boolean => {
-        return (
-          task?.title?.includes('Batch Processing') ||
-          task?.description?.includes('batch mode') ||
-          false
-        );
-      };
-
-      test('detects batch mode from title containing "Batch Processing"', () => {
-        const task = { title: 'Batch Processing Tasks' };
-        expect(isBatchMode(task)).toBe(true);
-      });
-
-      test('detects batch mode from title containing "Batch Processing" case sensitive', () => {
-        const task = { title: 'batch processing tasks' };
-        expect(isBatchMode(task)).toBe(false); // Case sensitive
-      });
-
-      test('detects batch mode from description containing "batch mode"', () => {
-        const task = { title: 'Regular Task', description: 'Execute in batch mode' };
-        expect(isBatchMode(task)).toBe(true);
-      });
-
-      test('detects batch mode from description containing "batch mode" case sensitive', () => {
-        const task = { title: 'Regular Task', description: 'Execute in Batch Mode' };
-        expect(isBatchMode(task)).toBe(false); // Case sensitive
-      });
-
-      test('returns false for regular task without batch indicators', () => {
-        const task = { title: 'Regular Task', description: 'Regular description' };
-        expect(isBatchMode(task)).toBe(false);
-      });
-
-      test('returns false when task is undefined', () => {
-        expect(isBatchMode(undefined)).toBe(false);
-      });
-
-      test('returns false when task has no title or description', () => {
-        const task = {} as any;
-        expect(isBatchMode(task)).toBe(false);
-      });
-
-      test('detects batch mode when both title and description match', () => {
-        const task = {
-          title: 'Batch Processing System',
-          description: 'Run tasks in batch mode',
-        };
-        expect(isBatchMode(task)).toBe(true);
-      });
-
-      test('handles partial matches in title', () => {
-        const task = { title: 'Create Batch Processing Pipeline' };
-        expect(isBatchMode(task)).toBe(true);
-      });
-
-      test('handles partial matches in description', () => {
-        const task = {
-          title: 'System Updates',
-          description: 'Configure system to run in batch mode for efficiency',
-        };
-        expect(isBatchMode(task)).toBe(true);
-      });
-    });
-
     describe('buildExecutionPromptWithoutSteps batch mode integration', () => {
       // Local variables for this test suite
       let localTempDir: string;
@@ -435,6 +369,7 @@ describe('prompt_builder', () => {
           task: batchTask,
           filePathPrefix: '@/',
           includeCurrentPlanContext: false,
+          batchMode: true,
         });
 
         expect(result).toContain('## Plan File for Task Updates');
@@ -466,6 +401,7 @@ describe('prompt_builder', () => {
           task: regularTask,
           filePathPrefix: '@/',
           includeCurrentPlanContext: false,
+          batchMode: true,
         });
 
         expect(result).not.toContain('## Plan File for Task Updates');
@@ -534,6 +470,7 @@ describe('prompt_builder', () => {
           task: batchTask,
           filePathPrefix: '@/',
           includeCurrentPlanContext: false,
+          batchMode: true,
         });
 
         expect(result).toContain('## Plan File for Task Updates');
@@ -564,6 +501,7 @@ describe('prompt_builder', () => {
           task: batchTask,
           // filePathPrefix intentionally omitted
           includeCurrentPlanContext: false,
+          batchMode: true,
         });
 
         expect(result).toContain('## Plan File for Task Updates');
@@ -593,6 +531,7 @@ describe('prompt_builder', () => {
           task: batchTask,
           filePathPrefix: '$PROJECT/',
           includeCurrentPlanContext: false,
+          batchMode: true,
         });
 
         expect(result).toContain('## Plan File for Task Updates');
@@ -623,6 +562,7 @@ describe('prompt_builder', () => {
           task: descriptionBatchTask,
           filePathPrefix: '@/',
           includeCurrentPlanContext: false,
+          batchMode: true,
         });
 
         expect(result).toContain('## Plan File for Task Updates');
@@ -660,7 +600,7 @@ describe('prompt_builder', () => {
         };
 
         // This should not throw an error, but handle it gracefully
-        await expect(
+        expect(
           buildExecutionPromptWithoutSteps({
             executor: localMockExecutor,
             planData,
@@ -670,6 +610,7 @@ describe('prompt_builder', () => {
             task: batchTask,
             filePathPrefix: '@/',
             includeCurrentPlanContext: false,
+            batchMode: true,
           })
         ).rejects.toThrow('Not a git repository');
 
@@ -698,6 +639,7 @@ describe('prompt_builder', () => {
           task: batchTask,
           filePathPrefix: '@/',
           includeCurrentPlanContext: false,
+          batchMode: true,
         });
 
         // Verify the exact format of the plan file reference section

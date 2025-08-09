@@ -63,7 +63,7 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
       const unknownKeys: string[] = [];
 
       result.error.issues.forEach((issue) => {
-        if (issue.code === z.ZodIssueCode.unrecognized_keys) {
+        if (issue.code === 'unrecognized_keys') {
           // For unrecognized keys, combine the path with the unknown keys
           const basePath = issue.path.length > 0 ? issue.path.join('.') : '';
           issue.keys.forEach((key) => {

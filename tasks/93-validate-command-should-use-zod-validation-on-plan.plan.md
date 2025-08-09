@@ -3,7 +3,7 @@
 title: validate command should use zod validation on plan files instead of custom code
 goal: Convert plan schemas to strict mode and remove manual validation logic
 id: 93
-status: in_progress
+status: done
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-08-09T23:13:19.739Z
@@ -25,7 +25,6 @@ tasks:
       adding strict mode.
     files:
       - src/rmplan/planSchema.ts
-    done: true
     steps:
       - prompt: >
           Add `.strict()` to the main phaseSchema object (after line 60, before
@@ -73,7 +72,6 @@ tasks:
       to preserve compatibility with the rest of the command.
     files:
       - src/rmplan/commands/validate.ts
-    done: true
     steps:
       - prompt: >
           Remove the entire manual unknown key checking block (lines 61-111).
@@ -107,7 +105,6 @@ tasks:
       to extract the full path information from Zod's error issues.
     files:
       - src/rmplan/commands/validate.ts
-    done: true
     steps:
       - prompt: >
           Update the unrecognized_keys handling to include the path information

@@ -37,23 +37,27 @@ export const phaseSchema = z
       .strict()
       .optional(),
     tasks: z.array(
-      z.object({
-        title: z.string(),
-        description: z.string(),
-        files: z.array(z.string()).default([]).optional(),
-        examples: z.array(z.string()).optional(),
-        docs: z.array(z.string()).default([]).optional(),
-        done: z.boolean().default(false).optional(),
-        steps: z
-          .array(
-            z.object({
-              prompt: z.string(),
-              examples: z.array(z.string()).optional(),
-              done: z.boolean().default(false),
-            }).strict()
-          )
-          .default([]),
-      }).strict()
+      z
+        .object({
+          title: z.string(),
+          description: z.string(),
+          files: z.array(z.string()).default([]).optional(),
+          examples: z.array(z.string()).optional(),
+          docs: z.array(z.string()).default([]).optional(),
+          done: z.boolean().default(false).optional(),
+          steps: z
+            .array(
+              z
+                .object({
+                  prompt: z.string(),
+                  examples: z.array(z.string()).optional(),
+                  done: z.boolean().default(false),
+                })
+                .strict()
+            )
+            .default([]),
+        })
+        .strict()
     ),
     baseBranch: z.string().optional(),
     changedFiles: z.array(z.string()).default([]).optional(),

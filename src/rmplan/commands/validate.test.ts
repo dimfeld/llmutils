@@ -452,7 +452,10 @@ tasks: []
       }) as never;
 
       try {
-        await handleValidateCommand({ dir: tempDir, verbose: true }, { parent: { opts: () => ({}) } });
+        await handleValidateCommand(
+          { dir: tempDir, verbose: true },
+          { parent: { opts: () => ({}) } }
+        );
       } catch (err) {
         // Expected if process.exit is called
       } finally {

@@ -38,12 +38,12 @@ For each completed task, update the YAML structure by setting \`done: true\`. Fi
 \`\`\`yaml
 tasks:
   - title: "Implement user authentication"
-    description: "Add login/logout functionality"
     done: true  # Already completed
+    description: "Add login/logout functionality"
     
   - title: "Add password validation"
-    description: "Implement password strength checking"
     # Add done: true here if this has been completed
+    description: "Implement password strength checking"
 \`\`\`
 
 
