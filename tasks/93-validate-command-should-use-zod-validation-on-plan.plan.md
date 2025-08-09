@@ -24,6 +24,7 @@ tasks:
       adding strict mode.
     files:
       - src/rmplan/planSchema.ts
+    done: true
     steps:
       - prompt: >
           Add `.strict()` to the main phaseSchema object (after line 60, before
@@ -31,33 +32,33 @@ tasks:
 
           Follow the pattern from src/rmfilter/config.ts where .strict() is
           chained before .describe().
-        done: false
+        done: true
       - prompt: >
           Add `.strict()` to the nested project object schema (after line 36,
           within the project field definition).
 
           Ensure the .optional() call remains at the end of the chain.
-        done: false
+        done: true
       - prompt: >
           Add `.strict()` to the task object schema within the tasks array
           (after line 55, within the array definition).
 
           This should be added to the z.object() that defines each task's
           structure.
-        done: false
+        done: true
       - prompt: >
           Add `.strict()` to the step object schema within the steps array
           (after line 52, within the nested array).
 
           Ensure this is added to the z.object() that defines each step's
           structure.
-        done: false
+        done: true
       - prompt: >
           Verify that multiPhasePlanSchema also uses `.strict()` (after line
           76).
 
           This ensures consistency across all plan-related schemas.
-        done: false
+        done: true
   - title: Remove manual unknown key validation logic
     description: >
       In `src/rmplan/commands/validate.ts`, remove the custom unknown key
@@ -70,27 +71,28 @@ tasks:
       to preserve compatibility with the rest of the command.
     files:
       - src/rmplan/commands/validate.ts
+    done: true
     steps:
       - prompt: >
           Remove the entire manual unknown key checking block (lines 61-111).
 
           This includes all the manual checking for root keys, task keys, step
           keys, and project keys.
-        done: false
+        done: true
       - prompt: >
           Update the success case handling to simply return { filename, isValid:
           true } when result.success is true.
 
           Remove the conditional logic that was checking for unknown keys after
           successful validation.
-        done: false
+        done: true
       - prompt: >
           Ensure the error case handling (starting around line 122) remains
           intact as it already handles unrecognized_keys from Zod.
 
           The existing logic for extracting unknown keys from issue.code ===
           z.ZodIssueCode.unrecognized_keys should continue to work.
-        done: false
+        done: true
   - title: Update error formatting and reporting
     description: >
       Enhance the error handling in `validatePlanFile` to properly extract and
@@ -102,6 +104,7 @@ tasks:
       to extract the full path information from Zod's error issues.
     files:
       - src/rmplan/commands/validate.ts
+    done: true
     steps:
       - prompt: >
           Update the unrecognized_keys handling to include the path information
@@ -110,21 +113,21 @@ tasks:
           When issue.code === z.ZodIssueCode.unrecognized_keys, combine the
           issue.path with issue.keys to create full paths like
           "tasks[0].unknownKey".
-        done: false
+        done: true
       - prompt: >
           Ensure the error message formatting preserves the existing structure
           with proper indentation and chalk colors.
 
           The unknownKeys array should contain full paths to make it clear where
           the unknown keys are located.
-        done: false
+        done: true
       - prompt: >
           Verify that the ValidationResult interface and return structure remain
           unchanged to maintain compatibility.
 
           The errors and unknownKeys arrays should continue to be populated as
           before.
-        done: false
+        done: true
   - title: Test validation with sample files
     description: >
       Create test cases or manually verify that the strict validation works
@@ -144,44 +147,44 @@ tasks:
 
           Set up beforeEach and afterEach hooks to create and clean up temporary
           directories, following the pattern from plan_file_validation.test.ts.
-        done: false
+        done: true
       - prompt: >
           Add a test case for valid plan files that verifies they pass
           validation without errors.
 
           Create a valid plan with all standard fields and ensure isValid is
           true.
-        done: false
+        done: true
       - prompt: >
           Add test cases for unknown keys at the root level.
 
           Create a plan with an extra field like "unknownField" at the root and
           verify it's detected with the correct path.
-        done: false
+        done: true
       - prompt: >
           Add test cases for unknown keys in tasks array.
 
           Create plans with unknown fields in task objects and verify the error
           messages show paths like "tasks[0].unknownField".
-        done: false
+        done: true
       - prompt: >
           Add test cases for unknown keys in steps and project sections.
 
           Verify that nested unknown keys are properly detected with full paths
           like "tasks[0].steps[1].unknownField" and "project.unknownField".
-        done: false
+        done: true
       - prompt: >
           Add a test for frontmatter format validation.
 
           Create a plan file with YAML frontmatter delimited by --- and verify
           it's parsed and validated correctly.
-        done: false
+        done: true
       - prompt: >
           Add an integration test that runs the actual validate command and
           checks the exit code.
 
           Verify that invalid files cause process.exit(1) to be called.
-        done: false
+        done: true
   - title: Update existing tests if needed
     description: >
       Review and update any existing tests for the validate command to ensure
@@ -201,27 +204,27 @@ tasks:
 
           Update any test data that might have extra fields that would now be
           rejected by strict validation.
-        done: false
+        done: true
       - prompt: >
           Check process_markdown.test.ts for any tests that validate plan
           schemas.
 
           Ensure test data conforms to the strict schema requirements.
-        done: false
+        done: true
       - prompt: >
           Run the full rmplan test suite with `bun test src/rmplan` to identify
           any failing tests.
 
           Fix any tests that fail due to the stricter validation by removing
           unknown fields from test data.
-        done: false
+        done: true
       - prompt: >
           Add a specific test case to validate.test.ts that verifies the command
           returns exit code 1 for invalid files.
 
           Mock process.exit if needed to capture the exit code without actually
           terminating the test process.
-        done: false
+        done: true
 ---
 
 The validate command currently uses Zod for basic schema validation but then manually checks for unknown keys in a custom implementation spanning 50+ lines of code. By converting the plan schemas to use Zod's `.strict()` mode, we can eliminate this custom logic while maintaining the same validation behavior. This approach is already used successfully in other parts of the codebase (e.g., rmfilter config schemas).
