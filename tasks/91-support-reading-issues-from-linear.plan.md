@@ -13,7 +13,7 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T01:16:37.066Z
+updatedAt: 2025-08-09T01:24:01.366Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
     description: >
@@ -37,13 +37,13 @@ tasks:
 
           Set the default value to 'github' and add a description explaining it
           controls which issue tracking service to use.
-        done: false
+        done: true
       - prompt: >
           Create a test file configSchema.test.ts that validates the new
           issueTracker field accepts both 'github' and 'linear' values,
 
           defaults to 'github' when not specified, and rejects invalid values.
-        done: false
+        done: true
   - title: Define Generic Issue Tracker Data Structures
     description: >
       Create a set of generic interfaces for issues and comments to decouple the
@@ -332,6 +332,13 @@ tasks:
 
           including sample output to help users understand the feature.
         done: false
+changedFiles:
+  - package.json
+  - src/rmfilter/rmfilter.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/configLoader.test.ts
+  - src/rmplan/configSchema.test.ts
+  - src/rmplan/configSchema.ts
 rmfilter:
   - src/rmplan
   - src/common/github*

@@ -56,17 +56,17 @@ describe('configSchema', () => {
   describe('getDefaultConfig', () => {
     test('should include issueTracker with default value "github"', () => {
       const defaultConfig = getDefaultConfig();
-      
+
       expect(defaultConfig).toHaveProperty('issueTracker');
       expect(defaultConfig.issueTracker).toBe('github');
     });
 
     test('should return a valid configuration according to schema', () => {
       const defaultConfig = getDefaultConfig();
-      
+
       // Should not throw when validating against schema
       expect(() => rmplanConfigSchema.parse(defaultConfig)).not.toThrow();
-      
+
       const validatedConfig = rmplanConfigSchema.parse(defaultConfig);
       expect(validatedConfig.issueTracker).toBe('github');
     });
