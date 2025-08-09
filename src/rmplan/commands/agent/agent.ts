@@ -5,7 +5,7 @@ import { select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import * as path from 'path';
 import { getGitRoot } from '../../../common/git.js';
-import { commitAll, logSpawn } from '../../../common/process.js';
+import { logSpawn } from '../../../common/process.js';
 import {
   boldMarkdownHeaders,
   closeLogFile,
@@ -16,34 +16,28 @@ import {
 } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
-import { resolveTasksDir, type RmplanConfig } from '../../configSchema.js';
+import { resolveTasksDir } from '../../configSchema.js';
+import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
 } from '../../executors/index.js';
-import type { Executor, ExecutorCommonOptions } from '../../executors/types.js';
-import {
-  clearPlanCache,
-  readAllPlans,
-  readPlanFile,
-  resolvePlanFile,
-  setPlanStatus,
-  writePlanFile,
-} from '../../plans.js';
-import { findNextActionableItem, getAllIncompleteTasks } from '../../plans/find_next.js';
+import type { ExecutorCommonOptions } from '../../executors/types.js';
+import { findNextPlan, readPlanFile, resolvePlanFile, writePlanFile } from '../../plans.js';
+import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { preparePhase } from '../../plans/prepare_phase.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
-import type { PlanSchema } from '../../planSchema.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { WorkspaceAutoSelector } from '../../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../../workspace/workspace_lock.js';
 import { createWorkspace } from '../../workspace/workspace_manager.js';
 import { findWorkspacesByTaskId } from '../../workspace/workspace_tracker.js';
-import { findNextPlan } from '../../plans.js';
-import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import { findNextReadyDependency } from '../find_next_dependency.js';
+import { executeBatchMode } from './batch_mode.js';
+import { markParentInProgress } from './parent_plans.js';
+import { executeStubPlan } from './stub_plan.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -673,336 +667,5 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   } finally {
     await closeLogFile();
-  }
-}
-
-async function executeStubPlan({
-  config,
-  baseDir,
-  planFilePath,
-  planData,
-  executor,
-  commit,
-  dryRun = false,
-}: {
-  config: RmplanConfig;
-  baseDir: string;
-  planFilePath: string;
-  planData: PlanSchema;
-  executor: Executor;
-  commit: boolean;
-  dryRun?: boolean;
-}) {
-  // Update plan status to in_progress
-  planData.status = 'in_progress';
-  planData.updatedAt = new Date().toISOString();
-  await writePlanFile(planFilePath, planData);
-
-  // If this plan has a parent, mark it as in_progress too
-  if (planData.parent) {
-    await markParentInProgress(planData.parent, config);
-  }
-
-  // Build execution prompt using the unified function
-  const directPrompt = await buildExecutionPromptWithoutSteps({
-    executor,
-    planData,
-    planFilePath,
-    baseDir,
-    config,
-    filePathPrefix: executor.filePathPrefix,
-    includeCurrentPlanContext: true,
-  });
-
-  if (!directPrompt.trim()) {
-    throw new Error('Plan has no goal or details to execute directly');
-  }
-
-  log(boldMarkdownHeaders('\n## Execution\n'));
-  log('Using combined goal and details as prompt:');
-  log(directPrompt);
-
-  if (dryRun) {
-    log('\n--dry-run mode: Would execute the above prompt');
-    return;
-  }
-
-  // Execute the consolidated prompt
-  await executor.execute(directPrompt, {
-    planId: planData.id?.toString() ?? 'unknown',
-    planTitle: planData.title ?? 'Untitled Plan',
-    planFilePath: planFilePath,
-  });
-
-  // Execute post-apply commands if configured and no error occurred
-  if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-    log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
-    for (const commandConfig of config.postApplyCommands) {
-      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
-      if (!commandSucceeded) {
-        throw new Error(`Required command "${commandConfig.title}" failed`);
-      }
-    }
-  }
-
-  // Mark plan as complete only if no error occurred
-  await setPlanStatus(planFilePath, 'done');
-  log('Plan executed directly and marked as complete!');
-
-  // Check if parent plan should be marked done
-  if (planData.parent) {
-    await checkAndMarkParentDone(planData.parent, config, baseDir);
-  }
-
-  // Check if commit was requested
-  if (commit) {
-    const commitMessage = [planData.title, planData.goal, planData.details]
-      .filter(Boolean)
-      .join('\n\n');
-    const exitCode = await commitAll(commitMessage, baseDir);
-    if (exitCode === 0) {
-      log('Changes committed successfully');
-    } else {
-      throw new Error('Commit failed');
-    }
-  }
-}
-
-async function executeBatchMode({
-  currentPlanFile,
-  config,
-  executor,
-  baseDir,
-  dryRun = false,
-}: {
-  currentPlanFile: string;
-  config: RmplanConfig;
-  executor: Executor;
-  baseDir: string;
-  dryRun?: boolean;
-}) {
-  log('Starting batch mode execution:', currentPlanFile);
-  try {
-    let hasError = false;
-
-    // Batch mode: continue until no incomplete tasks remain
-    while (true) {
-      // Read the current plan file to get updated state
-      const planData = await readPlanFile(currentPlanFile);
-
-      // Check if status needs to be updated from 'pending' to 'in progress'
-      if (planData.status === 'pending') {
-        planData.status = 'in_progress';
-        planData.updatedAt = new Date().toISOString();
-        await writePlanFile(currentPlanFile, planData);
-
-        // If this plan has a parent, mark it as in_progress too
-        if (planData.parent) {
-          await markParentInProgress(planData.parent, config);
-        }
-      }
-
-      // Get all incomplete tasks
-      const incompleteTasks = getAllIncompleteTasks(planData);
-
-      // If no incomplete tasks remain, exit the loop
-      if (incompleteTasks.length === 0) {
-        log('Batch mode complete: No incomplete tasks remaining');
-        break;
-      }
-
-      log(`Batch mode: Processing ${incompleteTasks.length} incomplete task(s)`);
-
-      // Format all incomplete tasks into a single prompt for the executor
-      const taskDescriptions = incompleteTasks
-        .map((taskResult) => {
-          const { taskIndex, task } = taskResult;
-          let taskDescription = `Task ${taskIndex + 1}: ${task.title}`;
-          if (task.description) {
-            taskDescription += `\nDescription: ${task.description}`;
-          }
-          if (task.steps && task.steps.length > 0) {
-            taskDescription += `\nSteps:`;
-            task.steps.forEach((step, stepIdx) => {
-              const status = step.done ? '[DONE]' : '[TODO]';
-              taskDescription += `\n  ${stepIdx + 1}. ${status} ${step.prompt}`;
-            });
-          }
-          if (task.files && task.files.length > 0) {
-            taskDescription += `\nFiles: ${task.files.join(', ')}`;
-          }
-          return taskDescription;
-        })
-        .join('\n\n');
-
-      // Build the batch prompt that includes the plan context and all incomplete task details
-      const batchPrompt = await buildExecutionPromptWithoutSteps({
-        executor,
-        planData,
-        planFilePath: currentPlanFile,
-        baseDir,
-        config,
-        task: {
-          title: `${incompleteTasks.length} Tasks`,
-          description: `Please select and complete a logical subset of the following incomplete tasks that makes sense to work on together:\n\n${taskDescriptions}\n\nAfter completing your work, mark the completed tasks as 'done: true' in the plan file at: ${currentPlanFile}. Find the tasks in the file by title.`,
-          files: [], // Files will be included via plan context
-        },
-        filePathPrefix: executor.filePathPrefix,
-        includeCurrentPlanContext: true,
-        batchMode: true,
-      });
-
-      if (dryRun) {
-        log(boldMarkdownHeaders('\n## Batch Mode Dry Run - Generated Prompt\n'));
-        log(batchPrompt);
-        log('\n--dry-run mode: Would execute the above prompt');
-        break;
-      }
-
-      try {
-        log(boldMarkdownHeaders('\n## Batch Mode Execution\n'));
-        await executor.execute(batchPrompt, {
-          planId: planData.id?.toString() ?? 'unknown',
-          planTitle: planData.title ?? 'Untitled Plan',
-          planFilePath: currentPlanFile,
-          batchMode: true,
-        });
-      } catch (err) {
-        error('Batch execution failed:', err);
-        hasError = true;
-        break;
-      }
-
-      // Run post-apply commands if configured
-      if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-        log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
-        for (const commandConfig of config.postApplyCommands) {
-          const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
-          if (!commandSucceeded) {
-            error(`Batch mode stopping because required command "${commandConfig.title}" failed.`);
-            hasError = true;
-            break;
-          }
-        }
-        if (hasError) {
-          break;
-        }
-      }
-
-      // After execution, re-read the plan file to get the updated state
-      const updatedPlanData = await readPlanFile(currentPlanFile);
-      const remainingIncompleteTasks = getAllIncompleteTasks(updatedPlanData);
-
-      log(
-        `Batch iteration complete. Remaining incomplete tasks: ${remainingIncompleteTasks.length}`
-      );
-
-      // If all tasks are now marked done, update the plan status to 'done'
-      if (remainingIncompleteTasks.length === 0) {
-        log('Batch mode: All tasks completed, marking plan as done');
-        await setPlanStatus(currentPlanFile, 'done');
-
-        // Handle parent plan updates similar to existing logic
-        if (updatedPlanData.parent) {
-          await checkAndMarkParentDone(updatedPlanData.parent, config, baseDir);
-        }
-        break;
-      }
-    }
-
-    if (hasError) {
-      throw new Error('Batch mode stopped due to error.');
-    }
-  } finally {
-    await closeLogFile();
-  }
-}
-
-/**
- * Marks a parent plan as in_progress if it's currently pending.
- * Recursively marks all ancestor plans as in_progress as well.
- */
-async function markParentInProgress(parentId: number, config: RmplanConfig): Promise<void> {
-  const tasksDir = await resolveTasksDir(config);
-  // Force re-read to get updated statuses
-  clearPlanCache();
-  const { plans: allPlans } = await readAllPlans(tasksDir);
-
-  // Get the parent plan
-  const parentPlan = allPlans.get(parentId);
-  if (!parentPlan) {
-    warn(`Parent plan with ID ${parentId} not found`);
-    return;
-  }
-
-  // Only update if parent is still pending
-  if (parentPlan.status === 'pending') {
-    parentPlan.status = 'in_progress';
-    parentPlan.updatedAt = new Date().toISOString();
-    await writePlanFile(parentPlan.filename, parentPlan);
-    log(chalk.yellow(`↻ Parent plan "${parentPlan.title}" marked as in_progress`));
-
-    // Recursively mark parent's parent if it exists
-    if (parentPlan.parent) {
-      await markParentInProgress(parentPlan.parent, config);
-    }
-  }
-}
-
-/**
- * Checks if a parent plan's children are all complete and marks the parent as done if so.
- * This function is duplicated here to avoid circular dependencies with actions.ts
- */
-async function checkAndMarkParentDone(
-  parentId: number,
-  config: RmplanConfig,
-  baseDir?: string
-): Promise<void> {
-  const tasksDir = await resolveTasksDir(config);
-  // Force re-read to get updated statuses
-  clearPlanCache();
-  const { plans: allPlans } = await readAllPlans(tasksDir);
-
-  // Get the parent plan
-  const parentPlan = allPlans.get(parentId);
-  if (!parentPlan) {
-    warn(`Parent plan with ID ${parentId} not found`);
-    return;
-  }
-
-  // If parent is already done, nothing to do
-  if (parentPlan.status === 'done') {
-    return;
-  }
-
-  // Find all children of this parent
-  const children = Array.from(allPlans.values()).filter((plan) => plan.parent === parentId);
-
-  // Check if all children are done
-  const allChildrenDone = children.every((child) => child.status === 'done');
-
-  if (allChildrenDone && children.length > 0) {
-    // Mark parent as done
-    parentPlan.status = 'done';
-    parentPlan.updatedAt = new Date().toISOString();
-
-    // Update changed files from children
-    const allChangedFiles = new Set<string>();
-    for (const child of children) {
-      if (child.changedFiles) {
-        child.changedFiles.forEach((file) => allChangedFiles.add(file));
-      }
-    }
-    if (allChangedFiles.size > 0) {
-      parentPlan.changedFiles = Array.from(allChangedFiles);
-    }
-
-    await writePlanFile(parentPlan.filename, parentPlan);
-    log(chalk.green(`✓ Parent plan "${parentPlan.title}" marked as complete (all children done)`));
-
-    // Recursively check if this parent has a parent
-    if (parentPlan.parent) {
-      await checkAndMarkParentDone(parentPlan.parent, config, baseDir);
-    }
   }
 }
