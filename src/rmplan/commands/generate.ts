@@ -485,7 +485,7 @@ export async function handleGenerateCommand(
       if (!argList?.length) continue;
       // Add a separator if some options already exist
       if (allRmfilterOptions.length) allRmfilterOptions.push('--');
-      allRmfilterOptions.push(...argList);
+      allRmfilterOptions.push(...argList.flatMap((arg) => arg.split(' ')));
     }
 
     // Check if no files are provided to rmfilter

@@ -379,7 +379,10 @@ async function gatherPhaseGenerationContext(
       )
     ).filter(Boolean) as string[];
 
-    const rmfilterArgsFromPlan = [...(currentPhaseData.rmfilter || []), ...(rmfilterArgs || [])];
+    const rmfilterArgsFromPlan = [
+      ...(currentPhaseData.rmfilter?.flatMap((arg) => arg.split(' ')) || []),
+      ...(rmfilterArgs || []),
+    ];
 
     if (changedFilesExist.length > 0) {
       rmfilterArgsFromPlan.push('--', ...changedFilesExist);
