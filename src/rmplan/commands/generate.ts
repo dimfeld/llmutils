@@ -335,7 +335,7 @@ export async function handleGenerateCommand(
   } else if (options.issue) {
     // Get the issue tracker client
     const issueTracker = await getIssueTracker(config);
-    
+
     // Use the generic issue utilities
     issueResult = await getInstructionsFromIssue(issueTracker, options.issue);
     planText = issueResult.plan;

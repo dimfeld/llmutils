@@ -13,7 +13,7 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T02:18:35.518Z
+updatedAt: 2025-08-09T02:27:55.876Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
     description: >
@@ -227,34 +227,34 @@ tasks:
 
           Replace fetchIssueAndComments and fetchAllOpenIssues calls with the
           generic tracker methods.
-        done: false
+        done: true
       - prompt: >
           Modify the issue selection logic in import.ts to work with the generic
           IssueData interface,
 
           ensuring the interactive selection works for both GitHub and Linear
           issues.
-        done: false
+        done: true
       - prompt: >
           Update issue_utils.ts to use the generic IssueData type instead of
           GitHub-specific types,
 
           adjusting the createStubPlanFromIssue function to work with the
           abstracted data.
-        done: false
+        done: true
       - prompt: >
           Update generate.ts to use getIssueTracker for fetching issues when the
           --issue flag is used,
 
           maintaining compatibility with the existing RmprOptions parsing.
-        done: false
+        done: true
       - prompt: >
           Update existing import.test.ts to test both GitHub and Linear
           implementations,
 
           using the ModuleMocker to mock the factory and verify both paths work
           correctly.
-        done: false
+        done: true
   - title: Add Comprehensive Tests for Linear Integration
     description: >
       Create new tests to validate the Linear API fetching logic and ensure it
@@ -347,6 +347,7 @@ changedFiles:
   - src/common/linear_client.test.ts
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
+  - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/import.integration.test.ts
   - src/rmplan/commands/import.test.ts

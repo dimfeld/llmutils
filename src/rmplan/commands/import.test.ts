@@ -97,35 +97,39 @@ const mockPlansResult = {
 
 // Mock Linear issue tracker client
 const mockLinearIssueTracker: IssueTrackerClient = {
-  fetchIssue: mock(() => Promise.resolve({
-    issue: {
-      id: 'TEAM-123',
-      number: 'TEAM-123',
-      title: 'Linear Issue',
-      body: 'This is a Linear issue description',
-      htmlUrl: 'https://linear.app/team/issue/TEAM-123',
-      state: 'open',
-      createdAt: '2023-01-01T00:00:00Z',
-      updatedAt: '2023-01-01T00:00:00Z',
-      author: {
-        login: 'linearuser',
-        name: 'Linear User',
+  fetchIssue: mock(() =>
+    Promise.resolve({
+      issue: {
+        id: 'TEAM-123',
+        number: 'TEAM-123',
+        title: 'Linear Issue',
+        body: 'This is a Linear issue description',
+        htmlUrl: 'https://linear.app/team/issue/TEAM-123',
+        state: 'open',
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z',
+        author: {
+          login: 'linearuser',
+          name: 'Linear User',
+        },
       },
-    },
-    comments: [],
-  })),
-  fetchAllOpenIssues: mock(() => Promise.resolve([
-    {
-      id: 'TEAM-100',
-      number: 'TEAM-100',
-      title: 'Linear Issue 100',
-      htmlUrl: 'https://linear.app/team/issue/TEAM-100',
-      state: 'open',
-      createdAt: '2023-01-01T00:00:00Z',
-      updatedAt: '2023-01-01T00:00:00Z',
-      author: { login: 'linearuser', name: 'Linear User' },
-    },
-  ])),
+      comments: [],
+    })
+  ),
+  fetchAllOpenIssues: mock(() =>
+    Promise.resolve([
+      {
+        id: 'TEAM-100',
+        number: 'TEAM-100',
+        title: 'Linear Issue 100',
+        htmlUrl: 'https://linear.app/team/issue/TEAM-100',
+        state: 'open',
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z',
+        author: { login: 'linearuser', name: 'Linear User' },
+      },
+    ])
+  ),
   parseIssueIdentifier: mock(() => ({ identifier: 'TEAM-123' })),
   getDisplayName: mock(() => 'Linear'),
   getConfig: mock(() => ({ type: 'linear' })),
@@ -742,7 +746,8 @@ describe('handleImportCommand', () => {
       ];
 
       for (const config of configs) {
-        const expectedTracker = config.issueTracker === 'github' ? mockIssueTracker : mockLinearIssueTracker;
+        const expectedTracker =
+          config.issueTracker === 'github' ? mockIssueTracker : mockLinearIssueTracker;
 
         await moduleMocker.mock('../configLoader.js', () => ({
           loadEffectiveConfig: mock(() => Promise.resolve(config)),

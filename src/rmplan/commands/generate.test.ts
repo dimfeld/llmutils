@@ -1475,7 +1475,9 @@ describe('handleGenerateCommand with --issue flag (Issue Tracker Abstraction)', 
     }));
 
     await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
-      parseCommandOptionsFromComment: mock(() => ({ options: { rmfilter: ['--include', '*.ts'] } })),
+      parseCommandOptionsFromComment: mock(() => ({
+        options: { rmfilter: ['--include', '*.ts'] },
+      })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));
   });
@@ -1703,7 +1705,7 @@ describe('handleGenerateCommand with --issue flag (Issue Tracker Abstraction)', 
     process.argv = originalArgv;
 
     expect(logSpawnSpy).toHaveBeenCalled();
-    
+
     // Check that the rmfilter command includes the options from the issue
     const callArgs = logSpawnSpy.mock.calls[0];
     expect(callArgs[0]).toContain('rmfilter');
