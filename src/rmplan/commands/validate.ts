@@ -71,7 +71,15 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
       // Check for unknown keys in tasks
       if (parsed.tasks && Array.isArray(parsed.tasks)) {
         parsed.tasks.forEach((task: any, taskIndex: number) => {
-          const knownTaskKeys = ['title', 'description', 'files', 'examples', 'docs', 'steps'];
+          const knownTaskKeys = [
+            'title',
+            'description',
+            'files',
+            'examples',
+            'docs',
+            'steps',
+            'done',
+          ];
           for (const key in task) {
             if (!knownTaskKeys.includes(key)) {
               unknownKeys.push(`tasks[${taskIndex}].${key}`);
