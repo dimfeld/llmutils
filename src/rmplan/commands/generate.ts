@@ -43,6 +43,7 @@ import {
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
+import { isURL } from '../context_helpers.ts';
 
 /**
  * Creates a stub plan YAML file with the given plan text in the details field
@@ -422,7 +423,10 @@ export async function handleGenerateCommand(
 
   // planText now contains the loaded plan
   const promptString = options.simple ? simplePlanPrompt(fullPlanText) : planPrompt(fullPlanText);
-  const tmpPromptPath = path.join(os.tmpdir(), `rmplan-prompt-${Date.now()}.md`);
+  const tmpDir = os.tmpdir();
+  const tmpPromptPath = path.join(tmpDir, `rmplan-prompt-${Date.now()}.md`);
+  const rmfilterOutputPath = path.join(tmpDir, `rmfilter-output-${Date.now()}.xml`);
+
   let exitRes: number | undefined;
   let wrotePrompt = false;
   try {
@@ -512,7 +516,9 @@ export async function handleGenerateCommand(
       const docsArgs: string[] = [];
       if (stubPlan?.data?.docs) {
         stubPlan?.data.docs.forEach((doc) => {
-          docsArgs.push('--docs', doc);
+          if (!isURL(doc)) {
+            docsArgs.push('--docs', doc);
+          }
         });
       }
 
@@ -539,6 +545,8 @@ export async function handleGenerateCommand(
         '--copy',
         '--instructions',
         `@${tmpPromptPath}`,
+        '--output',
+        rmfilterOutputPath,
       ];
       const proc = logSpawn(rmfilterFullArgs, {
         cwd: gitRoot,
@@ -564,6 +572,7 @@ export async function handleGenerateCommand(
         // Direct LLM call
         const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;
         const model = await createModel(modelId, config);
+        const rmfilterOutput = await Bun.file(rmfilterOutputPath).text();
 
         log('Generating plan using model:', modelId);
 
@@ -572,10 +581,10 @@ export async function handleGenerateCommand(
           messages: [
             {
               role: 'user',
-              content: promptString,
+              content: rmfilterOutput,
             },
           ],
-          temperature: 0.2,
+          temperature: 0.1,
         });
         input = result.text;
       } else {
@@ -615,9 +624,15 @@ export async function handleGenerateCommand(
   } finally {
     if (wrotePrompt) {
       try {
-        await Bun.file(tmpPromptPath).unlink();
+        await fs.rm(tmpPromptPath);
       } catch (e) {
         warn('Warning: failed to clean up temp file:', tmpPromptPath);
+      }
+
+      try {
+        await fs.rm(rmfilterOutputPath);
+      } catch (e) {
+        warn('Warning: failed to clean up temp file:', rmfilterOutputPath);
       }
     }
   }
