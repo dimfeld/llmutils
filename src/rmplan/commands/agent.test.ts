@@ -684,7 +684,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
       loadEffectiveConfig: mock(async () => ({
         paths: { tasks: tasksDir },
         models: {},
-        postApplyCommands: []
+        postApplyCommands: [],
       })),
     }));
 
@@ -1117,7 +1117,10 @@ class TestBatchExecutor {
   private taskCompletionStrategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once';
   private tasksPerIteration: number = 2;
 
-  constructor(strategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once', tasksPerIteration: number = 2) {
+  constructor(
+    strategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once',
+    tasksPerIteration: number = 2
+  ) {
     this.taskCompletionStrategy = strategy;
     this.tasksPerIteration = tasksPerIteration;
   }
@@ -1140,7 +1143,7 @@ class TestBatchExecutor {
 
     if (this.taskCompletionStrategy === 'all-at-once') {
       // Mark all incomplete tasks as done
-      plan.tasks.forEach(task => {
+      plan.tasks.forEach((task) => {
         if (!task.done) {
           task.done = true;
         }
@@ -1202,11 +1205,9 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
           ],
         },
         {
-          title: 'Task 3: Add Authentication', 
+          title: 'Task 3: Add Authentication',
           description: 'Implement user authentication and authorization',
-          steps: [
-            { title: 'Set up auth', prompt: 'Implement authentication system' },
-          ],
+          steps: [{ title: 'Set up auth', prompt: 'Implement authentication system' }],
         },
         {
           title: 'Task 4: Write Tests',
@@ -1247,7 +1248,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
       loadEffectiveConfig: mock(async () => ({
         paths: { tasks: tasksDir },
         models: {},
-        postApplyCommands: []
+        postApplyCommands: [],
       })),
     }));
 
@@ -1313,7 +1314,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
 
     // All tasks should be marked as done
     expect(updatedPlan.tasks).toHaveLength(4);
-    expect(updatedPlan.tasks.every(task => task.done === true)).toBe(true);
+    expect(updatedPlan.tasks.every((task) => task.done === true)).toBe(true);
 
     // Plan status should be updated to done
     expect(updatedPlan.status).toBe('done');
@@ -1341,7 +1342,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
     // Verify all tasks are eventually completed using real plan reading
     const { readPlanFile } = await import('../plans.js');
     const finalPlan = await readPlanFile(batchPlanFile);
-    expect(finalPlan.tasks.every(task => task.done === true)).toBe(true);
+    expect(finalPlan.tasks.every((task) => task.done === true)).toBe(true);
     expect(finalPlan.status).toBe('done');
   });
 
@@ -1364,7 +1365,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
 
     // Verify plan file structure is maintained using already imported function
     const unchangedPlan = await readPlanFile(batchPlanFile);
-    expect(unchangedPlan.tasks.every(task => task.done === true)).toBe(true);
+    expect(unchangedPlan.tasks.every((task) => task.done === true)).toBe(true);
   });
 
   test('batch mode handles executor failure and maintains plan file integrity', async () => {
@@ -1390,7 +1391,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
     // Verify plan file was not corrupted and tasks remain incomplete using real plan reading
     const { readPlanFile } = await import('../plans.js');
     const plan = await readPlanFile(batchPlanFile);
-    expect(plan.tasks.every(task => !task.done)).toBe(true);
+    expect(plan.tasks.every((task) => !task.done)).toBe(true);
   });
 
   test('batch mode correctly updates plan status from pending to in_progress to done', async () => {
@@ -1437,16 +1438,12 @@ describe('rmplanAgent - Batch Tasks Mode Integration', () => {
         {
           title: 'Task 1: Simple Implementation',
           description: 'First implementation task',
-          steps: [
-            { title: 'Setup', prompt: 'Set up the basic structure' },
-          ],
+          steps: [{ title: 'Setup', prompt: 'Set up the basic structure' }],
         },
         {
           title: 'Task 2: Simple Testing',
           description: 'Second testing task',
-          steps: [
-            { title: 'Add tests', prompt: 'Add basic tests' },
-          ],
+          steps: [{ title: 'Add tests', prompt: 'Add basic tests' }],
         },
       ],
       filename: batchPlanFile,
@@ -1470,7 +1467,7 @@ describe('rmplanAgent - Batch Tasks Mode Integration', () => {
       loadEffectiveConfig: mock(async () => ({
         paths: { tasks: tasksDir },
         models: {},
-        postApplyCommands: []
+        postApplyCommands: [],
       })),
     }));
 
@@ -1536,17 +1533,17 @@ describe('rmplanAgent - Batch Tasks Mode Integration', () => {
     const srcDir = path.join(tempDir, 'src');
     await fs.mkdir(srcDir, { recursive: true });
     await fs.writeFile(path.join(srcDir, 'main.js'), 'console.log("Hello world");');
-    
+
     const options = {
       batchTasks: true,
       'no-log': true,
       nonInteractive: true,
-      executor: 'copy-only'
+      executor: 'copy-only',
     };
     const globalCliOptions = {
       config: {
-        paths: { tasks: path.join(tempDir, 'tasks') }
-      }
+        paths: { tasks: path.join(tempDir, 'tasks') },
+      },
     };
 
     // This should work end-to-end with minimal mocking

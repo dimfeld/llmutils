@@ -10,7 +10,7 @@ dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T04:35:18.909Z
+updatedAt: 2025-08-09T05:10:30.530Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
     description: >
@@ -253,24 +253,24 @@ tasks:
           Add a new test suite 'rmplanAgent - Batch Tasks Mode' with setup that
           creates temporary directories and plan files with multiple incomplete
           tasks. Use the existing test patterns and ModuleMocker setup.
-        done: false
+        done: true
       - prompt: >
           Create a test that verifies batch mode executes when --batch-tasks
           flag is true, mocking the executor to simulate updating specific tasks
           to done: true in the plan file, and confirming the loop continues
           until all tasks are complete.
-        done: false
+        done: true
       - prompt: >
           Add a test for batch mode completing in multiple iterations - where
           the executor marks only some tasks as done in each iteration,
           requiring multiple loop cycles to complete all tasks.
-        done: false
+        done: true
       - prompt: >
           Create tests for edge cases: all tasks already complete (should exit
           immediately), executor fails to update plan file (should handle error
           gracefully), and verification that parent plan status updates work
           correctly in batch mode.
-        done: false
+        done: true
   - title: "Task 8: Document the new `--batch-tasks` feature"
     description: >
       Create documentation for the new --batch-tasks feature that explains its
@@ -330,6 +330,7 @@ changedFiles:
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
   - src/rmplan/batch_mode_integration.test.ts
+  - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/agent_batch_mode.test.ts
   - src/rmplan/commands/batch_tasks.test.ts
@@ -364,6 +365,8 @@ changedFiles:
   - src/rmplan/prompt_builder.test.ts
   - src/rmplan/prompt_builder.ts
   - src/rmplan/rmplan.ts
+  - test.yml
+  - test_yaml.js
 rmfilter:
   - src/rmplan/commands/agent.ts
   - src/rmplan/executors
