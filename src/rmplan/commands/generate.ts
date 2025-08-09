@@ -9,7 +9,7 @@ import * as path from 'path';
 import yaml from 'yaml';
 import * as clipboard from '../../common/clipboard.ts';
 import { getGitRoot } from '../../common/git.js';
-import { getInstructionsFromGithubIssue } from '../../common/github/issues.js';
+import { getIssueTracker } from '../../common/issue_tracker/factory.js';
 import { logSpawn } from '../../common/process.js';
 import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 import { waitForEnter } from '../../common/terminal.js';
@@ -40,6 +40,7 @@ import {
   generateClaudeCodePlanningPrompt,
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
+import { getInstructionsFromIssue, type IssueInstructionData } from '../issue_utils.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
@@ -250,7 +251,7 @@ export async function handleGenerateCommand(
 
   let planText: string | undefined;
   let combinedRmprOptions: RmprOptions | null = null;
-  let issueResult: Awaited<ReturnType<typeof getInstructionsFromGithubIssue>> | undefined;
+  let issueResult: IssueInstructionData | undefined;
   let issueUrlsForExtract: string[] = [];
 
   let planFile: string | undefined = options.plan;
@@ -332,17 +333,21 @@ export async function handleGenerateCommand(
       throw new Error(`Failed to get plan from editor: ${err as Error}`);
     }
   } else if (options.issue) {
-    issueResult = await getInstructionsFromGithubIssue(options.issue);
+    // Get the issue tracker client
+    const issueTracker = await getIssueTracker(config);
+    
+    // Use the generic issue utilities
+    issueResult = await getInstructionsFromIssue(issueTracker, options.issue);
     planText = issueResult.plan;
     // Extract combinedRmprOptions from the result if it exists
     combinedRmprOptions = issueResult.rmprOptions ?? null;
 
     // Construct the issue URL
-    issueUrlsForExtract.push(issueResult.issue.url);
+    issueUrlsForExtract.push(issueResult.issue.html_url);
 
     // Create stub plan file with the issue text in details
     const stubPlanResult = await createStubPlanFromText(planText, config, undefined, [
-      issueResult.issue.url,
+      issueResult.issue.html_url,
     ]);
     planFile = stubPlanResult.path;
     parsedPlan = stubPlanResult.data;

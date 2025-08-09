@@ -95,6 +95,42 @@ const mockPlansResult = {
   duplicates: {},
 };
 
+// Mock Linear issue tracker client
+const mockLinearIssueTracker: IssueTrackerClient = {
+  fetchIssue: mock(() => Promise.resolve({
+    issue: {
+      id: 'TEAM-123',
+      number: 'TEAM-123',
+      title: 'Linear Issue',
+      body: 'This is a Linear issue description',
+      htmlUrl: 'https://linear.app/team/issue/TEAM-123',
+      state: 'open',
+      createdAt: '2023-01-01T00:00:00Z',
+      updatedAt: '2023-01-01T00:00:00Z',
+      author: {
+        login: 'linearuser',
+        name: 'Linear User',
+      },
+    },
+    comments: [],
+  })),
+  fetchAllOpenIssues: mock(() => Promise.resolve([
+    {
+      id: 'TEAM-100',
+      number: 'TEAM-100',
+      title: 'Linear Issue 100',
+      htmlUrl: 'https://linear.app/team/issue/TEAM-100',
+      state: 'open',
+      createdAt: '2023-01-01T00:00:00Z',
+      updatedAt: '2023-01-01T00:00:00Z',
+      author: { login: 'linearuser', name: 'Linear User' },
+    },
+  ])),
+  parseIssueIdentifier: mock(() => ({ identifier: 'TEAM-123' })),
+  getDisplayName: mock(() => 'Linear'),
+  getConfig: mock(() => ({ type: 'linear' })),
+};
+
 describe('handleImportCommand', () => {
   beforeEach(async () => {
     // Mock all the dependencies
@@ -615,5 +651,120 @@ describe('handleImportCommand', () => {
     expect(log).toHaveBeenCalledWith(
       'No updates needed for plan 1 - all content is already up to date.'
     );
+  });
+
+  describe('Issue Tracker Abstraction', () => {
+    test('should work with GitHub issue tracker configuration', async () => {
+      const githubConfig = {
+        issueTracker: 'github',
+        paths: { tasks: 'tasks' },
+      };
+
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: mock(() => Promise.resolve(githubConfig)),
+      }));
+
+      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+        getIssueTracker: mock(() => Promise.resolve(mockIssueTracker)),
+      }));
+
+      await handleImportCommand('123');
+
+      const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
+      expect(getIssueTracker).toHaveBeenCalledWith(githubConfig);
+      expect(mockIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
+    });
+
+    test('should work with Linear issue tracker configuration', async () => {
+      const linearConfig = {
+        issueTracker: 'linear',
+        paths: { tasks: 'tasks' },
+      };
+
+      // Mock Linear-specific issue data
+      const linearIssueData = {
+        suggestedFileName: 'issue-team-123-linear-issue.md',
+        issue: {
+          title: 'Linear Issue',
+          html_url: 'https://linear.app/team/issue/TEAM-123',
+          number: 'TEAM-123',
+        },
+        plan: 'This is a Linear issue description',
+        rmprOptions: null,
+      };
+
+      await moduleMocker.mock('../issue_utils.js', () => ({
+        getInstructionsFromIssue: mock(() => Promise.resolve(linearIssueData)),
+        createStubPlanFromIssue: mock(() => ({
+          id: 6,
+          title: 'Linear Issue',
+          goal: 'Implement: Linear Issue',
+          details: 'This is a Linear issue description',
+          status: 'pending',
+          issue: ['https://linear.app/team/issue/TEAM-123'],
+          tasks: [],
+          createdAt: '2023-01-01T00:00:00.000Z',
+          updatedAt: '2023-01-01T00:00:00.000Z',
+        })),
+      }));
+
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
+      }));
+
+      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+        getIssueTracker: mock(() => Promise.resolve(mockLinearIssueTracker)),
+      }));
+
+      await handleImportCommand('TEAM-123');
+
+      const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
+      const { writePlanFile } = await import('../plans.js');
+
+      expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
+      expect(mockLinearIssueTracker.fetchIssue).toHaveBeenCalledWith('TEAM-123');
+      expect(writePlanFile).toHaveBeenCalled();
+
+      const [filePath, planData] = (writePlanFile as any).mock.calls[0];
+      expect(filePath).toBe('/test/git/root/tasks/6-issue-team-123-linear-issue.plan.md');
+      expect(planData).toMatchObject({
+        id: 6,
+        title: 'Linear Issue',
+        issue: ['https://linear.app/team/issue/TEAM-123'],
+      });
+    });
+
+    test('should handle both GitHub and Linear issues in interactive mode', async () => {
+      // Test that the factory returns the correct tracker based on config
+      const configs = [
+        { issueTracker: 'github', paths: { tasks: 'tasks' } },
+        { issueTracker: 'linear', paths: { tasks: 'tasks' } },
+      ];
+
+      for (const config of configs) {
+        const expectedTracker = config.issueTracker === 'github' ? mockIssueTracker : mockLinearIssueTracker;
+
+        await moduleMocker.mock('../configLoader.js', () => ({
+          loadEffectiveConfig: mock(() => Promise.resolve(config)),
+        }));
+
+        await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+          getIssueTracker: mock(() => Promise.resolve(expectedTracker)),
+        }));
+
+        await moduleMocker.mock('@inquirer/prompts', () => ({
+          checkbox: mock(() => Promise.resolve([])), // No selections
+        }));
+
+        await handleImportCommand();
+
+        const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
+        const { log } = await import('../../logging.js');
+
+        expect(getIssueTracker).toHaveBeenCalledWith(config);
+        expect(expectedTracker.fetchAllOpenIssues).toHaveBeenCalled();
+        expect(log).toHaveBeenCalledWith('Fetching all open issues...');
+      }
+    });
   });
 });

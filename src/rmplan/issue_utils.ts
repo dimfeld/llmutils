@@ -153,9 +153,9 @@ export async function getInstructionsFromIssue(
 }
 
 /**
- * Creates a stub plan from GitHub issue data
+ * Creates a stub plan from issue data
  *
- * @param issueData - The data returned from getInstructionsFromGithubIssue
+ * @param issueData - The data returned from getInstructionsFromIssue
  * @param planId - The new plan ID to assign
  * @returns A complete PlanSchema object for a stub plan
  */
