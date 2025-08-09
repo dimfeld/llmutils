@@ -110,7 +110,8 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       }),
       writePlanFile: mock(async (filePath: string, planData: PlanSchema) => {
         // Write the actual file
-        const schemaComment = '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
+        const schemaComment =
+          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
         await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
       }),
       setPlanStatus: mock(async (filePath: string, status: string) => {
@@ -118,7 +119,8 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         const planData = yaml.parse(content.replace(/^#.*\n/, ''));
         planData.status = status;
         planData.updatedAt = new Date().toISOString();
-        const schemaComment = '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
+        const schemaComment =
+          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
         await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
       }),
       readAllPlans: mock(async () => ({ plans: new Map() })),
@@ -153,7 +155,8 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       ...planData,
     };
 
-    const schemaComment = '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
+    const schemaComment =
+      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
     await fs.writeFile(planFile, schemaComment + yaml.stringify(defaultPlan));
   }
 
@@ -161,15 +164,15 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
     test('batch mode executes when options.batchTasks is true', async () => {
       await createPlanFile({
         tasks: [
-          { 
-            title: 'Task 1', 
+          {
+            title: 'Task 1',
             description: 'First task',
-            steps: [{ prompt: 'Do task 1', done: false }]
+            steps: [{ prompt: 'Do task 1', done: false }],
           },
-          { 
-            title: 'Task 2', 
+          {
+            title: 'Task 2',
             description: 'Second task',
-            steps: [{ prompt: 'Do task 2', done: false }]
+            steps: [{ prompt: 'Do task 2', done: false }],
           },
         ],
       });
@@ -192,11 +195,13 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
     test('batch mode does not execute when options.batchTasks is false', async () => {
       await createPlanFile({
-        tasks: [{ 
-          title: 'Task 1', 
-          description: 'First task',
-          steps: [{ prompt: 'Do task 1', done: false }]
-        }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
       });
 
       // Mock the normal execution path
@@ -212,7 +217,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
       // Should not have called batch mode prompt building
       const batchCalls = buildExecutionPromptWithoutStepsSpy.mock.calls.filter(
-        call => call[0].task && call[0].task.title?.includes('Batch Processing')
+        (call) => call[0].task && call[0].task.title?.includes('Batch Processing')
       );
       expect(batchCalls.length).toBe(0);
     });
@@ -220,15 +225,15 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
     test('batch mode continues until no incomplete tasks remain', async () => {
       await createPlanFile({
         tasks: [
-          { 
-            title: 'Task 1', 
+          {
+            title: 'Task 1',
             description: 'First task',
-            steps: [{ prompt: 'Do task 1', done: false }]
+            steps: [{ prompt: 'Do task 1', done: false }],
           },
-          { 
-            title: 'Task 2', 
+          {
+            title: 'Task 2',
             description: 'Second task',
-            steps: [{ prompt: 'Do task 2', done: false }]
+            steps: [{ prompt: 'Do task 2', done: false }],
           },
         ],
       });
@@ -241,16 +246,16 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
           // First call: complete Task 1
           await createPlanFile({
             tasks: [
-              { 
-                title: 'Task 1', 
+              {
+                title: 'Task 1',
                 description: 'First task',
                 steps: [{ prompt: 'Do task 1', done: true }],
-                done: true 
+                done: true,
               },
-              { 
-                title: 'Task 2', 
+              {
+                title: 'Task 2',
                 description: 'Second task',
-                steps: [{ prompt: 'Do task 2', done: false }]
+                steps: [{ prompt: 'Do task 2', done: false }],
               },
             ],
           });
@@ -258,17 +263,17 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
           // Second call: complete Task 2
           await createPlanFile({
             tasks: [
-              { 
-                title: 'Task 1', 
+              {
+                title: 'Task 1',
                 description: 'First task',
                 steps: [{ prompt: 'Do task 1', done: true }],
-                done: true 
+                done: true,
               },
-              { 
-                title: 'Task 2', 
+              {
+                title: 'Task 2',
                 description: 'Second task',
                 steps: [{ prompt: 'Do task 2', done: true }],
-                done: true 
+                done: true,
               },
             ],
           });
@@ -429,14 +434,27 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
     test('plan status changes from pending to in_progress', async () => {
       await createPlanFile({
         status: 'pending',
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: false }] }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
       });
 
       executorExecuteSpy.mockImplementation(async () => {
         // Complete the task
         await createPlanFile({
           status: 'in_progress',
-          tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true }],
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
         });
       });
 
@@ -486,7 +504,13 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       await createPlanFile({
         status: 'pending',
         parent: 42,
-        tasks: [{ title: 'Task 1', description: 'Child task', steps: [{ prompt: 'Do child task', done: false }] }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Child task',
+            steps: [{ prompt: 'Do child task', done: false }],
+          },
+        ],
       });
 
       // Mock parent plan checking
@@ -503,7 +527,14 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         await createPlanFile({
           status: 'in_progress',
           parent: 42,
-          tasks: [{ title: 'Task 1', description: 'Child task', steps: [{ prompt: 'Do child task', done: true }], done: true }],
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'Child task',
+              steps: [{ prompt: 'Do child task', done: true }],
+              done: true,
+            },
+          ],
         });
       });
 
@@ -523,12 +554,25 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
   describe('executor integration', () => {
     test('executor receives plan file path for editing', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: false }] }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
       });
 
       executorExecuteSpy.mockImplementation(async () => {
         await createPlanFile({
-          tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true }],
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
         });
       });
 
@@ -552,7 +596,13 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       await createPlanFile({
         id: 123,
         title: 'Custom Plan Title',
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: false }] }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
       });
 
       const options = { batchTasks: true, 'no-log': true, dryRun: true, nonInteractive: true };
@@ -577,7 +627,13 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
   describe('post-apply commands', () => {
     test('post-apply commands are executed after batch completion', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: false }] }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
       });
 
       loadEffectiveConfigSpy.mockResolvedValue({
@@ -590,7 +646,14 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
       executorExecuteSpy.mockImplementation(async () => {
         await createPlanFile({
-          tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true }],
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
         });
       });
 
@@ -613,9 +676,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
       loadEffectiveConfigSpy.mockResolvedValue({
         models: { execution: 'test-model' },
-        postApplyCommands: [
-          { title: 'Failing Command', command: 'exit 1' },
-        ],
+        postApplyCommands: [{ title: 'Failing Command', command: 'exit 1' }],
       });
 
       executePostApplyCommandSpy.mockResolvedValue(false); // Command fails
@@ -632,7 +693,13 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
   describe('dry run mode', () => {
     test('dry run prints batch prompt without executing', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: false }] }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
       });
 
       const options = { batchTasks: true, 'no-log': true, dryRun: true, nonInteractive: true };
@@ -645,8 +712,10 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       expect(executorExecuteSpy).not.toHaveBeenCalled();
 
       // Should have logged dry run information
-      const logCalls = logSpy.mock.calls.map(call => call[0]);
-      expect(logCalls.some(call => typeof call === 'string' && call.includes('--dry-run mode'))).toBe(true);
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      expect(
+        logCalls.some((call) => typeof call === 'string' && call.includes('--dry-run mode'))
+      ).toBe(true);
     });
   });
 
@@ -654,7 +723,13 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
     // TODO: Fix mock interaction issues in this test
     test.skip('batch mode handles executor errors gracefully', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: false }] }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
       });
 
       // Clear previous mock and set up rejection
@@ -700,16 +775,35 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
           // First iteration: complete one task
           await createPlanFile({
             tasks: [
-              { title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true },
-              { title: 'Task 2', description: 'Second task', steps: [{ prompt: 'Do task 2', done: false }] },
+              {
+                title: 'Task 1',
+                description: 'First task',
+                steps: [{ prompt: 'Do task 1', done: true }],
+                done: true,
+              },
+              {
+                title: 'Task 2',
+                description: 'Second task',
+                steps: [{ prompt: 'Do task 2', done: false }],
+              },
             ],
           });
         } else {
           // Second iteration: complete remaining task
           await createPlanFile({
             tasks: [
-              { title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true },
-              { title: 'Task 2', description: 'Second task', steps: [{ prompt: 'Do task 2', done: true }], done: true },
+              {
+                title: 'Task 1',
+                description: 'First task',
+                steps: [{ prompt: 'Do task 1', done: true }],
+                done: true,
+              },
+              {
+                title: 'Task 2',
+                description: 'Second task',
+                steps: [{ prompt: 'Do task 2', done: true }],
+                done: true,
+              },
             ],
           });
         }
@@ -721,22 +815,51 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       await rmplanAgent(planFile, options, globalCliOptions);
 
       // Check logging calls for batch mode progress
-      const logCalls = logSpy.mock.calls.map(call => call[0]);
-      expect(logCalls.some(call => typeof call === 'string' && call.includes('Starting batch mode execution'))).toBe(true);
-      expect(logCalls.some(call => typeof call === 'string' && call.includes('Processing 2 incomplete task(s)'))).toBe(true);
-      expect(logCalls.some(call => typeof call === 'string' && call.includes('Processing 1 incomplete task(s)'))).toBe(true);
-      expect(logCalls.some(call => typeof call === 'string' && call.includes('Batch iteration complete'))).toBe(true);
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      expect(
+        logCalls.some(
+          (call) => typeof call === 'string' && call.includes('Starting batch mode execution')
+        )
+      ).toBe(true);
+      expect(
+        logCalls.some(
+          (call) => typeof call === 'string' && call.includes('Processing 2 incomplete task(s)')
+        )
+      ).toBe(true);
+      expect(
+        logCalls.some(
+          (call) => typeof call === 'string' && call.includes('Processing 1 incomplete task(s)')
+        )
+      ).toBe(true);
+      expect(
+        logCalls.some(
+          (call) => typeof call === 'string' && call.includes('Batch iteration complete')
+        )
+      ).toBe(true);
     });
 
-    // TODO: Fix test interdependency issues  
+    // TODO: Fix test interdependency issues
     test.skip('batch mode logs plan completion', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: false }] }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
       });
 
       executorExecuteSpy.mockImplementation(async () => {
         await createPlanFile({
-          tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true }],
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
         });
       });
 
@@ -745,15 +868,27 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
       await rmplanAgent(planFile, options, globalCliOptions);
 
-      const logCalls = logSpy.mock.calls.map(call => call[0]);
-      expect(logCalls.some(call => typeof call === 'string' && call.includes('All tasks completed, marking plan as done'))).toBe(true);
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      expect(
+        logCalls.some(
+          (call) =>
+            typeof call === 'string' && call.includes('All tasks completed, marking plan as done')
+        )
+      ).toBe(true);
     });
   });
 
   describe('integration with existing agent functionality', () => {
     test('batch mode respects no-log option', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: true }],
+            done: true,
+          },
+        ],
       });
 
       const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
@@ -767,7 +902,14 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
     test('batch mode opens and closes log file when logging enabled', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: true }],
+            done: true,
+          },
+        ],
       });
 
       const options = { batchTasks: true };
@@ -782,7 +924,14 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
     test('batch mode uses correct executor from options', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: true }],
+            done: true,
+          },
+        ],
       });
 
       const customExecutor = { execute: mock(), filePathPrefix: '/custom/' };
@@ -803,7 +952,14 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
     test('batch mode uses correct model from options', async () => {
       await createPlanFile({
-        tasks: [{ title: 'Task 1', description: 'First task', steps: [{ prompt: 'Do task 1', done: true }], done: true }],
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: true }],
+            done: true,
+          },
+        ],
       });
 
       const options = { batchTasks: true, model: 'custom-model', 'no-log': true };

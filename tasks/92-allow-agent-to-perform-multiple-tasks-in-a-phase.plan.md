@@ -10,7 +10,7 @@ dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T03:34:25.814Z
+updatedAt: 2025-08-09T03:54:23.081Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
     description: >
@@ -93,25 +93,25 @@ tasks:
       - prompt: >
           Import the getAllIncompleteTasks function from plans/find_next.js at
           the top of the file with the other imports.
-        done: false
+        done: true
       - prompt: >
           After the plan preparation section (around line 386) and before the
           main execution loop, add a conditional check for options.batchTasks.
           If true, implement a new while loop that continues until no incomplete
           tasks remain.
-        done: false
+        done: true
       - prompt: >
           Inside the batch mode loop, read the plan file, get all incomplete
           tasks, and if tasks exist, build a prompt that includes the plan
           context and all incomplete task details. Pass the plan file path to
           the executor so the orchestrator can edit it.
-        done: false
+        done: true
       - prompt: >
           After the executor completes in batch mode, re-read the plan file to
           get the updated state. If all tasks are now marked done, update the
           plan status to 'done' and handle parent plan updates similar to the
           existing logic. Include appropriate logging for batch mode operations.
-        done: false
+        done: true
   - title: "Task 4: Update the orchestrator prompt for batch processing"
     description: >
       Modify the wrapWithOrchestration function in
@@ -328,6 +328,8 @@ changedFiles:
   - src/common/linear_client.test.ts
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
+  - src/rmplan/commands/agent.ts
+  - src/rmplan/commands/agent_batch_mode.test.ts
   - src/rmplan/commands/batch_tasks.test.ts
   - src/rmplan/commands/batch_tasks_simple.test.ts
   - src/rmplan/commands/batch_tasks_unit.test.ts

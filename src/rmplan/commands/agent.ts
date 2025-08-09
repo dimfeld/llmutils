@@ -420,24 +420,26 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         log(`Batch mode: Processing ${incompleteTasks.length} incomplete task(s)`);
 
         // Format all incomplete tasks into a single prompt for the executor
-        const taskDescriptions = incompleteTasks.map((taskResult, index) => {
-          const { taskIndex, task } = taskResult;
-          let taskDescription = `Task ${taskIndex + 1}: ${task.title}`;
-          if (task.description) {
-            taskDescription += `\nDescription: ${task.description}`;
-          }
-          if (task.steps && task.steps.length > 0) {
-            taskDescription += `\nSteps:`;
-            task.steps.forEach((step, stepIdx) => {
-              const status = step.done ? '[DONE]' : '[TODO]';
-              taskDescription += `\n  ${stepIdx + 1}. ${status} ${step.prompt}`;
-            });
-          }
-          if (task.files && task.files.length > 0) {
-            taskDescription += `\nFiles: ${task.files.join(', ')}`;
-          }
-          return taskDescription;
-        }).join('\n\n');
+        const taskDescriptions = incompleteTasks
+          .map((taskResult, index) => {
+            const { taskIndex, task } = taskResult;
+            let taskDescription = `Task ${taskIndex + 1}: ${task.title}`;
+            if (task.description) {
+              taskDescription += `\nDescription: ${task.description}`;
+            }
+            if (task.steps && task.steps.length > 0) {
+              taskDescription += `\nSteps:`;
+              task.steps.forEach((step, stepIdx) => {
+                const status = step.done ? '[DONE]' : '[TODO]';
+                taskDescription += `\n  ${stepIdx + 1}. ${status} ${step.prompt}`;
+              });
+            }
+            if (task.files && task.files.length > 0) {
+              taskDescription += `\nFiles: ${task.files.join(', ')}`;
+            }
+            return taskDescription;
+          })
+          .join('\n\n');
 
         // Build the batch prompt that includes the plan context and all incomplete task details
         const batchPrompt = await buildExecutionPromptWithoutSteps({
@@ -481,7 +483,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           for (const commandConfig of config.postApplyCommands) {
             const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
             if (!commandSucceeded) {
-              error(`Batch mode stopping because required command "${commandConfig.title}" failed.`);
+              error(
+                `Batch mode stopping because required command "${commandConfig.title}" failed.`
+              );
               hasError = true;
               break;
             }
@@ -495,7 +499,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         const updatedPlanData = await readPlanFile(currentPlanFile);
         const remainingIncompleteTasks = getAllIncompleteTasks(updatedPlanData);
 
-        log(`Batch iteration complete. Remaining incomplete tasks: ${remainingIncompleteTasks.length}`);
+        log(
+          `Batch iteration complete. Remaining incomplete tasks: ${remainingIncompleteTasks.length}`
+        );
 
         // If all tasks are now marked done, update the plan status to 'done'
         if (remainingIncompleteTasks.length === 0) {
