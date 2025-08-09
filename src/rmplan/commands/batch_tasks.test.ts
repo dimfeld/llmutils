@@ -96,9 +96,10 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       // Run agent with --batch-tasks and --dry-run to avoid actual execution
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should not fail due to unrecognized option (exit code 0 or acceptable error)
       expect([0, 1]).toContain(result.exitCode);
@@ -106,7 +107,7 @@ describe('--batch-tasks CLI flag tests', () => {
       // Should not contain "unknown option" error message
       const output = result.stdout.toString() + result.stderr.toString();
       expect(output).not.toContain('unknown option');
-      expect(output).not.toContain('error: unknown option \'--batch-tasks\'');
+      expect(output).not.toContain("error: unknown option '--batch-tasks'");
     });
 
     test('--batch-tasks flag is recognized by run command (alias)', async () => {
@@ -120,9 +121,10 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       // Run with alias command and --batch-tasks
-      const result = await $`bun ${rmplanPath} run 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} run 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should not fail due to unrecognized option
       expect([0, 1]).toContain(result.exitCode);
@@ -130,7 +132,7 @@ describe('--batch-tasks CLI flag tests', () => {
       // Should not contain "unknown option" error message
       const output = result.stdout.toString() + result.stderr.toString();
       expect(output).not.toContain('unknown option');
-      expect(output).not.toContain('error: unknown option \'--batch-tasks\'');
+      expect(output).not.toContain("error: unknown option '--batch-tasks'");
     });
 
     test('--batch-tasks flag works without any other options', async () => {
@@ -144,9 +146,10 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       // Run with minimal options
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should not fail due to flag parsing issues
       expect([0, 1]).toContain(result.exitCode);
@@ -168,9 +171,10 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Test description' }],
       });
 
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should not fail due to incompatible options
       expect([0, 1]).toContain(result.exitCode);
@@ -188,9 +192,10 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Test description' }],
       });
 
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --non-interactive --dry-run --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --non-interactive --dry-run --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -207,9 +212,10 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Test description' }],
       });
 
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --steps 5 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --steps 5 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -226,9 +232,10 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Test description' }],
       });
 
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --executor copy-only --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --executor copy-only --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -245,9 +252,10 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Test description' }],
       });
 
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --model claude-3-5-sonnet --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --model claude-3-5-sonnet --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -264,9 +272,10 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Test description' }],
       });
 
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --workspace test-workspace --new-workspace --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --workspace test-workspace --new-workspace --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -325,9 +334,10 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       // Run without the --batch-tasks flag (traditional mode)
-      const result = await $`bun ${rmplanPath} agent 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should work as before (exit code should be reasonable)
       expect([0, 1]).toContain(result.exitCode);
@@ -347,9 +357,10 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       // Run without the --batch-tasks flag
-      const result = await $`bun ${rmplanPath} run 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} run 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -367,17 +378,16 @@ describe('--batch-tasks CLI flag tests', () => {
           {
             title: 'Test task',
             description: 'Test description',
-            steps: [
-              { title: 'Step 1', description: 'First step', prompt: 'Do step 1' },
-            ],
+            steps: [{ title: 'Step 1', description: 'First step', prompt: 'Do step 1' }],
           },
         ],
       });
 
       // Test that existing options still work
-      const result = await $`bun ${rmplanPath} agent 1 --steps 1 --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --steps 1 --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -391,9 +401,10 @@ describe('--batch-tasks CLI flag tests', () => {
   describe('edge cases and error handling', () => {
     test('--batch-tasks handles non-existent plan file gracefully', async () => {
       // Try to run against a non-existent plan
-      const result = await $`bun ${rmplanPath} agent non-existent-plan.yml --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent non-existent-plan.yml --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should handle the error gracefully (not crash with unhandled exception)
       expect([0, 1, 2]).toContain(result.exitCode);
@@ -405,9 +416,10 @@ describe('--batch-tasks CLI flag tests', () => {
     });
 
     test('--batch-tasks with invalid plan ID handled properly', async () => {
-      const result = await $`bun ${rmplanPath} agent 99999 --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 99999 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       // Should handle the error gracefully
       expect([0, 1, 2]).toContain(result.exitCode);
@@ -421,9 +433,10 @@ describe('--batch-tasks CLI flag tests', () => {
       const malformedPlanPath = path.join(tasksDir, '1-malformed.yml');
       await fs.writeFile(malformedPlanPath, 'invalid: yaml: content: [missing closing bracket');
 
-      const result = await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1, 2]).toContain(result.exitCode);
 
@@ -443,9 +456,10 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       // Use plan ID instead of filename
-      const result = await $`bun ${rmplanPath} agent 42 --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent 42 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -473,9 +487,10 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Ready task', description: 'Ready to execute' }],
       });
 
-      const result = await $`bun ${rmplanPath} agent --next --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent --next --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 
@@ -493,9 +508,10 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Current task', description: 'Currently working on this' }],
       });
 
-      const result = await $`bun ${rmplanPath} agent --current --batch-tasks --dry-run --non-interactive --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const result =
+        await $`bun ${rmplanPath} agent --current --batch-tasks --dry-run --non-interactive --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
 
       expect([0, 1]).toContain(result.exitCode);
 

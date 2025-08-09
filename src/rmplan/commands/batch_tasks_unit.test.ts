@@ -206,9 +206,7 @@ describe('--batch-tasks flag pass-through tests', () => {
             execution: 'claude-3-5-sonnet',
             planning: 'claude-3-haiku',
           },
-          postApplyCommands: [
-            { title: 'Test command', command: 'echo test' }
-          ],
+          postApplyCommands: [{ title: 'Test command', command: 'echo test' }],
         },
         debug: true,
       };
@@ -231,7 +229,7 @@ describe('--batch-tasks flag pass-through tests', () => {
       const nextPlan = {
         id: 2,
         title: 'Next Plan',
-        filename: '/test/next-plan.yml'
+        filename: '/test/next-plan.yml',
       };
 
       await moduleMocker.mock('../plans.js', () => ({
@@ -239,7 +237,7 @@ describe('--batch-tasks flag pass-through tests', () => {
         findNextPlan: mock(async () => nextPlan),
       }));
 
-      const options = { 
+      const options = {
         batchTasks: true,
         next: true,
       };
@@ -258,7 +256,7 @@ describe('--batch-tasks flag pass-through tests', () => {
       const currentPlan = {
         id: 3,
         title: 'Current Plan',
-        filename: '/test/current-plan.yml'
+        filename: '/test/current-plan.yml',
       };
 
       await moduleMocker.mock('../plans.js', () => ({
@@ -266,7 +264,7 @@ describe('--batch-tasks flag pass-through tests', () => {
         findNextPlan: mock(async () => currentPlan),
       }));
 
-      const options = { 
+      const options = {
         batchTasks: true,
         current: true,
       };
@@ -287,8 +285,9 @@ describe('--batch-tasks flag pass-through tests', () => {
       const options = { batchTasks: true };
       const globalCliOptions = {};
 
-      await expect(handleAgentCommand(undefined, options, globalCliOptions))
-        .rejects.toThrow('Plan file is required');
+      await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
+        'Plan file is required'
+      );
 
       expect(rmplanAgentSpy).not.toHaveBeenCalled();
     });
@@ -300,7 +299,7 @@ describe('--batch-tasks flag pass-through tests', () => {
 
       // This should work without throwing errors related to batchTasks processing
       await handleAgentCommand(planFile, options, globalCliOptions);
-      
+
       expect(rmplanAgentSpy).toHaveBeenCalled();
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
       expect(passedOptions.batchTasks).toBe(true);

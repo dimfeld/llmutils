@@ -10,7 +10,7 @@ dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T03:20:03.303Z
+updatedAt: 2025-08-09T03:29:48.584Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
     description: >
@@ -33,12 +33,12 @@ tasks:
           `--executor`, and `--steps` are defined and add the new flag there
           with appropriate description explaining it enables batch task
           execution mode.
-        done: false
+        done: true
       - prompt: >
           Ensure the new `--batch-tasks` option is properly passed through from
           handleAgentCommand to rmplanAgent function in the options parameter so
           it can be accessed within the agent execution logic.
-        done: false
+        done: true
   - title: "Task 2: Implement a function to retrieve all incomplete tasks"
     description: >
       Create a new helper function `getAllIncompleteTasks` in
@@ -310,6 +310,44 @@ tasks:
           any important notes about limitations or best practices for using
           batch mode effectively.
         done: false
+changedFiles:
+  - BATCH_TASKS_TESTING_SUMMARY.md
+  - README.md
+  - docs/linear-integration.md
+  - package.json
+  - src/common/issue_tracker/factory.integration.test.ts
+  - src/common/issue_tracker/factory.test.ts
+  - src/common/issue_tracker/factory.ts
+  - src/common/issue_tracker/github.test.ts
+  - src/common/issue_tracker/github.ts
+  - src/common/issue_tracker/index.ts
+  - src/common/issue_tracker/types.test.ts
+  - src/common/issue_tracker/types.ts
+  - src/common/linear.test.ts
+  - src/common/linear.ts
+  - src/common/linear_client.test.ts
+  - src/common/linear_client.ts
+  - src/rmfilter/rmfilter.ts
+  - src/rmplan/commands/batch_tasks.test.ts
+  - src/rmplan/commands/batch_tasks_simple.test.ts
+  - src/rmplan/commands/batch_tasks_unit.test.ts
+  - src/rmplan/commands/documentation_consistency_check.test.ts
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/import.integration.test.ts
+  - src/rmplan/commands/import.test.ts
+  - src/rmplan/commands/import.ts
+  - src/rmplan/commands/integration_linear.test.ts
+  - src/rmplan/commands/issue_tracker_integration.test.ts
+  - src/rmplan/commands/linear_documentation_examples.test.ts
+  - src/rmplan/commands/linear_plan_structure.test.ts
+  - src/rmplan/commands/plan_file_validation.test.ts
+  - src/rmplan/configLoader.test.ts
+  - src/rmplan/configSchema.test.ts
+  - src/rmplan/configSchema.ts
+  - src/rmplan/issue_utils.ts
+  - src/rmplan/plans/prepare_phase.ts
+  - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan/commands/agent.ts
   - src/rmplan/executors
