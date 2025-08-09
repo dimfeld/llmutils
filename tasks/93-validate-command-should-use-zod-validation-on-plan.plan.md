@@ -140,6 +140,7 @@ tasks:
       fs.mkdtemp().
     files:
       - src/rmplan/commands/validate.test.ts
+    done: true
     steps:
       - prompt: >
           Create a new test file for the validate command using Bun's test
@@ -197,6 +198,7 @@ tasks:
     files:
       - src/rmplan/commands/import/plan_file_validation.test.ts
       - src/rmplan/process_markdown.test.ts
+    done: true
     steps:
       - prompt: >
           Review plan_file_validation.test.ts to ensure the plan objects created
