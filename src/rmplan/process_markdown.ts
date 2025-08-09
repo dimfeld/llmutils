@@ -14,6 +14,7 @@ import { phaseSchema, planSchema } from './planSchema.js';
 import {
   generateSuggestedFilename,
   getMaxNumericPlanId,
+  isTaskDone,
   readAllPlans,
   writePlanFile,
 } from './plans.js';
@@ -54,8 +55,7 @@ export function convertYamlToMarkdown(
 
   plan.tasks.forEach((task, index) => {
     // Check if all steps in the task are done
-    const isTaskDone = task.steps.length > 0 && task.steps.every((step) => step.done);
-    if (isTaskDone) {
+    if (isTaskDone(task)) {
       doneTasks.push({ task, index });
     } else {
       pendingTasks.push({ task, index });
@@ -473,7 +473,7 @@ export async function extractMarkdownToYaml(
       // Build a map of original completed tasks (all steps done)
       const completedTasks = new Map<number, (typeof originalTasks)[0]>();
       originalTasks.forEach((task, index) => {
-        if (task.steps.length > 0 && task.steps.every((step) => step.done)) {
+        if (isTaskDone(task)) {
           completedTasks.set(index, task);
         }
       });

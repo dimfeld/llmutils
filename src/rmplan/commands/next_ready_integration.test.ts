@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleGenerateCommand } from './generate.js';
 import { handlePrepareCommand } from './prepare.js';
-import { handleAgentCommand } from './agent.js';
+import { handleAgentCommand } from './agent/agent.js';
 import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';

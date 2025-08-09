@@ -4,39 +4,40 @@
 import { select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import * as path from 'path';
-import { getGitRoot } from '../../common/git.js';
-import { commitAll, logSpawn } from '../../common/process.js';
-import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
-import { executePostApplyCommand } from '../actions.js';
-import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
+import { getGitRoot } from '../../../common/git.js';
+import { logSpawn } from '../../../common/process.js';
+import {
+  boldMarkdownHeaders,
+  closeLogFile,
+  error,
+  log,
+  openLogFile,
+  warn,
+} from '../../../logging.js';
+import { executePostApplyCommand } from '../../actions.js';
+import { loadEffectiveConfig } from '../../configLoader.js';
+import { resolveTasksDir } from '../../configSchema.js';
+import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
-} from '../executors/index.js';
-import type { Executor, ExecutorCommonOptions } from '../executors/types.js';
-import {
-  clearPlanCache,
-  readAllPlans,
-  readPlanFile,
-  resolvePlanFile,
-  setPlanStatus,
-  writePlanFile,
-} from '../plans.js';
-import { findNextActionableItem } from '../plans/find_next.js';
-import { markStepDone, markTaskDone } from '../plans/mark_done.js';
-import { preparePhase } from '../plans/prepare_phase.js';
-import { prepareNextStep } from '../plans/prepare_step.js';
-import type { PlanSchema } from '../planSchema.js';
-import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
-import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
-import { WorkspaceLock } from '../workspace/workspace_lock.js';
-import { createWorkspace } from '../workspace/workspace_manager.js';
-import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
-import { findNextPlan } from '../plans.js';
-import { getCombinedTitleFromSummary } from '../display_utils.js';
-import { findNextReadyDependency } from './find_next_dependency.js';
+} from '../../executors/index.js';
+import type { ExecutorCommonOptions } from '../../executors/types.js';
+import { findNextPlan, readPlanFile, resolvePlanFile, writePlanFile } from '../../plans.js';
+import { findNextActionableItem } from '../../plans/find_next.js';
+import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
+import { preparePhase } from '../../plans/prepare_phase.js';
+import { prepareNextStep } from '../../plans/prepare_step.js';
+import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
+import { WorkspaceAutoSelector } from '../../workspace/workspace_auto_selector.js';
+import { WorkspaceLock } from '../../workspace/workspace_lock.js';
+import { createWorkspace } from '../../workspace/workspace_manager.js';
+import { findWorkspacesByTaskId } from '../../workspace/workspace_tracker.js';
+import { findNextReadyDependency } from '../find_next_dependency.js';
+import { executeBatchMode } from './batch_mode.js';
+import { markParentInProgress } from './parent_plans.js';
+import { executeStubPlan } from './stub_plan.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -385,6 +386,17 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   }
 
+  // Check if batch mode is enabled
+  if (options.batchTasks) {
+    return executeBatchMode({
+      config,
+      baseDir: currentBaseDir,
+      currentPlanFile,
+      executor,
+      dryRun: options.dryRun,
+    });
+  }
+
   log('Starting agent to execute plan:', currentPlanFile);
   try {
     let hasError = false;
@@ -655,186 +667,5 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   } finally {
     await closeLogFile();
-  }
-}
-
-async function executeStubPlan({
-  config,
-  baseDir,
-  planFilePath,
-  planData,
-  executor,
-  commit,
-  dryRun = false,
-}: {
-  config: RmplanConfig;
-  baseDir: string;
-  planFilePath: string;
-  planData: PlanSchema;
-  executor: Executor;
-  commit: boolean;
-  dryRun?: boolean;
-}) {
-  // Update plan status to in_progress
-  planData.status = 'in_progress';
-  planData.updatedAt = new Date().toISOString();
-  await writePlanFile(planFilePath, planData);
-
-  // If this plan has a parent, mark it as in_progress too
-  if (planData.parent) {
-    await markParentInProgress(planData.parent, config);
-  }
-
-  // Build execution prompt using the unified function
-  const directPrompt = await buildExecutionPromptWithoutSteps({
-    executor,
-    planData,
-    planFilePath,
-    baseDir,
-    config,
-    filePathPrefix: executor.filePathPrefix,
-    includeCurrentPlanContext: true,
-  });
-
-  if (!directPrompt.trim()) {
-    throw new Error('Plan has no goal or details to execute directly');
-  }
-
-  log(boldMarkdownHeaders('\n## Execution\n'));
-  log('Using combined goal and details as prompt:');
-  log(directPrompt);
-
-  if (dryRun) {
-    log('\n--dry-run mode: Would execute the above prompt');
-    return;
-  }
-
-  // Execute the consolidated prompt
-  await executor.execute(directPrompt, {
-    planId: planData.id?.toString() ?? 'unknown',
-    planTitle: planData.title ?? 'Untitled Plan',
-    planFilePath: planFilePath,
-  });
-
-  // Execute post-apply commands if configured and no error occurred
-  if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-    log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
-    for (const commandConfig of config.postApplyCommands) {
-      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
-      if (!commandSucceeded) {
-        throw new Error(`Required command "${commandConfig.title}" failed`);
-      }
-    }
-  }
-
-  // Mark plan as complete only if no error occurred
-  await setPlanStatus(planFilePath, 'done');
-  log('Plan executed directly and marked as complete!');
-
-  // Check if parent plan should be marked done
-  if (planData.parent) {
-    await checkAndMarkParentDone(planData.parent, config, baseDir);
-  }
-
-  // Check if commit was requested
-  if (commit) {
-    const commitMessage = [planData.title, planData.goal, planData.details]
-      .filter(Boolean)
-      .join('\n\n');
-    const exitCode = await commitAll(commitMessage, baseDir);
-    if (exitCode === 0) {
-      log('Changes committed successfully');
-    } else {
-      throw new Error('Commit failed');
-    }
-  }
-}
-
-/**
- * Marks a parent plan as in_progress if it's currently pending.
- * Recursively marks all ancestor plans as in_progress as well.
- */
-async function markParentInProgress(parentId: number, config: RmplanConfig): Promise<void> {
-  const tasksDir = await resolveTasksDir(config);
-  // Force re-read to get updated statuses
-  clearPlanCache();
-  const { plans: allPlans } = await readAllPlans(tasksDir);
-
-  // Get the parent plan
-  const parentPlan = allPlans.get(parentId);
-  if (!parentPlan) {
-    warn(`Parent plan with ID ${parentId} not found`);
-    return;
-  }
-
-  // Only update if parent is still pending
-  if (parentPlan.status === 'pending') {
-    parentPlan.status = 'in_progress';
-    parentPlan.updatedAt = new Date().toISOString();
-    await writePlanFile(parentPlan.filename, parentPlan);
-    log(chalk.yellow(`↻ Parent plan "${parentPlan.title}" marked as in_progress`));
-
-    // Recursively mark parent's parent if it exists
-    if (parentPlan.parent) {
-      await markParentInProgress(parentPlan.parent, config);
-    }
-  }
-}
-
-/**
- * Checks if a parent plan's children are all complete and marks the parent as done if so.
- * This function is duplicated here to avoid circular dependencies with actions.ts
- */
-async function checkAndMarkParentDone(
-  parentId: number,
-  config: RmplanConfig,
-  baseDir?: string
-): Promise<void> {
-  const tasksDir = await resolveTasksDir(config);
-  // Force re-read to get updated statuses
-  clearPlanCache();
-  const { plans: allPlans } = await readAllPlans(tasksDir);
-
-  // Get the parent plan
-  const parentPlan = allPlans.get(parentId);
-  if (!parentPlan) {
-    warn(`Parent plan with ID ${parentId} not found`);
-    return;
-  }
-
-  // If parent is already done, nothing to do
-  if (parentPlan.status === 'done') {
-    return;
-  }
-
-  // Find all children of this parent
-  const children = Array.from(allPlans.values()).filter((plan) => plan.parent === parentId);
-
-  // Check if all children are done
-  const allChildrenDone = children.every((child) => child.status === 'done');
-
-  if (allChildrenDone && children.length > 0) {
-    // Mark parent as done
-    parentPlan.status = 'done';
-    parentPlan.updatedAt = new Date().toISOString();
-
-    // Update changed files from children
-    const allChangedFiles = new Set<string>();
-    for (const child of children) {
-      if (child.changedFiles) {
-        child.changedFiles.forEach((file) => allChangedFiles.add(file));
-      }
-    }
-    if (allChangedFiles.size > 0) {
-      parentPlan.changedFiles = Array.from(allChangedFiles);
-    }
-
-    await writePlanFile(parentPlan.filename, parentPlan);
-    log(chalk.green(`✓ Parent plan "${parentPlan.title}" marked as complete (all children done)`));
-
-    // Recursively check if this parent has a parent
-    if (parentPlan.parent) {
-      await checkAndMarkParentDone(parentPlan.parent, config, baseDir);
-    }
   }
 }

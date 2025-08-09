@@ -2511,6 +2511,427 @@ describe('ClaudeCodeExecutor', () => {
     });
   });
 
+  describe('batch mode plan file editing functionality', () => {
+    test('prepends plan file path with @ prefix when batch mode is enabled', async () => {
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return `[ORCHESTRATED: ${planId}, batchMode: ${options.batchMode}] ${content}`;
+      });
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const batchModePlanInfo: ExecutePlanInfo = {
+        planId: '123',
+        planTitle: 'Batch Plan',
+        planFilePath: '/test/plans/batch-plan.yml',
+        batchMode: true,
+      };
+
+      await executor.execute('test content', batchModePlanInfo);
+
+      // Verify wrapWithOrchestration was called with batch mode context
+      expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
+        expect.stringContaining('@/test/plans/batch-plan.yml\n\ntest content'),
+        '123',
+        {
+          batchMode: true,
+          planFilePath: '/test/plans/batch-plan.yml',
+        }
+      );
+    });
+
+    test('does not prepend plan file path when batch mode is disabled', async () => {
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return `[ORCHESTRATED: ${planId}, batchMode: ${options.batchMode}] ${content}`;
+      });
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const regularPlanInfo: ExecutePlanInfo = {
+        planId: '123',
+        planTitle: 'Regular Plan',
+        planFilePath: '/test/plans/regular-plan.yml',
+        batchMode: false,
+      };
+
+      await executor.execute('test content', regularPlanInfo);
+
+      // Verify wrapWithOrchestration was called without the plan file prefix
+      expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
+        'test content', // Should not contain the plan file path prefix
+        '123',
+        {
+          batchMode: false,
+          planFilePath: '/test/plans/regular-plan.yml',
+        }
+      );
+    });
+
+    test('does not prepend plan file path when batch mode is undefined', async () => {
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return `[ORCHESTRATED: ${planId}, batchMode: ${options.batchMode}] ${content}`;
+      });
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const regularPlanInfo: ExecutePlanInfo = {
+        planId: '123',
+        planTitle: 'Regular Plan',
+        planFilePath: '/test/plans/regular-plan.yml',
+        // batchMode is undefined
+      };
+
+      await executor.execute('test content', regularPlanInfo);
+
+      // Verify wrapWithOrchestration was called without the plan file prefix
+      expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
+        'test content', // Should not contain the plan file path prefix
+        '123',
+        {
+          batchMode: undefined,
+          planFilePath: '/test/plans/regular-plan.yml',
+        }
+      );
+    });
+
+    test('handles missing plan file path in batch mode gracefully', async () => {
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return `[ORCHESTRATED: ${planId}, batchMode: ${options.batchMode}] ${content}`;
+      });
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const batchModePlanInfoWithoutPath: ExecutePlanInfo = {
+        planId: '123',
+        planTitle: 'Batch Plan',
+        planFilePath: '', // Empty path
+        batchMode: true,
+      };
+
+      await executor.execute('test content', batchModePlanInfoWithoutPath);
+
+      // Verify wrapWithOrchestration was called without the plan file prefix since path is empty
+      expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
+        'test content', // Should not contain the plan file path prefix
+        '123',
+        {
+          batchMode: true,
+          planFilePath: '',
+        }
+      );
+    });
+
+    test('uses correct @ file prefix for plan file path', async () => {
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return content; // Return content as-is to verify the prefix
+      });
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Verify the @ prefix is used from the class property
+      expect(executor.filePathPrefix).toBe('@');
+
+      const batchModePlanInfo: ExecutePlanInfo = {
+        planId: '123',
+        planTitle: 'Batch Plan',
+        planFilePath: '/absolute/path/to/plan.yml',
+        batchMode: true,
+      };
+
+      await executor.execute('original content', batchModePlanInfo);
+
+      // Verify the content was prepended with the correct @ prefix
+      expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
+        '@/absolute/path/to/plan.yml\n\noriginal content',
+        '123',
+        expect.any(Object)
+      );
+    });
+
+    test('batch mode and regular mode can be used in sequence', async () => {
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return content;
+      });
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // First execution: batch mode
+      const batchModePlanInfo: ExecutePlanInfo = {
+        planId: '123',
+        planTitle: 'Batch Plan',
+        planFilePath: '/test/batch-plan.yml',
+        batchMode: true,
+      };
+
+      await executor.execute('batch content', batchModePlanInfo);
+
+      // Verify batch mode execution
+      expect(mockWrapWithOrchestration).toHaveBeenLastCalledWith(
+        '@/test/batch-plan.yml\n\nbatch content',
+        '123',
+        expect.objectContaining({ batchMode: true })
+      );
+
+      // Second execution: regular mode
+      const regularPlanInfo: ExecutePlanInfo = {
+        planId: '456',
+        planTitle: 'Regular Plan',
+        planFilePath: '/test/regular-plan.yml',
+        batchMode: false,
+      };
+
+      await executor.execute('regular content', regularPlanInfo);
+
+      // Verify regular mode execution
+      expect(mockWrapWithOrchestration).toHaveBeenLastCalledWith(
+        'regular content',
+        '456',
+        expect.objectContaining({ batchMode: false })
+      );
+
+      // Verify both calls were made
+      expect(mockWrapWithOrchestration).toHaveBeenCalledTimes(2);
+    });
+
+    test('preserves original context content structure in batch mode', async () => {
+      // Mock the necessary dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return content;
+      });
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const complexContent = `# Header
+## Section 1
+Content line 1
+Content line 2
+
+## Section 2
+More content
+
+- List item 1
+- List item 2`;
+
+      const batchModePlanInfo: ExecutePlanInfo = {
+        planId: '123',
+        planTitle: 'Batch Plan',
+        planFilePath: '/test/plans/complex-plan.yml',
+        batchMode: true,
+      };
+
+      await executor.execute(complexContent, batchModePlanInfo);
+
+      // Verify that the complex content structure is preserved with proper spacing
+      expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
+        `@/test/plans/complex-plan.yml\n\n${complexContent}`,
+        '123',
+        expect.any(Object)
+      );
+
+      // Extract the content argument from the mock call
+      const [actualContent] = mockWrapWithOrchestration.mock.calls[0];
+
+      // Verify the structure: @ prefix, double newline, then original content
+      expect(actualContent).toMatch(/^@\/test\/plans\/complex-plan\.yml\n\n# Header/);
+      expect(actualContent).toContain('## Section 1\nContent line 1');
+      expect(actualContent).toContain('- List item 1\n- List item 2');
+    });
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });

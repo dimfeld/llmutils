@@ -21,6 +21,7 @@ export interface ExecutionPromptOptions {
   };
   filePathPrefix?: string;
   includeCurrentPlanContext?: boolean;
+  batchMode?: boolean;
 }
 
 /**
@@ -147,6 +148,7 @@ export async function buildExecutionPromptWithoutSteps(
     task,
     filePathPrefix,
     includeCurrentPlanContext = true,
+    batchMode = false,
   } = options;
 
   const promptParts: string[] = [];
@@ -174,6 +176,17 @@ export async function buildExecutionPromptWithoutSteps(
     const taskSection = buildTaskSection(task);
     if (taskSection) {
       promptParts.push(taskSection);
+    }
+
+    // Add plan file reference for batch mode
+    if (batchMode) {
+      const gitRoot = await getGitRoot(baseDir);
+      const relativePlanPath = path.isAbsolute(planFilePath)
+        ? path.relative(gitRoot, planFilePath)
+        : planFilePath;
+      const prefix = filePathPrefix || '';
+      const planFileReference = `\n## Plan File for Task Updates\n\n- ${prefix}${relativePlanPath}: This is the plan file you must edit to mark tasks as done after completing them.\n`;
+      promptParts.push(planFileReference);
     }
 
     // Add task files if available

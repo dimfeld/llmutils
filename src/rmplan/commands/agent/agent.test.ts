@@ -4,9 +4,9 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { rmplanAgent, handleAgentCommand } from './agent.js';
-import { clearPlanCache } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
+import { clearPlanCache } from '../../plans.js';
+import type { PlanSchema } from '../../planSchema.js';
+import { ModuleMocker } from '../../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -681,7 +681,11 @@ describe('handleAgentCommand - --next-ready flag', () => {
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({})),
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        postApplyCommands: [],
+      })),
     }));
 
     await moduleMocker.mock('../configSchema.js', () => ({
@@ -759,12 +763,9 @@ describe('handleAgentCommand - --next-ready flag', () => {
     // Verify findNextReadyDependency was called with correct parent plan ID
     expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
 
-    // Verify success messages were logged
+    // Verify success message was logged
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
-    );
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready plan: Ready Dependency Plan (ID: 101)')
+      expect.stringContaining('Found ready plan: 101 - Ready Dependency Plan')
     );
 
     // Verify rmplanAgent was called with the ready plan's filename
@@ -790,9 +791,9 @@ describe('handleAgentCommand - --next-ready flag', () => {
     // Verify findNextReadyDependency was called with correct parent plan ID (100)
     expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
 
-    // Verify success messages were logged
+    // Verify success message was logged
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
+      expect.stringContaining('Found ready plan: 101 - Ready Dependency Plan')
     );
 
     // Verify rmplanAgent was called with the ready plan's filename
@@ -967,14 +968,9 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     await handleAgentCommand(undefined, options, globalCliOptions);
 
-    // Verify detailed success messages were logged
+    // Verify success message was logged
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
-    );
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system'
-      )
+      expect.stringContaining('Found ready plan: 101 - Ready Dependency Plan')
     );
 
     // Verify rmplanAgent was called with the ready plan's filename
@@ -1099,7 +1095,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     // Verify the success message mentions the correct plan
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready dependency: 101 - Ready Dependency Plan')
+      expect.stringContaining('Found ready plan: 101 - Ready Dependency Plan')
     );
 
     // Verify all workspace options are preserved when redirecting
@@ -1112,5 +1108,455 @@ describe('handleAgentCommand - --next-ready flag', () => {
         nextReady: '100', // Original flag should remain
       })
     );
+  });
+});
+
+// Test executor that actually modifies plan files for testing batch execution
+class TestBatchExecutor {
+  public executeCalls: number = 0;
+  private taskCompletionStrategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once';
+  private tasksPerIteration: number = 2;
+
+  constructor(
+    strategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once',
+    tasksPerIteration: number = 2
+  ) {
+    this.taskCompletionStrategy = strategy;
+    this.tasksPerIteration = tasksPerIteration;
+  }
+
+  async execute(prompt: string, options: any) {
+    this.executeCalls++;
+
+    if (this.taskCompletionStrategy === 'error') {
+      throw new Error('Test executor failure');
+    }
+
+    if (this.taskCompletionStrategy === 'none') {
+      // Don't modify the plan file - simulate executor that doesn't complete tasks
+      return;
+    }
+
+    // Read and modify the plan file using real plan reading logic
+    const { readPlanFile, writePlanFile } = await import('../plans.js');
+    const plan = await readPlanFile(options.planFilePath);
+
+    if (this.taskCompletionStrategy === 'all-at-once') {
+      // Mark all incomplete tasks as done
+      plan.tasks.forEach((task) => {
+        if (!task.done) {
+          task.done = true;
+        }
+      });
+    } else if (this.taskCompletionStrategy === 'incremental') {
+      // Mark a limited number of tasks as done per iteration
+      let tasksMarked = 0;
+      for (const task of plan.tasks) {
+        if (!task.done && tasksMarked < this.tasksPerIteration) {
+          task.done = true;
+          tasksMarked++;
+        }
+      }
+    }
+
+    // Use real plan writing logic to maintain frontmatter format
+    await writePlanFile(options.planFilePath, plan);
+  }
+}
+
+describe('rmplanAgent - Batch Tasks Mode', () => {
+  let tempDir: string;
+  let batchPlanFile: string;
+  let testExecutor: TestBatchExecutor;
+
+  beforeEach(async () => {
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-batch-test-'));
+    const tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    batchPlanFile = path.join(tasksDir, '200-batch-plan.yml');
+
+    // Create a plan with multiple incomplete tasks for batch testing
+    const batchPlan: PlanSchema = {
+      id: 200,
+      title: 'Batch Test Plan',
+      goal: 'Test batch execution mode',
+      details: 'Plan with multiple tasks to be processed in batches',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task 1: Setup Database',
+          description: 'Create database schema and connection',
+          steps: [
+            { title: 'Create schema file', prompt: 'Create the database schema' },
+            { title: 'Set up connection', prompt: 'Configure database connection' },
+          ],
+        },
+        {
+          title: 'Task 2: Create API Routes',
+          description: 'Implement REST endpoints for CRUD operations',
+          steps: [
+            { title: 'Create routes', prompt: 'Set up REST API routes' },
+            { title: 'Add middleware', prompt: 'Add validation middleware' },
+          ],
+        },
+        {
+          title: 'Task 3: Add Authentication',
+          description: 'Implement user authentication and authorization',
+          steps: [{ title: 'Set up auth', prompt: 'Implement authentication system' }],
+        },
+        {
+          title: 'Task 4: Write Tests',
+          description: 'Add comprehensive test coverage',
+          steps: [
+            { title: 'Unit tests', prompt: 'Write unit tests' },
+            { title: 'Integration tests', prompt: 'Write integration tests' },
+          ],
+        },
+      ],
+      filename: batchPlanFile,
+    };
+
+    // Use real writePlanFile to create proper plan file format
+    const { writePlanFile } = await import('../plans.js');
+    await writePlanFile(batchPlanFile, batchPlan);
+
+    // Create test executor with default strategy
+    testExecutor = new TestBatchExecutor();
+
+    // Mock only essential external dependencies, keep core logic real
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: mock(() => {}),
+      error: mock(() => {}),
+      warn: mock(() => {}),
+      openLogFile: mock(() => {}),
+      closeLogFile: mock(async () => {}),
+      boldMarkdownHeaders: (text: string) => text,
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => testExecutor),
+      DEFAULT_EXECUTOR: 'test-executor',
+      defaultModelForExecutor: () => 'test-model',
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        postApplyCommands: [],
+      })),
+    }));
+
+    await moduleMocker.mock('../configSchema.js', () => ({
+      resolveTasksDir: mock(async () => tasksDir),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => '/test/project'),
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
+      commitAll: mock(async () => 0),
+    }));
+
+    // Mock workspace dependencies to avoid complexity
+    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
+      createWorkspace: mock(async () => null),
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_auto_selector.js', () => ({
+      WorkspaceAutoSelector: mock(() => ({
+        selectWorkspace: mock(async () => null),
+      })),
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_lock.js', () => ({
+      WorkspaceLock: {
+        getLockInfo: mock(async () => null),
+        isLockStale: mock(async () => false),
+        acquireLock: mock(async () => {}),
+        setupCleanupHandlers: mock(() => {}),
+        releaseLock: mock(async () => {}),
+      },
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_tracker.js', () => ({
+      findWorkspacesByTaskId: mock(async () => []),
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up temporary directory
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('batch mode executes and actually modifies plan file to mark tasks done', async () => {
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify executor was called
+    expect(testExecutor.executeCalls).toBe(1);
+
+    // Verify plan file was actually modified using real plan reading
+    const { readPlanFile } = await import('../plans.js');
+    const updatedPlan = await readPlanFile(batchPlanFile);
+
+    // All tasks should be marked as done
+    expect(updatedPlan.tasks).toHaveLength(4);
+    expect(updatedPlan.tasks.every((task) => task.done === true)).toBe(true);
+
+    // Plan status should be updated to done
+    expect(updatedPlan.status).toBe('done');
+  });
+
+  test('batch mode completes in multiple iterations with incremental task completion', async () => {
+    // Use incremental strategy with 2 tasks per iteration
+    testExecutor = new TestBatchExecutor('incremental', 2);
+
+    // Update the mock to use the new executor
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => testExecutor),
+      DEFAULT_EXECUTOR: 'test-executor',
+      defaultModelForExecutor: () => 'test-model',
+    }));
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify executor was called twice (4 tasks / 2 tasks per iteration = 2 iterations)
+    expect(testExecutor.executeCalls).toBe(2);
+
+    // Verify all tasks are eventually completed using real plan reading
+    const { readPlanFile } = await import('../plans.js');
+    const finalPlan = await readPlanFile(batchPlanFile);
+    expect(finalPlan.tasks.every((task) => task.done === true)).toBe(true);
+    expect(finalPlan.status).toBe('done');
+  });
+
+  test('batch mode with all tasks already complete exits immediately', async () => {
+    // Pre-mark all tasks as done in the plan file using real plan I/O
+    const { readPlanFile, writePlanFile } = await import('../plans.js');
+    const plan = await readPlanFile(batchPlanFile);
+    plan.tasks.forEach((task) => {
+      task.done = true;
+    });
+    await writePlanFile(batchPlanFile, plan);
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify executor was never called since no tasks to process
+    expect(testExecutor.executeCalls).toBe(0);
+
+    // Verify plan file structure is maintained using already imported function
+    const unchangedPlan = await readPlanFile(batchPlanFile);
+    expect(unchangedPlan.tasks.every((task) => task.done === true)).toBe(true);
+  });
+
+  test('batch mode handles executor failure and maintains plan file integrity', async () => {
+    // Use error strategy to simulate executor failure
+    testExecutor = new TestBatchExecutor('error');
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => testExecutor),
+      DEFAULT_EXECUTOR: 'test-executor',
+      defaultModelForExecutor: () => 'test-model',
+    }));
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await expect(rmplanAgent(batchPlanFile, options, globalCliOptions)).rejects.toThrow(
+      'Batch mode stopped due to error'
+    );
+
+    // Verify executor was called but failed
+    expect(testExecutor.executeCalls).toBe(1);
+
+    // Verify plan file was not corrupted and tasks remain incomplete using real plan reading
+    const { readPlanFile } = await import('../plans.js');
+    const plan = await readPlanFile(batchPlanFile);
+    expect(plan.tasks.every((task) => !task.done)).toBe(true);
+  });
+
+  test('batch mode correctly updates plan status from pending to in_progress to done', async () => {
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    // Verify initial status using real plan reading
+    const { readPlanFile } = await import('../plans.js');
+    let plan = await readPlanFile(batchPlanFile);
+    expect(plan.status).toBe('pending');
+
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify final status after completion
+    plan = await readPlanFile(batchPlanFile);
+    expect(plan.status).toBe('done');
+    expect(plan.updatedAt).toBeDefined();
+  });
+});
+
+describe('rmplanAgent - Batch Tasks Mode Integration', () => {
+  let tempDir: string;
+  let batchPlanFile: string;
+
+  beforeEach(async () => {
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-batch-integration-'));
+    const tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    batchPlanFile = path.join(tasksDir, '300-integration-plan.yml');
+
+    // Create a simpler plan for integration testing
+    const integrationPlan: PlanSchema = {
+      id: 300,
+      title: 'Integration Test Plan',
+      goal: 'Test real executor integration',
+      details: 'Simple plan for testing with copy-only executor',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task 1: Simple Implementation',
+          description: 'First implementation task',
+          steps: [{ title: 'Setup', prompt: 'Set up the basic structure' }],
+        },
+        {
+          title: 'Task 2: Simple Testing',
+          description: 'Second testing task',
+          steps: [{ title: 'Add tests', prompt: 'Add basic tests' }],
+        },
+      ],
+      filename: batchPlanFile,
+    };
+
+    // Use real writePlanFile to create proper plan file format
+    const { writePlanFile } = await import('../plans.js');
+    await writePlanFile(batchPlanFile, integrationPlan);
+
+    // Mock only logging to suppress output during test
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: mock(() => {}),
+      error: mock(() => {}),
+      warn: mock(() => {}),
+      openLogFile: mock(() => {}),
+      closeLogFile: mock(async () => {}),
+      boldMarkdownHeaders: (text: string) => text,
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        postApplyCommands: [],
+      })),
+    }));
+
+    await moduleMocker.mock('../configSchema.js', () => ({
+      resolveTasksDir: mock(async () => tasksDir),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir), // Use actual temp directory
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
+      commitAll: mock(async () => 0),
+    }));
+
+    // Mock workspace dependencies to avoid complexity
+    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
+      createWorkspace: mock(async () => null),
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_auto_selector.js', () => ({
+      WorkspaceAutoSelector: mock(() => ({
+        selectWorkspace: mock(async () => null),
+      })),
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_lock.js', () => ({
+      WorkspaceLock: {
+        getLockInfo: mock(async () => null),
+        isLockStale: mock(async () => false),
+        acquireLock: mock(async () => {}),
+        setupCleanupHandlers: mock(() => {}),
+        releaseLock: mock(async () => {}),
+      },
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_tracker.js', () => ({
+      findWorkspacesByTaskId: mock(async () => []),
+    }));
+
+    // Mock clipboard and terminal operations for the copy-only executor
+    await moduleMocker.mock('../../common/clipboard.ts', () => ({
+      write: mock(async () => {}),
+      read: mock(async () => ''),
+    }));
+
+    await moduleMocker.mock('../../common/terminal.ts', () => ({
+      waitForEnter: mock(async () => ''), // Return empty string to exit the while loop
+    }));
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up temporary directory
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test.skip('end-to-end batch mode with copy-only executor', async () => {
+    // Create some dummy source files for rmfilter to work with
+    const srcDir = path.join(tempDir, 'src');
+    await fs.mkdir(srcDir, { recursive: true });
+    await fs.writeFile(path.join(srcDir, 'main.js'), 'console.log("Hello world");');
+
+    const options = {
+      batchTasks: true,
+      'no-log': true,
+      nonInteractive: true,
+      executor: 'copy-only',
+    };
+    const globalCliOptions = {
+      config: {
+        paths: { tasks: path.join(tempDir, 'tasks') },
+      },
+    };
+
+    // This should work end-to-end with minimal mocking
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify plan file was modified using real plan reading
+    const { readPlanFile } = await import('../plans.js');
+    const updatedPlan = await readPlanFile(batchPlanFile);
+
+    // With copy-only executor, tasks should be marked as done
+    expect(updatedPlan.tasks).toHaveLength(2);
+    expect(updatedPlan.tasks[0].done).toBe(true);
+    expect(updatedPlan.tasks[1].done).toBe(true);
+    expect(updatedPlan.status).toBe('done');
   });
 });

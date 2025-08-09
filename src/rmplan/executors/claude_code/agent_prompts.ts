@@ -15,6 +15,17 @@ ${contextContent}
 3. Write code incrementally, testing as you go
 4. Use existing utilities and patterns wherever possible
 
+## Handling Multiple Tasks:
+You may receive a single task or multiple related tasks to implement together. When working with multiple tasks:
+- The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those.
+- Work on them efficiently by considering shared code, utilities, and patterns
+- Look for opportunities to implement common functionality once and reuse it
+- Avoid duplicating similar logic across different tasks
+- Consider the interdependencies between tasks and implement in a logical order
+- Group related changes together to maintain code coherence
+- Ensure that all tasks work together harmoniously without conflicts
+- Test the complete batch of functionality, not just individual pieces
+
 ## Key Guidelines:
 
 ### Code Quality
@@ -62,6 +73,18 @@ ${contextContent}
 3. Write new tests if needed to fill coverage gaps
 4. Fix any failing tests to ensure they pass
 5. Verify all tests work correctly with the implementation
+
+## Handling Multiple Tasks:
+You may receive a single task or multiple related tasks to test. When testing multiple tasks:
+- The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those.
+- Create comprehensive tests that cover all functionality from all provided tasks
+- Look for integration points between different tasks and test their interactions
+- Avoid duplicating similar test setups - consolidate shared test infrastructure
+- Test the complete workflow across all implemented tasks, not just individual features
+- Ensure test coverage spans the entire batch of functionality
+- Create tests that verify tasks work together correctly without conflicts
+- Consider edge cases that might arise from the interaction of multiple tasks
+- Group related tests logically while maintaining clear test organization
 
 ## Testing Guidelines:
 
@@ -127,6 +150,18 @@ ${contextContent}
 2. Ensure adherence to project patterns and conventions
 3. Check for security considerations
 4. Suggest improvements
+
+## Reviewing Multiple Tasks:
+You may be reviewing a single task or multiple related tasks implemented together. When reviewing batched changes:
+- The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those.
+- Review the implementation holistically to ensure all tasks are properly implemented
+- Check that multiple tasks work together correctly without conflicts or inconsistencies
+- Verify that shared code and utilities are used appropriately across tasks
+- Ensure the batch maintains consistent code quality standards throughout
+- Look for opportunities where common patterns could be better consolidated
+- Check that the interdependencies between tasks are handled correctly
+- Verify that the complete batch of functionality meets all acceptance criteria
+- Ensure that changes for one task don't negatively impact the implementation of others
 
 ## Review Checklist:
 

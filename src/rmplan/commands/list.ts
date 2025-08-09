@@ -8,7 +8,7 @@ import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { getCombinedTitleFromSummary } from '../display_utils.js';
-import { isPlanReady, readAllPlans } from '../plans.js';
+import { isPlanReady, isTaskDone, readAllPlans } from '../plans.js';
 
 export async function handleListCommand(options: any, command: any, searchTerms?: string[]) {
   const globalOpts = command.parent.opts();
@@ -232,10 +232,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       (() => {
         const taskCount = plan.tasks?.length || 0;
         if (taskCount) {
-          const doneTasks = plan.tasks?.filter(
-            (task) => (task.steps?.length && task.steps?.every((step) => step.done)) || task.done
-          );
-
+          const doneTasks = plan.tasks?.filter(isTaskDone);
           if (doneTasks?.length) {
             return `${doneTasks.length}/${taskCount}`;
           }

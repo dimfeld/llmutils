@@ -452,9 +452,18 @@ export class ClaudeCodeExecutor implements Executor {
 
     let originalContextContent = contextContent;
 
+    // In batch mode, prepend the plan file with @ prefix to make it accessible to Edit tool
+    if (planInfo && planInfo.batchMode && planInfo.planFilePath) {
+      const planFileReference = `${this.filePathPrefix}${planInfo.planFilePath}`;
+      contextContent = `${planFileReference}\n\n${contextContent}`;
+    }
+
     // Apply orchestration wrapper when plan information is provided
     if (planInfo && planInfo.planId) {
-      contextContent = wrapWithOrchestration(contextContent, planInfo.planId);
+      contextContent = wrapWithOrchestration(contextContent, planInfo.planId, {
+        batchMode: planInfo.batchMode,
+        planFilePath: planInfo.planFilePath,
+      });
     }
 
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
