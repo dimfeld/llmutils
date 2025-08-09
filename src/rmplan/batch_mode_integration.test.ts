@@ -95,7 +95,7 @@ tasks:
       details: 'This plan tests the batch mode feature',
       tasks: [
         { title: 'Task 1', done: false },
-        { title: 'Task 2', done: false }
+        { title: 'Task 2', done: false },
       ],
     };
 
@@ -120,7 +120,9 @@ tasks:
 
     // Verify prompt includes batch mode plan file reference
     expect(prompt).toContain('## Plan File for Task Updates');
-    expect(prompt).toContain('@/tasks/batch-test-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.');
+    expect(prompt).toContain(
+      '@/tasks/batch-test-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.'
+    );
     expect(prompt).toContain('## Task: Batch Processing Implementation');
     expect(prompt).toContain('Execute multiple tasks in batch mode');
 
@@ -147,7 +149,9 @@ tasks:
 
     // Verify the content passed to orchestration includes the plan file reference
     const [orchestratedContent] = mockWrapWithOrchestration.mock.calls[0];
-    expect(orchestratedContent).toMatch(new RegExp(`^@${planFilePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n\\n`));
+    expect(orchestratedContent).toMatch(
+      new RegExp(`^@${planFilePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n\\n`)
+    );
     expect(orchestratedContent).toContain('## Plan File for Task Updates');
     expect(orchestratedContent).toContain('## Task: Batch Processing Implementation');
   });
@@ -172,28 +176,28 @@ tasks:
       {
         name: 'title-based detection',
         task: { title: 'Batch Processing Tasks', description: 'Regular description' },
-        shouldDetectBatch: true
+        shouldDetectBatch: true,
       },
       {
         name: 'description-based detection',
         task: { title: 'Regular Task', description: 'Execute in batch mode' },
-        shouldDetectBatch: true
+        shouldDetectBatch: true,
       },
       {
         name: 'no batch indicators',
         task: { title: 'Regular Task', description: 'Regular description' },
-        shouldDetectBatch: false
+        shouldDetectBatch: false,
       },
       {
         name: 'case sensitive title',
         task: { title: 'batch processing tasks', description: 'Regular description' },
-        shouldDetectBatch: false
+        shouldDetectBatch: false,
       },
       {
         name: 'case sensitive description',
         task: { title: 'Regular Task', description: 'Execute in Batch Mode' },
-        shouldDetectBatch: false
-      }
+        shouldDetectBatch: false,
+      },
     ];
 
     for (const testCase of testCases) {
@@ -209,9 +213,13 @@ tasks:
       });
 
       if (testCase.shouldDetectBatch) {
-        expect(result, `${testCase.name} should detect batch mode`).toContain('## Plan File for Task Updates');
+        expect(result, `${testCase.name} should detect batch mode`).toContain(
+          '## Plan File for Task Updates'
+        );
       } else {
-        expect(result, `${testCase.name} should not detect batch mode`).not.toContain('## Plan File for Task Updates');
+        expect(result, `${testCase.name} should not detect batch mode`).not.toContain(
+          '## Plan File for Task Updates'
+        );
       }
     }
   });
@@ -267,7 +275,9 @@ tasks:
       includeCurrentPlanContext: false,
     });
 
-    expect(relativeResult).toContain('@/tasks/relative-plan.yml: This is the plan file you must edit');
+    expect(relativeResult).toContain(
+      '@/tasks/relative-plan.yml: This is the plan file you must edit'
+    );
 
     // Test different prefixes
     const customPrefixResult = await buildExecutionPromptWithoutSteps({
@@ -281,7 +291,9 @@ tasks:
       includeCurrentPlanContext: false,
     });
 
-    expect(customPrefixResult).toContain('$WORKSPACE/custom-plan.yml: This is the plan file you must edit');
+    expect(customPrefixResult).toContain(
+      '$WORKSPACE/custom-plan.yml: This is the plan file you must edit'
+    );
 
     // Test no prefix
     const noPrefixResult = await buildExecutionPromptWithoutSteps({
@@ -440,21 +452,21 @@ tasks:
       details: 'Complex batch processing phase',
       project: {
         goal: 'Overall Project Goal',
-        details: 'Project-level context and requirements'
+        details: 'Project-level context and requirements',
       },
       tasks: [
         { title: 'Complex Task 1', done: false },
         { title: 'Complex Task 2', done: true },
-        { title: 'Complex Task 3', done: false }
+        { title: 'Complex Task 3', done: false },
       ],
       rmfilter: ['src/complex.ts', 'lib/utils.ts'],
-      docs: ['https://example.com/api-docs', 'https://example.com/guide']
+      docs: ['https://example.com/api-docs', 'https://example.com/guide'],
     };
 
     const complexBatchTask = {
       title: 'Complex Batch Processing',
       description: 'Execute complex batch mode operations',
-      files: ['src/complex.ts', 'lib/utils.ts', 'tests/integration.ts']
+      files: ['src/complex.ts', 'lib/utils.ts', 'tests/integration.ts'],
     };
 
     const result = await buildExecutionPromptWithoutSteps({

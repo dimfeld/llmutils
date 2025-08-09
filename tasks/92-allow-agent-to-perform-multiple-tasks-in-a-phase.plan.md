@@ -10,7 +10,7 @@ dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T04:15:47.071Z
+updatedAt: 2025-08-09T04:26:31.219Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
     description: >
@@ -178,18 +178,18 @@ tasks:
           check if batch mode is active (could be indicated by presence of
           multiple tasks in planInfo). When in batch mode, ensure the plan file
           path is properly formatted with the @ prefix for Edit tool access.
-        done: false
+        done: true
       - prompt: >
           Update the orchestration wrapper call in the execute method to pass
           the plan file path when in batch mode, ensuring it's included in the
           orchestrator's context with proper @ prefix formatting.
-        done: false
+        done: true
       - prompt: >
           In src/rmplan/prompt_builder.ts, add a helper function or modify
           buildExecutionPromptWithoutSteps to include the plan file reference
           when building prompts for batch mode, making it clear to the
           orchestrator which file to edit.
-        done: false
+        done: true
   - title: "Task 6: Update sub-agent prompts to handle batched tasks"
     description: >
       Adjust the prompts for the implementer, tester, and reviewer agents in
@@ -329,6 +329,7 @@ changedFiles:
   - src/common/linear_client.test.ts
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
+  - src/rmplan/batch_mode_integration.test.ts
   - src/rmplan/commands/agent.ts
   - src/rmplan/commands/agent_batch_mode.test.ts
   - src/rmplan/commands/batch_tasks.test.ts
@@ -351,12 +352,15 @@ changedFiles:
   - src/rmplan/executors/claude_code/orchestrator_integration.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/types.ts
   - src/rmplan/issue_utils.ts
   - src/rmplan/plans/find_next.test.ts
   - src/rmplan/plans/find_next.ts
   - src/rmplan/plans/prepare_phase.ts
+  - src/rmplan/prompt_builder.test.ts
+  - src/rmplan/prompt_builder.ts
   - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan/commands/agent.ts

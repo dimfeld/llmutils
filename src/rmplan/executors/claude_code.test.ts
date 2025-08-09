@@ -2924,7 +2924,7 @@ More content
 
       // Extract the content argument from the mock call
       const [actualContent] = mockWrapWithOrchestration.mock.calls[0];
-      
+
       // Verify the structure: @ prefix, double newline, then original content
       expect(actualContent).toMatch(/^@\/test\/plans\/complex-plan\.yml\n\n# Header/);
       expect(actualContent).toContain('## Section 1\nContent line 1');

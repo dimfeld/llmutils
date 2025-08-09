@@ -27,9 +27,9 @@ export interface ExecutionPromptOptions {
  * Detects if the execution is in batch mode based on the task context
  */
 function isBatchMode(task?: { title: string; description?: string }): boolean {
-  return task?.title?.includes('Batch Processing') || 
-         task?.description?.includes('batch mode') ||
-         false;
+  return (
+    task?.title?.includes('Batch Processing') || task?.description?.includes('batch mode') || false
+  );
 }
 
 /**

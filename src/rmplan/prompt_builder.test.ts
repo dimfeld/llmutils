@@ -326,9 +326,11 @@ describe('prompt_builder', () => {
     describe('isBatchMode', () => {
       // Need to access the internal function for testing
       const isBatchMode = (task?: { title: string; description?: string }): boolean => {
-        return task?.title?.includes('Batch Processing') || 
-               task?.description?.includes('batch mode') ||
-               false;
+        return (
+          task?.title?.includes('Batch Processing') ||
+          task?.description?.includes('batch mode') ||
+          false
+        );
       };
 
       test('detects batch mode from title containing "Batch Processing"', () => {
@@ -366,9 +368,9 @@ describe('prompt_builder', () => {
       });
 
       test('detects batch mode when both title and description match', () => {
-        const task = { 
-          title: 'Batch Processing System', 
-          description: 'Run tasks in batch mode' 
+        const task = {
+          title: 'Batch Processing System',
+          description: 'Run tasks in batch mode',
         };
         expect(isBatchMode(task)).toBe(true);
       });
@@ -379,9 +381,9 @@ describe('prompt_builder', () => {
       });
 
       test('handles partial matches in description', () => {
-        const task = { 
-          title: 'System Updates', 
-          description: 'Configure system to run in batch mode for efficiency' 
+        const task = {
+          title: 'System Updates',
+          description: 'Configure system to run in batch mode for efficiency',
         };
         expect(isBatchMode(task)).toBe(true);
       });
@@ -436,7 +438,9 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain('@/batch-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.');
+        expect(result).toContain(
+          '@/batch-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.'
+        );
       });
 
       test('does not include plan file reference in regular mode', async () => {
@@ -472,14 +476,14 @@ describe('prompt_builder', () => {
         // Create nested directory structure
         const nestedDir = path.join(localTempDir, 'nested', 'subdirs');
         await fs.mkdir(nestedDir, { recursive: true });
-        
+
         const planFilePath = path.join(nestedDir, 'nested-batch-plan.yml');
         await fs.writeFile(planFilePath, 'test: plan');
 
         const planData: PlanSchema = {
           title: 'Nested Batch Plan',
           goal: 'Nested Goal',
-          details: 'Nested Details', 
+          details: 'Nested Details',
           tasks: [],
         };
 
@@ -501,7 +505,9 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain('@/nested/subdirs/nested-batch-plan.yml: This is the plan file you must edit');
+        expect(result).toContain(
+          '@/nested/subdirs/nested-batch-plan.yml: This is the plan file you must edit'
+        );
       });
 
       test('handles already relative plan file paths', async () => {
@@ -531,7 +537,9 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain('@/tasks/relative-batch-plan.yml: This is the plan file you must edit');
+        expect(result).toContain(
+          '@/tasks/relative-batch-plan.yml: This is the plan file you must edit'
+        );
       });
 
       test('uses empty prefix when filePathPrefix is not provided', async () => {
@@ -588,7 +596,9 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain('$PROJECT/custom-prefix-batch-plan.yml: This is the plan file you must edit');
+        expect(result).toContain(
+          '$PROJECT/custom-prefix-batch-plan.yml: This is the plan file you must edit'
+        );
       });
 
       test('batch mode detection works with description-based detection', async () => {
@@ -616,14 +626,16 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain('@/description-batch-plan.yml: This is the plan file you must edit');
+        expect(result).toContain(
+          '@/description-batch-plan.yml: This is the plan file you must edit'
+        );
       });
 
       test('handles git root resolution errors gracefully', async () => {
         // Mock getGitRoot to throw an error
         const { getGitRoot } = await import('../common/git.js');
         const originalGetGitRoot = getGitRoot;
-        
+
         // Use a mocked version that throws
         const mockGetGitRoot = mock(() => {
           throw new Error('Not a git repository');
@@ -689,8 +701,10 @@ describe('prompt_builder', () => {
         });
 
         // Verify the exact format of the plan file reference section
-        expect(result).toContain('\n## Plan File for Task Updates\n\n- @/format-batch-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.\n');
-        
+        expect(result).toContain(
+          '\n## Plan File for Task Updates\n\n- @/format-batch-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.\n'
+        );
+
         // Verify it appears after the task section
         const taskSectionIndex = result.indexOf('## Task: Batch Processing Format');
         const planFileIndex = result.indexOf('## Plan File for Task Updates');
