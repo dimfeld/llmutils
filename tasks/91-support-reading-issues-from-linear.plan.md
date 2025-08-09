@@ -5,7 +5,7 @@ goal: Integrate the Linear SDK and refactor the existing GitHub issue-fetching
   logic to use a common, abstract interface, enabling support for both
   platforms.
 id: 91
-status: in_progress
+status: done
 priority: medium
 dependencies: []
 docs:
@@ -13,7 +13,7 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T02:59:19.944Z
+updatedAt: 2025-08-09T03:11:26.806Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
     description: >
@@ -318,21 +318,23 @@ tasks:
 
           and configure issueTracker in rmplan.yml with a clear example
           configuration.
-        done: false
+        done: true
       - prompt: >
           Create docs/linear-integration.md with detailed documentation
           including Linear issue ID formats (TEAM-123),
 
           supported Linear features, example workflows, and any limitations
           compared to GitHub integration.
-        done: false
+        done: true
       - prompt: >
           Add examples showing how to import Linear issues using both
           interactive mode and direct issue IDs,
 
           including sample output to help users understand the feature.
-        done: false
+        done: true
 changedFiles:
+  - README.md
+  - docs/linear-integration.md
   - package.json
   - src/common/issue_tracker/factory.integration.test.ts
   - src/common/issue_tracker/factory.test.ts
@@ -347,6 +349,7 @@ changedFiles:
   - src/common/linear_client.test.ts
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
+  - src/rmplan/commands/documentation_consistency_check.test.ts
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/commands/import.integration.test.ts
@@ -354,12 +357,14 @@ changedFiles:
   - src/rmplan/commands/import.ts
   - src/rmplan/commands/integration_linear.test.ts
   - src/rmplan/commands/issue_tracker_integration.test.ts
+  - src/rmplan/commands/linear_documentation_examples.test.ts
   - src/rmplan/commands/linear_plan_structure.test.ts
   - src/rmplan/commands/plan_file_validation.test.ts
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
   - src/rmplan/issue_utils.ts
+  - src/rmplan/plans/prepare_phase.ts
 rmfilter:
   - src/rmplan
   - src/common/github*
