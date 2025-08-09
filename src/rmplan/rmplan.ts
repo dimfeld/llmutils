@@ -293,7 +293,7 @@ function createAgentCommand(command: Command, description: string) {
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planFile, options, command) => {
-      const { handleAgentCommand } = await import('./commands/agent.js');
+      const { handleAgentCommand } = await import('./commands/agent/agent.js');
       await handleAgentCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
     });
 }

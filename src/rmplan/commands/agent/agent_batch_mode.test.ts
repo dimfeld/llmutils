@@ -4,9 +4,9 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { rmplanAgent } from './agent.js';
-import { clearPlanCache } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
+import { clearPlanCache } from '../../plans.js';
+import type { PlanSchema } from '../../planSchema.js';
+import { ModuleMocker } from '../../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 

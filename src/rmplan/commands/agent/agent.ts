@@ -4,18 +4,25 @@
 import { select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import * as path from 'path';
-import { getGitRoot } from '../../common/git.js';
-import { commitAll, logSpawn } from '../../common/process.js';
-import { boldMarkdownHeaders, closeLogFile, error, log, openLogFile, warn } from '../../logging.js';
-import { executePostApplyCommand } from '../actions.js';
-import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
+import { getGitRoot } from '../../../common/git.js';
+import { commitAll, logSpawn } from '../../../common/process.js';
+import {
+  boldMarkdownHeaders,
+  closeLogFile,
+  error,
+  log,
+  openLogFile,
+  warn,
+} from '../../../logging.js';
+import { executePostApplyCommand } from '../../actions.js';
+import { loadEffectiveConfig } from '../../configLoader.js';
+import { resolveTasksDir, type RmplanConfig } from '../../configSchema.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
-} from '../executors/index.js';
-import type { Executor, ExecutorCommonOptions } from '../executors/types.js';
+} from '../../executors/index.js';
+import type { Executor, ExecutorCommonOptions } from '../../executors/types.js';
 import {
   clearPlanCache,
   readAllPlans,
@@ -23,20 +30,20 @@ import {
   resolvePlanFile,
   setPlanStatus,
   writePlanFile,
-} from '../plans.js';
-import { findNextActionableItem, getAllIncompleteTasks } from '../plans/find_next.js';
-import { markStepDone, markTaskDone } from '../plans/mark_done.js';
-import { preparePhase } from '../plans/prepare_phase.js';
-import { prepareNextStep } from '../plans/prepare_step.js';
-import type { PlanSchema } from '../planSchema.js';
-import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
-import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
-import { WorkspaceLock } from '../workspace/workspace_lock.js';
-import { createWorkspace } from '../workspace/workspace_manager.js';
-import { findWorkspacesByTaskId } from '../workspace/workspace_tracker.js';
-import { findNextPlan } from '../plans.js';
-import { getCombinedTitleFromSummary } from '../display_utils.js';
-import { findNextReadyDependency } from './find_next_dependency.js';
+} from '../../plans.js';
+import { findNextActionableItem, getAllIncompleteTasks } from '../../plans/find_next.js';
+import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
+import { preparePhase } from '../../plans/prepare_phase.js';
+import { prepareNextStep } from '../../plans/prepare_step.js';
+import type { PlanSchema } from '../../planSchema.js';
+import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
+import { WorkspaceAutoSelector } from '../../workspace/workspace_auto_selector.js';
+import { WorkspaceLock } from '../../workspace/workspace_lock.js';
+import { createWorkspace } from '../../workspace/workspace_manager.js';
+import { findWorkspacesByTaskId } from '../../workspace/workspace_tracker.js';
+import { findNextPlan } from '../../plans.js';
+import { getCombinedTitleFromSummary } from '../../display_utils.js';
+import { findNextReadyDependency } from '../find_next_dependency.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -909,8 +916,6 @@ async function executeBatchMode({
   } finally {
     await closeLogFile();
   }
-
-  return; // Exit early from batch mode
 }
 
 /**
