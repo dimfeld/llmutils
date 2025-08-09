@@ -486,5 +486,50 @@ planning:
       expect(config.planning).toBeDefined();
       expect(config.planning?.direct_mode).toBe(true);
     });
+
+    test('loadEffectiveConfig merges issueTracker from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+defaultExecutor: direct-call
+issueTracker: github
+paths:
+  tasks: "./tasks"
+`
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        `
+issueTracker: linear
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Local config should override main config for issueTracker
+      expect(config.issueTracker).toBe('linear');
+    });
+
+    test('loadEffectiveConfig applies default issueTracker when not specified in configs', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+defaultExecutor: direct-call
+paths:
+  tasks: "./tasks"
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Should apply default issueTracker value
+      expect(config.issueTracker).toBe('github');
+    });
   });
 });

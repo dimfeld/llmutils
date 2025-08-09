@@ -104,5 +104,30 @@ describe('configSchema', () => {
       expect(result.defaultExecutor).toBe('copy-only');
       expect(result.paths?.tasks).toBe('./tasks');
     });
+
+    test('should validate issueTracker with case sensitivity', () => {
+      const invalidConfig = {
+        issueTracker: 'GitHub', // Wrong case
+      };
+
+      expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+    });
+
+    test('should validate issueTracker with empty string', () => {
+      const invalidConfig = {
+        issueTracker: '',
+      };
+
+      expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+    });
+
+    test('should validate issueTracker with undefined explicitly set', () => {
+      const config = {
+        issueTracker: undefined,
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.issueTracker).toBe('github'); // Should use default
+    });
   });
 });
