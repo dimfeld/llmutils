@@ -60,6 +60,11 @@ export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSche
  */
 export const rmplanConfigSchema = z
   .object({
+    /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
+    issueTracker: z
+      .enum(['github', 'linear'])
+      .default('github')
+      .describe('Issue tracking service to use for import commands and issue-related operations'),
     /** An array of commands to run after changes are successfully applied by the agent. */
     postApplyCommands: z.array(postApplyCommandSchema).optional(),
     paths: z
@@ -198,6 +203,7 @@ export async function resolveTasksDir(config: any): Promise<string> {
  */
 export function getDefaultConfig(): RmplanConfig {
   return {
+    issueTracker: 'github',
     postApplyCommands: [],
     defaultExecutor: DEFAULT_EXECUTOR,
     workspaceCreation: undefined,

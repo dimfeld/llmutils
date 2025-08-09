@@ -1005,6 +1005,7 @@ export async function fullRmfilterRun(options?: {
 
     // Create a minimal RmplanConfig
     const rmplanConfig: RmplanConfig = {
+      issueTracker: 'github',
       models: globalValues.model ? { execution: globalValues.model } : undefined,
       defaultExecutor: DEFAULT_EXECUTOR,
     };

@@ -138,6 +138,7 @@ describe('configLoader', () => {
     test('should return default config when configPath is null', async () => {
       const config = await loadConfig(null);
       expect(config).toEqual({
+        issueTracker: 'github',
         defaultExecutor: DEFAULT_EXECUTOR,
         postApplyCommands: [],
         workspaceCreation: undefined,
