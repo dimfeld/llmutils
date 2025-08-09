@@ -88,10 +88,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       const comments = commentsConnection.nodes;
 
       // Fetch related data
-      const [state, labels] = await Promise.all([
-        issue.state,
-        issue.labels(),
-      ]);
+      const [state, labels] = await Promise.all([issue.state, issue.labels()]);
 
       // Map Linear issue data to generic IssueData format
       const issueData: IssueData = {
@@ -103,11 +100,13 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
         state: state?.name || 'Unknown',
         user: issue.creator ? this.mapLinearUserToUserData(issue.creator) : undefined,
         assignees: issue.assignee ? [this.mapLinearUserToUserData(issue.assignee)] : undefined,
-        labels: labels?.nodes?.length ? labels.nodes.map((label: any) => ({
-          id: label.id,
-          name: label.name,
-          color: label.color || undefined,
-        })) : undefined,
+        labels: labels?.nodes?.length
+          ? labels.nodes.map((label: any) => ({
+              id: label.id,
+              name: label.name,
+              color: label.color || undefined,
+            }))
+          : undefined,
         createdAt: issue.createdAt.toISOString(),
         updatedAt: issue.updatedAt.toISOString(),
         pullRequest: false, // Linear doesn't have pull requests
@@ -124,7 +123,9 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
         htmlUrl: undefined,
       }));
 
-      debugLog(`Successfully fetched Linear issue ${parsed.identifier} with ${commentData.length} comments`);
+      debugLog(
+        `Successfully fetched Linear issue ${parsed.identifier} with ${commentData.length} comments`
+      );
 
       return {
         issue: issueData,
@@ -167,10 +168,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       // Map Linear issues to generic IssueData format
       const issueData: IssueData[] = await Promise.all(
         allIssues.map(async (issue) => {
-          const [state, labels] = await Promise.all([
-            issue.state,
-            issue.labels(),
-          ]);
+          const [state, labels] = await Promise.all([issue.state, issue.labels()]);
 
           return {
             id: issue.id,
@@ -181,11 +179,13 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
             state: state?.name || 'Unknown',
             user: issue.creator ? this.mapLinearUserToUserData(issue.creator) : undefined,
             assignees: issue.assignee ? [this.mapLinearUserToUserData(issue.assignee)] : undefined,
-            labels: labels?.nodes?.length ? labels.nodes.map((label: any) => ({
-              id: label.id,
-              name: label.name,
-              color: label.color || undefined,
-            })) : undefined,
+            labels: labels?.nodes?.length
+              ? labels.nodes.map((label: any) => ({
+                  id: label.id,
+                  name: label.name,
+                  color: label.color || undefined,
+                }))
+              : undefined,
             createdAt: issue.createdAt.toISOString(),
             updatedAt: issue.updatedAt.toISOString(),
             pullRequest: false,

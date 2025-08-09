@@ -5,7 +5,7 @@ import type { IssueTrackerConfig } from './issue_tracker/types.ts';
 
 describe('LinearIssueTrackerClient', () => {
   const moduleMocker = new ModuleMocker(import.meta);
-  
+
   const mockConfig: IssueTrackerConfig = {
     type: 'linear',
     apiKey: 'test-linear-api-key',
@@ -50,7 +50,9 @@ describe('LinearIssueTrackerClient', () => {
         url: 'https://linear.app/company/issue/TEAM-123',
       });
 
-      const result2 = client.parseIssueIdentifier('https://linear.app/workspace/issue/PROJ-456/some-title-slug');
+      const result2 = client.parseIssueIdentifier(
+        'https://linear.app/workspace/issue/PROJ-456/some-title-slug'
+      );
       expect(result2).toEqual({
         identifier: 'PROJ-456',
         owner: 'workspace',
@@ -81,6 +83,30 @@ describe('LinearIssueTrackerClient', () => {
   });
 
   describe('fetchIssue', () => {
+    test('throws error when LINEAR_API_KEY is missing', async () => {
+      // Clear the environment variable
+      delete process.env.LINEAR_API_KEY;
+
+      await moduleMocker.mock('./linear_client.ts', () => ({
+        getLinearClient: mock(() => {
+          throw new Error(
+            'LINEAR_API_KEY environment variable is not set. ' +
+              'Please set your Linear API key to use Linear integration. ' +
+              'You can obtain an API key from: https://linear.app/settings/api'
+          );
+        }),
+      }));
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+
+      await expect(client.fetchIssue('TEAM-123')).rejects.toThrow(
+        'LINEAR_API_KEY environment variable is not set'
+      );
+
+      // Restore the environment variable for other tests
+      process.env.LINEAR_API_KEY = 'test-linear-api-key';
+    });
+
     test('fetches issue with comments successfully', async () => {
       const mockLinearClient = {
         issue: mock(async (id: string) => ({
@@ -324,9 +350,97 @@ describe('LinearIssueTrackerClient', () => {
       expect(result.issue.title).toBe('URL Test Issue');
       expect(mockLinearClient.issue).toHaveBeenCalledWith('TEAM-123');
     });
+
+    test('handles large text content correctly', async () => {
+      const largeDescription = 'A'.repeat(10000); // 10KB description
+      const largeComment = 'B'.repeat(5000); // 5KB comment
+
+      const mockLinearClient = {
+        issue: mock(async (id: string) => ({
+          id: 'issue-uuid-large',
+          identifier: 'TEAM-999',
+          title: 'Large Content Issue',
+          description: largeDescription,
+          url: 'https://linear.app/company/issue/TEAM-LARGE',
+          creator: {
+            id: 'user-1',
+            name: 'User One',
+          },
+          assignee: undefined,
+          labels: mock(async () => ({ nodes: [] })),
+          state: Promise.resolve({ name: 'Open' }),
+          createdAt: new Date('2024-01-01T00:00:00Z'),
+          updatedAt: new Date('2024-01-01T00:00:00Z'),
+          comments: mock(async () => ({
+            nodes: [
+              {
+                id: 'comment-large',
+                body: largeComment,
+                user: {
+                  id: 'user-2',
+                  name: 'User Two',
+                },
+                createdAt: new Date('2024-01-01T10:00:00Z'),
+                updatedAt: new Date('2024-01-01T10:00:00Z'),
+              },
+            ],
+          })),
+        })),
+      };
+
+      await moduleMocker.mock('./linear_client.ts', () => ({
+        getLinearClient: mock(() => mockLinearClient),
+      }));
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssue('TEAM-999');
+
+      expect(result.issue.body).toBe(largeDescription);
+      expect(result.issue.body?.length).toBe(10000);
+      expect(result.comments[0].body).toBe(largeComment);
+      expect(result.comments[0].body.length).toBe(5000);
+    });
   });
 
   describe('fetchAllOpenIssues', () => {
+    test('handles pagination failure gracefully', async () => {
+      const mockFirstPage = {
+        nodes: [
+          {
+            id: 'issue-1',
+            identifier: 'TEAM-1',
+            title: 'First Issue',
+            description: 'First issue description',
+            url: 'https://linear.app/company/issue/TEAM-1',
+            creator: undefined,
+            assignee: undefined,
+            labels: mock(async () => ({ nodes: [] })),
+            state: Promise.resolve({ name: 'In Progress' }),
+            createdAt: new Date('2024-01-01T00:00:00Z'),
+            updatedAt: new Date('2024-01-01T00:00:00Z'),
+          },
+        ],
+        pageInfo: { hasNextPage: true },
+        fetchNext: mock(async () => {
+          throw new Error('Pagination failed');
+        }),
+      };
+
+      const mockLinearClient = {
+        issues: mock(async (options: any) => mockFirstPage),
+      };
+
+      await moduleMocker.mock('./linear_client.ts', () => ({
+        getLinearClient: mock(() => mockLinearClient),
+      }));
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+
+      await expect(client.fetchAllOpenIssues()).rejects.toThrow(
+        'Failed to fetch open Linear issues: Pagination failed'
+      );
+    });
+
     test('fetches all open issues with pagination', async () => {
       const mockFirstPage = {
         nodes: [
@@ -358,9 +472,7 @@ describe('LinearIssueTrackerClient', () => {
               name: 'Assignee Two',
             },
             labels: mock(async () => ({
-              nodes: [
-                { id: 'label-1', name: 'Bug', color: '#ff0000' },
-              ],
+              nodes: [{ id: 'label-1', name: 'Bug', color: '#ff0000' }],
             })),
             state: Promise.resolve({ name: 'Todo' }),
             createdAt: new Date('2024-01-02T00:00:00Z'),
@@ -443,9 +555,7 @@ describe('LinearIssueTrackerClient', () => {
             login: undefined,
           },
         ],
-        labels: [
-          { id: 'label-1', name: 'Bug', color: '#ff0000' },
-        ],
+        labels: [{ id: 'label-1', name: 'Bug', color: '#ff0000' }],
         createdAt: '2024-01-02T00:00:00.000Z',
         updatedAt: '2024-01-02T00:00:00.000Z',
         pullRequest: false,
@@ -524,7 +634,7 @@ describe('LinearIssueTrackerClient', () => {
   describe('mapLinearUserToUserData', () => {
     test('maps Linear user with full data', () => {
       const client = new LinearIssueTrackerClient(mockConfig);
-      
+
       const linearUser = {
         id: 'user-123',
         name: 'John Doe',
@@ -547,7 +657,7 @@ describe('LinearIssueTrackerClient', () => {
 
     test('maps Linear user with displayName fallback', () => {
       const client = new LinearIssueTrackerClient(mockConfig);
-      
+
       const linearUser = {
         id: 'user-456',
         displayName: 'Jane Smith',
@@ -567,7 +677,7 @@ describe('LinearIssueTrackerClient', () => {
 
     test('maps Linear user with minimal data', () => {
       const client = new LinearIssueTrackerClient(mockConfig);
-      
+
       const linearUser = {
         id: 'user-789',
       };

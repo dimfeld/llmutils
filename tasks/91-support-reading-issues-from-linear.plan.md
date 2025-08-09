@@ -13,7 +13,7 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T01:40:45.436Z
+updatedAt: 2025-08-09T01:52:15.100Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
     description: >
@@ -139,27 +139,27 @@ tasks:
           (TEAM-123 format)
 
           and URLs (linear.app/team/issue/...), extracting the issue identifier.
-        done: false
+        done: true
       - prompt: >
           Implement fetchIssue method that uses the Linear SDK to fetch an issue
           by identifier, including its comments through the GraphQL API.
 
           Map the Linear issue and comment data to the generic IssueData and
           CommentData interfaces.
-        done: false
+        done: true
       - prompt: >
           Implement fetchAllOpenIssues that queries Linear for all open issues
           in the user's workspace, handling pagination if needed.
 
           Return them mapped to the generic IssueData format.
-        done: false
+        done: true
       - prompt: >
           Create comprehensive tests using the ModuleMocker to mock Linear SDK
           responses, testing issue fetching, comment retrieval,
 
           identifier parsing for various formats, and error handling for
           non-existent issues.
-        done: false
+        done: true
   - title: Create an Issue Tracker Abstraction Layer
     description: >
       Build a factory or service that provides an issue tracker client (either
@@ -337,6 +337,8 @@ changedFiles:
   - src/common/issue_tracker/index.ts
   - src/common/issue_tracker/types.test.ts
   - src/common/issue_tracker/types.ts
+  - src/common/linear.test.ts
+  - src/common/linear.ts
   - src/common/linear_client.test.ts
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
