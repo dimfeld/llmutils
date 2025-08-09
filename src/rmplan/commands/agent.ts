@@ -470,6 +470,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             planId: planData.id?.toString() ?? 'unknown',
             planTitle: planData.title ?? 'Untitled Plan',
             planFilePath: currentPlanFile,
+            batchMode: true,
           });
         } catch (err) {
           error('Batch execution failed:', err);

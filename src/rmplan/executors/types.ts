@@ -21,6 +21,8 @@ export interface ExecutePlanInfo {
   planTitle: string;
   /** The path to the plan file */
   planFilePath: string;
+  /** Whether batch mode is enabled for processing multiple tasks */
+  batchMode?: boolean;
 }
 
 export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {

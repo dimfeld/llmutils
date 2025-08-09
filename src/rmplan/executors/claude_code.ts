@@ -454,7 +454,10 @@ export class ClaudeCodeExecutor implements Executor {
 
     // Apply orchestration wrapper when plan information is provided
     if (planInfo && planInfo.planId) {
-      contextContent = wrapWithOrchestration(contextContent, planInfo.planId);
+      contextContent = wrapWithOrchestration(contextContent, planInfo.planId, {
+        batchMode: planInfo.batchMode,
+        planFilePath: planInfo.planFilePath,
+      });
     }
 
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
