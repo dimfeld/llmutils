@@ -14,22 +14,32 @@ describe('Documentation Consistency Check', () => {
       // Test all URL formats mentioned in the documentation
 
       // Example from README.md: https://linear.app/workspace/issue/TEAM-456
-      const result1 = linearClient.parseIssueIdentifier('https://linear.app/workspace/issue/TEAM-456');
+      const result1 = linearClient.parseIssueIdentifier(
+        'https://linear.app/workspace/issue/TEAM-456'
+      );
       expect(result1?.identifier).toBe('TEAM-456');
 
       // Example from linear-integration.md: https://linear.app/workspace/issue/TEAM-123
-      const result2 = linearClient.parseIssueIdentifier('https://linear.app/workspace/issue/TEAM-123');
+      const result2 = linearClient.parseIssueIdentifier(
+        'https://linear.app/workspace/issue/TEAM-123'
+      );
       expect(result2?.identifier).toBe('TEAM-123');
 
       // Example with slug from linear-integration.md
-      const result3 = linearClient.parseIssueIdentifier('https://linear.app/workspace/issue/TEAM-123/implement-user-authentication');
+      const result3 = linearClient.parseIssueIdentifier(
+        'https://linear.app/workspace/issue/TEAM-123/implement-user-authentication'
+      );
       expect(result3?.identifier).toBe('TEAM-123');
 
       // Various team identifier formats mentioned in documentation
-      const result4 = linearClient.parseIssueIdentifier('https://linear.app/company/issue/PROJ-001');
+      const result4 = linearClient.parseIssueIdentifier(
+        'https://linear.app/company/issue/PROJ-001'
+      );
       expect(result4?.identifier).toBe('PROJ-001');
 
-      const result5 = linearClient.parseIssueIdentifier('https://linear.app/mycompany/issue/ABC123-789');
+      const result5 = linearClient.parseIssueIdentifier(
+        'https://linear.app/mycompany/issue/ABC123-789'
+      );
       expect(result5?.identifier).toBe('ABC123-789');
     });
 
@@ -57,14 +67,7 @@ describe('Documentation Consistency Check', () => {
       const linearClient = createLinearClient({ type: 'linear' });
 
       // From linear-integration.md: "TEAM-123 where TEAM is your Linear team identifier (uppercase letters and numbers)"
-      const validPatterns = [
-        'TEAM-123',
-        'PROJ-456',
-        'ABC123-789',
-        'A-1',
-        'TEAM123-456',
-        'PROJ1-2',
-      ];
+      const validPatterns = ['TEAM-123', 'PROJ-456', 'ABC123-789', 'A-1', 'TEAM123-456', 'PROJ1-2'];
 
       for (const pattern of validPatterns) {
         const result = linearClient.parseIssueIdentifier(pattern);

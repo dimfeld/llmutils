@@ -1086,6 +1086,7 @@ rmplan import
 **Linear Issue ID Format:**
 
 Linear issues use the format `TEAM-123` where:
+
 - `TEAM` is your Linear team identifier (uppercase letters and numbers)
 - `123` is the issue number
 
@@ -1417,15 +1418,15 @@ rmplan import https://linear.app/workspace/issue/TEAM-123
 
 # Interactive Linear import with sample output:
 # rmplan import
-# ✓ Connected to Linear workspace: MyCompany  
+# ✓ Connected to Linear workspace: MyCompany
 # ✓ Found 12 open Linear issues
-# 
+#
 # Select issues to import (Space to select, Enter to confirm):
 # ❯ ◯ TEAM-123 - Implement user authentication
 #   ◯ TEAM-124 - Add password reset functionality
 #   ◯ TEAM-125 - Create user profile page
 #   ◯ PROJ-001 - Database migration for user roles
-# 
+#
 # Selected 2 issues for import
 # ✓ Imported: tasks/team-123-implement-user-authentication.yml
 # ✓ Imported: tasks/team-124-add-password-reset-functionality.yml

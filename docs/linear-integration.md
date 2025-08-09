@@ -55,6 +55,7 @@ paths:
 Linear uses a specific format for issue identifiers:
 
 ### Issue ID Format
+
 - **Pattern**: `TEAM-123`
 - **Team Identifier**: 2-10 uppercase letters and numbers (e.g., `TEAM`, `PROJ`, `ABC123`)
 - **Issue Number**: Sequential number assigned by Linear
@@ -94,6 +95,7 @@ rmplan import
 ```
 
 **Interactive Mode Features:**
+
 - Browse all open Linear issues in your workspace
 - Multi-select issues using space bar
 - Filter by team, status, or assignee
@@ -197,11 +199,11 @@ $ rmplan import
 
 Select issues to import (use Space to select, Enter to confirm):
 ❯ ◯ TEAM-123 - Implement user authentication
-  ◯ TEAM-124 - Add password reset functionality  
+  ◯ TEAM-124 - Add password reset functionality
   ◯ TEAM-125 - Create user profile page
   ◯ TEAM-126 - Implement two-factor authentication
   ◯ PROJ-001 - Database migration for user roles
-  
+
 Navigation: ↑/↓ to move, Space to select, Enter to confirm, q to quit
 ```
 
@@ -209,41 +211,42 @@ Navigation: ↑/↓ to move, Space to select, Enter to confirm, q to quit
 
 ```yaml
 id: 7
-title: "Implement user authentication"
-goal: "Implement: Implement user authentication"
+title: 'Implement user authentication'
+goal: 'Implement: Implement user authentication'
 details: |
   ## Problem
-  
+
   Users need to authenticate to access protected resources in our application.
-  
+
   ## Solution
-  
+
   Implement JWT-based authentication with the following components:
   - Login/registration endpoints
   - JWT token generation and validation
   - Protected route middleware
   - User session management
-  
+
   ---
-  
+
   **Comments:**
-  
+
   > We should also consider implementing OAuth for social login integration.
   > — Alice Johnson (2024-01-15)
-  
+
   > Good point! Let's also add support for refresh tokens.
   > — Bob Smith (2024-01-16)
 
 status: pending
-issue: ["https://linear.app/mycompany/issue/TEAM-123"]
+issue: ['https://linear.app/mycompany/issue/TEAM-123']
 tasks: []
-createdAt: "2024-01-16T10:30:00.000Z"
-updatedAt: "2024-01-16T10:30:00.000Z"
+createdAt: '2024-01-16T10:30:00.000Z'
+updatedAt: '2024-01-16T10:30:00.000Z'
 ```
 
 ## Supported Linear Features
 
 ### ✅ Fully Supported
+
 - Issue importing and plan generation
 - Issue comments with full attribution
 - Interactive multi-issue selection
@@ -255,11 +258,13 @@ updatedAt: "2024-01-16T10:30:00.000Z"
 - Custom output file locations
 
 ### ⚠️ Partially Supported
+
 - **Rich Text Formatting**: Linear's rich text is converted to Markdown, some formatting may be lost
 - **Attachments**: Issue attachments are not downloaded, only referenced by URL
 - **Issue Labels**: Linear labels are not currently imported (can be added in future versions)
 
 ### ❌ Not Supported
+
 - **Pull Requests**: Linear doesn't have pull requests; PR-related rmplan features remain GitHub-only
 - **Issue Creation**: rmplan can only read Linear issues, not create them
 - **Webhooks**: No webhook integration for automatic plan updates
@@ -267,18 +272,22 @@ updatedAt: "2024-01-16T10:30:00.000Z"
 ## Differences from GitHub Integration
 
 ### Issue Numbers
+
 - **GitHub**: Numeric IDs (e.g., `123`, `#456`)
 - **Linear**: Team-prefixed IDs (e.g., `TEAM-123`, `PROJ-456`)
 
-### Issue States  
+### Issue States
+
 - **GitHub**: `open`, `closed`
 - **Linear**: `Backlog`, `Todo`, `In Progress`, `Done`, `Canceled`
 
 ### URLs
+
 - **GitHub**: `https://github.com/owner/repo/issues/123`
 - **Linear**: `https://linear.app/workspace/issue/TEAM-123`
 
 ### Comments
+
 - **GitHub**: Rich Markdown support, reactions, editing history
 - **Linear**: Rich text converted to Markdown, simpler comment structure
 
@@ -287,6 +296,7 @@ updatedAt: "2024-01-16T10:30:00.000Z"
 ### Common Issues
 
 #### "LINEAR_API_KEY environment variable is not set"
+
 ```bash
 # Solution: Set the environment variable
 export LINEAR_API_KEY="lin_api_your_key_here"
@@ -296,16 +306,19 @@ echo $LINEAR_API_KEY
 ```
 
 #### "Invalid Linear API key"
+
 - Check that your API key starts with `lin_api_`
 - Verify the key hasn't expired in Linear settings
 - Ensure you have access to the workspace
 
 #### "Issue not found: TEAM-123"
+
 - Verify the issue exists and you have access to it
 - Check that the team identifier matches your Linear workspace
 - Ensure the issue hasn't been deleted or moved
 
 #### "No Linear issues found"
+
 - Check that your workspace has open issues
 - Verify your API key has read access to issues
 - Try specifying a specific team if you have multiple teams
@@ -325,11 +338,13 @@ rmplan import TEAM-123 --debug
 ## Performance Considerations
 
 ### API Rate Limits
+
 - Linear's API has rate limits (typically 1000 requests per hour)
 - Bulk imports are batched to respect rate limits
 - Interactive mode caches issue lists to minimize API calls
 
 ### Large Workspaces
+
 - Interactive import mode shows up to 100 issues at once
 - Use filtering options to narrow down large issue lists
 - Consider importing issues by team or project for better organization
@@ -350,7 +365,7 @@ If you're migrating from GitHub to Linear integration:
 export GITHUB_TOKEN="ghp_your_github_token"
 rmplan import 123
 
-# After (Linear)  
+# After (Linear)
 export LINEAR_API_KEY="lin_api_your_linear_key"
 rmplan import TEAM-123
 ```

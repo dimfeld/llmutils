@@ -178,10 +178,10 @@ describe('Linear Documentation Examples Validation', () => {
 
       expect(writePlanFile).toHaveBeenCalled();
       const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-      
+
       // Validate file naming matches documentation
       expect(filePath).toContain('team-456-implement-user-authentication.plan.md');
-      
+
       // Validate plan structure matches README example
       expect(planData).toMatchObject({
         id: 6,
@@ -265,7 +265,7 @@ describe('Linear Documentation Examples Validation', () => {
               html_url: 'https://linear.app/workspace/issue/TEAM-123',
               number: 'TEAM-123',
             },
-            plan: "The login form is not working correctly after the recent update.\n\n---\n\n**Comments:**\n\n> I noticed the issue occurs when users have special characters in their passwords.\n> — QA Tester (2024-01-15)",
+            plan: 'The login form is not working correctly after the recent update.\n\n---\n\n**Comments:**\n\n> I noticed the issue occurs when users have special characters in their passwords.\n> — QA Tester (2024-01-15)',
             rmprOptions: {
               rmfilter: ['--include', '*.ts'],
             },
@@ -566,7 +566,7 @@ describe('Linear Documentation Examples Validation', () => {
       expect(planData.details).toContain('**Comments:**');
       expect(planData.details).toContain('> We should also consider implementing OAuth');
       expect(planData.details).toContain('— Alice Johnson (2024-01-15)');
-      expect(planData.details).toContain('> Good point! Let\'s also add support for refresh tokens');
+      expect(planData.details).toContain("> Good point! Let's also add support for refresh tokens");
       expect(planData.details).toContain('— Bob Smith (2024-01-16)');
     });
 
@@ -660,9 +660,27 @@ describe('Linear Documentation Examples Validation', () => {
           pullRequest: false,
         },
         comments: [
-          { id: 'c1', body: 'Comment 1', createdAt: '2024-01-15T11:00:00.000Z', updatedAt: '2024-01-15T11:00:00.000Z', user: { id: 'u1', name: 'User 1' } },
-          { id: 'c2', body: 'Comment 2', createdAt: '2024-01-15T12:00:00.000Z', updatedAt: '2024-01-15T12:00:00.000Z', user: { id: 'u2', name: 'User 2' } },
-          { id: 'c3', body: 'Comment 3', createdAt: '2024-01-15T13:00:00.000Z', updatedAt: '2024-01-15T13:00:00.000Z', user: { id: 'u3', name: 'User 3' } },
+          {
+            id: 'c1',
+            body: 'Comment 1',
+            createdAt: '2024-01-15T11:00:00.000Z',
+            updatedAt: '2024-01-15T11:00:00.000Z',
+            user: { id: 'u1', name: 'User 1' },
+          },
+          {
+            id: 'c2',
+            body: 'Comment 2',
+            createdAt: '2024-01-15T12:00:00.000Z',
+            updatedAt: '2024-01-15T12:00:00.000Z',
+            user: { id: 'u2', name: 'User 2' },
+          },
+          {
+            id: 'c3',
+            body: 'Comment 3',
+            createdAt: '2024-01-15T13:00:00.000Z',
+            updatedAt: '2024-01-15T13:00:00.000Z',
+            user: { id: 'u3', name: 'User 3' },
+          },
         ],
       };
 
