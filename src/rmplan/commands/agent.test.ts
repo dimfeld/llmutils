@@ -1114,3 +1114,414 @@ describe('handleAgentCommand - --next-ready flag', () => {
     );
   });
 });
+
+describe('rmplanAgent - Batch Tasks Mode', () => {
+  let tempDir: string;
+  let batchPlanFile: string;
+
+  // Mock functions specific to batch mode
+  const buildExecutionPromptWithoutStepsSpy = mock(async () => 'Batch prompt');
+
+  beforeEach(async () => {
+    // Clear all existing mocks
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    warnSpy.mockClear();
+    selectSpy.mockClear();
+    executorExecuteSpy.mockClear();
+    buildExecutorAndLogSpy.mockClear();
+    preparePhase.mockClear();
+    setPlanStatusSpy.mockClear();
+    resolvePlanFileSpy.mockClear();
+    loadEffectiveConfigSpy.mockClear();
+    getGitRootSpy.mockClear();
+    openLogFileSpy.mockClear();
+    closeLogFileSpy.mockClear();
+    findPendingTaskSpy.mockClear();
+    findNextActionableItemSpy.mockClear();
+    prepareNextStepSpy.mockClear();
+    markStepDoneSpy.mockClear();
+    buildExecutionPromptWithoutStepsSpy.mockClear();
+
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-batch-test-'));
+    const tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    batchPlanFile = path.join(tasksDir, '200-batch-plan.yml');
+
+    // Create a plan with multiple incomplete tasks for batch testing
+    // All tasks have steps to avoid triggering plan preparation
+    const batchPlan: PlanSchema = {
+      id: 200,
+      title: 'Batch Test Plan',
+      goal: 'Test batch execution mode',
+      details: 'Plan with multiple tasks to be processed in batches',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task 1: Setup Database',
+          description: 'Create database schema and connection',
+          steps: [
+            { title: 'Create schema file', prompt: 'Create the database schema' },
+            { title: 'Set up connection', prompt: 'Configure database connection' },
+          ],
+        },
+        {
+          title: 'Task 2: Create API Routes',
+          description: 'Implement REST endpoints for CRUD operations',
+          steps: [
+            { title: 'Create routes', prompt: 'Set up REST API routes' },
+            { title: 'Add middleware', prompt: 'Add validation middleware' },
+          ],
+        },
+        {
+          title: 'Task 3: Add Authentication',
+          description: 'Implement user authentication and authorization',
+          steps: [
+            { title: 'Set up auth', prompt: 'Implement authentication system' },
+          ],
+        },
+        {
+          title: 'Task 4: Write Tests',
+          description: 'Add comprehensive test coverage',
+          steps: [
+            { title: 'Unit tests', prompt: 'Write unit tests' },
+            { title: 'Integration tests', prompt: 'Write integration tests' },
+          ],
+        },
+      ],
+      filename: batchPlanFile,
+    };
+
+    await fs.writeFile(batchPlanFile, yaml.stringify(batchPlan));
+
+    // Mock dependencies
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: warnSpy,
+      openLogFile: openLogFileSpy,
+      closeLogFile: closeLogFileSpy,
+      boldMarkdownHeaders: (text: string) => text,
+    }));
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      select: selectSpy,
+      input: mock(async () => ''),
+      confirm: mock(async () => true),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: buildExecutorAndLogSpy,
+      DEFAULT_EXECUTOR: 'copy-only',
+      defaultModelForExecutor: () => 'test-model',
+    }));
+
+    await moduleMocker.mock('../plans/find_next.js', async () => {
+      const realModule = await import('../plans/find_next.js');
+      return {
+        findPendingTask: findPendingTaskSpy,
+        findNextActionableItem: findNextActionableItemSpy,
+        getAllIncompleteTasks: realModule.getAllIncompleteTasks, // Use real function
+      };
+    });
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: resolvePlanFileSpy,
+      readPlanFile: async (filePath: string) => {
+        const content = await fs.readFile(filePath, 'utf-8');
+        return yaml.parse(content) as PlanSchema;
+      },
+      writePlanFile: async (filePath: string, plan: PlanSchema) => {
+        await fs.writeFile(filePath, yaml.stringify(plan));
+      },
+      setPlanStatus: setPlanStatusSpy,
+      clearPlanCache,
+      readAllPlans: async () => {
+        // Return empty plans for batch mode testing
+        return { plans: new Map(), errors: [] };
+      },
+    }));
+
+    await moduleMocker.mock('../prompt_builder.js', () => ({
+      buildExecutionPromptWithoutSteps: buildExecutionPromptWithoutStepsSpy,
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: loadEffectiveConfigSpy,
+    }));
+
+    await moduleMocker.mock('../configSchema.js', () => ({
+      resolveTasksDir: async () => tasksDir,
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: getGitRootSpy,
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
+      commitAll: mock(async () => 0),
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
+      createWorkspace: mock(async () => null),
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_auto_selector.js', () => ({
+      WorkspaceAutoSelector: mock(() => ({
+        selectWorkspace: mock(async () => null),
+      })),
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_lock.js', () => ({
+      WorkspaceLock: {
+        getLockInfo: mock(async () => null),
+        isLockStale: mock(async () => false),
+        acquireLock: mock(async () => {}),
+        setupCleanupHandlers: mock(() => {}),
+        releaseLock: mock(async () => {}),
+      },
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_tracker.js', () => ({
+      findWorkspacesByTaskId: mock(async () => []),
+    }));
+
+    // Set up default mock implementations
+    resolvePlanFileSpy.mockResolvedValue(batchPlanFile);
+    buildExecutorAndLogSpy.mockReturnValue({
+      execute: executorExecuteSpy,
+    });
+  });
+
+  afterEach(async () => {
+    // Clean up mocks
+    moduleMocker.clear();
+
+    // Clean up temporary directory
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('batch mode executes when --batch-tasks flag is true', async () => {
+    // Mock executor to simulate updating the plan file with done: true
+    executorExecuteSpy.mockImplementation(async () => {
+      // Simulate the orchestrator marking tasks as done in the plan file
+      const planContent = await fs.readFile(batchPlanFile, 'utf-8');
+      const plan = yaml.parse(planContent) as PlanSchema;
+      plan.tasks[0].done = true;
+      plan.tasks[1].done = true;
+      await fs.writeFile(batchPlanFile, yaml.stringify(plan));
+    });
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify batch mode was activated
+    expect(logSpy).toHaveBeenCalledWith('Starting batch mode execution:', batchPlanFile);
+
+    // Verify buildExecutionPromptWithoutSteps was called for batch prompt with expected format
+    expect(buildExecutionPromptWithoutStepsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: expect.objectContaining({
+          title: expect.stringContaining('Batch Processing:'),
+          description: expect.stringContaining('batch mode'),
+        }),
+      })
+    );
+
+    // Verify executor was called
+    expect(executorExecuteSpy).toHaveBeenCalled();
+
+    // Verify plan status was set to done when all tasks completed
+    expect(setPlanStatusSpy).toHaveBeenCalledWith(batchPlanFile, 'done');
+
+    // Verify completion message
+    expect(logSpy).toHaveBeenCalledWith('Batch mode: All tasks completed, marking plan as done');
+  });
+
+  test('batch mode completes in multiple iterations', async () => {
+    // Use the real getAllIncompleteTasks function instead of mocking
+    // it will automatically check the file state
+
+    let executionCount = 0;
+    executorExecuteSpy.mockImplementation(async () => {
+      const planContent = await fs.readFile(batchPlanFile, 'utf-8');
+      const plan = yaml.parse(planContent) as PlanSchema;
+
+      if (executionCount === 0) {
+        // First execution: mark first 2 tasks as done
+        plan.tasks[0].done = true;
+        plan.tasks[1].done = true;
+      } else if (executionCount === 1) {
+        // Second execution: mark remaining tasks as done
+        plan.tasks[2].done = true;
+        plan.tasks[3].done = true;
+      }
+
+      executionCount++;
+      await fs.writeFile(batchPlanFile, yaml.stringify(plan));
+    });
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify executor was called twice (two iterations)
+    expect(executorExecuteSpy).toHaveBeenCalledTimes(2);
+
+    // Verify batch iteration messages
+    expect(logSpy).toHaveBeenCalledWith('Batch mode: Processing 4 incomplete task(s)');
+    expect(logSpy).toHaveBeenCalledWith('Batch mode: Processing 2 incomplete task(s)');
+    expect(logSpy).toHaveBeenCalledWith(
+      'Batch iteration complete. Remaining incomplete tasks: 2'
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      'Batch iteration complete. Remaining incomplete tasks: 0'
+    );
+
+    // Verify completion
+    expect(logSpy).toHaveBeenCalledWith('Batch mode: All tasks completed, marking plan as done');
+    expect(setPlanStatusSpy).toHaveBeenCalledWith(batchPlanFile, 'done');
+  });
+
+  test('batch mode with all tasks already complete exits immediately', async () => {
+    // Update plan file to have all tasks marked as done
+    const planContent = await fs.readFile(batchPlanFile, 'utf-8');
+    const plan = yaml.parse(planContent) as PlanSchema;
+    plan.tasks.forEach((task) => {
+      task.done = true;
+    });
+    await fs.writeFile(batchPlanFile, yaml.stringify(plan));
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify batch mode started but exited immediately
+    expect(logSpy).toHaveBeenCalledWith('Starting batch mode execution:', batchPlanFile);
+    expect(logSpy).toHaveBeenCalledWith('Batch mode complete: No incomplete tasks remaining');
+
+    // Verify executor was never called since no tasks to process
+    expect(executorExecuteSpy).not.toHaveBeenCalled();
+
+    // Verify buildExecutionPromptWithoutSteps was never called
+    expect(buildExecutionPromptWithoutStepsSpy).not.toHaveBeenCalled();
+
+    // Verify plan status was still updated to done
+    expect(setPlanStatusSpy).toHaveBeenCalledWith(batchPlanFile, 'done');
+  });
+
+  test('batch mode handles executor failure gracefully', async () => {
+    // Tasks are incomplete by default from the plan file setup
+
+    // Mock executor to fail
+    const executorError = new Error('Executor failed to complete batch');
+    executorExecuteSpy.mockRejectedValue(executorError);
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await expect(rmplanAgent(batchPlanFile, options, globalCliOptions)).rejects.toThrow(
+      'Executor failed to complete batch'
+    );
+
+    // Verify batch mode started
+    expect(logSpy).toHaveBeenCalledWith('Starting batch mode execution:', batchPlanFile);
+
+    // Verify executor was called but failed
+    expect(executorExecuteSpy).toHaveBeenCalled();
+
+    // Verify plan status was not updated to done due to failure
+    expect(setPlanStatusSpy).not.toHaveBeenCalledWith(batchPlanFile, 'done');
+  });
+
+  test('batch mode updates parent plan status correctly', async () => {
+    // Create a parent plan
+    const parentPlanFile = path.join(tempDir, 'tasks', '199-parent-plan.yml');
+    const parentPlan: PlanSchema = {
+      id: 199,
+      title: 'Parent Plan',
+      goal: 'Parent plan goal',
+      details: 'Parent plan details',
+      status: 'pending',
+      tasks: [],
+      filename: parentPlanFile,
+    };
+    await fs.writeFile(parentPlanFile, yaml.stringify(parentPlan));
+
+    // Update batch plan to have parent reference
+    const planContent = await fs.readFile(batchPlanFile, 'utf-8');
+    const plan = yaml.parse(planContent) as PlanSchema;
+    plan.parent = 199;
+    await fs.writeFile(batchPlanFile, yaml.stringify(plan));
+
+    // checkAndMarkParentDone is a local function in agent.ts, no need to mock
+
+    // Tasks start incomplete, and the executor will mark the first one done
+
+    executorExecuteSpy.mockImplementation(async () => {
+      const currentPlanContent = await fs.readFile(batchPlanFile, 'utf-8');
+      const currentPlan = yaml.parse(currentPlanContent) as PlanSchema;
+      currentPlan.tasks[0].done = true;
+      await fs.writeFile(batchPlanFile, yaml.stringify(currentPlan));
+    });
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await rmplanAgent(batchPlanFile, options, globalCliOptions);
+
+    // Verify batch completed successfully
+    expect(setPlanStatusSpy).toHaveBeenCalledWith(batchPlanFile, 'done');
+
+    // Read the parent plan file to verify it was marked as in_progress
+    const parentPlanContent = await fs.readFile(parentPlanFile, 'utf-8');
+    const updatedParentPlan = yaml.parse(parentPlanContent) as PlanSchema;
+    expect(updatedParentPlan.status).toBe('in_progress');
+  });
+
+  test('batch mode handles plan file read errors during loop', async () => {
+    // Tasks are incomplete by default from the plan file setup
+
+    // Mock plan file read to fail on second iteration (after executor runs)
+    let readCount = 0;
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: resolvePlanFileSpy,
+      readPlanFile: async (filePath: string) => {
+        readCount++;
+        if (readCount > 1) {
+          throw new Error('Plan file corrupted during execution');
+        }
+        const content = await fs.readFile(filePath, 'utf-8');
+        return yaml.parse(content) as PlanSchema;
+      },
+      writePlanFile: async (filePath: string, plan: PlanSchema) => {
+        await fs.writeFile(filePath, yaml.stringify(plan));
+      },
+      setPlanStatus: setPlanStatusSpy,
+      clearPlanCache,
+    }));
+
+    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+
+    await expect(rmplanAgent(batchPlanFile, options, globalCliOptions)).rejects.toThrow(
+      'Plan file corrupted during execution'
+    );
+
+    // Verify batch mode started
+    expect(logSpy).toHaveBeenCalledWith('Starting batch mode execution:', batchPlanFile);
+
+    // Verify executor was called before the error
+    expect(executorExecuteSpy).toHaveBeenCalled();
+  });
+});
