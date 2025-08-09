@@ -3,30 +3,30 @@
 
 import * as path from 'node:path';
 import { checkbox } from '@inquirer/prompts';
-import { error, log, warn } from '../../logging.js';
-import { getIssueTracker } from '../../common/issue_tracker/factory.js';
-import type { IssueWithComments, IssueTrackerClient } from '../../common/issue_tracker/types.js';
+import { error, log, warn } from '../../../logging.js';
+import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
+import type { IssueWithComments, IssueTrackerClient } from '../../../common/issue_tracker/types.js';
 import {
   readAllPlans,
   writePlanFile,
   readPlanFile,
   getMaxNumericPlanId,
   getImportedIssueUrls,
-} from '../plans.js';
-import { loadEffectiveConfig } from '../configLoader.js';
-import { getGitRoot } from '../../common/git.js';
+} from '../../plans.js';
+import { loadEffectiveConfig } from '../../configLoader.js';
+import { getGitRoot } from '../../../common/git.js';
 import {
   createStubPlanFromIssue,
   getInstructionsFromIssue,
   type IssueInstructionData,
-} from '../issue_utils.js';
-import type { PlanSchema } from '../planSchema.js';
+} from '../../issue_utils.js';
+import type { PlanSchema } from '../../planSchema.js';
 import {
   parseCommandOptionsFromComment,
   combineRmprOptions,
   type RmprOptions,
-} from '../../rmpr/comment_options.js';
-import { singleLineWithPrefix, limitLines } from '../../common/formatting.js';
+} from '../../../rmpr/comment_options.js';
+import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js';
 
 /**
  * Select comments from an issue that aren't already in the existing plan details

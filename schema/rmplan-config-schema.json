@@ -3,6 +3,14 @@
   "description": "Repository-level configuration for rmplan",
   "type": "object",
   "properties": {
+    "issueTracker": {
+      "description": "Issue tracking service to use for import commands and issue-related operations",
+      "type": "string",
+      "enum": [
+        "github",
+        "linear"
+      ]
+    },
     "postApplyCommands": {
       "type": "array",
       "items": {
