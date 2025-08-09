@@ -1,6 +1,6 @@
 /**
  * Generic issue tracker interfaces to support both GitHub and Linear
- * 
+ *
  * These interfaces abstract away platform-specific details to provide
  * a common API for working with issues and comments from different
  * issue tracking services.
@@ -114,7 +114,7 @@ export interface IssueTrackerConfig {
 
 /**
  * Generic interface for issue tracker clients
- * 
+ *
  * This interface must be implemented by both GitHub and Linear
  * clients to provide a consistent API for the application.
  */

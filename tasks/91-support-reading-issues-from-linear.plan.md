@@ -13,7 +13,7 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T01:24:01.366Z
+updatedAt: 2025-08-09T01:34:29.253Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
     description: >
@@ -68,20 +68,20 @@ tasks:
 
           CommentData (containing id, body, user info, createdAt), and
           IssueWithComments (combining issue and comments array).
-        done: false
+        done: true
       - prompt: >
           Add an IssueTrackerClient interface that defines methods:
           fetchIssue(identifier: string), fetchAllOpenIssues(), 
 
           and parseIssueIdentifier(spec: string) that returns parsed issue info
           or null.
-        done: false
+        done: true
       - prompt: >
           Create a test file that validates the type definitions work correctly
           with sample data from both GitHub and Linear formats,
 
           ensuring the interfaces are flexible enough to handle both services.
-        done: false
+        done: true
   - title: Implement Linear SDK Client Initialization
     description: >
       Create a utility to initialize and provide access to the Linear SDK
@@ -334,6 +334,9 @@ tasks:
         done: false
 changedFiles:
   - package.json
+  - src/common/issue_tracker/index.ts
+  - src/common/issue_tracker/types.test.ts
+  - src/common/issue_tracker/types.ts
   - src/rmfilter/rmfilter.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/configLoader.test.ts

@@ -357,6 +357,99 @@ describe('Issue Tracker Types', () => {
       expect(linearUser.email).toBe('jane@company.com');
     });
   });
+
+  describe('Edge cases and boundary conditions', () => {
+    test('handles empty arrays and null values correctly', () => {
+      const issueWithEmptyCollections: IssueData = {
+        id: '1',
+        number: 1,
+        title: 'Test Issue',
+        htmlUrl: 'https://example.com/issues/1',
+        state: 'open',
+        assignees: [],
+        labels: [],
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      expect(issueWithEmptyCollections.assignees).toEqual([]);
+      expect(issueWithEmptyCollections.labels).toEqual([]);
+      expect(issueWithEmptyCollections.body).toBeUndefined();
+      expect(issueWithEmptyCollections.user).toBeUndefined();
+    });
+
+    test('handles empty strings and whitespace', () => {
+      const issueWithEmptyStrings: IssueData = {
+        id: '1',
+        number: 1,
+        title: '', // Empty title should be allowed
+        body: '   ', // Whitespace-only body
+        htmlUrl: 'https://example.com/issues/1',
+        state: '',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      expect(issueWithEmptyStrings.title).toBe('');
+      expect(issueWithEmptyStrings.body).toBe('   ');
+      expect(issueWithEmptyStrings.state).toBe('');
+    });
+
+    test('handles extreme number values', () => {
+      const extremeNumbers: IssueData[] = [
+        {
+          id: '1',
+          number: 0, // Zero issue number
+          title: 'Test',
+          htmlUrl: 'https://example.com/issues/0',
+          state: 'open',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-01T00:00:00Z',
+        },
+        {
+          id: '2',
+          number: Number.MAX_SAFE_INTEGER, // Very large number
+          title: 'Test',
+          htmlUrl: 'https://example.com/issues/9007199254740991',
+          state: 'open',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-01T00:00:00Z',
+        },
+        {
+          id: '3',
+          number: 'VERY-LONG-LINEAR-KEY-WITH-LOTS-OF-CHARACTERS-123456', // Long Linear key
+          title: 'Test',
+          htmlUrl:
+            'https://linear.app/company/issue/VERY-LONG-LINEAR-KEY-WITH-LOTS-OF-CHARACTERS-123456',
+          state: 'open',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      expect(extremeNumbers[0].number).toBe(0);
+      expect(extremeNumbers[1].number).toBe(Number.MAX_SAFE_INTEGER);
+      expect(extremeNumbers[2].number).toBe('VERY-LONG-LINEAR-KEY-WITH-LOTS-OF-CHARACTERS-123456');
+    });
+
+    test('handles malformed but valid data', () => {
+      const malformedComment: CommentData = {
+        id: '   comment_id_with_spaces   ',
+        body: 'Comment with\n\nmultiple\n\n\nline breaks\n\n',
+        createdAt: '2024-01-01T00:00:00.000Z', // With milliseconds
+        user: {
+          id: '',
+          name: 'User With "Quotes" and <HTML> tags',
+          login: 'user@domain.com', // Email as login (unusual but valid)
+        },
+      };
+
+      expect(malformedComment.id).toBe('   comment_id_with_spaces   ');
+      expect(malformedComment.body).toContain('\n\n');
+      expect(malformedComment.user?.name).toContain('"Quotes"');
+      expect(malformedComment.user?.login).toBe('user@domain.com');
+    });
+  });
 });
 
 describe('Type compatibility with existing GitHub code', () => {
@@ -399,5 +492,651 @@ describe('Type compatibility with existing GitHub code', () => {
     expect(mockFetchResult.issue.htmlUrl).toBe('https://github.com/owner/repo/issues/42'); // New property
     expect(mockFetchResult.comments[0].body).toBe('Test comment');
     expect(mockFetchResult.comments[0].user?.login).toBe('commenter');
+  });
+
+  test('works with realistic GitHub API response structure', () => {
+    // Based on actual GitHub API response structure
+    // This ensures our types can handle the actual shape of GitHub responses
+    const githubApiLikeIssue: IssueData = {
+      id: '1234567890',
+      number: 123,
+      title: 'Bug: Application crashes on startup',
+      body: '## Description\n\nThe application crashes immediately when starting on macOS...',
+      htmlUrl: 'https://github.com/owner/repo/issues/123',
+      state: 'open',
+      user: {
+        id: '9876543210',
+        login: 'user123',
+        name: 'John Doe',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/9876543210?v=4',
+      },
+      assignees: [
+        {
+          id: '1111111111',
+          login: 'maintainer1',
+          name: 'Jane Smith',
+          avatarUrl: 'https://avatars.githubusercontent.com/u/1111111111?v=4',
+        },
+        {
+          id: '2222222222',
+          login: 'maintainer2',
+          name: 'Bob Johnson',
+          avatarUrl: 'https://avatars.githubusercontent.com/u/2222222222?v=4',
+        },
+      ],
+      labels: [
+        {
+          id: '3333333333',
+          name: 'bug',
+          color: 'd73a4a',
+        },
+        {
+          id: '4444444444',
+          name: 'priority:high',
+          color: 'b60205',
+        },
+        {
+          id: '5555555555',
+          name: 'platform:macos',
+          color: '0052cc',
+        },
+      ],
+      createdAt: '2024-01-15T10:30:45Z',
+      updatedAt: '2024-01-20T14:22:33Z',
+      pullRequest: false,
+    };
+
+    const githubApiLikeComment: CommentData = {
+      id: '98765432',
+      body: 'I can reproduce this on my machine as well. Here are the logs:\n\n```\nCrash log here...\n```',
+      user: {
+        id: '6666666666',
+        login: 'contributor',
+        name: 'Alice Brown',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/6666666666?v=4',
+      },
+      createdAt: '2024-01-16T09:15:22Z',
+      updatedAt: '2024-01-16T09:20:45Z',
+      htmlUrl: 'https://github.com/owner/repo/issues/123#issuecomment-98765432',
+    };
+
+    const combinedGithubData: IssueWithComments = {
+      issue: githubApiLikeIssue,
+      comments: [githubApiLikeComment],
+    };
+
+    // Verify the structure works exactly as expected by existing code
+    expect(combinedGithubData.issue.number).toBe(123);
+    expect(combinedGithubData.issue.title).toContain('Bug:');
+    expect(combinedGithubData.issue.assignees).toHaveLength(2);
+    expect(combinedGithubData.issue.labels).toHaveLength(3);
+    expect(combinedGithubData.issue.user?.login).toBe('user123');
+    expect(combinedGithubData.comments[0].body).toContain('reproduce');
+    expect(combinedGithubData.comments[0].htmlUrl).toContain('#issuecomment-');
+  });
+
+  test('works with realistic Linear API response structure', () => {
+    // Based on potential Linear API response structure
+    const linearApiLikeIssue: IssueData = {
+      id: 'linear_issue_uuid_123abc',
+      number: 'TEAM-456',
+      title: 'Implement dark mode for settings page',
+      body: 'We need to add a dark mode toggle to the settings page to improve user experience in low-light environments.',
+      htmlUrl: 'https://linear.app/company/issue/TEAM-456/implement-dark-mode-for-settings-page',
+      state: 'In Progress',
+      user: {
+        id: 'linear_user_uuid_789def',
+        name: 'Product Manager',
+        email: 'pm@company.com',
+        avatarUrl: 'https://avatars.linear.app/linear_user_uuid_789def',
+      },
+      assignees: [
+        {
+          id: 'linear_user_uuid_frontend',
+          name: 'Frontend Developer',
+          email: 'frontend@company.com',
+          avatarUrl: 'https://avatars.linear.app/linear_user_uuid_frontend',
+        },
+      ],
+      labels: [
+        {
+          id: 'linear_label_uuid_feature',
+          name: 'Feature',
+          color: '#3b82f6',
+        },
+        {
+          id: 'linear_label_uuid_ui',
+          name: 'UI/UX',
+          color: '#f59e0b',
+        },
+      ],
+      createdAt: '2024-01-20T08:00:00.000Z',
+      updatedAt: '2024-01-25T16:45:30.123Z',
+      pullRequest: false,
+    };
+
+    const linearApiLikeComment: CommentData = {
+      id: 'linear_comment_uuid_987xyz',
+      body: 'I suggest we follow the system preference by default, but also provide manual override options.',
+      user: {
+        id: 'linear_user_uuid_designer',
+        name: 'UX Designer',
+        email: 'ux@company.com',
+      },
+      createdAt: '2024-01-22T14:30:15.456Z',
+      updatedAt: '2024-01-22T14:35:22.789Z',
+    };
+
+    const combinedLinearData: IssueWithComments = {
+      issue: linearApiLikeIssue,
+      comments: [linearApiLikeComment],
+    };
+
+    // Verify the structure works for Linear-style data
+    expect(combinedLinearData.issue.number).toBe('TEAM-456');
+    expect(combinedLinearData.issue.title).toContain('dark mode');
+    expect(combinedLinearData.issue.htmlUrl).toContain('linear.app');
+    expect(combinedLinearData.issue.state).toBe('In Progress');
+    expect(combinedLinearData.issue.user?.email).toBe('pm@company.com');
+    expect(combinedLinearData.issue.assignees?.[0].email).toBe('frontend@company.com');
+    expect(combinedLinearData.comments[0].user?.name).toBe('UX Designer');
+    expect(combinedLinearData.comments[0].htmlUrl).toBeUndefined(); // Linear might not provide comment URLs
+  });
+});
+
+describe('IssueTrackerClient interface validation', () => {
+  test('interface contract is correctly defined', () => {
+    // Create a mock implementation to test the interface contract
+    const mockClient: IssueTrackerClient = {
+      async fetchIssue(identifier: string): Promise<IssueWithComments> {
+        return {
+          issue: {
+            id: '1',
+            number: identifier === '123' ? 123 : 'TEAM-123',
+            title: 'Test Issue',
+            htmlUrl: 'https://example.com/issue',
+            state: 'open',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-01-01T00:00:00Z',
+          },
+          comments: [],
+        };
+      },
+
+      async fetchAllOpenIssues(): Promise<IssueData[]> {
+        return [
+          {
+            id: '1',
+            number: 1,
+            title: 'First Issue',
+            htmlUrl: 'https://example.com/issue/1',
+            state: 'open',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-01-01T00:00:00Z',
+          },
+          {
+            id: '2',
+            number: 2,
+            title: 'Second Issue',
+            htmlUrl: 'https://example.com/issue/2',
+            state: 'open',
+            createdAt: '2024-01-02T00:00:00Z',
+            updatedAt: '2024-01-02T00:00:00Z',
+          },
+        ];
+      },
+
+      parseIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
+        if (spec === 'invalid') return null;
+
+        const numericMatch = spec.match(/^\d+$/);
+        if (numericMatch) {
+          return { identifier: spec };
+        }
+
+        const urlMatch = spec.match(/^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)$/);
+        if (urlMatch) {
+          return {
+            identifier: urlMatch[3],
+            owner: urlMatch[1],
+            repo: urlMatch[2],
+            url: spec,
+          };
+        }
+
+        return { identifier: spec };
+      },
+
+      getDisplayName(): string {
+        return 'Test Issue Tracker';
+      },
+
+      getConfig(): IssueTrackerConfig {
+        return {
+          type: 'github',
+          apiKey: 'test-key',
+          baseUrl: 'https://api.example.com',
+          options: { timeout: 30000 },
+        };
+      },
+    };
+
+    // Test that the implementation works as expected
+    expect(typeof mockClient.fetchIssue).toBe('function');
+    expect(typeof mockClient.fetchAllOpenIssues).toBe('function');
+    expect(typeof mockClient.parseIssueIdentifier).toBe('function');
+    expect(typeof mockClient.getDisplayName).toBe('function');
+    expect(typeof mockClient.getConfig).toBe('function');
+  });
+
+  test('fetchIssue method returns correct structure', async () => {
+    const mockClient: IssueTrackerClient = {
+      async fetchIssue(): Promise<IssueWithComments> {
+        return {
+          issue: {
+            id: 'test-id',
+            number: 42,
+            title: 'Test Issue',
+            htmlUrl: 'https://example.com/issue/42',
+            state: 'open',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-01-01T00:00:00Z',
+          },
+          comments: [
+            {
+              id: 'comment-1',
+              body: 'Test comment',
+              createdAt: '2024-01-02T00:00:00Z',
+            },
+          ],
+        };
+      },
+      async fetchAllOpenIssues(): Promise<IssueData[]> {
+        return [];
+      },
+      parseIssueIdentifier(): ParsedIssueIdentifier | null {
+        return null;
+      },
+      getDisplayName(): string {
+        return 'Test';
+      },
+      getConfig(): IssueTrackerConfig {
+        return { type: 'github' };
+      },
+    };
+
+    const result = await mockClient.fetchIssue('42');
+
+    expect(result.issue.number).toBe(42);
+    expect(result.issue.title).toBe('Test Issue');
+    expect(result.comments).toHaveLength(1);
+    expect(result.comments[0].body).toBe('Test comment');
+  });
+
+  test('parseIssueIdentifier handles various input formats', () => {
+    const mockClient: IssueTrackerClient = {
+      parseIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
+        // GitHub URL
+        const githubMatch = spec.match(
+          /^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)$/
+        );
+        if (githubMatch) {
+          return {
+            identifier: githubMatch[3],
+            owner: githubMatch[1],
+            repo: githubMatch[2],
+            url: spec,
+          };
+        }
+
+        // Linear URL
+        const linearMatch = spec.match(/^https:\/\/linear\.app\/([^\/]+)\/issue\/([A-Z]+-\d+)/);
+        if (linearMatch) {
+          return {
+            identifier: linearMatch[2],
+            owner: linearMatch[1],
+            url: spec,
+          };
+        }
+
+        // Simple number or key
+        if (/^\d+$/.test(spec) || /^[A-Z]+-\d+$/.test(spec)) {
+          return { identifier: spec };
+        }
+
+        return null;
+      },
+      async fetchIssue(): Promise<IssueWithComments> {
+        return { issue: {} as IssueData, comments: [] };
+      },
+      async fetchAllOpenIssues(): Promise<IssueData[]> {
+        return [];
+      },
+      getDisplayName(): string {
+        return 'Test';
+      },
+      getConfig(): IssueTrackerConfig {
+        return { type: 'github' };
+      },
+    };
+
+    // Test various formats
+    const githubUrl = mockClient.parseIssueIdentifier('https://github.com/owner/repo/issues/123');
+    expect(githubUrl?.identifier).toBe('123');
+    expect(githubUrl?.owner).toBe('owner');
+    expect(githubUrl?.repo).toBe('repo');
+
+    const linearUrl = mockClient.parseIssueIdentifier('https://linear.app/company/issue/TEAM-456');
+    expect(linearUrl?.identifier).toBe('TEAM-456');
+    expect(linearUrl?.owner).toBe('company');
+
+    const simpleNumber = mockClient.parseIssueIdentifier('789');
+    expect(simpleNumber?.identifier).toBe('789');
+
+    const linearKey = mockClient.parseIssueIdentifier('PROJ-101');
+    expect(linearKey?.identifier).toBe('PROJ-101');
+
+    const invalid = mockClient.parseIssueIdentifier('not-valid-format');
+    expect(invalid).toBeNull();
+  });
+
+  test('client factory and registry types work correctly', () => {
+    const githubClientFactory: IssueTrackerClientFactory = (
+      config: IssueTrackerConfig
+    ): IssueTrackerClient => {
+      return {
+        async fetchIssue(): Promise<IssueWithComments> {
+          return { issue: {} as IssueData, comments: [] };
+        },
+        async fetchAllOpenIssues(): Promise<IssueData[]> {
+          return [];
+        },
+        parseIssueIdentifier(): ParsedIssueIdentifier | null {
+          return null;
+        },
+        getDisplayName(): string {
+          return 'GitHub';
+        },
+        getConfig(): IssueTrackerConfig {
+          return config;
+        },
+      };
+    };
+
+    const linearClientFactory: IssueTrackerClientFactory = (
+      config: IssueTrackerConfig
+    ): IssueTrackerClient => {
+      return {
+        async fetchIssue(): Promise<IssueWithComments> {
+          return { issue: {} as IssueData, comments: [] };
+        },
+        async fetchAllOpenIssues(): Promise<IssueData[]> {
+          return [];
+        },
+        parseIssueIdentifier(): ParsedIssueIdentifier | null {
+          return null;
+        },
+        getDisplayName(): string {
+          return 'Linear';
+        },
+        getConfig(): IssueTrackerConfig {
+          return config;
+        },
+      };
+    };
+
+    const registry: IssueTrackerRegistry = {
+      github: githubClientFactory,
+      linear: linearClientFactory,
+    };
+
+    // Test that factories work
+    const githubClient = registry.github({ type: 'github', apiKey: 'github-key' });
+    const linearClient = registry.linear({ type: 'linear', apiKey: 'linear-key' });
+
+    expect(githubClient.getDisplayName()).toBe('GitHub');
+    expect(linearClient.getDisplayName()).toBe('Linear');
+    expect(githubClient.getConfig().type).toBe('github');
+    expect(linearClient.getConfig().type).toBe('linear');
+  });
+});
+
+describe('Date format validation', () => {
+  test('handles various ISO 8601 date formats', () => {
+    const dateFormats: Array<{ date: string; description: string }> = [
+      { date: '2024-01-01T00:00:00Z', description: 'UTC with Z suffix' },
+      { date: '2024-01-01T00:00:00.000Z', description: 'UTC with milliseconds and Z' },
+      { date: '2024-01-01T00:00:00+00:00', description: 'UTC with explicit offset' },
+      { date: '2024-01-01T08:00:00+08:00', description: 'With timezone offset' },
+      { date: '2024-12-31T23:59:59.999Z', description: 'End of year with milliseconds' },
+      { date: '2024-02-29T12:00:00Z', description: 'Leap year date' },
+    ];
+
+    dateFormats.forEach(({ date, description }) => {
+      const issue: IssueData = {
+        id: '1',
+        number: 1,
+        title: 'Test Issue',
+        htmlUrl: 'https://example.com/issues/1',
+        state: 'open',
+        createdAt: date,
+        updatedAt: date,
+      };
+
+      const comment: CommentData = {
+        id: '1',
+        body: 'Test comment',
+        createdAt: date,
+        updatedAt: date,
+      };
+
+      // Verify the dates are accepted as valid strings
+      expect(issue.createdAt).toBe(date);
+      expect(issue.updatedAt).toBe(date);
+      expect(comment.createdAt).toBe(date);
+      expect(comment.updatedAt).toBe(date);
+
+      // Verify the dates can be parsed as valid Date objects
+      expect(() => new Date(issue.createdAt)).not.toThrow();
+      expect(() => new Date(comment.createdAt)).not.toThrow();
+      expect(new Date(issue.createdAt).getTime()).not.toBeNaN();
+      expect(new Date(comment.createdAt).getTime()).not.toBeNaN();
+    });
+  });
+
+  test('handles edge date cases', () => {
+    const edgeCases = [
+      '2024-01-01T00:00:00.000000Z', // Microseconds (should still parse)
+      '2024-01-01T00:00:00.123456Z', // More precise milliseconds
+      '2024-01-01T00:00:00-05:00', // Negative timezone offset
+      '2024-01-01T00:00:00+14:00', // Maximum timezone offset
+    ];
+
+    edgeCases.forEach((dateStr) => {
+      const issue: IssueData = {
+        id: '1',
+        number: 1,
+        title: 'Test Issue',
+        htmlUrl: 'https://example.com/issues/1',
+        state: 'open',
+        createdAt: dateStr,
+        updatedAt: dateStr,
+      };
+
+      // Should accept the date string format
+      expect(issue.createdAt).toBe(dateStr);
+
+      // Should be parseable as a Date (even if not standard ISO format)
+      const parsedDate = new Date(dateStr);
+      expect(parsedDate.getTime()).not.toBeNaN();
+    });
+  });
+
+  test('date chronology validation', () => {
+    // Created date should typically be before or equal to updated date
+    const issueWithLogicalDates: IssueData = {
+      id: '1',
+      number: 1,
+      title: 'Test Issue',
+      htmlUrl: 'https://example.com/issues/1',
+      state: 'open',
+      createdAt: '2024-01-01T10:00:00Z',
+      updatedAt: '2024-01-02T15:00:00Z', // Later than created
+    };
+
+    const commentWithLogicalDates: CommentData = {
+      id: '1',
+      body: 'Test comment',
+      createdAt: '2024-01-03T08:00:00Z',
+      updatedAt: '2024-01-03T09:00:00Z', // Later than created
+    };
+
+    const createdDate = new Date(issueWithLogicalDates.createdAt);
+    const updatedDate = new Date(issueWithLogicalDates.updatedAt);
+    const commentCreated = new Date(commentWithLogicalDates.createdAt);
+    const commentUpdated = new Date(commentWithLogicalDates.updatedAt!);
+
+    expect(createdDate.getTime()).toBeLessThanOrEqual(updatedDate.getTime());
+    expect(commentCreated.getTime()).toBeLessThanOrEqual(commentUpdated.getTime());
+
+    // Comment should typically be created after the issue
+    expect(commentCreated.getTime()).toBeGreaterThanOrEqual(createdDate.getTime());
+  });
+});
+
+describe('URL format validation', () => {
+  test('validates GitHub URL formats', () => {
+    const githubUrls = [
+      'https://github.com/owner/repo/issues/123',
+      'https://github.com/facebook/react/issues/1',
+      'https://github.com/microsoft/vscode/issues/999999',
+      'https://github.com/a/b/issues/1', // Minimal valid names
+      'https://github.com/very-long-organization-name/very-long-repo-name/issues/123',
+    ];
+
+    githubUrls.forEach((url) => {
+      const issue: IssueData = {
+        id: '1',
+        number: 1,
+        title: 'Test Issue',
+        htmlUrl: url,
+        state: 'open',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const comment: CommentData = {
+        id: '1',
+        body: 'Test comment',
+        createdAt: '2024-01-01T00:00:00Z',
+        htmlUrl: `${url}#issuecomment-123456`,
+      };
+
+      expect(issue.htmlUrl).toBe(url);
+      expect(comment.htmlUrl).toContain(url);
+
+      // Should be valid URLs
+      expect(() => new URL(issue.htmlUrl)).not.toThrow();
+      expect(() => new URL(comment.htmlUrl!)).not.toThrow();
+    });
+  });
+
+  test('validates Linear URL formats', () => {
+    const linearUrls = [
+      'https://linear.app/company/issue/TEAM-123',
+      'https://linear.app/my-startup/issue/PROJ-456',
+      'https://linear.app/linear/issue/LIN-789/some-issue-title-slug',
+      'https://linear.app/a/issue/T-1', // Minimal format
+      'https://linear.app/very-long-workspace-name/issue/VERY-LONG-TEAM-PREFIX-12345',
+    ];
+
+    linearUrls.forEach((url) => {
+      const issue: IssueData = {
+        id: '1',
+        number: 'TEAM-123',
+        title: 'Test Issue',
+        htmlUrl: url,
+        state: 'In Progress',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      expect(issue.htmlUrl).toBe(url);
+
+      // Should be valid URLs
+      expect(() => new URL(issue.htmlUrl)).not.toThrow();
+    });
+  });
+
+  test('handles avatar URL formats', () => {
+    const avatarUrls = [
+      'https://avatars.githubusercontent.com/u/123456789?v=4',
+      'https://avatars.githubusercontent.com/u/123456789?s=96&v=4',
+      'https://avatars.linear.app/user-uuid-123',
+      'https://avatars.linear.app/user-uuid-456?size=64',
+      'https://gravatar.com/avatar/hash123?s=80&d=identicon',
+      'https://example.com/avatars/user123.jpg',
+    ];
+
+    avatarUrls.forEach((avatarUrl) => {
+      const user: UserData = {
+        id: '1',
+        name: 'Test User',
+        avatarUrl,
+      };
+
+      expect(user.avatarUrl).toBe(avatarUrl);
+
+      // Should be valid URLs
+      expect(() => new URL(user.avatarUrl!)).not.toThrow();
+    });
+  });
+
+  test('validates base API URL configurations', () => {
+    const baseUrls = [
+      'https://api.github.com',
+      'https://api.linear.app/graphql',
+      'https://github.enterprise.com/api/v3',
+      'https://custom-linear.company.com/api',
+    ];
+
+    baseUrls.forEach((baseUrl) => {
+      const config: IssueTrackerConfig = {
+        type: 'github',
+        baseUrl,
+      };
+
+      expect(config.baseUrl).toBe(baseUrl);
+
+      // Should be valid URLs
+      expect(() => new URL(config.baseUrl!)).not.toThrow();
+    });
+  });
+
+  test('handles URL edge cases', () => {
+    // Test URLs with special characters, ports, paths
+    const edgeUrls = [
+      'https://github.com/owner/repo-with-dashes/issues/123',
+      'https://github.com/owner/repo_with_underscores/issues/456',
+      'https://github.com/owner/repo.with.dots/issues/789',
+      'https://github.enterprise.com:8080/owner/repo/issues/1',
+      'https://linear.app/company-name/issue/TEAM-123?utm_source=web',
+      'https://linear.app/company/issue/TEAM-456#comment-abc123',
+    ];
+
+    edgeUrls.forEach((url) => {
+      const issue: IssueData = {
+        id: '1',
+        number: 1,
+        title: 'Test Issue',
+        htmlUrl: url,
+        state: 'open',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+
+      expect(issue.htmlUrl).toBe(url);
+      expect(() => new URL(issue.htmlUrl)).not.toThrow();
+    });
   });
 });
