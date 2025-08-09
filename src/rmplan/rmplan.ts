@@ -286,6 +286,7 @@ function createAgentCommand(command: Command, description: string) {
       'Call LLM directly instead of copying prompt to clipboard during preparation'
     )
     .option('--dry-run', 'Print the generated prompt but do not execute it')
+    .option('--batch-tasks', 'Enable batch task execution mode where the agent selects and processes multiple tasks together')
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planFile, options, command) => {
