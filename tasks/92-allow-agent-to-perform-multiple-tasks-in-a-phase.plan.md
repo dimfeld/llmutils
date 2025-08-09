@@ -10,7 +10,7 @@ dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T04:26:31.219Z
+updatedAt: 2025-08-09T04:35:18.909Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
     description: >
@@ -215,19 +215,19 @@ tasks:
           handling multiple tasks. Add guidance that when multiple tasks are
           provided, the implementer should work on them together efficiently,
           considering shared code and avoiding duplication.
-        done: false
+        done: true
       - prompt: >
           Update the getTesterPrompt function to handle multiple tasks,
           instructing the tester to create comprehensive tests that cover all
           functionality from all provided tasks, ensuring test coverage across
           the batch.
-        done: false
+        done: true
       - prompt: >
           Update the getReviewerPrompt function to review batched changes
           holistically, checking that all tasks are properly implemented, work
           together correctly, and maintain code quality standards across the
           entire batch.
-        done: false
+        done: true
   - title: "Task 7: Add integration tests for the batch execution mode"
     description: >
       Create a comprehensive test suite in src/rmplan/commands/agent.test.ts for
@@ -349,6 +349,8 @@ changedFiles:
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
+  - src/rmplan/executors/claude_code/agent_prompts.test.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
   - src/rmplan/executors/claude_code/orchestrator_integration.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
