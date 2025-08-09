@@ -10,7 +10,7 @@ dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T03:54:23.081Z
+updatedAt: 2025-08-09T04:15:47.071Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
     description: >
@@ -140,20 +140,20 @@ tasks:
           optional planFilePath and a boolean flag indicating batch mode. When
           in batch mode, include additional instructions about analyzing and
           selecting task subsets.
-        done: false
+        done: true
       - prompt: >
           In the batch mode instructions, add clear guidance that the
           orchestrator should use the Edit tool to modify the plan file at the
           provided path, updating the `done` field to true for each completed
           task. Include an example of the YAML structure they'll be editing.
-        done: false
+        done: true
       - prompt: >
           Add instructions explaining how the orchestrator should select which
           tasks to batch together - considering factors like related
           functionality, shared files, logical grouping, and efficiency.
           Emphasize they should not attempt all tasks at once but select a
           reasonable subset.
-        done: false
+        done: true
   - title: "Task 5: Empower the orchestrator agent to edit the plan file"
     description: >
       Configure the claude-code executor to ensure the orchestrator agent has
@@ -314,6 +314,7 @@ changedFiles:
   - BATCH_TASKS_TESTING_SUMMARY.md
   - README.md
   - docs/linear-integration.md
+  - integration_test.ts
   - package.json
   - src/common/issue_tracker/factory.integration.test.ts
   - src/common/issue_tracker/factory.test.ts
@@ -347,6 +348,11 @@ changedFiles:
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
+  - src/rmplan/executors/claude_code/orchestrator_integration.test.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/types.ts
   - src/rmplan/issue_utils.ts
   - src/rmplan/plans/find_next.test.ts
   - src/rmplan/plans/find_next.ts

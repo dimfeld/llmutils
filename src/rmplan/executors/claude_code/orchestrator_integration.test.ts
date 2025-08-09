@@ -18,7 +18,7 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
     batchMode: true,
     planFilePath,
   });
-  
+
   expect(batchResult).toContain('BATCH TASK PROCESSING MODE');
   expect(batchResult).toContain('Analyze all provided tasks');
   expect(batchResult).toContain('Select a logical subset');
@@ -36,7 +36,7 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
     batchMode: false,
     planFilePath,
   });
-  
+
   expect(explicitNonBatchResult).not.toContain('BATCH TASK PROCESSING MODE');
   expect(explicitNonBatchResult).not.toContain('@/path/to/test/plan.yml');
   expect(explicitNonBatchResult).toContain(`rmplan-${planId}-implementer`);
@@ -77,7 +77,7 @@ test('wrapWithOrchestration includes batch mode workflow instructions', () => {
   expect(result).toContain('After all selected tasks are successfully completed');
   expect(result).toContain('use the Edit tool to update the plan file');
   expect(result).toContain('Mark each completed task with `done: true`');
-  
+
   // Check for batch mode guidelines
   expect(result).toContain('Be selective');
   expect(result).toContain("Don't attempt all tasks at once");
