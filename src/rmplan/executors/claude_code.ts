@@ -42,6 +42,7 @@ export class ClaudeCodeExecutor implements Executor {
   readonly filePathPrefix = '@';
   readonly todoDirections = '- Use the TodoWrite tool to maintain your TODO list.';
   private alwaysAllowedTools = new Map<string, true | string[]>();
+  private configAllowedTools = new Set<string>();
   private trackedFiles = new Set<string>();
   private planInfo?: ExecutePlanInfo;
 
@@ -263,7 +264,10 @@ export class ClaudeCodeExecutor implements Executor {
                 const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
 
                 if (isAllowed) {
-                  log(chalk.green(`Bash command automatically approved (matches allowed prefix)`));
+                  const approvalSource = this.configAllowedTools.has('Bash') 
+                    ? 'configured in allowlist' 
+                    : 'always allowed';
+                  log(chalk.green(`Bash command automatically approved (${approvalSource})`));
                   const response = {
                     type: 'permission_response',
                     approved: true,
@@ -272,7 +276,10 @@ export class ClaudeCodeExecutor implements Executor {
                   return;
                 }
               } else if (allowedValue === true) {
-                log(chalk.green(`Tool ${tool_name} automatically approved (always allowed)`));
+                const approvalSource = this.configAllowedTools.has(tool_name) 
+                  ? 'configured in allowlist' 
+                  : 'always allowed';
+                log(chalk.green(`Tool ${tool_name} automatically approved (${approvalSource})`));
                 const response = {
                   type: 'permission_response',
                   approved: true,
@@ -540,6 +547,38 @@ export class ClaudeCodeExecutor implements Executor {
     let allowedTools = [...defaultAllowedTools, ...(this.options.allowedTools ?? [])];
     if (disallowedTools) {
       allowedTools = allowedTools.filter((t) => !disallowedTools?.includes(t));
+    }
+
+    // Parse allowedTools into efficient lookup structure for auto-approval
+    this.alwaysAllowedTools.clear(); // Clear any existing session-based entries
+    this.configAllowedTools.clear(); // Clear any existing config entries tracking
+    for (const tool of allowedTools) {
+      if (tool.startsWith('Bash(') && tool.endsWith(')')) {
+        // Handle Bash command patterns like "Bash(jj commit:*)" or "Bash(pwd)"
+        const bashCommand = tool.slice(5, -1); // Remove "Bash(" and ")"
+        
+        let commandPrefix: string;
+        if (bashCommand.endsWith(':*')) {
+          // Wildcard pattern - extract the prefix
+          commandPrefix = bashCommand.slice(0, -2);
+        } else {
+          // Exact match - use the full command
+          commandPrefix = bashCommand;
+        }
+
+        // Add to the array of allowed Bash prefixes
+        const existingPrefixes = this.alwaysAllowedTools.get('Bash') as string[] | undefined;
+        if (existingPrefixes) {
+          existingPrefixes.push(commandPrefix);
+        } else {
+          this.alwaysAllowedTools.set('Bash', [commandPrefix]);
+        }
+        this.configAllowedTools.add('Bash'); // Track that Bash was configured
+      } else {
+        // Simple tool name like "Edit", "Write", etc.
+        this.alwaysAllowedTools.set(tool, true);
+        this.configAllowedTools.add(tool); // Track that this tool was configured
+      }
     }
 
     // Create temporary MCP configuration if permissions MCP is enabled
