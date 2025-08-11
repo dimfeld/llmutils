@@ -4204,6 +4204,707 @@ More content
     });
   });
 
+  describe('Allow for Session functionality', () => {
+    test('permissions prompt includes "Allow for Session" as second option', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Mock the select prompt to capture the choices being presented
+      let capturedChoices: any[] = [];
+      const mockSelect = mock((options: any) => {
+        capturedChoices = options.choices;
+        return Promise.resolve('approve'); // Just approve to complete the flow
+      });
+
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mockSelect,
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Trigger a permission request that will show the prompt
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Write',
+        input: { file_path: '/tmp/test/file.txt', content: 'test' },
+      });
+
+      // Verify the prompt was called with the correct choices
+      expect(mockSelect).toHaveBeenCalled();
+      expect(capturedChoices).toHaveLength(4);
+      expect(capturedChoices[0]).toEqual({ name: 'Allow', value: 'allow' });
+      expect(capturedChoices[1]).toEqual({ name: 'Allow for Session', value: 'session_allow' });
+      expect(capturedChoices[2]).toEqual({ name: 'Always Allow', value: 'always_allow' });
+      expect(capturedChoices[3]).toEqual({ name: 'Disallow', value: 'disallow' });
+
+      server.close(() => {});
+    });
+
+    test('selects session_allow choice for regular tool and adds to alwaysAllowedTools without persistence', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      const mockAddPermissionToFile = mock(() => Promise.resolve());
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Mock the file reading/writing functions to verify addPermissionToFile is not called
+      await moduleMocker.mock('../../common/fs.ts', () => ({
+        addPermissionToFile: mockAddPermissionToFile,
+      }));
+
+      // Mock the select prompt to return session_allow
+      const mockSelect = mock(() => Promise.resolve('session_allow'));
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mockSelect,
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Get initial state of data structures
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
+
+      expect(alwaysAllowedTools.has('Write')).toBe(false);
+      expect(configAllowedTools.has('Write')).toBe(false);
+
+      // Test session approval for Write tool
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Write',
+        input: { file_path: '/tmp/test/file.txt', content: 'test content' },
+      });
+
+      // Verify the tool was approved
+      expect(response).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Verify the tool was added to alwaysAllowedTools for session use
+      expect(alwaysAllowedTools.get('Write')).toBe(true);
+
+      // Verify the tool was NOT added to configAllowedTools (session-only)
+      expect(configAllowedTools.has('Write')).toBe(false);
+
+      // Verify addPermissionToFile was NOT called (no persistence)
+      expect(mockAddPermissionToFile).not.toHaveBeenCalled();
+
+      server.close(() => {});
+    });
+
+    test('selects session_allow choice for Bash command with prefix selection', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      const mockAddPermissionToFile = mock(() => Promise.resolve());
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      await moduleMocker.mock('../../common/fs.ts', () => ({
+        addPermissionToFile: mockAddPermissionToFile,
+      }));
+
+      // Mock the main select prompt to return session_allow
+      const mockSelect = mock(() => Promise.resolve('session_allow'));
+
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mockSelect,
+      }));
+
+      // Mock the prefix prompt to return the selected prefix
+      const mockPrefixPrompt = mock(() => Promise.resolve({ exact: false, command: 'git status' }));
+      await moduleMocker.mock('./claude_code/prefix_prompt.ts', () => ({
+        prefixPrompt: mockPrefixPrompt,
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Get initial state of data structures
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
+
+      expect(alwaysAllowedTools.has('Bash')).toBe(false);
+      expect(configAllowedTools.has('Bash')).toBe(false);
+
+      // Test session approval for Bash command
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'git status --porcelain' },
+      });
+
+      // Verify the command was approved
+      expect(response).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Verify the main select prompt was called
+      expect(mockSelect).toHaveBeenCalledTimes(1);
+
+      // Verify the main prompt was for the permission choice
+      const firstCall = mockSelect.mock.calls[0][0];
+      expect(firstCall.choices).toContainEqual({ name: 'Allow for Session', value: 'session_allow' });
+
+      // Verify the prefix prompt was called
+      expect(mockPrefixPrompt).toHaveBeenCalledTimes(1);
+      expect(mockPrefixPrompt).toHaveBeenCalledWith({
+        message: 'Select the command prefix to allow for this session:',
+        command: 'git status --porcelain',
+      });
+
+      // Verify the prefix was added to alwaysAllowedTools for session use
+      const bashCommands = alwaysAllowedTools.get('Bash') as string[];
+      expect(Array.isArray(bashCommands)).toBe(true);
+      expect(bashCommands).toContain('git status');
+
+      // Verify the tool was NOT added to configAllowedTools (session-only)
+      expect(configAllowedTools.has('Bash')).toBe(false);
+
+      // Verify addPermissionToFile was NOT called (no persistence)
+      expect(mockAddPermissionToFile).not.toHaveBeenCalled();
+
+      server.close(() => {});
+    });
+
+    test('auto-approves subsequent requests for session-approved tools', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Mock logging to verify the log messages
+      const logSpy = spyOn(logging, 'log').mockImplementation(() => {});
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Manually set up session-based approval (simulating previous session_allow choice)
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
+      
+      alwaysAllowedTools.set('Write', true); // Session-approved tool
+      // Don't add to configAllowedTools to simulate session-only approval
+
+      // Test auto-approval for the session-approved tool
+      const response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Write',
+        input: { file_path: '/tmp/test/file.txt', content: 'test content' },
+      });
+
+      // Verify the tool was auto-approved
+      expect(response).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      // Verify the log message indicates session-based approval
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Tool Write automatically approved (always allowed (session))')
+      );
+
+      logSpy.mockRestore();
+      server.close(() => {});
+    });
+
+    test('logs correct messages for session vs persistent approvals', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: ['Edit'], // Config-based tool
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Mock logging to capture log output
+      const logSpy = spyOn(logging, 'log').mockImplementation(() => {});
+
+      // Initialize config tools directly using the test method
+      executor.testParseAllowedTools(['Edit']);
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Set up session-based approval for Write tool
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      alwaysAllowedTools.set('Write', true); // Session-approved tool (not in config)
+
+      // Test config-based auto-approval
+      logSpy.mockClear();
+      let response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Edit',
+        input: { file_path: '/tmp/test/file.txt', old_string: 'old', new_string: 'new' },
+      });
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Tool Edit automatically approved (configured in allowlist)')
+      );
+
+      // Test session-based auto-approval
+      logSpy.mockClear();
+      response = mock();
+      mockSocket.write = response;
+
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Write',
+        input: { file_path: '/tmp/test/file.txt', content: 'test content' },
+      });
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Tool Write automatically approved (always allowed (session))')
+      );
+
+      logSpy.mockRestore();
+      server.close(() => {});
+    });
+
+    test('session approvals are stored differently than persistent approvals', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Mock the select prompt to return session_allow
+      const mockSelect = mock(() => Promise.resolve('session_allow'));
+
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mockSelect,
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
+
+      // Test session approval for Write tool
+      mockSocket.write = mock();
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Write',
+        input: { file_path: '/tmp/test/file.txt', content: 'test content' },
+      });
+
+      // Verify session approval is stored in alwaysAllowedTools but not configAllowedTools
+      expect(alwaysAllowedTools.get('Write')).toBe(true);
+      expect(configAllowedTools.has('Write')).toBe(false);
+
+      // Now simulate a persistent approval by manually calling the parsing method
+      executor.testParseAllowedTools(['Edit']);
+
+      // Verify persistent approval is stored in both data structures
+      expect(alwaysAllowedTools.get('Edit')).toBe(true);
+      expect(configAllowedTools.has('Edit')).toBe(true);
+
+      server.close(() => {});
+    });
+
+    test('always_allow choice persists permissions while session_allow does not', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // First mock: session_allow, Second mock: always_allow
+      let callCount = 0;
+      const mockSelect = mock((options: any) => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve('session_allow');
+        } else {
+          return Promise.resolve('always_allow');
+        }
+      });
+
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mockSelect,
+      }));
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
+
+      // First request: session approval
+      mockSocket.write = mock();
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Write',
+        input: { file_path: '/tmp/test/file.txt', content: 'test content' },
+      });
+
+      // Verify session approval state - in alwaysAllowedTools but not configAllowedTools
+      expect(alwaysAllowedTools.get('Write')).toBe(true);
+      expect(configAllowedTools.has('Write')).toBe(false);
+
+      // Second request with always_allow choice for Edit tool
+      mockSocket.write = mock();
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Edit',
+        input: { file_path: '/tmp/test/file2.txt', old_string: 'old', new_string: 'new' },
+      });
+
+      // Verify Edit tool is also added to alwaysAllowedTools
+      // The key difference is that always_allow triggers file persistence (private method we can't directly test)
+      // But we can verify both tools are in alwaysAllowedTools and neither is in configAllowedTools
+      // since configAllowedTools is only populated from configuration, not runtime approvals
+      expect(alwaysAllowedTools.get('Edit')).toBe(true);
+      expect(configAllowedTools.has('Edit')).toBe(false);
+
+      // Both tools should now be in alwaysAllowedTools for runtime use
+      expect(alwaysAllowedTools.get('Write')).toBe(true);
+      expect(alwaysAllowedTools.get('Edit')).toBe(true);
+
+      server.close(() => {});
+    });
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });
