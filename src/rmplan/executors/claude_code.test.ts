@@ -3080,6 +3080,7 @@ describe('ClaudeCodeExecutor', () => {
           disallowedTools: [],
           allowAllTools: false,
           permissionsMcp: { enabled: true },
+          includeDefaultTools: false, // Disable default tools
         },
         mockSharedOptions,
         mockConfig
@@ -3182,11 +3183,243 @@ describe('ClaudeCodeExecutor', () => {
 
       // Check that the log message indicates session-based approval
       expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Tool Write automatically approved (always allowed)')
+        expect.stringContaining('Tool Write automatically approved (always allowed (session))')
       );
 
       // Clean up
       server.close(() => {});
+    });
+
+    test('handles malformed tool configurations gracefully', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [
+            'Edit', // Valid
+            'Bash(jj commit:*)', // Valid
+            'Bash(', // Malformed - missing closing parenthesis
+            'Bash()', // Edge case - empty command
+            'Bash( :*)', // Edge case - empty prefix
+            '', // Invalid - empty string
+            'Bash(pwd)', // Valid - exact command
+            'Write' // Valid
+          ],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true },
+          includeDefaultTools: false, // Disable default tools to test only what we configure
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock logging to capture debug messages
+      const debugLogSpy = spyOn(logging, 'debugLog').mockImplementation(() => {});
+
+      // Mock the dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => ({ message: line })),
+      }));
+
+      // Call execute to trigger the parsing logic
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify debug messages were logged for malformed configurations
+      expect(debugLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping malformed Bash tool configuration: Bash( (missing closing parenthesis)')
+      );
+      expect(debugLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping empty Bash command configuration: Bash()')
+      );
+      expect(debugLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping empty Bash command prefix: Bash( :*)')
+      );
+      expect(debugLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping invalid tool configuration:')
+      );
+
+      // Verify that only valid tools were actually parsed
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
+
+      expect(alwaysAllowedTools.get('Edit')).toBe(true);
+      expect(alwaysAllowedTools.get('Write')).toBe(true);
+      expect(alwaysAllowedTools.get('Bash')).toEqual(['jj commit', 'pwd']);
+      expect(configAllowedTools.has('Edit')).toBe(true);
+      expect(configAllowedTools.has('Write')).toBe(true);
+      expect(configAllowedTools.has('Bash')).toBe(true);
+
+      debugLogSpy.mockRestore();
+    });
+
+    test('preserves session-based approvals when config tools are parsed on subsequent executions', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: ['Edit', 'Bash(jj commit:*)'],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true },
+          includeDefaultTools: false, // Disable default tools to test only what we configure
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => ({ message: line })),
+      }));
+
+      // First execution - should populate config-based tools
+      await executor.execute('test content 1', mockPlanInfo);
+
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
+
+      // Verify initial parsing
+      expect(alwaysAllowedTools.get('Edit')).toBe(true);
+      expect(alwaysAllowedTools.get('Bash')).toEqual(['jj commit']);
+      expect(configAllowedTools.has('Edit')).toBe(true);
+      expect(configAllowedTools.has('Bash')).toBe(true);
+
+      // Simulate session-based approvals (like user choosing "Always Allow")
+      alwaysAllowedTools.set('Write', true); // User approved Write tool during session
+      alwaysAllowedTools.set('WebFetch', true); // User approved WebFetch tool during session
+      
+      // Also add a session-based bash command
+      const bashCommands = alwaysAllowedTools.get('Bash') as string[];
+      bashCommands.push('git status'); // User approved a git status command
+
+      // Verify session data is present
+      expect(alwaysAllowedTools.get('Write')).toBe(true);
+      expect(alwaysAllowedTools.get('WebFetch')).toBe(true);
+      expect(alwaysAllowedTools.get('Bash')).toContain('git status');
+
+      // Second execution - should preserve session data
+      await executor.execute('test content 2', mockPlanInfo);
+
+      // Verify that session-based approvals are preserved
+      expect(alwaysAllowedTools.get('Write')).toBe(true);
+      expect(alwaysAllowedTools.get('WebFetch')).toBe(true);
+      expect(alwaysAllowedTools.get('Edit')).toBe(true); // Config-based should still be there
+      expect(alwaysAllowedTools.get('Bash')).toContain('jj commit'); // Config-based
+      expect(alwaysAllowedTools.get('Bash')).toContain('git status'); // Session-based
+
+      // Verify config tracking is maintained
+      expect(configAllowedTools.has('Edit')).toBe(true);
+      expect(configAllowedTools.has('Bash')).toBe(true);
+      expect(configAllowedTools.has('Write')).toBe(false); // Session-based, not config
+      expect(configAllowedTools.has('WebFetch')).toBe(false); // Session-based, not config
+    });
+
+    test('only initializes config tools once even with multiple execute calls', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: ['Edit', 'Write'],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true },
+          includeDefaultTools: false, // Disable default tools to test only what we configure
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => ({ message: line })),
+      }));
+
+      // Check initial state
+      expect((executor as any).configToolsInitialized).toBe(false);
+
+      // First execution
+      await executor.execute('test content 1', mockPlanInfo);
+
+      expect((executor as any).configToolsInitialized).toBe(true);
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      expect(alwaysAllowedTools.size).toBe(2); // Edit and Write
+
+      // Second execution - should not re-initialize config tools
+      await executor.execute('test content 2', mockPlanInfo);
+
+      expect((executor as any).configToolsInitialized).toBe(true);
+      expect(alwaysAllowedTools.size).toBe(2); // Should remain the same
+    });
+
+    test('handles session-approved Bash with true value correctly', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: ['Edit', 'Bash(jj commit:*)'],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true },
+          includeDefaultTools: false, // Disable default tools to test only what we configure
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock dependencies
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => ({ message: line })),
+      }));
+
+      // First execution
+      await executor.execute('test content 1', mockPlanInfo);
+
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      
+      // Verify initial config-based Bash setup
+      expect(alwaysAllowedTools.get('Bash')).toEqual(['jj commit']);
+
+      // Simulate user choosing "Always Allow" for any Bash command during session
+      alwaysAllowedTools.set('Bash', true);
+
+      // Second execution - should not override the session-based true value
+      await executor.execute('test content 2', mockPlanInfo);
+
+      // Bash should remain true (session approval for all commands)
+      expect(alwaysAllowedTools.get('Bash')).toBe(true);
     });
   });
 
