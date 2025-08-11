@@ -14,7 +14,16 @@ export const phaseSchema = z
       .optional()
       .describe('Plan details. This can also be in markdown content after the YAML'),
     id: z.coerce.number().int().positive().optional(),
-    status: statusSchema.default('pending').optional(),
+    status: z.preprocess((s) => {
+      if (typeof s === 'string') {
+        // common synonyms
+        if (s === 'complete') {
+          return 'done';
+        }
+      }
+
+      return s;
+    }, statusSchema.default('pending').optional()),
     statusDescription: z.string().optional(),
     priority: prioritySchema.optional(),
     container: z.boolean().default(false).optional(),
