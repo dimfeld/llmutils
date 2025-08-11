@@ -4,13 +4,13 @@ title: Add "Allow for this session" to permissions MCP
 goal: Add the "Allow for this session" option to the permissions prompt and
   implement session-based approval logic without persistence.
 id: 86
-status: pending
+status: in_progress
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-08-11T08:01:30.287Z
 promptsGeneratedAt: 2025-08-11T08:04:09.303Z
 createdAt: 2025-08-01T19:09:16.510Z
-updatedAt: 2025-08-11T08:04:09.303Z
+updatedAt: 2025-08-11T08:04:09.652Z
 tasks:
   - title: Add "Allow for Session" choice to permissions prompt
     description: >

@@ -464,8 +464,9 @@ export class ClaudeCodeExecutor implements Executor {
                 message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
                 choices: [
                   { name: 'Allow', value: 'allow' },
-                  { name: 'Disallow', value: 'disallow' },
+                  { name: 'Allow for Session', value: 'session_allow' },
                   { name: 'Always Allow', value: 'always_allow' },
+                  { name: 'Disallow', value: 'disallow' },
                 ],
               },
               { signal: controller.signal }
@@ -481,7 +482,10 @@ export class ClaudeCodeExecutor implements Executor {
               promptActive = false;
 
               // Set approved based on the user's choice
-              approved = userChoice === 'allow' || userChoice === 'always_allow';
+              approved =
+                userChoice === 'allow' ||
+                userChoice === 'always_allow' ||
+                userChoice === 'session_allow';
 
               // If user chose "Always Allow", add the tool to the always allowed set
               if (userChoice === 'always_allow') {
@@ -519,6 +523,41 @@ export class ClaudeCodeExecutor implements Executor {
 
                 // Save the new permission rule to the settings file
                 await this.addPermissionToFile(tool_name, prefixForBash);
+              }
+
+              // If user chose "Allow for Session", add the tool to the always allowed set without persistence
+              if (userChoice === 'session_allow') {
+                if (tool_name === 'Bash') {
+                  // For Bash tool, prompt for a prefix to allow
+                  const command = input.command as string;
+                  const selectedPrefix = await prefixPrompt({
+                    message: 'Select the command prefix to allow for this session:',
+                    command: command,
+                  });
+
+                  // Add the prefix to the array of allowed prefixes for Bash
+                  const existingPrefixes = this.alwaysAllowedTools.get('Bash') as
+                    | string[]
+                    | undefined;
+                  if (existingPrefixes) {
+                    existingPrefixes.push(selectedPrefix.command);
+                  } else {
+                    this.alwaysAllowedTools.set('Bash', [selectedPrefix.command]);
+                  }
+                  log(
+                    chalk.blue(
+                      `Bash prefix "${selectedPrefix.command}" added to allowed list for current session only`
+                    )
+                  );
+                } else {
+                  // For non-Bash tools, set the value to true
+                  this.alwaysAllowedTools.set(tool_name, true);
+                  log(
+                    chalk.blue(`Tool ${tool_name} added to allowed list for current session only`)
+                  );
+                }
+
+                // NOTE: Deliberately NOT calling addPermissionToFile() for session-only approvals
               }
             } catch (err: any) {
               // If the prompt was aborted (timeout occurred), use the timeout result
