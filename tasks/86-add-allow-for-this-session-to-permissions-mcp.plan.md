@@ -127,6 +127,7 @@ tasks:
       approvals.
     files:
       - src/rmplan/executors/claude_code.test.ts
+    done: true
     steps:
       - prompt: >
           Add a test that verifies the permissions prompt now includes four
@@ -134,34 +135,34 @@ tasks:
 
           Mock the select prompt and verify it's called with the correct choices
           array.
-        done: false
+        done: true
       - prompt: >
           Create a test that simulates selecting "Allow for Session" for a
           regular tool.
 
           Verify the tool is added to alwaysAllowedTools but addPermissionToFile
           is not called.
-        done: false
+        done: true
       - prompt: >
           Add a test for "Allow for Session" with Bash commands that verifies
           prefixPrompt is called.
 
           Ensure the selected prefix is added to alwaysAllowedTools but not
           persisted to settings.
-        done: false
+        done: true
       - prompt: >
           Create a test that verifies auto-approval works for session-approved
           tools on subsequent requests.
 
           Check that the log message indicates session-based approval.
-        done: false
+        done: true
       - prompt: >
           Add a test that verifies the settings file remains unchanged when
           using session approvals.
 
           Mock file operations to ensure addPermissionToFile is never called for
           session approvals.
-        done: false
+        done: true
   - title: Test edge cases and integration
     description: >
       Verify edge cases including session approval followed by "Always Allow"
@@ -174,6 +175,7 @@ tasks:
       introducing unexpected behavior.
     files:
       - src/rmplan/executors/claude_code.test.ts
+    done: true
     steps:
       - prompt: >
           Create a test where a tool is first approved for session, then later
@@ -181,35 +183,35 @@ tasks:
 
           Verify the tool transitions from session-only to persistent approval
           correctly.
-        done: false
+        done: true
       - prompt: >
           Add a test for multiple session approvals of different Bash command
           prefixes.
 
           Ensure each prefix is tracked separately in the alwaysAllowedTools
           array.
-        done: false
+        done: true
       - prompt: >
           Test that existing "Always Allow" functionality still works exactly as
           before.
 
           Verify it adds to both alwaysAllowedTools and calls
           addPermissionToFile.
-        done: false
+        done: true
       - prompt: >
           Create an integration test that simulates a full session with mixed
           approval types.
 
           Verify session approvals don't persist after the executor is
           recreated.
-        done: false
+        done: true
       - prompt: >
           Add a test for the MCP server integration to ensure session approvals
           work correctly through the socket.
 
           Verify the permission response is sent with approved=true for session
           approvals.
-        done: false
+        done: true
 ---
 
 # Original Plan Details
