@@ -282,16 +282,18 @@ export class ClaudeCodeExecutor implements Executor {
    */
   private addBashPrefixSafely(prefix: string): boolean {
     const existingValue = this.alwaysAllowedTools.get(BASH_TOOL_NAME);
-    
+
     // Type safety validation
     if (existingValue !== undefined && !Array.isArray(existingValue) && existingValue !== true) {
       // This should not happen, but if it does, we need to handle it gracefully
-      debugLog(`Warning: Unexpected value type for ${BASH_TOOL_NAME} in alwaysAllowedTools: ${typeof existingValue}`);
+      debugLog(
+        `Warning: Unexpected value type for ${BASH_TOOL_NAME} in alwaysAllowedTools: ${typeof existingValue}`
+      );
       // Reset to empty array to continue safely
       this.alwaysAllowedTools.set(BASH_TOOL_NAME, [prefix]);
       return true;
     }
-    
+
     if (Array.isArray(existingValue)) {
       // Prevent duplicates
       if (!existingValue.includes(prefix)) {
@@ -304,7 +306,7 @@ export class ClaudeCodeExecutor implements Executor {
       this.alwaysAllowedTools.set(BASH_TOOL_NAME, [prefix]);
       return true;
     }
-    
+
     // existingValue === true means Bash was already approved for all commands
     // No need to add specific prefixes in this case
     return false;
@@ -326,7 +328,7 @@ export class ClaudeCodeExecutor implements Executor {
     try {
       const command = input.command as string;
       const selectedPrefix = await prefixPrompt({
-        message: isPersistent 
+        message: isPersistent
           ? 'Select the command prefix to always allow:'
           : 'Select the command prefix to allow for this session:',
         command: command,
@@ -334,13 +336,15 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Add the prefix using the safe method
       const wasAdded = this.addBashPrefixSafely(selectedPrefix.command);
-      
+
       if (wasAdded) {
         const message = isPersistent ? persistentMessage : sessionMessage;
         log(chalk.blue(message.replace('{prefix}', selectedPrefix.command)));
       } else {
         // Prefix was already present
-        log(chalk.yellow(`Bash prefix "${selectedPrefix.command}" was already in the allowed list`));
+        log(
+          chalk.yellow(`Bash prefix "${selectedPrefix.command}" was already in the allowed list`)
+        );
       }
 
       // Save to settings file only for persistent approvals
@@ -447,7 +451,11 @@ export class ClaudeCodeExecutor implements Executor {
                     const approvalSource = this.configAllowedTools.has(BASH_TOOL_NAME)
                       ? 'configured in allowlist'
                       : 'always allowed (session)';
-                    log(chalk.green(`${BASH_TOOL_NAME} command automatically approved (${approvalSource})`));
+                    log(
+                      chalk.green(
+                        `${BASH_TOOL_NAME} command automatically approved (${approvalSource})`
+                      )
+                    );
                     const response = {
                       type: 'permission_response',
                       approved: true,
@@ -575,7 +583,7 @@ export class ClaudeCodeExecutor implements Executor {
                   // For non-Bash tools, set the value to true
                   this.alwaysAllowedTools.set(tool_name, true);
                   log(chalk.blue(`Tool ${tool_name} added to always allowed list`));
-                  
+
                   // Save the new permission rule to the settings file
                   await this.addPermissionToFile(tool_name);
                 }

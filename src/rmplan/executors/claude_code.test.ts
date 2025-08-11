@@ -4357,7 +4357,10 @@ More content
       const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
 
       // Get initial state of data structures
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
 
       expect(alwaysAllowedTools.has('Write')).toBe(false);
@@ -4467,7 +4470,10 @@ More content
       const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
 
       // Get initial state of data structures
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
 
       expect(alwaysAllowedTools.has('Bash')).toBe(false);
@@ -4496,7 +4502,10 @@ More content
 
       // Verify the main prompt was for the permission choice
       const firstCall = mockSelect.mock.calls[0][0];
-      expect(firstCall.choices).toContainEqual({ name: 'Allow for Session', value: 'session_allow' });
+      expect(firstCall.choices).toContainEqual({
+        name: 'Allow for Session',
+        value: 'session_allow',
+      });
 
       // Verify the prefix prompt was called
       expect(mockPrefixPrompt).toHaveBeenCalledTimes(1);
@@ -4578,9 +4587,12 @@ More content
       const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
 
       // Manually set up session-based approval (simulating previous session_allow choice)
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
-      
+
       alwaysAllowedTools.set('Write', true); // Session-approved tool
       // Don't add to configAllowedTools to simulate session-only approval
 
@@ -4673,7 +4685,10 @@ More content
       const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
 
       // Set up session-based approval for Write tool
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       alwaysAllowedTools.set('Write', true); // Session-approved tool (not in config)
 
       // Test config-based auto-approval
@@ -4772,7 +4787,10 @@ More content
       // Create the permission socket server
       const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
 
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
 
       // Test session approval for Write tool
@@ -4867,7 +4885,10 @@ More content
       // Create the permission socket server
       const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
 
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
 
       // First request: session approval

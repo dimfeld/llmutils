@@ -52,6 +52,8 @@ tasks:
 - Tests are failing
 - Code review identified blocking issues
 
+You don't need to mark the entire plan file as complete. We will handle that for you. But if you do, you must use 'status: done'
+
 `;
 }
 

@@ -17,7 +17,7 @@ export const phaseSchema = z
     status: z.preprocess((s) => {
       if (typeof s === 'string') {
         // common synonyms
-        if (s === 'complete') {
+        if (s === 'complete' || s === 'completed') {
           return 'done';
         }
       }
