@@ -4043,6 +4043,140 @@ More content
       expect(result.configAllowedTools.has('Bash')).toBe(true);
       expect(result.configAllowedTools.has('Write')).toBe(false); // Session-based, not config
     });
+
+    test('handles malformed input commands safely with allowlist configuration', async () => {
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: ['Edit', 'Bash(jj commit:*)', 'Bash(pwd)'],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: true, timeout: 100, defaultResponse: 'no' },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Mock the permission socket server creation and handling
+      let permissionRequestHandler: (message: any) => Promise<void>;
+      const mockSocket = {
+        on: mock((event: string, handler: any) => {
+          if (event === 'data') {
+            permissionRequestHandler = async (message: any) => {
+              const buffer = Buffer.from(JSON.stringify(message));
+              await handler(buffer);
+            };
+          }
+        }),
+        write: mock(),
+      };
+
+      const mockServer = {
+        listen: mock((path: string, callback: () => void) => {
+          callback();
+        }),
+        on: mock(),
+        close: mock((callback: () => void) => {
+          callback();
+        }),
+      };
+
+      await moduleMocker.mock('net', () => ({
+        createServer: mock((handler: any) => {
+          handler(mockSocket);
+          return mockServer;
+        }),
+      }));
+
+      // Mock inquirer prompts to simulate timeout (normal permission flow)
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        select: mock(() => {
+          return new Promise(() => {
+            // Simulate timeout - never resolves, which should result in 'no'
+          });
+        }),
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test')),
+      }));
+
+      await moduleMocker.mock('fs/promises', () => ({
+        mkdtemp: mock(() => Promise.resolve('/tmp/mcp-test')),
+        rm: mock(() => Promise.resolve()),
+      }));
+
+      // Use real parsing logic
+      executor.testParseAllowedTools(['Edit', 'Bash(jj commit:*)', 'Bash(pwd)']);
+
+      // Create the permission socket server
+      const server = await (executor as any).createPermissionSocketServer('/tmp/test-socket.sock');
+
+      // Test that null command doesn't crash and falls through to normal permission flow
+      const response1 = mock();
+      mockSocket.write = response1;
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: null },
+      });
+      
+      expect(response1).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: false,
+        }) + '\n'
+      );
+
+      // Test that undefined command doesn't crash and falls through to normal permission flow
+      const response2 = mock();
+      mockSocket.write = response2;
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: undefined },
+      });
+      
+      expect(response2).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: false,
+        }) + '\n'
+      );
+
+      // Test that non-string command (number) doesn't crash and falls through
+      const response3 = mock();
+      mockSocket.write = response3;
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 123 },
+      });
+      
+      expect(response3).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: false,
+        }) + '\n'
+      );
+
+      // Test that a valid command still works correctly
+      const response4 = mock();
+      mockSocket.write = response4;
+      await permissionRequestHandler({
+        type: 'permission_request',
+        tool_name: 'Bash',
+        input: { command: 'jj commit -m "test"' },
+      });
+      
+      expect(response4).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: 'permission_response',
+          approved: true,
+        }) + '\n'
+      );
+
+      server.close(() => {});
+    });
   });
 
   afterEach(() => {

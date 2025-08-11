@@ -361,21 +361,26 @@ export class ClaudeCodeExecutor implements Executor {
             if (allowedValue !== undefined) {
               // For Bash tools, check if the command matches any allowed prefix
               if (tool_name === 'Bash' && Array.isArray(allowedValue)) {
-                const command = input.command as string;
-                const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
+                // Safely validate input.command is a string before using string methods
+                if (typeof input.command === 'string') {
+                  const command = input.command;
+                  const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
 
-                if (isAllowed) {
-                  const approvalSource = this.configAllowedTools.has('Bash') 
-                    ? 'configured in allowlist' 
-                    : 'always allowed (session)';
-                  log(chalk.green(`Bash command automatically approved (${approvalSource})`));
-                  const response = {
-                    type: 'permission_response',
-                    approved: true,
-                  };
-                  socket.write(JSON.stringify(response) + '\n');
-                  return;
+                  if (isAllowed) {
+                    const approvalSource = this.configAllowedTools.has('Bash') 
+                      ? 'configured in allowlist' 
+                      : 'always allowed (session)';
+                    log(chalk.green(`Bash command automatically approved (${approvalSource})`));
+                    const response = {
+                      type: 'permission_response',
+                      approved: true,
+                    };
+                    socket.write(JSON.stringify(response) + '\n');
+                    return;
+                  }
                 }
+                // If input.command is not a string or doesn't match any allowed prefix,
+                // fall through to normal permission prompt
               } else if (allowedValue === true) {
                 const approvalSource = this.configAllowedTools.has(tool_name) 
                   ? 'configured in allowlist' 
