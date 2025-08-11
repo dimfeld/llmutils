@@ -111,28 +111,28 @@ tasks:
 
           Create a test that verifies a simple tool like "Edit" is auto-approved
           when it's in the allowedTools configuration.
-        done: false
+        done: true
       - prompt: >
           Add a test that verifies Bash commands matching an allowed prefix
           pattern are auto-approved.
 
           Test both exact matches (like "jj commit -m 'test'") and prefix
           matches with additional arguments.
-        done: false
+        done: true
       - prompt: >
           Add a test that verifies tools and commands NOT in the allowlist still
           trigger the normal permission prompt.
 
           Mock the select prompt to return a response and verify the prompt was
           called.
-        done: false
+        done: true
       - prompt: >
           Add a test that verifies the correct log messages are generated when
           auto-approving based on the configuration.
 
           Use a spy on the log function to capture and verify the message
           indicates configuration-based approval.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/claude_code
