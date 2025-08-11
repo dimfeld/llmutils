@@ -150,7 +150,7 @@ ${contextContent}
 
 ## Your Primary Responsibilities:
 1. Identify bugs, logic errors, and correctness issues
-2. Find violations of project patterns and conventions
+2. Find violations of project patterns and conventions. (But ignore formatting, indentation, etc.)
 3. Detect security vulnerabilities and unsafe practices
 4. Flag performance problems and inefficiencies
 5. Identify missing error handling and edge cases
