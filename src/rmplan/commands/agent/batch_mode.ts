@@ -1,3 +1,4 @@
+import { commitAll } from '../../../common/process.js';
 import { boldMarkdownHeaders, closeLogFile, error, log } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { type RmplanConfig } from '../../configSchema.js';
@@ -137,7 +138,8 @@ export async function executeBatchMode({
       );
 
       // If all tasks are now marked done, update the plan status to 'done'
-      if (remainingIncompleteTasks.length === 0) {
+      const finished = remainingIncompleteTasks.length === 0;
+      if (finished) {
         log('Batch mode: All tasks completed, marking plan as done');
         await setPlanStatus(currentPlanFile, 'done');
 
@@ -147,6 +149,11 @@ export async function executeBatchMode({
         }
         break;
       }
+
+      const commitMessage = finished
+        ? `Plan complete: ${planData.title}`
+        : 'Finish batch tasks iteration';
+      await commitAll(commitMessage, baseDir);
     }
 
     if (hasError) {
