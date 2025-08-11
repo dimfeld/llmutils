@@ -348,7 +348,7 @@ export class ClaudeCodeExecutor implements Executor {
         await this.addPermissionToFile(BASH_TOOL_NAME, selectedPrefix);
       }
     } catch (error) {
-      debugLog(`Error handling Bash prefix approval: ${error}`);
+      debugLog(`Error handling Bash prefix approval: ${error as Error}`);
       throw error; // Re-throw to let caller handle appropriately
     }
   }
