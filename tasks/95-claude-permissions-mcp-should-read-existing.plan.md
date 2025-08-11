@@ -47,7 +47,7 @@ tasks:
           Parse each entry in `allowedTools`: if it's a simple tool name, set it
           to `true` in the map. If it matches the pattern "Bash(...)", extract
           the command pattern and add it to an array of allowed Bash prefixes.
-        done: false
+        done: true
       - prompt: >
           For Bash command patterns, handle both exact matches (like
           "Bash(pwd)") and wildcard patterns (like "Bash(jj commit:*)").
@@ -55,7 +55,7 @@ tasks:
           Strip the trailing ":*" from wildcard patterns to get the prefix.
           Store all Bash patterns in a single array under the "Bash" key in the
           map.
-        done: false
+        done: true
   - title: "Task 2: Update the permission handler to use the allowlist for
       auto-approval"
     description: >
@@ -85,7 +85,7 @@ tasks:
 
           Change the messages from "automatically approved (always allowed)" to
           something like "automatically approved (configured in allowlist)".
-        done: false
+        done: true
   - title: "Task 3: Add unit tests for allowlist-based auto-approval"
     description: >
       In `claude_code.test.ts`, add a new suite of tests to verify the
