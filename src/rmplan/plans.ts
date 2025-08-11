@@ -541,13 +541,17 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
  * @param filePath - The path where to write the YAML file
  * @param plan - The plan data to write
  */
-export async function writePlanFile(filePath: string, plan: PlanSchema): Promise<void> {
+export async function writePlanFile(
+  filePath: string,
+  input: PlanSchema & { filename?: string }
+): Promise<void> {
   const absolutePath = resolve(filePath);
+  // Plans from readAllPlans will have a filename which we want to strip out
+  const { filename: _, ...plan } = input;
 
   // Validate the plan before writing
   const result = phaseSchema.safeParse(plan);
   if (!result.success) {
-    console.trace(JSON.stringify(plan));
     const errors = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
       .join('\n');
