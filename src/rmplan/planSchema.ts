@@ -40,18 +40,18 @@ export const phaseSchema = z
       z
         .object({
           title: z.string(),
+          done: z.boolean().default(false).optional(),
           description: z.string(),
           files: z.array(z.string()).default([]).optional(),
           examples: z.array(z.string()).optional(),
           docs: z.array(z.string()).default([]).optional(),
-          done: z.boolean().default(false).optional(),
           steps: z
             .array(
               z
                 .object({
                   prompt: z.string(),
-                  examples: z.array(z.string()).optional(),
                   done: z.boolean().default(false),
+                  examples: z.array(z.string()).optional(),
                 })
                 .strict()
             )
