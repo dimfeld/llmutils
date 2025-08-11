@@ -142,6 +142,9 @@ CRITICAL: Do not be polite or encouraging. Your job is to find issues, not to pr
 
 Use git commands to see the recent related commits and which files were changed, so you know what to focus on.
 
+Make sure that your feedback is congruent with the requirements of the project. For example, flagging increased number of rows from a database query is not useful feedback if the feature being implemented requires it.
+
+
 ## Context and Task
 ${contextContent}
 
