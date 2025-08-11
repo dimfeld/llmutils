@@ -23,6 +23,7 @@ tasks:
       from one-time approval to session approval to permanent approval.
     files:
       - src/rmplan/executors/claude_code.ts
+    done: true
     steps:
       - prompt: >
           Locate the select prompt in the createPermissionSocketServer method
@@ -31,13 +32,13 @@ tasks:
           Add a new choice with name "Allow for Session" and value
           "session_allow" between the existing "Allow" and "Always Allow"
           options.
-        done: false
+        done: true
       - prompt: >
           Ensure the new choice follows the existing format and maintains the
           same styling as other choices.
 
           The order should be: Allow, Allow for Session, Always Allow, Disallow.
-        done: false
+        done: true
   - title: Implement session_allow handler logic
     description: >
       Add handling for the 'session_allow' choice in the permission request
@@ -53,6 +54,7 @@ tasks:
       the rest.
     files:
       - src/rmplan/executors/claude_code.ts
+    done: true
     steps:
       - prompt: >
           In the permission handler after retrieving userChoice, add a condition
@@ -60,28 +62,28 @@ tasks:
 
           Set approved = true for this case, similar to how it's done for
           'always_allow'.
-        done: false
+        done: true
       - prompt: >
           Add an if block to handle session_allow that mirrors the always_allow
           logic but without persistence.
 
           For Bash tools, use prefixPrompt to get the prefix selection and add
           it to alwaysAllowedTools.
-        done: false
+        done: true
       - prompt: >
           For non-Bash tools in session_allow, add the tool to
           alwaysAllowedTools with value true.
 
           Add appropriate logging using chalk.blue to indicate the tool was
           added for the current session only.
-        done: false
+        done: true
       - prompt: >
           Ensure the session_allow handler does NOT call addPermissionToFile()
           method.
 
           The tool should only exist in alwaysAllowedTools, not in the settings
           file.
-        done: false
+        done: true
   - title: Update logging for session vs persistent approvals
     description: >
       Verify and enhance the auto-approval logging (around lines 374-383) to
@@ -95,6 +97,7 @@ tasks:
       whether the approval will persist.
     files:
       - src/rmplan/executors/claude_code.ts
+    done: true
     steps:
       - prompt: >
           Review the existing auto-approval logging code to confirm it properly
@@ -102,14 +105,14 @@ tasks:
 
           Verify that tools not in configAllowedTools are logged as "(always
           allowed (session))".
-        done: false
+        done: true
       - prompt: >
           If needed, adjust the log messages to make the distinction between
           session and persistent approvals clearer.
 
           Ensure consistency in the message format for both Bash commands and
           regular tools.
-        done: false
+        done: true
   - title: Add comprehensive test coverage
     description: >
       Create test cases in src/rmplan/executors/claude_code.test.ts to verify
