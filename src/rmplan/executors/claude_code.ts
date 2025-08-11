@@ -44,6 +44,106 @@ export class ClaudeCodeExecutor implements Executor {
   private alwaysAllowedTools = new Map<string, true | string[]>();
   private configAllowedTools = new Set<string>();
   private configToolsInitialized = false;
+
+  /**
+   * Parse the allowedTools configuration into efficient lookup structures for auto-approval.
+   * This method is exposed for testing purposes.
+   */
+  private parseAllowedTools(allowedTools: string[]): void {
+    // Only initialize config-based tools once to avoid clearing session-based approvals
+    if (!this.configToolsInitialized) {
+      this.configAllowedTools.clear(); // Only clear config tracking, not session data
+      
+      for (const tool of allowedTools) {
+        // Input validation for malformed tool strings
+        if (typeof tool !== 'string' || tool.trim() === '') {
+          debugLog(`Skipping invalid tool configuration: ${tool}`);
+          continue;
+        }
+        
+        const trimmedTool = tool.trim();
+        
+        if (trimmedTool.startsWith('Bash(')) {
+          // Validate Bash command format
+          if (!trimmedTool.endsWith(')')) {
+            debugLog(`Skipping malformed Bash tool configuration: ${trimmedTool} (missing closing parenthesis)`);
+            continue;
+          }
+          
+          // Handle Bash command patterns like "Bash(jj commit:*)" or "Bash(pwd)"
+          const bashCommand = trimmedTool.slice(5, -1); // Remove "Bash(" and ")"
+          
+          // Validate bash command is not empty
+          if (bashCommand.trim() === '') {
+            debugLog(`Skipping empty Bash command configuration: ${trimmedTool}`);
+            continue;
+          }
+          
+          let commandPrefix: string;
+          if (bashCommand.endsWith(':*')) {
+            // Wildcard pattern - extract the prefix
+            commandPrefix = bashCommand.slice(0, -2).trim();
+            if (commandPrefix === '') {
+              debugLog(`Skipping empty Bash command prefix: ${trimmedTool}`);
+              continue;
+            }
+          } else {
+            // Exact match - use the full command
+            commandPrefix = bashCommand.trim();
+          }
+
+          // Add to the array of allowed Bash prefixes (preserve existing session-based entries)
+          const existingPrefixes = this.alwaysAllowedTools.get('Bash');
+          if (Array.isArray(existingPrefixes)) {
+            // Only add if not already present
+            if (!existingPrefixes.includes(commandPrefix)) {
+              existingPrefixes.push(commandPrefix);
+            }
+          } else if (existingPrefixes === undefined) {
+            // No existing Bash entries, create new array
+            this.alwaysAllowedTools.set('Bash', [commandPrefix]);
+          }
+          // If existingPrefixes === true, it means Bash was session-approved for all commands,
+          // so we don't need to add specific prefixes
+          
+          this.configAllowedTools.add('Bash'); // Track that Bash was configured
+        } else {
+          // Simple tool name like "Edit", "Write", etc.
+          // Only set if not already session-approved
+          if (!this.alwaysAllowedTools.has(trimmedTool)) {
+            this.alwaysAllowedTools.set(trimmedTool, true);
+          }
+          this.configAllowedTools.add(trimmedTool); // Track that this tool was configured
+        }
+      }
+      
+      this.configToolsInitialized = true;
+    }
+  }
+
+  /**
+   * Test helper method to trigger parsing of allowedTools configuration.
+   * This method is only used for testing purposes.
+   */
+  public testParseAllowedTools(allowedTools: string[]): void {
+    // Reset initialization state to allow re-parsing for tests
+    this.configToolsInitialized = false;
+    this.parseAllowedTools(allowedTools);
+  }
+
+  /**
+   * Test helper method to access the parsed allowedTools data structures.
+   * This method is only used for testing purposes.
+   */
+  public testGetParsedAllowedTools(): {
+    alwaysAllowedTools: Map<string, true | string[]>;
+    configAllowedTools: Set<string>;
+  } {
+    return {
+      alwaysAllowedTools: new Map(this.alwaysAllowedTools),
+      configAllowedTools: new Set(this.configAllowedTools),
+    };
+  }
   private trackedFiles = new Set<string>();
   private planInfo?: ExecutePlanInfo;
 
@@ -551,75 +651,7 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     // Parse allowedTools into efficient lookup structure for auto-approval
-    // Only initialize config-based tools once to avoid clearing session-based approvals
-    if (!this.configToolsInitialized) {
-      this.configAllowedTools.clear(); // Only clear config tracking, not session data
-      
-      for (const tool of allowedTools) {
-        // Input validation for malformed tool strings
-        if (typeof tool !== 'string' || tool.trim() === '') {
-          debugLog(`Skipping invalid tool configuration: ${tool}`);
-          continue;
-        }
-        
-        const trimmedTool = tool.trim();
-        
-        if (trimmedTool.startsWith('Bash(')) {
-          // Validate Bash command format
-          if (!trimmedTool.endsWith(')')) {
-            debugLog(`Skipping malformed Bash tool configuration: ${trimmedTool} (missing closing parenthesis)`);
-            continue;
-          }
-          
-          // Handle Bash command patterns like "Bash(jj commit:*)" or "Bash(pwd)"
-          const bashCommand = trimmedTool.slice(5, -1); // Remove "Bash(" and ")"
-          
-          // Validate bash command is not empty
-          if (bashCommand.trim() === '') {
-            debugLog(`Skipping empty Bash command configuration: ${trimmedTool}`);
-            continue;
-          }
-          
-          let commandPrefix: string;
-          if (bashCommand.endsWith(':*')) {
-            // Wildcard pattern - extract the prefix
-            commandPrefix = bashCommand.slice(0, -2).trim();
-            if (commandPrefix === '') {
-              debugLog(`Skipping empty Bash command prefix: ${trimmedTool}`);
-              continue;
-            }
-          } else {
-            // Exact match - use the full command
-            commandPrefix = bashCommand.trim();
-          }
-
-          // Add to the array of allowed Bash prefixes (preserve existing session-based entries)
-          const existingPrefixes = this.alwaysAllowedTools.get('Bash');
-          if (Array.isArray(existingPrefixes)) {
-            // Only add if not already present
-            if (!existingPrefixes.includes(commandPrefix)) {
-              existingPrefixes.push(commandPrefix);
-            }
-          } else if (existingPrefixes === undefined) {
-            // No existing Bash entries, create new array
-            this.alwaysAllowedTools.set('Bash', [commandPrefix]);
-          }
-          // If existingPrefixes === true, it means Bash was session-approved for all commands,
-          // so we don't need to add specific prefixes
-          
-          this.configAllowedTools.add('Bash'); // Track that Bash was configured
-        } else {
-          // Simple tool name like "Edit", "Write", etc.
-          // Only set if not already session-approved
-          if (!this.alwaysAllowedTools.has(trimmedTool)) {
-            this.alwaysAllowedTools.set(trimmedTool, true);
-          }
-          this.configAllowedTools.add(trimmedTool); // Track that this tool was configured
-        }
-      }
-      
-      this.configToolsInitialized = true;
-    }
+    this.parseAllowedTools(allowedTools);
 
     // Create temporary MCP configuration if permissions MCP is enabled
     let unixSocketServer: net.Server | undefined;
