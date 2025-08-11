@@ -5,7 +5,7 @@ goal: To add the core logic for checking permission requests against the
   configured `allowedTools` list and to add comprehensive tests verifying the
   new behavior.
 id: 95
-status: completed
+status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-11T07:03:16.500Z

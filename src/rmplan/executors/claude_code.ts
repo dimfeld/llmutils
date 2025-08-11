@@ -53,32 +53,34 @@ export class ClaudeCodeExecutor implements Executor {
     // Only initialize config-based tools once to avoid clearing session-based approvals
     if (!this.configToolsInitialized) {
       this.configAllowedTools.clear(); // Only clear config tracking, not session data
-      
+
       for (const tool of allowedTools) {
         // Input validation for malformed tool strings
         if (typeof tool !== 'string' || tool.trim() === '') {
           debugLog(`Skipping invalid tool configuration: ${tool}`);
           continue;
         }
-        
+
         const trimmedTool = tool.trim();
-        
+
         if (trimmedTool.startsWith('Bash(')) {
           // Validate Bash command format
           if (!trimmedTool.endsWith(')')) {
-            debugLog(`Skipping malformed Bash tool configuration: ${trimmedTool} (missing closing parenthesis)`);
+            debugLog(
+              `Skipping malformed Bash tool configuration: ${trimmedTool} (missing closing parenthesis)`
+            );
             continue;
           }
-          
+
           // Handle Bash command patterns like "Bash(jj commit:*)" or "Bash(pwd)"
           const bashCommand = trimmedTool.slice(5, -1); // Remove "Bash(" and ")"
-          
+
           // Validate bash command is not empty
           if (bashCommand.trim() === '') {
             debugLog(`Skipping empty Bash command configuration: ${trimmedTool}`);
             continue;
           }
-          
+
           let commandPrefix: string;
           if (bashCommand.endsWith(':*')) {
             // Wildcard pattern - extract the prefix
@@ -105,7 +107,7 @@ export class ClaudeCodeExecutor implements Executor {
           }
           // If existingPrefixes === true, it means Bash was session-approved for all commands,
           // so we don't need to add specific prefixes
-          
+
           this.configAllowedTools.add('Bash'); // Track that Bash was configured
         } else {
           // Simple tool name like "Edit", "Write", etc.
@@ -116,7 +118,7 @@ export class ClaudeCodeExecutor implements Executor {
           this.configAllowedTools.add(trimmedTool); // Track that this tool was configured
         }
       }
-      
+
       this.configToolsInitialized = true;
     }
   }
@@ -367,8 +369,8 @@ export class ClaudeCodeExecutor implements Executor {
                   const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
 
                   if (isAllowed) {
-                    const approvalSource = this.configAllowedTools.has('Bash') 
-                      ? 'configured in allowlist' 
+                    const approvalSource = this.configAllowedTools.has('Bash')
+                      ? 'configured in allowlist'
                       : 'always allowed (session)';
                     log(chalk.green(`Bash command automatically approved (${approvalSource})`));
                     const response = {
@@ -382,8 +384,8 @@ export class ClaudeCodeExecutor implements Executor {
                 // If input.command is not a string or doesn't match any allowed prefix,
                 // fall through to normal permission prompt
               } else if (allowedValue === true) {
-                const approvalSource = this.configAllowedTools.has(tool_name) 
-                  ? 'configured in allowlist' 
+                const approvalSource = this.configAllowedTools.has(tool_name)
+                  ? 'configured in allowlist'
                   : 'always allowed (session)';
                 log(chalk.green(`Tool ${tool_name} automatically approved (${approvalSource})`));
                 const response = {

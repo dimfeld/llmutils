@@ -2912,7 +2912,7 @@ describe('ClaudeCodeExecutor', () => {
       // Should have prompted the user since Write is not in allowlist
       expect(mockSelect).toHaveBeenCalled();
 
-      // Test that WebFetch tool (not in allowlist) triggers user prompt  
+      // Test that WebFetch tool (not in allowlist) triggers user prompt
       const response2 = mock();
       mockSocket.write = response2;
 
@@ -3126,7 +3126,10 @@ describe('ClaudeCodeExecutor', () => {
 
       // Now test session-based approval by manually adding to the executor's data structures
       // Add Write tool to session-based (not config-based) allowlist
-      const alwaysAllowedTools = (executor1 as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor1 as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       alwaysAllowedTools.set('Write', true);
       // Don't add to configAllowedTools to simulate session-based approval
 
@@ -3160,7 +3163,7 @@ describe('ClaudeCodeExecutor', () => {
             'Bash( :*)', // Edge case - empty prefix
             '', // Invalid - empty string
             'Bash(pwd)', // Valid - exact command
-            'Write' // Valid
+            'Write', // Valid
           ],
           disallowedTools: [],
           allowAllTools: false,
@@ -3198,12 +3201,14 @@ describe('ClaudeCodeExecutor', () => {
         'Bash( :*)', // Edge case - empty prefix
         '', // Invalid - empty string
         'Bash(pwd)', // Valid - exact command
-        'Write' // Valid
+        'Write', // Valid
       ]);
 
       // Verify debug messages were logged for malformed configurations
       expect(debugLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Skipping malformed Bash tool configuration: Bash( (missing closing parenthesis)')
+        expect.stringContaining(
+          'Skipping malformed Bash tool configuration: Bash( (missing closing parenthesis)'
+        )
       );
       expect(debugLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('Skipping empty Bash command configuration: Bash()')
@@ -3217,7 +3222,7 @@ describe('ClaudeCodeExecutor', () => {
 
       // Verify that only valid tools were actually parsed
       const result = executor.testGetParsedAllowedTools();
-      
+
       expect(result.alwaysAllowedTools.get('Edit')).toBe(true);
       expect(result.alwaysAllowedTools.get('Write')).toBe(true);
       expect(result.alwaysAllowedTools.get('Bash')).toEqual(['jj commit', 'pwd']);
@@ -3259,7 +3264,10 @@ describe('ClaudeCodeExecutor', () => {
       // First execution - should populate config-based tools
       await executor.execute('test content 1', mockPlanInfo);
 
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       const configAllowedTools = (executor as any).configAllowedTools as Set<string>;
 
       // Verify initial parsing
@@ -3271,7 +3279,7 @@ describe('ClaudeCodeExecutor', () => {
       // Simulate session-based approvals (like user choosing "Always Allow")
       alwaysAllowedTools.set('Write', true); // User approved Write tool during session
       alwaysAllowedTools.set('WebFetch', true); // User approved WebFetch tool during session
-      
+
       // Also add a session-based bash command
       const bashCommands = alwaysAllowedTools.get('Bash') as string[];
       bashCommands.push('git status'); // User approved a git status command
@@ -3333,7 +3341,10 @@ describe('ClaudeCodeExecutor', () => {
       await executor.execute('test content 1', mockPlanInfo);
 
       expect((executor as any).configToolsInitialized).toBe(true);
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       expect(alwaysAllowedTools.size).toBe(2); // Edit and Write
 
       // Second execution - should not re-initialize config tools
@@ -3374,8 +3385,11 @@ describe('ClaudeCodeExecutor', () => {
       // First execution
       await executor.execute('test content 1', mockPlanInfo);
 
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
-      
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
+
       // Verify initial config-based Bash setup
       expect(alwaysAllowedTools.get('Bash')).toEqual(['jj commit']);
 
@@ -3825,13 +3839,13 @@ More content
       );
 
       executor.testParseAllowedTools(['Edit', 'Write', 'WebFetch']);
-      
+
       const result = executor.testGetParsedAllowedTools();
-      
+
       expect(result.alwaysAllowedTools.get('Edit')).toBe(true);
       expect(result.alwaysAllowedTools.get('Write')).toBe(true);
       expect(result.alwaysAllowedTools.get('WebFetch')).toBe(true);
-      
+
       expect(result.configAllowedTools.has('Edit')).toBe(true);
       expect(result.configAllowedTools.has('Write')).toBe(true);
       expect(result.configAllowedTools.has('WebFetch')).toBe(true);
@@ -3849,10 +3863,14 @@ More content
         mockConfig
       );
 
-      executor.testParseAllowedTools(['Bash(jj commit:*)', 'Bash(git status:*)', 'Bash(npm run:*)']);
-      
+      executor.testParseAllowedTools([
+        'Bash(jj commit:*)',
+        'Bash(git status:*)',
+        'Bash(npm run:*)',
+      ]);
+
       const result = executor.testGetParsedAllowedTools();
-      
+
       expect(result.alwaysAllowedTools.get('Bash')).toEqual(['jj commit', 'git status', 'npm run']);
       expect(result.configAllowedTools.has('Bash')).toBe(true);
     });
@@ -3870,9 +3888,9 @@ More content
       );
 
       executor.testParseAllowedTools(['Bash(pwd)', 'Bash(ls -la)', 'Bash(whoami)']);
-      
+
       const result = executor.testGetParsedAllowedTools();
-      
+
       expect(result.alwaysAllowedTools.get('Bash')).toEqual(['pwd', 'ls -la', 'whoami']);
       expect(result.configAllowedTools.has('Bash')).toBe(true);
     });
@@ -3895,19 +3913,19 @@ More content
         'Write',
         'Bash(pwd)',
         'WebFetch',
-        'Bash(git log:*)'
+        'Bash(git log:*)',
       ]);
-      
+
       const result = executor.testGetParsedAllowedTools();
-      
+
       // Check simple tools
       expect(result.alwaysAllowedTools.get('Edit')).toBe(true);
       expect(result.alwaysAllowedTools.get('Write')).toBe(true);
       expect(result.alwaysAllowedTools.get('WebFetch')).toBe(true);
-      
+
       // Check Bash commands (both wildcard and exact)
       expect(result.alwaysAllowedTools.get('Bash')).toEqual(['jj commit', 'pwd', 'git log']);
-      
+
       // Check config tracking
       expect(result.configAllowedTools.has('Edit')).toBe(true);
       expect(result.configAllowedTools.has('Write')).toBe(true);
@@ -3940,23 +3958,25 @@ More content
         '', // Invalid - empty string
         '   ', // Invalid - whitespace only
         'Bash( )', // Invalid - whitespace-only command
-        'Write' // Valid
+        'Write', // Valid
       ]);
-      
+
       const result = executor.testGetParsedAllowedTools();
-      
+
       // Only valid tools should be parsed
       expect(result.alwaysAllowedTools.get('Edit')).toBe(true);
       expect(result.alwaysAllowedTools.get('Write')).toBe(true);
       expect(result.alwaysAllowedTools.get('Bash')).toEqual(['jj commit', 'pwd']);
-      
+
       expect(result.configAllowedTools.has('Edit')).toBe(true);
       expect(result.configAllowedTools.has('Write')).toBe(true);
       expect(result.configAllowedTools.has('Bash')).toBe(true);
-      
+
       // Verify debug messages for malformed configurations
       expect(debugLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Skipping malformed Bash tool configuration: Bash( (missing closing parenthesis)')
+        expect.stringContaining(
+          'Skipping malformed Bash tool configuration: Bash( (missing closing parenthesis)'
+        )
       );
       expect(debugLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('Skipping empty Bash command configuration: Bash()')
@@ -3986,23 +4006,23 @@ More content
       // Parse configuration with overlapping Bash commands
       executor.testParseAllowedTools([
         'Edit',
-        'Bash(jj commit:*)', 
+        'Bash(jj commit:*)',
         'Bash(jj commit:*)', // Duplicate - should not create duplicate entry
         'Bash(git status:*)',
         'Edit', // Duplicate - should not affect the true value
-        'WebFetch'
+        'WebFetch',
       ]);
-      
+
       const result = executor.testGetParsedAllowedTools();
-      
+
       // Check that there are no duplicates in the Bash array
       const bashCommands = result.alwaysAllowedTools.get('Bash') as string[];
       expect(bashCommands).toEqual(['jj commit', 'git status']);
-      
+
       // Check simple tools (duplicates should not affect the true value)
       expect(result.alwaysAllowedTools.get('Edit')).toBe(true);
       expect(result.alwaysAllowedTools.get('WebFetch')).toBe(true);
-      
+
       // Verify config tracking
       expect(result.configAllowedTools.has('Edit')).toBe(true);
       expect(result.configAllowedTools.has('WebFetch')).toBe(true);
@@ -4022,22 +4042,27 @@ More content
       );
 
       // Simulate session-based approval for Write tool
-      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<string, true | string[]>;
+      const alwaysAllowedTools = (executor as any).alwaysAllowedTools as Map<
+        string,
+        true | string[]
+      >;
       alwaysAllowedTools.set('Write', true);
       alwaysAllowedTools.set('Bash', ['git status']);
 
       // Parse config tools (this should preserve session data)
       executor.testParseAllowedTools(['Edit', 'Bash(jj commit:*)']);
-      
+
       const result = executor.testGetParsedAllowedTools();
-      
+
       // Session-based tools should be preserved
       expect(result.alwaysAllowedTools.get('Write')).toBe(true);
-      expect(result.alwaysAllowedTools.get('Bash')).toEqual(expect.arrayContaining(['git status', 'jj commit']));
-      
+      expect(result.alwaysAllowedTools.get('Bash')).toEqual(
+        expect.arrayContaining(['git status', 'jj commit'])
+      );
+
       // Config-based tools should be added
       expect(result.alwaysAllowedTools.get('Edit')).toBe(true);
-      
+
       // Config tracking should only include config-based tools
       expect(result.configAllowedTools.has('Edit')).toBe(true);
       expect(result.configAllowedTools.has('Bash')).toBe(true);
@@ -4119,7 +4144,7 @@ More content
         tool_name: 'Bash',
         input: { command: null },
       });
-      
+
       expect(response1).toHaveBeenCalledWith(
         JSON.stringify({
           type: 'permission_response',
@@ -4135,7 +4160,7 @@ More content
         tool_name: 'Bash',
         input: { command: undefined },
       });
-      
+
       expect(response2).toHaveBeenCalledWith(
         JSON.stringify({
           type: 'permission_response',
@@ -4151,7 +4176,7 @@ More content
         tool_name: 'Bash',
         input: { command: 123 },
       });
-      
+
       expect(response3).toHaveBeenCalledWith(
         JSON.stringify({
           type: 'permission_response',
@@ -4167,7 +4192,7 @@ More content
         tool_name: 'Bash',
         input: { command: 'jj commit -m "test"' },
       });
-      
+
       expect(response4).toHaveBeenCalledWith(
         JSON.stringify({
           type: 'permission_response',
