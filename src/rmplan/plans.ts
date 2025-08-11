@@ -547,6 +547,7 @@ export async function writePlanFile(filePath: string, plan: PlanSchema): Promise
   // Validate the plan before writing
   const result = phaseSchema.safeParse(plan);
   if (!result.success) {
+    console.trace(JSON.stringify(plan));
     const errors = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
       .join('\n');

@@ -14,6 +14,7 @@ createdAt: 2025-08-11T07:00:46.652Z
 updatedAt: 2025-08-11T07:08:08.601Z
 tasks:
   - title: "Task 1: Pre-process `allowedTools` into an efficient lookup structure"
+    done: true
     description: >
       In the `ClaudeCodeExecutor`, the existing `alwaysAllowedTools` map will be
       repurposed and populated at the beginning of the `execute` method. This
@@ -58,6 +59,7 @@ tasks:
         done: true
   - title: "Task 2: Update the permission handler to use the allowlist for
       auto-approval"
+    done: true
     description: >
       Modify the `createPermissionSocketServer` method in `claude_code.ts`.
       Inside the socket's `data` event handler, enhance the logic that checks
@@ -87,6 +89,7 @@ tasks:
           something like "automatically approved (configured in allowlist)".
         done: true
   - title: "Task 3: Add unit tests for allowlist-based auto-approval"
+    done: true
     description: >
       In `claude_code.test.ts`, add a new suite of tests to verify the
       auto-approval functionality. These tests will simulate permission requests
