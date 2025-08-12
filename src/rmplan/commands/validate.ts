@@ -176,7 +176,7 @@ function validateParentChildRelationships(
   return inconsistencies;
 }
 
-function wouldCreateCircularDependency(
+export function wouldCreateCircularDependency(
   plans: Map<number, PlanSchema & { filename: string }>,
   parentId: number,
   childId: number

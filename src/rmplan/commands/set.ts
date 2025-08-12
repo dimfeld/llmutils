@@ -6,6 +6,7 @@ import type { Priority } from '../planSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
+import { wouldCreateCircularDependency } from './validate.js';
 
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
 
@@ -106,8 +107,7 @@ export async function handleSetCommand(
 
   // Set parent
   if (options.parent !== undefined) {
-    // Load all plans to check if parent exists
-    // Use the directory of the current plan file as the search directory
+    // Load all plans to check if parent exists and for circular dependency detection
     const config = await loadEffectiveConfig(globalOpts.config);
     const planDir = await resolveTasksDir(config);
     const { plans: allPlans } = await readAllPlans(planDir);
@@ -115,6 +115,53 @@ export async function handleSetCommand(
     const parentPlan = allPlans.get(options.parent);
     if (!parentPlan) {
       throw new Error(`Parent plan with ID ${options.parent} not found`);
+    }
+
+    // Get current plan's ID from the loaded plan
+    const currentPlanId = plan.id;
+    if (!currentPlanId) {
+      throw new Error('Current plan has no ID');
+    }
+
+    // Check for circular dependencies before making any changes
+    if (wouldCreateCircularDependency(allPlans, options.parent, currentPlanId)) {
+      throw new Error(`Setting parent ${options.parent} would create a circular dependency`);
+    }
+
+    // Handle changing parents - remove from old parent's dependencies if it exists
+    const oldParentId = plan.parent;
+    if (oldParentId !== undefined && oldParentId !== options.parent) {
+      const oldParentPlan = allPlans.get(oldParentId);
+      if (oldParentPlan && oldParentPlan.dependencies) {
+        const originalLength = oldParentPlan.dependencies.length;
+        oldParentPlan.dependencies = oldParentPlan.dependencies.filter(
+          (dep) => dep !== currentPlanId
+        );
+        if (oldParentPlan.dependencies.length < originalLength) {
+          oldParentPlan.updatedAt = new Date().toISOString();
+          await writePlanFile(oldParentPlan.filename, oldParentPlan);
+          log(`Removed ${currentPlanId} from old parent ${oldParentId}'s dependencies`);
+        }
+      }
+    }
+
+    // Add this plan's ID to the parent's dependencies (if not already present)
+    if (!parentPlan.dependencies) {
+      parentPlan.dependencies = [];
+    }
+    if (!parentPlan.dependencies.includes(currentPlanId)) {
+      parentPlan.dependencies.push(currentPlanId);
+      parentPlan.updatedAt = new Date().toISOString();
+
+      // If parent was done, mark it as in_progress since it now has new dependencies
+      if (parentPlan.status === 'done') {
+        parentPlan.status = 'in_progress';
+        log(`Parent plan ${options.parent} marked as in_progress`);
+      }
+
+      // Write the updated parent plan
+      await writePlanFile(parentPlan.filename, parentPlan);
+      log(`Updated parent plan ${options.parent} to include dependency on ${currentPlanId}`);
     }
 
     plan.parent = options.parent;
@@ -125,6 +172,32 @@ export async function handleSetCommand(
   // Remove parent
   if (options.noParent) {
     if (plan.parent !== undefined) {
+      const oldParentId = plan.parent;
+      const currentPlanId = plan.id;
+      
+      if (!currentPlanId) {
+        throw new Error('Current plan has no ID');
+      }
+
+      // Load all plans to update the old parent's dependencies
+      const config = await loadEffectiveConfig(globalOpts.config);
+      const planDir = await resolveTasksDir(config);
+      const { plans: allPlans } = await readAllPlans(planDir);
+
+      // Remove this plan from the old parent's dependencies
+      const oldParentPlan = allPlans.get(oldParentId);
+      if (oldParentPlan && oldParentPlan.dependencies) {
+        const originalLength = oldParentPlan.dependencies.length;
+        oldParentPlan.dependencies = oldParentPlan.dependencies.filter(
+          (dep) => dep !== currentPlanId
+        );
+        if (oldParentPlan.dependencies.length < originalLength) {
+          oldParentPlan.updatedAt = new Date().toISOString();
+          await writePlanFile(oldParentPlan.filename, oldParentPlan);
+          log(`Removed ${currentPlanId} from parent ${oldParentId}'s dependencies`);
+        }
+      }
+
       delete plan.parent;
       modified = true;
       log('Removed parent');
