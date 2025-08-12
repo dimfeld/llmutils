@@ -216,6 +216,7 @@ tasks:
           multi-phase projects.
         done: true
   - title: Add integration tests
+    done: true
     description: >
       Create integration tests that verify the complete workflow: creating plans
       with parents using add command, modifying relationships with set command,
