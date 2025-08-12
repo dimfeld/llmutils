@@ -119,28 +119,28 @@ function validateParentChildRelationships(
       console.warn(`Skipping plan with invalid ID: ${childId}`);
       continue;
     }
-    
+
     if (plan.parent && typeof plan.parent === 'number') {
       // Validate that parent ID is a valid positive number
       if (!Number.isInteger(plan.parent) || plan.parent <= 0) {
         console.warn(`Plan ${childId} has invalid parent ID: ${plan.parent}`);
         continue;
       }
-      
+
       const parentPlan = plans.get(plan.parent);
-      
+
       if (!parentPlan) {
         console.warn(`Plan ${childId} references non-existent parent ${plan.parent}`);
         continue;
       }
 
       const dependencies = parentPlan.dependencies || [];
-      
+
       // Ensure dependencies are all valid numbers
-      const validDependencies = dependencies.filter(dep => 
-        typeof dep === 'number' && Number.isInteger(dep) && dep > 0
+      const validDependencies = dependencies.filter(
+        (dep) => typeof dep === 'number' && Number.isInteger(dep) && dep > 0
       );
-      
+
       // Check if the parent includes this child in its dependencies
       if (!validDependencies.includes(childId)) {
         if (!parentChildMap.has(plan.parent)) {
@@ -167,7 +167,9 @@ function validateParentChildRelationships(
         childIds,
       });
     } else {
-      console.warn(`Parent plan ${parentId} not found or missing filename, skipping inconsistency record`);
+      console.warn(
+        `Parent plan ${parentId} not found or missing filename, skipping inconsistency record`
+      );
     }
   }
 
@@ -181,7 +183,7 @@ function wouldCreateCircularDependency(
 ): boolean {
   // Check if adding childId to parentId's dependencies would create a cycle
   // This happens if parentId is already a dependency (direct or indirect) of childId
-  
+
   try {
     // Use the existing collectDependenciesInOrder function to check for circular dependencies
     // If parentId is already a dependency of childId, adding childId to parentId would create a cycle
@@ -217,7 +219,10 @@ function wouldCreateCircularDependency(
     return checkDependencies(childId);
   } catch (error) {
     // Log the error and be conservative
-    console.warn(`Error checking circular dependency for parent ${parentId} -> child ${childId}:`, error);
+    console.warn(
+      `Error checking circular dependency for parent ${parentId} -> child ${childId}:`,
+      error
+    );
     return true;
   }
 }
@@ -232,7 +237,7 @@ async function fixParentChildRelationships(
     try {
       // Read the current version of the parent plan
       const parentPlan = await readPlanFile(inconsistency.parentFilename);
-      
+
       // Initialize dependencies array if it doesn't exist
       if (!parentPlan.dependencies) {
         parentPlan.dependencies = [];
@@ -253,10 +258,10 @@ async function fixParentChildRelationships(
         // Update the plan with new dependencies and updatedAt timestamp
         parentPlan.dependencies = newDependencies;
         parentPlan.updatedAt = new Date().toISOString();
-        
+
         // Write the updated plan back to file
         await writePlanFile(inconsistency.parentFilename, parentPlan);
-        
+
         fixedRelationships++;
       }
     } catch (error) {
@@ -269,7 +274,10 @@ async function fixParentChildRelationships(
   return { fixedRelationships, errors };
 }
 
-export async function handleValidateCommand(options: { dir?: string; verbose?: boolean; fix?: boolean }, command: any): Promise<void> {
+export async function handleValidateCommand(
+  options: { dir?: string; verbose?: boolean; fix?: boolean },
+  command: any
+): Promise<void> {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -305,55 +313,74 @@ export async function handleValidateCommand(options: { dir?: string; verbose?: b
   // Parent-child validation (only for schema-valid files)
   let parentChildInconsistencies: ParentChildInconsistency[] = [];
   let fixResult: FixResult | null = null;
-  
+
   if (validFiles.length > 0) {
     console.log(chalk.blue.bold('Checking parent-child relationships...'));
-    
+
     try {
       // Load all plans for cross-referencing
       const { plans } = await readAllPlans(tasksDir);
-      
+
       // Find parent-child inconsistencies
       parentChildInconsistencies = validateParentChildRelationships(plans);
-      
+
       if (parentChildInconsistencies.length > 0) {
-        console.log(chalk.yellow.bold(`\nFound ${parentChildInconsistencies.length} parent-child inconsistencies:`));
-        
+        console.log(
+          chalk.yellow.bold(
+            `\nFound ${parentChildInconsistencies.length} parent-child inconsistencies:`
+          )
+        );
+
         parentChildInconsistencies.forEach((inconsistency) => {
-          const childrenText = inconsistency.childIds.length === 1 
-            ? `child ${inconsistency.childIds[0]}` 
-            : `children ${inconsistency.childIds.join(', ')}`;
-          console.log(chalk.yellow(`  • Parent plan ${inconsistency.parentId} missing dependencies for ${childrenText}`));
+          const childrenText =
+            inconsistency.childIds.length === 1
+              ? `child ${inconsistency.childIds[0]}`
+              : `children ${inconsistency.childIds.join(', ')}`;
+          console.log(
+            chalk.yellow(
+              `  • Parent plan ${inconsistency.parentId} missing dependencies for ${childrenText}`
+            )
+          );
         });
-        
+
         // Check for circular dependencies before fixing and filter individual children
         const safeInconsistencies: ParentChildInconsistency[] = [];
-        
+
         for (const inconsistency of parentChildInconsistencies) {
           const safeChildren: number[] = [];
-          
+
           for (const childId of inconsistency.childIds) {
-            const wouldCreateCycle = wouldCreateCircularDependency(plans, inconsistency.parentId, childId);
+            const wouldCreateCycle = wouldCreateCircularDependency(
+              plans,
+              inconsistency.parentId,
+              childId
+            );
             if (wouldCreateCycle) {
-              console.log(chalk.red(`    ⚠ Skipping ${inconsistency.parentId} → ${childId}: would create circular dependency`));
+              console.log(
+                chalk.red(
+                  `    ⚠ Skipping ${inconsistency.parentId} → ${childId}: would create circular dependency`
+                )
+              );
             } else {
               safeChildren.push(childId);
             }
           }
-          
+
           // Only include inconsistencies that have at least one safe child
           if (safeChildren.length > 0) {
             safeInconsistencies.push({
               parentId: inconsistency.parentId,
               parentFilename: inconsistency.parentFilename,
-              childIds: safeChildren
+              childIds: safeChildren,
             });
           }
         }
 
         if (options.fix === false) {
           console.log(chalk.yellow(`\n--no-fix flag specified, not auto-fixing inconsistencies.`));
-          console.log(chalk.yellow('Run without --no-fix to automatically fix these relationships.'));
+          console.log(
+            chalk.yellow('Run without --no-fix to automatically fix these relationships.')
+          );
         } else if (safeInconsistencies.length > 0) {
           // Auto-fix the inconsistencies
           console.log(chalk.blue('\nAuto-fixing parent-child relationships...'));
@@ -361,9 +388,13 @@ export async function handleValidateCommand(options: { dir?: string; verbose?: b
         }
       }
     } catch (error) {
-      console.log(chalk.red(`Error during parent-child validation: ${error instanceof Error ? error.message : String(error)}`));
+      console.log(
+        chalk.red(
+          `Error during parent-child validation: ${error instanceof Error ? error.message : String(error)}`
+        )
+      );
     }
-    
+
     console.log(); // Extra line for spacing
   }
 
@@ -398,10 +429,15 @@ export async function handleValidateCommand(options: { dir?: string; verbose?: b
   if (fixResult && fixResult.fixedRelationships > 0) {
     console.log(chalk.blue.bold('Parent-Child Relationships Fixed:'));
     parentChildInconsistencies.forEach((inconsistency) => {
-      const childrenText = inconsistency.childIds.length === 1 
-        ? `child ${inconsistency.childIds[0]}` 
-        : `children ${inconsistency.childIds.join(', ')}`;
-      console.log(chalk.green(`  ✓ Updated plan ${inconsistency.parentId} to include ${childrenText} in dependencies`));
+      const childrenText =
+        inconsistency.childIds.length === 1
+          ? `child ${inconsistency.childIds[0]}`
+          : `children ${inconsistency.childIds.join(', ')}`;
+      console.log(
+        chalk.green(
+          `  ✓ Updated plan ${inconsistency.parentId} to include ${childrenText} in dependencies`
+        )
+      );
     });
     console.log();
   }
@@ -421,9 +457,13 @@ export async function handleValidateCommand(options: { dir?: string; verbose?: b
     console.log(`  ${chalk.red(`✗ ${invalidFiles.length} invalid`)}`);
   }
   if (fixResult && fixResult.fixedRelationships > 0) {
-    console.log(`  ${chalk.green(`✓ ${fixResult.fixedRelationships} parent-child relationships fixed`)}`);
+    console.log(
+      `  ${chalk.green(`✓ ${fixResult.fixedRelationships} parent-child relationships fixed`)}`
+    );
   } else if (parentChildInconsistencies.length > 0 && options.fix === false) {
-    console.log(`  ${chalk.yellow(`⚠ ${parentChildInconsistencies.length} parent-child inconsistencies found (not fixed due to --no-fix)`)}`);
+    console.log(
+      `  ${chalk.yellow(`⚠ ${parentChildInconsistencies.length} parent-child inconsistencies found (not fixed due to --no-fix)`)}`
+    );
   }
 
   // Exit with error code if there are invalid files

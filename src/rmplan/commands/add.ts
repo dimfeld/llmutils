@@ -109,6 +109,11 @@ export async function handleAddCommand(title: string[], options: any, command: a
       parentPlan.dependencies.push(planId);
       parentPlan.updatedAt = new Date().toISOString();
 
+      if (parentPlan.status === 'done') {
+        parentPlan.status = 'in_progress';
+        log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
+      }
+
       // Write the updated parent plan
       await writePlanFile(parentPlan.filename, parentPlan);
       log(chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${planId}`));
