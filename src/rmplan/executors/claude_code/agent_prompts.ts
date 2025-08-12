@@ -1,5 +1,7 @@
 import type { AgentDefinition } from './agent_generator.ts';
 
+const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
+
 export function getImplementerPrompt(contextContent: string): AgentDefinition {
   return {
     name: 'implementer',
@@ -17,7 +19,7 @@ ${contextContent}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to implement together. When working with multiple tasks:
-- The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those.
+- ${contextTaskFocus}
 - Work on them efficiently by considering shared code, utilities, and patterns
 - Look for opportunities to implement common functionality once and reuse it
 - Avoid duplicating similar logic across different tasks
@@ -78,7 +80,7 @@ ${contextContent}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
-- The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those.
+- ${contextTaskFocus}
 - Create comprehensive tests that cover all functionality from all provided tasks
 - Look for integration points between different tasks and test their interactions
 - Avoid duplicating similar test setups - consolidate shared test infrastructure
@@ -160,7 +162,7 @@ ${contextContent}
 
 ## Reviewing Multiple Tasks:
 
-The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks were actually just implemented.
+${contextTaskFocus}
 
 Scrutinize interactions between tasks for conflicts, inconsistencies, and integration issues. Look for:
 - Code duplication across tasks that should be consolidated

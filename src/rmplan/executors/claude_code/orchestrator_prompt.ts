@@ -137,8 +137,8 @@ function buildImportantGuidelines(options: OrchestrationOptions): string {
 - **DO NOT write tests directly**. Always use the tester agent for test execution and updates.
 - **DO NOT review code directly**. Always use the reviewer agent for code quality assessment.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
-- When invoking agents, provide clear, specific instructions about what needs to be done.
-- The agents have access to the same task instructions below that you do, so you don't need to repeat them.
+- The agents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific tasks titles are being worked on so the agents can focus on the right tasks.
+- When invoking agents, provide clear, specific instructions about what needs to be done in addition to referencing the task titles.
 - Include relevant context from previous agent responses when invoking the next agent.`;
 
   const batchModeGuidelines = options.batchMode
