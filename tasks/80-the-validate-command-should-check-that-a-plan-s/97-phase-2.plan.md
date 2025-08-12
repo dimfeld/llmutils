@@ -80,26 +80,26 @@ tasks:
           parent plan's dependencies array. Load the parent plan, add the
           current plan's ID to its dependencies if not already present, update
           its updatedAt timestamp, and save it back to disk.
-        done: false
+        done: true
       - prompt: >
           Modify the "Remove parent" section (lines 125-134) to also update the
           old parent plan. Before deleting the parent field, store the old
           parent ID, then load that parent plan, remove the current plan's ID
           from its dependencies array, update its updatedAt timestamp, and save
           it.
-        done: false
+        done: true
       - prompt: >
           Add logic to handle changing parents. In the "Set parent" section,
           first check if the plan already has a parent. If it does and it's
           different from the new parent, remove the child from the old parent's
           dependencies before adding it to the new parent's dependencies.
-        done: false
+        done: true
       - prompt: >
           Add circular dependency prevention by importing and using the
           `wouldCreateCircularDependency` function from validate.ts. Before
           adding a child to a parent's dependencies, check if it would create a
           cycle and throw an error if it would.
-        done: false
+        done: true
   - title: Add tests for set command updates
     description: >
       Create comprehensive tests in `/src/rmplan/commands/set.test.ts` for the
