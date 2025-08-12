@@ -134,32 +134,32 @@ tasks:
           parent" that creates two plans, sets one as the parent of the other,
           then verifies both the child has the parent field set AND the parent
           has the child in its dependencies array.
-        done: false
+        done: true
       - prompt: >
           Add a test "should remove child from parent dependencies when removing
           parent" that creates a parent-child relationship, then uses
           --no-parent to remove it, and verifies the child is removed from the
           parent's dependencies array.
-        done: false
+        done: true
       - prompt: >
           Add a test "should update both old and new parent when changing
           parent" that creates three plans (child, old parent, new parent),
           establishes initial relationship, changes the parent, then verifies
           old parent no longer has the child in dependencies and new parent
           does.
-        done: false
+        done: true
       - prompt: >
           Add a test "should prevent circular dependencies when setting parent"
           that creates two plans where plan A depends on plan B, then attempts
           to set plan B's parent to plan A, and verifies this throws an
           appropriate error.
-        done: false
+        done: true
       - prompt: >
           Add a test "should handle setting parent to same value without
           duplicating dependencies" that sets a parent, then sets the same
           parent again, and verifies the parent's dependencies array doesn't
           contain duplicate entries.
-        done: false
+        done: true
   - title: Update documentation
     description: >
       Update the README and CLAUDE.md files to document the new validation

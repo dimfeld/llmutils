@@ -550,4 +550,200 @@ describe('rmplan set command', () => {
     const updatedPlan = await readPlanFile(childPlanPath);
     expect(updatedPlan.parent).toBe(100);
   });
+
+  test('should update parent plan dependencies when setting parent', async () => {
+    // Create both parent and child plans
+    const parentPlanPath = await createTestPlan(200);
+    const childPlanPath = await createTestPlan(201);
+
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        parent: 200,
+      },
+      globalOpts
+    );
+
+    // Verify child has parent field set
+    const updatedChild = await readPlanFile(childPlanPath);
+    expect(updatedChild.parent).toBe(200);
+
+    // Verify parent has child in dependencies array
+    const updatedParent = await readPlanFile(parentPlanPath);
+    expect(updatedParent.dependencies).toEqual([201]);
+    expect(updatedParent.updatedAt).toBeDefined();
+  });
+
+  test('should remove child from parent dependencies when removing parent', async () => {
+    // Create both parent and child plans
+    const parentPlanPath = await createTestPlan(202);
+    const childPlanPath = await createTestPlan(203);
+
+    // First set parent relationship
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        parent: 202,
+      },
+      globalOpts
+    );
+
+    // Verify relationship is established
+    let updatedChild = await readPlanFile(childPlanPath);
+    let updatedParent = await readPlanFile(parentPlanPath);
+    expect(updatedChild.parent).toBe(202);
+    expect(updatedParent.dependencies).toEqual([203]);
+
+    // Remove parent relationship
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        noParent: true,
+      },
+      globalOpts
+    );
+
+    // Verify child parent field is removed
+    updatedChild = await readPlanFile(childPlanPath);
+    expect(updatedChild.parent).toBeUndefined();
+
+    // Verify parent dependencies array is updated
+    updatedParent = await readPlanFile(parentPlanPath);
+    expect(updatedParent.dependencies).toEqual([]);
+  });
+
+  test('should update both old and new parent when changing parent', async () => {
+    // Create child, old parent, and new parent plans
+    const childPlanPath = await createTestPlan(204);
+    const oldParentPlanPath = await createTestPlan(205);
+    const newParentPlanPath = await createTestPlan(206);
+
+    // Establish initial relationship with old parent
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        parent: 205,
+      },
+      globalOpts
+    );
+
+    // Verify initial relationship
+    let updatedChild = await readPlanFile(childPlanPath);
+    let oldParent = await readPlanFile(oldParentPlanPath);
+    expect(updatedChild.parent).toBe(205);
+    expect(oldParent.dependencies).toEqual([204]);
+
+    // Change to new parent
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        parent: 206,
+      },
+      globalOpts
+    );
+
+    // Verify child has new parent
+    updatedChild = await readPlanFile(childPlanPath);
+    expect(updatedChild.parent).toBe(206);
+
+    // Verify old parent no longer has child in dependencies
+    oldParent = await readPlanFile(oldParentPlanPath);
+    expect(oldParent.dependencies).toEqual([]);
+
+    // Verify new parent has child in dependencies
+    const newParent = await readPlanFile(newParentPlanPath);
+    expect(newParent.dependencies).toEqual([204]);
+  });
+
+  test('should prevent circular dependencies when setting parent', async () => {
+    // Create three plans to set up a circular dependency scenario
+    const planAPath = await createTestPlan(207);
+    const planBPath = await createTestPlan(208);
+    const planCPath = await createTestPlan(209);
+
+    // Create a dependency chain: B -> C -> A
+    await handleSetCommand(
+      planBPath,
+      {
+        planFile: planBPath,
+        dependsOn: [209],
+      },
+      globalOpts
+    );
+
+    await handleSetCommand(
+      planCPath,
+      {
+        planFile: planCPath,
+        dependsOn: [207],
+      },
+      globalOpts
+    );
+
+    // Verify the dependency chain exists: B depends on C, C depends on A
+    const planB = await readPlanFile(planBPath);
+    const planC = await readPlanFile(planCPath);
+    expect(planB.dependencies).toEqual([209]);
+    expect(planC.dependencies).toEqual([207]);
+
+    // Now if we try to set plan B's parent to plan A, it would create a cycle:
+    // A -> B (via parent-child) but B -> C -> A (via dependencies), creating A -> B -> C -> A
+    await expect(
+      handleSetCommand(
+        planBPath,
+        {
+          planFile: planBPath,
+          parent: 207,
+        },
+        globalOpts
+      )
+    ).rejects.toThrow('Setting parent 207 would create a circular dependency');
+
+    // Verify plan B still has no parent
+    const updatedPlanB = await readPlanFile(planBPath);
+    expect(updatedPlanB.parent).toBeUndefined();
+  });
+
+  test('should handle setting parent to same value without duplicating dependencies', async () => {
+    // Create parent and child plans
+    const parentPlanPath = await createTestPlan(210);
+    const childPlanPath = await createTestPlan(211);
+
+    // Set parent first time
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        parent: 210,
+      },
+      globalOpts
+    );
+
+    // Verify initial relationship
+    let updatedChild = await readPlanFile(childPlanPath);
+    let updatedParent = await readPlanFile(parentPlanPath);
+    expect(updatedChild.parent).toBe(210);
+    expect(updatedParent.dependencies).toEqual([211]);
+
+    // Set same parent again
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        parent: 210,
+      },
+      globalOpts
+    );
+
+    // Verify no duplicate dependencies
+    updatedChild = await readPlanFile(childPlanPath);
+    updatedParent = await readPlanFile(parentPlanPath);
+    expect(updatedChild.parent).toBe(210);
+    expect(updatedParent.dependencies).toEqual([211]); // Should still be [211], not [211, 211]
+  });
 });
