@@ -4,7 +4,7 @@ import * as yaml from 'yaml';
 import chalk from 'chalk';
 import { z } from 'zod/v4';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { phaseSchema } from '../planSchema.js';
+import { phaseSchema, type PlanSchema } from '../planSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 interface ValidationResult {
@@ -107,29 +107,52 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
 }
 
 function validateParentChildRelationships(
-  plans: Map<number, any>
+  plans: Map<number, PlanSchema & { filename: string }>
 ): ParentChildInconsistency[] {
   const inconsistencies: ParentChildInconsistency[] = [];
   const parentChildMap = new Map<number, number[]>();
 
   // First, collect all parent-child relationships that need fixing
   for (const [childId, plan] of plans) {
+    // Validate that childId is a valid positive number
+    if (typeof childId !== 'number' || !Number.isInteger(childId) || childId <= 0) {
+      console.warn(`Skipping plan with invalid ID: ${childId}`);
+      continue;
+    }
+    
     if (plan.parent && typeof plan.parent === 'number') {
+      // Validate that parent ID is a valid positive number
+      if (!Number.isInteger(plan.parent) || plan.parent <= 0) {
+        console.warn(`Plan ${childId} has invalid parent ID: ${plan.parent}`);
+        continue;
+      }
+      
       const parentPlan = plans.get(plan.parent);
       
       if (!parentPlan) {
-        // Parent doesn't exist - this is an error but not something we can auto-fix
+        console.warn(`Plan ${childId} references non-existent parent ${plan.parent}`);
         continue;
       }
 
       const dependencies = parentPlan.dependencies || [];
       
+      // Ensure dependencies are all valid numbers
+      const validDependencies = dependencies.filter(dep => 
+        typeof dep === 'number' && Number.isInteger(dep) && dep > 0
+      );
+      
       // Check if the parent includes this child in its dependencies
-      if (!dependencies.includes(childId)) {
+      if (!validDependencies.includes(childId)) {
         if (!parentChildMap.has(plan.parent)) {
           parentChildMap.set(plan.parent, []);
         }
-        parentChildMap.get(plan.parent)!.push(childId);
+        const existingChildren = parentChildMap.get(plan.parent);
+        if (existingChildren) {
+          existingChildren.push(childId);
+        } else {
+          // This shouldn't happen due to the check above, but being defensive
+          parentChildMap.set(plan.parent, [childId]);
+        }
       }
     }
   }
@@ -137,18 +160,22 @@ function validateParentChildRelationships(
   // Convert to inconsistency format
   for (const [parentId, childIds] of parentChildMap) {
     const parentPlan = plans.get(parentId);
-    inconsistencies.push({
-      parentId,
-      parentFilename: parentPlan.filename,
-      childIds,
-    });
+    if (parentPlan && parentPlan.filename) {
+      inconsistencies.push({
+        parentId,
+        parentFilename: parentPlan.filename,
+        childIds,
+      });
+    } else {
+      console.warn(`Parent plan ${parentId} not found or missing filename, skipping inconsistency record`);
+    }
   }
 
   return inconsistencies;
 }
 
 function wouldCreateCircularDependency(
-  plans: Map<number, any>,
+  plans: Map<number, PlanSchema & { filename: string }>,
   parentId: number,
   childId: number
 ): boolean {
@@ -188,8 +215,9 @@ function wouldCreateCircularDependency(
     };
 
     return checkDependencies(childId);
-  } catch {
-    // If there's any error in dependency checking, be conservative and assume it would create a cycle
+  } catch (error) {
+    // Log the error and be conservative
+    console.warn(`Error checking circular dependency for parent ${parentId} -> child ${childId}:`, error);
     return true;
   }
 }
@@ -241,7 +269,7 @@ async function fixParentChildRelationships(
   return { fixedRelationships, errors };
 }
 
-export async function handleValidateCommand(options: any, command: any): Promise<void> {
+export async function handleValidateCommand(options: { dir?: string; verbose?: boolean; fix?: boolean }, command: any): Promise<void> {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -298,16 +326,30 @@ export async function handleValidateCommand(options: any, command: any): Promise
           console.log(chalk.yellow(`  • Parent plan ${inconsistency.parentId} missing dependencies for ${childrenText}`));
         });
         
-        // Check for circular dependencies before fixing
-        const safeInconsistencies = parentChildInconsistencies.filter((inconsistency) => {
-          return inconsistency.childIds.every((childId) => {
+        // Check for circular dependencies before fixing and filter individual children
+        const safeInconsistencies: ParentChildInconsistency[] = [];
+        
+        for (const inconsistency of parentChildInconsistencies) {
+          const safeChildren: number[] = [];
+          
+          for (const childId of inconsistency.childIds) {
             const wouldCreateCycle = wouldCreateCircularDependency(plans, inconsistency.parentId, childId);
             if (wouldCreateCycle) {
               console.log(chalk.red(`    ⚠ Skipping ${inconsistency.parentId} → ${childId}: would create circular dependency`));
+            } else {
+              safeChildren.push(childId);
             }
-            return !wouldCreateCycle;
-          });
-        });
+          }
+          
+          // Only include inconsistencies that have at least one safe child
+          if (safeChildren.length > 0) {
+            safeInconsistencies.push({
+              parentId: inconsistency.parentId,
+              parentFilename: inconsistency.parentFilename,
+              childIds: safeChildren
+            });
+          }
+        }
 
         if (options.fix === false) {
           console.log(chalk.yellow(`\n--no-fix flag specified, not auto-fixing inconsistencies.`));
