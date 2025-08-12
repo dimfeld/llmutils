@@ -293,7 +293,9 @@ export async function extractMarkdownToYaml(
   try {
     // First try to see if it's YAML already.
     let maybeYaml = findYamlStart(inputText);
-    const parsedObject = yaml.parse(maybeYaml);
+    const parsedObject = yaml.parse(maybeYaml, {
+      strict: false,
+    });
     convertedYaml = yaml.stringify(parsedObject);
   } catch {
     // Print output if not quiet

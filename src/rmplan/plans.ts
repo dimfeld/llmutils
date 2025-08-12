@@ -485,6 +485,12 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
   let parsed: any;
   let markdownBody: string | undefined;
 
+  function parseYaml(content: string) {
+    return yaml.parse(content, {
+      uniqueKeys: false,
+    });
+  }
+
   // Check if the file uses front matter format
   if (content.startsWith('---\n')) {
     // Find the closing delimiter for front matter
@@ -496,14 +502,14 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
       markdownBody = content.substring(endDelimiterIndex + 5).trim();
 
       // Parse the front matter as YAML
-      parsed = yaml.parse(frontMatter);
+      parsed = parseYaml(frontMatter);
     } else {
       // No closing delimiter found, treat entire file as YAML
-      parsed = yaml.parse(content);
+      parsed = parseYaml(content);
     }
   } else {
     // No front matter, parse entire content as YAML
-    parsed = yaml.parse(content);
+    parsed = parseYaml(content);
   }
 
   // Ensure parsed is a valid object

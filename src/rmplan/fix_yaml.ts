@@ -26,7 +26,7 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
   while (attempt < maxAttempts) {
     try {
       // Attempt to parse the YAML
-      let parsedYaml = YAML.parse(currentYaml);
+      let parsedYaml = YAML.parse(currentYaml, { strict: false });
       return parsedYaml;
     } catch (error: unknown) {
       lastError = error as Error;
