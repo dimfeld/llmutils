@@ -45,6 +45,7 @@ project:
     hierarchies
 tasks:
   - title: Add parent-child validation logic to validate.ts
+    done: true
     description: >
       Modify `/src/rmplan/commands/validate.ts` to add a new validation phase
       after schema validation that checks parent-child relationships. Create a
@@ -83,6 +84,7 @@ tasks:
           cycle in the dependency graph.
         done: true
   - title: Implement auto-fix functionality
+    done: true
     description: >
       Add logic to automatically update parent plans when missing dependencies
       are detected. This includes reading the parent plan file using
@@ -119,6 +121,7 @@ tasks:
           and any errors encountered.
         done: true
   - title: Add reporting for fixed relationships
+    done: true
     description: >
       Enhance the console output to show which parent-child relationships were
       fixed. Use chalk for colored output consistent with existing validation
@@ -153,6 +156,7 @@ tasks:
           fixed" using chalk.green when fixes were made.
         done: true
   - title: Add comprehensive tests for validation
+    done: true
     description: >
       Create tests in `/src/rmplan/commands/validate.test.ts` covering: plans
       with correct parent-child relationships (should pass), plans with missing
@@ -197,6 +201,7 @@ tasks:
           reporting issues.
         done: true
   - title: Add --no-fix flag option
+    done: true
     description: >
       Add a command-line flag `--no-fix` to allow users to run validation
       without auto-fixing. When this flag is present, the command should report
