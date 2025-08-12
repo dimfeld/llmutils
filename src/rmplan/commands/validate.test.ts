@@ -518,4 +518,429 @@ tasks: []
       expect(output).toContain('Unknown keys: unknownKey');
     });
   });
+
+  describe('parent-child validation', () => {
+    test('should pass validation when child has parent and parent includes child in dependencies', async () => {
+      // Create parent plan that includes child in dependencies
+      const parentPlan = `---
+id: 1
+goal: Parent plan
+details: This is the parent
+dependencies: [2]
+tasks:
+  - title: Parent task
+    description: Parent task description
+    files: []
+    steps: []
+---
+
+Additional parent plan details.`;
+
+      // Create child plan with parent field
+      const childPlan = `---
+id: 2
+goal: Child plan
+details: This is the child
+parent: 1
+tasks:
+  - title: Child task
+    description: Child task description
+    files: []
+    steps: []
+---
+
+Additional child plan details.`;
+
+      await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
+      await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
+
+      // Mock console methods to capture output
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined(); // Should not exit with error
+      const output = logOutput.join('\\n');
+      expect(output).toContain('✓ 2 valid');
+      expect(output).not.toContain('parent-child inconsistencies');
+    });
+
+    test('should detect and auto-fix missing parent dependency', async () => {
+      // Create parent plan that does NOT include child in dependencies
+      const parentPlan = `---
+id: 1
+goal: Parent plan
+details: This is the parent
+tasks:
+  - title: Parent task
+    description: Parent task description
+    files: []
+    steps: []
+---
+
+Additional parent plan details.`;
+
+      // Create child plan with parent field
+      const childPlan = `---
+id: 2
+goal: Child plan
+details: This is the child
+parent: 1
+tasks:
+  - title: Child task
+    description: Child task description
+    files: []
+    steps: []
+---
+
+Additional child plan details.`;
+
+      await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
+      await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
+
+      // Mock console methods to capture output
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined(); // Should not exit with error
+      const output = logOutput.join('\\n');
+      expect(output).toContain('✓ 2 valid');
+      expect(output).toContain('Found 1 parent-child inconsistencies');
+      expect(output).toContain('Parent plan 1 missing dependencies for child 2');
+      expect(output).toContain('1 parent-child relationships fixed');
+      expect(output).toContain('Updated plan 1 to include child 2 in dependencies');
+
+      // Verify the parent file was actually updated
+      const updatedParentContent = await fs.readFile(path.join(tempDir, 'parent.plan.md'), 'utf-8');
+      expect(updatedParentContent).toContain('dependencies:');
+      expect(updatedParentContent).toContain('- 2');
+      expect(updatedParentContent).toContain('updatedAt:');
+    });
+
+    test('should handle multiple children with same parent', async () => {
+      // Create parent plan without any dependencies
+      const parentPlan = `---
+id: 1
+goal: Parent plan
+details: This is the parent
+tasks:
+  - title: Parent task
+    description: Parent task description
+    files: []
+    steps: []
+---
+
+Additional parent plan details.`;
+
+      // Create two child plans with same parent
+      const child1Plan = `---
+id: 2
+goal: Child plan 1
+details: This is child 1
+parent: 1
+tasks:
+  - title: Child task 1
+    description: Child task 1 description
+    files: []
+    steps: []
+---
+
+Additional child 1 plan details.`;
+
+      const child2Plan = `---
+id: 3
+goal: Child plan 2
+details: This is child 2
+parent: 1
+tasks:
+  - title: Child task 2
+    description: Child task 2 description
+    files: []
+    steps: []
+---
+
+Additional child 2 plan details.`;
+
+      await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
+      await fs.writeFile(path.join(tempDir, 'child1.plan.md'), child1Plan);
+      await fs.writeFile(path.join(tempDir, 'child2.plan.md'), child2Plan);
+
+      // Mock console methods to capture output
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined(); // Should not exit with error
+      const output = logOutput.join('\\n');
+      expect(output).toContain('✓ 3 valid');
+      expect(output).toContain('Found 1 parent-child inconsistencies');
+      expect(output).toContain('Parent plan 1 missing dependencies for children');
+      expect(output).toContain('1 parent-child relationships fixed');
+
+      // Verify the parent file was updated with both children
+      const updatedParentContent = await fs.readFile(path.join(tempDir, 'parent.plan.md'), 'utf-8');
+      expect(updatedParentContent).toContain('dependencies:');
+      expect(updatedParentContent).toContain('- 2');
+      expect(updatedParentContent).toContain('- 3');
+    });
+
+    test('should not fix when --no-fix flag is used', async () => {
+      // Create parent plan without dependencies
+      const parentPlan = `---
+id: 1
+goal: Parent plan
+details: This is the parent
+tasks:
+  - title: Parent task
+    description: Parent task description
+    files: []
+    steps: []
+---
+
+Additional parent plan details.`;
+
+      // Create child plan with parent field
+      const childPlan = `---
+id: 2
+goal: Child plan
+details: This is the child
+parent: 1
+tasks:
+  - title: Child task
+    description: Child task description
+    files: []
+    steps: []
+---
+
+Additional child plan details.`;
+
+      await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
+      await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
+
+      // Mock console methods to capture output
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir, fix: false }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined(); // Should not exit with error
+      const output = logOutput.join('\\n');
+      expect(output).toContain('✓ 2 valid');
+      expect(output).toContain('Found 1 parent-child inconsistencies');
+      expect(output).toContain('--no-fix flag specified');
+      expect(output).toContain('Run without --no-fix to automatically fix');
+      expect(output).toContain('1 parent-child inconsistencies found (not fixed due to --no-fix)');
+      expect(output).not.toContain('parent-child relationships fixed');
+
+      // Verify the parent file was NOT updated
+      const parentContent = await fs.readFile(path.join(tempDir, 'parent.plan.md'), 'utf-8');
+      expect(parentContent).not.toContain('dependencies:');
+    });
+
+    test('should handle non-existent parent ID gracefully', async () => {
+      // Create child plan with non-existent parent
+      const childPlan = `---
+id: 2
+goal: Child plan
+details: This is the child
+parent: 999
+tasks:
+  - title: Child task
+    description: Child task description
+    files: []
+    steps: []
+---
+
+Additional child plan details.`;
+
+      await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
+
+      // Mock console methods to capture output
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined(); // Should not exit with error
+      const output = logOutput.join('\\n');
+      expect(output).toContain('✓ 1 valid');
+      expect(output).not.toContain('parent-child inconsistencies');
+    });
+
+    test('should handle circular dependency detection', async () => {
+      // Create a potential circular dependency scenario
+      // Parent plan depends on child, child has parent field
+      const parentPlan = `---
+id: 1
+goal: Parent plan
+details: This is the parent
+dependencies: [2]
+tasks:
+  - title: Parent task
+    description: Parent task description
+    files: []
+    steps: []
+---
+
+Additional parent plan details.`;
+
+      // Create child that depends on another plan that depends on parent
+      const childPlan = `---
+id: 2
+goal: Child plan
+details: This is the child
+parent: 1
+dependencies: [3]
+tasks:
+  - title: Child task
+    description: Child task description
+    files: []
+    steps: []
+---
+
+Additional child plan details.`;
+
+      const grandchildPlan = `---
+id: 3
+goal: Grandchild plan
+details: This is the grandchild
+dependencies: [1]
+tasks:
+  - title: Grandchild task
+    description: Grandchild task description
+    files: []
+    steps: []
+---
+
+Additional grandchild plan details.`;
+
+      await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
+      await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
+      await fs.writeFile(path.join(tempDir, 'grandchild.plan.md'), grandchildPlan);
+
+      // Mock console methods to capture output
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined(); // Should not exit with error
+      const output = logOutput.join('\\n');
+      expect(output).toContain('✓ 3 valid');
+      // Since parent already includes child 2, there should be no inconsistencies
+      expect(output).not.toContain('parent-child inconsistencies');
+    });
+  });
 });

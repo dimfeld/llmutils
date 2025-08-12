@@ -6,14 +6,14 @@ title: The validate command should check that a plan's parent also depends on
 goal: Implement the parent-child dependency validation logic in the validate
   command with automatic fixing capability
 id: 96
-status: pending
+status: in_progress
 priority: high
 dependencies: []
 parent: 80
 planGeneratedAt: 2025-08-12T00:46:31.546Z
 promptsGeneratedAt: 2025-08-12T00:49:25.602Z
 createdAt: 2025-07-29T19:17:43.223Z
-updatedAt: 2025-08-12T00:49:25.602Z
+updatedAt: 2025-08-12T00:49:26.039Z
 project:
   title: Implement parent-child dependency validation and auto-fix in rmplan
     validate command
@@ -66,7 +66,7 @@ tasks:
           Create a Map to track parent-child inconsistencies where the key is
           the parent plan ID and the value is an array of child IDs that need to
           be added.
-        done: false
+        done: true
       - prompt: >
           Iterate through all loaded plans and for each plan with a parent
           field, check if the parent plan exists and whether it includes this
@@ -74,14 +74,14 @@ tasks:
 
           If the parent exists but doesn't include the child, add this
           relationship to the inconsistencies Map.
-        done: false
+        done: true
       - prompt: >
           Add validation to ensure that fixing a parent-child relationship won't
           create a circular dependency.
 
           Check if adding the child to the parent's dependencies would create a
           cycle in the dependency graph.
-        done: false
+        done: true
   - title: Implement auto-fix functionality
     description: >
       Add logic to automatically update parent plans when missing dependencies
@@ -102,7 +102,7 @@ tasks:
 
           For each parent ID in the inconsistencies Map, retrieve the parent
           plan and its filename from the plans Map.
-        done: false
+        done: true
       - prompt: >
           For each parent plan that needs fixing, use readPlanFile to get the
           latest version, then add the missing child IDs to the dependencies
@@ -110,14 +110,14 @@ tasks:
 
           Initialize the dependencies array as an empty array if it doesn't
           exist, and ensure no duplicate IDs are added.
-        done: false
+        done: true
       - prompt: >
           Update the parent plan's updatedAt field to the current ISO timestamp
           and use writePlanFile to save the changes.
 
           Return a summary object indicating how many relationships were fixed
           and any errors encountered.
-        done: false
+        done: true
   - title: Add reporting for fixed relationships
     description: >
       Enhance the console output to show which parent-child relationships were
@@ -137,21 +137,21 @@ tasks:
 
           Use chalk.blue.bold for the section header "Parent-Child Relationships
           Fixed:" similar to existing headers.
-        done: false
+        done: true
       - prompt: >
           For each fixed relationship, output a line showing the parent plan ID
           and filename, followed by the child IDs that were added.
 
           Use chalk.green checkmarks for successfully fixed relationships and
           proper indentation for readability.
-        done: false
+        done: true
       - prompt: >
           Add the count of fixed relationships to the Summary section at the end
           of the command output.
 
           Include it as a separate line like "✓ X parent-child relationships
           fixed" using chalk.green when fixes were made.
-        done: false
+        done: true
   - title: Add comprehensive tests for validation
     description: >
       Create tests in `/src/rmplan/commands/validate.test.ts` covering: plans
@@ -173,21 +173,21 @@ tasks:
           Create a test for the happy path where a child has a parent and the
           parent already includes the child in dependencies - this should pass
           without fixes.
-        done: false
+        done: true
       - prompt: >
           Create a test where a child specifies a parent but the parent doesn't
           include the child in dependencies.
 
           Verify that the validation detects this issue, fixes it by updating
           the parent file, and reports the fix in the output.
-        done: false
+        done: true
       - prompt: >
           Add a test for multiple children with the same parent where some are
           missing from the parent's dependencies.
 
           Verify that all missing children are added to the parent in a single
           update operation.
-        done: false
+        done: true
       - prompt: >
           Create a test for edge cases: non-existent parent ID (should report
           error), and a case that would create circular dependency (should not
@@ -195,7 +195,7 @@ tasks:
 
           Also test that the --no-fix flag prevents modifications while still
           reporting issues.
-        done: false
+        done: true
   - title: Add --no-fix flag option
     description: >
       Add a command-line flag `--no-fix` to allow users to run validation
@@ -217,14 +217,14 @@ tasks:
 
           This should go after the existing --verbose option to maintain
           consistent ordering.
-        done: false
+        done: true
       - prompt: >
           In validate.ts, modify handleValidateCommand to check for the
           options.noFix flag.
 
           When the flag is true, skip the auto-fix functionality but still
           report what issues were found.
-        done: false
+        done: true
       - prompt: >
           Update the console output to indicate when --no-fix is active, showing
           a message like "Found X parent-child inconsistencies (run without
@@ -232,7 +232,7 @@ tasks:
 
           Use chalk.yellow for this informational message to distinguish it from
           errors.
-        done: false
+        done: true
 ---
 
 Enhance the existing validate command to check bidirectional parent-child relationships. When a plan has a parent field, verify that the parent plan includes this child in its dependencies array. If not, automatically update the parent plan to add the missing dependency. The implementation should handle multiple children for a single parent, prevent circular dependencies, and provide clear console output about what was fixed.

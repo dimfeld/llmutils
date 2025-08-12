@@ -405,6 +405,7 @@ program
   .description('Validate all plan files for Zod schema errors and unknown keys')
   .option('--dir <directory>', 'Directory to validate (defaults to configured task directory)')
   .option('-v, --verbose', 'Show valid files as well as invalid ones')
+  .option('--no-fix', 'Report validation issues without auto-fixing them')
   .action(async (options, command) => {
     const { handleValidateCommand } = await import('./commands/validate.js');
     await handleValidateCommand(options, command).catch(handleCommandError);
