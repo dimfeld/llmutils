@@ -53,7 +53,9 @@ You may receive a single task or multiple related tasks to implement together. W
 4. Test your implementation as you go. Tests must test the actual code and not just simulate or reproduce it. Move functions to another file and export them from there if it makes it easier to test.
 5. Ensure all checks and validations pass before marking work as complete
 
-Remember: You are implementing functionality with tests, not writing documentation. Focus on clean, working code that follows project conventions.`,
+Remember: You are implementing functionality with tests, not writing documentation. Focus on clean, working code that follows project conventions.
+
+Do not mark anything in the plan file as done. This is your manager's responsibility`,
   };
 }
 
