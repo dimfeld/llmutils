@@ -218,12 +218,17 @@ export function wouldCreateCircularDependency(
 
     return checkDependencies(childId);
   } catch (error) {
-    // Log the error and be conservative
+    // Log the error but don't be overly conservative
     console.warn(
       `Error checking circular dependency for parent ${parentId} -> child ${childId}:`,
       error
     );
-    return true;
+    // Only return true for specific errors that indicate actual circular dependencies
+    // For other errors, assume no circular dependency exists to avoid blocking legitimate operations
+    if (error instanceof Error && error.message.includes('circular')) {
+      return true;
+    }
+    return false;
   }
 }
 

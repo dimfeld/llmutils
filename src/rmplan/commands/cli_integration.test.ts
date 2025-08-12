@@ -125,7 +125,7 @@ describe('CLI integration tests for --next-ready flag', () => {
 
       // Should mention finding the ready dependency
       const output = result.stdout.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Ready Dependency');
     });
 
@@ -176,7 +176,7 @@ describe('CLI integration tests for --next-ready flag', () => {
       // Should succeed and find the urgent priority dependency
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Urgent Priority Dependency');
     });
 
@@ -262,7 +262,7 @@ describe('CLI integration tests for --next-ready flag', () => {
       // Should succeed and indicate direct mode
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Ready Dependency');
     });
   });
@@ -294,7 +294,7 @@ describe('CLI integration tests for --next-ready flag', () => {
 
       // The command will fail, but should show that it found the dependency
       const output = result.stdout.toString() + result.stderr.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Ready Dependency');
     });
 
@@ -348,7 +348,7 @@ describe('CLI integration tests for --next-ready flag', () => {
 
       // The command may fail, but should show that it found the dependency
       const output = result.stdout.toString() + result.stderr.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Ready Dependency');
     });
 
@@ -572,7 +572,7 @@ describe('CLI integration tests for --next-ready flag', () => {
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Ready Dependency');
     });
 
@@ -601,7 +601,7 @@ describe('CLI integration tests for --next-ready flag', () => {
         .nothrow();
 
       const output = result.stdout.toString() + result.stderr.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Ready Dependency');
     });
 
@@ -631,7 +631,7 @@ describe('CLI integration tests for --next-ready flag', () => {
           .nothrow();
 
       const output = result.stdout.toString() + result.stderr.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Ready Dependency');
     });
 
@@ -661,7 +661,7 @@ describe('CLI integration tests for --next-ready flag', () => {
           .nothrow();
 
       const output = result.stdout.toString() + result.stderr.toString();
-      expect(output).toContain('Found ready dependency');
+      expect(output).toContain('Found ready plan');
       expect(output).toContain('Ready Dependency');
     });
   });

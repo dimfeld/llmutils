@@ -337,7 +337,7 @@ describe('rmplan set command', () => {
   });
 
   test('should add documentation paths', async () => {
-    const planPath = await createTestPlan('23');
+    const planPath = await createTestPlan(23);
 
     await handleSetCommand(
       planPath,
@@ -353,7 +353,7 @@ describe('rmplan set command', () => {
   });
 
   test('should not duplicate documentation paths', async () => {
-    const planPath = await createTestPlan('24');
+    const planPath = await createTestPlan(24);
 
     // First add
     await handleSetCommand(
@@ -380,7 +380,7 @@ describe('rmplan set command', () => {
   });
 
   test('should remove documentation paths', async () => {
-    const planPath = await createTestPlan('25');
+    const planPath = await createTestPlan(25);
 
     // First add documentation paths
     await handleSetCommand(
@@ -407,7 +407,7 @@ describe('rmplan set command', () => {
   });
 
   test('should handle plans without existing documentation paths', async () => {
-    const planPath = await createTestPlan('26');
+    const planPath = await createTestPlan(26);
 
     // Remove documentation paths from plan without any
     await handleSetCommand(
@@ -424,7 +424,7 @@ describe('rmplan set command', () => {
   });
 
   test('should handle adding and removing documentation paths in same command', async () => {
-    const planPath = await createTestPlan('27');
+    const planPath = await createTestPlan(27);
 
     // First add some docs
     await handleSetCommand(

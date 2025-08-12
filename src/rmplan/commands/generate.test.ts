@@ -562,7 +562,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     // Should log the success message
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready dependency: 456 - Ready Dependency Plan')
+      expect.stringContaining('Found ready plan: 456 - Ready Dependency Plan')
     );
 
     // Should have set options.plan to the found plan's filename
@@ -629,7 +629,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     // Should log the success message
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready dependency: 456 - Ready Dependency Plan')
+      expect.stringContaining('Found ready plan: 456 - Ready Dependency Plan')
     );
 
     // Should have set options.plan to the found plan's filename
