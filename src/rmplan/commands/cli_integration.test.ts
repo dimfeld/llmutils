@@ -9,7 +9,7 @@ import { readPlanFile } from '../plans.js';
 
 /**
  * Integration tests for parent-child relationship functionality in rmplan commands.
- * 
+ *
  * These tests verify the complete workflow of creating, modifying, and validating
  * parent-child relationships across the add, set, and validate commands, ensuring
  * that bidirectional relationships are maintained automatically.
@@ -95,17 +95,19 @@ describe('CLI integration tests for parent-child relationships', () => {
   describe('parent-child relationship validation integration tests', () => {
     test('parent-child workflow with add and validate', async () => {
       // Create a parent plan using add command
-      const addParentResult = await $`bun ${rmplanPath} add "Parent Plan" --priority high --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
-      
+      const addParentResult =
+        await $`bun ${rmplanPath} add "Parent Plan" --priority high --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
+
       expect(addParentResult.exitCode).toBe(0);
 
       // Create a child plan with --parent option using add command
-      const addChildResult = await $`bun ${rmplanPath} add "Child Plan" --parent 1 --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
-      
+      const addChildResult =
+        await $`bun ${rmplanPath} add "Child Plan" --parent 1 --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
+
       expect(addChildResult.exitCode).toBe(0);
 
       // Verify that the plans were created correctly by checking file contents
@@ -123,7 +125,7 @@ describe('CLI integration tests for parent-child relationships', () => {
       const validateResult = await $`bun ${rmplanPath} validate --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(validateResult.exitCode).toBe(0);
       const output = validateResult.stdout.toString();
       expect(output).toContain('Validating 2 plan files');
@@ -149,7 +151,7 @@ describe('CLI integration tests for parent-child relationships', () => {
       const setParentResult = await $`bun ${rmplanPath} set 2 --parent 1 --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(setParentResult.exitCode).toBe(0);
 
       // Verify the relationship was established by checking file contents
@@ -158,12 +160,12 @@ describe('CLI integration tests for parent-child relationships', () => {
 
       const childPlan = await readPlanFile(path.join(tasksDir, '2-plan-two.plan.md'));
       expect(childPlan.parent).toBe(1);
-      
+
       // Run validate to ensure no inconsistencies
       const validateResult1 = await $`bun ${rmplanPath} validate --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(validateResult1.exitCode).toBe(0);
       const output1 = validateResult1.stdout.toString();
       expect(output1).toContain('2 valid');
@@ -178,26 +180,29 @@ describe('CLI integration tests for parent-child relationships', () => {
 
     test('complex hierarchy validation', async () => {
       // Create a multi-level hierarchy: grandparent -> parent -> child
-      const addGrandparentResult = await $`bun ${rmplanPath} add "Grandparent Plan" --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const addGrandparentResult =
+        await $`bun ${rmplanPath} add "Grandparent Plan" --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
       expect(addGrandparentResult.exitCode).toBe(0);
 
-      const addParentResult = await $`bun ${rmplanPath} add "Parent Plan" --parent 1 --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const addParentResult =
+        await $`bun ${rmplanPath} add "Parent Plan" --parent 1 --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
       expect(addParentResult.exitCode).toBe(0);
 
-      const addChildResult = await $`bun ${rmplanPath} add "Child Plan" --parent 2 --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const addChildResult =
+        await $`bun ${rmplanPath} add "Child Plan" --parent 2 --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
       expect(addChildResult.exitCode).toBe(0);
 
       // Validate the initial hierarchy
       const validateResult1 = await $`bun ${rmplanPath} validate --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(validateResult1.exitCode).toBe(0);
       expect(validateResult1.stdout.toString()).toContain('3 valid');
 
@@ -215,7 +220,7 @@ describe('CLI integration tests for parent-child relationships', () => {
       const setNewParentResult = await $`bun ${rmplanPath} set 3 --parent 1 --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(setNewParentResult.exitCode).toBe(0);
 
       // Verify the parent change took effect
@@ -231,15 +236,16 @@ describe('CLI integration tests for parent-child relationships', () => {
       const validateResult2 = await $`bun ${rmplanPath} validate --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(validateResult2.exitCode).toBe(0);
       expect(validateResult2.stdout.toString()).toContain('3 valid');
       expect(validateResult2.stdout.toString()).not.toContain('parent-child inconsistencies');
 
       // Add another child to create multiple children for one parent
-      const addChild2Result = await $`bun ${rmplanPath} add "Second Child" --parent 1 --config ${configPath}`
-        .cwd(tempDir)
-        .nothrow();
+      const addChild2Result =
+        await $`bun ${rmplanPath} add "Second Child" --parent 1 --config ${configPath}`
+          .cwd(tempDir)
+          .nothrow();
       expect(addChild2Result.exitCode).toBe(0);
 
       // Verify the new structure
@@ -253,7 +259,7 @@ describe('CLI integration tests for parent-child relationships', () => {
       const validateResult3 = await $`bun ${rmplanPath} validate --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(validateResult3.exitCode).toBe(0);
       expect(validateResult3.stdout.toString()).toContain('4 valid');
       expect(validateResult3.stdout.toString()).not.toContain('parent-child inconsistencies');
@@ -283,10 +289,10 @@ describe('CLI integration tests for parent-child relationships', () => {
       const validateResult = await $`bun ${rmplanPath} validate --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(validateResult.exitCode).toBe(0);
       const output = validateResult.stdout.toString();
-      
+
       // Should report finding inconsistencies and fixing them
       expect(output).toContain('Validating 2 plan files');
       expect(output).toContain('Found 1 parent-child inconsistencies');
@@ -304,7 +310,7 @@ describe('CLI integration tests for parent-child relationships', () => {
       const validateResult2 = await $`bun ${rmplanPath} validate --config ${configPath}`
         .cwd(tempDir)
         .nothrow();
-      
+
       expect(validateResult2.exitCode).toBe(0);
       const output2 = validateResult2.stdout.toString();
       expect(output2).toContain('2 valid');

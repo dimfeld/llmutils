@@ -570,6 +570,7 @@ rmplan validate --no-fix
 The `validate` command ensures the integrity of your plan files by checking both YAML schema compliance and parent-child relationship consistency. When child plans reference a parent but that parent doesn't include the child in its dependencies array, the validate command automatically fixes these inconsistencies by updating the parent plan files.
 
 **Key validation features:**
+
 - **Schema Validation**: Verifies plan files conform to the expected YAML structure
 - **Parent-Child Consistency**: Ensures bidirectional relationships between parent and child plans
 - **Automatic Fixing**: Updates parent plans to include missing child dependencies

@@ -147,13 +147,11 @@ export async function executeBatchMode({
         if (updatedPlanData.parent) {
           await checkAndMarkParentDone(updatedPlanData.parent, config, baseDir);
         }
+        await commitAll(`Plan complete: ${planData.title}`, baseDir);
         break;
+      } else {
+        await commitAll('Finish batch tasks iteration', baseDir);
       }
-
-      const commitMessage = finished
-        ? `Plan complete: ${planData.title}`
-        : 'Finish batch tasks iteration';
-      await commitAll(commitMessage, baseDir);
     }
 
     if (hasError) {

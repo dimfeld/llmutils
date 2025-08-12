@@ -6,7 +6,7 @@ title: The validate command should check that a plan's parent also depends on
 goal: Update the set command and other related commands to maintain
   bidirectional parent-child relationships automatically
 id: 97
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - 96
@@ -14,7 +14,7 @@ parent: 80
 planGeneratedAt: 2025-08-12T00:46:31.546Z
 promptsGeneratedAt: 2025-08-12T01:22:51.307Z
 createdAt: 2025-07-29T19:17:43.223Z
-updatedAt: 2025-08-12T01:22:51.699Z
+updatedAt: 2025-08-12T01:57:04.160Z
 project:
   title: Implement parent-child dependency validation and auto-fix in rmplan
     validate command

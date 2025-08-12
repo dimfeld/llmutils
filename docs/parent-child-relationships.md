@@ -9,17 +9,21 @@ Parent-child relationships in rmplan allow you to organize complex projects into
 ## Key Features
 
 ### Bidirectional Consistency
+
 - When you set a parent on a child plan, the parent is automatically updated to include the child in its dependencies
 - When you change a child's parent, both the old and new parent plans are updated appropriately
 - When you remove a parent relationship, the child is automatically removed from the parent's dependencies
 
 ### Automatic Maintenance
+
 All rmplan commands work together to maintain consistency:
+
 - **`add` command**: When creating plans with `--parent`, automatically updates the parent's dependencies
 - **`set` command**: When modifying parent relationships, updates all affected plans
 - **`validate` command**: Detects and fixes any inconsistencies in existing plan relationships
 
 ### Circular Dependency Prevention
+
 The system prevents circular dependencies by checking the entire dependency chain before making any changes.
 
 ## Creating Parent-Child Relationships
@@ -39,6 +43,7 @@ rmplan add "Frontend Components" --parent auth-system --depends-on api-endpoints
 ```
 
 In this example:
+
 - `auth-system.yml` becomes the parent plan
 - All child plans (`db-schema.yml`, `api-endpoints.yml`, `frontend.yml`) will automatically be added to the parent's dependencies array
 - Child plans can have their own dependencies (like `api-endpoints` depending on `db-schema`)
@@ -61,27 +66,29 @@ rmplan set child-plan.yml --no-parent
 ## Plan File Structure
 
 ### Child Plan Structure
+
 ```yaml
 id: child-plan-123
-title: "Database Schema Setup"
-parent: auth-system-456  # References parent plan ID
-dependencies: []         # Child's own dependencies
+title: 'Database Schema Setup'
+parent: auth-system-456 # References parent plan ID
+dependencies: [] # Child's own dependencies
 status: pending
 priority: high
 tasks:
-  - title: "Create user tables"
+  - title: 'Create user tables'
     # ... task details
 ```
 
 ### Parent Plan Structure
+
 ```yaml
 id: auth-system-456
-title: "User Authentication System"
-dependencies: [child-plan-123, another-child-789]  # Automatically maintained
+title: 'User Authentication System'
+dependencies: [child-plan-123, another-child-789] # Automatically maintained
 status: pending
 priority: high
 tasks:
-  - title: "Coordinate authentication implementation"
+  - title: 'Coordinate authentication implementation'
     # ... task details
 ```
 
@@ -151,12 +158,14 @@ rmplan validate --no-fix
 ### Auto-Fixing Behavior
 
 When inconsistencies are found, `validate` automatically:
+
 - Adds missing child dependencies to parent plans
 - Removes orphaned dependencies from parent plans
 - Reports all changes made
 - Preserves existing dependencies and metadata
 
 Example output:
+
 ```
 ✓ Validated 15 plan files
 ⚠ Found 2 inconsistencies:
@@ -170,6 +179,7 @@ Example output:
 ### 1. Plan Organization
 
 **Use clear naming conventions:**
+
 ```bash
 # Good: Clear, descriptive names
 rmplan add "User Authentication - Phase 1: Database Setup"
@@ -181,6 +191,7 @@ rmplan add "TODO Items"
 ```
 
 **Organize files logically:**
+
 ```
 tasks/
 ├── auth-system/
@@ -197,14 +208,15 @@ tasks/
 ### 2. Dependency Design
 
 **Keep dependencies linear when possible:**
+
 ```yaml
 # Good: Clear linear progression
 Database Schema → API Endpoints → Frontend → Testing
-
 # Avoid: Complex webs when simpler alternatives exist
 ```
 
 **Use appropriate priority levels:**
+
 - `high`: Critical path items that block other work
 - `medium`: Standard implementation tasks
 - `low`: Nice-to-have features
@@ -213,6 +225,7 @@ Database Schema → API Endpoints → Frontend → Testing
 ### 3. Workflow Patterns
 
 **Start with high-level planning:**
+
 ```bash
 # 1. Create the overall project structure
 rmplan add "E-commerce Platform" --output tasks/ecommerce-root.yml
@@ -228,6 +241,7 @@ rmplan add "Shopping Cart Service" --parent backend --depends-on catalog-api --o
 ```
 
 **Use the `--next-ready` workflow:**
+
 ```bash
 # Find and work on the next ready dependency
 rmplan show --next-ready ecommerce-root
@@ -241,6 +255,7 @@ rmplan agent --next-ready ecommerce-root
 ### 4. Maintenance
 
 **Regular validation:**
+
 ```bash
 # Run before major changes
 rmplan validate --verbose
@@ -250,6 +265,7 @@ rmplan validate --no-fix  # Fail if inconsistencies found
 ```
 
 **Keep relationships simple:**
+
 - Avoid deep nesting (>3 levels) when possible
 - Prefer linear dependencies over complex webs
 - Use clear, descriptive titles and IDs
@@ -260,11 +276,13 @@ rmplan validate --no-fix  # Fail if inconsistencies found
 ### Starting a New Multi-Phase Project
 
 1. **Create the root plan:**
+
    ```bash
    rmplan add "My New Feature" --priority high --output tasks/my-feature.yml
    ```
 
 2. **Break into phases:**
+
    ```bash
    rmplan add "Phase 1: Foundation" --parent my-feature --output tasks/phase-1.yml
    rmplan add "Phase 2: Implementation" --parent my-feature --depends-on phase-1 --output tasks/phase-2.yml
@@ -272,6 +290,7 @@ rmplan validate --no-fix  # Fail if inconsistencies found
    ```
 
 3. **Add detailed tasks:**
+
    ```bash
    rmplan add "Database Setup" --parent phase-1 --output tasks/db-setup.yml
    rmplan add "API Framework" --parent phase-1 --depends-on db-setup --output tasks/api-framework.yml
@@ -286,17 +305,20 @@ rmplan validate --no-fix  # Fail if inconsistencies found
 ### Refactoring Existing Plans
 
 1. **Assess current structure:**
+
    ```bash
    rmplan list --all
    rmplan show existing-plan.yml
    ```
 
 2. **Create new parent if needed:**
+
    ```bash
    rmplan add "Refactored Project Structure" --output tasks/new-parent.yml
    ```
 
 3. **Update relationships:**
+
    ```bash
    rmplan set existing-child-1.yml --parent new-parent
    rmplan set existing-child-2.yml --parent new-parent
@@ -312,21 +334,27 @@ rmplan validate --no-fix  # Fail if inconsistencies found
 ### Common Issues
 
 **Circular Dependencies:**
+
 ```
 Error: Circular dependency detected: plan-a → plan-b → plan-c → plan-a
 ```
+
 Solution: Review your dependency chain and break the circle by removing one dependency.
 
 **Missing Parent Plans:**
+
 ```
 Warning: Parent plan 'missing-parent' not found for child 'child-plan'
 ```
+
 Solution: Either create the missing parent plan or update the child to reference an existing parent.
 
 **Inconsistent Dependencies:**
+
 ```
 Warning: Parent 'parent-plan' doesn't include child 'child-plan' in dependencies
 ```
+
 Solution: Run `rmplan validate` to automatically fix the inconsistency.
 
 ### Debugging Commands
@@ -370,7 +398,7 @@ dependencies: [optional-feature]
 Parent-child relationships work seamlessly with:
 
 - **GitHub Issues**: Import issues as child plans of a parent project
-- **Linear Integration**: Create hierarchical structures from Linear project data  
+- **Linear Integration**: Create hierarchical structures from Linear project data
 - **Workspace Isolation**: Each plan in a hierarchy can run in its own workspace
 - **CI/CD Integration**: Validate relationships in your build pipeline
 
@@ -379,6 +407,7 @@ Parent-child relationships work seamlessly with:
 Parent-child relationships in rmplan provide a powerful way to organize complex projects while maintaining consistency automatically. By following these patterns and best practices, you can create maintainable, scalable project structures that grow with your needs.
 
 For additional help:
+
 - Run `rmplan --help` for command-specific documentation
 - Use `rmplan validate --verbose` to understand relationship issues
 - Check the main README for usage examples and configuration options
