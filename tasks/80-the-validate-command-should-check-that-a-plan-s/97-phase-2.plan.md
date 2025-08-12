@@ -163,6 +163,7 @@ tasks:
           contain duplicate entries.
         done: true
   - title: Update documentation
+    done: true
     description: >
       Update the README and CLAUDE.md files to document the new validation
       behavior and the automatic maintenance of bidirectional parent-child
@@ -194,26 +195,26 @@ tasks:
           automatically fixing inconsistencies where child plans reference
           parents that don't include them in dependencies. Include a usage
           example.
-        done: false
+        done: true
       - prompt: >
           In README.md, update the documentation for the set command to explain
           that when setting or changing a parent, it automatically updates the
           parent plan's dependencies to maintain bidirectional relationships.
           Add examples showing --parent and --no-parent usage.
-        done: false
+        done: true
       - prompt: >
           In CLAUDE.md under the "## Repository Structure" section where rmplan
           is described, add a note about the automatic parent-child relationship
           maintenance feature. Explain that all commands (add, set, validate)
           work together to ensure consistency in the dependency graph.
-        done: false
+        done: true
       - prompt: >
           Create a documentation file at docs/parent-child-relationships.md that
           provides a comprehensive guide to working with parent-child plan
           relationships, including examples of creating hierarchical plans, how
           the automatic maintenance works, and best practices for organizing
           multi-phase projects.
-        done: false
+        done: true
   - title: Add integration tests
     description: >
       Create integration tests that verify the complete workflow: creating plans
@@ -233,26 +234,26 @@ tasks:
           that uses the add command to create a parent plan and child plan with
           --parent option, then runs validate to ensure no inconsistencies are
           found.
-        done: false
+        done: true
       - prompt: >
           Add an integration test "parent-child workflow with set and validate"
           that creates two independent plans, uses set command to establish
           parent-child relationship, runs validate to ensure no inconsistencies,
           then uses set --no-parent to remove the relationship and validates
           again.
-        done: false
+        done: true
       - prompt: >
           Add an integration test "complex hierarchy validation" that creates a
           multi-level hierarchy (grandparent -> parent -> child), modifies
           relationships using set command, and validates the entire structure
           remains consistent after each change.
-        done: false
+        done: true
       - prompt: >
           Add an integration test "validate auto-fix integration" that manually
           creates an inconsistent state (child with parent field but parent
           missing dependency), runs validate command, then verifies the parent
           plan was automatically updated to include the child.
-        done: false
+        done: true
 ---
 
 Ensure that all commands that can modify parent-child relationships maintain bidirectional consistency. The set command should be updated to automatically update parent dependencies when setting or changing a parent field. Similarly, when removing a parent relationship, the child should be removed from the parent's dependencies. This phase ensures the codebase maintains consistency going forward, preventing the issues that the validate command fixes.

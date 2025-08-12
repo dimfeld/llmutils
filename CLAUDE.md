@@ -55,9 +55,10 @@ The codebase is organized into several main modules with improved modularity and
 3. **rmplan**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command
    - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
-   - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `prepare.ts`, `split.ts`
+   - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `prepare.ts`, `split.ts`, `validate.ts`, `set.ts`
    - Workspace management: `workspace.ts` with automated isolation support
    - Executor system in `executors/` for different LLM integration approaches
+   - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
 
 4. **apply-llm-edits**: Processes LLM-generated edits and applies them to the codebase
    - Supports different edit formats (unified diff, search/replace, XML, whole-file)

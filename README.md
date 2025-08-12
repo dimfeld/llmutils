@@ -442,6 +442,18 @@ rmplan add "Add user roles" --depends-on oauth-auth --output tasks/user-roles.ym
 # Create a high-priority plan and open in editor
 rmplan add "Fix security vulnerability" --priority high --edit
 
+# Set or update plan metadata and relationships
+rmplan set plan.yml --parent parent-plan-123 --priority high --status in_progress
+
+# Change a plan's parent (automatically updates both old and new parent dependencies)
+rmplan set plan.yml --parent new-parent-plan
+
+# Remove a parent relationship (automatically removes child from parent's dependencies)
+rmplan set plan.yml --no-parent
+
+# Update plan properties using plan ID instead of file path
+rmplan set my-feature-123 --status done --priority medium
+
 # Split a large plan into phase-based plans using an LLM
 rmplan split tasks/large-feature.yml --output-dir ./feature-phases
 
@@ -539,7 +551,48 @@ rmplan workspace add path/to/my-plan.yml
 
 # Create a workspace with a plan by ID and a custom workspace ID
 rmplan workspace add my-plan-id --id my-dev-space
+
+# Validate all plan files for schema and parent-child relationship consistency
+rmplan validate
+
+# Validate specific plan files
+rmplan validate tasks/feature-1.yml tasks/feature-2.yml
+
+# Validate with detailed output showing what was checked and fixed
+rmplan validate --verbose
+
+# Validate without auto-fixing inconsistencies (report-only mode)
+rmplan validate --no-fix
 ```
+
+### Plan Validation
+
+The `validate` command ensures the integrity of your plan files by checking both YAML schema compliance and parent-child relationship consistency. When child plans reference a parent but that parent doesn't include the child in its dependencies array, the validate command automatically fixes these inconsistencies by updating the parent plan files.
+
+**Key validation features:**
+- **Schema Validation**: Verifies plan files conform to the expected YAML structure
+- **Parent-Child Consistency**: Ensures bidirectional relationships between parent and child plans
+- **Automatic Fixing**: Updates parent plans to include missing child dependencies
+- **Clear Reporting**: Shows which relationships were fixed and provides validation summaries
+- **Circular Dependency Prevention**: Detects and prevents circular references in the dependency graph
+
+**Usage:**
+
+```bash
+# Validate all plan files in the tasks directory
+rmplan validate
+
+# Validate specific plan files
+rmplan validate tasks/feature-1.yml tasks/feature-2.yml
+
+# Validate and see detailed output
+rmplan validate --verbose
+
+# Validate without auto-fixing (report only)
+rmplan validate --no-fix
+```
+
+When inconsistencies are found, the validate command will automatically update parent plan files and report what was changed, ensuring your project's dependency graph remains consistent and reliable.
 
 ## Working with Plan Dependencies
 
