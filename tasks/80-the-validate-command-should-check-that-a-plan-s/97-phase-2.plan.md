@@ -46,6 +46,7 @@ project:
     hierarchies
 tasks:
   - title: Update set command for parent field changes
+    done: true
     description: >
       Modify `/src/rmplan/commands/set.ts` to handle parent field updates
       bidirectionally. When setting a parent, load the parent plan and add the
@@ -101,6 +102,7 @@ tasks:
           cycle and throw an error if it would.
         done: true
   - title: Add tests for set command updates
+    done: true
     description: >
       Create comprehensive tests in `/src/rmplan/commands/set.test.ts` for the
       new bidirectional behavior. The test file already exists and has good
