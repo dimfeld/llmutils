@@ -149,19 +149,24 @@ export class ClaudeCodeExecutor implements Executor {
    * Load agent instructions from file path, with proper error handling.
    * Returns undefined if the file doesn't exist or can't be read.
    */
-  private async loadAgentInstructions(instructionPath: string, gitRoot: string): Promise<string | undefined> {
+  private async loadAgentInstructions(
+    instructionPath: string,
+    gitRoot: string
+  ): Promise<string | undefined> {
     try {
       const resolvedPath = path.isAbsolute(instructionPath)
         ? instructionPath
         : path.join(gitRoot, instructionPath);
-      
+
       const file = Bun.file(resolvedPath);
       const content = await file.text();
       log(chalk.blue(`📋 Including agent instructions:`), path.relative(gitRoot, resolvedPath));
       return content;
     } catch (error) {
       // Log a warning but don't fail the execution
-      debugLog(`Warning: Could not load agent instructions from ${instructionPath}: ${error as Error}`);
+      debugLog(
+        `Warning: Could not load agent instructions from ${instructionPath}: ${error as Error}`
+      );
       return undefined;
     }
   }
@@ -809,13 +814,16 @@ export class ClaudeCodeExecutor implements Executor {
     if (planInfo && planInfo.planId) {
       // Load custom instructions for each agent if configured
       const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
-        ? await this.loadAgentInstructions(this.rmplanConfig.agents.implementer.instructions, gitRoot)
+        ? await this.loadAgentInstructions(
+            this.rmplanConfig.agents.implementer.instructions,
+            gitRoot
+          )
         : undefined;
-      
+
       const testerInstructions = this.rmplanConfig.agents?.tester?.instructions
         ? await this.loadAgentInstructions(this.rmplanConfig.agents.tester.instructions, gitRoot)
         : undefined;
-      
+
       const reviewerInstructions = this.rmplanConfig.agents?.reviewer?.instructions
         ? await this.loadAgentInstructions(this.rmplanConfig.agents.reviewer.instructions, gitRoot)
         : undefined;

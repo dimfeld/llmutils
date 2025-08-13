@@ -4929,7 +4929,7 @@ More content
   test('includes custom instructions from config files in agent prompts', async () => {
     // Create a temporary directory for instruction files
     const tempDir = await fs.mkdtemp('/tmp/agent-instructions-test-');
-    
+
     try {
       // Write instruction files for each agent
       const implementerInstructions = 'Always use TypeScript interfaces for data structures.';
@@ -4954,11 +4954,13 @@ More content
       };
 
       // Mock the agent prompt functions to capture their arguments
-      const mockGetImplementerPrompt = mock((contextContent: string, customInstructions?: string) => ({
-        name: 'implementer',
-        description: 'Test implementer',
-        prompt: `Context: ${contextContent}\nCustom: ${customInstructions || 'none'}`,
-      }));
+      const mockGetImplementerPrompt = mock(
+        (contextContent: string, customInstructions?: string) => ({
+          name: 'implementer',
+          description: 'Test implementer',
+          prompt: `Context: ${contextContent}\nCustom: ${customInstructions || 'none'}`,
+        })
+      );
 
       const mockGetTesterPrompt = mock((contextContent: string, customInstructions?: string) => ({
         name: 'tester',
@@ -5024,7 +5026,10 @@ More content
       await executor.execute('test content', mockPlanInfo);
 
       // Verify that each agent prompt function was called with the correct custom instructions
-      expect(mockGetImplementerPrompt).toHaveBeenCalledWith('test content', implementerInstructions);
+      expect(mockGetImplementerPrompt).toHaveBeenCalledWith(
+        'test content',
+        implementerInstructions
+      );
       expect(mockGetTesterPrompt).toHaveBeenCalledWith('test content', testerInstructions);
       expect(mockGetReviewerPrompt).toHaveBeenCalledWith('test content', reviewerInstructions);
 
@@ -5032,7 +5037,6 @@ More content
       expect(mockGetImplementerPrompt).toHaveBeenCalledTimes(1);
       expect(mockGetTesterPrompt).toHaveBeenCalledTimes(1);
       expect(mockGetReviewerPrompt).toHaveBeenCalledTimes(1);
-
     } finally {
       // Clean up temporary directory
       await fs.rm(tempDir, { recursive: true, force: true });

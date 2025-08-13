@@ -5,16 +5,17 @@ goal: To implement the core functionality for defining, loading, and injecting
   custom instructions into the prompts for the implementer, tester, and reviewer
   agents.
 id: 98
-status: in_progress
+status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-13T19:15:03.540Z
 promptsGeneratedAt: 2025-08-13T19:18:44.562Z
 createdAt: 2025-08-13T19:06:31.948Z
-updatedAt: 2025-08-13T19:18:44.912Z
+updatedAt: 2025-08-13T19:32:45.148Z
 tasks:
   - title: "Task 1: Extend `rmplanConfigSchema` to support agent-specific
       instructions"
+    done: true
     description: >
       The `rmplanConfigSchema` in `src/rmplan/configSchema.ts` will be updated
       to include a new optional `agents` object. This object will contain
@@ -43,7 +44,6 @@ tasks:
       - Invalid configurations are rejected appropriately
 
       - The schema remains backward compatible (works without agents section)
-    done: true
     files:
       - src/rmplan/configSchema.ts
       - src/rmplan/configSchema.test.ts
@@ -71,6 +71,7 @@ tasks:
           all existing tests still pass.
         done: true
   - title: "Task 2: Modify agent prompt functions to accept custom instructions"
+    done: true
     description: >
       The `getImplementerPrompt`, `getTesterPrompt`, and `getReviewerPrompt`
       functions in `src/rmplan/executors/claude_code/agent_prompts.ts` will be
@@ -100,7 +101,6 @@ tasks:
       compatibility)
 
       - Custom instructions appear in the expected location within the prompt
-    done: true
     files:
       - src/rmplan/executors/claude_code/agent_prompts.ts
       - src/rmplan/executors/claude_code/agent_prompts.test.ts
@@ -132,6 +132,7 @@ tasks:
           all existing functionality remains intact.
         done: true
   - title: "Task 3: Load and pass custom instructions in `ClaudeCodeExecutor`"
+    done: true
     description: >
       In the `execute` method of `ClaudeCodeExecutor`
       (`src/rmplan/executors/claude_code.ts`), logic will be added to read the
@@ -157,7 +158,6 @@ tasks:
       Error handling will log warnings for missing files but not fail the
       execution, similar to how other optional configuration files are handled
       in the codebase.
-    done: true
     files:
       - src/rmplan/executors/claude_code.ts
     steps:
@@ -190,6 +190,7 @@ tasks:
           the custom instructions included.
         done: true
   - title: "Task 4: Add an integration test for custom agent instructions"
+    done: true
     description: >
       A new integration test will be added to
       `src/rmplan/executors/claude_code.test.ts` that verifies the end-to-end
@@ -215,7 +216,6 @@ tasks:
       instructions. It will use real file operations (following the testing
       philosophy of preferring real filesystem operations over mocks where
       possible).
-    done: true
     files:
       - src/rmplan/executors/claude_code.test.ts
     steps:

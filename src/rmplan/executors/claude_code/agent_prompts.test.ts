@@ -197,7 +197,9 @@ The current tasks to implement are:
       expect(result.prompt).toContain('Reviewing Multiple Tasks');
       expect(result.prompt).toContain('Scrutinize interactions between tasks');
       expect(result.prompt).toContain('Code duplication across tasks that should be consolidated');
-      expect(result.prompt).toContain('Inconsistent patterns or approaches between related implementations');
+      expect(result.prompt).toContain(
+        'Inconsistent patterns or approaches between related implementations'
+      );
       expect(result.prompt).toContain('Missing integration tests for task interactions');
       expect(result.prompt).toContain('Performance bottlenecks introduced by task combinations');
     });

@@ -2,9 +2,12 @@ import type { AgentDefinition } from './agent_generator.ts';
 
 const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
 
-export function getImplementerPrompt(contextContent: string, customInstructions?: string): AgentDefinition {
-  const customInstructionsSection = customInstructions?.trim() 
-    ? `\n## Custom Instructions\n${customInstructions}\n` 
+export function getImplementerPrompt(
+  contextContent: string,
+  customInstructions?: string
+): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim()
+    ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
 
   return {
@@ -64,9 +67,12 @@ Do not mark anything in the plan file as done. This is your manager's responsibi
   };
 }
 
-export function getTesterPrompt(contextContent: string, customInstructions?: string): AgentDefinition {
-  const customInstructionsSection = customInstructions?.trim() 
-    ? `\n## Custom Instructions\n${customInstructions}\n` 
+export function getTesterPrompt(
+  contextContent: string,
+  customInstructions?: string
+): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim()
+    ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
 
   return {
@@ -141,9 +147,12 @@ Remember: Your goal is to ensure all tests pass and that the code has comprehens
   };
 }
 
-export function getReviewerPrompt(contextContent: string, customInstructions?: string): AgentDefinition {
-  const customInstructionsSection = customInstructions?.trim() 
-    ? `\n## Custom Instructions\n${customInstructions}\n` 
+export function getReviewerPrompt(
+  contextContent: string,
+  customInstructions?: string
+): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim()
+    ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
 
   return {
