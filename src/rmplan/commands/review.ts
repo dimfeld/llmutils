@@ -57,10 +57,10 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   // Load all plans for hierarchy traversal
   const gitRoot = await getGitRoot();
   const plansConfig = globalOpts.config || gitRoot;
-  
+
   let parentChain: PlanWithFilename[] = [];
   let completedChildren: PlanWithFilename[] = [];
-  
+
   try {
     const { plans: allPlans } = await readAllPlans(plansConfig);
 
@@ -74,9 +74,11 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     if (planData.id) {
       try {
         parentChain = getParentChain(planWithFilename, allPlans);
-        
+
         if (parentChain.length > 0) {
-          log(chalk.cyan(`Parent plan context loaded: ${parentChain[0].id} - ${parentChain[0].title}`));
+          log(
+            chalk.cyan(`Parent plan context loaded: ${parentChain[0].id} - ${parentChain[0].title}`)
+          );
           if (parentChain.length > 1) {
             log(chalk.cyan(`Found ${parentChain.length} levels of parent plans`));
           }
@@ -90,7 +92,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       // Get completed children if this plan has any
       try {
         completedChildren = getCompletedChildren(planData.id, allPlans);
-        
+
         if (completedChildren.length > 0) {
           log(chalk.cyan(`Found ${completedChildren.length} completed child plans`));
         }
@@ -102,7 +104,11 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(chalk.yellow(`Warning: Could not read plan hierarchy: ${errorMessage}. Continuing with basic review.`));
+    log(
+      chalk.yellow(
+        `Warning: Could not read plan hierarchy: ${errorMessage}. Continuing with basic review.`
+      )
+    );
   }
 
   // Generate diff against trunk branch
@@ -286,19 +292,16 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
 }
 
 export function buildReviewPrompt(
-  planData: PlanSchema, 
-  diffResult: DiffResult, 
-  parentChain: PlanWithFilename[] = [], 
+  planData: PlanSchema,
+  diffResult: DiffResult,
+  parentChain: PlanWithFilename[] = [],
   completedChildren: PlanWithFilename[] = []
 ): string {
   // Build parent plan context section if available
   const parentContext: string[] = [];
   if (parentChain.length > 0) {
-    parentContext.push(
-      `# Parent Plan Context`,
-      ``
-    );
-    
+    parentContext.push(`# Parent Plan Context`, ``);
+
     // Include all parents in the chain, starting with immediate parent
     parentChain.forEach((parent, index) => {
       const level = index === 0 ? 'Parent' : `Grandparent (Level ${index + 1})`;
@@ -308,16 +311,16 @@ export function buildReviewPrompt(
         `**${level} Goal:** ${parent.goal}`,
         ``
       );
-      
+
       if (parent.details) {
         parentContext.push(`**${level} Details:** ${parent.details}`, ``);
       }
-      
+
       if (index < parentChain.length - 1) {
         parentContext.push(`---`, ``);
       }
     });
-    
+
     parentContext.push(
       `*Note: This review is for a child plan implementing part of the parent plan${parentChain.length > 1 ? 's' : ''} above.*`,
       ``,
@@ -325,7 +328,7 @@ export function buildReviewPrompt(
     );
   }
 
-  // Build completed children context section if available  
+  // Build completed children context section if available
   const childrenContext: string[] = [];
   if (completedChildren.length > 0) {
     childrenContext.push(
@@ -334,7 +337,7 @@ export function buildReviewPrompt(
       `The following child plans have been completed as part of this parent plan:`,
       ``
     );
-    
+
     completedChildren.forEach((child) => {
       childrenContext.push(
         `**Child Plan ID:** ${child.id}`,
@@ -342,12 +345,12 @@ export function buildReviewPrompt(
         `**Child Goal:** ${child.goal}`,
         ``
       );
-      
+
       if (child.details) {
         childrenContext.push(`**Child Details:** ${child.details}`, ``);
       }
     });
-    
+
     childrenContext.push(
       `*Note: When reviewing this parent plan, consider how these completed children contribute to the overall goals.*`,
       ``,

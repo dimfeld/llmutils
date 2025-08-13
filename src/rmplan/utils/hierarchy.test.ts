@@ -33,7 +33,7 @@ describe('Hierarchy Utilities', () => {
     it('should return empty array for plan with no parent', () => {
       const plan = createPlan(1, 'Root Plan');
       const allPlans = new Map([[1, plan]]);
-      
+
       const parents = getParentChain(plan, allPlans);
       expect(parents).toEqual([]);
     });
@@ -45,7 +45,7 @@ describe('Hierarchy Utilities', () => {
         [1, parent],
         [2, child],
       ]);
-      
+
       const parents = getParentChain(child, allPlans);
       expect(parents).toEqual([parent]);
     });
@@ -61,7 +61,7 @@ describe('Hierarchy Utilities', () => {
         [3, parent],
         [4, child],
       ]);
-      
+
       const parents = getParentChain(child, allPlans);
       expect(parents).toEqual([parent, grandparent, greatGrandparent]);
     });
@@ -69,7 +69,7 @@ describe('Hierarchy Utilities', () => {
     it('should handle missing parent reference gracefully', () => {
       const child = createPlan(2, 'Child Plan', 'pending', 1); // parent ID 1 doesn't exist
       const allPlans = new Map([[2, child]]);
-      
+
       const parents = getParentChain(child, allPlans);
       expect(parents).toEqual([]);
     });
@@ -84,7 +84,7 @@ describe('Hierarchy Utilities', () => {
         [2, plan2],
         [3, plan3],
       ]);
-      
+
       const parents = getParentChain(plan1, allPlans);
       // Should stop when cycle is detected
       expect(parents.length).toBeLessThanOrEqual(3);
@@ -97,7 +97,7 @@ describe('Hierarchy Utilities', () => {
     it('should return empty array for plan with no children', () => {
       const plan = createPlan(1, 'Plan with no children');
       const allPlans = new Map([[1, plan]]);
-      
+
       const children = getDirectChildren(1, allPlans);
       expect(children).toEqual([]);
     });
@@ -113,7 +113,7 @@ describe('Hierarchy Utilities', () => {
         [3, child2],
         [4, grandchild],
       ]);
-      
+
       const children = getDirectChildren(1, allPlans);
       expect(children).toHaveLength(2);
       expect(children).toContain(child1);
@@ -132,9 +132,9 @@ describe('Hierarchy Utilities', () => {
         [3, child2],
         [5, child3],
       ]);
-      
+
       const children = getDirectChildren(1, allPlans);
-      expect(children.map(c => c.id)).toEqual([2, 3, 5]);
+      expect(children.map((c) => c.id)).toEqual([2, 3, 5]);
     });
   });
 
@@ -142,7 +142,7 @@ describe('Hierarchy Utilities', () => {
     it('should return empty array for plan with no children', () => {
       const plan = createPlan(1, 'Plan with no children');
       const allPlans = new Map([[1, plan]]);
-      
+
       const children = getAllChildren(1, allPlans);
       expect(children).toEqual([]);
     });
@@ -162,7 +162,7 @@ describe('Hierarchy Utilities', () => {
         [5, grandchild2],
         [6, greatGrandchild],
       ]);
-      
+
       const children = getAllChildren(1, allPlans);
       expect(children).toHaveLength(5);
       expect(children).toContain(child1);
@@ -179,37 +179,37 @@ describe('Hierarchy Utilities', () => {
       const child2 = createPlan(3, 'Child 2', 'pending', 2);
       const child3 = createPlan(4, 'Child 3', 'pending', 3);
       const child4 = createPlan(5, 'Child 4', 'pending', 1); // Another direct child of 1
-      
+
       // Now create a cycle by making child1 (plan 2) also a child of child2 (plan 3)
       // This creates: 1 -> 2, 1 -> 5, 2 -> 3, 3 -> 4, and 3 -> 2 (cycle)
       const cyclicChild = createPlan(6, 'Cyclic Child', 'pending', 3);
       cyclicChild.id = 2; // Make it the same as child1 to create cycle
-      
+
       const allPlans = new Map([
         [1, parent],
-        [2, child1],     // parent: 1
-        [3, child2],     // parent: 2
-        [4, child3],     // parent: 3
-        [5, child4],     // parent: 1
+        [2, child1], // parent: 1
+        [3, child2], // parent: 2
+        [4, child3], // parent: 3
+        [5, child4], // parent: 1
       ]);
-      
+
       // Manually add another relationship that creates a cycle
       // Add plan 2 as also having parent 3 (creating a cycle 2 -> 3 -> 2)
       const allPlansWithCycle = new Map(allPlans);
-      
+
       // Simulate multiple children pointing to each other
       // Plan 7 is child of 3, and plan 3 is child of 7 (cycle)
       const plan7 = createPlan(7, 'Plan 7', 'pending', 3);
       const modifiedPlan3 = { ...child2, parent: 7 }; // Make 3 child of 7
-      
+
       allPlansWithCycle.set(3, modifiedPlan3);
       allPlansWithCycle.set(7, plan7);
-      
+
       const children = getAllChildren(1, allPlansWithCycle);
       // Should include child1 (plan 2) but handle the cycle between 3 and 7
       // The function should not hang and should return some reasonable result
       expect(children.length).toBeGreaterThanOrEqual(1);
-      expect(children.some(c => c.id === 2)).toBe(true);
+      expect(children.some((c) => c.id === 2)).toBe(true);
     });
 
     it('should return results sorted by ID', () => {
@@ -223,9 +223,9 @@ describe('Hierarchy Utilities', () => {
         [3, grandchild],
         [5, child1],
       ]);
-      
+
       const children = getAllChildren(1, allPlans);
-      expect(children.map(c => c.id)).toEqual([2, 3, 5]);
+      expect(children.map((c) => c.id)).toEqual([2, 3, 5]);
     });
   });
 
@@ -241,7 +241,7 @@ describe('Hierarchy Utilities', () => {
         [3, pendingChild],
         [4, inProgressChild],
       ]);
-      
+
       const completedChildren = getCompletedChildren(1, allPlans);
       expect(completedChildren).toHaveLength(1);
       expect(completedChildren[0]).toEqual(completedChild);
@@ -258,7 +258,7 @@ describe('Hierarchy Utilities', () => {
         [3, completedGrandchild],
         [4, pendingGrandchild],
       ]);
-      
+
       const completedChildren = getCompletedChildren(1, allPlans);
       expect(completedChildren).toHaveLength(1);
       expect(completedChildren[0]).toEqual(completedGrandchild);
@@ -279,7 +279,7 @@ describe('Hierarchy Utilities', () => {
         [4, inProgressChild],
         [5, cancelledChild],
       ]);
-      
+
       const pendingChildren = getPendingChildren(1, allPlans);
       expect(pendingChildren).toHaveLength(2);
       expect(pendingChildren).toContain(pendingChild);
@@ -297,7 +297,7 @@ describe('Hierarchy Utilities', () => {
         [2, parent],
         [3, child],
       ]);
-      
+
       expect(hasCycleInParentChain(child, allPlans)).toBe(false);
     });
 
@@ -311,7 +311,7 @@ describe('Hierarchy Utilities', () => {
         [2, plan2],
         [3, plan3],
       ]);
-      
+
       expect(hasCycleInParentChain(plan1, allPlans)).toBe(true);
       expect(hasCycleInParentChain(plan2, allPlans)).toBe(true);
       expect(hasCycleInParentChain(plan3, allPlans)).toBe(true);
@@ -320,7 +320,7 @@ describe('Hierarchy Utilities', () => {
     it('should return false for plan with missing parent reference', () => {
       const plan = createPlan(1, 'Plan', 'pending', 999); // parent 999 doesn't exist
       const allPlans = new Map([[1, plan]]);
-      
+
       expect(hasCycleInParentChain(plan, allPlans)).toBe(false);
     });
   });
@@ -335,7 +335,7 @@ describe('Hierarchy Utilities', () => {
         [2, child],
         [3, root2],
       ]);
-      
+
       const roots = getRootPlans(allPlans);
       expect(roots).toHaveLength(2);
       expect(roots).toContain(root1);
@@ -352,9 +352,9 @@ describe('Hierarchy Utilities', () => {
         [3, root2],
         [5, root3],
       ]);
-      
+
       const roots = getRootPlans(allPlans);
-      expect(roots.map(r => r.id)).toEqual([1, 3, 5]);
+      expect(roots.map((r) => r.id)).toEqual([1, 3, 5]);
     });
 
     it('should return empty array when all plans have parents', () => {
@@ -364,7 +364,7 @@ describe('Hierarchy Utilities', () => {
         [1, parent],
         [2, child],
       ]);
-      
+
       const roots = getRootPlans(allPlans);
       expect(roots).toEqual([]);
     });
@@ -380,7 +380,7 @@ describe('Hierarchy Utilities', () => {
         // no id field
       };
       const allPlans = new Map();
-      
+
       // Should not crash
       expect(() => getParentChain(planWithoutId, allPlans)).not.toThrow();
       expect(() => getAllChildren(0, allPlans)).not.toThrow();
@@ -390,7 +390,7 @@ describe('Hierarchy Utilities', () => {
     it('should handle empty plans map', () => {
       const plan = createPlan(1, 'Plan');
       const emptyPlans = new Map<number, PlanWithFilename>();
-      
+
       expect(getParentChain(plan, emptyPlans)).toEqual([]);
       expect(getAllChildren(1, emptyPlans)).toEqual([]);
       expect(getDirectChildren(1, emptyPlans)).toEqual([]);

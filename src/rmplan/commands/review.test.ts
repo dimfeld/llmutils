@@ -685,7 +685,8 @@ describe('Parent plan context handling', () => {
       id: 99,
       title: 'PR review command',
       goal: 'Implement a new rmplan review command that analyzes code changes against plan requirements',
-      details: 'The review command will compare the current branch to the trunk branch, gather all relevant plan context',
+      details:
+        'The review command will compare the current branch to the trunk branch, gather all relevant plan context',
       tasks: [],
     };
 
@@ -693,12 +694,14 @@ describe('Parent plan context handling', () => {
       id: 101,
       title: 'PR review command - Parent-Child Plan Integration',
       goal: 'Enhance the review command to intelligently handle plan hierarchies',
-      details: 'Extend the review command to automatically include relevant context from parent plans',
+      details:
+        'Extend the review command to automatically include relevant context from parent plans',
       parent: 99,
       tasks: [
         {
           title: 'Implement parent plan context gathering',
-          description: 'Add logic to detect when a plan has a parent and automatically include parent context',
+          description:
+            'Add logic to detect when a plan has a parent and automatically include parent context',
         },
       ],
     };
@@ -914,10 +917,15 @@ tasks:
         baseBranch: 'main',
         diffContent: 'test diff',
       }),
-      buildReviewPrompt: (planData: any, diffResult: any, parentChain: any[] = [], completedChildren: any[] = []) => {
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = []
+      ) => {
         // Create a test prompt that includes parent context when parent is provided
         let prompt = `REVIEWER AGENT\n\n`;
-        
+
         if (parentChain && parentChain.length > 0) {
           const parentPlan = parentChain[0];
           prompt += `# Parent Plan Context\n\n`;
@@ -925,12 +933,12 @@ tasks:
           prompt += `**Parent Title:** ${parentPlan.title}\n`;
           prompt += `**Parent Goal:** ${parentPlan.goal}\n\n`;
         }
-        
+
         prompt += `# Plan Context\n\n`;
         prompt += `**Plan ID:** ${planData.id}\n`;
         prompt += `**Title:** ${planData.title}\n`;
         prompt += `**Goal:** ${planData.goal}\n\n`;
-        
+
         return prompt;
       },
     }));
@@ -1007,7 +1015,9 @@ describe('Hierarchy integration with utilities', () => {
     expect(prompt).toContain('**Grandparent (Level 2) Plan ID:** 50');
     expect(prompt).toContain('**Grandparent (Level 2) Title:** Root Project Plan');
     expect(prompt).toContain('---'); // Section separator
-    expect(prompt).toContain('This review is for a child plan implementing part of the parent plans above');
+    expect(prompt).toContain(
+      'This review is for a child plan implementing part of the parent plans above'
+    );
   });
 
   test('includes completed children when reviewing parent plan', async () => {
@@ -1063,13 +1073,17 @@ describe('Hierarchy integration with utilities', () => {
 
     // Verify completed children section is included
     expect(prompt).toContain('# Completed Child Plans');
-    expect(prompt).toContain('The following child plans have been completed as part of this parent plan:');
+    expect(prompt).toContain(
+      'The following child plans have been completed as part of this parent plan:'
+    );
     expect(prompt).toContain('**Child Plan ID:** 100');
     expect(prompt).toContain('**Child Title:** Core Review Implementation');
     expect(prompt).toContain('**Child Goal:** Implement basic review command');
     expect(prompt).toContain('**Child Plan ID:** 101');
     expect(prompt).toContain('**Child Title:** Parent-Child Integration');
-    expect(prompt).toContain('consider how these completed children contribute to the overall goals');
+    expect(prompt).toContain(
+      'consider how these completed children contribute to the overall goals'
+    );
   });
 
   test('handles both parent chain and completed children together', async () => {
@@ -1134,10 +1148,10 @@ describe('Hierarchy integration with utilities', () => {
     expect(prompt).toContain('# Parent Plan Context');
     expect(prompt).toContain('**Parent Plan ID:** 99');
     expect(prompt).toContain('**Grandparent (Level 2) Plan ID:** 50');
-    
+
     expect(prompt).toContain('# Completed Child Plans');
     expect(prompt).toContain('**Child Plan ID:** 102');
-    
+
     expect(prompt).toContain('# Plan Context');
     expect(prompt).toContain('**Plan ID:** 101');
 
@@ -1145,7 +1159,7 @@ describe('Hierarchy integration with utilities', () => {
     const parentIndex = prompt.indexOf('# Parent Plan Context');
     const childrenIndex = prompt.indexOf('# Completed Child Plans');
     const planIndex = prompt.indexOf('# Plan Context');
-    
+
     expect(parentIndex).toBeLessThan(childrenIndex);
     expect(childrenIndex).toBeLessThan(planIndex);
   });
@@ -1268,7 +1282,12 @@ describe('Hierarchy integration with utilities', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(currentPlan, diffResult, [parentWithoutDetails], [childWithoutDetails]);
+    const prompt = buildReviewPrompt(
+      currentPlan,
+      diffResult,
+      [parentWithoutDetails],
+      [childWithoutDetails]
+    );
 
     // Should include basic info but not try to include missing details
     expect(prompt).toContain('**Parent Plan ID:** 99');

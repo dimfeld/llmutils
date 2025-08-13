@@ -4,7 +4,7 @@ title: PR review command - Parent-Child Plan Integration
 goal: Enhance the review command to intelligently handle plan hierarchies and
   multiple plan reviews
 id: 101
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - 100
@@ -12,7 +12,7 @@ parent: 99
 planGeneratedAt: 2025-08-13T20:34:32.142Z
 promptsGeneratedAt: 2025-08-13T21:14:17.043Z
 createdAt: 2025-08-13T20:28:04.715Z
-updatedAt: 2025-08-13T21:14:17.484Z
+updatedAt: 2025-08-13T21:36:25.653Z
 project:
   title: Add PR review command to rmplan for comprehensive code review against
     plan requirements
@@ -47,6 +47,7 @@ project:
     - Provides clear feedback on code quality and requirement compliance
 tasks:
   - title: Implement parent plan context gathering
+    done: true
     description: >
       Add logic to detect when a plan has a parent and automatically include the
       parent's goal and high-level details in the review context, providing
@@ -58,7 +59,6 @@ tasks:
     files:
       - src/rmplan/commands/review.ts
       - src/rmplan/commands/review.test.ts
-    done: true
     steps:
       - prompt: >
           Add tests in review.test.ts for parent context inclusion. Create test
