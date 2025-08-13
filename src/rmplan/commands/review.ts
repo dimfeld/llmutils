@@ -28,8 +28,8 @@ import { statSync } from 'node:fs';
  * Comprehensive error handling for saving review results
  */
 async function saveReviewResultWithErrorHandling(
-  filePath: string, 
-  content: string, 
+  filePath: string,
+  content: string,
   logger: (message: string) => void
 ): Promise<void> {
   try {
@@ -71,20 +71,24 @@ async function saveReviewResultWithErrorHandling(
     }
 
     // Check available disk space (basic check)
-    if (content.length > 100 * 1024 * 1024) { // 100MB
+    if (content.length > 100 * 1024 * 1024) {
+      // 100MB
       logger(chalk.yellow('Warning: Large review output detected, checking available space...'));
     }
 
     // Validate content size
     const contentSize = Buffer.byteLength(content, 'utf-8');
-    if (contentSize > 50 * 1024 * 1024) { // 50MB limit
-      throw new Error(`Review content too large (${Math.round(contentSize / 1024 / 1024)}MB). Consider reducing verbosity.`);
+    if (contentSize > 50 * 1024 * 1024) {
+      // 50MB limit
+      throw new Error(
+        `Review content too large (${Math.round(contentSize / 1024 / 1024)}MB). Consider reducing verbosity.`
+      );
     }
 
     // Attempt to write file with retry mechanism
     let retryCount = 0;
     const maxRetries = 3;
-    
+
     while (retryCount < maxRetries) {
       try {
         await writeFile(filePath, content, 'utf-8');
@@ -93,13 +97,17 @@ async function saveReviewResultWithErrorHandling(
       } catch (writeErr) {
         retryCount++;
         const errorCode = (writeErr as any)?.code;
-        
+
         if (errorCode === 'ENOSPC') {
           throw new Error('Insufficient disk space to save review results');
         } else if (errorCode === 'EMFILE' || errorCode === 'ENFILE') {
           if (retryCount < maxRetries) {
-            logger(chalk.yellow(`Temporary file handle exhaustion, retrying... (${retryCount}/${maxRetries})`));
-            await new Promise(resolve => setTimeout(resolve, 100 * retryCount)); // Exponential backoff
+            logger(
+              chalk.yellow(
+                `Temporary file handle exhaustion, retrying... (${retryCount}/${maxRetries})`
+              )
+            );
+            await new Promise((resolve) => setTimeout(resolve, 100 * retryCount)); // Exponential backoff
             continue;
           }
           throw new Error('Too many open files - system resource exhaustion');
@@ -108,21 +116,24 @@ async function saveReviewResultWithErrorHandling(
         } else if (errorCode === 'EROFS') {
           throw new Error('Cannot write to read-only file system');
         } else if (retryCount < maxRetries) {
-          logger(chalk.yellow(`Write failed, retrying... (${retryCount}/${maxRetries}): ${(writeErr as Error).message}`));
-          await new Promise(resolve => setTimeout(resolve, 100 * retryCount));
+          logger(
+            chalk.yellow(
+              `Write failed, retrying... (${retryCount}/${maxRetries}): ${(writeErr as Error).message}`
+            )
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100 * retryCount));
           continue;
         } else {
           throw writeErr;
         }
       }
     }
-    
-    throw new Error(`Failed to write file after ${maxRetries} attempts`);
 
+    throw new Error(`Failed to write file after ${maxRetries} attempts`);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     logger(chalk.red(`Error saving review results: ${errorMessage}`));
-    
+
     // Attempt fallback save to current directory
     try {
       const fallbackPath = `review-fallback-${Date.now()}.txt`;
@@ -374,7 +385,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     // Determine format and verbosity from options or config
     const outputFormat = options.format || config.review?.outputFormat || 'terminal';
     const verbosity: VerbosityLevel = options.verbosity || 'normal';
-    
+
     // Validate format
     if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {
       log(chalk.yellow(`Warning: Invalid format '${outputFormat}', using 'terminal'`));
@@ -389,7 +400,9 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     };
 
     // Format the review result
-    const formatter = createFormatter(outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal');
+    const formatter = createFormatter(
+      outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
+    );
     const formattedOutput = formatter.format(reviewResult, formatterOptions);
 
     // Save to file if requested with comprehensive error handling
@@ -398,14 +411,14 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     } else if (config.review?.saveLocation) {
       // Use config save location if no explicit output file
       try {
-        const saveDir = isAbsolute(config.review.saveLocation) 
-          ? config.review.saveLocation 
+        const saveDir = isAbsolute(config.review.saveLocation)
+          ? config.review.saveLocation
           : join(gitRoot, config.review.saveLocation);
-        
+
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `review-${planData.id}-${timestamp}${formatter.getFileExtension()}`;
         const savePath = join(saveDir, filename);
-        
+
         await saveReviewResultWithErrorHandling(savePath, formattedOutput, log);
       } catch (saveErr) {
         const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);

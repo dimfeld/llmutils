@@ -28,27 +28,27 @@ describe('parseReviewerOutput', () => {
     const { issues, recommendations, actionItems } = parseReviewerOutput(output);
 
     expect(issues).toHaveLength(5);
-    
+
     // Check critical security issue
-    const sqlIssue = issues.find(i => i.description.includes('SQL injection'));
+    const sqlIssue = issues.find((i) => i.description.includes('SQL injection'));
     expect(sqlIssue).toBeDefined();
     expect(sqlIssue?.severity).toBe('critical');
     expect(sqlIssue?.category).toBe('security');
-    
+
     // Check XSS issue
-    const xssIssue = issues.find(i => i.description.includes('XSS'));
+    const xssIssue = issues.find((i) => i.description.includes('XSS'));
     expect(xssIssue).toBeDefined();
     expect(xssIssue?.severity).toBe('critical');
     expect(xssIssue?.category).toBe('security');
-    
+
     // Check performance issue
-    const perfIssue = issues.find(i => i.description.includes('Performance'));
+    const perfIssue = issues.find((i) => i.description.includes('Performance'));
     expect(perfIssue).toBeDefined();
     expect(perfIssue?.severity).toBe('major');
     expect(perfIssue?.category).toBe('performance');
-    
+
     // Check bug
-    const bugIssue = issues.find(i => i.description.includes('Null pointer'));
+    const bugIssue = issues.find((i) => i.description.includes('Null pointer'));
     expect(bugIssue).toBeDefined();
     expect(bugIssue?.severity).toBe('major');
     expect(bugIssue?.category).toBe('bug');
@@ -64,15 +64,15 @@ describe('parseReviewerOutput', () => {
     const { issues } = parseReviewerOutput(output);
 
     expect(issues).toHaveLength(3);
-    
+
     const loginIssue = issues[0];
     expect(loginIssue.file).toBe('src/auth/login.ts');
     expect(loginIssue.line).toBe(45);
-    
+
     const serviceIssue = issues[1];
     expect(serviceIssue.file).toBe('user.service.js');
     expect(serviceIssue.line).toBe(123);
-    
+
     const styleIssue = issues[2];
     expect(styleIssue.file).toBe('components/Button.tsx');
     expect(styleIssue.line).toBeUndefined();
@@ -117,12 +117,14 @@ Action items:
     // The parser finds more issues than expected because it identifies bullet points
     // Let's check the actual count and verify the critical bug is found
     expect(issues.length).toBeGreaterThan(0);
-    const criticalBugIssue = issues.find(i => i.description.includes('Critical bug in payment processing'));
+    const criticalBugIssue = issues.find((i) =>
+      i.description.includes('Critical bug in payment processing')
+    );
     expect(criticalBugIssue).toBeDefined();
-    
+
     expect(recommendations).toHaveLength(3);
     expect(actionItems).toHaveLength(3);
-    
+
     expect(recommendations[0]).toContain('Consider implementing proper error handling');
     expect(actionItems[0]).toContain('TODO: Fix the authentication bug');
   });
@@ -139,7 +141,13 @@ Action items:
 describe('generateReviewSummary', () => {
   test('calculates counts correctly', () => {
     const issues: ReviewIssue[] = [
-      { id: '1', severity: 'critical', category: 'security', title: 'SQL injection', description: 'test' },
+      {
+        id: '1',
+        severity: 'critical',
+        category: 'security',
+        title: 'SQL injection',
+        description: 'test',
+      },
       { id: '2', severity: 'critical', category: 'security', title: 'XSS', description: 'test' },
       { id: '3', severity: 'major', category: 'bug', title: 'Null pointer', description: 'test' },
       { id: '4', severity: 'minor', category: 'style', title: 'Naming', description: 'test' },
@@ -163,19 +171,33 @@ describe('generateReviewSummary', () => {
   test('determines overall rating correctly', () => {
     // Poor rating with critical issues
     const criticalIssues: ReviewIssue[] = [
-      { id: '1', severity: 'critical', category: 'security', title: 'Critical', description: 'test' },
+      {
+        id: '1',
+        severity: 'critical',
+        category: 'security',
+        title: 'Critical',
+        description: 'test',
+      },
     ];
     expect(generateReviewSummary(criticalIssues, 1).overallRating).toBe('poor');
 
     // Poor rating with many major issues
     const manyMajorIssues: ReviewIssue[] = Array.from({ length: 6 }, (_, i) => ({
-      id: `${i}`, severity: 'major' as const, category: 'bug' as const, title: 'Major', description: 'test'
+      id: `${i}`,
+      severity: 'major' as const,
+      category: 'bug' as const,
+      title: 'Major',
+      description: 'test',
     }));
     expect(generateReviewSummary(manyMajorIssues, 1).overallRating).toBe('poor');
 
     // Fair rating with some major issues
     const someMajorIssues: ReviewIssue[] = Array.from({ length: 3 }, (_, i) => ({
-      id: `${i}`, severity: 'major' as const, category: 'bug' as const, title: 'Major', description: 'test'
+      id: `${i}`,
+      severity: 'major' as const,
+      category: 'bug' as const,
+      title: 'Major',
+      description: 'test',
     }));
     expect(generateReviewSummary(someMajorIssues, 1).overallRating).toBe('fair');
 
@@ -500,14 +522,14 @@ Action items:
     expect(result.baseBranch).toBe('main');
     expect(result.changedFiles).toEqual(['src/auth.ts', 'src/db.ts']);
     expect(result.rawOutput).toBe(rawOutput);
-    
+
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.recommendations.length).toBeGreaterThan(0);
     expect(result.actionItems.length).toBeGreaterThan(0);
-    
+
     expect(result.summary.totalIssues).toBe(result.issues.length);
     expect(result.summary.filesReviewed).toBe(2);
-    
+
     // Timestamp should be recent
     const timestamp = new Date(result.reviewTimestamp);
     const now = new Date();
@@ -583,20 +605,24 @@ Suggestion: Use parameterized queries or prepared statements
 
     // Should find all the various issue formats
     expect(issues.length).toBeGreaterThanOrEqual(8);
-    
+
     // Check critical issues are identified
-    const criticalIssues = issues.filter(i => i.severity === 'critical');
+    const criticalIssues = issues.filter((i) => i.severity === 'critical');
     expect(criticalIssues.length).toBeGreaterThanOrEqual(2);
-    
-    // Check file extraction  
-    const sqlIssue = issues.find(i => i.description.includes('SQL injection') || i.description.includes('concatenated'));
+
+    // Check file extraction
+    const sqlIssue = issues.find(
+      (i) => i.description.includes('SQL injection') || i.description.includes('concatenated')
+    );
     expect(sqlIssue).toBeDefined();
     expect(sqlIssue?.severity).toBe('critical');
-    
+
     // Look for security issues - the parser should find critical security issues
-    const securityIssues = issues.filter(i => i.severity === 'critical' && i.category === 'security');
+    const securityIssues = issues.filter(
+      (i) => i.severity === 'critical' && i.category === 'security'
+    );
     expect(securityIssues.length).toBeGreaterThan(0);
-    
+
     // Check recommendations and action items
     expect(recommendations.length).toBeGreaterThanOrEqual(3);
     expect(actionItems.length).toBeGreaterThanOrEqual(3);
@@ -624,11 +650,11 @@ Documentation looks comprehensive and helpful.
 
     // The parser identifies bullet points as issues, so let's focus on what we can control
     // Check that no critical or major issues are found
-    const criticalIssues = issues.filter(i => i.severity === 'critical');
-    const majorIssues = issues.filter(i => i.severity === 'major');
+    const criticalIssues = issues.filter((i) => i.severity === 'critical');
+    const majorIssues = issues.filter((i) => i.severity === 'major');
     expect(criticalIssues).toHaveLength(0);
     expect(majorIssues).toHaveLength(0);
-    
+
     expect(actionItems).toHaveLength(0);
   });
 
@@ -669,7 +695,7 @@ CRITICAL: Standalone severity without proper formatting
 
     // Should handle gracefully and extract what it can
     expect(issues.length).toBeGreaterThan(0);
-    
+
     // Should not crash on malformed input
     expect(() => parseReviewerOutput(weirdOutput)).not.toThrow();
   });
@@ -757,22 +783,22 @@ CRITICAL: Standalone severity without proper formatting
     const formatter = new MarkdownFormatter();
 
     // Test with showFiles disabled
-    const outputNoFiles = formatter.format(sampleResult, { 
-      verbosity: 'normal', 
-      showFiles: false 
+    const outputNoFiles = formatter.format(sampleResult, {
+      verbosity: 'normal',
+      showFiles: false,
     });
     expect(outputNoFiles).not.toContain('## Changed Files');
 
     // Test with suggestions disabled
-    const outputNoSuggestions = formatter.format(sampleResult, { 
-      verbosity: 'normal', 
-      showSuggestions: false 
+    const outputNoSuggestions = formatter.format(sampleResult, {
+      verbosity: 'normal',
+      showSuggestions: false,
     });
     expect(outputNoSuggestions).not.toContain('**Suggestion:**');
 
     // Test detailed verbosity includes recommendations
-    const outputDetailed = formatter.format(sampleResult, { 
-      verbosity: 'detailed' 
+    const outputDetailed = formatter.format(sampleResult, {
+      verbosity: 'detailed',
     });
     expect(outputDetailed).toContain('## Recommendations');
     expect(outputDetailed).toContain('Test recommendation');
@@ -828,7 +854,7 @@ CRITICAL: Standalone severity without proper formatting
     expect(minimal.issues).toBeUndefined();
     expect(minimal.rawOutput).toBeUndefined();
 
-    // Test normal verbosity  
+    // Test normal verbosity
     const normalOutput = formatter.format(fullResult, { verbosity: 'normal' });
     const normal = JSON.parse(normalOutput);
     expect(normal.planId).toBe('test-plan');
@@ -874,14 +900,14 @@ INFO: Consider adding more detailed comments
     const { issues } = parseReviewerOutput(outputWithPrefixes);
 
     expect(issues).toHaveLength(4);
-    
+
     // The parser matches the prefixes but categories are based on content patterns
     // Find the critical issue - it should match both the prefix and content
-    const criticalIssue = issues.find(i => i.description.includes('CRITICAL'));
+    const criticalIssue = issues.find((i) => i.description.includes('CRITICAL'));
     expect(criticalIssue?.severity).toBe('critical'); // Content has "SQL injection vulnerability"
-    
+
     // Other issues might not match content patterns so they default to 'info'
-    expect(issues.filter(i => i.severity === 'critical').length).toBe(1);
+    expect(issues.filter((i) => i.severity === 'critical').length).toBe(1);
   });
 
   test('TerminalFormatter severity colors work correctly', () => {
@@ -947,9 +973,9 @@ INFO: Consider adding more detailed comments
     const formatter = new TerminalFormatter();
 
     // Test with colors enabled
-    const colorOutput = formatter.format(result, { 
-      verbosity: 'normal', 
-      colorEnabled: true 
+    const colorOutput = formatter.format(result, {
+      verbosity: 'normal',
+      colorEnabled: true,
     });
     expect(colorOutput).toContain('🔴 Critical Issues');
     expect(colorOutput).toContain('🟡 Major Issues');
@@ -957,9 +983,9 @@ INFO: Consider adding more detailed comments
     expect(colorOutput).toContain('ℹ️ Info Issues');
 
     // Test with colors disabled
-    const noColorOutput = formatter.format(result, { 
-      verbosity: 'normal', 
-      colorEnabled: false 
+    const noColorOutput = formatter.format(result, {
+      verbosity: 'normal',
+      colorEnabled: false,
     });
     // Should still contain the icons but not escape sequences
     expect(noColorOutput).toContain('🔴 Critical Issues');

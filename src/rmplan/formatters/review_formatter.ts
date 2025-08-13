@@ -6,7 +6,14 @@ import { table } from 'table';
 import { basename, extname, normalize } from 'node:path';
 
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
-export type ReviewCategory = 'security' | 'performance' | 'bug' | 'style' | 'compliance' | 'testing' | 'other';
+export type ReviewCategory =
+  | 'security'
+  | 'performance'
+  | 'bug'
+  | 'style'
+  | 'compliance'
+  | 'testing'
+  | 'other';
 
 export interface ReviewIssue {
   id: string;
@@ -68,12 +75,15 @@ function validateAndSanitizeFilePath(filePath: string): string | null {
   // Remove any dangerous characters and patterns
   // Filter out control characters by checking character codes
   const removeControlChars = (str: string): string => {
-    return str.split('').filter(char => {
-      const code = char.charCodeAt(0);
-      return !(code >= 0 && code <= 31) && !(code >= 127 && code <= 159);
-    }).join('');
+    return str
+      .split('')
+      .filter((char) => {
+        const code = char.charCodeAt(0);
+        return !(code >= 0 && code <= 31) && !(code >= 127 && code <= 159);
+      })
+      .join('');
   };
-  
+
   const sanitized = removeControlChars(filePath)
     .trim()
     .replace(/[<>:"|?*]/g, '') // Remove Windows forbidden characters
@@ -87,7 +97,22 @@ function validateAndSanitizeFilePath(filePath: string): string | null {
 
   // Must have a valid file extension
   const extension = extname(sanitized);
-  const validExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.cpp', '.c', '.h', '.go', '.rs', '.rb', '.php', '.cs'];
+  const validExtensions = [
+    '.ts',
+    '.tsx',
+    '.js',
+    '.jsx',
+    '.py',
+    '.java',
+    '.cpp',
+    '.c',
+    '.h',
+    '.go',
+    '.rs',
+    '.rb',
+    '.php',
+    '.cs',
+  ];
   if (!validExtensions.includes(extension.toLowerCase())) {
     return null;
   }
@@ -141,19 +166,28 @@ const ISSUE_PATTERNS = [
 
 // Pre-compiled issue marker patterns
 const ISSUE_MARKERS = [
-  /^[-*•]\s*(.+)/,  // Bullet points
-  /^\d+\.\s*(.+)/,  // Numbered lists
-  /^⚠️|❌|🔴|🟡|⭐\s*(.+)/,  // Emoji markers
-  /^(CRITICAL|MAJOR|MINOR|INFO):\s*(.+)/i,  // Severity prefixes
+  /^[-*•]\s*(.+)/, // Bullet points
+  /^\d+\.\s*(.+)/, // Numbered lists
+  /^⚠️|❌|🔴|🟡|⭐\s*(.+)/, // Emoji markers
+  /^(CRITICAL|MAJOR|MINOR|INFO):\s*(.+)/i, // Severity prefixes
 ];
 
 // Pre-compiled file path patterns
 const FILE_EXT_PATTERN = '(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs)';
 const PATH_COMPONENT_PATTERN = '[a-zA-Z0-9._/-]{1,100}'; // Limited length to prevent ReDoS
 
-const FILE_LINE_PATTERN = new RegExp(`\\b(?:in|at|line)\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN}):(\\d{1,6})\\b`, 'i');
-const FILE_ONLY_PATTERN = new RegExp(`\\b(?:in|at)\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN})\\b`, 'i');
-const FILE_KEYWORD_PATTERN = new RegExp(`\\bfile\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN})\\b`, 'i');
+const FILE_LINE_PATTERN = new RegExp(
+  `\\b(?:in|at|line)\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN}):(\\d{1,6})\\b`,
+  'i'
+);
+const FILE_ONLY_PATTERN = new RegExp(
+  `\\b(?:in|at)\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN})\\b`,
+  'i'
+);
+const FILE_KEYWORD_PATTERN = new RegExp(
+  `\\bfile\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN})\\b`,
+  'i'
+);
 
 // Pre-compiled recommendation and action item patterns
 const RECOMMENDATION_PATTERN = /^[-*•]\s*(recommend|suggestion|should|consider|improve)/i;
@@ -200,7 +234,7 @@ export function parseReviewerOutput(rawOutput: string): {
       const match = line.match(marker);
       if (match) {
         const content = match[1] || match[2] || match[0];
-        
+
         // Determine severity and category based on content
         let severity: ReviewSeverity = 'info';
         let category: ReviewCategory = 'other';
@@ -260,7 +294,12 @@ export function parseReviewerOutput(rawOutput: string): {
         // Look for suggestions in following lines (limit lookahead)
         if (i + 1 < lineCount) {
           const nextLine = lines[i + 1].trim();
-          if (nextLine.length < 200 && (nextLine.startsWith('Suggestion:') || nextLine.startsWith('Fix:') || nextLine.startsWith('Consider:'))) {
+          if (
+            nextLine.length < 200 &&
+            (nextLine.startsWith('Suggestion:') ||
+              nextLine.startsWith('Fix:') ||
+              nextLine.startsWith('Consider:'))
+          ) {
             issue.suggestion = nextLine.replace(/^(Suggestion|Fix|Consider):\s*/i, '');
           }
         }
@@ -273,20 +312,24 @@ export function parseReviewerOutput(rawOutput: string): {
 
     // Check for recommendations and action items even if we found an issue
     // since some lines might match multiple patterns
-    
+
     // Look for recommendations (with limits)
     if (recommendations.length < 50 && line.length < 200) {
-      if (RECOMMENDATION_PATTERN.test(line) || 
-          (RECOMMENDATION_START_PATTERN.test(line) && !SECTION_HEADER_PATTERN.test(line))) {
+      if (
+        RECOMMENDATION_PATTERN.test(line) ||
+        (RECOMMENDATION_START_PATTERN.test(line) && !SECTION_HEADER_PATTERN.test(line))
+      ) {
         recommendations.push(line);
       }
     }
 
     // Look for action items (with limits) - include various bullet point patterns
     if (actionItems.length < 50 && line.length < 200) {
-      if ((ACTION_ITEM_PATTERN.test(line) && !ACTION_ITEM_SECTION_PATTERN.test(line)) ||
-          ACTION_BULLET_PATTERN.test(line) ||
-          /^[-*•]\s*(action|update|fix|address)/i.test(line)) {
+      if (
+        (ACTION_ITEM_PATTERN.test(line) && !ACTION_ITEM_SECTION_PATTERN.test(line)) ||
+        ACTION_BULLET_PATTERN.test(line) ||
+        /^[-*•]\s*(action|update|fix|address)/i.test(line)
+      ) {
         actionItems.push(line);
       }
     }
@@ -361,7 +404,7 @@ function validateJsonStructure(obj: any): void {
   if (obj === null || obj === undefined) {
     throw new Error('Cannot serialize null or undefined to JSON');
   }
-  
+
   // Check for circular references by attempting serialization
   try {
     JSON.stringify(obj);
@@ -471,7 +514,7 @@ export class MarkdownFormatter implements ReviewFormatter {
     // Changed files
     if (options.showFiles !== false && options.verbosity !== 'minimal') {
       sections.push('## Changed Files');
-      result.changedFiles.forEach(file => {
+      result.changedFiles.forEach((file) => {
         sections.push(`- ${file}`);
       });
       sections.push('');
@@ -480,10 +523,10 @@ export class MarkdownFormatter implements ReviewFormatter {
     // Issues
     if (result.issues.length > 0 && options.verbosity !== 'minimal') {
       sections.push('## Issues Found');
-      
+
       const groupedIssues = this.groupIssuesBySeverity(result.issues);
-      
-      (['critical', 'major', 'minor', 'info'] as const).forEach(severity => {
+
+      (['critical', 'major', 'minor', 'info'] as const).forEach((severity) => {
         const issues = groupedIssues[severity];
         if (issues.length > 0) {
           sections.push(`### ${severity.charAt(0).toUpperCase() + severity.slice(1)} Issues`);
@@ -497,7 +540,7 @@ export class MarkdownFormatter implements ReviewFormatter {
             }
             sections.push('');
             sections.push(issue.description);
-            
+
             if (issue.suggestion && options.showSuggestions !== false) {
               sections.push('');
               sections.push(`**Suggestion:** ${issue.suggestion}`);
@@ -511,7 +554,7 @@ export class MarkdownFormatter implements ReviewFormatter {
     // Recommendations
     if (result.recommendations.length > 0 && options.verbosity === 'detailed') {
       sections.push('## Recommendations');
-      result.recommendations.forEach(rec => {
+      result.recommendations.forEach((rec) => {
         sections.push(`- ${rec}`);
       });
       sections.push('');
@@ -520,7 +563,7 @@ export class MarkdownFormatter implements ReviewFormatter {
     // Action items
     if (result.actionItems.length > 0 && options.verbosity !== 'minimal') {
       sections.push('## Action Items');
-      result.actionItems.forEach(item => {
+      result.actionItems.forEach((item) => {
         sections.push(`- [ ] ${item}`);
       });
       sections.push('');
@@ -552,12 +595,16 @@ export class MarkdownFormatter implements ReviewFormatter {
  * Terminal formatter for console output with colors
  */
 export class TerminalFormatter implements ReviewFormatter {
-  format(result: ReviewResult, options: FormatterOptions = { verbosity: 'normal', colorEnabled: true }): string {
+  format(
+    result: ReviewResult,
+    options: FormatterOptions = { verbosity: 'normal', colorEnabled: true }
+  ): string {
     const { colorEnabled = true } = options;
     const sections: string[] = [];
 
     // Helper function to apply color conditionally
-    const color = (text: string, colorFn: (str: string) => string) => colorEnabled ? colorFn(text) : text;
+    const color = (text: string, colorFn: (str: string) => string) =>
+      colorEnabled ? colorFn(text) : text;
 
     // Header
     sections.push(color('📋 Code Review Report', chalk.bold.cyan));
@@ -568,7 +615,7 @@ export class TerminalFormatter implements ReviewFormatter {
 
     // Summary
     sections.push(color('📊 Summary', chalk.bold.yellow));
-    
+
     const ratingColor = this.getRatingColor(result.summary.overallRating, colorEnabled);
     sections.push(`Overall Rating: ${ratingColor(result.summary.overallRating.toUpperCase())}`);
     sections.push(`Total Issues: ${result.summary.totalIssues}`);
@@ -614,12 +661,17 @@ export class TerminalFormatter implements ReviewFormatter {
       sections.push('');
 
       const groupedIssues = this.groupIssuesBySeverity(result.issues);
-      
-      (['critical', 'major', 'minor', 'info'] as const).forEach(severity => {
+
+      (['critical', 'major', 'minor', 'info'] as const).forEach((severity) => {
         const issues = groupedIssues[severity];
         if (issues.length > 0) {
           const severityIcon = this.getSeverityIcon(severity);
-          sections.push(color(`${severityIcon} ${severity.charAt(0).toUpperCase() + severity.slice(1)} Issues`, this.getSeverityColor(severity)));
+          sections.push(
+            color(
+              `${severityIcon} ${severity.charAt(0).toUpperCase() + severity.slice(1)} Issues`,
+              this.getSeverityColor(severity)
+            )
+          );
           sections.push('');
 
           issues.forEach((issue, index) => {
@@ -629,10 +681,10 @@ export class TerminalFormatter implements ReviewFormatter {
               const fileLocation = `${issue.file}${issue.line ? `:${issue.line}` : ''}`;
               sections.push(`   File: ${color(fileLocation, chalk.blue)}`);
             }
-            
+
             if (options.verbosity === 'detailed') {
               sections.push(`   ${issue.description}`);
-              
+
               if (issue.suggestion && options.showSuggestions !== false) {
                 sections.push(`   ${color('💡 Suggestion:', chalk.yellow)} ${issue.suggestion}`);
               }
@@ -646,7 +698,7 @@ export class TerminalFormatter implements ReviewFormatter {
     // Action items
     if (result.actionItems.length > 0 && options.verbosity !== 'minimal') {
       sections.push(color('✅ Action Items', chalk.bold.green));
-      result.actionItems.forEach(item => {
+      result.actionItems.forEach((item) => {
         sections.push(`• ${item}`);
       });
       sections.push('');
@@ -675,7 +727,7 @@ export class TerminalFormatter implements ReviewFormatter {
 
   private getRatingColor(rating: string, colorEnabled: boolean) {
     if (!colorEnabled) return (text: string) => text;
-    
+
     switch (rating) {
       case 'excellent':
         return chalk.green;
@@ -752,9 +804,10 @@ export function createReviewResult(
   const safePlanTitle = (planTitle || 'Untitled Plan').substring(0, MAX_PLAN_TITLE_LENGTH);
   const safeBranch = (baseBranch || 'main').substring(0, MAX_BRANCH_NAME_LENGTH);
   const safeChangedFiles = changedFiles.slice(0, MAX_CHANGED_FILES);
-  const safeRawOutput = rawOutput.length > MAX_RAW_OUTPUT_LENGTH 
-    ? rawOutput.substring(0, MAX_RAW_OUTPUT_LENGTH) + '\n[Output truncated due to size limits]'
-    : rawOutput;
+  const safeRawOutput =
+    rawOutput.length > MAX_RAW_OUTPUT_LENGTH
+      ? rawOutput.substring(0, MAX_RAW_OUTPUT_LENGTH) + '\n[Output truncated due to size limits]'
+      : rawOutput;
 
   const { issues, recommendations, actionItems } = parseReviewerOutput(safeRawOutput);
   const summary = generateReviewSummary(issues, safeChangedFiles.length);
