@@ -6,16 +6,17 @@ goal: To implement and test the full functionality of the branch-aware
   renumbering preference, from the underlying Git utilities to the final command
   logic and integration tests.
 id: 90
-status: in_progress
+status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-13T00:54:09.283Z
 promptsGeneratedAt: 2025-08-13T00:58:12.552Z
 createdAt: 2025-08-06T18:48:42.803Z
-updatedAt: 2025-08-13T01:06:23.800Z
+updatedAt: 2025-08-13T01:21:43.989Z
 tasks:
   - title: Integrate branch detection and changed file retrieval into the renumber
       command
+    done: true
     description: >
       Modify the `handleRenumber` function in `renumber.ts` to determine the
       current Git branch. Based on the branch name, it will decide whether to
@@ -34,7 +35,6 @@ tasks:
       - Add appropriate logging for debugging
     files:
       - src/rmplan/commands/renumber.ts
-    done: true
     steps:
       - prompt: >
           Import the `getChangedFilesOnBranch` function and the existing
@@ -62,6 +62,7 @@ tasks:
           This will help with troubleshooting the feature.
         done: true
   - title: Implement branch-based preference in conflict resolution
+    done: true
     description: >
       Update the conflict resolution logic within `handleRenumber`. When an ID
       conflict is detected and the command is running on a feature branch, the
@@ -85,7 +86,6 @@ tasks:
       the branch
     files:
       - src/rmplan/commands/renumber.ts
-    done: true
     steps:
       - prompt: >
           Create a Set from the changed plan files (if any) for efficient
@@ -118,6 +118,7 @@ tasks:
           --prefer flag > branch-based > createdAt timestamp.
         done: true
   - title: Add integration tests for the branch-aware renumber command
+    done: true
     description: >
       Add new tests to `renumber.test.ts` to validate the complete feature.
       These tests will need to create a temporary Git repository and simulate
@@ -138,7 +139,6 @@ tasks:
       - Test both feature branch and trunk branch behavior
     files:
       - src/rmplan/commands/renumber.test.ts
-    done: true
     steps:
       - prompt: >
           Add a new test case "prefers plans changed on current feature branch
