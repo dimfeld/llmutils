@@ -56,12 +56,12 @@ export async function storeLastReviewMetadata(
 ): Promise<void> {
   const metadataPath = await getMetadataFilePath(gitRoot);
   const tempPath = `${metadataPath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
-  
+
   // Ensure the directory exists
   await mkdir(getMetadataDir(gitRoot), { recursive: true });
-  
+
   let allMetadata: Record<string, IncrementalReviewMetadata> = {};
-  
+
   // Try to read existing metadata
   try {
     const existingData = await readFile(metadataPath, 'utf-8');
@@ -70,13 +70,13 @@ export async function storeLastReviewMetadata(
     // File doesn't exist or is corrupted, start fresh
     allMetadata = {};
   }
-  
+
   // Store metadata for this plan
   allMetadata[planId] = {
     ...metadata,
     lastReviewTimestamp: new Date(metadata.lastReviewTimestamp), // Ensure proper Date object
   };
-  
+
   // Atomic write: write to temp file first, then rename
   try {
     const jsonData = JSON.stringify(allMetadata, null, 2);
@@ -104,16 +104,16 @@ export async function getLastReviewMetadata(
   planId: string
 ): Promise<IncrementalReviewMetadata | null> {
   const metadataPath = await getMetadataFilePath(gitRoot);
-  
+
   try {
     const data = await readFile(metadataPath, 'utf-8');
     const allMetadata: Record<string, any> = JSON.parse(data);
-    
+
     const planMetadata = allMetadata[planId];
     if (!planMetadata) {
       return null;
     }
-    
+
     // Ensure timestamp is a proper Date object
     return {
       ...planMetadata,
@@ -131,7 +131,7 @@ export async function getLastReviewMetadata(
 async function isUsingJjInDir(gitRoot: string): Promise<boolean> {
   try {
     const jjDir = join(gitRoot, '.jj');
-    const stat = await import('node:fs/promises').then(fs => fs.stat(jjDir));
+    const stat = await import('node:fs/promises').then((fs) => fs.stat(jjDir));
     return stat.isDirectory();
   } catch {
     return false;
@@ -155,10 +155,10 @@ export async function calculateDiffRange(gitRoot: string, fromCommit: string): P
   if (!fromCommit || !isValidCommitHash(fromCommit)) {
     throw new Error(`Invalid commit hash format: ${fromCommit}`);
   }
-  
+
   const usingJj = await isUsingJjInDir(gitRoot);
   let toCommit: string;
-  
+
   if (usingJj) {
     const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow();
     if (result.exitCode !== 0) {
@@ -166,7 +166,7 @@ export async function calculateDiffRange(gitRoot: string, fromCommit: string): P
       throw new Error(`Failed to get current jj commit: ${errorMsg}`);
     }
     toCommit = result.stdout.toString().trim();
-    
+
     // Validate the retrieved commit hash
     if (!isValidCommitHash(toCommit)) {
       throw new Error(`Invalid current commit hash from jj: ${toCommit}`);
@@ -178,13 +178,13 @@ export async function calculateDiffRange(gitRoot: string, fromCommit: string): P
       throw new Error(`Failed to get current git commit: ${errorMsg}`);
     }
     toCommit = result.stdout.toString().trim();
-    
+
     // Validate the retrieved commit hash
     if (!isValidCommitHash(toCommit)) {
       throw new Error(`Invalid current commit hash from git: ${toCommit}`);
     }
   }
-  
+
   return {
     fromCommit,
     toCommit,
@@ -201,7 +201,7 @@ export async function filterFilesByModificationTime(
   sinceTimestamp: Date
 ): Promise<string[]> {
   const filteredFiles: string[] = [];
-  
+
   for (const file of files) {
     const filePath = join(gitRoot, file);
     try {
@@ -214,7 +214,7 @@ export async function filterFilesByModificationTime(
       continue;
     }
   }
-  
+
   return filteredFiles;
 }
 
@@ -230,14 +230,14 @@ export async function getIncrementalDiff(
   if (!baseBranch || baseBranch.trim().length === 0) {
     throw new Error('Base branch name cannot be empty');
   }
-  
+
   // Sanitize branch name to prevent command injection
   if (!/^[a-zA-Z0-9._/-]+$/.test(baseBranch)) {
     throw new Error(`Invalid base branch name format: ${baseBranch}`);
   }
-  
+
   const range = await calculateDiffRange(gitRoot, fromCommit);
-  
+
   // If from and to commits are the same, no changes
   if (range.fromCommit === range.toCommit) {
     return {
@@ -247,19 +247,20 @@ export async function getIncrementalDiff(
       diffContent: '',
     };
   }
-  
+
   let changedFiles: string[] = [];
   let diffContent = '';
-  
+
   const MAX_DIFF_SIZE = 10 * 1024 * 1024; // 10MB limit
-  
+
   if (range.usingJj) {
     try {
       // Get list of changed files using jj diff
-      const filesResult = await $`jj diff --from ${range.fromCommit} --to ${range.toCommit} --summary`
-        .cwd(gitRoot)
-        .nothrow();
-      
+      const filesResult =
+        await $`jj diff --from ${range.fromCommit} --to ${range.toCommit} --summary`
+          .cwd(gitRoot)
+          .nothrow();
+
       if (filesResult.exitCode === 0) {
         changedFiles = filesResult.stdout
           .toString()
@@ -282,13 +283,13 @@ export async function getIncrementalDiff(
       } else {
         throw new Error(`jj diff --summary failed: ${filesResult.stderr.toString()}`);
       }
-      
+
       // Get full diff content
       const diffResult = await $`jj diff --from ${range.fromCommit} --to ${range.toCommit}`
         .cwd(gitRoot)
         .nothrow()
         .quiet();
-      
+
       if (diffResult.exitCode === 0) {
         const fullDiff = diffResult.stdout.toString();
         if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
@@ -310,7 +311,7 @@ export async function getIncrementalDiff(
         .cwd(gitRoot)
         .nothrow()
         .quiet();
-      
+
       if (filesResult.exitCode === 0) {
         changedFiles = filesResult.stdout
           .toString()
@@ -320,13 +321,13 @@ export async function getIncrementalDiff(
       } else {
         throw new Error(`git diff --name-only failed: ${filesResult.stderr.toString()}`);
       }
-      
+
       // Get full diff content
       const diffResult = await $`git diff ${range.fromCommit}..${range.toCommit}`
         .cwd(gitRoot)
         .nothrow()
         .quiet();
-      
+
       if (diffResult.exitCode === 0) {
         const fullDiff = diffResult.stdout.toString();
         if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
@@ -342,7 +343,7 @@ export async function getIncrementalDiff(
       throw new Error(`Failed to generate incremental git diff: ${errorMessage}`);
     }
   }
-  
+
   return {
     hasChanges: changedFiles.length > 0,
     changedFiles,
@@ -379,13 +380,13 @@ export async function hasIncrementalMetadata(gitRoot: string, planId: string): P
 export async function clearIncrementalMetadata(gitRoot: string, planId: string): Promise<void> {
   const metadataPath = await getMetadataFilePath(gitRoot);
   const tempPath = `${metadataPath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
-  
+
   try {
     const data = await readFile(metadataPath, 'utf-8');
     const allMetadata: Record<string, IncrementalReviewMetadata> = JSON.parse(data);
-    
+
     delete allMetadata[planId];
-    
+
     // Atomic write: write to temp file first, then rename
     const jsonData = JSON.stringify(allMetadata, null, 2);
     await writeFile(tempPath, jsonData, 'utf-8');
@@ -398,7 +399,7 @@ export async function clearIncrementalMetadata(gitRoot: string, planId: string):
     } catch {
       // Ignore cleanup errors
     }
-    
+
     // If the original file doesn't exist or can't be read, nothing to clear
     if (error instanceof Error && error.message.includes('ENOENT')) {
       return;
@@ -422,13 +423,17 @@ export async function getIncrementalSummary(
   totalFiles: number;
 } | null> {
   const metadata = await getLastReviewMetadata(gitRoot, planId);
-  
+
   if (!metadata) {
     return null;
   }
-  
-  const incrementalDiff = await getIncrementalDiff(gitRoot, metadata.lastReviewCommit, metadata.baseBranch);
-  
+
+  const incrementalDiff = await getIncrementalDiff(
+    gitRoot,
+    metadata.lastReviewCommit,
+    metadata.baseBranch
+  );
+
   if (!incrementalDiff.hasChanges) {
     return {
       isIncremental: true,
@@ -438,12 +443,12 @@ export async function getIncrementalSummary(
       totalFiles: 0,
     };
   }
-  
+
   // Categorize files as new vs modified based on what was in the last review
   const lastReviewedFiles = new Set(metadata.reviewedFiles || []);
-  const newFiles = incrementalDiff.changedFiles.filter(file => !lastReviewedFiles.has(file));
-  const modifiedFiles = incrementalDiff.changedFiles.filter(file => lastReviewedFiles.has(file));
-  
+  const newFiles = incrementalDiff.changedFiles.filter((file) => !lastReviewedFiles.has(file));
+  const modifiedFiles = incrementalDiff.changedFiles.filter((file) => lastReviewedFiles.has(file));
+
   return {
     isIncremental: true,
     newFiles,

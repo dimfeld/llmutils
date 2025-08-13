@@ -4,7 +4,7 @@ title: PR review command - Enhanced Review Features and Configuration
 goal: Add advanced review capabilities including custom review criteria,
   configuration options, and improved output formatting
 id: 102
-status: in_progress
+status: done
 priority: low
 dependencies:
   - 101
@@ -12,7 +12,7 @@ parent: 99
 planGeneratedAt: 2025-08-13T20:34:32.142Z
 promptsGeneratedAt: 2025-08-13T21:48:21.383Z
 createdAt: 2025-08-13T20:28:04.715Z
-updatedAt: 2025-08-13T21:48:21.857Z
+updatedAt: 2025-08-13T23:12:11.402Z
 project:
   title: Add PR review command to rmplan for comprehensive code review against
     plan requirements
@@ -47,6 +47,7 @@ project:
     - Provides clear feedback on code quality and requirement compliance
 tasks:
   - title: Add review configuration schema
+    done: true
     description: >
       Extend the rmplan configuration schema to include review-specific settings
       such as default review focus areas, custom instructions, and output
@@ -69,7 +70,6 @@ tasks:
       - src/rmplan/configSchema.test.ts
       - src/rmplan/configSchema.ts
       - src/rmplan/commands/review.ts
-    done: true
     steps:
       - prompt: >
           Create tests in configSchema.test.ts for the new review configuration
@@ -90,6 +90,7 @@ tasks:
           specified. Pass configuration values to the appropriate functions.
         done: true
   - title: Implement custom review instructions
+    done: true
     description: >
       Add support for providing custom review criteria through CLI options or
       configuration, allowing teams to enforce specific standards or focus
@@ -113,7 +114,6 @@ tasks:
       - src/rmplan/commands/review.test.ts
       - src/rmplan/commands/review.ts
       - src/rmplan/rmplan.ts
-    done: true
     steps:
       - prompt: >
           Add tests for custom review instructions in review.test.ts, including
@@ -130,6 +130,7 @@ tasks:
           which should then pass them to getReviewerPrompt.
         done: true
   - title: Create structured output formatting
+    done: true
     description: >
       Develop formatted output options for review results, including markdown
       reports, JSON for tooling integration, and human-readable summaries with
@@ -152,7 +153,6 @@ tasks:
       - src/rmplan/formatters/review_formatter.test.ts
       - src/rmplan/formatters/review_formatter.ts
       - src/rmplan/commands/review.ts
-    done: true
     steps:
       - prompt: >
           Create review_formatter.test.ts with tests for parsing reviewer output
@@ -174,6 +174,7 @@ tasks:
           option, displaying formatted output and optionally saving to file.
         done: true
   - title: Add review result persistence
+    done: true
     description: >
       Implement functionality to save review results to files, track review
       history, and potentially integrate with Git commits or PR comments.
@@ -196,7 +197,6 @@ tasks:
       - src/rmplan/review_persistence.ts
       - src/rmplan/commands/review.ts
       - src/rmplan/rmplan.ts
-    done: true
     steps:
       - prompt: >
           Create review_persistence.test.ts with tests for saving review
@@ -218,6 +218,7 @@ tasks:
           location from config or CLI.
         done: true
   - title: Build incremental review support
+    done: true
     description: >
       Create logic to detect and review only changes made since the last review,
       reducing redundancy and focusing on new modifications. Using the existing
@@ -240,7 +241,6 @@ tasks:
       - src/rmplan/incremental_review.ts
       - src/rmplan/commands/review.ts
       - src/rmplan/rmplan.ts
-    done: true
     steps:
       - prompt: >
           Create incremental_review.test.ts with tests for tracking last review

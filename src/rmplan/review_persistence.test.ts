@@ -222,10 +222,7 @@ describe('loadReviewHistory', () => {
     await writeFile(join(reviewsDir, 'not-a-review.txt'), 'Invalid content');
 
     // Create a file with invalid metadata
-    await writeFile(
-      join(reviewsDir, 'invalid-review.md'),
-      '# Review Results\nMissing metadata'
-    );
+    await writeFile(join(reviewsDir, 'invalid-review.md'), '# Review Results\nMissing metadata');
 
     const history = await loadReviewHistory(reviewsDir);
 
@@ -503,7 +500,8 @@ describe('Error handling and edge cases', () => {
 
   test('preserves unicode characters in review content', async () => {
     const reviewsDir = join(testDir, '.rmfilter', 'reviews');
-    const reviewContent = 'Code review with emojis: ✅ Good, ❌ Issues, ⚠️ Warnings\nUnicode: café résumé naïve';
+    const reviewContent =
+      'Code review with emojis: ✅ Good, ❌ Issues, ⚠️ Warnings\nUnicode: café résumé naïve';
     const metadata: ReviewMetadata = {
       planId: '1',
       planTitle: 'Unicode Test Plan',

@@ -1,7 +1,7 @@
 /**
  * @fileoverview Review persistence functionality for saving review results,
  * managing review history, and integrating with Git notes.
- * 
+ *
  * This module provides functionality to:
  * - Save review results to timestamped files in .rmfilter/reviews/
  * - Store metadata including plan ID, commit hash, timestamp, and reviewer
@@ -41,12 +41,12 @@ function sanitizePlanIdForFilename(planId: string): string {
   if (planId.includes('..')) {
     throw new Error('Invalid plan ID: contains path traversal characters');
   }
-  
+
   // Additional length check
   if (planId.length > 100) {
     throw new Error('Invalid plan ID: too long');
   }
-  
+
   return planId
     .replace(/[^a-zA-Z0-9._-]/g, '-') // Replace unsafe chars (including / and \) with hyphens
     .replace(/-+/g, '-') // Collapse multiple hyphens
@@ -69,10 +69,10 @@ function parseReviewMetadata(content: string): ReviewMetadata | null {
   try {
     const lines = content.split('\n');
     const metadata: Partial<ReviewMetadata> = {};
-    
+
     for (const line of lines) {
       const trimmed = line.trim();
-      
+
       if (trimmed.startsWith('**Plan ID:**')) {
         metadata.planId = trimmed.replace('**Plan ID:**', '').trim();
       } else if (trimmed.startsWith('**Plan Title:**')) {
@@ -91,17 +91,26 @@ function parseReviewMetadata(content: string): ReviewMetadata | null {
         if (filesStr === '(none)') {
           metadata.changedFiles = [];
         } else {
-          metadata.changedFiles = filesStr.split(', ').map(f => f.trim()).filter(Boolean);
+          metadata.changedFiles = filesStr
+            .split(', ')
+            .map((f) => f.trim())
+            .filter(Boolean);
         }
       }
     }
-    
+
     // Validate required fields
-    if (metadata.planId && metadata.planTitle && metadata.commitHash && 
-        metadata.timestamp && metadata.baseBranch && metadata.changedFiles !== undefined) {
+    if (
+      metadata.planId &&
+      metadata.planTitle &&
+      metadata.commitHash &&
+      metadata.timestamp &&
+      metadata.baseBranch &&
+      metadata.changedFiles !== undefined
+    ) {
       return metadata as ReviewMetadata;
     }
-    
+
     return null;
   } catch (error) {
     debugLog('Failed to parse review metadata: %o', error);
@@ -115,7 +124,7 @@ function parseReviewMetadata(content: string): ReviewMetadata | null {
  */
 export async function createReviewsDirectory(gitRoot: string): Promise<string> {
   const reviewsDir = join(gitRoot, '.rmfilter', 'reviews');
-  
+
   try {
     await mkdir(reviewsDir, { recursive: true });
     debugLog('Created reviews directory: %s', reviewsDir);
@@ -123,13 +132,13 @@ export async function createReviewsDirectory(gitRoot: string): Promise<string> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to create reviews directory: ${errorMessage}`);
   }
-  
+
   return reviewsDir;
 }
 
 /**
  * Saves a review result to a timestamped file with metadata.
- * 
+ *
  * @param reviewsDir - Directory where review files are stored
  * @param reviewContent - The actual review content
  * @param metadata - Review metadata including plan info, commit hash, etc.
@@ -141,13 +150,13 @@ export async function saveReviewResult(
 ): Promise<string> {
   // Ensure the reviews directory exists
   await mkdir(reviewsDir, { recursive: true });
-  
+
   // Generate safe filename
   const safePlanId = sanitizePlanIdForFilename(metadata.planId);
   const timestampStr = formatTimestampForFilename(metadata.timestamp);
   const filename = `review-${safePlanId}-${timestampStr}.md`;
   const filePath = join(reviewsDir, filename);
-  
+
   // Format the file content with metadata header
   const fileContent = [
     '# Review Results',
@@ -166,7 +175,7 @@ export async function saveReviewResult(
     '',
     reviewContent,
   ].join('\n');
-  
+
   try {
     await writeFile(filePath, fileContent, 'utf-8');
     debugLog('Saved review result to: %s', filePath);
@@ -193,21 +202,21 @@ export async function loadReviewHistory(reviewsDir: string): Promise<ReviewHisto
     debugLog('Reviews directory not accessible: %s', reviewsDir);
     return [];
   }
-  
+
   try {
     const files = await readdir(reviewsDir);
-    const reviewFiles = files.filter(file => 
-      file.startsWith('review-') && extname(file) === '.md'
+    const reviewFiles = files.filter(
+      (file) => file.startsWith('review-') && extname(file) === '.md'
     );
-    
+
     const historyEntries: ReviewHistoryEntry[] = [];
-    
+
     for (const filename of reviewFiles) {
       try {
         const filePath = join(reviewsDir, filename);
         const content = await readFile(filePath, 'utf-8');
         const metadata = parseReviewMetadata(content);
-        
+
         if (metadata) {
           historyEntries.push({
             metadata,
@@ -222,13 +231,12 @@ export async function loadReviewHistory(reviewsDir: string): Promise<ReviewHisto
         // Continue processing other files
       }
     }
-    
+
     // Sort by timestamp, newest first
     historyEntries.sort((a, b) => b.metadata.timestamp.getTime() - a.metadata.timestamp.getTime());
-    
+
     debugLog('Loaded %d review history entries', historyEntries.length);
     return historyEntries;
-    
   } catch (error) {
     debugLog('Failed to load review history: %o', error);
     return [];
@@ -249,27 +257,27 @@ function isValidCommitHash(hash: string): boolean {
  */
 function validateReviewSummary(summary: string): string {
   const trimmed = summary.trim();
-  
+
   if (trimmed.length === 0) {
     throw new Error('Review summary cannot be empty');
   }
-  
+
   if (trimmed.length > 10000) {
     throw new Error('Review summary too long (max 10000 characters)');
   }
-  
+
   // Check for potentially dangerous content
   if (trimmed.includes('\x00') || trimmed.includes('\x1b')) {
     throw new Error('Review summary contains invalid characters');
   }
-  
+
   return trimmed;
 }
 
 /**
  * Creates a Git note with review summary for the specified commit.
  * Git notes are attached to commits and can store additional metadata.
- * 
+ *
  * @param gitRoot - Root directory of the Git repository
  * @param commitHash - The commit to attach the note to
  * @param reviewSummary - Summary of the review to store in the note
@@ -285,7 +293,7 @@ export async function createGitNote(
     debugLog('Invalid commit hash format: %s', commitHash);
     return false;
   }
-  
+
   try {
     const validatedSummary = validateReviewSummary(reviewSummary);
     reviewSummary = validatedSummary;
@@ -293,30 +301,29 @@ export async function createGitNote(
     debugLog('Invalid review summary: %s', (error as Error).message);
     return false;
   }
-  
+
   try {
     // Create a git note with the review summary - use proper argument escaping
     const result = await $`git notes add -m ${reviewSummary} ${commitHash}`.cwd(gitRoot).nothrow();
-    
+
     if (result.exitCode === 0) {
       debugLog('Created git note for commit %s', commitHash);
       return true;
     } else {
       const errorMsg = result.stderr.toString().trim() || 'Unknown error';
-      debugLog('Failed to create git note. Exit code: %d, stderr: %s', 
-        result.exitCode, errorMsg);
-      
+      debugLog('Failed to create git note. Exit code: %d, stderr: %s', result.exitCode, errorMsg);
+
       // Handle specific error cases
       if (errorMsg.includes('Notes already exist')) {
         debugLog('Git note already exists for commit %s', commitHash);
         return false;
       }
-      
+
       if (errorMsg.includes('bad object')) {
         debugLog('Invalid commit hash: %s', commitHash);
         return false;
       }
-      
+
       return false;
     }
   } catch (error) {
@@ -335,13 +342,13 @@ export async function getLastReviewForPlan(
   planId: string
 ): Promise<ReviewHistoryEntry | null> {
   const history = await loadReviewHistory(reviewsDir);
-  
+
   for (const entry of history) {
     if (entry.metadata.planId === planId) {
       return entry;
     }
   }
-  
+
   return null;
 }
 
@@ -355,8 +362,8 @@ export async function getReviewsInDateRange(
   endDate: Date
 ): Promise<ReviewHistoryEntry[]> {
   const history = await loadReviewHistory(reviewsDir);
-  
-  return history.filter(entry => {
+
+  return history.filter((entry) => {
     const reviewTime = entry.metadata.timestamp.getTime();
     return reviewTime >= startDate.getTime() && reviewTime <= endDate.getTime();
   });
@@ -366,24 +373,27 @@ export async function getReviewsInDateRange(
  * Generates a summary of recent review activity.
  * Returns statistics about reviews conducted in the past period.
  */
-export async function getReviewSummary(reviewsDir: string, daysPast: number = 7): Promise<{
+export async function getReviewSummary(
+  reviewsDir: string,
+  daysPast: number = 7
+): Promise<{
   totalReviews: number;
   uniquePlans: number;
   reviewers: string[];
   averageReviewsPerDay: number;
 }> {
   const endDate = new Date();
-  const startDate = new Date(endDate.getTime() - (daysPast * 24 * 60 * 60 * 1000));
-  
+  const startDate = new Date(endDate.getTime() - daysPast * 24 * 60 * 60 * 1000);
+
   const recentReviews = await getReviewsInDateRange(reviewsDir, startDate, endDate);
-  
-  const uniquePlans = new Set(recentReviews.map(r => r.metadata.planId));
+
+  const uniquePlans = new Set(recentReviews.map((r) => r.metadata.planId));
   const reviewers = new Set(
     recentReviews
-      .map(r => r.metadata.reviewer)
+      .map((r) => r.metadata.reviewer)
       .filter((reviewer): reviewer is string => reviewer !== undefined)
   );
-  
+
   return {
     totalReviews: recentReviews.length,
     uniquePlans: uniquePlans.size,

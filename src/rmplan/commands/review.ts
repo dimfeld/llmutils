@@ -44,7 +44,7 @@ import { statSync } from 'node:fs';
 async function getCurrentCommitHash(gitRoot: string): Promise<string | null> {
   try {
     const usingJj = await getUsingJj();
-    
+
     if (usingJj) {
       const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow();
       if (result.exitCode === 0) {
@@ -59,7 +59,7 @@ async function getCurrentCommitHash(gitRoot: string): Promise<string | null> {
   } catch (error) {
     log(chalk.yellow(`Warning: Could not get current commit hash: ${(error as Error).message}`));
   }
-  
+
   return null;
 }
 
@@ -301,7 +301,11 @@ export async function handleReviewCommand(planFile: string, options: any, comman
         log(chalk.yellow('No changes detected since last review. Nothing new to review.'));
         return;
       }
-      log(chalk.cyan(`Review delta: ${incrementalSummary.newFiles.length} new files, ${incrementalSummary.modifiedFiles.length} modified files`));
+      log(
+        chalk.cyan(
+          `Review delta: ${incrementalSummary.newFiles.length} new files, ${incrementalSummary.modifiedFiles.length} modified files`
+        )
+      );
     }
   }
 
@@ -309,16 +313,16 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   const diffResult = await generateDiffForReview(gitRoot, incrementalOptions);
 
   if (!diffResult.hasChanges) {
-    const nothingMessage = incrementalOptions.incremental ? 
-      'No changes detected since last review. Nothing to review.' :
-      'No changes detected compared to trunk branch. Nothing to review.';
+    const nothingMessage = incrementalOptions.incremental
+      ? 'No changes detected since last review. Nothing to review.'
+      : 'No changes detected compared to trunk branch. Nothing to review.';
     log(chalk.yellow(nothingMessage));
     return;
   }
 
-  const changedFilesMessage = incrementalOptions.incremental ?
-    `Found ${diffResult.changedFiles.length} changed files since last review` :
-    `Found ${diffResult.changedFiles.length} changed files`;
+  const changedFilesMessage = incrementalOptions.incremental
+    ? `Found ${diffResult.changedFiles.length} changed files since last review`
+    : `Found ${diffResult.changedFiles.length} changed files`;
   log(chalk.cyan(changedFilesMessage));
   log(chalk.gray(`Comparing against: ${diffResult.baseBranch}`));
 
@@ -474,15 +478,16 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     const formattedOutput = formatter.format(reviewResult, formatterOptions);
 
     // Persistence logic - save to structured review history
-    const shouldSave = options.save || 
-      (config.review?.autoSave && !options.noSave) || 
+    const shouldSave =
+      options.save ||
+      (config.review?.autoSave && !options.noSave) ||
       (!options.noSave && !options.outputFile && !config.review?.saveLocation);
 
     if (shouldSave) {
       try {
         const reviewsDir = await createReviewsDirectory(gitRoot);
         const currentCommitHash = await getCurrentCommitHash(gitRoot);
-        
+
         if (currentCommitHash) {
           const metadata: ReviewMetadata = {
             planId: planData.id?.toString() ?? 'unknown',
@@ -511,7 +516,8 @@ export async function handleReviewCommand(planFile: string, options: any, comman
           log(chalk.yellow('Warning: Could not save review - unable to determine commit hash'));
         }
       } catch (persistenceErr) {
-        const persistenceErrorMessage = persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
+        const persistenceErrorMessage =
+          persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
         log(chalk.yellow(`Warning: Could not save review to history: ${persistenceErrorMessage}`));
       }
     }
@@ -555,15 +561,20 @@ export async function handleReviewCommand(planFile: string, options: any, comman
             reviewedFiles: diffResult.changedFiles,
             changeCount: diffResult.changedFiles.length,
           };
-          
+
           await storeLastReviewMetadata(gitRoot, planData.id.toString(), incrementalMetadata);
           if (incrementalOptions.incremental) {
             log(chalk.gray('Incremental review metadata updated for future reviews'));
           }
         }
       } catch (metadataErr) {
-        const metadataErrorMessage = metadataErr instanceof Error ? metadataErr.message : String(metadataErr);
-        log(chalk.yellow(`Warning: Could not store incremental review metadata: ${metadataErrorMessage}`));
+        const metadataErrorMessage =
+          metadataErr instanceof Error ? metadataErr.message : String(metadataErr);
+        log(
+          chalk.yellow(
+            `Warning: Could not store incremental review metadata: ${metadataErrorMessage}`
+          )
+        );
       }
     }
 
@@ -676,17 +687,21 @@ export async function generateDiffForReview(
     if (!options.planId) {
       throw new Error('Plan ID is required for incremental reviews');
     }
-    
+
     const lastReviewMetadata = await getLastReviewMetadata(gitRoot, options.planId);
     if (!lastReviewMetadata) {
       // No previous review found, fall back to regular diff
       console.log('No previous review found for incremental mode, generating full diff...');
       return generateRegularDiffForReview(gitRoot);
     }
-    
-    return getIncrementalDiff(gitRoot, lastReviewMetadata.lastReviewCommit, lastReviewMetadata.baseBranch);
+
+    return getIncrementalDiff(
+      gitRoot,
+      lastReviewMetadata.lastReviewCommit,
+      lastReviewMetadata.baseBranch
+    );
   }
-  
+
   // Handle explicit since commit
   if (options?.sinceCommit) {
     const baseBranch = await getTrunkBranch(gitRoot);
@@ -695,7 +710,7 @@ export async function generateDiffForReview(
     }
     return getIncrementalDiff(gitRoot, options.sinceCommit, baseBranch);
   }
-  
+
   // Regular diff generation
   return generateRegularDiffForReview(gitRoot);
 }

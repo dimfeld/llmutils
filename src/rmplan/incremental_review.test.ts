@@ -20,7 +20,7 @@ describe('incremental_review', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'incremental-review-test-'));
     testRepoDir = join(tempDir, 'test-repo');
-    
+
     // Check if jj is available
     try {
       await $`jj --version`.quiet().nothrow();
@@ -53,7 +53,13 @@ describe('incremental_review', () => {
     await $`jj config set --repo user.name "Test User"`.cwd(repoDir).quiet().nothrow();
   }
 
-  async function createCommit(repoDir: string, filename: string, content: string, message: string, useJj = false) {
+  async function createCommit(
+    repoDir: string,
+    filename: string,
+    content: string,
+    message: string,
+    useJj = false
+  ) {
     await writeFile(join(repoDir, filename), content);
     if (useJj) {
       await $`jj commit -m "${message}"`.cwd(repoDir).quiet().nothrow();
@@ -77,7 +83,7 @@ describe('incremental_review', () => {
     test('should store and retrieve metadata for Git repository', async () => {
       await initGitRepo(testRepoDir);
       await createCommit(testRepoDir, 'test.txt', 'initial content', 'Initial commit');
-      
+
       const commitHash = await getCurrentCommitHash(testRepoDir);
       const metadata: IncrementalReviewMetadata = {
         lastReviewCommit: commitHash,
@@ -100,10 +106,10 @@ describe('incremental_review', () => {
         console.log('Skipping jj test: jj not available');
         return;
       }
-      
+
       await initJjRepo(testRepoDir);
       await createCommit(testRepoDir, 'test.txt', 'initial content', 'Initial commit', true);
-      
+
       const commitHash = await getCurrentCommitHash(testRepoDir, true);
       const metadata: IncrementalReviewMetadata = {
         lastReviewCommit: commitHash,
@@ -129,7 +135,7 @@ describe('incremental_review', () => {
     test('should handle multiple plans independently', async () => {
       await initGitRepo(testRepoDir);
       await createCommit(testRepoDir, 'test.txt', 'initial content', 'Initial commit');
-      
+
       const commitHash = await getCurrentCommitHash(testRepoDir);
       const metadata1: IncrementalReviewMetadata = {
         lastReviewCommit: commitHash,
@@ -137,7 +143,7 @@ describe('incremental_review', () => {
         planId: 'plan-1',
         baseBranch: 'main',
       };
-      
+
       const metadata2: IncrementalReviewMetadata = {
         lastReviewCommit: commitHash,
         lastReviewTimestamp: new Date(),
@@ -163,7 +169,7 @@ describe('incremental_review', () => {
       await initGitRepo(testRepoDir);
       await createCommit(testRepoDir, 'file1.txt', 'content 1', 'First commit');
       const firstCommit = await getCurrentCommitHash(testRepoDir);
-      
+
       await createCommit(testRepoDir, 'file2.txt', 'content 2', 'Second commit');
       await createCommit(testRepoDir, 'file3.txt', 'content 3', 'Third commit');
 
@@ -178,11 +184,11 @@ describe('incremental_review', () => {
         console.log('Skipping jj test: jj not available');
         return;
       }
-      
+
       await initJjRepo(testRepoDir);
       await createCommit(testRepoDir, 'file1.txt', 'content 1', 'First commit', true);
       const firstCommit = await getCurrentCommitHash(testRepoDir, true);
-      
+
       await createCommit(testRepoDir, 'file2.txt', 'content 2', 'Second commit', true);
 
       const range = await calculateDiffRange(testRepoDir, firstCommit);
@@ -195,20 +201,29 @@ describe('incremental_review', () => {
   describe('filterFilesByModificationTime', () => {
     test('should filter files modified since given timestamp', async () => {
       await initGitRepo(testRepoDir);
-      
+
       // Create initial files
       await createCommit(testRepoDir, 'old-file.txt', 'old content', 'Old commit');
       const oldTimestamp = new Date();
-      
+
       // Wait a bit to ensure timestamp difference
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
       await createCommit(testRepoDir, 'new-file.txt', 'new content', 'New commit');
-      await createCommit(testRepoDir, 'another-new.txt', 'another new content', 'Another new commit');
-      
+      await createCommit(
+        testRepoDir,
+        'another-new.txt',
+        'another new content',
+        'Another new commit'
+      );
+
       const changedFiles = ['old-file.txt', 'new-file.txt', 'another-new.txt'];
-      const filteredFiles = await filterFilesByModificationTime(testRepoDir, changedFiles, oldTimestamp);
-      
+      const filteredFiles = await filterFilesByModificationTime(
+        testRepoDir,
+        changedFiles,
+        oldTimestamp
+      );
+
       // Should only include files modified after the timestamp
       expect(filteredFiles).toContain('new-file.txt');
       expect(filteredFiles).toContain('another-new.txt');
@@ -219,11 +234,15 @@ describe('incremental_review', () => {
       await initGitRepo(testRepoDir);
       await createCommit(testRepoDir, 'file1.txt', 'content 1', 'Commit 1');
       await createCommit(testRepoDir, 'file2.txt', 'content 2', 'Commit 2');
-      
+
       const veryOldTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
       const changedFiles = ['file1.txt', 'file2.txt'];
-      const filteredFiles = await filterFilesByModificationTime(testRepoDir, changedFiles, veryOldTimestamp);
-      
+      const filteredFiles = await filterFilesByModificationTime(
+        testRepoDir,
+        changedFiles,
+        veryOldTimestamp
+      );
+
       expect(filteredFiles).toEqual(changedFiles);
     });
 
@@ -231,8 +250,12 @@ describe('incremental_review', () => {
       await initGitRepo(testRepoDir);
       const timestamp = new Date();
       const changedFiles = ['non-existent.txt', 'another-missing.txt'];
-      
-      const filteredFiles = await filterFilesByModificationTime(testRepoDir, changedFiles, timestamp);
+
+      const filteredFiles = await filterFilesByModificationTime(
+        testRepoDir,
+        changedFiles,
+        timestamp
+      );
       expect(filteredFiles).toEqual([]);
     });
   });
@@ -242,14 +265,14 @@ describe('incremental_review', () => {
       await initGitRepo(testRepoDir);
       await createCommit(testRepoDir, 'file1.txt', 'initial content', 'Initial commit');
       const initialCommit = await getCurrentCommitHash(testRepoDir);
-      
+
       await createCommit(testRepoDir, 'file2.txt', 'new content', 'Add new file');
       await writeFile(join(testRepoDir, 'file1.txt'), 'modified content');
       await $`git add file1.txt`.cwd(testRepoDir).quiet();
       await $`git commit -m "Modify existing file"`.cwd(testRepoDir).quiet();
 
       const diff = await getIncrementalDiff(testRepoDir, initialCommit, 'main');
-      
+
       expect(diff.hasChanges).toBe(true);
       expect(diff.changedFiles).toContain('file2.txt');
       expect(diff.changedFiles).toContain('file1.txt');
@@ -263,15 +286,15 @@ describe('incremental_review', () => {
         console.log('Skipping jj test: jj not available');
         return;
       }
-      
+
       await initJjRepo(testRepoDir);
       await createCommit(testRepoDir, 'file1.txt', 'initial content', 'Initial commit', true);
       const initialCommit = await getCurrentCommitHash(testRepoDir, true);
-      
+
       await createCommit(testRepoDir, 'file2.txt', 'new content', 'Add new file', true);
 
       const diff = await getIncrementalDiff(testRepoDir, initialCommit, 'main');
-      
+
       expect(diff.hasChanges).toBe(true);
       expect(diff.changedFiles).toContain('file2.txt');
       expect(diff.baseBranch).toBe('main');
@@ -284,7 +307,7 @@ describe('incremental_review', () => {
       const commit = await getCurrentCommitHash(testRepoDir);
 
       const diff = await getIncrementalDiff(testRepoDir, commit, 'main');
-      
+
       expect(diff.hasChanges).toBe(false);
       expect(diff.changedFiles).toEqual([]);
     });
@@ -293,14 +316,16 @@ describe('incremental_review', () => {
       await initGitRepo(testRepoDir);
       await createCommit(testRepoDir, 'file1.txt', 'content', 'Single commit');
 
-      await expect(getIncrementalDiff(testRepoDir, 'invalid-commit-hash', 'main')).rejects.toThrow();
+      await expect(
+        getIncrementalDiff(testRepoDir, 'invalid-commit-hash', 'main')
+      ).rejects.toThrow();
     });
   });
 
   describe('edge cases and error handling', () => {
     test('should handle corrupted metadata file gracefully', async () => {
       await initGitRepo(testRepoDir);
-      
+
       // Create corrupt metadata file
       const metadataDir = join(testRepoDir, '.rmfilter', 'reviews');
       await $`mkdir -p ${metadataDir}`.quiet();
@@ -319,7 +344,7 @@ describe('incremental_review', () => {
     test('should create necessary directories when storing metadata', async () => {
       await initGitRepo(testRepoDir);
       await createCommit(testRepoDir, 'test.txt', 'content', 'Initial commit');
-      
+
       const commitHash = await getCurrentCommitHash(testRepoDir);
       const metadata: IncrementalReviewMetadata = {
         lastReviewCommit: commitHash,
@@ -335,7 +360,7 @@ describe('incremental_review', () => {
         console.error('Error in storeLastReviewMetadata:', error);
         throw error;
       }
-      
+
       // Should be retrievable
       const retrieved = await getLastReviewMetadata(testRepoDir, 'test-plan');
       expect(retrieved).not.toBeNull();
