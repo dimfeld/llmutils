@@ -177,22 +177,69 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
           ({ filePath }) => filePath !== preferredFile.filePath
         );
       } else {
-        // Check if we're on a feature branch and if any conflicting files were changed on the current branch
-        let changedFile: (typeof files)[0] | undefined;
+        // Separate files into two groups: changed on branch vs unchanged
+        const changedFiles: typeof files = [];
+        const unchangedFiles: typeof files = [];
+        
         if (isFeatureBranch && changedPlanFilesSet.size > 0) {
-          changedFile = files.find(({ filePath }) => changedPlanFilesSet.has(filePath));
+          for (const file of files) {
+            if (changedPlanFilesSet.has(file.filePath)) {
+              changedFiles.push(file);
+            } else {
+              unchangedFiles.push(file);
+            }
+          }
+          
+          debugLog(
+            `ID ${id}: Found ${changedFiles.length} changed files and ${unchangedFiles.length} unchanged files`
+          );
         }
 
-        if (changedFile) {
-          debugLog(
-            `ID ${id}: Found file changed on branch ${currentBranch ?? 'unknown'}: ${changedFile.filePath}`
-          );
-          // Keep the changed file, renumber all others
-          plansToKeepAndRenumber = files.filter(
-            ({ filePath }) => filePath !== changedFile.filePath
-          );
+        if (changedFiles.length > 0) {
+          // Files changed on branch should ALL be renumbered (they're the newer conflicting files)
+          // Among unchanged files, use timestamp logic to pick ONE to keep
+          if (unchangedFiles.length > 0) {
+            // Use timestamp logic on unchanged files to pick one to keep
+            const unchangedWithTimestamps = unchangedFiles.map(({ plan, filePath }) => ({
+              filePath,
+              plan,
+              createdAt: plan.createdAt || new Date(0).toISOString(),
+            }));
+
+            // Sort by createdAt, keeping the oldest unchanged file
+            unchangedWithTimestamps.sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+
+            const fileToKeep = unchangedWithTimestamps[0];
+            debugLog(`ID ${id}: Keeping unchanged file ${fileToKeep.filePath} (oldest), renumbering all changed files and other unchanged files`);
+            
+            // Renumber all changed files plus all unchanged files except the oldest
+            plansToKeepAndRenumber = [
+              ...changedFiles,
+              ...unchangedWithTimestamps.slice(1).map(({ filePath, plan }) => ({ filePath, plan }))
+            ];
+          } else {
+            // No unchanged files, so all files were changed on branch - renumber all but one
+            // Use timestamp logic to pick one changed file to keep
+            debugLog(`ID ${id}: All files were changed on branch, using timestamp logic`);
+            const changedWithTimestamps = changedFiles.map(({ plan, filePath }) => ({
+              filePath,
+              plan,
+              createdAt: plan.createdAt || new Date(0).toISOString(),
+            }));
+
+            changedWithTimestamps.sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+
+            // Keep the first (oldest), renumber the rest
+            plansToKeepAndRenumber = changedWithTimestamps
+              .slice(1)
+              .map(({ filePath, plan }) => ({ filePath, plan }));
+          }
         } else {
-          // No changed file found among conflicts or not on feature branch, fall back to timestamp logic
+          // No changed files found among conflicts or not on feature branch, fall back to timestamp logic
           if (isFeatureBranch && changedPlanFilesSet.size > 0) {
             debugLog(`ID ${id}: No changed files found among conflicts, using timestamp logic`);
           }

@@ -463,7 +463,7 @@ describe('rmplan renumber', () => {
   });
 
   // Branch-aware renumber tests
-  test('prefers plans changed on current feature branch when resolving conflicts', async () => {
+  test('renumbers plans changed on current feature branch when resolving conflicts', async () => {
     // Mock git functions to simulate being on a feature branch
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
@@ -480,15 +480,15 @@ describe('rmplan renumber', () => {
 
     await handleRenumber({}, createMockCommand());
 
-    // The newer plan (changed on branch) should keep ID 1 despite being newer
-    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
-    expect(newPlan.id).toBe(1);
-    expect(newPlan.title).toBe('Newer plan - changed on branch');
-
-    // The older plan should be renumbered to 2
-    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
-    expect(oldPlan.id).toBe(2);
+    // The older plan (unchanged on branch) should keep ID 1
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    expect(oldPlan.id).toBe(1);
     expect(oldPlan.title).toBe('Older plan');
+
+    // The newer plan (changed on branch) should be renumbered to 2
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    expect(newPlan.id).toBe(2);
+    expect(newPlan.title).toBe('Newer plan - changed on branch');
   });
 
   test('uses timestamp logic when on trunk branch (main)', async () => {
@@ -519,7 +519,7 @@ describe('rmplan renumber', () => {
     expect(newPlan.title).toBe('Newer plan');
   });
 
-  test('prefer flag overrides branch-based preference', async () => {
+  test('keep flag overrides branch-based preference', async () => {
     // Mock git functions to simulate being on a feature branch
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
@@ -534,18 +534,18 @@ describe('rmplan renumber', () => {
     await createPlan(1, 'Older plan', '1-old.yml', oldTime);
     await createPlan(1, 'Newer plan - changed on branch', '1-new.yml', newTime);
 
-    // Use --prefer to override branch-based preference, preferring the older file
-    await handleRenumber({ prefer: ['1-old.yml'] }, createMockCommand());
+    // Use --keep to override branch-based preference, keeping the changed file
+    await handleRenumber({ keep: ['1-new.yml'] }, createMockCommand());
 
-    // The older plan should keep ID 1 due to explicit preference
-    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
-    expect(oldPlan.id).toBe(1);
-    expect(oldPlan.title).toBe('Older plan');
-
-    // The newer plan should be renumbered despite being changed on branch
-    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
-    expect(newPlan.id).toBe(2);
+    // The newer plan should keep ID 1 due to explicit preference, even though it would normally be renumbered
+    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
+    expect(newPlan.id).toBe(1);
     expect(newPlan.title).toBe('Newer plan - changed on branch');
+
+    // The older plan should be renumbered
+    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
+    expect(oldPlan.id).toBe(2);
+    expect(oldPlan.title).toBe('Older plan');
   });
 
   test('falls back to timestamp logic when no conflicting files were changed on branch', async () => {
