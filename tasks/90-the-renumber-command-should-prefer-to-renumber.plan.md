@@ -34,32 +34,33 @@ tasks:
       - Add appropriate logging for debugging
     files:
       - src/rmplan/commands/renumber.ts
+    done: true
     steps:
       - prompt: >
           Import the `getChangedFilesOnBranch` function and the existing
           `getCurrentBranchName` function from the git module at the top of
           renumber.ts.
-        done: false
+        done: true
       - prompt: >
           After getting the gitRoot (around line 21), add code to detect the
           current branch using getCurrentBranchName().
 
           Store whether we're on a feature branch (not main/master) in a
           variable.
-        done: false
+        done: true
       - prompt: >
           If on a feature branch, call getChangedFilesOnBranch() to get the list
           of changed files.
 
           Convert these to absolute paths and filter to only include plan files
           (.plan.md, .yml, .yaml).
-        done: false
+        done: true
       - prompt: >
           Add debug logging to show the current branch and number of changed
           plan files found.
 
           This will help with troubleshooting the feature.
-        done: false
+        done: true
   - title: Implement branch-based preference in conflict resolution
     description: >
       Update the conflict resolution logic within `handleRenumber`. When an ID
@@ -84,37 +85,38 @@ tasks:
       the branch
     files:
       - src/rmplan/commands/renumber.ts
+    done: true
     steps:
       - prompt: >
           Create a Set from the changed plan files (if any) for efficient
           lookup.
 
           This should be done before the conflict resolution loop starts.
-        done: false
+        done: true
       - prompt: >
           In the conflict resolution loop (around line 93), after checking for
           preferred files, add a new branch-based preference check.
 
           This should only run if we're on a feature branch and no preferred
           file was found.
-        done: false
+        done: true
       - prompt: >
           Implement the logic to find if any conflicting files are in the
           changed files set.
 
           If found, that file should be kept and others should be renumbered.
-        done: false
+        done: true
       - prompt: >
           Add debug logging when a file is preferred due to being changed on the
           current branch.
 
           If no changed file is found among conflicts, fall back to the existing
           createdAt logic.
-        done: false
+        done: true
       - prompt: >
           Ensure the branch-based preference respects the precedence order:
           --prefer flag > branch-based > createdAt timestamp.
-        done: false
+        done: true
   - title: Add integration tests for the branch-aware renumber command
     description: >
       Add new tests to `renumber.test.ts` to validate the complete feature.
@@ -136,6 +138,7 @@ tasks:
       - Test both feature branch and trunk branch behavior
     files:
       - src/rmplan/commands/renumber.test.ts
+    done: true
     steps:
       - prompt: >
           Add a new test case "prefers plans changed on current feature branch
