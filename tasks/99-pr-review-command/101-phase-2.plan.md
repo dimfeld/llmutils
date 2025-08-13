@@ -4,7 +4,7 @@ title: PR review command - Parent-Child Plan Integration
 goal: Enhance the review command to intelligently handle plan hierarchies and
   multiple plan reviews
 id: 101
-status: pending
+status: in_progress
 priority: medium
 dependencies:
   - 100
@@ -12,7 +12,7 @@ parent: 99
 planGeneratedAt: 2025-08-13T20:34:32.142Z
 promptsGeneratedAt: 2025-08-13T21:14:17.043Z
 createdAt: 2025-08-13T20:28:04.715Z
-updatedAt: 2025-08-13T21:14:17.043Z
+updatedAt: 2025-08-13T21:14:17.484Z
 project:
   title: Add PR review command to rmplan for comprehensive code review against
     plan requirements
