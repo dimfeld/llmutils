@@ -139,7 +139,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       customInstructions = await readFile(instructionsPath, 'utf-8');
       log(chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`));
     } catch (err) {
-      log(chalk.yellow(`Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${err}`));
+      log(chalk.yellow(`Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${err as Error}`));
     }
   } else if (config.review?.customInstructionsPath) {
     // Fall back to config file instructions
@@ -150,7 +150,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       customInstructions = await readFile(instructionsPath, 'utf-8');
       log(chalk.gray(`Using custom instructions from config: ${config.review.customInstructionsPath}`));
     } catch (err) {
-      log(chalk.yellow(`Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${err}`));
+      log(chalk.yellow(`Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${err as Error}`));
     }
   }
 
