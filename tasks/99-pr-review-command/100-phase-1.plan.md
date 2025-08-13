@@ -54,6 +54,7 @@ tasks:
       handling and option parsing. The handler should support resolving plans by
       both file path and plan ID, load the plan details, and prepare for diff
       generation and review execution.
+    done: true
     files:
       - /src/rmplan/commands/review.ts
       - /src/rmplan/commands/review.test.ts
@@ -89,6 +90,7 @@ tasks:
       follow the established pattern of other rmplan commands, using dynamic
       imports for the handler and supporting standard CLI options. Include help
       text that clearly explains the command's purpose and available options.
+    done: true
     files:
       - /src/rmplan/rmplan.ts
     steps:
@@ -119,6 +121,7 @@ tasks:
       (main/master), generate both a list of changed files and the actual diff
       content, and format the output appropriately for inclusion in the review
       prompt.
+    done: true
     files:
       - /src/rmplan/commands/review.ts
       - /src/rmplan/commands/review.test.ts
@@ -154,6 +157,7 @@ tasks:
       code changes were made, and instruct the reviewer to evaluate both code
       quality and requirement compliance. Use the existing reviewer agent prompt
       structure from agent_prompts.ts as the foundation.
+    done: true
     files:
       - /src/rmplan/commands/review.ts
       - /src/rmplan/commands/review.test.ts
@@ -189,6 +193,7 @@ tasks:
       options, configure it for reviewer agent mode, and execute the review
       prompt. Support all standard executor options including model selection
       and execution mode.
+    done: true
     files:
       - /src/rmplan/commands/review.ts
       - /src/rmplan/commands/review.test.ts
