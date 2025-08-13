@@ -402,15 +402,6 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       : focusInstruction;
   }
 
-  // Build the review prompt
-  const reviewPrompt = buildReviewPrompt(
-    planData,
-    diffResult,
-    parentChain,
-    completedChildren,
-    customInstructions
-  );
-
   // Set up executor
   const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
   const sharedExecutorOptions: ExecutorCommonOptions = {
@@ -420,6 +411,20 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+
+  // If the executor wants rmfilter output, that means that we need to send it the diff.
+  // TODO rename that flag to something more generic
+  const includeDiff = executor.prepareStepOptions?.()?.rmfilter ?? true;
+
+  // Build the review prompt
+  const reviewPrompt = buildReviewPrompt(
+    planData,
+    diffResult,
+    includeDiff,
+    parentChain,
+    completedChildren,
+    customInstructions
+  );
 
   // Execute the review
   if (options.dryRun) {
@@ -826,6 +831,7 @@ async function generateRegularDiffForReview(gitRoot: string): Promise<DiffResult
 export function buildReviewPrompt(
   planData: PlanSchema,
   diffResult: DiffResult,
+  includeDiff: boolean = false,
   parentChain: PlanWithFilename[] = [],
   completedChildren: PlanWithFilename[] = [],
   customInstructions?: string
@@ -935,7 +941,9 @@ export function buildReviewPrompt(
     changedFilesSection.push(`- ${file}`);
   });
 
-  changedFilesSection.push(``, `**Full Diff:**`, ``, '```diff', diffResult.diffContent, '```');
+  if (includeDiff) {
+    changedFilesSection.push(``, `**Full Diff:**`, ``, '```diff', diffResult.diffContent, '```');
+  }
 
   // Combine everything into the final prompt
   const contextContent = [
