@@ -58,6 +58,7 @@ tasks:
     files:
       - src/rmplan/commands/review.ts
       - src/rmplan/commands/review.test.ts
+    done: true
     steps:
       - prompt: >
           Add tests in review.test.ts for parent context inclusion. Create test

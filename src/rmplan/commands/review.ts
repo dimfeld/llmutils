@@ -9,8 +9,10 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getReviewerPrompt } from '../executors/claude_code/agent_prompts.js';
-import { readPlanFile, resolvePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFile, readAllPlans } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { getParentChain, getCompletedChildren } from '../utils/hierarchy.js';
+import type { PlanWithFilename } from '../utils/hierarchy.js';
 
 export async function handleReviewCommand(planFile: string, options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -52,23 +54,58 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
   log(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
 
-  // Load parent plan if this plan has a parent
-  let parentPlan: PlanSchema | undefined = undefined;
-  if (planData.parent) {
-    try {
-      // Try to resolve parent plan by ID
-      const parentPlanFile = await resolvePlanFile(planData.parent.toString(), globalOpts.config);
-      parentPlan = await readPlanFile(parentPlanFile);
-      log(chalk.cyan(`Parent plan context loaded: ${parentPlan.id} - ${parentPlan.title}`));
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log(chalk.yellow(`Warning: Could not load parent plan ${planData.parent}: ${errorMessage}`));
-      // Continue without parent context
+  // Load all plans for hierarchy traversal
+  const gitRoot = await getGitRoot();
+  const plansConfig = globalOpts.config || gitRoot;
+  
+  let parentChain: PlanWithFilename[] = [];
+  let completedChildren: PlanWithFilename[] = [];
+  
+  try {
+    const { plans: allPlans } = await readAllPlans(plansConfig);
+
+    // Add filename to the current plan for hierarchy compatibility
+    const planWithFilename: PlanWithFilename = {
+      ...planData,
+      filename: resolvedPlanFile,
+    };
+
+    // Use hierarchy utilities to get parent chain
+    if (planData.id) {
+      try {
+        parentChain = getParentChain(planWithFilename, allPlans);
+        
+        if (parentChain.length > 0) {
+          log(chalk.cyan(`Parent plan context loaded: ${parentChain[0].id} - ${parentChain[0].title}`));
+          if (parentChain.length > 1) {
+            log(chalk.cyan(`Found ${parentChain.length} levels of parent plans`));
+          }
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(chalk.yellow(`Warning: Could not load parent chain: ${errorMessage}`));
+        parentChain = [];
+      }
+
+      // Get completed children if this plan has any
+      try {
+        completedChildren = getCompletedChildren(planData.id, allPlans);
+        
+        if (completedChildren.length > 0) {
+          log(chalk.cyan(`Found ${completedChildren.length} completed child plans`));
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(chalk.yellow(`Warning: Could not load completed children: ${errorMessage}`));
+        completedChildren = [];
+      }
     }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(chalk.yellow(`Warning: Could not read plan hierarchy: ${errorMessage}. Continuing with basic review.`));
   }
 
   // Generate diff against trunk branch
-  const gitRoot = await getGitRoot();
   const diffResult = await generateDiffForReview(gitRoot);
 
   if (!diffResult.hasChanges) {
@@ -80,7 +117,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   log(chalk.gray(`Comparing against: ${diffResult.baseBranch}`));
 
   // Build the review prompt
-  const reviewPrompt = buildReviewPrompt(planData, diffResult, parentPlan);
+  const reviewPrompt = buildReviewPrompt(planData, diffResult, parentChain, completedChildren);
 
   // Set up executor
   const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
@@ -248,25 +285,71 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
   };
 }
 
-export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult, parentPlan?: PlanSchema): string {
+export function buildReviewPrompt(
+  planData: PlanSchema, 
+  diffResult: DiffResult, 
+  parentChain: PlanWithFilename[] = [], 
+  completedChildren: PlanWithFilename[] = []
+): string {
   // Build parent plan context section if available
   const parentContext: string[] = [];
-  if (parentPlan) {
+  if (parentChain.length > 0) {
     parentContext.push(
       `# Parent Plan Context`,
-      ``,
-      `**Parent Plan ID:** ${parentPlan.id}`,
-      `**Parent Title:** ${parentPlan.title}`,
-      `**Parent Goal:** ${parentPlan.goal}`,
       ``
     );
     
-    if (parentPlan.details) {
-      parentContext.push(`**Parent Details:** ${parentPlan.details}`, ``);
-    }
+    // Include all parents in the chain, starting with immediate parent
+    parentChain.forEach((parent, index) => {
+      const level = index === 0 ? 'Parent' : `Grandparent (Level ${index + 1})`;
+      parentContext.push(
+        `**${level} Plan ID:** ${parent.id}`,
+        `**${level} Title:** ${parent.title}`,
+        `**${level} Goal:** ${parent.goal}`,
+        ``
+      );
+      
+      if (parent.details) {
+        parentContext.push(`**${level} Details:** ${parent.details}`, ``);
+      }
+      
+      if (index < parentChain.length - 1) {
+        parentContext.push(`---`, ``);
+      }
+    });
     
     parentContext.push(
-      `*Note: This review is for a child plan implementing part of the parent plan above.*`,
+      `*Note: This review is for a child plan implementing part of the parent plan${parentChain.length > 1 ? 's' : ''} above.*`,
+      ``,
+      ``
+    );
+  }
+
+  // Build completed children context section if available  
+  const childrenContext: string[] = [];
+  if (completedChildren.length > 0) {
+    childrenContext.push(
+      `# Completed Child Plans`,
+      ``,
+      `The following child plans have been completed as part of this parent plan:`,
+      ``
+    );
+    
+    completedChildren.forEach((child) => {
+      childrenContext.push(
+        `**Child Plan ID:** ${child.id}`,
+        `**Child Title:** ${child.title}`,
+        `**Child Goal:** ${child.goal}`,
+        ``
+      );
+      
+      if (child.details) {
+        childrenContext.push(`**Child Details:** ${child.details}`, ``);
+      }
+    });
+    
+    childrenContext.push(
+      `*Note: When reviewing this parent plan, consider how these completed children contribute to the overall goals.*`,
       ``,
       ``
     );
@@ -321,6 +404,7 @@ export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult, 
   // Combine everything into the final prompt
   const contextContent = [
     ...parentContext,
+    ...childrenContext,
     ...planContext,
     ``,
     ...changedFilesSection,

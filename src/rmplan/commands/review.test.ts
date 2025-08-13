@@ -10,6 +10,7 @@ import {
   sanitizeBranchName,
 } from './review.js';
 import type { PlanSchema } from '../planSchema.js';
+import type { PlanWithFilename } from '../utils/hierarchy.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -271,7 +272,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult);
+    const prompt = buildReviewPrompt(planData, diffResult, [], []);
 
     // Verify plan context is included
     expect(prompt).toContain('Plan ID:** 42');
@@ -324,7 +325,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult);
+    const prompt = buildReviewPrompt(planData, diffResult, [], []);
 
     expect(prompt).toContain('Plan ID:** 1');
     expect(prompt).toContain('Title:** Simple Plan');
@@ -360,7 +361,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult);
+    const prompt = buildReviewPrompt(planData, diffResult, [], []);
 
     expect(prompt).toContain('Plan ID:** 2');
     expect(prompt).toContain('Title:** Plan Without Details');
@@ -715,7 +716,7 @@ describe('Parent plan context handling', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(childPlan, diffResult, parentPlan);
+    const prompt = buildReviewPrompt(childPlan, diffResult, [parentPlan], []);
 
     // Verify parent context is included
     expect(prompt).toContain('# Parent Plan Context');
@@ -758,7 +759,7 @@ describe('Parent plan context handling', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult);
+    const prompt = buildReviewPrompt(planData, diffResult, [], []);
 
     // Should not include parent context
     expect(prompt).not.toContain('# Parent Plan Context');
@@ -799,7 +800,7 @@ describe('Parent plan context handling', () => {
     }));
 
     // Test with undefined parent (simulating missing parent)
-    const prompt = buildReviewPrompt(childPlan, diffResult, undefined);
+    const prompt = buildReviewPrompt(childPlan, diffResult, [], []);
 
     // Should not include parent context when parent is missing
     expect(prompt).not.toContain('# Parent Plan Context');
@@ -913,11 +914,12 @@ tasks:
         baseBranch: 'main',
         diffContent: 'test diff',
       }),
-      buildReviewPrompt: (planData: any, diffResult: any, parentPlan?: any) => {
+      buildReviewPrompt: (planData: any, diffResult: any, parentChain: any[] = [], completedChildren: any[] = []) => {
         // Create a test prompt that includes parent context when parent is provided
         let prompt = `REVIEWER AGENT\n\n`;
         
-        if (parentPlan) {
+        if (parentChain && parentChain.length > 0) {
+          const parentPlan = parentChain[0];
           prompt += `# Parent Plan Context\n\n`;
           prompt += `**Parent Plan ID:** ${parentPlan.id}\n`;
           prompt += `**Parent Title:** ${parentPlan.title}\n`;
@@ -944,6 +946,340 @@ tasks:
     await handleReviewCommand(childPlanFile, {}, mockCommand);
 
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Hierarchy integration with utilities', () => {
+  test('handles multiple levels of parent plans', async () => {
+    const grandparentPlan: PlanWithFilename = {
+      id: 50,
+      title: 'Root Project Plan',
+      goal: 'Implement the entire project',
+      details: 'This is the top-level project plan',
+      tasks: [],
+      filename: 'grandparent-50.yml',
+    };
+
+    const parentPlan: PlanWithFilename = {
+      id: 99,
+      title: 'PR review command',
+      goal: 'Implement review functionality',
+      details: 'Mid-level plan for review features',
+      parent: 50,
+      tasks: [],
+      filename: 'parent-99.yml',
+    };
+
+    const childPlan: PlanSchema = {
+      id: 101,
+      title: 'PR review command - Parent-Child Integration',
+      goal: 'Enhance review command with hierarchy support',
+      parent: 99,
+      tasks: [
+        {
+          title: 'Test task',
+          description: 'A test task',
+        },
+      ],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/review.ts'],
+      baseBranch: 'main',
+      diffContent: 'test diff',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    // Test with multi-level parent chain
+    const parentChain = [parentPlan, grandparentPlan];
+    const prompt = buildReviewPrompt(childPlan, diffResult, parentChain, []);
+
+    // Verify both parent levels are included
+    expect(prompt).toContain('# Parent Plan Context');
+    expect(prompt).toContain('**Parent Plan ID:** 99');
+    expect(prompt).toContain('**Parent Title:** PR review command');
+    expect(prompt).toContain('**Grandparent (Level 2) Plan ID:** 50');
+    expect(prompt).toContain('**Grandparent (Level 2) Title:** Root Project Plan');
+    expect(prompt).toContain('---'); // Section separator
+    expect(prompt).toContain('This review is for a child plan implementing part of the parent plans above');
+  });
+
+  test('includes completed children when reviewing parent plan', async () => {
+    const parentPlan: PlanSchema = {
+      id: 99,
+      title: 'PR review command',
+      goal: 'Implement complete review functionality',
+      tasks: [
+        {
+          title: 'Parent task',
+          description: 'High-level task',
+        },
+      ],
+    };
+
+    const completedChild1: PlanWithFilename = {
+      id: 100,
+      title: 'Core Review Implementation',
+      goal: 'Implement basic review command',
+      details: 'This child handles the core review logic',
+      status: 'done',
+      parent: 99,
+      tasks: [],
+      filename: 'child-100.yml',
+    };
+
+    const completedChild2: PlanWithFilename = {
+      id: 101,
+      title: 'Parent-Child Integration',
+      goal: 'Add hierarchy support to review',
+      details: 'This child adds parent-child relationship handling',
+      status: 'done',
+      parent: 99,
+      tasks: [],
+      filename: 'child-101.yml',
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/review.ts', 'src/hierarchy.ts'],
+      baseBranch: 'main',
+      diffContent: 'parent review diff',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    const completedChildren = [completedChild1, completedChild2];
+    const prompt = buildReviewPrompt(parentPlan, diffResult, [], completedChildren);
+
+    // Verify completed children section is included
+    expect(prompt).toContain('# Completed Child Plans');
+    expect(prompt).toContain('The following child plans have been completed as part of this parent plan:');
+    expect(prompt).toContain('**Child Plan ID:** 100');
+    expect(prompt).toContain('**Child Title:** Core Review Implementation');
+    expect(prompt).toContain('**Child Goal:** Implement basic review command');
+    expect(prompt).toContain('**Child Plan ID:** 101');
+    expect(prompt).toContain('**Child Title:** Parent-Child Integration');
+    expect(prompt).toContain('consider how these completed children contribute to the overall goals');
+  });
+
+  test('handles both parent chain and completed children together', async () => {
+    const grandparentPlan: PlanWithFilename = {
+      id: 50,
+      title: 'Project Root',
+      goal: 'Top level goal',
+      tasks: [],
+      filename: 'grandparent-50.yml',
+    };
+
+    const parentPlan: PlanWithFilename = {
+      id: 99,
+      title: 'Middle Plan',
+      goal: 'Middle level goal',
+      parent: 50,
+      tasks: [],
+      filename: 'parent-99.yml',
+    };
+
+    const currentPlan: PlanSchema = {
+      id: 101,
+      title: 'Current Plan',
+      goal: 'Current plan goal',
+      parent: 99,
+      tasks: [
+        {
+          title: 'Current task',
+          description: 'Task description',
+        },
+      ],
+    };
+
+    const completedChild: PlanWithFilename = {
+      id: 102,
+      title: 'Completed Child',
+      goal: 'Child goal',
+      status: 'done',
+      parent: 101,
+      tasks: [],
+      filename: 'child-102.yml',
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['test.ts'],
+      baseBranch: 'main',
+      diffContent: 'complex diff',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    const parentChain = [parentPlan, grandparentPlan];
+    const completedChildren = [completedChild];
+    const prompt = buildReviewPrompt(currentPlan, diffResult, parentChain, completedChildren);
+
+    // Verify both parent and children contexts are included in correct order
+    expect(prompt).toContain('# Parent Plan Context');
+    expect(prompt).toContain('**Parent Plan ID:** 99');
+    expect(prompt).toContain('**Grandparent (Level 2) Plan ID:** 50');
+    
+    expect(prompt).toContain('# Completed Child Plans');
+    expect(prompt).toContain('**Child Plan ID:** 102');
+    
+    expect(prompt).toContain('# Plan Context');
+    expect(prompt).toContain('**Plan ID:** 101');
+
+    // Verify order: parent context, then children context, then current plan context
+    const parentIndex = prompt.indexOf('# Parent Plan Context');
+    const childrenIndex = prompt.indexOf('# Completed Child Plans');
+    const planIndex = prompt.indexOf('# Plan Context');
+    
+    expect(parentIndex).toBeLessThan(childrenIndex);
+    expect(childrenIndex).toBeLessThan(planIndex);
+  });
+
+  test('handles plan without ID gracefully', async () => {
+    const planWithoutId: PlanSchema = {
+      // No ID field
+      title: 'Plan Without ID',
+      goal: 'Test plan without ID',
+      tasks: [
+        {
+          title: 'Test task',
+          description: 'Task description',
+        },
+      ],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['test.ts'],
+      baseBranch: 'main',
+      diffContent: 'simple diff',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    // Should not attempt hierarchy traversal without an ID
+    const prompt = buildReviewPrompt(planWithoutId, diffResult, [], []);
+
+    expect(prompt).not.toContain('# Parent Plan Context');
+    expect(prompt).not.toContain('# Completed Child Plans');
+    expect(prompt).toContain('# Plan Context');
+    expect(prompt).toContain('**Title:** Plan Without ID');
+  });
+
+  test('handles empty parent chain and children arrays', async () => {
+    const simplePlan: PlanSchema = {
+      id: 1,
+      title: 'Simple Plan',
+      goal: 'Simple goal',
+      tasks: [
+        {
+          title: 'Simple task',
+          description: 'Simple description',
+        },
+      ],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['simple.ts'],
+      baseBranch: 'main',
+      diffContent: 'simple diff',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    const prompt = buildReviewPrompt(simplePlan, diffResult, [], []);
+
+    // Should work like before - no parent or children sections
+    expect(prompt).not.toContain('# Parent Plan Context');
+    expect(prompt).not.toContain('# Completed Child Plans');
+    expect(prompt).toContain('# Plan Context');
+    expect(prompt).toContain('**Plan ID:** 1');
+    expect(prompt).toContain('**Title:** Simple Plan');
+  });
+
+  test('handles plan hierarchy with missing plan details gracefully', async () => {
+    const parentWithoutDetails: PlanWithFilename = {
+      id: 99,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      // No details field
+      tasks: [],
+      filename: 'parent-99.yml',
+    };
+
+    const childWithoutDetails: PlanWithFilename = {
+      id: 101,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      // No details field
+      status: 'done',
+      parent: 99,
+      tasks: [],
+      filename: 'child-101.yml',
+    };
+
+    const currentPlan: PlanSchema = {
+      id: 100,
+      title: 'Current Plan',
+      goal: 'Current goal',
+      parent: 99,
+      tasks: [
+        {
+          title: 'Task',
+          description: 'Description',
+        },
+      ],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['test.ts'],
+      baseBranch: 'main',
+      diffContent: 'test diff',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    const prompt = buildReviewPrompt(currentPlan, diffResult, [parentWithoutDetails], [childWithoutDetails]);
+
+    // Should include basic info but not try to include missing details
+    expect(prompt).toContain('**Parent Plan ID:** 99');
+    expect(prompt).toContain('**Parent Title:** Parent Plan');
+    expect(prompt).toContain('**Parent Goal:** Parent goal');
+    expect(prompt).not.toContain('**Parent Details:**');
+
+    expect(prompt).toContain('**Child Plan ID:** 101');
+    expect(prompt).toContain('**Child Title:** Child Plan');
+    expect(prompt).toContain('**Child Goal:** Child goal');
+    expect(prompt).not.toContain('**Child Details:**');
   });
 });
 
