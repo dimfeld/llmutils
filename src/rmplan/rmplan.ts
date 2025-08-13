@@ -520,6 +520,9 @@ program
     'Include changed files list in output (enabled by default except in minimal verbosity).'
   )
   .option('--no-suggestions', 'Hide suggestions in the formatted output.')
+  .option('--incremental', 'Only review changes since the last review for this plan.')
+  .option('--since-last-review', 'Alias for --incremental. Only review changes since the last review.')
+  .option('--since <commit>', 'Review changes since the specified commit hash.')
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
     await handleReviewCommand(planFile, options, command).catch(handleCommandError);

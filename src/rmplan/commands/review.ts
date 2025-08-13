@@ -27,6 +27,14 @@ import {
   createGitNote,
   type ReviewMetadata,
 } from '../review_persistence.js';
+import {
+  getIncrementalDiff,
+  storeLastReviewMetadata,
+  getLastReviewMetadata,
+  getIncrementalSummary,
+  type IncrementalReviewMetadata,
+  type DiffResult,
+} from '../incremental_review.js';
 import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 
@@ -274,15 +282,44 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     );
   }
 
-  // Generate diff against trunk branch
-  const diffResult = await generateDiffForReview(gitRoot);
+  // Handle incremental review options
+  const incrementalOptions = {
+    incremental: options.incremental || options.sinceLastReview,
+    sinceLastReview: options.sinceLastReview,
+    sinceCommit: options.since,
+    planId: planData.id?.toString(),
+  };
+
+  // Generate incremental summary if applicable
+  let incrementalSummary = null;
+  if (incrementalOptions.incremental && planData.id) {
+    incrementalSummary = await getIncrementalSummary(gitRoot, planData.id.toString(), []);
+    if (incrementalSummary) {
+      log(chalk.cyan(`Incremental review mode enabled`));
+      log(chalk.gray(`Last review: ${incrementalSummary.lastReviewDate?.toLocaleString()}`));
+      if (incrementalSummary.totalFiles === 0) {
+        log(chalk.yellow('No changes detected since last review. Nothing new to review.'));
+        return;
+      }
+      log(chalk.cyan(`Review delta: ${incrementalSummary.newFiles.length} new files, ${incrementalSummary.modifiedFiles.length} modified files`));
+    }
+  }
+
+  // Generate diff against trunk branch or incremental diff
+  const diffResult = await generateDiffForReview(gitRoot, incrementalOptions);
 
   if (!diffResult.hasChanges) {
-    log(chalk.yellow('No changes detected compared to trunk branch. Nothing to review.'));
+    const nothingMessage = incrementalOptions.incremental ? 
+      'No changes detected since last review. Nothing to review.' :
+      'No changes detected compared to trunk branch. Nothing to review.';
+    log(chalk.yellow(nothingMessage));
     return;
   }
 
-  log(chalk.cyan(`Found ${diffResult.changedFiles.length} changed files`));
+  const changedFilesMessage = incrementalOptions.incremental ?
+    `Found ${diffResult.changedFiles.length} changed files since last review` :
+    `Found ${diffResult.changedFiles.length} changed files`;
+  log(chalk.cyan(changedFilesMessage));
   log(chalk.gray(`Comparing against: ${diffResult.baseBranch}`));
 
   // Load custom instructions
@@ -505,18 +542,36 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       log('\n' + formattedOutput);
     }
 
+    // Store incremental review metadata after successful review
+    if (planData.id) {
+      try {
+        const currentCommitHash = await getCurrentCommitHash(gitRoot);
+        if (currentCommitHash) {
+          const incrementalMetadata: IncrementalReviewMetadata = {
+            lastReviewCommit: currentCommitHash,
+            lastReviewTimestamp: new Date(),
+            planId: planData.id.toString(),
+            baseBranch: diffResult.baseBranch,
+            reviewedFiles: diffResult.changedFiles,
+            changeCount: diffResult.changedFiles.length,
+          };
+          
+          await storeLastReviewMetadata(gitRoot, planData.id.toString(), incrementalMetadata);
+          if (incrementalOptions.incremental) {
+            log(chalk.gray('Incremental review metadata updated for future reviews'));
+          }
+        }
+      } catch (metadataErr) {
+        const metadataErrorMessage = metadataErr instanceof Error ? metadataErr.message : String(metadataErr);
+        log(chalk.yellow(`Warning: Could not store incremental review metadata: ${metadataErrorMessage}`));
+      }
+    }
+
     log(chalk.green('\nCode review completed successfully!'));
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     throw new Error(`Review execution failed: ${errorMessage}`);
   }
-}
-
-interface DiffResult {
-  hasChanges: boolean;
-  changedFiles: string[];
-  baseBranch: string;
-  diffContent: string;
 }
 
 // Maximum diff size to prevent memory issues (10MB)
@@ -607,7 +662,45 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
   return sanitizedAreas;
 }
 
-export async function generateDiffForReview(gitRoot: string): Promise<DiffResult> {
+export async function generateDiffForReview(
+  gitRoot: string,
+  options?: {
+    incremental?: boolean;
+    sinceLastReview?: boolean;
+    sinceCommit?: string;
+    planId?: string;
+  }
+): Promise<DiffResult> {
+  // Handle incremental review options
+  if (options?.incremental || options?.sinceLastReview) {
+    if (!options.planId) {
+      throw new Error('Plan ID is required for incremental reviews');
+    }
+    
+    const lastReviewMetadata = await getLastReviewMetadata(gitRoot, options.planId);
+    if (!lastReviewMetadata) {
+      // No previous review found, fall back to regular diff
+      console.log('No previous review found for incremental mode, generating full diff...');
+      return generateRegularDiffForReview(gitRoot);
+    }
+    
+    return getIncrementalDiff(gitRoot, lastReviewMetadata.lastReviewCommit, lastReviewMetadata.baseBranch);
+  }
+  
+  // Handle explicit since commit
+  if (options?.sinceCommit) {
+    const baseBranch = await getTrunkBranch(gitRoot);
+    if (!baseBranch) {
+      throw new Error('Could not determine trunk branch for comparison');
+    }
+    return getIncrementalDiff(gitRoot, options.sinceCommit, baseBranch);
+  }
+  
+  // Regular diff generation
+  return generateRegularDiffForReview(gitRoot);
+}
+
+async function generateRegularDiffForReview(gitRoot: string): Promise<DiffResult> {
   const baseBranch = await getTrunkBranch(gitRoot);
   if (!baseBranch) {
     throw new Error('Could not determine trunk branch for comparison');
