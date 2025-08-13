@@ -15,15 +15,33 @@ interface PlanToRenumber {
   conflictsWith?: number;
 }
 
-export async function handleRenumber(options: any, command: any) {
+interface RenumberOptions {
+  dryRun?: boolean;
+  prefer?: string[];
+}
+
+interface RenumberCommand {
+  parent: {
+    opts(): {
+      config?: string;
+    };
+  };
+}
+
+// Constants for trunk branch names
+const TRUNK_BRANCHES = ['main', 'master'] as const;
+
+export async function handleRenumber(options: RenumberOptions, command: RenumberCommand) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const gitRoot = (await getGitRoot()) || process.cwd();
 
   // Detect current branch and determine if we should use branch-based preference
   const currentBranch = await getCurrentBranchName(gitRoot);
-  const isFeatureBranch = currentBranch && currentBranch !== 'main' && currentBranch !== 'master';
-  debugLog(`Current branch: ${currentBranch}, isFeatureBranch: ${isFeatureBranch}`);
+  const isFeatureBranch = currentBranch && !TRUNK_BRANCHES.includes(currentBranch as any);
+  debugLog(
+    `Current branch: ${currentBranch ?? 'detached HEAD'}, isFeatureBranch: ${isFeatureBranch}`
+  );
 
   // Get changed files on current branch if we're on a feature branch
   let changedPlanFiles: string[] = [];
@@ -32,11 +50,31 @@ export async function handleRenumber(options: any, command: any) {
       const changedFiles = await getChangedFilesOnBranch(gitRoot);
       // Convert to absolute paths and filter for plan files
       changedPlanFiles = changedFiles
-        .map(file => path.isAbsolute(file) ? file : path.join(gitRoot, file))
-        .filter(file => file.endsWith('.plan.md') || file.endsWith('.yml') || file.endsWith('.yaml'));
-      debugLog(`Found ${changedPlanFiles.length} changed plan files: ${changedPlanFiles.join(', ')}`);
+        .map((file) => {
+          if (path.isAbsolute(file)) {
+            return file;
+          }
+          // Validate relative path to prevent path traversal
+          const normalized = path.normalize(file);
+          if (normalized.includes('..')) {
+            debugLog(`Skipping potentially unsafe path: ${file}`);
+            return null;
+          }
+          return path.join(gitRoot, normalized);
+        })
+        .filter((file): file is string => {
+          return (
+            file !== null &&
+            (file.endsWith('.plan.md') || file.endsWith('.yml') || file.endsWith('.yaml'))
+          );
+        });
+      debugLog(
+        `Found ${changedPlanFiles.length} changed plan files: ${changedPlanFiles.join(', ')}`
+      );
     } catch (error) {
-      debugLog(`Error getting changed files: ${error as Error}`);
+      debugLog(
+        `Error getting changed files: ${error instanceof Error ? error.message : String(error)}`
+      );
       // Continue with normal logic if git operations fail
     }
   }
@@ -98,10 +136,21 @@ export async function handleRenumber(options: any, command: any) {
   // Build a set of preferred plans and their ancestors
   const preferredPlans = new Set<string>();
   if (options.prefer) {
-    // Normalize the file paths
-    const preferredFilePaths = options.prefer.map((p: string) =>
-      path.isAbsolute(p) ? p : path.join(tasksDirectory, p)
-    );
+    // Normalize the file paths with validation
+    const preferredFilePaths = options.prefer
+      .map((p: string) => {
+        if (path.isAbsolute(p)) {
+          return p;
+        }
+        // Validate relative path to prevent path traversal
+        const normalized = path.normalize(p);
+        if (normalized.includes('..')) {
+          debugLog(`Skipping potentially unsafe preferred path: ${p}`);
+          return null;
+        }
+        return path.join(tasksDirectory, normalized);
+      })
+      .filter((p): p is string => p !== null);
 
     for (const preferredPath of preferredFilePaths) {
       preferredPlans.add(preferredPath);
@@ -129,13 +178,15 @@ export async function handleRenumber(options: any, command: any) {
         );
       } else {
         // Check if we're on a feature branch and if any conflicting files were changed on the current branch
-        let changedFile: typeof files[0] | undefined;
+        let changedFile: (typeof files)[0] | undefined;
         if (isFeatureBranch && changedPlanFilesSet.size > 0) {
           changedFile = files.find(({ filePath }) => changedPlanFilesSet.has(filePath));
         }
-        
+
         if (changedFile) {
-          debugLog(`ID ${id}: Found file changed on branch ${currentBranch}: ${changedFile.filePath}`);
+          debugLog(
+            `ID ${id}: Found file changed on branch ${currentBranch ?? 'unknown'}: ${changedFile.filePath}`
+          );
           // Keep the changed file, renumber all others
           plansToKeepAndRenumber = files.filter(
             ({ filePath }) => filePath !== changedFile.filePath
@@ -146,15 +197,12 @@ export async function handleRenumber(options: any, command: any) {
             debugLog(`ID ${id}: No changed files found among conflicts, using timestamp logic`);
           }
           // Fall back to original logic: sort by createdAt timestamp
-          const plansWithTimestamps = await Promise.all(
-            files.map(async ({ plan, filePath }) => {
-              return {
-                filePath,
-                plan,
-                createdAt: plan.createdAt || new Date(0).toISOString(),
-              };
-            })
-          );
+          // Create timestamp mappings directly without Promise.all since plan.createdAt is already available
+          const plansWithTimestamps = files.map(({ plan, filePath }) => ({
+            filePath,
+            plan,
+            createdAt: plan.createdAt || new Date(0).toISOString(),
+          }));
 
           // Sort by createdAt, keeping the oldest one
           plansWithTimestamps.sort(
