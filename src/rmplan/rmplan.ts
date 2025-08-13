@@ -479,18 +479,16 @@ program
 
 program
   .command('review <planFile>')
-  .description('Analyze code changes on current branch against plan requirements using reviewer agent')
+  .description(
+    'Analyze code changes on current branch against plan requirements using reviewer agent'
+  )
   .option(`-x, --executor <name>`, 'The executor to use for review execution')
   .addHelpText('after', `Available executors: ${executorNames}`)
   .option(
     '-m, --model <model>',
     'Specify the LLM model to use for the review. Overrides model from rmplan config.'
   )
-  .option(
-    '--dry-run',
-    'Generate and print the review prompt but do not execute it',
-    false
-  )
+  .option('--dry-run', 'Generate and print the review prompt but do not execute it', false)
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
     await handleReviewCommand(planFile, options, command).catch(handleCommandError);

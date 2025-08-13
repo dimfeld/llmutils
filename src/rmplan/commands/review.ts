@@ -18,13 +18,32 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
   // Resolve the plan file (support both file paths and plan IDs)
   const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
-  
+
   // Load the plan details
   const planData = await readPlanFile(resolvedPlanFile);
-  
+
   // Validate plan exists and has content
   if (!planData) {
     throw new Error(`Could not load plan from: ${resolvedPlanFile}`);
+  }
+
+  // Validate required plan fields
+  if (!planData.goal) {
+    throw new Error(`Plan file is missing required 'goal' field: ${resolvedPlanFile}`);
+  }
+
+  if (!planData.tasks || !Array.isArray(planData.tasks) || planData.tasks.length === 0) {
+    throw new Error(`Plan file must have at least one task: ${resolvedPlanFile}`);
+  }
+
+  // Validate task structure
+  for (const [index, task] of planData.tasks.entries()) {
+    if (!task.title) {
+      throw new Error(`Task ${index + 1} is missing required 'title' field in plan: ${resolvedPlanFile}`);
+    }
+    if (!task.description) {
+      throw new Error(`Task ${index + 1} is missing required 'description' field in plan: ${resolvedPlanFile}`);
+    }
   }
 
   log(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
@@ -32,7 +51,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   // Generate diff against trunk branch
   const gitRoot = await getGitRoot();
   const diffResult = await generateDiffForReview(gitRoot);
-  
+
   if (!diffResult.hasChanges) {
     log(chalk.yellow('No changes detected compared to trunk branch. Nothing to review.'));
     return;
@@ -63,17 +82,18 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   }
 
   log(chalk.cyan('\n## Executing Code Review\n'));
-  
+
   try {
     await executor.execute(reviewPrompt, {
       planId: planData.id?.toString() ?? 'unknown',
       planTitle: planData.title ?? 'Untitled Plan',
       planFilePath: resolvedPlanFile,
     });
-    
+
     log(chalk.green('\nCode review completed successfully!'));
   } catch (err) {
-    throw new Error(`Review execution failed: ${err as Error}`);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    throw new Error(`Review execution failed: ${errorMessage}`);
   }
 }
 
@@ -84,10 +104,28 @@ interface DiffResult {
   diffContent: string;
 }
 
+// Maximum diff size to prevent memory issues (10MB)
+const MAX_DIFF_SIZE = 10 * 1024 * 1024;
+
+function sanitizeBranchName(branch: string): string {
+  // Only allow alphanumeric characters, hyphens, underscores, forward slashes, and dots
+  // This is a conservative approach for git/jj branch names
+  if (!/^[a-zA-Z0-9._/-]+$/.test(branch)) {
+    throw new Error(`Invalid branch name format: ${branch}`);
+  }
+  return branch;
+}
+
 export async function generateDiffForReview(gitRoot: string): Promise<DiffResult> {
   const baseBranch = await getTrunkBranch(gitRoot);
-  const usingJj = await getUsingJj();
+  if (!baseBranch) {
+    throw new Error('Could not determine trunk branch for comparison');
+  }
   
+  // Sanitize branch name to prevent command injection
+  const safeBranch = sanitizeBranchName(baseBranch);
+  const usingJj = await getUsingJj();
+
   let changedFiles: string[] = [];
   let diffContent = '';
 
@@ -95,69 +133,89 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
     // Use jj commands for diff generation
     try {
       // Get list of changed files
-      const filesResult = await $`jj diff --from ${baseBranch} --summary`.cwd(gitRoot).nothrow();
+      const filesResult = await $`jj diff --from ${safeBranch} --summary`.cwd(gitRoot).nothrow();
       if (filesResult.exitCode === 0) {
         changedFiles = filesResult.stdout
           .toString()
           .split('\n')
-          .map(line => {
-            line = line.trim();
-            if (!line || line.startsWith('D')) {
-              return '';
-            }
-            // Handle renames (R old_file new_file)
-            if (line.startsWith('R')) {
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith('D')) // Filter out deleted files and empty lines
+          .map((line) => {
+            // Handle renames (R old_file new_file) - get the new file name
+            if (line.startsWith('R ')) {
               const parts = line.split(' ');
-              return parts.length >= 3 ? parts[2] : '';
+              return parts.length >= 3 ? parts[2] : null;
             }
-            // Handle additions/modifications (A/M file)
-            return line.slice(2);
+            // Handle additions/modifications (A/M file) - get the file name
+            if (line.length >= 2 && (line.startsWith('A ') || line.startsWith('M '))) {
+              return line.slice(2);
+            }
+            // Unknown format, skip it
+            return null;
           })
-          .filter(line => !!line);
+          .filter((filename): filename is string => filename !== null);
+      } else {
+        throw new Error(`jj diff --summary command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`);
       }
 
       // Get full diff content
-      const diffResult = await $`jj diff --from ${baseBranch}`.cwd(gitRoot).nothrow();
+      const diffResult = await $`jj diff --from ${safeBranch}`.cwd(gitRoot).nothrow();
       if (diffResult.exitCode === 0) {
-        diffContent = diffResult.stdout.toString();
+        const fullDiff = diffResult.stdout.toString();
+        if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
+          diffContent = `[Diff too large (${Math.round(Buffer.byteLength(fullDiff, 'utf8') / 1024 / 1024)} MB) to include in review. Consider reviewing individual files or splitting the changes.]`;
+        } else {
+          diffContent = fullDiff;
+        }
+      } else {
+        throw new Error(`jj diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`);
       }
     } catch (err) {
-      throw new Error(`Failed to generate jj diff: ${err as Error}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to generate jj diff: ${errorMessage}`);
     }
   } else {
     // Use git commands for diff generation
     try {
       // Get list of changed files
-      const filesResult = await $`git diff --name-only ${baseBranch}`.cwd(gitRoot).nothrow();
+      const filesResult = await $`git diff --name-only ${safeBranch}`.cwd(gitRoot).nothrow();
       if (filesResult.exitCode === 0) {
         changedFiles = filesResult.stdout
           .toString()
           .split('\n')
-          .map(line => line.trim())
-          .filter(line => !!line);
+          .map((line) => line.trim())
+          .filter((line) => !!line);
+      } else {
+        throw new Error(`git diff --name-only command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`);
       }
 
       // Get full diff content
-      const diffResult = await $`git diff ${baseBranch}`.cwd(gitRoot).nothrow();
+      const diffResult = await $`git diff ${safeBranch}`.cwd(gitRoot).nothrow();
       if (diffResult.exitCode === 0) {
-        diffContent = diffResult.stdout.toString();
+        const fullDiff = diffResult.stdout.toString();
+        if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
+          diffContent = `[Diff too large (${Math.round(Buffer.byteLength(fullDiff, 'utf8') / 1024 / 1024)} MB) to include in review. Consider reviewing individual files or splitting the changes.]`;
+        } else {
+          diffContent = fullDiff;
+        }
+      } else {
+        throw new Error(`git diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`);
       }
     } catch (err) {
-      throw new Error(`Failed to generate git diff: ${err as Error}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to generate git diff: ${errorMessage}`);
     }
   }
 
   return {
     hasChanges: changedFiles.length > 0,
     changedFiles,
-    baseBranch,
+    baseBranch: baseBranch, // Return original for display purposes
     diffContent,
   };
 }
 
 export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult): string {
-  // Get the reviewer agent prompt template
-  const reviewerAgent = getReviewerPrompt('', ''); // We'll build context ourselves
 
   // Build plan context section
   const planContext = [
@@ -199,7 +257,7 @@ export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult):
     `**Changed Files (${diffResult.changedFiles.length}):**`,
   ];
 
-  diffResult.changedFiles.forEach(file => {
+  diffResult.changedFiles.forEach((file) => {
     changedFilesSection.push(`- ${file}`);
   });
 
@@ -223,7 +281,7 @@ export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult):
   ].join('\n');
 
   // Use the reviewer agent template with our context
-  const reviewerPromptWithContext = getReviewerPrompt(contextContent);
-  
+  const reviewerPromptWithContext = getReviewerPrompt(contextContent, '');
+
   return reviewerPromptWithContext.prompt;
 }

@@ -912,7 +912,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = {  };
+      const options = {};
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
