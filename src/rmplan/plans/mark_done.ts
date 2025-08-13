@@ -1,9 +1,12 @@
 import chalk from 'chalk';
 import path from 'path';
-import { getGitRoot } from '../../common/git.js';
+import {
+  getChangedFilesOnBranch,
+  getGitRoot,
+  type GetChangedFilesOptions,
+} from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
 import { boldMarkdownHeaders, log, warn } from '../../logging.js';
-import { getChangedFiles, type GetChangedFilesOptions } from '../../rmfilter/additional_docs.js';
 import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
 import { clearPlanCache, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import { type PendingTaskResult, findPendingTask, findNextActionableItem } from './find_next.js';
@@ -144,7 +147,7 @@ export async function markStepDone(
       excludePaths,
     };
 
-    const changedFiles = await getChangedFiles(gitRoot, options);
+    const changedFiles = await getChangedFilesOnBranch(gitRoot, options);
     if (changedFiles.length > 0) {
       planData.changedFiles = changedFiles;
     }
@@ -270,7 +273,7 @@ export async function markTaskDone(
       excludePaths,
     };
 
-    const changedFiles = await getChangedFiles(gitRoot, options);
+    const changedFiles = await getChangedFilesOnBranch(gitRoot, options);
     if (changedFiles.length > 0) {
       planData.changedFiles = changedFiles;
     }

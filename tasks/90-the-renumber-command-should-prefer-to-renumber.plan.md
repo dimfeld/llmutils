@@ -14,110 +14,6 @@ promptsGeneratedAt: 2025-08-13T00:58:12.552Z
 createdAt: 2025-08-06T18:48:42.803Z
 updatedAt: 2025-08-13T00:58:12.552Z
 tasks:
-  - title: Create a Git utility to find changed files on the current branch
-    description: >
-      Implement a new function in the `git.ts` module that identifies files
-      created or modified on the current branch. This function should determine
-      the common ancestor (merge-base) with a trunk branch (e.g., 'main' or
-      'master') and then list all files that have changed since that point. This
-      provides the necessary data for the renumbering logic to identify actively
-      worked-on plans.
-
-
-      The implementation should follow the pattern used in
-      src/rmfilter/additional_docs.ts for getChangedFiles(), but be located in
-      the common git utilities. It needs to:
-
-      - Find the merge-base between current branch and trunk branch
-
-      - Get the list of changed files since that merge-base
-
-      - Handle both Git and Jujutsu repositories
-
-      - Return an empty array if on a trunk branch or if there are no changes
-    files:
-      - src/common/git.ts
-    steps:
-      - prompt: >
-          Add a new function called `getFilesChangedOnBranch()` to
-          src/common/git.ts that returns the list of files changed on the
-          current branch compared to the trunk branch (main/master).
-
-          The function should detect the trunk branch, find the merge-base, and
-          return changed files.
-        done: false
-      - prompt: >
-          Implement the logic to detect if the current branch is a trunk branch
-          (main or master).
-
-          If on a trunk branch, return an empty array immediately.
-        done: false
-      - prompt: |
-          Add support for both Git and Jujutsu by checking which VCS is in use.
-          For Git, use `git merge-base` and `git diff --name-only`.
-          For Jujutsu, use appropriate jj commands to get changed files.
-        done: false
-      - prompt: >
-          Add proper error handling and debug logging using the debugLog
-          function.
-
-          Return an empty array if any Git commands fail or if the merge-base
-          cannot be determined.
-        done: false
-  - title: Add tests for the new Git utility
-    description: >
-      Create comprehensive tests for the new "get changed files" utility. These
-      tests should be in `git.test.ts` and will involve setting up a temporary
-      Git repository, creating commits on different branches, and asserting that
-      the function correctly identifies the files changed on a feature branch
-      relative to the trunk.
-
-
-      The tests should follow the existing patterns in git.test.ts:
-
-      - Use temporary directories with fs.mkdtemp()
-
-      - Create real Git repositories using Bun.spawn()
-
-      - Test various scenarios including no changes, multiple changes, and edge
-      cases
-
-      - Clean up temporary directories after each test
-    files:
-      - src/common/git.test.ts
-    steps:
-      - prompt: >
-          Add a new describe block for 'getFilesChangedOnBranch' in git.test.ts.
-
-          Set up the basic test structure with beforeEach and afterEach hooks
-          for temporary directory management.
-        done: false
-      - prompt: >
-          Create a test that verifies the function returns an empty array when
-          on the main branch.
-
-          Initialize a Git repo, create some commits on main, and verify no
-          files are reported as changed.
-        done: false
-      - prompt: >
-          Create a test for detecting files changed on a feature branch.
-
-          Create a main branch with initial files, then create a feature branch,
-          modify/add files, and verify the function returns the correct changed
-          files.
-        done: false
-      - prompt: >
-          Add a test for when there are no changes on the feature branch.
-
-          Create a feature branch but don't make any changes, verify the
-          function returns an empty array.
-        done: false
-      - prompt: >
-          Add edge case tests: detached HEAD state, branch with no common
-          ancestor, and repository with no main/master branch.
-
-          Ensure the function handles these gracefully.
-        done: false
   - title: Integrate branch detection and changed file retrieval into the renumber
       command
     description: >
@@ -140,7 +36,7 @@ tasks:
       - src/rmplan/commands/renumber.ts
     steps:
       - prompt: >
-          Import the new `getFilesChangedOnBranch` function and the existing
+          Import the `getChangedFilesOnBranch` function and the existing
           `getCurrentBranchName` function from the git module at the top of
           renumber.ts.
         done: false
@@ -152,7 +48,7 @@ tasks:
           variable.
         done: false
       - prompt: >
-          If on a feature branch, call getFilesChangedOnBranch() to get the list
+          If on a feature branch, call getChangedFilesOnBranch() to get the list
           of changed files.
 
           Convert these to absolute paths and filter to only include plan files
@@ -246,7 +142,7 @@ tasks:
           when resolving conflicts".
 
           Mock getCurrentBranchName to return 'feature-branch' and
-          getFilesChangedOnBranch to return specific plan files.
+          getChangedFilesOnBranch to return specific plan files.
         done: false
       - prompt: >
           In the new test, create conflicting plans where the newer file (by
@@ -275,7 +171,7 @@ tasks:
       - prompt: >
           Add a test for handling errors when Git operations fail.
 
-          Mock getFilesChangedOnBranch to throw an error and verify the command
+          Mock getChangedFilesOnBranch to throw an error and verify the command
           still works using the fallback logic.
         done: false
 rmfilter:
