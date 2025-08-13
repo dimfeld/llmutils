@@ -6,7 +6,7 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import type { PlanSchema } from '../planSchema.js';
 
-describe('--batch-tasks CLI flag tests', () => {
+describe('--serial-tasks CLI flag tests', () => {
   let tempDir: string;
   let tasksDir: string;
   let configPath: string;
@@ -85,7 +85,7 @@ describe('--batch-tasks CLI flag tests', () => {
   }
 
   describe('CLI flag parsing and recognition', () => {
-    test('--batch-tasks flag is recognized by agent command', async () => {
+    test('--serial-tasks flag is recognized by agent command', async () => {
       // Create a test plan
       await createPlanFile({
         id: 1,
@@ -95,9 +95,9 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Simple test task' }],
       });
 
-      // Run agent with --batch-tasks and --dry-run to avoid actual execution
+      // Run agent with --serial-tasks and --dry-run to avoid actual execution
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -107,10 +107,10 @@ describe('--batch-tasks CLI flag tests', () => {
       // Should not contain "unknown option" error message
       const output = result.stdout.toString() + result.stderr.toString();
       expect(output).not.toContain('unknown option');
-      expect(output).not.toContain("error: unknown option '--batch-tasks'");
+      expect(output).not.toContain("error: unknown option '--serial-tasks'");
     });
 
-    test('--batch-tasks flag is recognized by run command (alias)', async () => {
+    test('--serial-tasks flag is recognized by run command (alias)', async () => {
       // Create a test plan
       await createPlanFile({
         id: 1,
@@ -120,9 +120,9 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Simple test task' }],
       });
 
-      // Run with alias command and --batch-tasks
+      // Run with alias command and --serial-tasks
       const result =
-        await $`bun ${rmplanPath} run 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} run 1 --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -132,10 +132,10 @@ describe('--batch-tasks CLI flag tests', () => {
       // Should not contain "unknown option" error message
       const output = result.stdout.toString() + result.stderr.toString();
       expect(output).not.toContain('unknown option');
-      expect(output).not.toContain("error: unknown option '--batch-tasks'");
+      expect(output).not.toContain("error: unknown option '--serial-tasks'");
     });
 
-    test('--batch-tasks flag works without any other options', async () => {
+    test('--serial-tasks flag works without any other options', async () => {
       // Create a test plan
       await createPlanFile({
         id: 1,
@@ -147,7 +147,7 @@ describe('--batch-tasks CLI flag tests', () => {
 
       // Run with minimal options
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -162,7 +162,7 @@ describe('--batch-tasks CLI flag tests', () => {
   });
 
   describe('flag combination and compatibility', () => {
-    test('--batch-tasks works with --dry-run', async () => {
+    test('--serial-tasks works with --dry-run', async () => {
       await createPlanFile({
         id: 1,
         title: 'Dry Run Test',
@@ -172,7 +172,7 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -183,7 +183,7 @@ describe('--batch-tasks CLI flag tests', () => {
       expect(output).not.toContain('incompatible options');
     });
 
-    test('--batch-tasks works with --non-interactive', async () => {
+    test('--serial-tasks works with --non-interactive', async () => {
       await createPlanFile({
         id: 1,
         title: 'Non-Interactive Test',
@@ -193,7 +193,7 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --non-interactive --dry-run --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --non-interactive --dry-run --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -203,7 +203,7 @@ describe('--batch-tasks CLI flag tests', () => {
       expect(output).not.toContain('incompatible options');
     });
 
-    test('--batch-tasks works with --steps', async () => {
+    test('--serial-tasks works with --steps', async () => {
       await createPlanFile({
         id: 1,
         title: 'Steps Limit Test',
@@ -213,7 +213,7 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --steps 5 --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --steps 5 --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -223,7 +223,7 @@ describe('--batch-tasks CLI flag tests', () => {
       expect(output).not.toContain('incompatible options');
     });
 
-    test('--batch-tasks works with executor options', async () => {
+    test('--serial-tasks works with executor options', async () => {
       await createPlanFile({
         id: 1,
         title: 'Executor Test',
@@ -233,7 +233,7 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --executor copy-only --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --executor copy-only --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -243,7 +243,7 @@ describe('--batch-tasks CLI flag tests', () => {
       expect(output).not.toContain('incompatible options');
     });
 
-    test('--batch-tasks works with model specification', async () => {
+    test('--serial-tasks works with model specification', async () => {
       await createPlanFile({
         id: 1,
         title: 'Model Test',
@@ -253,7 +253,7 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --model claude-3-5-sonnet --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --model claude-3-5-sonnet --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -263,7 +263,7 @@ describe('--batch-tasks CLI flag tests', () => {
       expect(output).not.toContain('incompatible options');
     });
 
-    test('--batch-tasks works with workspace options', async () => {
+    test('--serial-tasks works with workspace options', async () => {
       await createPlanFile({
         id: 1,
         title: 'Workspace Test',
@@ -273,7 +273,7 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --workspace test-workspace --new-workspace --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --workspace test-workspace --new-workspace --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -285,27 +285,27 @@ describe('--batch-tasks CLI flag tests', () => {
   });
 
   describe('help text and documentation', () => {
-    test('--batch-tasks appears in agent command help', async () => {
+    test('--serial-tasks appears in agent command help', async () => {
       const result = await $`bun ${rmplanPath} agent --help`.nothrow();
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toString();
 
       // Should contain the batch-tasks option
-      expect(output).toContain('--batch-tasks');
+      expect(output).toContain('--serial-tasks');
       // Should contain descriptive help text
       expect(output).toContain('batch task execution mode');
       expect(output).toContain('selects and processes multiple tasks together');
     });
 
-    test('--batch-tasks appears in run command help', async () => {
+    test('--serial-tasks appears in run command help', async () => {
       const result = await $`bun ${rmplanPath} run --help`.nothrow();
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toString();
 
       // Should contain the batch-tasks option
-      expect(output).toContain('--batch-tasks');
+      expect(output).toContain('--serial-tasks');
       // Should contain descriptive help text
       expect(output).toContain('batch task execution mode');
       expect(output).toContain('selects and processes multiple tasks together');
@@ -324,7 +324,7 @@ describe('--batch-tasks CLI flag tests', () => {
   });
 
   describe('backward compatibility', () => {
-    test('agent command works without --batch-tasks flag', async () => {
+    test('agent command works without --serial-tasks flag', async () => {
       await createPlanFile({
         id: 1,
         title: 'Backward Compatibility Test',
@@ -333,7 +333,7 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Test description' }],
       });
 
-      // Run without the --batch-tasks flag (traditional mode)
+      // Run without the --serial-tasks flag (traditional mode)
       const result =
         await $`bun ${rmplanPath} agent 1 --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
@@ -344,10 +344,10 @@ describe('--batch-tasks CLI flag tests', () => {
 
       const output = result.stdout.toString() + result.stderr.toString();
       expect(output).not.toContain('batch-tasks is required');
-      expect(output).not.toContain('must specify --batch-tasks');
+      expect(output).not.toContain('must specify --serial-tasks');
     });
 
-    test('run command works without --batch-tasks flag', async () => {
+    test('run command works without --serial-tasks flag', async () => {
       await createPlanFile({
         id: 1,
         title: 'Run Backward Compatibility Test',
@@ -356,7 +356,7 @@ describe('--batch-tasks CLI flag tests', () => {
         tasks: [{ title: 'Test task', description: 'Test description' }],
       });
 
-      // Run without the --batch-tasks flag
+      // Run without the --serial-tasks flag
       const result =
         await $`bun ${rmplanPath} run 1 --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
@@ -399,10 +399,10 @@ describe('--batch-tasks CLI flag tests', () => {
   });
 
   describe('edge cases and error handling', () => {
-    test('--batch-tasks handles non-existent plan file gracefully', async () => {
+    test('--serial-tasks handles non-existent plan file gracefully', async () => {
       // Try to run against a non-existent plan
       const result =
-        await $`bun ${rmplanPath} agent non-existent-plan.yml --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent non-existent-plan.yml --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -410,14 +410,14 @@ describe('--batch-tasks CLI flag tests', () => {
       expect([0, 1, 2]).toContain(result.exitCode);
 
       const output = result.stdout.toString() + result.stderr.toString();
-      // Should not crash with issues related to the --batch-tasks flag itself
+      // Should not crash with issues related to the --serial-tasks flag itself
       expect(output).not.toContain('batch-tasks');
       expect(output).not.toContain('batchTasks is not defined');
     });
 
-    test('--batch-tasks with invalid plan ID handled properly', async () => {
+    test('--serial-tasks with invalid plan ID handled properly', async () => {
       const result =
-        await $`bun ${rmplanPath} agent 99999 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 99999 --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -428,13 +428,13 @@ describe('--batch-tasks CLI flag tests', () => {
       expect(output).not.toContain('batchTasks is not defined');
     });
 
-    test('--batch-tasks with malformed plan file handled properly', async () => {
+    test('--serial-tasks with malformed plan file handled properly', async () => {
       // Create a malformed plan file
       const malformedPlanPath = path.join(tasksDir, '1-malformed.yml');
       await fs.writeFile(malformedPlanPath, 'invalid: yaml: content: [missing closing bracket');
 
       const result =
-        await $`bun ${rmplanPath} agent 1 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 1 --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -446,7 +446,7 @@ describe('--batch-tasks CLI flag tests', () => {
   });
 
   describe('integration with plan file discovery', () => {
-    test('--batch-tasks works with plan ID resolution', async () => {
+    test('--serial-tasks works with plan ID resolution', async () => {
       await createPlanFile({
         id: 42,
         title: 'ID Resolution Test',
@@ -457,7 +457,7 @@ describe('--batch-tasks CLI flag tests', () => {
 
       // Use plan ID instead of filename
       const result =
-        await $`bun ${rmplanPath} agent 42 --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent 42 --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -468,7 +468,7 @@ describe('--batch-tasks CLI flag tests', () => {
       expect(output).not.toContain('batchTasks is not defined');
     });
 
-    test('--batch-tasks works with --next flag', async () => {
+    test('--serial-tasks works with --next flag', async () => {
       // Create plans in sequence
       await createPlanFile({
         id: 1,
@@ -488,7 +488,7 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       const result =
-        await $`bun ${rmplanPath} agent --next --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent --next --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 
@@ -499,7 +499,7 @@ describe('--batch-tasks CLI flag tests', () => {
       expect(output).not.toContain('batchTasks is not defined');
     });
 
-    test('--batch-tasks works with --current flag', async () => {
+    test('--serial-tasks works with --current flag', async () => {
       await createPlanFile({
         id: 1,
         title: 'In Progress Plan',
@@ -509,7 +509,7 @@ describe('--batch-tasks CLI flag tests', () => {
       });
 
       const result =
-        await $`bun ${rmplanPath} agent --current --batch-tasks --dry-run --non-interactive --config ${configPath}`
+        await $`bun ${rmplanPath} agent --current --serial-tasks --dry-run --non-interactive --config ${configPath}`
           .cwd(tempDir)
           .nothrow();
 

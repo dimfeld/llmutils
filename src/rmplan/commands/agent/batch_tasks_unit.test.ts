@@ -17,7 +17,7 @@ const resolvePlanFileSpy = mock(async (planFile: string) => planFile);
 const loadEffectiveConfigSpy = mock(async () => ({}));
 const resolveTasksDirSpy = mock(async () => '/test/tasks');
 
-describe('--batch-tasks flag pass-through tests', () => {
+describe('--serial-tasks flag pass-through tests', () => {
   let tempDir: string;
   let planFile: string;
 
@@ -89,35 +89,35 @@ describe('--batch-tasks flag pass-through tests', () => {
   });
 
   describe('basic flag pass-through', () => {
-    test('batchTasks option is passed through to rmplanAgent', async () => {
-      const options = { batchTasks: true };
+    test('serialTasks option is passed through to rmplanAgent', async () => {
+      const options = { serialTasks: true };
       const globalCliOptions = {};
 
       await handleAgentCommand(planFile, options, globalCliOptions);
 
-      // Verify rmplanAgent was called with the options including batchTasks
+      // Verify rmplanAgent was called with the options including serialTasks
       expect(rmplanAgentSpy).toHaveBeenCalledWith(planFile, options, globalCliOptions);
 
       // Get the actual options that were passed
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
     });
 
-    test('batchTasks option defaults to undefined when not specified', async () => {
-      const options = {}; // No batchTasks option
+    test('serialTasks option defaults to undefined when not specified', async () => {
+      const options = {}; // No serialTasks option
       const globalCliOptions = {};
 
       await handleAgentCommand(planFile, options, globalCliOptions);
 
       expect(rmplanAgentSpy).toHaveBeenCalledWith(planFile, options, globalCliOptions);
 
-      // batchTasks should not be present in the options
+      // serialTasks should not be present in the options
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBeUndefined();
+      expect(passedOptions.serialTasks).toBeUndefined();
     });
 
-    test('batchTasks false value is preserved', async () => {
-      const options = { batchTasks: false };
+    test('serialTasks false value is preserved', async () => {
+      const options = { serialTasks: false };
       const globalCliOptions = {};
 
       await handleAgentCommand(planFile, options, globalCliOptions);
@@ -125,14 +125,14 @@ describe('--batch-tasks flag pass-through tests', () => {
       expect(rmplanAgentSpy).toHaveBeenCalledWith(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(false);
+      expect(passedOptions.serialTasks).toBe(false);
     });
   });
 
   describe('flag combination preservation', () => {
-    test('batchTasks combined with other execution options', async () => {
+    test('serialTasks combined with other execution options', async () => {
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         executor: 'claude-code',
         model: 'claude-3-5-sonnet',
         steps: 5,
@@ -146,7 +146,7 @@ describe('--batch-tasks flag pass-through tests', () => {
       expect(rmplanAgentSpy).toHaveBeenCalledWith(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.executor).toBe('claude-code');
       expect(passedOptions.model).toBe('claude-3-5-sonnet');
       expect(passedOptions.steps).toBe(5);
@@ -154,9 +154,9 @@ describe('--batch-tasks flag pass-through tests', () => {
       expect(passedOptions.nonInteractive).toBe(true);
     });
 
-    test('batchTasks combined with workspace options', async () => {
+    test('serialTasks combined with workspace options', async () => {
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         workspace: 'test-workspace-123',
         autoWorkspace: true,
         newWorkspace: true,
@@ -168,15 +168,15 @@ describe('--batch-tasks flag pass-through tests', () => {
       expect(rmplanAgentSpy).toHaveBeenCalledWith(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.workspace).toBe('test-workspace-123');
       expect(passedOptions.autoWorkspace).toBe(true);
       expect(passedOptions.newWorkspace).toBe(true);
     });
 
-    test('batchTasks combined with logging options', async () => {
+    test('serialTasks combined with logging options', async () => {
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         'no-log': true,
         verbose: true,
       };
@@ -187,15 +187,15 @@ describe('--batch-tasks flag pass-through tests', () => {
       expect(rmplanAgentSpy).toHaveBeenCalledWith(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions['no-log']).toBe(true);
       expect(passedOptions.verbose).toBe(true);
     });
   });
 
   describe('global CLI options pass-through', () => {
-    test('batchTasks with complex global CLI options', async () => {
-      const options = { batchTasks: true };
+    test('serialTasks with complex global CLI options', async () => {
+      const options = { serialTasks: true };
       const globalCliOptions = {
         config: {
           paths: {
@@ -218,13 +218,13 @@ describe('--batch-tasks flag pass-through tests', () => {
       // Verify both options and globalCliOptions are preserved
       const [passedPlanFile, passedOptions, passedGlobalOptions] = rmplanAgentSpy.mock.calls[0];
       expect(passedPlanFile).toBe(planFile);
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedGlobalOptions).toEqual(globalCliOptions);
     });
   });
 
-  describe('plan discovery with batchTasks', () => {
-    test('batchTasks preserved with --next plan discovery', async () => {
+  describe('plan discovery with serialTasks', () => {
+    test('serialTasks preserved with --next plan discovery', async () => {
       // Mock findNextPlan to return a plan
       const nextPlan = {
         id: 2,
@@ -238,7 +238,7 @@ describe('--batch-tasks flag pass-through tests', () => {
       }));
 
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         next: true,
       };
       const globalCliOptions = {};
@@ -248,11 +248,11 @@ describe('--batch-tasks flag pass-through tests', () => {
       expect(rmplanAgentSpy).toHaveBeenCalledWith(nextPlan.filename, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.next).toBe(true);
     });
 
-    test('batchTasks preserved with --current plan discovery', async () => {
+    test('serialTasks preserved with --current plan discovery', async () => {
       const currentPlan = {
         id: 3,
         title: 'Current Plan',
@@ -265,7 +265,7 @@ describe('--batch-tasks flag pass-through tests', () => {
       }));
 
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         current: true,
       };
       const globalCliOptions = {};
@@ -275,14 +275,14 @@ describe('--batch-tasks flag pass-through tests', () => {
       expect(rmplanAgentSpy).toHaveBeenCalledWith(currentPlan.filename, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.current).toBe(true);
     });
   });
 
-  describe('error handling with batchTasks', () => {
+  describe('error handling with serialTasks', () => {
     test('error thrown when plan file is required but not provided', async () => {
-      const options = { batchTasks: true };
+      const options = { serialTasks: true };
       const globalCliOptions = {};
 
       await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
@@ -292,24 +292,24 @@ describe('--batch-tasks flag pass-through tests', () => {
       expect(rmplanAgentSpy).not.toHaveBeenCalled();
     });
 
-    test('batchTasks preserves error handling behavior', async () => {
+    test('serialTasks preserves error handling behavior', async () => {
       // Test that the flag doesn't interfere with normal error handling
-      const options = { batchTasks: true };
+      const options = { serialTasks: true };
       const globalCliOptions = {};
 
-      // This should work without throwing errors related to batchTasks processing
+      // This should work without throwing errors related to serialTasks processing
       await handleAgentCommand(planFile, options, globalCliOptions);
 
       expect(rmplanAgentSpy).toHaveBeenCalled();
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
     });
   });
 
   describe('option type preservation', () => {
-    test('numeric options are preserved with batchTasks', async () => {
+    test('numeric options are preserved with serialTasks', async () => {
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         steps: 10,
         timeout: 5000,
       };
@@ -318,16 +318,16 @@ describe('--batch-tasks flag pass-through tests', () => {
       await handleAgentCommand(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.steps).toBe(10);
       expect(passedOptions.timeout).toBe(5000);
       expect(typeof passedOptions.steps).toBe('number');
       expect(typeof passedOptions.timeout).toBe('number');
     });
 
-    test('boolean options are preserved with batchTasks', async () => {
+    test('boolean options are preserved with serialTasks', async () => {
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         dryRun: false,
         nonInteractive: true,
         direct: false,
@@ -337,19 +337,19 @@ describe('--batch-tasks flag pass-through tests', () => {
       await handleAgentCommand(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.dryRun).toBe(false);
       expect(passedOptions.nonInteractive).toBe(true);
       expect(passedOptions.direct).toBe(false);
-      expect(typeof passedOptions.batchTasks).toBe('boolean');
+      expect(typeof passedOptions.serialTasks).toBe('boolean');
       expect(typeof passedOptions.dryRun).toBe('boolean');
       expect(typeof passedOptions.nonInteractive).toBe('boolean');
       expect(typeof passedOptions.direct).toBe('boolean');
     });
 
-    test('string options are preserved with batchTasks', async () => {
+    test('string options are preserved with serialTasks', async () => {
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         executor: 'claude-code',
         model: 'gpt-4',
         workspace: 'test-123',
@@ -359,7 +359,7 @@ describe('--batch-tasks flag pass-through tests', () => {
       await handleAgentCommand(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.executor).toBe('claude-code');
       expect(passedOptions.model).toBe('gpt-4');
       expect(passedOptions.workspace).toBe('test-123');
@@ -372,7 +372,7 @@ describe('--batch-tasks flag pass-through tests', () => {
   describe('edge cases', () => {
     test('handles null and undefined options gracefully', async () => {
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         model: null,
         workspace: undefined,
       };
@@ -381,14 +381,14 @@ describe('--batch-tasks flag pass-through tests', () => {
       await handleAgentCommand(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.model).toBe(null);
       expect(passedOptions.workspace).toBe(undefined);
     });
 
     test('handles empty string options', async () => {
       const options = {
-        batchTasks: true,
+        serialTasks: true,
         executor: '',
         workspace: '',
       };
@@ -397,22 +397,22 @@ describe('--batch-tasks flag pass-through tests', () => {
       await handleAgentCommand(planFile, options, globalCliOptions);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
       expect(passedOptions.executor).toBe('');
       expect(passedOptions.workspace).toBe('');
     });
 
     test('handles options object mutation', async () => {
-      const options = { batchTasks: true };
+      const options = { serialTasks: true };
       const globalCliOptions = {};
 
       await handleAgentCommand(planFile, options, globalCliOptions);
 
       // The original options object should not be affected
-      expect(options.batchTasks).toBe(true);
+      expect(options.serialTasks).toBe(true);
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
-      expect(passedOptions.batchTasks).toBe(true);
+      expect(passedOptions.serialTasks).toBe(true);
     });
   });
 });

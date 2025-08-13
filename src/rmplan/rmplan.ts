@@ -287,8 +287,8 @@ function createAgentCommand(command: Command, description: string) {
     )
     .option('--dry-run', 'Print the generated prompt but do not execute it')
     .option(
-      '--batch-tasks',
-      'Enable batch task execution mode where the agent selects and processes multiple tasks together'
+      '--serial-tasks',
+      'Disable batch task execution mode and process tasks one at a time (default is batch mode)'
     )
     .allowExcessArguments(true)
     .allowUnknownOption(true)

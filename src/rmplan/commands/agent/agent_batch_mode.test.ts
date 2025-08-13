@@ -161,7 +161,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
   }
 
   describe('batch mode activation and loop behavior', () => {
-    test('batch mode executes when options.batchTasks is true', async () => {
+    test('batch mode executes by default (when options.serialTasks is not true)', async () => {
       await createPlanFile({
         tasks: [
           {
@@ -177,7 +177,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, 'no-log': true, dryRun: true, nonInteractive: true };
+      const options = { 'no-log': true, dryRun: true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -193,7 +193,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       expect(callArgs.task.description).toContain('Task 2: Task 2');
     });
 
-    test('batch mode does not execute when options.batchTasks is false', async () => {
+    test('batch mode does not execute when options.serialTasks is true', async () => {
       await createPlanFile({
         tasks: [
           {
@@ -210,7 +210,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         getAllIncompleteTasks: mock(() => []),
       }));
 
-      const options = { batchTasks: false, 'no-log': true, nonInteractive: true };
+      const options = { serialTasks: true, 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -280,7 +280,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         }
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -297,7 +297,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -331,7 +331,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, 'no-log': true, dryRun: true, nonInteractive: true };
+      const options = { 'no-log': true, dryRun: true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -381,7 +381,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, 'no-log': true, dryRun: true, nonInteractive: true };
+      const options = { 'no-log': true, dryRun: true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -420,7 +420,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, 'no-log': true, dryRun: true, nonInteractive: true };
+      const options = { 'no-log': true, dryRun: true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -458,7 +458,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         });
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -489,7 +489,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         });
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -538,7 +538,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         });
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -576,7 +576,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         });
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -605,7 +605,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, 'no-log': true, dryRun: true, nonInteractive: true };
+      const options = { 'no-log': true, dryRun: true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -657,7 +657,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         });
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -681,7 +681,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
       executePostApplyCommandSpy.mockResolvedValue(false); // Command fails
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await expect(rmplanAgent(planFile, options, globalCliOptions)).rejects.toThrow(
@@ -702,7 +702,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, 'no-log': true, dryRun: true, nonInteractive: true };
+      const options = { 'no-log': true, dryRun: true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -736,7 +736,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       executorExecuteSpy.mockClear();
       executorExecuteSpy.mockRejectedValue(new Error('Executor failed'));
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await expect(rmplanAgent(planFile, options, globalCliOptions)).rejects.toThrow(
@@ -750,7 +750,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       // Create invalid plan file
       await fs.writeFile(planFile, 'invalid yaml content [');
 
-      const options = { batchTasks: true, 'no-log': true };
+      const options = { 'no-log': true };
       const globalCliOptions = {};
 
       // Should throw error when trying to parse invalid YAML
@@ -809,7 +809,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         }
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -863,7 +863,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         });
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -891,7 +891,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+      const options = { 'no-log': true, nonInteractive: true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -912,7 +912,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true };
+      const options = {  };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -937,7 +937,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       const customExecutor = { execute: mock(), filePathPrefix: '/custom/' };
       buildExecutorAndLogSpy.mockReturnValue(customExecutor);
 
-      const options = { batchTasks: true, executor: 'custom-executor', 'no-log': true };
+      const options = { executor: 'custom-executor', 'no-log': true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);
@@ -962,7 +962,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const options = { batchTasks: true, model: 'custom-model', 'no-log': true };
+      const options = { model: 'custom-model', 'no-log': true };
       const globalCliOptions = {};
 
       await rmplanAgent(planFile, options, globalCliOptions);

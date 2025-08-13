@@ -4,8 +4,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-describe('--batch-tasks flag simple smoke tests', () => {
-  test('--batch-tasks flag is recognized and does not cause CLI errors', async () => {
+describe('--serial-tasks flag simple smoke tests', () => {
+  test('--serial-tasks flag is recognized and does not cause CLI errors', async () => {
     // Create a temporary directory for this test
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-smoke-test-'));
     const rmplanPath = path.join(process.cwd(), 'src/rmplan/rmplan.ts');
@@ -16,11 +16,11 @@ describe('--batch-tasks flag simple smoke tests', () => {
       expect(helpResult.exitCode).toBe(0);
 
       const helpOutput = helpResult.stdout.toString();
-      expect(helpOutput).toContain('--batch-tasks');
-      expect(helpOutput).toContain('Enable batch task execution mode');
+      expect(helpOutput).toContain('--serial-tasks');
+      expect(helpOutput).toContain('Disable batch task execution mode and process tasks one at a time');
 
       // Test that the flag doesn't cause parsing errors when used
-      const flagResult = await $`bun ${rmplanPath} agent --batch-tasks --help`.nothrow();
+      const flagResult = await $`bun ${rmplanPath} agent --serial-tasks --help`.nothrow();
       expect(flagResult.exitCode).toBe(0);
 
       // Should not contain any error messages about unknown options
@@ -33,7 +33,7 @@ describe('--batch-tasks flag simple smoke tests', () => {
     }
   });
 
-  test('run command alias also supports --batch-tasks', async () => {
+  test('run command alias also supports --serial-tasks', async () => {
     const rmplanPath = path.join(process.cwd(), 'src/rmplan/rmplan.ts');
 
     // Test that the flag works with the 'run' alias as well
@@ -41,7 +41,7 @@ describe('--batch-tasks flag simple smoke tests', () => {
     expect(result.exitCode).toBe(0);
 
     const output = result.stdout.toString();
-    expect(output).toContain('--batch-tasks');
-    expect(output).toContain('Enable batch task execution mode');
+    expect(output).toContain('--serial-tasks');
+    expect(output).toContain('Disable batch task execution mode and process tasks one at a time');
   });
 });

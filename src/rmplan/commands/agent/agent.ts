@@ -386,8 +386,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   }
 
-  // Check if batch mode is enabled
-  if (options.batchTasks) {
+  // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
+  if (!options.serialTasks) {
     return executeBatchMode({
       config,
       baseDir: currentBaseDir,
