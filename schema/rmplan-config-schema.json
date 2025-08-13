@@ -5,6 +5,7 @@
   "properties": {
     "issueTracker": {
       "description": "Issue tracking service to use for import commands and issue-related operations",
+      "default": "github",
       "type": "string",
       "enum": [
         "github",
@@ -230,6 +231,43 @@
         "instructions": {
           "description": "Path to a planning document file to include in all planning prompts",
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "agents": {
+      "description": "Custom instructions for implementer, tester, and reviewer agents",
+      "type": "object",
+      "properties": {
+        "implementer": {
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "Path to custom instructions file for the implementer agent",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tester": {
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "Path to custom instructions file for the tester agent",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "reviewer": {
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "Path to custom instructions file for the reviewer agent",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

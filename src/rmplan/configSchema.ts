@@ -63,8 +63,8 @@ export const rmplanConfigSchema = z
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])
-      .optional()
       .default('github')
+      .optional()
       .describe('Issue tracking service to use for import commands and issue-related operations'),
     /** An array of commands to run after changes are successfully applied by the agent. */
     postApplyCommands: z.array(postApplyCommandSchema).optional(),
