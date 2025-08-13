@@ -34,10 +34,21 @@ export interface ReviewHistoryEntry {
 /**
  * Sanitizes a plan ID to create a safe filename component.
  * Removes or replaces characters that are not safe for filenames.
+ * Prevents path traversal attacks.
  */
 function sanitizePlanIdForFilename(planId: string): string {
+  // Check for explicit path traversal attempts
+  if (planId.includes('..')) {
+    throw new Error('Invalid plan ID: contains path traversal characters');
+  }
+  
+  // Additional length check
+  if (planId.length > 100) {
+    throw new Error('Invalid plan ID: too long');
+  }
+  
   return planId
-    .replace(/[^a-zA-Z0-9._-]/g, '-') // Replace unsafe chars with hyphens
+    .replace(/[^a-zA-Z0-9._-]/g, '-') // Replace unsafe chars (including / and \) with hyphens
     .replace(/-+/g, '-') // Collapse multiple hyphens
     .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
 }
@@ -230,7 +241,29 @@ export async function loadReviewHistory(reviewsDir: string): Promise<ReviewHisto
  * but can be shortened. We'll accept 7-40 character hex strings.
  */
 function isValidCommitHash(hash: string): boolean {
-  return /^[a-f0-9]{7,40}$/i.test(hash);
+  return /^[a-f0-9]{7,40}$/i.test(hash.trim());
+}
+
+/**
+ * Validates and sanitizes review summary content
+ */
+function validateReviewSummary(summary: string): string {
+  const trimmed = summary.trim();
+  
+  if (trimmed.length === 0) {
+    throw new Error('Review summary cannot be empty');
+  }
+  
+  if (trimmed.length > 10000) {
+    throw new Error('Review summary too long (max 10000 characters)');
+  }
+  
+  // Check for potentially dangerous content
+  if (trimmed.includes('\x00') || trimmed.includes('\x1b')) {
+    throw new Error('Review summary contains invalid characters');
+  }
+  
+  return trimmed;
 }
 
 /**
@@ -253,26 +286,42 @@ export async function createGitNote(
     return false;
   }
   
-  if (!reviewSummary || reviewSummary.trim().length === 0) {
-    debugLog('Empty review summary provided');
+  try {
+    const validatedSummary = validateReviewSummary(reviewSummary);
+    reviewSummary = validatedSummary;
+  } catch (error) {
+    debugLog('Invalid review summary: %s', (error as Error).message);
     return false;
   }
   
   try {
-    // Create a git note with the review summary
-    const noteCommand = $`git notes add -m ${reviewSummary} ${commitHash}`.cwd(gitRoot).nothrow();
-    const result = await noteCommand;
+    // Create a git note with the review summary - use proper argument escaping
+    const result = await $`git notes add -m ${reviewSummary} ${commitHash}`.cwd(gitRoot).nothrow();
     
     if (result.exitCode === 0) {
       debugLog('Created git note for commit %s', commitHash);
       return true;
     } else {
+      const errorMsg = result.stderr.toString().trim() || 'Unknown error';
       debugLog('Failed to create git note. Exit code: %d, stderr: %s', 
-        result.exitCode, result.stderr.toString());
+        result.exitCode, errorMsg);
+      
+      // Handle specific error cases
+      if (errorMsg.includes('Notes already exist')) {
+        debugLog('Git note already exists for commit %s', commitHash);
+        return false;
+      }
+      
+      if (errorMsg.includes('bad object')) {
+        debugLog('Invalid commit hash: %s', commitHash);
+        return false;
+      }
+      
       return false;
     }
   } catch (error) {
-    debugLog('Error creating git note: %o', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    debugLog('Error creating git note: %s', errorMessage);
     return false;
   }
 }

@@ -5,7 +5,7 @@
  */
 
 import { $ } from 'bun';
-import { readFile, writeFile, mkdir, stat, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat, access, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getUsingJj } from '../common/git.js';
 
@@ -47,7 +47,7 @@ export interface DiffRange {
 }
 
 /**
- * Stores last review metadata for a specific plan
+ * Stores last review metadata for a specific plan using atomic file operations
  */
 export async function storeLastReviewMetadata(
   gitRoot: string,
@@ -55,6 +55,7 @@ export async function storeLastReviewMetadata(
   metadata: IncrementalReviewMetadata
 ): Promise<void> {
   const metadataPath = await getMetadataFilePath(gitRoot);
+  const tempPath = `${metadataPath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
   
   // Ensure the directory exists
   await mkdir(getMetadataDir(gitRoot), { recursive: true });
@@ -76,9 +77,23 @@ export async function storeLastReviewMetadata(
     lastReviewTimestamp: new Date(metadata.lastReviewTimestamp), // Ensure proper Date object
   };
   
-  // Write back to file
-  const jsonData = JSON.stringify(allMetadata, null, 2);
-  await writeFile(metadataPath, jsonData, 'utf-8');
+  // Atomic write: write to temp file first, then rename
+  try {
+    const jsonData = JSON.stringify(allMetadata, null, 2);
+    await writeFile(tempPath, jsonData, 'utf-8');
+    await rename(tempPath, metadataPath);
+  } catch (error) {
+    // Clean up temp file if it exists
+    try {
+      await access(tempPath);
+      await writeFile(tempPath, '', 'utf-8'); // Clear content for security
+      // Note: we can't reliably delete the temp file in all scenarios,
+      // but clearing its content prevents data leakage
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
 }
 
 /**
@@ -124,24 +139,50 @@ async function isUsingJjInDir(gitRoot: string): Promise<boolean> {
 }
 
 /**
+ * Validates a commit hash format
+ */
+function isValidCommitHash(hash: string): boolean {
+  // Git commit hashes are typically 40-character hexadecimal strings,
+  // but can be shortened. We'll accept 7-40 character hex strings.
+  return /^[a-f0-9]{7,40}$/i.test(hash.trim());
+}
+
+/**
  * Calculates the diff range between a previous commit and current HEAD
  */
 export async function calculateDiffRange(gitRoot: string, fromCommit: string): Promise<DiffRange> {
+  // Validate input commit hash
+  if (!fromCommit || !isValidCommitHash(fromCommit)) {
+    throw new Error(`Invalid commit hash format: ${fromCommit}`);
+  }
+  
   const usingJj = await isUsingJjInDir(gitRoot);
   let toCommit: string;
   
   if (usingJj) {
     const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow();
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to get current jj commit: ${result.stderr.toString()}`);
+      const errorMsg = result.stderr.toString().trim() || 'Unknown error';
+      throw new Error(`Failed to get current jj commit: ${errorMsg}`);
     }
     toCommit = result.stdout.toString().trim();
+    
+    // Validate the retrieved commit hash
+    if (!isValidCommitHash(toCommit)) {
+      throw new Error(`Invalid current commit hash from jj: ${toCommit}`);
+    }
   } else {
     const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow();
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to get current git commit: ${result.stderr.toString()}`);
+      const errorMsg = result.stderr.toString().trim() || 'Unknown error';
+      throw new Error(`Failed to get current git commit: ${errorMsg}`);
     }
     toCommit = result.stdout.toString().trim();
+    
+    // Validate the retrieved commit hash
+    if (!isValidCommitHash(toCommit)) {
+      throw new Error(`Invalid current commit hash from git: ${toCommit}`);
+    }
   }
   
   return {
@@ -185,6 +226,16 @@ export async function getIncrementalDiff(
   fromCommit: string,
   baseBranch: string
 ): Promise<DiffResult> {
+  // Additional validation for baseBranch
+  if (!baseBranch || baseBranch.trim().length === 0) {
+    throw new Error('Base branch name cannot be empty');
+  }
+  
+  // Sanitize branch name to prevent command injection
+  if (!/^[a-zA-Z0-9._/-]+$/.test(baseBranch)) {
+    throw new Error(`Invalid base branch name format: ${baseBranch}`);
+  }
+  
   const range = await calculateDiffRange(gitRoot, fromCommit);
   
   // If from and to commits are the same, no changes
@@ -323,10 +374,11 @@ export async function hasIncrementalMetadata(gitRoot: string, planId: string): P
 }
 
 /**
- * Clears incremental review metadata for a specific plan
+ * Clears incremental review metadata for a specific plan using atomic operations
  */
 export async function clearIncrementalMetadata(gitRoot: string, planId: string): Promise<void> {
   const metadataPath = await getMetadataFilePath(gitRoot);
+  const tempPath = `${metadataPath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
   
   try {
     const data = await readFile(metadataPath, 'utf-8');
@@ -334,11 +386,24 @@ export async function clearIncrementalMetadata(gitRoot: string, planId: string):
     
     delete allMetadata[planId];
     
+    // Atomic write: write to temp file first, then rename
     const jsonData = JSON.stringify(allMetadata, null, 2);
-    await writeFile(metadataPath, jsonData, 'utf-8');
+    await writeFile(tempPath, jsonData, 'utf-8');
+    await rename(tempPath, metadataPath);
   } catch (error) {
-    // File doesn't exist or can't be read, nothing to clear
-    return;
+    // Clean up temp file if it exists
+    try {
+      await access(tempPath);
+      await writeFile(tempPath, '', 'utf-8'); // Clear content for security
+    } catch {
+      // Ignore cleanup errors
+    }
+    
+    // If the original file doesn't exist or can't be read, nothing to clear
+    if (error instanceof Error && error.message.includes('ENOENT')) {
+      return;
+    }
+    throw error;
   }
 }
 
