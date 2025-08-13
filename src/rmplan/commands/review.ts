@@ -3,8 +3,8 @@
 
 import { $ } from 'bun';
 import chalk from 'chalk';
-import { readFile } from 'node:fs/promises';
-import { join, isAbsolute, resolve, relative } from 'node:path';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join, isAbsolute, resolve, relative, dirname } from 'node:path';
 import { getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -15,6 +15,12 @@ import { readPlanFile, resolvePlanFile, readAllPlans } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getParentChain, getCompletedChildren } from '../utils/hierarchy.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
+import {
+  createReviewResult,
+  createFormatter,
+  type VerbosityLevel,
+  type FormatterOptions,
+} from '../formatters/review_formatter.js';
 
 export async function handleReviewCommand(planFile: string, options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -229,12 +235,100 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
   log(chalk.cyan('\n## Executing Code Review\n'));
 
+  let rawOutput = '';
+
   try {
-    await executor.execute(reviewPrompt, {
-      planId: planData.id?.toString() ?? 'unknown',
-      planTitle: planData.title ?? 'Untitled Plan',
-      planFilePath: resolvedPlanFile,
-    });
+    // Capture the executor output for formatting
+    const originalLog = console.log;
+    const outputBuffer: string[] = [];
+
+    // Temporarily capture console output
+    console.log = (...args: any[]) => {
+      outputBuffer.push(args.join(' '));
+      originalLog(...args);
+    };
+
+    try {
+      await executor.execute(reviewPrompt, {
+        planId: planData.id?.toString() ?? 'unknown',
+        planTitle: planData.title ?? 'Untitled Plan',
+        planFilePath: resolvedPlanFile,
+      });
+
+      rawOutput = outputBuffer.join('\n');
+    } finally {
+      // Restore original console.log
+      console.log = originalLog;
+    }
+
+    // Create structured review result
+    const reviewResult = createReviewResult(
+      planData.id?.toString() ?? 'unknown',
+      planData.title ?? 'Untitled Plan',
+      diffResult.baseBranch,
+      diffResult.changedFiles,
+      rawOutput
+    );
+
+    // Determine format and verbosity from options or config
+    const outputFormat = options.format || config.review?.outputFormat || 'terminal';
+    const verbosity: VerbosityLevel = options.verbosity || 'normal';
+    
+    // Validate format
+    if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {
+      log(chalk.yellow(`Warning: Invalid format '${outputFormat}', using 'terminal'`));
+    }
+
+    // Create formatter options
+    const formatterOptions: FormatterOptions = {
+      verbosity,
+      showFiles: options.showFiles !== false && verbosity !== 'minimal',
+      showSuggestions: !options.noSuggestions,
+      colorEnabled: !options.noColor && outputFormat === 'terminal',
+    };
+
+    // Format the review result
+    const formatter = createFormatter(outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal');
+    const formattedOutput = formatter.format(reviewResult, formatterOptions);
+
+    // Save to file if requested
+    if (options.outputFile) {
+      try {
+        // Ensure directory exists
+        const outputDir = dirname(options.outputFile);
+        await mkdir(outputDir, { recursive: true });
+
+        await writeFile(options.outputFile, formattedOutput, 'utf-8');
+        log(chalk.green(`Review results saved to: ${options.outputFile}`));
+      } catch (saveErr) {
+        const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
+        log(chalk.yellow(`Warning: Could not save review to file: ${saveErrorMessage}`));
+      }
+    } else if (config.review?.saveLocation) {
+      // Use config save location if no explicit output file
+      try {
+        const saveDir = isAbsolute(config.review.saveLocation) 
+          ? config.review.saveLocation 
+          : join(gitRoot, config.review.saveLocation);
+        
+        await mkdir(saveDir, { recursive: true });
+        
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `review-${planData.id}-${timestamp}${formatter.getFileExtension()}`;
+        const savePath = join(saveDir, filename);
+        
+        await writeFile(savePath, formattedOutput, 'utf-8');
+        log(chalk.green(`Review results saved to: ${savePath}`));
+      } catch (saveErr) {
+        const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
+        log(chalk.yellow(`Warning: Could not save review to configured location: ${saveErrorMessage}`));
+      }
+    }
+
+    // Display formatted output to console (unless saving to file and format is not terminal)
+    if (!options.outputFile || outputFormat === 'terminal') {
+      log('\n' + formattedOutput);
+    }
 
     log(chalk.green('\nCode review completed successfully!'));
   } catch (err) {

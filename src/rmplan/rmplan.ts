@@ -501,6 +501,32 @@ program
     '--focus <areas>',
     'Comma-separated list of focus areas (e.g., security,performance,testing). Overrides config focus areas.'
   )
+  .option(
+    '--format <format>',
+    'Output format for review results: json, markdown, or terminal. Overrides config setting.',
+    'terminal'
+  )
+  .option(
+    '--verbosity <level>',
+    'Output verbosity level: minimal, normal, or detailed.',
+    'normal'
+  )
+  .option(
+    '--output-file <path>',
+    'Save review results to the specified file path. Format determined by --format option.'
+  )
+  .option(
+    '--no-color',
+    'Disable colored output in terminal format.'
+  )
+  .option(
+    '--show-files',
+    'Include changed files list in output (enabled by default except in minimal verbosity).'
+  )
+  .option(
+    '--no-suggestions',
+    'Hide suggestions in the formatted output.'
+  )
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
     await handleReviewCommand(planFile, options, command).catch(handleCommandError);
