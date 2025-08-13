@@ -1,11 +1,14 @@
 ---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Testing Infrastructure Improvements
 goal: Achieve 90% test coverage and reduce test runtime
 id: 103
-status: pending
+status: in_progress
 priority: medium
+dependencies:
+  - 104
 parent: 100
-dependencies: [104]
+updatedAt: 2025-08-13T21:04:33.592Z
 project:
   title: Testing Excellence Initiative
   goal: Build a robust and fast testing infrastructure
@@ -17,11 +20,11 @@ project:
     - Setting up continuous testing in CI/CD
 tasks:
   - title: Set up test coverage reporting
+    done: false
     description: Configure coverage tools and CI integration
     files:
       - jest.config.js
       - .github/workflows/test.yml
-    done: false
     steps:
       - prompt: Configure Jest coverage thresholds
         done: false
@@ -30,11 +33,11 @@ tasks:
       - prompt: Set up coverage badges in README
         done: false
   - title: Optimize test performance
+    done: false
     description: Parallelize tests and reduce redundant setup
     files:
       - src/tests/setup.ts
       - src/tests/utils/*.ts
-    done: false
     steps:
       - prompt: Implement shared test fixtures and factories
         done: false
@@ -43,4 +46,5 @@ tasks:
       - prompt: Extract common test setup to reduce duplication
         done: false
 ---
+
 This plan depends on plan 104 (Test Data Generation) and is part of the Q1 2024 goals.

@@ -107,12 +107,18 @@ interface DiffResult {
 // Maximum diff size to prevent memory issues (10MB)
 const MAX_DIFF_SIZE = 10 * 1024 * 1024;
 
-function sanitizeBranchName(branch: string): string {
+export function sanitizeBranchName(branch: string): string {
   // Only allow alphanumeric characters, hyphens, underscores, forward slashes, and dots
   // This is a conservative approach for git/jj branch names
   if (!/^[a-zA-Z0-9._/-]+$/.test(branch)) {
     throw new Error(`Invalid branch name format: ${branch}`);
   }
+  
+  // Additional security check: prevent path traversal attempts
+  if (branch.includes('..') || branch.startsWith('/') || branch.includes('\\')) {
+    throw new Error(`Invalid branch name format: ${branch}`);
+  }
+  
   return branch;
 }
 
