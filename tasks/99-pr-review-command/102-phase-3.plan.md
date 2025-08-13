@@ -69,25 +69,26 @@ tasks:
       - src/rmplan/configSchema.test.ts
       - src/rmplan/configSchema.ts
       - src/rmplan/commands/review.ts
+    done: true
     steps:
       - prompt: >
           Create tests in configSchema.test.ts for the new review configuration
           section. Test validation of focus areas array, output format enum
           values, and file path resolution for custom instructions and save
           locations.
-        done: false
+        done: true
       - prompt: >
           Extend rmplanConfigSchema in configSchema.ts with a new 'review'
           section containing: focusAreas (array of strings), outputFormat (enum:
           json/markdown/terminal), saveLocation (string path),
           customInstructionsPath (string path), incrementalReview (boolean), and
           excludePatterns (array of glob patterns).
-        done: false
+        done: true
       - prompt: >
           Update the review command handler to load and use the review
           configuration settings, falling back to sensible defaults when not
           specified. Pass configuration values to the appropriate functions.
-        done: false
+        done: true
   - title: Implement custom review instructions
     description: >
       Add support for providing custom review criteria through CLI options or
@@ -112,21 +113,22 @@ tasks:
       - src/rmplan/commands/review.test.ts
       - src/rmplan/commands/review.ts
       - src/rmplan/rmplan.ts
+    done: true
     steps:
       - prompt: >
           Add tests for custom review instructions in review.test.ts, including
           loading from file, CLI override behavior, and focus area filtering.
-        done: false
+        done: true
       - prompt: >
           Add CLI options to the review command in rmplan.ts: --instructions for
           inline text, --instructions-file for file path, and --focus for
           comma-separated focus areas.
-        done: false
+        done: true
       - prompt: >
           Update handleReviewCommand to load custom instructions from config or
           CLI, merge them appropriately, and pass them to buildReviewPrompt
           which should then pass them to getReviewerPrompt.
-        done: false
+        done: true
   - title: Create structured output formatting
     description: >
       Develop formatted output options for review results, including markdown
