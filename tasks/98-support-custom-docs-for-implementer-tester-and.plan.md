@@ -43,6 +43,7 @@ tasks:
       - Invalid configurations are rejected appropriately
 
       - The schema remains backward compatible (works without agents section)
+    done: true
     files:
       - src/rmplan/configSchema.ts
       - src/rmplan/configSchema.test.ts
@@ -55,7 +56,7 @@ tasks:
           partial configurations with only some agents,
 
           invalid field names within agents, and ensuring the field is optional.
-        done: false
+        done: true
       - prompt: >
           In configSchema.ts, add the new `agents` field to rmplanConfigSchema
           after the `planning` field.
@@ -64,11 +65,11 @@ tasks:
           objects, each containing an optional instructions string field.
 
           Add appropriate descriptions for each field to document their purpose.
-        done: false
+        done: true
       - prompt: >
           Run the tests to ensure the new schema validation works correctly and
           all existing tests still pass.
-        done: false
+        done: true
   - title: "Task 2: Modify agent prompt functions to accept custom instructions"
     description: >
       The `getImplementerPrompt`, `getTesterPrompt`, and `getReviewerPrompt`
@@ -99,6 +100,7 @@ tasks:
       compatibility)
 
       - Custom instructions appear in the expected location within the prompt
+    done: true
     files:
       - src/rmplan/executors/claude_code/agent_prompts.ts
       - src/rmplan/executors/claude_code/agent_prompts.test.ts
@@ -111,24 +113,24 @@ tasks:
           context section and that prompts still work
 
           without custom instructions.
-        done: false
+        done: true
       - prompt: >
           Update the function signatures of getImplementerPrompt,
           getTesterPrompt, and getReviewerPrompt to accept
 
           an optional second parameter `customInstructions?: string`.
-        done: false
+        done: true
       - prompt: >
           In each prompt function, add logic to include the custom instructions
           if provided. Insert them as a
 
           "## Custom Instructions" section after the "## Context and Task"
           section but before the primary responsibilities.
-        done: false
+        done: true
       - prompt: >
           Run the tests to ensure custom instructions are properly included and
           all existing functionality remains intact.
-        done: false
+        done: true
   - title: "Task 3: Load and pass custom instructions in `ClaudeCodeExecutor`"
     description: >
       In the `execute` method of `ClaudeCodeExecutor`
@@ -155,6 +157,7 @@ tasks:
       Error handling will log warnings for missing files but not fail the
       execution, similar to how other optional configuration files are handled
       in the codebase.
+    done: true
     files:
       - src/rmplan/executors/claude_code.ts
     steps:
@@ -166,7 +169,7 @@ tasks:
           Include try-catch error handling that logs
 
           warnings for missing files and returns undefined.
-        done: false
+        done: true
       - prompt: >
           In the execute method, after getting the git root and before
           generating agent files, add code to load
@@ -176,7 +179,7 @@ tasks:
 
           instructions in variables like implementerInstructions,
           testerInstructions, and reviewerInstructions.
-        done: false
+        done: true
       - prompt: >
           Update the calls to getImplementerPrompt, getTesterPrompt, and
           getReviewerPrompt to pass the loaded
@@ -185,7 +188,7 @@ tasks:
           definitions are created correctly with
 
           the custom instructions included.
-        done: false
+        done: true
   - title: "Task 4: Add an integration test for custom agent instructions"
     description: >
       A new integration test will be added to
@@ -212,6 +215,7 @@ tasks:
       instructions. It will use real file operations (following the testing
       philosophy of preferring real filesystem operations over mocks where
       possible).
+    done: true
     files:
       - src/rmplan/executors/claude_code.test.ts
     steps:

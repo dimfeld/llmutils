@@ -161,7 +161,7 @@ export class ClaudeCodeExecutor implements Executor {
       return content;
     } catch (error) {
       // Log a warning but don't fail the execution
-      debugLog(`Warning: Could not load agent instructions from ${instructionPath}: ${error}`);
+      debugLog(`Warning: Could not load agent instructions from ${instructionPath}: ${error as Error}`);
       return undefined;
     }
   }
