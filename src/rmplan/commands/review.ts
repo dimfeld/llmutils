@@ -5,7 +5,7 @@ import { $ } from 'bun';
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, relative, dirname } from 'node:path';
-import { getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
+import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
@@ -37,31 +37,6 @@ import {
 } from '../incremental_review.js';
 import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
-
-/**
- * Gets the current commit hash from the repository
- */
-async function getCurrentCommitHash(gitRoot: string): Promise<string | null> {
-  try {
-    const usingJj = await getUsingJj();
-
-    if (usingJj) {
-      const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow();
-      if (result.exitCode === 0) {
-        return result.stdout.toString().trim();
-      }
-    } else {
-      const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow();
-      if (result.exitCode === 0) {
-        return result.stdout.toString().trim();
-      }
-    }
-  } catch (error) {
-    log(chalk.yellow(`Warning: Could not get current commit hash: ${(error as Error).message}`));
-  }
-
-  return null;
-}
 
 /**
  * Comprehensive error handling for saving review results
