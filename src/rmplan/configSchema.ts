@@ -63,7 +63,6 @@ export const rmplanConfigSchema = z
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])
-      .default('github')
       .optional()
       .describe('Issue tracking service to use for import commands and issue-related operations'),
     /** An array of commands to run after changes are successfully applied by the agent. */
@@ -190,6 +189,43 @@ export const rmplanConfigSchema = z
       .strict()
       .optional()
       .describe('Custom instructions for implementer, tester, and reviewer agents'),
+    /** Review-specific configuration options */
+    review: z
+      .object({
+        /** Default focus areas for reviews (security, performance, testing, etc.) */
+        focusAreas: z
+          .array(z.string())
+          .optional()
+          .describe('Default focus areas for reviews such as security, performance, testing'),
+        /** Output format for review results */
+        outputFormat: z
+          .enum(['json', 'markdown', 'terminal'])
+          .optional()
+          .describe('Format for review output: json, markdown, or terminal'),
+        /** Path where review results should be saved */
+        saveLocation: z
+          .string()
+          .optional()
+          .describe('Directory path where review results should be saved'),
+        /** Path to custom review instructions file */
+        customInstructionsPath: z
+          .string()
+          .optional()
+          .describe('Path to file containing custom review instructions'),
+        /** Enable incremental review behavior (only review changes since last review) */
+        incrementalReview: z
+          .boolean()
+          .optional()
+          .describe('Enable incremental reviews that only analyze changes since last review'),
+        /** Glob patterns to exclude from review */
+        excludePatterns: z
+          .array(z.string())
+          .optional()
+          .describe('Glob patterns for files/directories to exclude from review'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration options for the review command'),
     /**
      * Executor-specific options mapped by executor name.
      * Each executor has its own schema:

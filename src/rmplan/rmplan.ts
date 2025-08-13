@@ -489,6 +489,18 @@ program
     'Specify the LLM model to use for the review. Overrides model from rmplan config.'
   )
   .option('--dry-run', 'Generate and print the review prompt but do not execute it', false)
+  .option(
+    '--instructions <text>',
+    'Inline custom instructions for the review. Overrides config file instructions.'
+  )
+  .option(
+    '--instructions-file <path>',
+    'Path to file containing custom review instructions. Overrides config file instructions.'
+  )
+  .option(
+    '--focus <areas>',
+    'Comma-separated list of focus areas (e.g., security,performance,testing). Overrides config focus areas.'
+  )
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
     await handleReviewCommand(planFile, options, command).catch(handleCommandError);

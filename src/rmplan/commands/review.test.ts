@@ -1685,3 +1685,452 @@ tasks:
     });
   });
 });
+
+describe('Custom review instructions', () => {
+  test('loads custom instructions from config file', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'rmplan-custom-instructions-'));
+    const instructionsPath = join(testDir, 'custom-instructions.md');
+    const instructionsContent = 'Focus on code security and performance issues.';
+    
+    await writeFile(instructionsPath, instructionsContent);
+    
+    const planContent = `
+id: 1
+title: Test Plan
+goal: Test custom instructions
+tasks:
+  - title: Test task
+    description: A test task
+`;
+    const planFile = join(testDir, 'test-plan.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string) => {
+        expect(prompt).toContain('Focus on code security and performance issues.');
+        expect(prompt).toContain('Custom Instructions');
+        return 'Mock review result';
+      }),
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'copy-only',
+        review: {
+          customInstructionsPath: instructionsPath,
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => {
+        const basePrompt = 'REVIEWER AGENT\n\nBase review prompt';
+        if (customInstructions?.trim()) {
+          return `${basePrompt}\n\n## Custom Instructions\n${customInstructions}`;
+        }
+        return basePrompt;
+      },
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(planFile, {}, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('prioritizes CLI instructions over config instructions', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'rmplan-cli-instructions-'));
+    const configInstructionsPath = join(testDir, 'config-instructions.md');
+    const configInstructions = 'Config instructions about security.';
+    
+    await writeFile(configInstructionsPath, configInstructions);
+    
+    const planContent = `
+id: 1
+title: Test Plan  
+goal: Test CLI override
+tasks:
+  - title: Test task
+    description: A test task
+`;
+    const planFile = join(testDir, 'test-plan.yml');
+    await writeFile(planFile, planContent);
+
+    const cliInstructions = 'CLI instructions about performance.';
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string) => {
+        expect(prompt).toContain('CLI instructions about performance.');
+        expect(prompt).not.toContain('Config instructions about security.');
+        return 'Mock review result';
+      }),
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'copy-only',
+        review: {
+          customInstructionsPath: configInstructionsPath,
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => {
+        const basePrompt = 'REVIEWER AGENT\n\nBase review prompt';
+        if (customInstructions?.trim()) {
+          return `${basePrompt}\n\n## Custom Instructions\n${customInstructions}`;
+        }
+        return basePrompt;
+      },
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(planFile, { instructions: cliInstructions }, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('loads instructions from file path provided via CLI', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'rmplan-cli-file-instructions-'));
+    const cliInstructionsPath = join(testDir, 'cli-instructions.md');
+    const cliInstructions = 'CLI file instructions for testing coverage.';
+    
+    await writeFile(cliInstructionsPath, cliInstructions);
+    
+    const planContent = `
+id: 1
+title: Test Plan
+goal: Test CLI file instructions
+tasks:
+  - title: Test task
+    description: A test task
+`;
+    const planFile = join(testDir, 'test-plan.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string) => {
+        expect(prompt).toContain('CLI file instructions for testing coverage.');
+        return 'Mock review result';
+      }),
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'copy-only',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => {
+        const basePrompt = 'REVIEWER AGENT\n\nBase review prompt';
+        if (customInstructions?.trim()) {
+          return `${basePrompt}\n\n## Custom Instructions\n${customInstructions}`;
+        }
+        return basePrompt;
+      },
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(planFile, { instructionsFile: cliInstructionsPath }, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('handles focus area filtering', async () => {
+    const planContent = `
+id: 1
+title: Test Plan
+goal: Test focus areas
+tasks:
+  - title: Test task
+    description: A test task
+`;
+    const planFile = join(testDir, 'test-focus.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string) => {
+        expect(prompt).toContain('Focus on: security, performance');
+        return 'Mock review result';
+      }),
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'copy-only',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => {
+        const basePrompt = 'REVIEWER AGENT\n\nBase review prompt';
+        if (customInstructions?.trim()) {
+          return `${basePrompt}\n\n## Custom Instructions\n${customInstructions}`;
+        }
+        return basePrompt;
+      },
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const focusAreas = ['security', 'performance'];
+    await handleReviewCommand(planFile, { focus: focusAreas.join(',') }, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('merges config focus areas with CLI focus areas', async () => {
+    const planContent = `
+id: 1
+title: Test Plan
+goal: Test merged focus areas
+tasks:
+  - title: Test task
+    description: A test task
+`;
+    const planFile = join(testDir, 'test-merged-focus.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string) => {
+        // Should contain focus areas from CLI (overriding config)
+        expect(prompt).toContain('Focus on: testing, documentation');
+        return 'Mock review result';
+      }),
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'copy-only',
+        review: {
+          focusAreas: ['security', 'performance'], // Config areas
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => {
+        const basePrompt = 'REVIEWER AGENT\n\nBase review prompt';
+        if (customInstructions?.trim()) {
+          return `${basePrompt}\n\n## Custom Instructions\n${customInstructions}`;
+        }
+        return basePrompt;
+      },
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // CLI focus areas should override config
+    await handleReviewCommand(planFile, { focus: 'testing,documentation' }, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('handles missing instructions file gracefully', async () => {
+    const planContent = `
+id: 1
+title: Test Plan
+goal: Test missing file handling
+tasks:
+  - title: Test task
+    description: A test task
+`;
+    const planFile = join(testDir, 'test-missing-file.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string) => {
+        // Should not contain custom instructions section
+        expect(prompt).not.toContain('Custom Instructions');
+        return 'Mock review result';
+      }),
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'copy-only',
+        review: {
+          customInstructionsPath: '/nonexistent/path/instructions.md',
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => {
+        const basePrompt = 'REVIEWER AGENT\n\nBase review prompt';
+        if (customInstructions?.trim()) {
+          return `${basePrompt}\n\n## Custom Instructions\n${customInstructions}`;
+        }
+        return basePrompt;
+      },
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Should handle missing file without throwing
+    await expect(handleReviewCommand(planFile, {}, mockCommand)).resolves.toBeUndefined();
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+});

@@ -3,6 +3,8 @@
 
 import { $ } from 'bun';
 import chalk from 'chalk';
+import { readFile } from 'node:fs/promises';
+import { join, isAbsolute } from 'node:path';
 import { getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -122,8 +124,57 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   log(chalk.cyan(`Found ${diffResult.changedFiles.length} changed files`));
   log(chalk.gray(`Comparing against: ${diffResult.baseBranch}`));
 
+  // Load custom instructions
+  let customInstructions = '';
+  
+  // First try CLI options (CLI takes precedence)
+  if (options.instructions) {
+    customInstructions = options.instructions;
+    log(chalk.gray('Using inline custom instructions from CLI'));
+  } else if (options.instructionsFile) {
+    try {
+      const instructionsPath = isAbsolute(options.instructionsFile) 
+        ? options.instructionsFile 
+        : join(gitRoot, options.instructionsFile);
+      customInstructions = await readFile(instructionsPath, 'utf-8');
+      log(chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`));
+    } catch (err) {
+      log(chalk.yellow(`Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${err}`));
+    }
+  } else if (config.review?.customInstructionsPath) {
+    // Fall back to config file instructions
+    try {
+      const instructionsPath = isAbsolute(config.review.customInstructionsPath)
+        ? config.review.customInstructionsPath
+        : join(gitRoot, config.review.customInstructionsPath);
+      customInstructions = await readFile(instructionsPath, 'utf-8');
+      log(chalk.gray(`Using custom instructions from config: ${config.review.customInstructionsPath}`));
+    } catch (err) {
+      log(chalk.yellow(`Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${err}`));
+    }
+  }
+
+  // Handle focus areas
+  let focusAreas: string[] = [];
+  if (options.focus) {
+    // CLI focus areas override config
+    focusAreas = options.focus.split(',').map((area: string) => area.trim()).filter(Boolean);
+    log(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
+  } else if (config.review?.focusAreas && config.review.focusAreas.length > 0) {
+    focusAreas = config.review.focusAreas;
+    log(chalk.gray(`Using focus areas from config: ${focusAreas.join(', ')}`));
+  }
+
+  // Add focus areas to custom instructions if provided
+  if (focusAreas.length > 0) {
+    const focusInstruction = `Focus on: ${focusAreas.join(', ')}`;
+    customInstructions = customInstructions 
+      ? `${customInstructions}\n\n${focusInstruction}`
+      : focusInstruction;
+  }
+
   // Build the review prompt
-  const reviewPrompt = buildReviewPrompt(planData, diffResult, parentChain, completedChildren);
+  const reviewPrompt = buildReviewPrompt(planData, diffResult, parentChain, completedChildren, customInstructions);
 
   // Set up executor
   const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
@@ -298,7 +349,8 @@ export function buildReviewPrompt(
   planData: PlanSchema,
   diffResult: DiffResult,
   parentChain: PlanWithFilename[] = [],
-  completedChildren: PlanWithFilename[] = []
+  completedChildren: PlanWithFilename[] = [],
+  customInstructions?: string
 ): string {
   // Build parent plan context section if available
   const parentContext: string[] = [];
@@ -426,8 +478,8 @@ export function buildReviewPrompt(
     ``,
   ].join('\n');
 
-  // Use the reviewer agent template with our context
-  const reviewerPromptWithContext = getReviewerPrompt(contextContent, '');
+  // Use the reviewer agent template with our context and custom instructions
+  const reviewerPromptWithContext = getReviewerPrompt(contextContent, customInstructions || '');
 
   return reviewerPromptWithContext.prompt;
 }
