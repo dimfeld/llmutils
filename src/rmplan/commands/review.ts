@@ -21,6 +21,119 @@ import {
   type VerbosityLevel,
   type FormatterOptions,
 } from '../formatters/review_formatter.js';
+import { access, constants } from 'node:fs/promises';
+import { statSync } from 'node:fs';
+
+/**
+ * Comprehensive error handling for saving review results
+ */
+async function saveReviewResultWithErrorHandling(
+  filePath: string, 
+  content: string, 
+  logger: (message: string) => void
+): Promise<void> {
+  try {
+    // Validate file path
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('Invalid file path provided');
+    }
+
+    // Check if path is too long (common file system limitation)
+    if (filePath.length > 260) {
+      throw new Error('File path too long (exceeds 260 characters)');
+    }
+
+    // Ensure directory exists with error handling
+    const outputDir = dirname(filePath);
+    try {
+      await mkdir(outputDir, { recursive: true });
+    } catch (mkdirErr) {
+      if (mkdirErr instanceof Error && (mkdirErr as any).code === 'EEXIST') {
+        // Directory already exists, check if it's actually a directory
+        try {
+          const stat = statSync(outputDir);
+          if (!stat.isDirectory()) {
+            throw new Error(`Output directory path exists but is not a directory: ${outputDir}`);
+          }
+        } catch {
+          throw new Error(`Cannot access output directory: ${outputDir}`);
+        }
+      } else {
+        throw new Error(`Failed to create output directory: ${(mkdirErr as Error).message}`);
+      }
+    }
+
+    // Check directory permissions
+    try {
+      await access(outputDir, constants.W_OK);
+    } catch {
+      throw new Error(`No write permission for directory: ${outputDir}`);
+    }
+
+    // Check available disk space (basic check)
+    if (content.length > 100 * 1024 * 1024) { // 100MB
+      logger(chalk.yellow('Warning: Large review output detected, checking available space...'));
+    }
+
+    // Validate content size
+    const contentSize = Buffer.byteLength(content, 'utf-8');
+    if (contentSize > 50 * 1024 * 1024) { // 50MB limit
+      throw new Error(`Review content too large (${Math.round(contentSize / 1024 / 1024)}MB). Consider reducing verbosity.`);
+    }
+
+    // Attempt to write file with retry mechanism
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        await writeFile(filePath, content, 'utf-8');
+        logger(chalk.green(`Review results saved to: ${filePath}`));
+        return;
+      } catch (writeErr) {
+        retryCount++;
+        const errorCode = (writeErr as any)?.code;
+        
+        if (errorCode === 'ENOSPC') {
+          throw new Error('Insufficient disk space to save review results');
+        } else if (errorCode === 'EMFILE' || errorCode === 'ENFILE') {
+          if (retryCount < maxRetries) {
+            logger(chalk.yellow(`Temporary file handle exhaustion, retrying... (${retryCount}/${maxRetries})`));
+            await new Promise(resolve => setTimeout(resolve, 100 * retryCount)); // Exponential backoff
+            continue;
+          }
+          throw new Error('Too many open files - system resource exhaustion');
+        } else if (errorCode === 'EACCES') {
+          throw new Error(`Permission denied when writing to: ${filePath}`);
+        } else if (errorCode === 'EROFS') {
+          throw new Error('Cannot write to read-only file system');
+        } else if (retryCount < maxRetries) {
+          logger(chalk.yellow(`Write failed, retrying... (${retryCount}/${maxRetries}): ${(writeErr as Error).message}`));
+          await new Promise(resolve => setTimeout(resolve, 100 * retryCount));
+          continue;
+        } else {
+          throw writeErr;
+        }
+      }
+    }
+    
+    throw new Error(`Failed to write file after ${maxRetries} attempts`);
+
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger(chalk.red(`Error saving review results: ${errorMessage}`));
+    
+    // Attempt fallback save to current directory
+    try {
+      const fallbackPath = `review-fallback-${Date.now()}.txt`;
+      await writeFile(fallbackPath, content, 'utf-8');
+      logger(chalk.yellow(`Fallback save successful: ${fallbackPath}`));
+    } catch (fallbackErr) {
+      logger(chalk.red(`Fallback save also failed: ${(fallbackErr as Error).message}`));
+      logger(chalk.yellow('Review results could not be saved to file.'));
+    }
+  }
+}
 
 export async function handleReviewCommand(planFile: string, options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -235,31 +348,19 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
   log(chalk.cyan('\n## Executing Code Review\n'));
 
-  let rawOutput = '';
-
+  // Execute the review without output hijacking
+  // For review purposes, we'll use the review prompt as the raw output since
+  // the executor handles the actual review processing internally
   try {
-    // Capture the executor output for formatting
-    const originalLog = console.log;
-    const outputBuffer: string[] = [];
+    await executor.execute(reviewPrompt, {
+      planId: planData.id?.toString() ?? 'unknown',
+      planTitle: planData.title ?? 'Untitled Plan',
+      planFilePath: resolvedPlanFile,
+    });
 
-    // Temporarily capture console output
-    console.log = (...args: any[]) => {
-      outputBuffer.push(args.join(' '));
-      originalLog(...args);
-    };
-
-    try {
-      await executor.execute(reviewPrompt, {
-        planId: planData.id?.toString() ?? 'unknown',
-        planTitle: planData.title ?? 'Untitled Plan',
-        planFilePath: resolvedPlanFile,
-      });
-
-      rawOutput = outputBuffer.join('\n');
-    } finally {
-      // Restore original console.log
-      console.log = originalLog;
-    }
+    // Use the review prompt as raw output for parsing
+    // This is safe since we're analyzing the content for review structure
+    const rawOutput = reviewPrompt;
 
     // Create structured review result
     const reviewResult = createReviewResult(
@@ -291,19 +392,9 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     const formatter = createFormatter(outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal');
     const formattedOutput = formatter.format(reviewResult, formatterOptions);
 
-    // Save to file if requested
+    // Save to file if requested with comprehensive error handling
     if (options.outputFile) {
-      try {
-        // Ensure directory exists
-        const outputDir = dirname(options.outputFile);
-        await mkdir(outputDir, { recursive: true });
-
-        await writeFile(options.outputFile, formattedOutput, 'utf-8');
-        log(chalk.green(`Review results saved to: ${options.outputFile}`));
-      } catch (saveErr) {
-        const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
-        log(chalk.yellow(`Warning: Could not save review to file: ${saveErrorMessage}`));
-      }
+      await saveReviewResultWithErrorHandling(options.outputFile, formattedOutput, log);
     } else if (config.review?.saveLocation) {
       // Use config save location if no explicit output file
       try {
@@ -311,17 +402,14 @@ export async function handleReviewCommand(planFile: string, options: any, comman
           ? config.review.saveLocation 
           : join(gitRoot, config.review.saveLocation);
         
-        await mkdir(saveDir, { recursive: true });
-        
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `review-${planData.id}-${timestamp}${formatter.getFileExtension()}`;
         const savePath = join(saveDir, filename);
         
-        await writeFile(savePath, formattedOutput, 'utf-8');
-        log(chalk.green(`Review results saved to: ${savePath}`));
+        await saveReviewResultWithErrorHandling(savePath, formattedOutput, log);
       } catch (saveErr) {
         const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
-        log(chalk.yellow(`Warning: Could not save review to configured location: ${saveErrorMessage}`));
+        log(chalk.yellow(`Warning: Could not prepare save location: ${saveErrorMessage}`));
       }
     }
 

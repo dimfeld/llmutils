@@ -3,6 +3,7 @@
 
 import chalk from 'chalk';
 import { table } from 'table';
+import { basename, extname, normalize } from 'node:path';
 
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
 export type ReviewCategory = 'security' | 'performance' | 'bug' | 'style' | 'compliance' | 'testing' | 'other';
@@ -57,7 +58,114 @@ export interface ReviewFormatter {
 }
 
 /**
+ * Safely validates and sanitizes a file path to prevent security exploits
+ */
+function validateAndSanitizeFilePath(filePath: string): string | null {
+  if (!filePath || typeof filePath !== 'string') {
+    return null;
+  }
+
+  // Remove any dangerous characters and patterns
+  // Filter out control characters by checking character codes
+  const removeControlChars = (str: string): string => {
+    return str.split('').filter(char => {
+      const code = char.charCodeAt(0);
+      return !(code >= 0 && code <= 31) && !(code >= 127 && code <= 159);
+    }).join('');
+  };
+  
+  const sanitized = removeControlChars(filePath)
+    .trim()
+    .replace(/[<>:"|?*]/g, '') // Remove Windows forbidden characters
+    .replace(/\.\./g, '') // Remove path traversal attempts
+    .replace(/^\/+|\/+$/g, ''); // Remove leading/trailing slashes
+
+  // Validate length
+  if (sanitized.length === 0 || sanitized.length > 260) {
+    return null;
+  }
+
+  // Must have a valid file extension
+  const extension = extname(sanitized);
+  const validExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.cpp', '.c', '.h', '.go', '.rs', '.rb', '.php', '.cs'];
+  if (!validExtensions.includes(extension.toLowerCase())) {
+    return null;
+  }
+
+  // Normalize path to prevent various encoding exploits
+  try {
+    const normalized = normalize(sanitized);
+    // Final check - path should not go outside project scope
+    if (normalized.includes('../') || normalized.startsWith('/')) {
+      return null;
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
+// Pre-compiled regex patterns for better performance
+const ISSUE_PATTERNS = [
+  // Critical/Security issues
+  {
+    pattern: /(?:critical|security|vulnerability|exploit|injection|xss|sql|csrf|rce)/i,
+    severity: 'critical' as const,
+    category: 'security' as const,
+  },
+  // Performance issues
+  {
+    pattern: /(?:performance|slow|bottleneck|memory leak|cpu|inefficient|optimization)/i,
+    severity: 'major' as const,
+    category: 'performance' as const,
+  },
+  // Bugs
+  {
+    pattern: /(?:bug|error|exception|crash|fail|broken|incorrect|wrong)/i,
+    severity: 'major' as const,
+    category: 'bug' as const,
+  },
+  // Testing issues
+  {
+    pattern: /(?:test|testing|coverage|unit test|integration test|mock)/i,
+    severity: 'minor' as const,
+    category: 'testing' as const,
+  },
+  // Style/Code quality
+  {
+    pattern: /(?:style|formatting|naming|convention|readability|maintainability)/i,
+    severity: 'minor' as const,
+    category: 'style' as const,
+  },
+];
+
+// Pre-compiled issue marker patterns
+const ISSUE_MARKERS = [
+  /^[-*•]\s*(.+)/,  // Bullet points
+  /^\d+\.\s*(.+)/,  // Numbered lists
+  /^⚠️|❌|🔴|🟡|⭐\s*(.+)/,  // Emoji markers
+  /^(CRITICAL|MAJOR|MINOR|INFO):\s*(.+)/i,  // Severity prefixes
+];
+
+// Pre-compiled file path patterns
+const FILE_EXT_PATTERN = '(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs)';
+const PATH_COMPONENT_PATTERN = '[a-zA-Z0-9._/-]{1,100}'; // Limited length to prevent ReDoS
+
+const FILE_LINE_PATTERN = new RegExp(`\\b(?:in|at|line)\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN}):(\\d{1,6})\\b`, 'i');
+const FILE_ONLY_PATTERN = new RegExp(`\\b(?:in|at)\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN})\\b`, 'i');
+const FILE_KEYWORD_PATTERN = new RegExp(`\\bfile\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN})\\b`, 'i');
+
+// Pre-compiled recommendation and action item patterns
+const RECOMMENDATION_PATTERN = /^[-*•]\s*(recommend|suggestion|should|consider|improve)/i;
+const RECOMMENDATION_START_PATTERN = /^(recommend|suggestion|should|consider|improve)/i;
+const SECTION_HEADER_PATTERN = /^\w+:\s*$/;
+const ACTION_ITEM_PATTERN = /^(todo|action|next|fix|address|update)/i;
+const ACTION_ITEM_SECTION_PATTERN = /^\w+\s*(items?)?\s*:\s*$/;
+const ACTION_BULLET_PATTERN = /^[-*•]\s*(todo|action|fix)/i;
+
+/**
  * Parses raw reviewer agent output to extract structured review findings
+ * Optimized for performance with large outputs
  */
 export function parseReviewerOutput(rawOutput: string): {
   issues: ReviewIssue[];
@@ -68,57 +176,27 @@ export function parseReviewerOutput(rawOutput: string): {
   const recommendations: string[] = [];
   const actionItems: string[] = [];
 
-  // Patterns to match different types of findings
-  const issuePatterns = [
-    // Critical/Security issues
-    {
-      pattern: /(?:critical|security|vulnerability|exploit|injection|xss|sql|csrf|rce)/i,
-      severity: 'critical' as const,
-      category: 'security' as const,
-    },
-    // Performance issues
-    {
-      pattern: /(?:performance|slow|bottleneck|memory leak|cpu|inefficient|optimization)/i,
-      severity: 'major' as const,
-      category: 'performance' as const,
-    },
-    // Bugs
-    {
-      pattern: /(?:bug|error|exception|crash|fail|broken|incorrect|wrong)/i,
-      severity: 'major' as const,
-      category: 'bug' as const,
-    },
-    // Testing issues
-    {
-      pattern: /(?:test|testing|coverage|unit test|integration test|mock)/i,
-      severity: 'minor' as const,
-      category: 'testing' as const,
-    },
-    // Style/Code quality
-    {
-      pattern: /(?:style|formatting|naming|convention|readability|maintainability)/i,
-      severity: 'minor' as const,
-      category: 'style' as const,
-    },
-  ];
+  // Limit processing for very large outputs to prevent performance issues
+  const MAX_OUTPUT_LENGTH = 100000; // 100KB limit
+  const MAX_ISSUES = 100; // Limit number of issues processed
+  const MAX_LINES = 1000; // Limit number of lines processed
+
+  if (rawOutput.length > MAX_OUTPUT_LENGTH) {
+    rawOutput = rawOutput.substring(0, MAX_OUTPUT_LENGTH);
+  }
 
   // Split output into lines for processing
   const lines = rawOutput.split('\n');
+  const lineCount = Math.min(lines.length, MAX_LINES);
   let issueId = 1;
 
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < lineCount && issues.length < MAX_ISSUES; i++) {
     const line = lines[i].trim();
-    if (!line) continue;
+    if (!line || line.length > 500) continue; // Skip empty or very long lines
 
-    // Look for issue markers (common patterns in reviewer output)
-    const issueMarkers = [
-      /^[-*•]\s*(.+)/,  // Bullet points
-      /^\d+\.\s*(.+)/,  // Numbered lists
-      /^⚠️|❌|🔴|🟡|⭐\s*(.+)/,  // Emoji markers
-      /^(CRITICAL|MAJOR|MINOR|INFO):\s*(.+)/i,  // Severity prefixes
-    ];
-
-    for (const marker of issueMarkers) {
+    // Check for issue markers first (most specific patterns)
+    let foundIssue = false;
+    for (const marker of ISSUE_MARKERS) {
       const match = line.match(marker);
       if (match) {
         const content = match[1] || match[2] || match[0];
@@ -127,7 +205,8 @@ export function parseReviewerOutput(rawOutput: string): {
         let severity: ReviewSeverity = 'info';
         let category: ReviewCategory = 'other';
 
-        for (const pattern of issuePatterns) {
+        // Use optimized pattern matching with early termination
+        for (const pattern of ISSUE_PATTERNS) {
           if (pattern.pattern.test(content)) {
             severity = pattern.severity;
             category = pattern.category;
@@ -135,25 +214,34 @@ export function parseReviewerOutput(rawOutput: string): {
           }
         }
 
-        // Extract file and line number if present
+        // Extract file and line number if present using pre-compiled patterns
         let file: string | undefined;
         let lineNumber: number | undefined;
 
-        // Try more specific patterns first to avoid false matches
-        const fileLineMatch = content.match(/(?:in|at|line)\s+(.+?\.(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs)):(\d+)/i);
+        const fileLineMatch = content.match(FILE_LINE_PATTERN);
         if (fileLineMatch) {
-          file = fileLineMatch[1];
-          lineNumber = parseInt(fileLineMatch[2], 10);
+          const potentialFile = validateAndSanitizeFilePath(fileLineMatch[1]);
+          if (potentialFile) {
+            file = potentialFile;
+            const lineNum = parseInt(fileLineMatch[2], 10);
+            if (lineNum > 0 && lineNum <= 100000) {
+              lineNumber = lineNum;
+            }
+          }
         } else {
-          // Try file without line number, but make sure it's not the "file" keyword pattern
-          const fileOnlyMatch = content.match(/(?:in|at)\s+(.+?\.(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs))\b/i);
-          if (fileOnlyMatch && !fileOnlyMatch[0].includes(' file ')) {
-            file = fileOnlyMatch[1];
+          const fileOnlyMatch = content.match(FILE_ONLY_PATTERN);
+          if (fileOnlyMatch) {
+            const potentialFile = validateAndSanitizeFilePath(fileOnlyMatch[1]);
+            if (potentialFile) {
+              file = potentialFile;
+            }
           } else {
-            // Try "file path/to/file.ext" pattern
-            const fileKeywordMatch = content.match(/\bfile\s+(.+?\.(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs))\b/i);
+            const fileKeywordMatch = content.match(FILE_KEYWORD_PATTERN);
             if (fileKeywordMatch) {
-              file = fileKeywordMatch[1];
+              const potentialFile = validateAndSanitizeFilePath(fileKeywordMatch[1]);
+              if (potentialFile) {
+                file = potentialFile;
+              }
             }
           }
         }
@@ -169,29 +257,38 @@ export function parseReviewerOutput(rawOutput: string): {
           line: lineNumber,
         };
 
-        // Look for suggestions in following lines
-        if (i + 1 < lines.length) {
+        // Look for suggestions in following lines (limit lookahead)
+        if (i + 1 < lineCount) {
           const nextLine = lines[i + 1].trim();
-          if (nextLine.startsWith('Suggestion:') || nextLine.startsWith('Fix:') || nextLine.startsWith('Consider:')) {
+          if (nextLine.length < 200 && (nextLine.startsWith('Suggestion:') || nextLine.startsWith('Fix:') || nextLine.startsWith('Consider:'))) {
             issue.suggestion = nextLine.replace(/^(Suggestion|Fix|Consider):\s*/i, '');
           }
         }
 
         issues.push(issue);
+        foundIssue = true;
         break;
       }
     }
 
-    // Look for recommendations (exclude section headers)
-    if (line.match(/^[-*•]\s*(recommend|suggestion|should|consider|improve)/i) || 
-        (line.match(/^(recommend|suggestion|should|consider|improve)/i) && !line.match(/^\w+:\s*$/))) {
-      recommendations.push(line);
+    // Check for recommendations and action items even if we found an issue
+    // since some lines might match multiple patterns
+    
+    // Look for recommendations (with limits)
+    if (recommendations.length < 50 && line.length < 200) {
+      if (RECOMMENDATION_PATTERN.test(line) || 
+          (RECOMMENDATION_START_PATTERN.test(line) && !SECTION_HEADER_PATTERN.test(line))) {
+        recommendations.push(line);
+      }
     }
 
-    // Look for action items (exclude section headers)
-    if ((line.match(/^(todo|action|next|fix|address|update)/i) && !line.match(/^\w+\s*(items?)?\s*:\s*$/)) ||
-        line.match(/^[-*•]\s*(todo|action|fix)/i)) {
-      actionItems.push(line);
+    // Look for action items (with limits) - include various bullet point patterns
+    if (actionItems.length < 50 && line.length < 200) {
+      if ((ACTION_ITEM_PATTERN.test(line) && !ACTION_ITEM_SECTION_PATTERN.test(line)) ||
+          ACTION_BULLET_PATTERN.test(line) ||
+          /^[-*•]\s*(action|update|fix|address)/i.test(line)) {
+        actionItems.push(line);
+      }
     }
   }
 
@@ -258,33 +355,74 @@ export function generateReviewSummary(issues: ReviewIssue[], filesReviewed: numb
 }
 
 /**
+ * Validates that an object can be safely serialized to JSON
+ */
+function validateJsonStructure(obj: any): void {
+  if (obj === null || obj === undefined) {
+    throw new Error('Cannot serialize null or undefined to JSON');
+  }
+  
+  // Check for circular references by attempting serialization
+  try {
+    JSON.stringify(obj);
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('circular')) {
+      throw new Error('Cannot serialize object with circular references to JSON');
+    }
+    throw new Error(`JSON serialization failed: ${(error as Error).message}`);
+  }
+
+  // Validate critical fields exist and are correct types
+  if (typeof obj === 'object' && obj !== null) {
+    if (obj.planId !== undefined && typeof obj.planId !== 'string') {
+      throw new Error('planId must be a string');
+    }
+    if (obj.issues !== undefined && !Array.isArray(obj.issues)) {
+      throw new Error('issues must be an array');
+    }
+    if (obj.summary !== undefined && typeof obj.summary !== 'object') {
+      throw new Error('summary must be an object');
+    }
+  }
+}
+
+/**
  * JSON formatter for tooling integration
  */
 export class JsonFormatter implements ReviewFormatter {
   format(result: ReviewResult, options: FormatterOptions = { verbosity: 'normal' }): string {
+    let outputObject: any;
+
     if (options.verbosity === 'minimal') {
-      return JSON.stringify({
+      outputObject = {
         planId: result.planId,
         summary: result.summary,
         issueCount: result.issues.length,
-      }, null, 2);
+      };
+    } else if (options.verbosity === 'detailed') {
+      outputObject = result;
+    } else {
+      // Normal verbosity
+      outputObject = {
+        planId: result.planId,
+        planTitle: result.planTitle,
+        reviewTimestamp: result.reviewTimestamp,
+        baseBranch: result.baseBranch,
+        summary: result.summary,
+        issues: result.issues,
+        recommendations: result.recommendations,
+        actionItems: result.actionItems,
+      };
     }
 
-    if (options.verbosity === 'detailed') {
-      return JSON.stringify(result, null, 2);
-    }
+    // Validate the structure before serializing
+    validateJsonStructure(outputObject);
 
-    // Normal verbosity
-    return JSON.stringify({
-      planId: result.planId,
-      planTitle: result.planTitle,
-      reviewTimestamp: result.reviewTimestamp,
-      baseBranch: result.baseBranch,
-      summary: result.summary,
-      issues: result.issues,
-      recommendations: result.recommendations,
-      actionItems: result.actionItems,
-    }, null, 2);
+    try {
+      return JSON.stringify(outputObject, null, 2);
+    } catch (error) {
+      throw new Error(`Failed to generate JSON output: ${(error as Error).message}`);
+    }
   }
 
   getFileExtension(): string {
@@ -419,7 +557,7 @@ export class TerminalFormatter implements ReviewFormatter {
     const sections: string[] = [];
 
     // Helper function to apply color conditionally
-    const color = (text: string, colorFn: any) => colorEnabled ? colorFn(text) : text;
+    const color = (text: string, colorFn: (str: string) => string) => colorEnabled ? colorFn(text) : text;
 
     // Header
     sections.push(color('📋 Code Review Report', chalk.bold.cyan));
@@ -593,7 +731,7 @@ export class TerminalFormatter implements ReviewFormatter {
 }
 
 /**
- * Creates a formatted review result from raw executor output
+ * Creates a formatted review result from raw executor output with memory safeguards
  */
 export function createReviewResult(
   planId: string,
@@ -602,18 +740,34 @@ export function createReviewResult(
   changedFiles: string[],
   rawOutput: string
 ): ReviewResult {
-  const { issues, recommendations, actionItems } = parseReviewerOutput(rawOutput);
-  const summary = generateReviewSummary(issues, changedFiles.length);
+  // Add memory safeguards to prevent excessive memory usage
+  const MAX_PLAN_ID_LENGTH = 100;
+  const MAX_PLAN_TITLE_LENGTH = 200;
+  const MAX_BRANCH_NAME_LENGTH = 100;
+  const MAX_CHANGED_FILES = 500;
+  const MAX_RAW_OUTPUT_LENGTH = 500000; // 500KB limit for raw output
+
+  // Sanitize and limit input parameters
+  const safePlanId = (planId || 'unknown').substring(0, MAX_PLAN_ID_LENGTH);
+  const safePlanTitle = (planTitle || 'Untitled Plan').substring(0, MAX_PLAN_TITLE_LENGTH);
+  const safeBranch = (baseBranch || 'main').substring(0, MAX_BRANCH_NAME_LENGTH);
+  const safeChangedFiles = changedFiles.slice(0, MAX_CHANGED_FILES);
+  const safeRawOutput = rawOutput.length > MAX_RAW_OUTPUT_LENGTH 
+    ? rawOutput.substring(0, MAX_RAW_OUTPUT_LENGTH) + '\n[Output truncated due to size limits]'
+    : rawOutput;
+
+  const { issues, recommendations, actionItems } = parseReviewerOutput(safeRawOutput);
+  const summary = generateReviewSummary(issues, safeChangedFiles.length);
 
   return {
-    planId,
-    planTitle,
+    planId: safePlanId,
+    planTitle: safePlanTitle,
     reviewTimestamp: new Date().toISOString(),
-    baseBranch,
-    changedFiles,
+    baseBranch: safeBranch,
+    changedFiles: safeChangedFiles,
     summary,
     issues,
-    rawOutput,
+    rawOutput: safeRawOutput,
     recommendations,
     actionItems,
   };
