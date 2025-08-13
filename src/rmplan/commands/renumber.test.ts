@@ -316,7 +316,7 @@ describe('rmplan renumber', () => {
     expect(updatedSet2Plan3.dependencies).toEqual([6, 7]);
   });
 
-  test('prefers specified plans when resolving conflicts', async () => {
+  test('keeps specified plans when resolving conflicts', async () => {
     // Create plans with conflicting IDs
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -325,8 +325,8 @@ describe('rmplan renumber', () => {
     await createPlan(1, 'Older plan - should be renumbered', '1-old.yml', oldTime);
     await createPlan(1, 'Newer plan - should keep ID', '1-new.yml', newTime);
 
-    // Use --prefer to keep the newer plan (which would normally be renumbered)
-    await handleRenumber({ prefer: ['1-new.yml'] }, createMockCommand());
+    // Use --keep to keep the newer plan (which would normally be renumbered)
+    await handleRenumber({ keep: ['1-new.yml'] }, createMockCommand());
 
     // Check that files were renamed correctly
     const files = await fs.promises.readdir(tasksDir);
@@ -343,7 +343,7 @@ describe('rmplan renumber', () => {
     expect(oldPlan.title).toBe('Older plan - should be renumbered');
   });
 
-  test('prefers parent and its children when parent is specified', async () => {
+  test('keeps parent and its children when parent is specified', async () => {
     // Create a hierarchy with conflicts
     const parent = {
       id: 1,
@@ -391,7 +391,7 @@ describe('rmplan renumber', () => {
     await writeTestPlan(path.join(tasksDir, '1-conflicting.yml'), conflictingPlan);
 
     // Prefer the parent, which should also protect its children
-    await handleRenumber({ prefer: ['1-parent.yml'] }, createMockCommand());
+    await handleRenumber({ keep: ['1-parent.yml'] }, createMockCommand());
 
     // Parent should keep ID 1
     const updatedParent = await readPlanFile(path.join(tasksDir, '1-parent.yml'));
@@ -417,7 +417,7 @@ describe('rmplan renumber', () => {
     expect(fs.existsSync(path.join(tasksDir, '1-conflicting.yml'))).toBe(false);
   });
 
-  test('handles multiple preferred files', async () => {
+  test('handles multiple keep files', async () => {
     // Create multiple sets of conflicting plans
     await createPlan(1, 'Plan A1', '1-a1.yml', new Date('2024-01-01').toISOString());
     await createPlan(1, 'Plan B1', '1-b1.yml', new Date('2024-01-02').toISOString());
@@ -425,7 +425,7 @@ describe('rmplan renumber', () => {
     await createPlan(2, 'Plan B2', '2-b2.yml', new Date('2024-01-02').toISOString());
 
     // Prefer the B plans (newer ones)
-    await handleRenumber({ prefer: ['1-b1.yml', '2-b2.yml'] }, createMockCommand());
+    await handleRenumber({ keep: ['1-b1.yml', '2-b2.yml'] }, createMockCommand());
 
     // B plans should keep their IDs
     const b1 = await readPlanFile(path.join(tasksDir, '1-b1.yml'));
@@ -442,7 +442,7 @@ describe('rmplan renumber', () => {
     expect(a2.id).toBe(4);
   });
 
-  test('handles absolute paths in --prefer option', async () => {
+  test('handles absolute paths in --keep option', async () => {
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
 
@@ -451,7 +451,7 @@ describe('rmplan renumber', () => {
 
     // Use absolute path for preference
     const absolutePath = path.join(tasksDir, '1-new.yml');
-    await handleRenumber({ prefer: [absolutePath] }, createMockCommand());
+    await handleRenumber({ keep: [absolutePath] }, createMockCommand());
 
     // Newer plan should keep ID 1
     const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
@@ -460,5 +460,393 @@ describe('rmplan renumber', () => {
     // Older plan should be renumbered
     const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
     expect(oldPlan.id).toBe(2);
+  });
+
+  // Branch-aware renumber tests
+  test('renumbers plans changed on current feature branch when resolving conflicts', async () => {
+    // Mock git functions to simulate being on a feature branch
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, '1-new.yml')]),
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    // Create conflicting plans - the newer file is the one changed on the branch
+    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
+    await createPlan(1, 'Newer plan - changed on branch', '1-new.yml', newTime);
+
+    await handleRenumber({}, createMockCommand());
+
+    // The older plan (unchanged on branch) should keep ID 1
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    expect(oldPlan.id).toBe(1);
+    expect(oldPlan.title).toBe('Older plan');
+
+    // The newer plan (changed on branch) should be renumbered to 2
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    expect(newPlan.id).toBe(2);
+    expect(newPlan.title).toBe('Newer plan - changed on branch');
+  });
+
+  test('uses timestamp logic when on trunk branch (main)', async () => {
+    // Mock git functions to simulate being on main branch
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'main'),
+      getChangedFilesOnBranch: mock(async () => []), // Not called when on trunk
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    // Create conflicting plans
+    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+
+    await handleRenumber({}, createMockCommand());
+
+    // Should use timestamp logic: older plan keeps ID 1
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    expect(oldPlan.id).toBe(1);
+    expect(oldPlan.title).toBe('Older plan');
+
+    // Newer plan should be renumbered to 2
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    expect(newPlan.id).toBe(2);
+    expect(newPlan.title).toBe('Newer plan');
+  });
+
+  test('keep flag overrides branch-based preference', async () => {
+    // Mock git functions to simulate being on a feature branch
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, '1-new.yml')]),
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    // Create conflicting plans - the newer file is changed on branch
+    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
+    await createPlan(1, 'Newer plan - changed on branch', '1-new.yml', newTime);
+
+    // Use --keep to override branch-based preference, keeping the changed file
+    await handleRenumber({ keep: ['1-new.yml'] }, createMockCommand());
+
+    // The newer plan should keep ID 1 due to explicit preference, even though it would normally be renumbered
+    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
+    expect(newPlan.id).toBe(1);
+    expect(newPlan.title).toBe('Newer plan - changed on branch');
+
+    // The older plan should be renumbered
+    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
+    expect(oldPlan.id).toBe(2);
+    expect(oldPlan.title).toBe('Older plan');
+  });
+
+  test('falls back to timestamp logic when no conflicting files were changed on branch', async () => {
+    // Mock git functions to simulate being on a feature branch but no conflicting files changed
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, 'different-file.yml')]),
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    // Create conflicting plans - neither file was changed on the branch
+    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+
+    await handleRenumber({}, createMockCommand());
+
+    // Should fall back to timestamp logic: older plan keeps ID 1
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    expect(oldPlan.id).toBe(1);
+    expect(oldPlan.title).toBe('Older plan');
+
+    // Newer plan should be renumbered to 2
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    expect(newPlan.id).toBe(2);
+    expect(newPlan.title).toBe('Newer plan');
+  });
+
+  test('handles errors when Git operations fail', async () => {
+    // Mock git functions where getChangedFilesOnBranch throws an error
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => {
+        throw new Error('Git operation failed');
+      }),
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    // Create conflicting plans
+    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+
+    // Should not throw and fall back to timestamp logic
+    await handleRenumber({}, createMockCommand());
+
+    // Should fall back to timestamp logic: older plan keeps ID 1
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    expect(oldPlan.id).toBe(1);
+    expect(oldPlan.title).toBe('Older plan');
+
+    // Newer plan should be renumbered to 2
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    expect(newPlan.id).toBe(2);
+    expect(newPlan.title).toBe('Newer plan');
+  });
+
+  test('handles mixed scenario where some files are changed on branch and others are not', async () => {
+    // Mock git functions to simulate being on a feature branch
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => [
+        path.join(tasksDir, '1-changed.yml'), // This one was changed on branch
+        // '1-unchanged.yml' was not changed on branch
+      ]),
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+    const middleTime = new Date('2024-03-01').toISOString();
+
+    // Create three conflicting plans with ID 1
+    await createPlan(1, 'Unchanged plan - oldest', '1-unchanged.yml', oldTime);
+    await createPlan(1, 'Changed plan - newer', '1-changed.yml', newTime);
+    await createPlan(1, 'Another unchanged plan - middle time', '1-unchanged2.yml', middleTime);
+
+    await handleRenumber({}, createMockCommand());
+
+    // The oldest unchanged plan should keep ID 1
+    const unchangedPlan = await readPlanFile(path.join(tasksDir, '1-unchanged.yml'));
+    expect(unchangedPlan.id).toBe(1);
+    expect(unchangedPlan.title).toBe('Unchanged plan - oldest');
+
+    // The changed plan should be renumbered (even though it's newer)
+    const changedPlan = await readPlanFile(path.join(tasksDir, '2-changed.yml'));
+    expect(changedPlan.id).toBe(2);
+    expect(changedPlan.title).toBe('Changed plan - newer');
+
+    // The other unchanged plan should also be renumbered (not the oldest unchanged)
+    const unchanged2Plan = await readPlanFile(path.join(tasksDir, '3-unchanged2.yml'));
+    expect(unchanged2Plan.id).toBe(3);
+    expect(unchanged2Plan.title).toBe('Another unchanged plan - middle time');
+  });
+
+  test('handles case where all conflicting files are changed on the branch', async () => {
+    // Mock git functions to simulate being on a feature branch
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => [
+        path.join(tasksDir, '1-changed-old.yml'),
+        path.join(tasksDir, '1-changed-new.yml'),
+        path.join(tasksDir, '1-changed-newest.yml'),
+      ]),
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+    const newestTime = new Date('2024-12-01').toISOString();
+
+    // Create three conflicting plans with ID 1, all changed on branch
+    await createPlan(1, 'Changed plan - oldest', '1-changed-old.yml', oldTime);
+    await createPlan(1, 'Changed plan - newer', '1-changed-new.yml', newTime);
+    await createPlan(1, 'Changed plan - newest', '1-changed-newest.yml', newestTime);
+
+    await handleRenumber({}, createMockCommand());
+
+    // When all files are changed on branch, should fall back to timestamp logic
+    // The oldest should keep ID 1
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-changed-old.yml'));
+    expect(oldPlan.id).toBe(1);
+    expect(oldPlan.title).toBe('Changed plan - oldest');
+
+    // The other two should be renumbered
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-changed-new.yml'));
+    expect(newPlan.id).toBe(2);
+    expect(newPlan.title).toBe('Changed plan - newer');
+
+    const newestPlan = await readPlanFile(path.join(tasksDir, '3-changed-newest.yml'));
+    expect(newestPlan.id).toBe(3);
+    expect(newestPlan.title).toBe('Changed plan - newest');
+  });
+
+  test('handles complex dependency updates with multiple conflict sets and branch logic', async () => {
+    // Mock git functions to simulate being on a feature branch
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => [
+        path.join(tasksDir, '1-changed.yml'), // ID 1 conflict - changed
+        path.join(tasksDir, '3-changed.yml'), // ID 3 conflict - changed
+      ]),
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    // Create first conflict set (ID 1)
+    const plan1Unchanged: PlanSchema = {
+      id: 1,
+      title: 'Plan 1 Unchanged',
+      goal: 'Goal 1',
+      details: 'Details 1',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: [3], // Depends on ID 3 which will also have conflicts
+      createdAt: oldTime,
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+
+    const plan1Changed: PlanSchema = {
+      id: 1,
+      title: 'Plan 1 Changed',
+      goal: 'Goal 1 updated',
+      details: 'Details 1 updated',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: [3], // Same dependency
+      createdAt: newTime,
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+
+    // Create second conflict set (ID 3)
+    const plan3Unchanged: PlanSchema = {
+      id: 3,
+      title: 'Plan 3 Unchanged',
+      goal: 'Goal 3',
+      details: 'Details 3',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: [],
+      createdAt: oldTime,
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+
+    const plan3Changed: PlanSchema = {
+      id: 3,
+      title: 'Plan 3 Changed',
+      goal: 'Goal 3 updated',
+      details: 'Details 3 updated',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: [],
+      createdAt: newTime,
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+
+    await writeTestPlan(path.join(tasksDir, '1-unchanged.yml'), plan1Unchanged);
+    await writeTestPlan(path.join(tasksDir, '1-changed.yml'), plan1Changed);
+    await writeTestPlan(path.join(tasksDir, '3-unchanged.yml'), plan3Unchanged);
+    await writeTestPlan(path.join(tasksDir, '3-changed.yml'), plan3Changed);
+
+    await handleRenumber({}, createMockCommand());
+
+    // Unchanged files should keep their original IDs
+    const unchangedPlan1 = await readPlanFile(path.join(tasksDir, '1-unchanged.yml'));
+    expect(unchangedPlan1.id).toBe(1);
+    expect(unchangedPlan1.dependencies).toEqual([3]); // Should still point to unchanged plan 3
+
+    const unchangedPlan3 = await readPlanFile(path.join(tasksDir, '3-unchanged.yml'));
+    expect(unchangedPlan3.id).toBe(3);
+
+    // Changed files should be renumbered to higher IDs
+    const changedPlan1 = await readPlanFile(path.join(tasksDir, '4-changed.yml'));
+    expect(changedPlan1.id).toBe(4);
+    expect(changedPlan1.dependencies).toEqual([5]); // Should point to the renumbered plan 3
+
+    const changedPlan3 = await readPlanFile(path.join(tasksDir, '5-changed.yml'));
+    expect(changedPlan3.id).toBe(5);
+  });
+
+  test('keep flag overrides branch logic with multiple conflict sets', async () => {
+    // Mock git functions to simulate being on a feature branch
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => [
+        path.join(tasksDir, '1-changed.yml'),
+        path.join(tasksDir, '2-changed.yml'),
+      ]),
+    }));
+
+    const oldTime = new Date('2024-01-01').toISOString();
+    const newTime = new Date('2024-06-01').toISOString();
+
+    // Create two sets of conflicts
+    await createPlan(1, 'Plan 1 Unchanged', '1-unchanged.yml', oldTime);
+    await createPlan(1, 'Plan 1 Changed - should keep via flag', '1-changed.yml', newTime);
+    await createPlan(2, 'Plan 2 Unchanged', '2-unchanged.yml', oldTime);
+    await createPlan(2, 'Plan 2 Changed - should be renumbered', '2-changed.yml', newTime);
+
+    // Use keep flag to prefer one of the changed files
+    await handleRenumber({ keep: ['1-changed.yml'] }, createMockCommand());
+
+    // The preferred changed file should keep its ID despite being changed on branch
+    const changedPlan1 = await readPlanFile(path.join(tasksDir, '1-changed.yml'));
+    expect(changedPlan1.id).toBe(1);
+    expect(changedPlan1.title).toBe('Plan 1 Changed - should keep via flag');
+
+    // The unchanged file should be renumbered
+    const unchangedPlan1 = await readPlanFile(path.join(tasksDir, '3-unchanged.yml'));
+    expect(unchangedPlan1.id).toBe(3);
+
+    // For the second conflict, branch logic should apply normally
+    // Unchanged file keeps ID 2, changed file gets renumbered
+    const unchangedPlan2 = await readPlanFile(path.join(tasksDir, '2-unchanged.yml'));
+    expect(unchangedPlan2.id).toBe(2);
+
+    const changedPlan2 = await readPlanFile(path.join(tasksDir, '4-changed.yml'));
+    expect(changedPlan2.id).toBe(4);
+  });
+
+  test('handles large number of changed files efficiently when no conflicts exist', async () => {
+    // Mock git functions to simulate being on a feature branch with many changed files
+    const changedFiles = [];
+    for (let i = 1; i <= 50; i++) {
+      changedFiles.push(path.join(tasksDir, `${i}.yml`));
+    }
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getCurrentBranchName: mock(async () => 'feature-branch'),
+      getChangedFilesOnBranch: mock(async () => changedFiles),
+    }));
+
+    // Create many non-conflicting plans (all with unique IDs)
+    for (let i = 1; i <= 50; i++) {
+      await createPlan(i, `Plan ${i}`, `${i}.yml`, new Date().toISOString());
+    }
+
+    const startTime = Date.now();
+    await handleRenumber({}, createMockCommand());
+    const endTime = Date.now();
+
+    // Should complete quickly (within 2 seconds for 50 plans with no conflicts)
+    expect(endTime - startTime).toBeLessThan(2000);
+
+    // Verify no files were changed (no conflicts to resolve)
+    for (let i = 1; i <= 50; i++) {
+      const plan = await readPlanFile(path.join(tasksDir, `${i}.yml`));
+      expect(plan.id).toBe(i);
+      expect(plan.title).toBe(`Plan ${i}`);
+    }
   });
 });

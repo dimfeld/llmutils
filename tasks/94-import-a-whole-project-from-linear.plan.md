@@ -13,4 +13,4 @@ tasks: []
 This should be able to import a project and its issues, or an issue and its subissues, from Linear and create a plan file with all of the issues and their dependencies.
 
 There should be an option to create it as a single plan file with each issue being a task, or as multiple plan files,
-one for each issue, with a parent "container" plan file for the project.
+one for each issue, with a parent "container" plan file for the project or parent issue.

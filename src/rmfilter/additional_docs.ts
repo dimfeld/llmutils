@@ -10,7 +10,7 @@ import {
   parseMdcFile,
   type MdcFile,
 } from './mdc.ts';
-import { getGitRoot, getUsingJj } from '../common/git.ts';
+import { getGitRoot, getUsingJj, getTrunkBranch, getChangedFilesOnBranch } from '../common/git.ts';
 
 // Helper function to escape XML attribute values (specifically quotes)
 function escapeXmlAttr(value: string): string {
@@ -429,120 +429,6 @@ export function parseJjRename(line: string): string {
 
 export const CURRENT_DIFF = `HEAD~`;
 
-async function getTrunkBranch(gitRoot: string): Promise<string> {
-  const defaultBranch = (await $`git branch --list main master`.cwd(gitRoot).nothrow().text())
-    .replace('*', '')
-    .trim();
-  return defaultBranch || 'main';
-}
-
-export interface GetChangedFilesOptions {
-  baseBranch?: string;
-  excludePaths?: string[];
-}
-
-/**
- * Gets the list of changed files compared to a base branch
- */
-export async function getChangedFiles(
-  gitRoot: string,
-  options: GetChangedFilesOptions | string = {}
-): Promise<string[]> {
-  // Support legacy string parameter for backward compatibility
-  const opts: GetChangedFilesOptions =
-    typeof options === 'string' ? { baseBranch: options } : options;
-
-  const { excludePaths = [] } = opts;
-  let baseBranch = opts.baseBranch;
-  if (!baseBranch) {
-    baseBranch = await getTrunkBranch(gitRoot);
-  }
-
-  if (!baseBranch) {
-    debugLog('[ChangedFiles] Could not determine base branch.');
-    return [];
-  }
-
-  const excludeFiles = [
-    'pnpm-lock.yaml',
-    'bun.lockb',
-    'package-lock.json',
-    'bun.lock',
-    'yarn.lock',
-    'Cargo.lock',
-    '.gitignore',
-    '.gitattributes',
-    '.editorconfig',
-    '.prettierrc',
-    '.prettierignore',
-    '.eslintrc',
-    '.eslintignore',
-    'tsconfig.json',
-    'tsconfig.build.json',
-    '.vscode/settings.json',
-    '.idea/**/*',
-    '*.log',
-    '*.tmp',
-    '.DS_Store',
-    'Thumbs.db',
-  ];
-
-  let changedFiles: string[] = [];
-  if (await getUsingJj()) {
-    if (baseBranch === CURRENT_DIFF) {
-      // convert from
-      baseBranch = '@-';
-    }
-
-    const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
-      '&'
-    );
-    const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
-    let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(gitRoot).nothrow().text();
-    changedFiles = summ
-      .split('\n')
-      .map((line) => {
-        line = line.trim();
-        if (!line || line.startsWith('D')) {
-          return '';
-        }
-        if (line.startsWith('R')) {
-          return parseJjRename(line);
-        }
-        return line.slice(2);
-      })
-      .filter((line) => !!line);
-  } else {
-    const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
-    let summ = await $`git diff --name-only ${baseBranch} ${exclude}`.cwd(gitRoot).nothrow().text();
-    changedFiles = summ
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => !!line);
-  }
-
-  // Filter out files based on excludePaths
-  if (excludePaths.length > 0) {
-    changedFiles = changedFiles.filter((file) => {
-      // Check if the file starts with any of the exclude paths
-      return !excludePaths.some((excludePath) => {
-        // Normalize paths for comparison
-        const normalizedFile = path.normalize(file);
-        const normalizedExclude = path.normalize(excludePath);
-
-        // Check if file is under the exclude path
-        return (
-          normalizedFile.startsWith(normalizedExclude + path.sep) ||
-          normalizedFile === normalizedExclude ||
-          normalizedFile.startsWith(normalizedExclude + '/')
-        );
-      });
-    });
-  }
-
-  return changedFiles;
-}
-
 export async function getDiffTag(
   gitRoot: string,
   values: { 'with-diff'?: boolean; 'diff-from'?: string; 'changed-files'?: boolean }
@@ -579,7 +465,7 @@ export async function getDiffTag(
     }
 
     if (values['changed-files']) {
-      changedFiles = await getChangedFiles(gitRoot, baseBranch);
+      changedFiles = await getChangedFilesOnBranch(gitRoot, baseBranch);
     }
   } else {
     const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
@@ -589,7 +475,7 @@ export async function getDiffTag(
     }
 
     if (values['changed-files'] && baseBranch) {
-      changedFiles = await getChangedFiles(gitRoot, baseBranch);
+      changedFiles = await getChangedFilesOnBranch(gitRoot, baseBranch);
     }
   }
 

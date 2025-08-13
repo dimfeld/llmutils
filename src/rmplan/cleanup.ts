@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { debugLog, error, log } from '../logging.ts';
-import { CURRENT_DIFF, getChangedFiles } from '../rmfilter/additional_docs.ts';
-import { getGitRoot } from '../common/git.ts';
+import { CURRENT_DIFF } from '../rmfilter/additional_docs.ts';
+import { getChangedFilesOnBranch, getGitRoot } from '../common/git.ts';
 
 const doubleSlash = /\/\/\s*.*$/;
 const slashStar = /\/\*[\s\S]*?\*\/$/;
@@ -115,7 +115,7 @@ export async function cleanupEolComments(baseBranch?: string, files?: string[]):
     }
   } else {
     // Fall back to changed files
-    targetFiles = await getChangedFiles(gitRoot, baseBranch || CURRENT_DIFF);
+    targetFiles = await getChangedFilesOnBranch(gitRoot, baseBranch || CURRENT_DIFF);
     if (targetFiles.length === 0) {
       log('No changed files found');
       return;

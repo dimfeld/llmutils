@@ -29,7 +29,11 @@ export const prefixPrompt = createPrompt<{ exact: boolean; command: string }, Pr
       } else if (key.name === 'right' && selectedWordIndex < words.length - 1) {
         setSelectedWordIndex(selectedWordIndex + 1);
       } else if (key.name === 'a') {
-        setSelectedWordIndex(words.length - 1);
+        if (selectedWordIndex === words.length - 1) {
+          setSelectedWordIndex(0);
+        } else {
+          setSelectedWordIndex(words.length - 1);
+        }
       } else if (key.name === 'e') {
         done({ exact: true, command: actualCommand });
       } else if (isEnterKey(key)) {
