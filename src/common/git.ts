@@ -18,6 +18,7 @@ import { $ } from 'bun';
 import { findUp } from 'find-up';
 import * as path from 'node:path';
 import { debugLog } from '../logging.js';
+import { CURRENT_DIFF, parseJjRename } from '../rmfilter/additional_docs.js';
 
 let cachedGitRoot = new Map<string, string>();
 let cachedGitRepository: string | undefined;

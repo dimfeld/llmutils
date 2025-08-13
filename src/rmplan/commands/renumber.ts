@@ -4,7 +4,7 @@ import yaml from 'yaml';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { getGitRoot } from '../../common/git.js';
+import { getGitRoot, getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
 import { debugLog, log } from '../../logging.js';
 
 interface PlanToRenumber {
@@ -19,6 +19,27 @@ export async function handleRenumber(options: any, command: any) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const gitRoot = (await getGitRoot()) || process.cwd();
+
+  // Detect current branch and determine if we should use branch-based preference
+  const currentBranch = await getCurrentBranchName(gitRoot);
+  const isFeatureBranch = currentBranch && currentBranch !== 'main' && currentBranch !== 'master';
+  debugLog(`Current branch: ${currentBranch}, isFeatureBranch: ${isFeatureBranch}`);
+
+  // Get changed files on current branch if we're on a feature branch
+  let changedPlanFiles: string[] = [];
+  if (isFeatureBranch) {
+    try {
+      const changedFiles = await getChangedFilesOnBranch(gitRoot);
+      // Convert to absolute paths and filter for plan files
+      changedPlanFiles = changedFiles
+        .map(file => path.isAbsolute(file) ? file : path.join(gitRoot, file))
+        .filter(file => file.endsWith('.plan.md') || file.endsWith('.yml') || file.endsWith('.yaml'));
+      debugLog(`Found ${changedPlanFiles.length} changed plan files: ${changedPlanFiles.join(', ')}`);
+    } catch (error) {
+      debugLog(`Error getting changed files: ${error as Error}`);
+      // Continue with normal logic if git operations fail
+    }
+  }
 
   let tasksDirectory: string;
   if (config.paths?.tasks) {
@@ -89,6 +110,9 @@ export async function handleRenumber(options: any, command: any) {
 
   debugLog(`Found ${preferredPlans.size} preferred plans: ${[...preferredPlans].join(', ')}`);
 
+  // Create a Set from changed plan files for efficient lookup
+  const changedPlanFilesSet = new Set(changedPlanFiles);
+
   // Find plans with conflicting IDs
   for (const [id, files] of idToFiles) {
     if (files.length > 1) {
@@ -104,26 +128,44 @@ export async function handleRenumber(options: any, command: any) {
           ({ filePath }) => filePath !== preferredFile.filePath
         );
       } else {
-        // Fall back to original logic: sort by createdAt timestamp
-        const plansWithTimestamps = await Promise.all(
-          files.map(async ({ plan, filePath }) => {
-            return {
-              filePath,
-              plan,
-              createdAt: plan.createdAt || new Date(0).toISOString(),
-            };
-          })
-        );
+        // Check if we're on a feature branch and if any conflicting files were changed on the current branch
+        let changedFile: typeof files[0] | undefined;
+        if (isFeatureBranch && changedPlanFilesSet.size > 0) {
+          changedFile = files.find(({ filePath }) => changedPlanFilesSet.has(filePath));
+        }
+        
+        if (changedFile) {
+          debugLog(`ID ${id}: Found file changed on branch ${currentBranch}: ${changedFile.filePath}`);
+          // Keep the changed file, renumber all others
+          plansToKeepAndRenumber = files.filter(
+            ({ filePath }) => filePath !== changedFile.filePath
+          );
+        } else {
+          // No changed file found among conflicts or not on feature branch, fall back to timestamp logic
+          if (isFeatureBranch && changedPlanFilesSet.size > 0) {
+            debugLog(`ID ${id}: No changed files found among conflicts, using timestamp logic`);
+          }
+          // Fall back to original logic: sort by createdAt timestamp
+          const plansWithTimestamps = await Promise.all(
+            files.map(async ({ plan, filePath }) => {
+              return {
+                filePath,
+                plan,
+                createdAt: plan.createdAt || new Date(0).toISOString(),
+              };
+            })
+          );
 
-        // Sort by createdAt, keeping the oldest one
-        plansWithTimestamps.sort(
-          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        );
+          // Sort by createdAt, keeping the oldest one
+          plansWithTimestamps.sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          );
 
-        // Keep the first (oldest), renumber the rest
-        plansToKeepAndRenumber = plansWithTimestamps
-          .slice(1)
-          .map(({ filePath, plan }) => ({ filePath, plan }));
+          // Keep the first (oldest), renumber the rest
+          plansToKeepAndRenumber = plansWithTimestamps
+            .slice(1)
+            .map(({ filePath, plan }) => ({ filePath, plan }));
+        }
       }
 
       // Add plans that need renumbering
