@@ -5,13 +5,13 @@ goal: To implement the core functionality for defining, loading, and injecting
   custom instructions into the prompts for the implementer, tester, and reviewer
   agents.
 id: 98
-status: pending
+status: in_progress
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-13T19:15:03.540Z
 promptsGeneratedAt: 2025-08-13T19:18:44.562Z
 createdAt: 2025-08-13T19:06:31.948Z
-updatedAt: 2025-08-13T19:18:44.562Z
+updatedAt: 2025-08-13T19:18:44.912Z
 tasks:
   - title: "Task 1: Extend `rmplanConfigSchema` to support agent-specific
       instructions"

@@ -130,4 +130,103 @@ describe('configSchema', () => {
       expect(result.issueTracker).toBe('github'); // Should use default
     });
   });
+
+  describe('agents field', () => {
+    test('should accept valid agent configurations with all three agents', () => {
+      const config = {
+        agents: {
+          implementer: { instructions: './instructions/implementer.md' },
+          tester: { instructions: './instructions/tester.md' },
+          reviewer: { instructions: './instructions/reviewer.md' },
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.agents?.implementer?.instructions).toBe('./instructions/implementer.md');
+      expect(result.agents?.tester?.instructions).toBe('./instructions/tester.md');
+      expect(result.agents?.reviewer?.instructions).toBe('./instructions/reviewer.md');
+    });
+
+    test('should accept partial configurations with only some agents', () => {
+      const config = {
+        agents: {
+          implementer: { instructions: './implementer.md' },
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.agents?.implementer?.instructions).toBe('./implementer.md');
+      expect(result.agents?.tester).toBeUndefined();
+      expect(result.agents?.reviewer).toBeUndefined();
+    });
+
+    test('should accept agents with missing instructions field', () => {
+      const config = {
+        agents: {
+          implementer: {},
+          tester: { instructions: './tester.md' },
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.agents?.implementer?.instructions).toBeUndefined();
+      expect(result.agents?.tester?.instructions).toBe('./tester.md');
+    });
+
+    test('should reject invalid field names within agents', () => {
+      const config = {
+        agents: {
+          invalid_agent: { instructions: './test.md' },
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(config)).toThrow();
+    });
+
+    test('should ensure the field is optional', () => {
+      const config = {
+        issueTracker: 'github' as const,
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.agents).toBeUndefined();
+    });
+
+    test('should reject non-string instructions values', () => {
+      const config = {
+        agents: {
+          implementer: { instructions: 123 },
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(config)).toThrow();
+    });
+
+    test('should accept empty agents object', () => {
+      const config = {
+        agents: {},
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.agents).toBeDefined();
+      expect(Object.keys(result.agents)).toHaveLength(0);
+    });
+
+    test('should work with other configuration fields', () => {
+      const config = {
+        issueTracker: 'linear' as const,
+        defaultExecutor: 'claude-code',
+        agents: {
+          implementer: { instructions: './implementer.md' },
+          reviewer: { instructions: './reviewer.md' },
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.issueTracker).toBe('linear');
+      expect(result.defaultExecutor).toBe('claude-code');
+      expect(result.agents?.implementer?.instructions).toBe('./implementer.md');
+      expect(result.agents?.reviewer?.instructions).toBe('./reviewer.md');
+    });
+  });
 });

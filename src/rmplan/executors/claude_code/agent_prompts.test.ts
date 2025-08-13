@@ -195,38 +195,30 @@ The current tasks to implement are:
 
       // Check for key batch-review instructions
       expect(result.prompt).toContain('Reviewing Multiple Tasks');
-      expect(result.prompt).toContain('Review the implementation holistically');
-      expect(result.prompt).toContain('Check that multiple tasks work together correctly');
-      expect(result.prompt).toContain(
-        'Verify that shared code and utilities are used appropriately'
-      );
-      expect(result.prompt).toContain('Ensure the batch maintains consistent code quality');
-      expect(result.prompt).toContain(
-        'Check that the interdependencies between tasks are handled correctly'
-      );
+      expect(result.prompt).toContain('Scrutinize interactions between tasks');
+      expect(result.prompt).toContain('Code duplication across tasks that should be consolidated');
+      expect(result.prompt).toContain('Inconsistent patterns or approaches between related implementations');
+      expect(result.prompt).toContain('Missing integration tests for task interactions');
+      expect(result.prompt).toContain('Performance bottlenecks introduced by task combinations');
     });
 
     test('maintains core review guidelines', () => {
       const result = getReviewerPrompt(sampleSingleTask);
 
-      expect(result.prompt).toContain('Review Checklist');
-      expect(result.prompt).toContain('Code Quality');
-      expect(result.prompt).toContain('Security Considerations');
-      expect(result.prompt).toContain('Project Conventions');
-      expect(result.prompt).toContain('Testing Quality');
+      expect(result.prompt).toContain('Critical Issues to Flag');
+      expect(result.prompt).toContain('Code Correctness (HIGH PRIORITY)');
+      expect(result.prompt).toContain('Security Vulnerabilities (HIGH PRIORITY)');
+      expect(result.prompt).toContain('Project Violations (MEDIUM PRIORITY)');
+      expect(result.prompt).toContain('Testing Problems (HIGH PRIORITY)');
     });
 
     test('includes guidance for both single and multiple task scenarios', () => {
       const singleResult = getReviewerPrompt(sampleSingleTask);
       const multiResult = getReviewerPrompt(sampleMultipleTasks);
 
-      // Both should mention handling single or multiple tasks
-      expect(singleResult.prompt).toContain(
-        'You may be reviewing a single task or multiple related tasks'
-      );
-      expect(multiResult.prompt).toContain(
-        'You may be reviewing a single task or multiple related tasks'
-      );
+      // Both should have the reviewing multiple tasks section
+      expect(singleResult.prompt).toContain('Reviewing Multiple Tasks');
+      expect(multiResult.prompt).toContain('Reviewing Multiple Tasks');
 
       // Both should have the same core review responsibilities
       expect(singleResult.prompt).toContain('Your Primary Responsibilities');
@@ -236,8 +228,8 @@ The current tasks to implement are:
     test('includes proper reviewer tone and approach', () => {
       const result = getReviewerPrompt(sampleSingleTask);
 
-      expect(result.prompt).toContain('You can be completely honest');
-      expect(result.prompt).toContain('not worry about hurting');
+      expect(result.prompt).toContain('Do not be polite or encouraging');
+      expect(result.prompt).toContain('Your job is to find issues, not to praise good code');
       expect(result.prompt).toContain('Use git commands to see the recent related commits');
     });
   });
@@ -292,6 +284,105 @@ The current tasks to implement are:
     });
   });
 
+  describe('Custom instructions functionality', () => {
+    const customInstructions = `## Custom Project Guidelines
+- Always use TypeScript strict mode
+- Prefer functional programming patterns
+- Include JSDoc comments for all public functions`;
+
+    test('getImplementerPrompt includes custom instructions when provided', () => {
+      const result = getImplementerPrompt(sampleSingleTask, customInstructions);
+
+      expect(result.prompt).toContain('## Custom Instructions');
+      expect(result.prompt).toContain(customInstructions);
+      expect(result.prompt).toContain(sampleSingleTask);
+    });
+
+    test('getTesterPrompt includes custom instructions when provided', () => {
+      const result = getTesterPrompt(sampleSingleTask, customInstructions);
+
+      expect(result.prompt).toContain('## Custom Instructions');
+      expect(result.prompt).toContain(customInstructions);
+      expect(result.prompt).toContain(sampleSingleTask);
+    });
+
+    test('getReviewerPrompt includes custom instructions when provided', () => {
+      const result = getReviewerPrompt(sampleSingleTask, customInstructions);
+
+      expect(result.prompt).toContain('## Custom Instructions');
+      expect(result.prompt).toContain(customInstructions);
+      expect(result.prompt).toContain(sampleSingleTask);
+    });
+
+    test('custom instructions appear after context but before primary responsibilities', () => {
+      const result = getImplementerPrompt(sampleSingleTask, customInstructions);
+      const prompt = result.prompt;
+
+      const contextIndex = prompt.indexOf('## Context and Task');
+      const customIndex = prompt.indexOf('## Custom Instructions');
+      const responsibilitiesIndex = prompt.indexOf('## Your Primary Responsibilities');
+
+      expect(contextIndex).toBeGreaterThan(-1);
+      expect(customIndex).toBeGreaterThan(-1);
+      expect(responsibilitiesIndex).toBeGreaterThan(-1);
+      expect(customIndex).toBeGreaterThan(contextIndex);
+      expect(responsibilitiesIndex).toBeGreaterThan(customIndex);
+    });
+
+    test('prompts work correctly without custom instructions (backward compatibility)', () => {
+      const implementer = getImplementerPrompt(sampleSingleTask);
+      const tester = getTesterPrompt(sampleSingleTask);
+      const reviewer = getReviewerPrompt(sampleSingleTask);
+
+      // Should not contain custom instructions section
+      expect(implementer.prompt).not.toContain('## Custom Instructions');
+      expect(tester.prompt).not.toContain('## Custom Instructions');
+      expect(reviewer.prompt).not.toContain('## Custom Instructions');
+
+      // Should still have all core content
+      expect(implementer.prompt).toContain('## Context and Task');
+      expect(implementer.prompt).toContain('## Your Primary Responsibilities');
+      expect(tester.prompt).toContain('## Context and Task');
+      expect(tester.prompt).toContain('## Your Primary Responsibilities');
+      expect(reviewer.prompt).toContain('## Context and Task');
+      expect(reviewer.prompt).toContain('## Your Primary Responsibilities');
+    });
+
+    test('empty custom instructions do not add section', () => {
+      const result = getImplementerPrompt(sampleSingleTask, '');
+
+      expect(result.prompt).not.toContain('## Custom Instructions');
+      expect(result.prompt).toContain('## Context and Task');
+      expect(result.prompt).toContain('## Your Primary Responsibilities');
+    });
+
+    test('undefined custom instructions do not add section', () => {
+      const result = getImplementerPrompt(sampleSingleTask, undefined);
+
+      expect(result.prompt).not.toContain('## Custom Instructions');
+      expect(result.prompt).toContain('## Context and Task');
+      expect(result.prompt).toContain('## Your Primary Responsibilities');
+    });
+
+    test('custom instructions preserve formatting', () => {
+      const formattedInstructions = `## Custom Guidelines
+
+### Coding Standards
+- Use ESLint rules
+- Write unit tests
+
+### Documentation
+- Include README updates
+- Add inline comments`;
+
+      const result = getImplementerPrompt(sampleSingleTask, formattedInstructions);
+
+      expect(result.prompt).toContain(formattedInstructions);
+      expect(result.prompt).toContain('### Coding Standards');
+      expect(result.prompt).toContain('### Documentation');
+    });
+  });
+
   describe('Batch-specific functionality verification', () => {
     test('implementer prompt includes all key batch instructions', () => {
       const result = getImplementerPrompt(sampleMultipleTasks);
@@ -338,13 +429,11 @@ The current tasks to implement are:
       const prompt = result.prompt;
 
       const expectedInstructions = [
-        'Review the implementation holistically',
-        'Check that multiple tasks work together correctly',
-        'Verify that shared code and utilities are used appropriately',
-        'Ensure the batch maintains consistent code quality',
-        'Look for opportunities where common patterns could be better consolidated',
-        'Check that the interdependencies between tasks are handled correctly',
-        'Verify that the complete batch of functionality meets all acceptance criteria',
+        'Scrutinize interactions between tasks for conflicts',
+        'Code duplication across tasks that should be consolidated',
+        'Inconsistent patterns or approaches between related implementations',
+        'Missing integration tests for task interactions',
+        'Performance bottlenecks introduced by task combinations',
       ];
 
       expectedInstructions.forEach((instruction) => {

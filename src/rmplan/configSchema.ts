@@ -64,6 +64,7 @@ export const rmplanConfigSchema = z
     issueTracker: z
       .enum(['github', 'linear'])
       .optional()
+      .default('github')
       .describe('Issue tracking service to use for import commands and issue-related operations'),
     /** An array of commands to run after changes are successfully applied by the agent. */
     postApplyCommands: z.array(postApplyCommandSchema).optional(),
@@ -158,6 +159,37 @@ export const rmplanConfigSchema = z
           .describe('Path to a planning document file to include in all planning prompts'),
       })
       .optional(),
+    /** Custom instructions for specialized agents */
+    agents: z
+      .object({
+        implementer: z
+          .object({
+            instructions: z
+              .string()
+              .optional()
+              .describe('Path to custom instructions file for the implementer agent'),
+          })
+          .optional(),
+        tester: z
+          .object({
+            instructions: z
+              .string()
+              .optional()
+              .describe('Path to custom instructions file for the tester agent'),
+          })
+          .optional(),
+        reviewer: z
+          .object({
+            instructions: z
+              .string()
+              .optional()
+              .describe('Path to custom instructions file for the reviewer agent'),
+          })
+          .optional(),
+      })
+      .strict()
+      .optional()
+      .describe('Custom instructions for implementer, tester, and reviewer agents'),
     /**
      * Executor-specific options mapped by executor name.
      * Each executor has its own schema:

@@ -2,15 +2,18 @@ import type { AgentDefinition } from './agent_generator.ts';
 
 const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
 
-export function getImplementerPrompt(contextContent: string): AgentDefinition {
+export function getImplementerPrompt(contextContent: string, customInstructions?: string): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim() 
+    ? `\n## Custom Instructions\n${customInstructions}\n` 
+    : '';
+
   return {
     name: 'implementer',
     description: 'Implements the requested functionality following project standards and patterns',
     prompt: `You are an implementer agent focused on writing high-quality code.
 
 ## Context and Task
-${contextContent}
-
+${contextContent}${customInstructionsSection}
 ## Your Primary Responsibilities:
 1. Implement the requested functionality according to the specifications
 2. Follow all coding standards and patterns established in the codebase
@@ -61,7 +64,11 @@ Do not mark anything in the plan file as done. This is your manager's responsibi
   };
 }
 
-export function getTesterPrompt(contextContent: string): AgentDefinition {
+export function getTesterPrompt(contextContent: string, customInstructions?: string): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim() 
+    ? `\n## Custom Instructions\n${customInstructions}\n` 
+    : '';
+
   return {
     name: 'tester',
     description:
@@ -69,8 +76,7 @@ export function getTesterPrompt(contextContent: string): AgentDefinition {
     prompt: `You are a testing agent focused on ensuring comprehensive test coverage.
 
 ## Context and Task
-${contextContent}
-
+${contextContent}${customInstructionsSection}
 ## Your Primary Responsibilities:
 1. First, analyze existing tests to understand the testing patterns and framework
 2. Identify gaps in test coverage for the implemented functionality
@@ -135,7 +141,11 @@ Remember: Your goal is to ensure all tests pass and that the code has comprehens
   };
 }
 
-export function getReviewerPrompt(contextContent: string): AgentDefinition {
+export function getReviewerPrompt(contextContent: string, customInstructions?: string): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim() 
+    ? `\n## Custom Instructions\n${customInstructions}\n` 
+    : '';
+
   return {
     name: 'reviewer',
     description:
@@ -150,8 +160,7 @@ Make sure that your feedback is congruent with the requirements of the project. 
 
 
 ## Context and Task
-${contextContent}
-
+${contextContent}${customInstructionsSection}
 ## Your Primary Responsibilities:
 1. Identify bugs, logic errors, and correctness issues
 2. Find violations of project patterns and conventions. (But ignore formatting, indentation, etc.)
