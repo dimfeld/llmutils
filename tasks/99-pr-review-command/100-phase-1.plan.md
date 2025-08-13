@@ -4,7 +4,7 @@ title: PR review command - Core Review Command Implementation
 goal: Implement the basic review command that can analyze a single plan against
   current branch changes
 id: 100
-status: in_progress
+status: done
 priority: high
 dependencies: []
 parent: 99
@@ -63,24 +63,24 @@ tasks:
           for the review command handler. Include tests for plan resolution by
           file path and by ID, and stub tests for diff generation and prompt
           building that will be filled in as those features are implemented.
-        done: false
+        done: true
       - prompt: >
           Create review.ts with the handleReviewCommand function that accepts
           planFile, options, and command parameters. Implement configuration
           loading using loadEffectiveConfig, and plan file resolution using
           resolvePlanFile to support both file paths and numeric plan IDs.
-        done: false
+        done: true
       - prompt: >
           Add plan loading logic to read the plan file and extract key
           information including title, goal, details, tasks, and requirements.
           Store this information in a structured format that will be used for
           prompt generation later.
-        done: false
+        done: true
       - prompt: >
           Add validation to ensure the provided plan exists and has valid
           content. Include appropriate error messages for missing plans or
           invalid plan formats.
-        done: false
+        done: true
   - title: Register review command in CLI
     description: >
       Update /src/rmplan/rmplan.ts to register the new review command with
@@ -97,19 +97,19 @@ tasks:
           definitions in rmplan.ts. Use program.command('review <planFile>')
           with a description explaining it analyzes code changes against plan
           requirements.
-        done: false
+        done: true
       - prompt: >
           Add standard options to the review command including --executor for
           executor selection, --model for model override, --direct for direct
           execution mode, and --dry-run for testing without execution. Include
           appropriate help text for each option.
-        done: false
+        done: true
       - prompt: >
           Implement the action handler that dynamically imports
           handleReviewCommand from './commands/review.js' and calls it with the
           provided arguments, following the error handling pattern used by other
           commands.
-        done: false
+        done: true
   - title: Implement diff generation logic
     description: >
       Add functions to generate a comprehensive diff of the current branch
@@ -128,23 +128,23 @@ tasks:
           getTrunkBranch from git.ts to identify the repository root and trunk
           branch. The function should return both the list of changed files and
           the full diff content.
-        done: false
+        done: true
       - prompt: >
           Implement diff generation using Bun's $ utility to execute either 'git
           diff' or 'jj diff' commands based on getUsingJj(). Generate a unified
           diff format comparing the current branch to trunk, excluding common
           lock files and temporary files.
-        done: false
+        done: true
       - prompt: >
           Add error handling for cases where diff generation fails, such as when
           not in a git repository or when the trunk branch cannot be determined.
           Provide helpful error messages for troubleshooting.
-        done: false
+        done: true
       - prompt: >
           Write tests for the diff generation logic that verify correct trunk
           branch detection, proper diff command execution for both Git and jj,
           and appropriate error handling for edge cases.
-        done: false
+        done: true
   - title: Build review prompt generator
     description: >
       Create a function to construct the review prompt combining plan details
@@ -162,24 +162,24 @@ tasks:
           Create a buildReviewPrompt function that takes the plan data and diff
           content as parameters. Structure the prompt with clear sections for
           plan context, requirements, and code changes to review.
-        done: false
+        done: true
       - prompt: >
           Import and use getReviewerPrompt from agent_prompts.ts to get the
           reviewer agent definition. Combine the plan's goal, details, and task
           descriptions into a context section that the reviewer agent prompt
           expects.
-        done: false
+        done: true
       - prompt: >
           Format the diff content appropriately within the prompt, ensuring it's
           clearly marked as the code changes to review. Include both the file
           list and the actual diff, with proper markdown formatting for
           readability.
-        done: false
+        done: true
       - prompt: >
           Add tests for prompt generation that verify the prompt includes all
           necessary plan context, properly formats the diff content, and follows
           the expected structure for the reviewer agent.
-        done: false
+        done: true
   - title: Integrate with executor system
     description: >
       Connect the review command to the existing executor infrastructure,
@@ -197,22 +197,22 @@ tasks:
           Import buildExecutorAndLog and DEFAULT_EXECUTOR from the executors
           module. Determine the executor to use from options, falling back to
           config.defaultExecutor or DEFAULT_EXECUTOR.
-        done: false
+        done: true
       - prompt: >
           Create the executor instance using buildExecutorAndLog with
           appropriate shared options including model, direct mode, and dry-run
           settings. Configure the executor to use the reviewer agent type.
-        done: false
+        done: true
       - prompt: >
           Call executor.execute() with the generated review prompt and metadata
           including plan ID and title. Handle the execution result and provide
           appropriate user feedback about the review completion.
-        done: false
+        done: true
       - prompt: >
           Add integration tests that verify the executor is properly initialized
           with reviewer configuration, the review prompt is passed correctly to
           the executor, and different executor types are supported.
-        done: false
+        done: true
 ---
 
 Create the foundational review command that accepts a plan file/ID, generates a diff of the current branch against trunk, and executes a review using the reviewer agent. This phase establishes the core functionality and command structure that will be extended in later phases.
