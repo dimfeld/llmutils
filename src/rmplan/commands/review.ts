@@ -229,7 +229,7 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
       }
 
       // Get full diff content
-      const diffResult = await $`jj diff --from ${safeBranch}`.cwd(gitRoot).nothrow();
+      const diffResult = await $`jj diff --from ${safeBranch}`.cwd(gitRoot).nothrow().quiet();
       if (diffResult.exitCode === 0) {
         const fullDiff = diffResult.stdout.toString();
         if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
@@ -250,7 +250,10 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
     // Use git commands for diff generation
     try {
       // Get list of changed files
-      const filesResult = await $`git diff --name-only ${safeBranch}`.cwd(gitRoot).nothrow();
+      const filesResult = await $`git diff --name-only ${safeBranch}`
+        .cwd(gitRoot)
+        .nothrow()
+        .quiet();
       if (filesResult.exitCode === 0) {
         changedFiles = filesResult.stdout
           .toString()

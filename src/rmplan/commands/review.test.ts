@@ -83,7 +83,6 @@ tasks:
 
   try {
     await handleReviewCommand(planFile, {}, mockCommand);
-    expect(true).toBe(true); // Test passed
   } catch (err) {
     console.error('Test error:', err);
     throw err;
@@ -194,8 +193,6 @@ describe('generateDiffForReview', () => {
     // The function should handle the case when git commands fail gracefully
     try {
       await generateDiffForReview(gitRepoDir);
-      // If it doesn't throw, that's also fine - it means git worked
-      expect(true).toBe(true);
     } catch (error) {
       // Should throw a meaningful error if git commands fail
       expect(error.message).toContain('Failed to generate');
@@ -215,7 +212,6 @@ describe('generateDiffForReview', () => {
 
     try {
       await generateDiffForReview(jjRepoDir);
-      expect(true).toBe(true);
     } catch (error) {
       // Should throw a meaningful error if jj commands fail
       expect(error.message).toContain('Failed to generate');
