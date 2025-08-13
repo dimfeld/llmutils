@@ -152,26 +152,27 @@ tasks:
       - src/rmplan/formatters/review_formatter.test.ts
       - src/rmplan/formatters/review_formatter.ts
       - src/rmplan/commands/review.ts
+    done: true
     steps:
       - prompt: >
           Create review_formatter.test.ts with tests for parsing reviewer output
           into structured ReviewResult objects and formatting them as JSON,
           Markdown, and terminal output.
-        done: false
+        done: true
       - prompt: >
           Implement review_formatter.ts with a ReviewResult interface containing
           severity levels, issue categories, and file locations. Create
           formatter classes for each output format with a common interface.
-        done: false
+        done: true
       - prompt: >
           Parse the executor output to extract review findings, categorize them
           by severity (critical/major/minor), and format using chalk for
           terminal output with clear visual hierarchy.
-        done: false
+        done: true
       - prompt: >
           Update the review command to use the formatter based on config or CLI
           option, displaying formatted output and optionally saving to file.
-        done: false
+        done: true
   - title: Add review result persistence
     description: >
       Implement functionality to save review results to files, track review

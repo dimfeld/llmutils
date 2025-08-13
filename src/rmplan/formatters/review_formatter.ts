@@ -631,6 +631,6 @@ export function createFormatter(format: 'json' | 'markdown' | 'terminal'): Revie
     case 'terminal':
       return new TerminalFormatter();
     default:
-      throw new Error(`Unsupported format: ${format}`);
+      throw new Error(`Unsupported format: ${format as string}`);
   }
 }
