@@ -196,26 +196,27 @@ tasks:
       - src/rmplan/review_persistence.ts
       - src/rmplan/commands/review.ts
       - src/rmplan/rmplan.ts
+    done: true
     steps:
       - prompt: >
           Create review_persistence.test.ts with tests for saving review
           results, managing review history, and handling file I/O errors
           gracefully.
-        done: false
+        done: true
       - prompt: >
           Implement review_persistence.ts with functions to save review results
           with metadata, maintain a history index file, and optionally create
           Git notes using git commands.
-        done: false
+        done: true
       - prompt: >
           Add --save and --output-file CLI options to the review command in
           rmplan.ts for controlling result persistence.
-        done: false
+        done: true
       - prompt: >
           Update the review command to save results using the persistence
           module, creating the reviews directory if needed and handling the save
           location from config or CLI.
-        done: false
+        done: true
   - title: Build incremental review support
     description: >
       Create logic to detect and review only changes made since the last review,
