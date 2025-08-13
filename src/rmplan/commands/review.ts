@@ -21,8 +21,39 @@ import {
   type VerbosityLevel,
   type FormatterOptions,
 } from '../formatters/review_formatter.js';
+import {
+  saveReviewResult,
+  createReviewsDirectory,
+  createGitNote,
+  type ReviewMetadata,
+} from '../review_persistence.js';
 import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
+
+/**
+ * Gets the current commit hash from the repository
+ */
+async function getCurrentCommitHash(gitRoot: string): Promise<string | null> {
+  try {
+    const usingJj = await getUsingJj();
+    
+    if (usingJj) {
+      const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow();
+      if (result.exitCode === 0) {
+        return result.stdout.toString().trim();
+      }
+    } else {
+      const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow();
+      if (result.exitCode === 0) {
+        return result.stdout.toString().trim();
+      }
+    }
+  } catch (error) {
+    log(chalk.yellow(`Warning: Could not get current commit hash: ${(error as Error).message}`));
+  }
+  
+  return null;
+}
 
 /**
  * Comprehensive error handling for saving review results
@@ -404,6 +435,49 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
     );
     const formattedOutput = formatter.format(reviewResult, formatterOptions);
+
+    // Persistence logic - save to structured review history
+    const shouldSave = options.save || 
+      (config.review?.autoSave && !options.noSave) || 
+      (!options.noSave && !options.outputFile && !config.review?.saveLocation);
+
+    if (shouldSave) {
+      try {
+        const reviewsDir = await createReviewsDirectory(gitRoot);
+        const currentCommitHash = await getCurrentCommitHash(gitRoot);
+        
+        if (currentCommitHash) {
+          const metadata: ReviewMetadata = {
+            planId: planData.id?.toString() ?? 'unknown',
+            planTitle: planData.title ?? 'Untitled Plan',
+            commitHash: currentCommitHash,
+            timestamp: new Date(),
+            reviewer: process.env.USER || process.env.USERNAME,
+            baseBranch: diffResult.baseBranch,
+            changedFiles: diffResult.changedFiles,
+          };
+
+          const savedPath = await saveReviewResult(reviewsDir, formattedOutput, metadata);
+          log(chalk.cyan(`Review saved to: ${savedPath}`));
+
+          // Create Git note if requested
+          if (options.gitNote) {
+            const reviewSummary = `Code review completed for plan ${metadata.planId}: ${metadata.planTitle}`;
+            const noteCreated = await createGitNote(gitRoot, currentCommitHash, reviewSummary);
+            if (noteCreated) {
+              log(chalk.cyan('Git note created with review summary'));
+            } else {
+              log(chalk.yellow('Warning: Could not create Git note'));
+            }
+          }
+        } else {
+          log(chalk.yellow('Warning: Could not save review - unable to determine commit hash'));
+        }
+      } catch (persistenceErr) {
+        const persistenceErrorMessage = persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
+        log(chalk.yellow(`Warning: Could not save review to history: ${persistenceErrorMessage}`));
+      }
+    }
 
     // Save to file if requested with comprehensive error handling
     if (options.outputFile) {

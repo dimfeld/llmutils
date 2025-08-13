@@ -511,6 +511,9 @@ program
     '--output-file <path>',
     'Save review results to the specified file path. Format determined by --format option.'
   )
+  .option('--save', 'Save review results to .rmfilter/reviews/ directory with metadata tracking.')
+  .option('--no-save', 'Disable automatic saving of review results (overrides config settings).')
+  .option('--git-note', 'Create a Git note with review summary attached to the current commit.')
   .option('--no-color', 'Disable colored output in terminal format.')
   .option(
     '--show-files',

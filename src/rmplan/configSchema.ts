@@ -208,6 +208,11 @@ export const rmplanConfigSchema = z
           .string()
           .optional()
           .describe('Directory path where review results should be saved'),
+        /** Automatically save review results to .rmfilter/reviews/ directory */
+        autoSave: z
+          .boolean()
+          .optional()
+          .describe('Automatically save review results with metadata to .rmfilter/reviews/ directory'),
         /** Path to custom review instructions file */
         customInstructionsPath: z
           .string()
