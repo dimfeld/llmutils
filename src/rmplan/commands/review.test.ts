@@ -73,7 +73,13 @@ tasks:
       baseBranch: 'main',
       diffContent: 'mock diff',
     }),
-    buildReviewPrompt: (planData: any, diffResult: any, parentChain: any[] = [], completedChildren: any[] = [], customInstructions?: string) => 'mock review prompt',
+    buildReviewPrompt: (
+      planData: any,
+      diffResult: any,
+      parentChain: any[] = [],
+      completedChildren: any[] = [],
+      customInstructions?: string
+    ) => 'mock review prompt',
   }));
 
   // Test resolving plan by file path
@@ -158,7 +164,13 @@ tasks:
       baseBranch: 'main',
       diffContent: 'mock diff',
     }),
-    buildReviewPrompt: (planData: any, diffResult: any, parentChain: any[] = [], completedChildren: any[] = [], customInstructions?: string) => 'mock review prompt',
+    buildReviewPrompt: (
+      planData: any,
+      diffResult: any,
+      parentChain: any[] = [],
+      completedChildren: any[] = [],
+      customInstructions?: string
+    ) => 'mock review prompt',
   }));
 
   // Test resolving plan by ID
@@ -508,7 +520,13 @@ tasks:
         baseBranch: 'main',
         diffContent: 'some diff',
       }),
-      buildReviewPrompt: (planData: any, diffResult: any, parentChain: any[] = [], completedChildren: any[] = [], customInstructions?: string) => 'review prompt',
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => 'review prompt',
     }));
 
     const mockCommand = {
@@ -661,7 +679,13 @@ tasks:
         baseBranch: 'main',
         diffContent: 'test diff',
       }),
-      buildReviewPrompt: (planData: any, diffResult: any, parentChain: any[] = [], completedChildren: any[] = [], customInstructions?: string) => 'Generated prompt for dry run',
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => 'Generated prompt for dry run',
     }));
 
     const mockCommand = {
@@ -1672,7 +1696,13 @@ tasks:
           baseBranch: 'main',
           diffContent: 'test diff',
         }),
-        buildReviewPrompt: (planData: any, diffResult: any, parentChain: any[] = [], completedChildren: any[] = [], customInstructions?: string) => 'test prompt',
+        buildReviewPrompt: (
+          planData: any,
+          diffResult: any,
+          parentChain: any[] = [],
+          completedChildren: any[] = [],
+          customInstructions?: string
+        ) => 'test prompt',
       }));
 
       const mockCommand = {
@@ -1692,7 +1722,7 @@ tasks:
       const gitRoot = '/safe/project';
       const maliciousPaths = [
         '../../../etc/passwd',
-        '../../home/user/.ssh/id_rsa', 
+        '../../home/user/.ssh/id_rsa',
         '/etc/passwd',
         'C:\\Windows\\System32\\config\\SAM',
         '../../../var/log/auth.log',
@@ -1729,7 +1759,7 @@ tasks:
     test('handles absolute paths within git root', () => {
       const gitRoot = '/safe/project';
       const safeAbsolutePath = '/safe/project/instructions.md';
-      
+
       expect(() => validateInstructionsFilePath(safeAbsolutePath, gitRoot)).not.toThrow();
       const result = validateInstructionsFilePath(safeAbsolutePath, gitRoot);
       expect(result).toBe(safeAbsolutePath);
@@ -1737,10 +1767,16 @@ tasks:
 
     test('validates input types for file path', () => {
       const gitRoot = '/safe/project';
-      
-      expect(() => validateInstructionsFilePath('', gitRoot)).toThrow('Instructions file path must be a non-empty string');
-      expect(() => validateInstructionsFilePath(null as any, gitRoot)).toThrow('Instructions file path must be a non-empty string');
-      expect(() => validateInstructionsFilePath(undefined as any, gitRoot)).toThrow('Instructions file path must be a non-empty string');
+
+      expect(() => validateInstructionsFilePath('', gitRoot)).toThrow(
+        'Instructions file path must be a non-empty string'
+      );
+      expect(() => validateInstructionsFilePath(null as any, gitRoot)).toThrow(
+        'Instructions file path must be a non-empty string'
+      );
+      expect(() => validateInstructionsFilePath(undefined as any, gitRoot)).toThrow(
+        'Instructions file path must be a non-empty string'
+      );
     });
   });
 
@@ -1760,7 +1796,9 @@ tasks:
       ];
 
       for (const maliciousAreas of maliciousFocusAreas) {
-        expect(() => validateFocusAreas(maliciousAreas)).toThrow(/Focus area contains invalid characters/);
+        expect(() => validateFocusAreas(maliciousAreas)).toThrow(
+          /Focus area contains invalid characters/
+        );
       }
     });
 
@@ -1808,11 +1846,11 @@ tasks:
 describe('Custom review instructions', () => {
   test('validateInstructionsFilePath rejects malicious paths and accepts safe ones', () => {
     const gitRoot = '/safe/project';
-    
+
     // Test path traversal protection
     expect(() => validateInstructionsFilePath('../../../etc/passwd', gitRoot)).toThrow();
     expect(() => validateInstructionsFilePath('/etc/passwd', gitRoot)).toThrow();
-    
+
     // Test safe paths
     expect(() => validateInstructionsFilePath('instructions.md', gitRoot)).not.toThrow();
     expect(() => validateInstructionsFilePath('./docs/review.md', gitRoot)).not.toThrow();
@@ -1823,11 +1861,11 @@ describe('Custom review instructions', () => {
     expect(() => validateFocusAreas(['security; rm -rf /'])).toThrow();
     expect(() => validateFocusAreas(['performance && echo hacked'])).toThrow();
     expect(() => validateFocusAreas(['<script>alert("xss")</script>'])).toThrow();
-    
+
     // Test safe focus areas
     expect(() => validateFocusAreas(['security', 'performance', 'testing'])).not.toThrow();
     expect(validateFocusAreas(['security', 'performance'])).toEqual(['security', 'performance']);
-    
+
     // Test limits
     expect(() => validateFocusAreas(Array(15).fill('area'))).toThrow('Too many focus areas');
     expect(() => validateFocusAreas(['a'.repeat(100)])).toThrow('Focus area too long');
@@ -1838,7 +1876,7 @@ describe('Custom review instructions', () => {
     const error = new Error('Test error');
     const errorMessage = error instanceof Error ? error.message : String(error);
     expect(errorMessage).toBe('Test error');
-    
+
     // Test string coercion for non-Error objects
     const nonError = { message: 'Not an error object' };
     const nonErrorMessage = nonError instanceof Error ? nonError.message : String(nonError);
@@ -1848,29 +1886,36 @@ describe('Custom review instructions', () => {
   test('properly handles buildReviewPrompt function signature with custom instructions', () => {
     // Test that buildReviewPrompt accepts the customInstructions parameter
     const planData = { id: 1, title: 'Test', goal: 'Test goal', tasks: [] };
-    const diffResult = { hasChanges: true, changedFiles: ['test.ts'], baseBranch: 'main', diffContent: 'diff' };
-    
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['test.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff',
+    };
+
     // This should not throw and should work with the new signature
-    expect(() => buildReviewPrompt(planData, diffResult, [], [], 'custom instructions')).not.toThrow();
+    expect(() =>
+      buildReviewPrompt(planData, diffResult, [], [], 'custom instructions')
+    ).not.toThrow();
     expect(() => buildReviewPrompt(planData, diffResult, [], [])).not.toThrow();
   });
 
   test('validates function signatures work correctly after security fixes', () => {
     // Test that all our security functions work as expected
     const gitRoot = '/test/project';
-    
+
     // Test validateInstructionsFilePath with various inputs
     expect(() => validateInstructionsFilePath('safe-file.md', gitRoot)).not.toThrow();
     expect(() => validateInstructionsFilePath('../unsafe', gitRoot)).toThrow();
-    
+
     // Test validateFocusAreas with various inputs
     expect(() => validateFocusAreas(['safe', 'areas'])).not.toThrow();
     expect(() => validateFocusAreas(['unsafe; injection'])).toThrow();
-    
+
     // Test that they return expected values for valid inputs
     const safePath = validateInstructionsFilePath('docs/instructions.md', gitRoot);
     expect(safePath).toContain('docs/instructions.md');
-    
+
     const safeAreas = validateFocusAreas(['security', 'performance']);
     expect(safeAreas).toEqual(['security', 'performance']);
   });

@@ -126,7 +126,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
   // Load custom instructions
   let customInstructions = '';
-  
+
   // First try CLI options (CLI takes precedence)
   if (options.instructions) {
     customInstructions = options.instructions;
@@ -138,17 +138,30 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       log(chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      log(chalk.yellow(`Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`));
+      log(
+        chalk.yellow(
+          `Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`
+        )
+      );
     }
   } else if (config.review?.customInstructionsPath) {
     // Fall back to config file instructions
     try {
-      const instructionsPath = validateInstructionsFilePath(config.review.customInstructionsPath, gitRoot);
+      const instructionsPath = validateInstructionsFilePath(
+        config.review.customInstructionsPath,
+        gitRoot
+      );
       customInstructions = await readFile(instructionsPath, 'utf-8');
-      log(chalk.gray(`Using custom instructions from config: ${config.review.customInstructionsPath}`));
+      log(
+        chalk.gray(`Using custom instructions from config: ${config.review.customInstructionsPath}`)
+      );
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      log(chalk.yellow(`Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`));
+      log(
+        chalk.yellow(
+          `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
+        )
+      );
     }
   }
 
@@ -156,7 +169,10 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   let focusAreas: string[] = [];
   if (options.focus) {
     // CLI focus areas override config
-    const rawFocusAreas = options.focus.split(',').map((area: string) => area.trim()).filter(Boolean);
+    const rawFocusAreas = options.focus
+      .split(',')
+      .map((area: string) => area.trim())
+      .filter(Boolean);
     try {
       focusAreas = validateFocusAreas(rawFocusAreas);
       log(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
@@ -179,13 +195,19 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   // Add focus areas to custom instructions if provided
   if (focusAreas.length > 0) {
     const focusInstruction = `Focus on: ${focusAreas.join(', ')}`;
-    customInstructions = customInstructions 
+    customInstructions = customInstructions
       ? `${customInstructions}\n\n${focusInstruction}`
       : focusInstruction;
   }
 
   // Build the review prompt
-  const reviewPrompt = buildReviewPrompt(planData, diffResult, parentChain, completedChildren, customInstructions);
+  const reviewPrompt = buildReviewPrompt(
+    planData,
+    diffResult,
+    parentChain,
+    completedChildren,
+    customInstructions
+  );
 
   // Set up executor
   const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
@@ -259,7 +281,7 @@ export function validateInstructionsFilePath(filePath: string, gitRoot: string):
   const absolutePath = isAbsolute(filePath) ? filePath : join(gitRoot, filePath);
   const resolvedPath = resolve(absolutePath);
   const resolvedGitRoot = resolve(gitRoot);
-  
+
   // Ensure the resolved path is within the git root directory
   const relativePath = relative(resolvedGitRoot, resolvedPath);
   if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
@@ -268,8 +290,16 @@ export function validateInstructionsFilePath(filePath: string, gitRoot: string):
 
   // Additional security check: prevent common dangerous paths
   const normalizedPath = resolvedPath.toLowerCase();
-  const dangerousPaths = ['/etc/', '/usr/', '/var/', '/home/', '/root/', 'c:\\windows\\', 'c:\\users\\'];
-  if (dangerousPaths.some(dangerous => normalizedPath.includes(dangerous))) {
+  const dangerousPaths = [
+    '/etc/',
+    '/usr/',
+    '/var/',
+    '/home/',
+    '/root/',
+    'c:\\windows\\',
+    'c:\\users\\',
+  ];
+  if (dangerousPaths.some((dangerous) => normalizedPath.includes(dangerous))) {
     throw new Error(`Instructions file path contains dangerous directory: ${filePath}`);
   }
 
@@ -293,8 +323,8 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
   }
 
   const sanitizedAreas = focusAreas
-    .map(area => area.trim())
-    .filter(area => {
+    .map((area) => area.trim())
+    .filter((area) => {
       if (!area) return false;
       if (area.length > maxFocusAreaLength) {
         throw new Error(`Focus area too long (max ${maxFocusAreaLength} characters): ${area}`);
