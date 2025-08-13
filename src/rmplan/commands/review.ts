@@ -4,7 +4,7 @@
 import { $ } from 'bun';
 import chalk from 'chalk';
 import { readFile } from 'node:fs/promises';
-import { join, isAbsolute } from 'node:path';
+import { join, isAbsolute, resolve, relative } from 'node:path';
 import { getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -133,24 +133,22 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     log(chalk.gray('Using inline custom instructions from CLI'));
   } else if (options.instructionsFile) {
     try {
-      const instructionsPath = isAbsolute(options.instructionsFile) 
-        ? options.instructionsFile 
-        : join(gitRoot, options.instructionsFile);
+      const instructionsPath = validateInstructionsFilePath(options.instructionsFile, gitRoot);
       customInstructions = await readFile(instructionsPath, 'utf-8');
       log(chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`));
     } catch (err) {
-      log(chalk.yellow(`Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${err as Error}`));
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log(chalk.yellow(`Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`));
     }
   } else if (config.review?.customInstructionsPath) {
     // Fall back to config file instructions
     try {
-      const instructionsPath = isAbsolute(config.review.customInstructionsPath)
-        ? config.review.customInstructionsPath
-        : join(gitRoot, config.review.customInstructionsPath);
+      const instructionsPath = validateInstructionsFilePath(config.review.customInstructionsPath, gitRoot);
       customInstructions = await readFile(instructionsPath, 'utf-8');
       log(chalk.gray(`Using custom instructions from config: ${config.review.customInstructionsPath}`));
     } catch (err) {
-      log(chalk.yellow(`Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${err as Error}`));
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log(chalk.yellow(`Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`));
     }
   }
 
@@ -158,11 +156,24 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   let focusAreas: string[] = [];
   if (options.focus) {
     // CLI focus areas override config
-    focusAreas = options.focus.split(',').map((area: string) => area.trim()).filter(Boolean);
-    log(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
+    const rawFocusAreas = options.focus.split(',').map((area: string) => area.trim()).filter(Boolean);
+    try {
+      focusAreas = validateFocusAreas(rawFocusAreas);
+      log(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log(chalk.yellow(`Warning: Invalid focus areas from CLI: ${errorMessage}`));
+      focusAreas = [];
+    }
   } else if (config.review?.focusAreas && config.review.focusAreas.length > 0) {
-    focusAreas = config.review.focusAreas;
-    log(chalk.gray(`Using focus areas from config: ${focusAreas.join(', ')}`));
+    try {
+      focusAreas = validateFocusAreas(config.review.focusAreas);
+      log(chalk.gray(`Using focus areas from config: ${focusAreas.join(', ')}`));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log(chalk.yellow(`Warning: Invalid focus areas from config: ${errorMessage}`));
+      focusAreas = [];
+    }
   }
 
   // Add focus areas to custom instructions if provided
@@ -233,6 +244,68 @@ export function sanitizeBranchName(branch: string): string {
   }
 
   return branch;
+}
+
+/**
+ * Validates that a file path is safe to read and within allowed boundaries
+ * Prevents path traversal attacks and ensures the path stays within the git root
+ */
+export function validateInstructionsFilePath(filePath: string, gitRoot: string): string {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Instructions file path must be a non-empty string');
+  }
+
+  // Resolve the absolute path
+  const absolutePath = isAbsolute(filePath) ? filePath : join(gitRoot, filePath);
+  const resolvedPath = resolve(absolutePath);
+  const resolvedGitRoot = resolve(gitRoot);
+  
+  // Ensure the resolved path is within the git root directory
+  const relativePath = relative(resolvedGitRoot, resolvedPath);
+  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    throw new Error(`Instructions file path is outside the allowed directory: ${filePath}`);
+  }
+
+  // Additional security check: prevent common dangerous paths
+  const normalizedPath = resolvedPath.toLowerCase();
+  const dangerousPaths = ['/etc/', '/usr/', '/var/', '/home/', '/root/', 'c:\\windows\\', 'c:\\users\\'];
+  if (dangerousPaths.some(dangerous => normalizedPath.includes(dangerous))) {
+    throw new Error(`Instructions file path contains dangerous directory: ${filePath}`);
+  }
+
+  return resolvedPath;
+}
+
+/**
+ * Validates and sanitizes focus areas to prevent injection attacks
+ */
+export function validateFocusAreas(focusAreas: string[]): string[] {
+  if (!Array.isArray(focusAreas)) {
+    throw new Error('Focus areas must be an array');
+  }
+
+  const allowedFocusPattern = /^[a-zA-Z0-9\s._-]+$/;
+  const maxFocusAreaLength = 50;
+  const maxFocusAreas = 10;
+
+  if (focusAreas.length > maxFocusAreas) {
+    throw new Error(`Too many focus areas specified (max ${maxFocusAreas})`);
+  }
+
+  const sanitizedAreas = focusAreas
+    .map(area => area.trim())
+    .filter(area => {
+      if (!area) return false;
+      if (area.length > maxFocusAreaLength) {
+        throw new Error(`Focus area too long (max ${maxFocusAreaLength} characters): ${area}`);
+      }
+      if (!allowedFocusPattern.test(area)) {
+        throw new Error(`Focus area contains invalid characters: ${area}`);
+      }
+      return true;
+    });
+
+  return sanitizedAreas;
 }
 
 export async function generateDiffForReview(gitRoot: string): Promise<DiffResult> {
