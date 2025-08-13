@@ -76,6 +76,7 @@ tasks:
     buildReviewPrompt: (
       planData: any,
       diffResult: any,
+      includeDiff: boolean = false,
       parentChain: any[] = [],
       completedChildren: any[] = [],
       customInstructions?: string
@@ -167,6 +168,7 @@ tasks:
     buildReviewPrompt: (
       planData: any,
       diffResult: any,
+      includeDiff: boolean = false,
       parentChain: any[] = [],
       completedChildren: any[] = [],
       customInstructions?: string
@@ -282,7 +284,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult, [], []);
+    const prompt = buildReviewPrompt(planData, diffResult, true, [], []);
 
     // Verify plan context is included
     expect(prompt).toContain('Plan ID:** 42');
@@ -335,7 +337,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult, [], []);
+    const prompt = buildReviewPrompt(planData, diffResult, true, [], []);
 
     expect(prompt).toContain('Plan ID:** 1');
     expect(prompt).toContain('Title:** Simple Plan');
@@ -371,7 +373,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult, [], []);
+    const prompt = buildReviewPrompt(planData, diffResult, true, [], []);
 
     expect(prompt).toContain('Plan ID:** 2');
     expect(prompt).toContain('Title:** Plan Without Details');
@@ -523,6 +525,7 @@ tasks:
       buildReviewPrompt: (
         planData: any,
         diffResult: any,
+        includeDiff: boolean = false,
         parentChain: any[] = [],
         completedChildren: any[] = [],
         customInstructions?: string
@@ -682,6 +685,7 @@ tasks:
       buildReviewPrompt: (
         planData: any,
         diffResult: any,
+        includeDiff: boolean = false,
         parentChain: any[] = [],
         completedChildren: any[] = [],
         customInstructions?: string
@@ -741,7 +745,7 @@ describe('Parent plan context handling', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(childPlan, diffResult, [parentPlan], []);
+    const prompt = buildReviewPrompt(childPlan, diffResult, true, [parentPlan], []);
 
     // Verify parent context is included
     expect(prompt).toContain('# Parent Plan Context');
@@ -784,7 +788,7 @@ describe('Parent plan context handling', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult, [], []);
+    const prompt = buildReviewPrompt(planData, diffResult, true, [], []);
 
     // Should not include parent context
     expect(prompt).not.toContain('# Parent Plan Context');
@@ -825,7 +829,7 @@ describe('Parent plan context handling', () => {
     }));
 
     // Test with undefined parent (simulating missing parent)
-    const prompt = buildReviewPrompt(childPlan, diffResult, [], []);
+    const prompt = buildReviewPrompt(childPlan, diffResult, true, [], []);
 
     // Should not include parent context when parent is missing
     expect(prompt).not.toContain('# Parent Plan Context');
@@ -942,6 +946,7 @@ tasks:
       buildReviewPrompt: (
         planData: any,
         diffResult: any,
+        includeDiff: boolean = false,
         parentChain: any[] = [],
         completedChildren: any[] = []
       ) => {
@@ -1028,7 +1033,7 @@ describe('Hierarchy integration with utilities', () => {
 
     // Test with multi-level parent chain
     const parentChain = [parentPlan, grandparentPlan];
-    const prompt = buildReviewPrompt(childPlan, diffResult, parentChain, []);
+    const prompt = buildReviewPrompt(childPlan, diffResult, true, parentChain, []);
 
     // Verify both parent levels are included
     expect(prompt).toContain('# Parent Plan Context');
@@ -1091,7 +1096,7 @@ describe('Hierarchy integration with utilities', () => {
     }));
 
     const completedChildren = [completedChild1, completedChild2];
-    const prompt = buildReviewPrompt(parentPlan, diffResult, [], completedChildren);
+    const prompt = buildReviewPrompt(parentPlan, diffResult, true, [], completedChildren);
 
     // Verify completed children section is included
     expect(prompt).toContain('# Completed Child Plans');
@@ -1164,7 +1169,7 @@ describe('Hierarchy integration with utilities', () => {
 
     const parentChain = [parentPlan, grandparentPlan];
     const completedChildren = [completedChild];
-    const prompt = buildReviewPrompt(currentPlan, diffResult, parentChain, completedChildren);
+    const prompt = buildReviewPrompt(currentPlan, diffResult, true, parentChain, completedChildren);
 
     // Verify both parent and children contexts are included in correct order
     expect(prompt).toContain('# Parent Plan Context');
@@ -1213,7 +1218,7 @@ describe('Hierarchy integration with utilities', () => {
     }));
 
     // Should not attempt hierarchy traversal without an ID
-    const prompt = buildReviewPrompt(planWithoutId, diffResult, [], []);
+    const prompt = buildReviewPrompt(planWithoutId, diffResult, true, [], []);
 
     expect(prompt).not.toContain('# Parent Plan Context');
     expect(prompt).not.toContain('# Completed Child Plans');
@@ -1247,7 +1252,7 @@ describe('Hierarchy integration with utilities', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(simplePlan, diffResult, [], []);
+    const prompt = buildReviewPrompt(simplePlan, diffResult, true, [], []);
 
     // Should work like before - no parent or children sections
     expect(prompt).not.toContain('# Parent Plan Context');
@@ -1307,6 +1312,7 @@ describe('Hierarchy integration with utilities', () => {
     const prompt = buildReviewPrompt(
       currentPlan,
       diffResult,
+      true,
       [parentWithoutDetails],
       [childWithoutDetails]
     );
@@ -1699,6 +1705,7 @@ tasks:
         buildReviewPrompt: (
           planData: any,
           diffResult: any,
+          includeDiff: boolean = false,
           parentChain: any[] = [],
           completedChildren: any[] = [],
           customInstructions?: string
@@ -1895,9 +1902,9 @@ describe('Custom review instructions', () => {
 
     // This should not throw and should work with the new signature
     expect(() =>
-      buildReviewPrompt(planData, diffResult, [], [], 'custom instructions')
+      buildReviewPrompt(planData, diffResult, true, [], [], 'custom instructions')
     ).not.toThrow();
-    expect(() => buildReviewPrompt(planData, diffResult, [], [])).not.toThrow();
+    expect(() => buildReviewPrompt(planData, diffResult, true, [], [])).not.toThrow();
   });
 
   test('validates function signatures work correctly after security fixes', () => {
