@@ -46,5 +46,4 @@ tasks:
       - prompt: Extract common test setup to reduce duplication
         done: false
 ---
-
 This plan depends on plan 104 (Test Data Generation) and is part of the Q1 2024 goals.

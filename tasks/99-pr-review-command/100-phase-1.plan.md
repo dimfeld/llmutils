@@ -11,7 +11,7 @@ parent: 99
 planGeneratedAt: 2025-08-13T20:34:32.142Z
 promptsGeneratedAt: 2025-08-13T20:40:39.944Z
 createdAt: 2025-08-13T20:28:04.715Z
-updatedAt: 2025-08-13T20:40:40.351Z
+updatedAt: 2025-08-13T21:08:30.859Z
 project:
   title: Add PR review command to rmplan for comprehensive code review against
     plan requirements
@@ -46,6 +46,7 @@ project:
     - Provides clear feedback on code quality and requirement compliance
 tasks:
   - title: Create review command handler
+    done: true
     description: >
       Create /src/rmplan/commands/review.ts with the main command handler
       function that loads configuration, resolves the plan file, and
@@ -54,7 +55,6 @@ tasks:
       handling and option parsing. The handler should support resolving plans by
       both file path and plan ID, load the plan details, and prepare for diff
       generation and review execution.
-    done: true
     files:
       - /src/rmplan/commands/review.ts
       - /src/rmplan/commands/review.test.ts
@@ -83,6 +83,7 @@ tasks:
           invalid plan formats.
         done: true
   - title: Register review command in CLI
+    done: true
     description: >
       Update /src/rmplan/rmplan.ts to register the new review command with
       appropriate options including plan argument, executor selection, model
@@ -90,7 +91,6 @@ tasks:
       follow the established pattern of other rmplan commands, using dynamic
       imports for the handler and supporting standard CLI options. Include help
       text that clearly explains the command's purpose and available options.
-    done: true
     files:
       - /src/rmplan/rmplan.ts
     steps:
@@ -113,6 +113,7 @@ tasks:
           commands.
         done: true
   - title: Implement diff generation logic
+    done: true
     description: >
       Add functions to generate a comprehensive diff of the current branch
       against trunk, leveraging existing getChangedFilesOnBranch() and Git/jj
@@ -121,7 +122,6 @@ tasks:
       (main/master), generate both a list of changed files and the actual diff
       content, and format the output appropriately for inclusion in the review
       prompt.
-    done: true
     files:
       - /src/rmplan/commands/review.ts
       - /src/rmplan/commands/review.test.ts
@@ -149,6 +149,7 @@ tasks:
           and appropriate error handling for edge cases.
         done: true
   - title: Build review prompt generator
+    done: true
     description: >
       Create a function to construct the review prompt combining plan details
       (goal, tasks, requirements) with the generated diff, formatting it
@@ -157,7 +158,6 @@ tasks:
       code changes were made, and instruct the reviewer to evaluate both code
       quality and requirement compliance. Use the existing reviewer agent prompt
       structure from agent_prompts.ts as the foundation.
-    done: true
     files:
       - /src/rmplan/commands/review.ts
       - /src/rmplan/commands/review.test.ts
@@ -185,6 +185,7 @@ tasks:
           the expected structure for the reviewer agent.
         done: true
   - title: Integrate with executor system
+    done: true
     description: >
       Connect the review command to the existing executor infrastructure,
       ensuring it can use any configured executor (Claude Code, copy-paste,
@@ -193,7 +194,6 @@ tasks:
       options, configure it for reviewer agent mode, and execute the review
       prompt. Support all standard executor options including model selection
       and execution mode.
-    done: true
     files:
       - /src/rmplan/commands/review.ts
       - /src/rmplan/commands/review.test.ts

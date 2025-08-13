@@ -39,10 +39,14 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   // Validate task structure
   for (const [index, task] of planData.tasks.entries()) {
     if (!task.title) {
-      throw new Error(`Task ${index + 1} is missing required 'title' field in plan: ${resolvedPlanFile}`);
+      throw new Error(
+        `Task ${index + 1} is missing required 'title' field in plan: ${resolvedPlanFile}`
+      );
     }
     if (!task.description) {
-      throw new Error(`Task ${index + 1} is missing required 'description' field in plan: ${resolvedPlanFile}`);
+      throw new Error(
+        `Task ${index + 1} is missing required 'description' field in plan: ${resolvedPlanFile}`
+      );
     }
   }
 
@@ -113,12 +117,12 @@ export function sanitizeBranchName(branch: string): string {
   if (!/^[a-zA-Z0-9._/-]+$/.test(branch)) {
     throw new Error(`Invalid branch name format: ${branch}`);
   }
-  
+
   // Additional security check: prevent path traversal attempts
   if (branch.includes('..') || branch.startsWith('/') || branch.includes('\\')) {
     throw new Error(`Invalid branch name format: ${branch}`);
   }
-  
+
   return branch;
 }
 
@@ -127,7 +131,7 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
   if (!baseBranch) {
     throw new Error('Could not determine trunk branch for comparison');
   }
-  
+
   // Sanitize branch name to prevent command injection
   const safeBranch = sanitizeBranchName(baseBranch);
   const usingJj = await getUsingJj();
@@ -161,7 +165,9 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
           })
           .filter((filename): filename is string => filename !== null);
       } else {
-        throw new Error(`jj diff --summary command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`);
+        throw new Error(
+          `jj diff --summary command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`
+        );
       }
 
       // Get full diff content
@@ -174,7 +180,9 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
           diffContent = fullDiff;
         }
       } else {
-        throw new Error(`jj diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`);
+        throw new Error(
+          `jj diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`
+        );
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -192,7 +200,9 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
           .map((line) => line.trim())
           .filter((line) => !!line);
       } else {
-        throw new Error(`git diff --name-only command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`);
+        throw new Error(
+          `git diff --name-only command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`
+        );
       }
 
       // Get full diff content
@@ -205,7 +215,9 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
           diffContent = fullDiff;
         }
       } else {
-        throw new Error(`git diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`);
+        throw new Error(
+          `git diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`
+        );
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -222,7 +234,6 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
 }
 
 export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult): string {
-
   // Build plan context section
   const planContext = [
     `# Plan Context`,

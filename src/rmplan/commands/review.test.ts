@@ -3,7 +3,12 @@ import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ModuleMocker } from '../../testing.js';
-import { handleReviewCommand, generateDiffForReview, buildReviewPrompt, sanitizeBranchName } from './review.js';
+import {
+  handleReviewCommand,
+  generateDiffForReview,
+  buildReviewPrompt,
+  sanitizeBranchName,
+} from './review.js';
 import type { PlanSchema } from '../planSchema.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -694,9 +699,7 @@ describe('Security fixes', () => {
 
       for (const maliciousBranch of maliciousBranches) {
         // Test the sanitization function directly
-        expect(() => sanitizeBranchName(maliciousBranch)).toThrow(
-          'Invalid branch name format'
-        );
+        expect(() => sanitizeBranchName(maliciousBranch)).toThrow('Invalid branch name format');
       }
     });
 
@@ -718,7 +721,7 @@ describe('Security fixes', () => {
       for (const validBranch of validBranches) {
         // Test the sanitization function directly instead of the full generateDiffForReview
         // since mocking Bun's $ utility is complex
-        
+
         // Should not throw an error for valid branch names
         expect(() => sanitizeBranchName(validBranch)).not.toThrow();
         expect(sanitizeBranchName(validBranch)).toBe(validBranch);
@@ -729,10 +732,8 @@ describe('Security fixes', () => {
       const maliciousBranch = 'main; rm -rf /';
 
       // Test the sanitization function directly - it should reject malicious input
-      expect(() => sanitizeBranchName(maliciousBranch)).toThrow(
-        'Invalid branch name format'
-      );
-      
+      expect(() => sanitizeBranchName(maliciousBranch)).toThrow('Invalid branch name format');
+
       // The sanitizeBranchName function is used in both git and jj code paths in generateDiffForReview
       // So testing it directly verifies protection in both modes
     });
@@ -940,13 +941,13 @@ tasks:
       // Test that the MAX_DIFF_SIZE constant is properly set to 10MB
       const reviewModule = await import('./review.js');
       // We can't directly access the constant, but we can test the logic indirectly
-      
+
       // Create a string that exceeds 10MB (10 * 1024 * 1024 bytes)
       const largeDiff = 'a'.repeat(11 * 1024 * 1024); // 11MB
       const largeDiffSizeInBytes = Buffer.byteLength(largeDiff, 'utf8');
-      
+
       expect(largeDiffSizeInBytes).toBeGreaterThan(10 * 1024 * 1024);
-      
+
       // The protection logic uses Buffer.byteLength to check size, which is the right approach
       // for UTF-8 string length checking
     });
@@ -956,7 +957,7 @@ tasks:
       const smallString = 'hello';
       const mediumString = 'a'.repeat(1024); // 1KB
       const unicodeString = '🔒'.repeat(100); // Unicode characters take more bytes
-      
+
       expect(Buffer.byteLength(smallString, 'utf8')).toBe(5);
       expect(Buffer.byteLength(mediumString, 'utf8')).toBe(1024);
       expect(Buffer.byteLength(unicodeString, 'utf8')).toBeGreaterThan(100); // Unicode takes more bytes
@@ -969,7 +970,7 @@ tasks:
       const exitCode = 128;
       const stderr = 'fatal: not a git repository';
       const expectedMessage = `git diff --name-only command failed (exit code ${exitCode}): ${stderr}`;
-      
+
       expect(expectedMessage).toContain('git diff --name-only command failed');
       expect(expectedMessage).toContain('exit code 128');
       expect(expectedMessage).toContain('fatal: not a git repository');
@@ -980,7 +981,7 @@ tasks:
       const exitCode = 1;
       const stderr = 'Error: No jj repo in current directory';
       const expectedMessage = `jj diff --summary command failed (exit code ${exitCode}): ${stderr}`;
-      
+
       expect(expectedMessage).toContain('jj diff --summary command failed');
       expect(expectedMessage).toContain('exit code 1');
       expect(expectedMessage).toContain('Error: No jj repo in current directory');
@@ -990,7 +991,7 @@ tasks:
       // Test that error wrapping preserves the original error message
       const originalError = 'Unexpected error';
       const wrappedMessage = `Failed to generate git diff: ${originalError}`;
-      
+
       expect(wrappedMessage).toContain('Failed to generate git diff');
       expect(wrappedMessage).toContain('Unexpected error');
     });
