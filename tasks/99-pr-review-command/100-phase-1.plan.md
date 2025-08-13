@@ -4,14 +4,15 @@ title: PR review command - Core Review Command Implementation
 goal: Implement the basic review command that can analyze a single plan against
   current branch changes
 id: 100
-status: done
+status: in_progress
 priority: high
-dependencies: []
+dependencies:
+  - 103
 parent: 99
 planGeneratedAt: 2025-08-13T20:34:32.142Z
 promptsGeneratedAt: 2025-08-13T20:40:39.944Z
 createdAt: 2025-08-13T20:28:04.715Z
-updatedAt: 2025-08-13T21:08:30.859Z
+updatedAt: 2025-08-13T23:54:11.755Z
 project:
   title: Add PR review command to rmplan for comprehensive code review against
     plan requirements
