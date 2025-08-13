@@ -143,37 +143,37 @@ tasks:
 
           Mock getCurrentBranchName to return 'feature-branch' and
           getChangedFilesOnBranch to return specific plan files.
-        done: false
+        done: true
       - prompt: >
           In the new test, create conflicting plans where the newer file (by
           timestamp) is the one changed on the branch.
 
           Verify that the changed file keeps its ID even though it's newer.
-        done: false
+        done: true
       - prompt: >
           Add a test "uses timestamp logic when on trunk branch (main)".
 
           Mock getCurrentBranchName to return 'main' and verify the original
           timestamp-based logic is used.
-        done: false
+        done: true
       - prompt: >
           Add a test "prefer flag overrides branch-based preference".
 
           Set up a scenario where a file would be preferred due to branch
           changes, but use --prefer to override it.
-        done: false
+        done: true
       - prompt: >
           Add a test for the case where multiple files conflict but none were
           changed on the current branch.
 
           Verify it falls back to the timestamp-based logic correctly.
-        done: false
+        done: true
       - prompt: >
           Add a test for handling errors when Git operations fail.
 
           Mock getChangedFilesOnBranch to throw an error and verify the command
           still works using the fallback logic.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/commands/renumber*
   - --with-imports
