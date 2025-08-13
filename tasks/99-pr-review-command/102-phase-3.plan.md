@@ -240,30 +240,31 @@ tasks:
       - src/rmplan/incremental_review.ts
       - src/rmplan/commands/review.ts
       - src/rmplan/rmplan.ts
+    done: true
     steps:
       - prompt: >
           Create incremental_review.test.ts with tests for tracking last review
           points, detecting changes since last review, and handling both Git and
           jj repositories.
-        done: false
+        done: true
       - prompt: >
           Implement incremental_review.ts with functions to store/retrieve last
           review metadata, calculate diff ranges, and filter files based on
           modification time.
-        done: false
+        done: true
       - prompt: >
           Add --incremental, --since-last-review, and --since CLI options to the
           review command for controlling incremental review behavior.
-        done: false
+        done: true
       - prompt: >
           Update generateDiffForReview in review.ts to support incremental diffs
           using stored metadata, showing only changes since the specified point.
-        done: false
+        done: true
       - prompt: >
           Integrate incremental review tracking into the main review flow,
           automatically storing review points and providing clear feedback about
           what's being reviewed.
-        done: false
+        done: true
 ---
 
 Implement additional features to make the review command more powerful and customizable. Add configuration options for review behavior, support for custom review instructions, and enhanced output formatting. Include options to focus reviews on specific aspects (security, performance, etc.) and to save review results.
