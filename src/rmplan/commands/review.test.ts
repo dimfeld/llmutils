@@ -678,6 +678,275 @@ tasks:
   });
 });
 
+describe('Parent plan context handling', () => {
+  test('includes parent context when plan has a parent', async () => {
+    const parentPlan: PlanSchema = {
+      id: 99,
+      title: 'PR review command',
+      goal: 'Implement a new rmplan review command that analyzes code changes against plan requirements',
+      details: 'The review command will compare the current branch to the trunk branch, gather all relevant plan context',
+      tasks: [],
+    };
+
+    const childPlan: PlanSchema = {
+      id: 101,
+      title: 'PR review command - Parent-Child Plan Integration',
+      goal: 'Enhance the review command to intelligently handle plan hierarchies',
+      details: 'Extend the review command to automatically include relevant context from parent plans',
+      parent: 99,
+      tasks: [
+        {
+          title: 'Implement parent plan context gathering',
+          description: 'Add logic to detect when a plan has a parent and automatically include parent context',
+        },
+      ],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/rmplan/commands/review.ts'],
+      baseBranch: 'main',
+      diffContent: 'mock diff content',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    const prompt = buildReviewPrompt(childPlan, diffResult, parentPlan);
+
+    // Verify parent context is included
+    expect(prompt).toContain('# Parent Plan Context');
+    expect(prompt).toContain('**Parent Plan ID:** 99');
+    expect(prompt).toContain('**Parent Title:** PR review command');
+    expect(prompt).toContain('**Parent Goal:** Implement a new rmplan review command');
+    expect(prompt).toContain(
+      'This review is for a child plan implementing part of the parent plan above.'
+    );
+
+    // Verify child plan context still included
+    expect(prompt).toContain('# Plan Context');
+    expect(prompt).toContain('**Plan ID:** 101');
+    expect(prompt).toContain('**Title:** PR review command - Parent-Child Plan Integration');
+  });
+
+  test('works normally when plan has no parent', async () => {
+    const planData: PlanSchema = {
+      id: 42,
+      title: 'Standalone Plan',
+      goal: 'A plan without a parent',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'A simple task',
+        },
+      ],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['test.ts'],
+      baseBranch: 'main',
+      diffContent: 'mock diff',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    const prompt = buildReviewPrompt(planData, diffResult);
+
+    // Should not include parent context
+    expect(prompt).not.toContain('# Parent Plan Context');
+    expect(prompt).not.toContain('Parent Plan ID');
+
+    // Should still include normal plan context
+    expect(prompt).toContain('# Plan Context');
+    expect(prompt).toContain('**Plan ID:** 42');
+    expect(prompt).toContain('**Title:** Standalone Plan');
+  });
+
+  test('continues without parent context when parent plan is missing', async () => {
+    // This test ensures the review works even if parent plan cannot be found
+    const childPlan: PlanSchema = {
+      id: 101,
+      title: 'Child Plan',
+      goal: 'A child plan with missing parent',
+      parent: 99, // Parent ID exists but plan will not be found
+      tasks: [
+        {
+          title: 'Test task',
+          description: 'A test task',
+        },
+      ],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['test.ts'],
+      baseBranch: 'main',
+      diffContent: 'mock diff',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    // Test with undefined parent (simulating missing parent)
+    const prompt = buildReviewPrompt(childPlan, diffResult, undefined);
+
+    // Should not include parent context when parent is missing
+    expect(prompt).not.toContain('# Parent Plan Context');
+    expect(prompt).not.toContain('Parent Plan ID');
+
+    // Should still include child plan context
+    expect(prompt).toContain('# Plan Context');
+    expect(prompt).toContain('**Plan ID:** 101');
+    expect(prompt).toContain('**Title:** Child Plan');
+  });
+
+  test('handles parent plan context integration in handleReviewCommand', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'rmplan-parent-test-'));
+
+    // Create parent plan file
+    const parentPlanContent = `
+id: 99
+title: Parent Plan
+goal: Parent goal for context
+details: This is the parent plan providing context
+tasks:
+  - title: Parent task
+    description: A parent task
+`;
+    const parentPlanFile = join(testDir, 'parent-99.yml');
+    await writeFile(parentPlanFile, parentPlanContent);
+
+    // Create child plan file
+    const childPlanContent = `
+id: 101
+title: Child Plan
+goal: Child goal that implements parent
+parent: 99
+tasks:
+  - title: Child task
+    description: A child task
+`;
+    const childPlanFile = join(testDir, 'child-101.yml');
+    await writeFile(childPlanFile, childPlanContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string) => {
+        // Verify the prompt includes parent context
+        expect(prompt).toContain('# Parent Plan Context');
+        expect(prompt).toContain('**Parent Plan ID:** 99');
+        expect(prompt).toContain('**Parent Title:** Parent Plan');
+        return 'Mock review result';
+      }),
+    };
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async (planFileOrId: string) => {
+        if (planFileOrId === childPlanFile) return childPlanFile;
+        if (planFileOrId === parentPlanFile) return parentPlanFile;
+        if (planFileOrId === '99') return parentPlanFile; // Handle parent ID resolution
+        return planFileOrId;
+      },
+      readPlanFile: async (filePath: string) => {
+        if (filePath === parentPlanFile) {
+          return {
+            id: 99,
+            title: 'Parent Plan',
+            goal: 'Parent goal for context',
+            details: 'This is the parent plan providing context',
+            tasks: [
+              {
+                title: 'Parent task',
+                description: 'A parent task',
+              },
+            ],
+          };
+        }
+        if (filePath === childPlanFile) {
+          return {
+            id: 101,
+            title: 'Child Plan',
+            goal: 'Child goal that implements parent',
+            parent: 99,
+            tasks: [
+              {
+                title: 'Child task',
+                description: 'A child task',
+              },
+            ],
+          };
+        }
+        return null;
+      },
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'copy-only',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: (planData: any, diffResult: any, parentPlan?: any) => {
+        // Create a test prompt that includes parent context when parent is provided
+        let prompt = `REVIEWER AGENT\n\n`;
+        
+        if (parentPlan) {
+          prompt += `# Parent Plan Context\n\n`;
+          prompt += `**Parent Plan ID:** ${parentPlan.id}\n`;
+          prompt += `**Parent Title:** ${parentPlan.title}\n`;
+          prompt += `**Parent Goal:** ${parentPlan.goal}\n\n`;
+        }
+        
+        prompt += `# Plan Context\n\n`;
+        prompt += `**Plan ID:** ${planData.id}\n`;
+        prompt += `**Title:** ${planData.title}\n`;
+        prompt += `**Goal:** ${planData.goal}\n\n`;
+        
+        return prompt;
+      },
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({
+          config: testDir,
+        }),
+      },
+    };
+
+    await handleReviewCommand(childPlanFile, {}, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+});
+
 // Security tests for the implemented security fixes
 describe('Security fixes', () => {
   describe('Branch name sanitization', () => {

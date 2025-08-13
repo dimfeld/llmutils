@@ -52,6 +52,21 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
   log(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
 
+  // Load parent plan if this plan has a parent
+  let parentPlan: PlanSchema | undefined = undefined;
+  if (planData.parent) {
+    try {
+      // Try to resolve parent plan by ID
+      const parentPlanFile = await resolvePlanFile(planData.parent.toString(), globalOpts.config);
+      parentPlan = await readPlanFile(parentPlanFile);
+      log(chalk.cyan(`Parent plan context loaded: ${parentPlan.id} - ${parentPlan.title}`));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(chalk.yellow(`Warning: Could not load parent plan ${planData.parent}: ${errorMessage}`));
+      // Continue without parent context
+    }
+  }
+
   // Generate diff against trunk branch
   const gitRoot = await getGitRoot();
   const diffResult = await generateDiffForReview(gitRoot);
@@ -65,7 +80,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   log(chalk.gray(`Comparing against: ${diffResult.baseBranch}`));
 
   // Build the review prompt
-  const reviewPrompt = buildReviewPrompt(planData, diffResult);
+  const reviewPrompt = buildReviewPrompt(planData, diffResult, parentPlan);
 
   // Set up executor
   const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
@@ -233,7 +248,30 @@ export async function generateDiffForReview(gitRoot: string): Promise<DiffResult
   };
 }
 
-export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult): string {
+export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult, parentPlan?: PlanSchema): string {
+  // Build parent plan context section if available
+  const parentContext: string[] = [];
+  if (parentPlan) {
+    parentContext.push(
+      `# Parent Plan Context`,
+      ``,
+      `**Parent Plan ID:** ${parentPlan.id}`,
+      `**Parent Title:** ${parentPlan.title}`,
+      `**Parent Goal:** ${parentPlan.goal}`,
+      ``
+    );
+    
+    if (parentPlan.details) {
+      parentContext.push(`**Parent Details:** ${parentPlan.details}`, ``);
+    }
+    
+    parentContext.push(
+      `*Note: This review is for a child plan implementing part of the parent plan above.*`,
+      ``,
+      ``
+    );
+  }
+
   // Build plan context section
   const planContext = [
     `# Plan Context`,
@@ -282,6 +320,7 @@ export function buildReviewPrompt(planData: PlanSchema, diffResult: DiffResult):
 
   // Combine everything into the final prompt
   const contextContent = [
+    ...parentContext,
     ...planContext,
     ``,
     ...changedFilesSection,
