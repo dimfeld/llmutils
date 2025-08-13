@@ -17,7 +17,7 @@ interface PlanToRenumber {
 
 interface RenumberOptions {
   dryRun?: boolean;
-  prefer?: string[];
+  keep?: string[];
 }
 
 interface RenumberCommand {
@@ -135,9 +135,9 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
 
   // Build a set of preferred plans and their ancestors
   const preferredPlans = new Set<string>();
-  if (options.prefer) {
+  if (options.keep) {
     // Normalize the file paths with validation
-    const preferredFilePaths = options.prefer
+    const preferredFilePaths = options.keep
       .map((p: string) => {
         if (path.isAbsolute(p)) {
           return p;
