@@ -211,9 +211,9 @@ export function parseReviewerOutput(rawOutput: string): {
   const actionItems: string[] = [];
 
   // Limit processing for very large outputs to prevent performance issues
-  const MAX_OUTPUT_LENGTH = 100000; // 100KB limit
+  const MAX_OUTPUT_LENGTH = 10000000; // 10MB limit
   const MAX_ISSUES = 100; // Limit number of issues processed
-  const MAX_LINES = 1000; // Limit number of lines processed
+  const MAX_LINES = 100000; // Limit number of lines processed
 
   if (rawOutput.length > MAX_OUTPUT_LENGTH) {
     rawOutput = rawOutput.substring(0, MAX_OUTPUT_LENGTH);

@@ -84,7 +84,7 @@ describe('wrapWithOrchestration', () => {
         planFilePath: testPlanFilePath,
       });
 
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toContain(
         'coordinate between specialized agents to complete the coding tasks described below'
       );
@@ -124,7 +124,7 @@ describe('wrapWithOrchestration', () => {
         batchMode: true,
       });
 
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toContain('PLAN_FILE_PATH_NOT_PROVIDED');
       expect(result).toContain(
         'use the Edit tool to update the plan file at: @PLAN_FILE_PATH_NOT_PROVIDED'
@@ -299,7 +299,7 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toBeString();
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toEndWith('');
     });
 
@@ -311,7 +311,7 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toBeString();
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toEndWith(whitespaceContent);
     });
 
@@ -323,7 +323,7 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toBeString();
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toContain(longContent);
       expect(result.length).toBeGreaterThan(longContent.length);
     });
@@ -377,7 +377,7 @@ describe('wrapWithOrchestration', () => {
           planFilePath: testPlanFilePath,
         });
 
-        expect(result).toContain('BATCH TASK PROCESSING MODE');
+        expect(result).toContain('# Batch Task Processing Mode');
         expect(result).toContain('Task Selection Phase');
       }
     });

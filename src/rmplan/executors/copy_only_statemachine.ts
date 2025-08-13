@@ -14,7 +14,7 @@ import {
 import type { SharedStore } from '../../state_machine/store.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { ExecutorCommonOptions, Executor } from './types';
+import type { ExecutorCommonOptions, Executor, ExecutePlanInfo } from './types';
 import type { Event } from '../../state_machine/events.ts';
 import { NoopNode } from '../../state_machine/nodes.ts';
 
@@ -217,7 +217,15 @@ export class CopyOnlyStateMachineExecutor implements Executor {
     return { rmfilter: false };
   }
 
-  async execute(contextContent: string) {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+    // Handle output capture mode for review
+    if (planInfo.captureOutput) {
+      // In capture mode, we just return the context content as the "output"
+      // since this executor doesn't actually process the content
+      return contextContent;
+    }
+
+    // Normal execution: run the state machine
     const stateMachine = new CopyOnlyStateMachine(
       contextContent,
       this.options,

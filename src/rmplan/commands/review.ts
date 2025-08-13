@@ -431,19 +431,17 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
   log(chalk.cyan('\n## Executing Code Review\n'));
 
-  // Execute the review without output hijacking
-  // For review purposes, we'll use the review prompt as the raw output since
-  // the executor handles the actual review processing internally
+  // Execute the review with output capture enabled
   try {
-    await executor.execute(reviewPrompt, {
+    const executorOutput = await executor.execute(reviewPrompt, {
       planId: planData.id?.toString() ?? 'unknown',
       planTitle: planData.title ?? 'Untitled Plan',
       planFilePath: resolvedPlanFile,
+      captureOutput: true, // Enable output capture for review
     });
 
-    // Use the review prompt as raw output for parsing
-    // This is safe since we're analyzing the content for review structure
-    const rawOutput = reviewPrompt;
+    // Use the actual executor output for parsing
+    const rawOutput = executorOutput || reviewPrompt;
 
     // Create structured review result
     const reviewResult = createReviewResult(

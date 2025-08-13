@@ -672,7 +672,7 @@ export class ClaudeCodeExecutor implements Executor {
     return server;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo) {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
     // Clear tracked files set for proper state isolation between runs
     this.trackedFiles.clear();
 
@@ -936,6 +936,7 @@ export class ClaudeCodeExecutor implements Executor {
 
         args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
         let splitter = createLineSplitter();
+        let capturedOutput = '';
 
         log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
         const result = await spawnAndLogOutput(args, {
@@ -961,12 +962,24 @@ export class ClaudeCodeExecutor implements Executor {
               }
             }
 
-            return formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
+            const formattedOutput = formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
+            
+            // Capture output if requested
+            if (planInfo?.captureOutput) {
+              capturedOutput += formattedOutput;
+            }
+
+            return formattedOutput;
           },
         });
 
         if (result.exitCode !== 0) {
           throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
+        }
+
+        // Return captured output if requested
+        if (planInfo?.captureOutput) {
+          return capturedOutput;
         }
       }
     } finally {

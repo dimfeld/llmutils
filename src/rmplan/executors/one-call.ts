@@ -48,8 +48,7 @@ export class OneCallExecutor implements Executor {
     return options;
   }
 
-  async execute(contextContent: string, _planInfo: ExecutePlanInfo) {
-    // This executor doesn't use plan information
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
     const retryRequester = createRetryRequester(this.executionModel);
     const { text: llmOutput } = await runStreamingPrompt({
       input: contextContent,
@@ -57,6 +56,11 @@ export class OneCallExecutor implements Executor {
       temperature: 0,
       // Temperature and other LLM params could be configurable here or via rmplanConfig/executorOptions in future
     });
+
+    // Handle output capture mode for review
+    if (planInfo.captureOutput) {
+      return llmOutput;
+    }
 
     // Add a newline for better separation in logs if streaming to console
     if (!process.stdout.isTTY) {
