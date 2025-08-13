@@ -180,7 +180,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         // Separate files into two groups: changed on branch vs unchanged
         const changedFiles: typeof files = [];
         const unchangedFiles: typeof files = [];
-        
+
         if (isFeatureBranch && changedPlanFilesSet.size > 0) {
           for (const file of files) {
             if (changedPlanFilesSet.has(file.filePath)) {
@@ -189,7 +189,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
               unchangedFiles.push(file);
             }
           }
-          
+
           debugLog(
             `ID ${id}: Found ${changedFiles.length} changed files and ${unchangedFiles.length} unchanged files`
           );
@@ -212,12 +212,14 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
             );
 
             const fileToKeep = unchangedWithTimestamps[0];
-            debugLog(`ID ${id}: Keeping unchanged file ${fileToKeep.filePath} (oldest), renumbering all changed files and other unchanged files`);
-            
+            debugLog(
+              `ID ${id}: Keeping unchanged file ${fileToKeep.filePath} (oldest), renumbering all changed files and other unchanged files`
+            );
+
             // Renumber all changed files plus all unchanged files except the oldest
             plansToKeepAndRenumber = [
               ...changedFiles,
-              ...unchangedWithTimestamps.slice(1).map(({ filePath, plan }) => ({ filePath, plan }))
+              ...unchangedWithTimestamps.slice(1).map(({ filePath, plan }) => ({ filePath, plan })),
             ];
           } else {
             // No unchanged files, so all files were changed on branch - renumber all but one
