@@ -272,6 +272,52 @@
       },
       "additionalProperties": false
     },
+    "review": {
+      "description": "Configuration options for the review command",
+      "type": "object",
+      "properties": {
+        "focusAreas": {
+          "description": "Default focus areas for reviews such as security, performance, testing",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputFormat": {
+          "description": "Format for review output: json, markdown, or terminal",
+          "type": "string",
+          "enum": [
+            "json",
+            "markdown",
+            "terminal"
+          ]
+        },
+        "saveLocation": {
+          "description": "Directory path where review results should be saved",
+          "type": "string"
+        },
+        "autoSave": {
+          "description": "Automatically save review results with metadata to .rmfilter/reviews/ directory",
+          "type": "boolean"
+        },
+        "customInstructionsPath": {
+          "description": "Path to file containing custom review instructions",
+          "type": "string"
+        },
+        "incrementalReview": {
+          "description": "Enable incremental reviews that only analyze changes since last review",
+          "type": "boolean"
+        },
+        "excludePatterns": {
+          "description": "Glob patterns for files/directories to exclude from review",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "executors": {
       "description": "Options for each executor",
       "type": "object",
@@ -365,5 +411,8 @@
       "additionalProperties": false
     }
   },
+  "required": [
+    "issueTracker"
+  ],
   "additionalProperties": false
 }
