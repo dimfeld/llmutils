@@ -66,10 +66,6 @@
             "type": "string"
           }
         },
-        "planning": {
-          "description": "Path to a planning document file to include in all planning prompts",
-          "type": "string"
-        },
         "trackingFile": {
           "description": "Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)",
           "type": "string"
@@ -218,12 +214,22 @@
       },
       "additionalProperties": false
     },
+    "instructions": {
+      "description": "Paths to custom instruction documents",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
     "planning": {
       "type": "object",
       "properties": {
         "direct_mode": {
           "description": "Default behavior for direct mode in generate and prepare commands",
           "type": "boolean"
+        },
+        "instructions": {
+          "description": "Path to a planning document file to include in all planning prompts",
+          "type": "string"
         }
       },
       "additionalProperties": false

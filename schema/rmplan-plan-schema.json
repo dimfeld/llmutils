@@ -133,6 +133,10 @@
           "title": {
             "type": "string"
           },
+          "done": {
+            "default": false,
+            "type": "boolean"
+          },
           "description": {
             "type": "string"
           },
@@ -156,10 +160,6 @@
               "type": "string"
             }
           },
-          "done": {
-            "default": false,
-            "type": "boolean"
-          },
           "steps": {
             "default": [],
             "type": "array",
@@ -169,15 +169,15 @@
                 "prompt": {
                   "type": "string"
                 },
+                "done": {
+                  "default": false,
+                  "type": "boolean"
+                },
                 "examples": {
                   "type": "array",
                   "items": {
                     "type": "string"
                   }
-                },
-                "done": {
-                  "default": false,
-                  "type": "boolean"
                 }
               },
               "required": [

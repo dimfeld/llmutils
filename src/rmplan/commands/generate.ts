@@ -385,7 +385,9 @@ export async function handleGenerateCommand(
         const parentPlan = allPlans.get(stubPlan.data.parent);
         if (parentPlan) {
           planParts.push(
-            `\n## Parent Plan Context\n**Parent Plan:** ${parentPlan.title || `Plan ${stubPlan.data.parent}`} (ID: ${stubPlan.data.parent})`
+            `\n# Parent Plan Context`,
+            `\nThe parent plan details give you more context about the larger project around this plan. It may be useful to reference these details when working on this plan, but keep in mind that some of these details may already be implemented, so look at the actual code to verify what needs to be done.\n`,
+            `**Parent Plan:** ${parentPlan.title || `Plan ${stubPlan.data.parent}`} (ID: ${stubPlan.data.parent})`
           );
           if (parentPlan.goal) {
             planParts.push(`**Parent Goal:** ${parentPlan.goal}`);
@@ -411,10 +413,10 @@ export async function handleGenerateCommand(
 
   // Read planning document if configured
   let planningDocContent = '';
-  if (config.paths?.planning) {
-    const planningPath = path.isAbsolute(config.paths.planning)
-      ? config.paths.planning
-      : path.join(gitRoot, config.paths.planning);
+  if (config.planning?.instructions) {
+    const planningPath = path.isAbsolute(config.planning.instructions)
+      ? config.planning.instructions
+      : path.join(gitRoot, config.planning.instructions);
     const planningFile = Bun.file(planningPath);
     planningDocContent = await planningFile.text();
     log(chalk.blue('📋 Including planning document:'), path.relative(gitRoot, planningPath));

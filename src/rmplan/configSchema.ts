@@ -76,10 +76,6 @@ export const rmplanConfigSchema = z
           .describe(
             'Paths to directories to search for .md and .mdc documentation files to auto-include'
           ),
-        planning: z
-          .string()
-          .optional()
-          .describe('Path to a planning document file to include in all planning prompts'),
         trackingFile: z
           .string()
           .optional()
@@ -148,6 +144,7 @@ export const rmplanConfigSchema = z
     defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
+    instructions: z.object({}).optional().describe('Paths to custom instruction documents'),
     /** Planning-related configuration options */
     planning: z
       .object({
@@ -155,6 +152,10 @@ export const rmplanConfigSchema = z
           .boolean()
           .optional()
           .describe('Default behavior for direct mode in generate and prepare commands'),
+        instructions: z
+          .string()
+          .optional()
+          .describe('Path to a planning document file to include in all planning prompts'),
       })
       .optional(),
     /**

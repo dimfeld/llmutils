@@ -136,10 +136,10 @@ export async function preparePhase(
     // Read planning document if configured
     let planningDocContent = '';
     const gitRoot = (await getGitRoot()) || process.cwd();
-    if (config.paths?.planning) {
-      const planningPath = path.isAbsolute(config.paths.planning)
-        ? config.paths.planning
-        : path.join(gitRoot, config.paths.planning);
+    if (config.planning?.instructions) {
+      const planningPath = path.isAbsolute(config.planning.instructions)
+        ? config.planning.instructions
+        : path.join(gitRoot, config.planning.instructions);
       const planningFile = Bun.file(planningPath);
       planningDocContent = await planningFile.text();
       log(chalk.blue('📋 Including planning document:'), path.relative(gitRoot, planningPath));
