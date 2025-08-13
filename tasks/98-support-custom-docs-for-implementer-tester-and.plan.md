@@ -223,25 +223,25 @@ tasks:
           tester, and reviewer agents, and
 
           creates a config object referencing these files.
-        done: false
+        done: true
       - prompt: >
           In the test, mock the agent prompt functions to capture the
           customInstructions parameter passed to them.
 
           Set up other necessary mocks similar to existing tests (git root,
           process spawning, etc.).
-        done: false
+        done: true
       - prompt: >
           Create a ClaudeCodeExecutor with the config containing agent
           instructions, execute it with test content,
 
           and verify that each agent prompt function was called with the correct
           custom instructions from the files.
-        done: false
+        done: true
       - prompt: >
           Clean up the temporary directory after the test completes and ensure
           all tests pass.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/configSchema.ts
   - src/rmplan/executors/claude_code.ts

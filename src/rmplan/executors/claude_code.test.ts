@@ -4926,6 +4926,119 @@ More content
     });
   });
 
+  test('includes custom instructions from config files in agent prompts', async () => {
+    // Create a temporary directory for instruction files
+    const tempDir = await fs.mkdtemp('/tmp/agent-instructions-test-');
+    
+    try {
+      // Write instruction files for each agent
+      const implementerInstructions = 'Always use TypeScript interfaces for data structures.';
+      const testerInstructions = 'Focus on edge cases and error handling in tests.';
+      const reviewerInstructions = 'Check for security vulnerabilities and performance issues.';
+
+      const implementerPath = path.join(tempDir, 'implementer.txt');
+      const testerPath = path.join(tempDir, 'tester.txt');
+      const reviewerPath = path.join(tempDir, 'reviewer.txt');
+
+      await fs.writeFile(implementerPath, implementerInstructions);
+      await fs.writeFile(testerPath, testerInstructions);
+      await fs.writeFile(reviewerPath, reviewerInstructions);
+
+      // Create config with agent instructions
+      const configWithAgents: RmplanConfig = {
+        agents: {
+          implementer: { instructions: implementerPath },
+          tester: { instructions: testerPath },
+          reviewer: { instructions: reviewerPath },
+        },
+      };
+
+      // Mock the agent prompt functions to capture their arguments
+      const mockGetImplementerPrompt = mock((contextContent: string, customInstructions?: string) => ({
+        name: 'implementer',
+        description: 'Test implementer',
+        prompt: `Context: ${contextContent}\nCustom: ${customInstructions || 'none'}`,
+      }));
+
+      const mockGetTesterPrompt = mock((contextContent: string, customInstructions?: string) => ({
+        name: 'tester',
+        description: 'Test tester',
+        prompt: `Context: ${contextContent}\nCustom: ${customInstructions || 'none'}`,
+      }));
+
+      const mockGetReviewerPrompt = mock((contextContent: string, customInstructions?: string) => ({
+        name: 'reviewer',
+        description: 'Test reviewer',
+        prompt: `Context: ${contextContent}\nCustom: ${customInstructions || 'none'}`,
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+        getImplementerPrompt: mockGetImplementerPrompt,
+        getTesterPrompt: mockGetTesterPrompt,
+        getReviewerPrompt: mockGetReviewerPrompt,
+      }));
+
+      // Mock other dependencies
+      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+        generateAgentFiles: mock(() => Promise.resolve()),
+        removeAgentFiles: mock(() => Promise.resolve()),
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve(tempDir)), // Use temp dir as git root
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      // Mock cleanup registry
+      const mockUnregister = mock();
+      const mockRegister = mock(() => mockUnregister);
+      await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
+        CleanupRegistry: {
+          getInstance: mock(() => ({
+            register: mockRegister,
+          })),
+        },
+      }));
+
+      // Create executor with the config containing agent instructions
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+        },
+        mockSharedOptions,
+        configWithAgents
+      );
+
+      // Execute with plan info to trigger agent file generation
+      await executor.execute('test content', mockPlanInfo);
+
+      // Verify that each agent prompt function was called with the correct custom instructions
+      expect(mockGetImplementerPrompt).toHaveBeenCalledWith('test content', implementerInstructions);
+      expect(mockGetTesterPrompt).toHaveBeenCalledWith('test content', testerInstructions);
+      expect(mockGetReviewerPrompt).toHaveBeenCalledWith('test content', reviewerInstructions);
+
+      // Verify all prompt functions were called exactly once
+      expect(mockGetImplementerPrompt).toHaveBeenCalledTimes(1);
+      expect(mockGetTesterPrompt).toHaveBeenCalledTimes(1);
+      expect(mockGetReviewerPrompt).toHaveBeenCalledTimes(1);
+
+    } finally {
+      // Clean up temporary directory
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });
