@@ -19,8 +19,7 @@ export interface ReviewIssue {
   id: string;
   severity: ReviewSeverity;
   category: ReviewCategory;
-  title: string;
-  description: string;
+  content: string;
   file?: string;
   line?: number;
   suggestion?: string;
@@ -301,8 +300,7 @@ export function parseReviewerOutput(rawOutput: string): {
           id: `issue-${issueId++}`,
           severity,
           category,
-          title: content.length > 80 ? content.substring(0, 77) + '...' : content,
-          description: content,
+          content,
           file,
           line: lineNumber,
         };
@@ -534,13 +532,12 @@ export class MarkdownFormatter implements ReviewFormatter {
           sections.push('');
 
           issues.forEach((issue, index) => {
-            sections.push(`#### ${index + 1}. ${issue.title}`);
+            sections.push(`#### ${index + 1}. ${issue.content}`);
             sections.push(`**Category:** ${issue.category}`);
             if (issue.file) {
               sections.push(`**File:** ${issue.file}${issue.line ? `:${issue.line}` : ''}`);
             }
             sections.push('');
-            sections.push(issue.description);
 
             if (issue.suggestion && options.showSuggestions !== false) {
               sections.push('');
@@ -673,7 +670,7 @@ export class TerminalFormatter implements ReviewFormatter {
           sections.push('');
 
           issues.forEach((issue, index) => {
-            sections.push(`${index + 1}. ${color(issue.title, chalk.bold)}`);
+            sections.push(`${index + 1}. ${color(issue.content, chalk.bold)}`);
             sections.push(`   Category: ${color(issue.category, chalk.cyan)}`);
             if (issue.file) {
               const fileLocation = `${issue.file}${issue.line ? `:${issue.line}` : ''}`;
@@ -681,8 +678,6 @@ export class TerminalFormatter implements ReviewFormatter {
             }
 
             if (options.verbosity === 'detailed') {
-              sections.push(`   ${issue.description}`);
-
               if (issue.suggestion && options.showSuggestions !== false) {
                 sections.push(`   ${color('💡 Suggestion:', chalk.yellow)} ${issue.suggestion}`);
               }

@@ -317,21 +317,6 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       rawOutput
     );
 
-    // Check if autofix should be performed - with robust issue detection
-    const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
-    let shouldAutofix = false;
-    if (hasIssues) {
-      if (!options.autofix && !options.noAutofix) {
-        // Prompt user for autofix
-        shouldAutofix = await confirm({
-          message: 'Issues were found during review. Would you like to automatically fix them?',
-          default: false,
-        });
-      }
-    }
-
-    const performAutofix = options.autofix || (shouldAutofix && !options.noAutofix);
-
     // Determine format and verbosity from options or config
     const outputFormat = options.format || config.review?.outputFormat || 'terminal';
     const verbosity: VerbosityLevel = options.verbosity || 'normal';
@@ -354,6 +339,26 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
     );
     const formattedOutput = formatter.format(reviewResult, formatterOptions);
+
+    // Display formatted output to console (unless saving to file and format is not terminal)
+    if (!options.outputFile || outputFormat === 'terminal') {
+      log('\n' + formattedOutput);
+    }
+
+    // Check if autofix should be performed - with robust issue detection
+    const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
+    let shouldAutofix = false;
+    if (hasIssues) {
+      if (!options.autofix && !options.noAutofix) {
+        // Prompt user for autofix
+        shouldAutofix = await confirm({
+          message: 'Issues were found during review. Would you like to automatically fix them?',
+          default: false,
+        });
+      }
+    }
+
+    const performAutofix = options.autofix || (shouldAutofix && !options.noAutofix);
 
     // Persistence logic - save to structured review history
     const shouldSave =
@@ -419,11 +424,6 @@ export async function handleReviewCommand(planFile: string, options: any, comman
         const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
         log(chalk.yellow(`Warning: Could not prepare save location: ${saveErrorMessage}`));
       }
-    }
-
-    // Display formatted output to console (unless saving to file and format is not terminal)
-    if (!options.outputFile || outputFormat === 'terminal') {
-      log('\n' + formattedOutput);
     }
 
     // Store incremental review metadata after successful review
@@ -818,10 +818,7 @@ export function buildAutofixPrompt(
   // Add issues from the review result
   if (reviewResult.issues && reviewResult.issues.length > 0) {
     reviewResult.issues.forEach((issue, index) => {
-      prompt.push(`### Issue ${index + 1}: ${issue.title || 'Unnamed Issue'}`);
-      if (issue.description) {
-        prompt.push(issue.description);
-      }
+      prompt.push(`### Issue ${index + 1}: ${issue.content || 'Unnamed Issue'}`);
       if (issue.file) {
         prompt.push(`**File:** ${issue.file}`);
       }

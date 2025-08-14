@@ -30,25 +30,25 @@ describe('parseReviewerOutput', () => {
     expect(issues).toHaveLength(5);
 
     // Check critical security issue
-    const sqlIssue = issues.find((i) => i.description.includes('SQL injection'));
+    const sqlIssue = issues.find((i) => i.content.includes('SQL injection'));
     expect(sqlIssue).toBeDefined();
     expect(sqlIssue?.severity).toBe('critical');
     expect(sqlIssue?.category).toBe('security');
 
     // Check XSS issue
-    const xssIssue = issues.find((i) => i.description.includes('XSS'));
+    const xssIssue = issues.find((i) => i.content.includes('XSS'));
     expect(xssIssue).toBeDefined();
     expect(xssIssue?.severity).toBe('critical');
     expect(xssIssue?.category).toBe('security');
 
     // Check performance issue
-    const perfIssue = issues.find((i) => i.description.includes('Performance'));
+    const perfIssue = issues.find((i) => i.content.includes('Performance'));
     expect(perfIssue).toBeDefined();
     expect(perfIssue?.severity).toBe('major');
     expect(perfIssue?.category).toBe('performance');
 
     // Check bug
-    const bugIssue = issues.find((i) => i.description.includes('Null pointer'));
+    const bugIssue = issues.find((i) => i.content.includes('Null pointer'));
     expect(bugIssue).toBeDefined();
     expect(bugIssue?.severity).toBe('major');
     expect(bugIssue?.category).toBe('bug');
@@ -118,7 +118,7 @@ Action items:
     // Let's check the actual count and verify the critical bug is found
     expect(issues.length).toBeGreaterThan(0);
     const criticalBugIssue = issues.find((i) =>
-      i.description.includes('Critical bug in payment processing')
+      i.content.includes('Critical bug in payment processing')
     );
     expect(criticalBugIssue).toBeDefined();
 
@@ -145,13 +145,12 @@ describe('generateReviewSummary', () => {
         id: '1',
         severity: 'critical',
         category: 'security',
-        title: 'SQL injection',
-        description: 'test',
+        content: 'SQL injection test',
       },
-      { id: '2', severity: 'critical', category: 'security', title: 'XSS', description: 'test' },
-      { id: '3', severity: 'major', category: 'bug', title: 'Null pointer', description: 'test' },
-      { id: '4', severity: 'minor', category: 'style', title: 'Naming', description: 'test' },
-      { id: '5', severity: 'info', category: 'other', title: 'Info', description: 'test' },
+      { id: '2', severity: 'critical', category: 'security', content: 'XSS test' },
+      { id: '3', severity: 'major', category: 'bug', content: 'Null pointer test' },
+      { id: '4', severity: 'minor', category: 'style', content: 'Naming test' },
+      { id: '5', severity: 'info', category: 'other', content: 'Info test' },
     ];
 
     const summary = generateReviewSummary(issues, 5);
@@ -175,8 +174,7 @@ describe('generateReviewSummary', () => {
         id: '1',
         severity: 'critical',
         category: 'security',
-        title: 'Critical',
-        description: 'test',
+        content: 'Critical test',
       },
     ];
 
@@ -185,8 +183,7 @@ describe('generateReviewSummary', () => {
       id: `${i}`,
       severity: 'major' as const,
       category: 'bug' as const,
-      title: 'Major',
-      description: 'test',
+      content: 'Major test',
     }));
 
     // Fair rating with some major issues
@@ -194,13 +191,12 @@ describe('generateReviewSummary', () => {
       id: `${i}`,
       severity: 'major' as const,
       category: 'bug' as const,
-      title: 'Major',
-      description: 'test',
+      content: 'Major test',
     }));
 
     // Good rating with one major issue
     const oneMajorIssue: ReviewIssue[] = [
-      { id: '1', severity: 'major', category: 'bug', title: 'Major', description: 'test' },
+      { id: '1', severity: 'major', category: 'bug', content: 'Major test' },
     ];
   });
 });
@@ -234,8 +230,7 @@ describe('JsonFormatter', () => {
         id: '1',
         severity: 'critical',
         category: 'security',
-        title: 'SQL injection',
-        description: 'Critical SQL injection vulnerability',
+        content: 'Critical SQL injection vulnerability',
         file: 'src/auth.ts',
         line: 45,
       },
@@ -243,8 +238,7 @@ describe('JsonFormatter', () => {
         id: '2',
         severity: 'major',
         category: 'bug',
-        title: 'Null pointer',
-        description: 'Potential null pointer exception',
+        content: 'Potential null pointer exception',
       },
     ],
     rawOutput: 'Raw reviewer output',
@@ -322,8 +316,7 @@ describe('MarkdownFormatter', () => {
         id: '1',
         severity: 'critical',
         category: 'security',
-        title: 'SQL injection',
-        description: 'Critical SQL injection vulnerability in login function',
+        content: 'Critical SQL injection vulnerability in login function',
         file: 'src/auth.ts',
         line: 45,
         suggestion: 'Use parameterized queries',
@@ -351,7 +344,7 @@ describe('MarkdownFormatter', () => {
 
     expect(output).toContain('## Issues Found');
     expect(output).toContain('### Critical Issues');
-    expect(output).toContain('#### 1. SQL injection');
+    expect(output).toContain('#### 1. Critical SQL injection vulnerability in login function');
     expect(output).toContain('**Category:** security');
     expect(output).toContain('**File:** src/auth.ts:45');
     expect(output).toContain('**Suggestion:** Use parameterized queries');
@@ -410,8 +403,7 @@ describe('TerminalFormatter', () => {
         id: '1',
         severity: 'critical',
         category: 'security',
-        title: 'SQL injection',
-        description: 'Critical SQL injection vulnerability',
+        content: 'Critical SQL injection vulnerability',
         file: 'src/auth.ts',
         line: 45,
       },
@@ -449,7 +441,7 @@ describe('TerminalFormatter', () => {
 
     expect(output).toContain('🔍 Issues Found');
     expect(output).toContain('🔴 Critical Issues');
-    expect(output).toContain('1. SQL injection');
+    expect(output).toContain('1. Critical SQL injection vulnerability');
     expect(output).toContain('Category: security');
     expect(output).toContain('File: src/auth.ts:45');
   });
@@ -600,7 +592,7 @@ Suggestion: Use parameterized queries or prepared statements
 
     // Check file extraction
     const sqlIssue = issues.find(
-      (i) => i.description.includes('SQL injection') || i.description.includes('concatenated')
+      (i) => i.content.includes('SQL injection') || i.content.includes('concatenated')
     );
     expect(sqlIssue).toBeDefined();
     expect(sqlIssue?.severity).toBe('critical');
@@ -755,8 +747,7 @@ CRITICAL: Standalone severity without proper formatting
           id: '1',
           severity: 'critical',
           category: 'security',
-          title: 'Test issue',
-          description: 'Test description',
+          content: 'Test description',
           suggestion: 'Test suggestion',
         },
       ],
@@ -818,8 +809,7 @@ CRITICAL: Standalone severity without proper formatting
           id: '1',
           severity: 'critical',
           category: 'security',
-          title: 'Test issue',
-          description: 'Test description',
+          content: 'Test description',
         },
       ],
       rawOutput: 'Raw output for testing',
@@ -861,8 +851,7 @@ CRITICAL: Standalone severity without proper formatting
       id: `${i}`,
       severity: 'minor' as const,
       category: 'style' as const,
-      title: `Minor issue ${i}`,
-      description: 'Test minor issue',
+      content: `Minor issue ${i} - Test minor issue`,
     }));
 
     const summary = generateReviewSummary(manyMinorIssues, 10);
@@ -886,7 +875,7 @@ INFO: Consider adding more detailed comments
 
     // The parser matches the prefixes but categories are based on content patterns
     // Find the critical issue - it should match both the prefix and content
-    const criticalIssue = issues.find((i) => i.description.includes('CRITICAL'));
+    const criticalIssue = issues.find((i) => i.content.includes('CRITICAL'));
     expect(criticalIssue?.severity).toBe('critical'); // Content has "SQL injection vulnerability"
 
     // Other issues might not match content patterns so they default to 'info'
@@ -922,29 +911,25 @@ INFO: Consider adding more detailed comments
           id: '1',
           severity: 'critical',
           category: 'security',
-          title: 'Critical issue',
-          description: 'Critical description',
+          content: 'Critical description',
         },
         {
           id: '2',
           severity: 'major',
           category: 'performance',
-          title: 'Major issue',
-          description: 'Major description',
+          content: 'Major description',
         },
         {
           id: '3',
           severity: 'minor',
           category: 'bug',
-          title: 'Minor issue',
-          description: 'Minor description',
+          content: 'Minor description',
         },
         {
           id: '4',
           severity: 'info',
           category: 'style',
-          title: 'Info issue',
-          description: 'Info description',
+          content: 'Info description',
         },
       ],
       rawOutput: 'Raw output',
