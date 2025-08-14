@@ -990,7 +990,7 @@ export function buildReviewPrompt(
 /**
  * Creates an autofix prompt that includes the plan context, review findings, and instructions to fix all identified issues
  */
-function buildAutofixPrompt(
+export function buildAutofixPrompt(
   planData: PlanSchema,
   reviewResult: ReturnType<typeof createReviewResult>,
   diffResult: DiffResult

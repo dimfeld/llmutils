@@ -164,33 +164,33 @@ tasks:
 
           the executor is called twice: once with executionMode 'simple' for
           review, then with 'normal' for autofix.
-        done: false
+        done: true
       - prompt: >
           Add a test case for the interactive prompt scenario: when issues are
           found without --autofix flag,
 
           mock the confirm function to return true and verify the autofix
           execution occurs.
-        done: false
+        done: true
       - prompt: >
           Add a test case where the user declines the autofix prompt (confirm
           returns false),
 
           and verify that the executor is only called once for the review, not
           for autofix.
-        done: false
+        done: true
       - prompt: >
           Add a test case where no issues are found (totalIssues = 0),
 
           and verify that no prompt appears and no autofix execution occurs
           regardless of the --autofix flag.
-        done: false
+        done: true
       - prompt: >
           Add a test to verify that --no-autofix flag prevents autofix even when
           issues are found,
 
           ensuring no prompt appears and no second execution occurs.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/rmplan.ts
   - src/rmplan/commands/review.ts

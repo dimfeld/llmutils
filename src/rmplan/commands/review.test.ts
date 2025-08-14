@@ -2014,3 +2014,598 @@ describe('Custom review instructions', () => {
     expect(safeAreas).toEqual(['security', 'performance']);
   });
 });
+
+describe('Autofix functionality', () => {
+  test('autofix flag executes review then autofix when issues found', async () => {
+    const planContent = `
+id: 123
+title: Test Plan with Issues
+goal: Test autofix functionality
+tasks:
+  - title: Test task
+    description: A test task that has issues
+`;
+    const planFile = join(testDir, 'autofix-test.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        if (metadata.executionMode === 'simple') {
+          // First call is the review - return output with issues
+          return `## Code Review Summary
+
+### Critical Issues (2)
+1. **Security Vulnerability** - Unsafe input validation
+2. **Performance Issue** - N+1 query problem
+
+### Recommendations
+- Fix input validation
+- Optimize database queries`;
+        } else if (metadata.executionMode === 'normal') {
+          // Second call is the autofix
+          expect(prompt).toContain('Autofix Request');
+          expect(prompt).toContain('Security Vulnerability');
+          expect(prompt).toContain('Performance Issue');
+          return 'Autofix completed successfully';
+        }
+        return 'Unexpected execution mode';
+      }),
+    };
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 123,
+        title: 'Test Plan with Issues',
+        goal: 'Test autofix functionality',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task that has issues',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff content',
+      }),
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        includeDiff: boolean = false,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(planFile, { autofix: true }, mockCommand);
+
+    // Verify the executor was called twice: once for review, once for autofix
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
+
+    // Verify the first call was for review (simple mode)
+    expect(mockExecutor.execute).toHaveBeenNthCalledWith(
+      1,
+      'test review prompt',
+      expect.objectContaining({
+        executionMode: 'simple',
+        captureOutput: true,
+      })
+    );
+
+    // Verify the second call was for autofix (normal mode)
+    expect(mockExecutor.execute).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('Autofix Request'),
+      expect.objectContaining({
+        executionMode: 'normal',
+        captureOutput: false,
+      })
+    );
+  });
+
+  test('prompts user for autofix when issues found without autofix flag', async () => {
+    const planContent = `
+id: 124
+title: Test Interactive Prompt
+goal: Test interactive autofix prompt
+tasks:
+  - title: Test task
+    description: A test task with issues
+`;
+    const planFile = join(testDir, 'interactive-test.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        if (metadata.executionMode === 'simple') {
+          return `## Code Review Summary
+
+### Major Issues (1)
+1. **Code Quality** - Missing error handling`;
+        } else if (metadata.executionMode === 'normal') {
+          return 'Autofix completed';
+        }
+        return 'Unexpected mode';
+      }),
+    };
+
+    // Mock the confirm function to return true (user confirms autofix)
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      confirm: mock(async ({ message }: { message: string }) => {
+        expect(message).toContain('Issues were found during review');
+        expect(message).toContain('automatically fix them');
+        return true;
+      }),
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 124,
+        title: 'Test Interactive Prompt',
+        goal: 'Test interactive autofix prompt',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task with issues',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call without autofix flag - should prompt user and execute autofix
+    await handleReviewCommand(planFile, {}, mockCommand);
+
+    // Should execute both review and autofix
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
+  });
+
+  test('respects user declining autofix prompt', async () => {
+    const planContent = `
+id: 125
+title: Test Declined Autofix
+goal: Test user declining autofix
+tasks:
+  - title: Test task
+    description: A test task with issues
+`;
+    const planFile = join(testDir, 'decline-test.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        if (metadata.executionMode === 'simple') {
+          return `## Code Review Summary
+
+### Minor Issues (1)
+1. **Style** - Missing documentation`;
+        }
+        // Should not be called for autofix
+        throw new Error('Autofix should not be executed when user declines');
+      }),
+    };
+
+    // Mock the confirm function to return false (user declines autofix)
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      confirm: mock(async ({ message }: { message: string }) => {
+        expect(message).toContain('Issues were found during review');
+        return false;
+      }),
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 125,
+        title: 'Test Declined Autofix',
+        goal: 'Test user declining autofix',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task with issues',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(planFile, {}, mockCommand);
+
+    // Should only execute review, not autofix
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(mockExecutor.execute).toHaveBeenCalledWith(
+      'test review prompt',
+      expect.objectContaining({
+        executionMode: 'simple',
+      })
+    );
+  });
+
+  test('no prompt or autofix when no issues found', async () => {
+    const planContent = `
+id: 126
+title: Test No Issues
+goal: Test no autofix when no issues
+tasks:
+  - title: Test task
+    description: A clean test task
+`;
+    const planFile = join(testDir, 'no-issues-test.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        if (metadata.executionMode === 'simple') {
+          // Return review output with no issues (avoid bullet points or numbered lists)
+          return `## Code Review Summary
+
+The review has been completed successfully.
+No issues were identified in the code changes.
+The implementation appears to follow good coding practices.
+
+Overall assessment: The code looks good and meets quality standards.
+
+Recommendations:
+Continue following current coding standards and best practices.`;
+        }
+        throw new Error('Autofix should not be executed when no issues found');
+      }),
+    };
+
+    // Mock confirm to throw if called (it shouldn't be)
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      confirm: mock(async () => {
+        throw new Error('Confirm should not be called when no issues found');
+      }),
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 126,
+        title: 'Test No Issues',
+        goal: 'Test no autofix when no issues',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A clean test task',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Test both with and without autofix flag - should behave the same (no autofix)
+    await handleReviewCommand(planFile, {}, mockCommand);
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+
+    // Reset mock and test with autofix flag
+    mockExecutor.execute.mockClear();
+    await handleReviewCommand(planFile, { autofix: true }, mockCommand);
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('no-autofix flag prevents autofix even when issues found', async () => {
+    const planContent = `
+id: 127
+title: Test No-Autofix Flag
+goal: Test no-autofix flag prevention
+tasks:
+  - title: Test task
+    description: A test task with issues
+`;
+    const planFile = join(testDir, 'no-autofix-test.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        if (metadata.executionMode === 'simple') {
+          return `## Code Review Summary
+
+### Critical Issues (1)
+1. **Security** - SQL injection vulnerability`;
+        }
+        throw new Error('Autofix should not be executed with --no-autofix flag');
+      }),
+    };
+
+    // Mock confirm to throw if called (it shouldn't be with --no-autofix)
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      confirm: mock(async () => {
+        throw new Error('Confirm should not be called with --no-autofix flag');
+      }),
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 127,
+        title: 'Test No-Autofix Flag',
+        goal: 'Test no-autofix flag prevention',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task with issues',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(planFile, { noAutofix: true }, mockCommand);
+
+    // Should only execute review, not autofix
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(mockExecutor.execute).toHaveBeenCalledWith(
+      'test review prompt',
+      expect.objectContaining({
+        executionMode: 'simple',
+      })
+    );
+  });
+
+  test('buildAutofixPrompt creates proper autofix prompt structure', async () => {
+    const planData = {
+      id: 42,
+      title: 'Test Plan',
+      goal: 'Test autofix prompt building',
+      details: 'This plan tests the autofix prompt structure',
+      tasks: [
+        {
+          title: 'Fix security issues',
+          description: 'Address security vulnerabilities',
+        },
+        {
+          title: 'Improve performance',
+          description: 'Optimize slow queries',
+        },
+      ],
+    };
+
+    const mockReviewResult = {
+      planId: '42',
+      planTitle: 'Test Plan',
+      reviewTimestamp: '2024-01-01T00:00:00.000Z',
+      baseBranch: 'main',
+      changedFiles: ['src/auth.ts', 'src/db.ts'],
+      summary: {
+        totalIssues: 2,
+        criticalCount: 1,
+        majorCount: 1,
+        minorCount: 0,
+        infoCount: 0,
+        categoryCounts: {
+          security: 1,
+          performance: 1,
+          bug: 0,
+          style: 0,
+          compliance: 0,
+          testing: 0,
+          other: 0,
+        },
+        filesReviewed: 2,
+        overallRating: 'fair' as const,
+      },
+      issues: [
+        {
+          id: 'sec-001',
+          severity: 'critical' as const,
+          category: 'security' as const,
+          title: 'SQL Injection vulnerability',
+          description: 'User input not properly sanitized',
+          file: 'src/auth.ts',
+          line: 42,
+          suggestion: 'Use parameterized queries',
+        },
+        {
+          id: 'perf-001',
+          severity: 'major' as const,
+          category: 'performance' as const,
+          title: 'N+1 query problem',
+          description: 'Inefficient database queries in loop',
+          file: 'src/db.ts',
+          line: 15,
+          suggestion: 'Use batch queries or eager loading',
+        },
+      ],
+      rawOutput: 'Mock review output',
+      recommendations: ['Use parameterized queries', 'Optimize database access'],
+      actionItems: ['Fix SQL injection', 'Implement batch queries'],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/auth.ts', 'src/db.ts'],
+      baseBranch: 'main',
+      diffContent: 'mock diff content',
+    };
+
+    // Import the buildAutofixPrompt function directly for testing
+    const { buildAutofixPrompt } = await import('./review.js');
+    const autofixPrompt = buildAutofixPrompt(planData, mockReviewResult, diffResult);
+
+    // Verify the prompt structure
+    expect(autofixPrompt).toContain('# Autofix Request');
+    expect(autofixPrompt).toContain('## Plan Context');
+    expect(autofixPrompt).toContain('**Plan ID:** 42');
+    expect(autofixPrompt).toContain('**Title:** Test Plan');
+    expect(autofixPrompt).toContain('**Goal:** Test autofix prompt building');
+    expect(autofixPrompt).toContain('**Details:**');
+    expect(autofixPrompt).toContain('This plan tests the autofix prompt structure');
+
+    // Verify tasks are included
+    expect(autofixPrompt).toContain('**Tasks:**');
+    expect(autofixPrompt).toContain('1. **Fix security issues**');
+    expect(autofixPrompt).toContain('Address security vulnerabilities');
+    expect(autofixPrompt).toContain('2. **Improve performance**');
+    expect(autofixPrompt).toContain('Optimize slow queries');
+
+    // Verify issues are included
+    expect(autofixPrompt).toContain('## Review Findings');
+    expect(autofixPrompt).toContain('SQL Injection vulnerability');
+    expect(autofixPrompt).toContain('N+1 query problem');
+    expect(autofixPrompt).toContain('src/auth.ts');
+    expect(autofixPrompt).toContain('src/db.ts');
+    expect(autofixPrompt).toContain('critical');
+    expect(autofixPrompt).toContain('major');
+
+    // Verify instructions are included
+    expect(autofixPrompt).toContain('## Instructions');
+    expect(autofixPrompt).toContain('Please fix all the issues identified in the review');
+    expect(autofixPrompt).toContain('maintaining the plan requirements');
+  });
+});
