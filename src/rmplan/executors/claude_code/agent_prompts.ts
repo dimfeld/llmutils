@@ -52,6 +52,7 @@ You may receive a single task or multiple related tasks to implement together. W
 ### Error Handling
 - Handle errors according to project conventions
 - Ensure operations that might fail have appropriate error handling
+- Unexpected errors should generally be allowed to bubble up so that error reporting logic will handle them. Don't just catch them and log or return a default value unless it really makes sense for the function.
 - Add proper null/undefined checks where needed
 
 ### Implementation Approach
@@ -198,6 +199,7 @@ Scrutinize interactions between tasks for conflicts, inconsistencies, and integr
 - Null pointer exceptions or undefined access
 - Resource leaks (files, connections, memory)
 - Incorrect type usage or unsafe type assertions
+- Catching errors and just printing a log message (which will likely not be seen in production). Errors should be bubbled up, especially unexpected errors.
 
 ### Security Vulnerabilities (HIGH PRIORITY)
 - Path traversal vulnerabilities
@@ -223,7 +225,7 @@ Scrutinize interactions between tasks for conflicts, inconsistencies, and integr
 - Missing caching where it would significantly help
 
 ### Testing Problems (HIGH PRIORITY)
-- Tests that don't actually test the real functionality
+- Tests that don't test the actual implementation
 - Missing tests for error conditions and edge cases
 - Tests that pass but don't verify correct behavior
 - Flaky or non-deterministic tests
