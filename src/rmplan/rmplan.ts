@@ -526,6 +526,8 @@ program
     'Alias for --incremental. Only review changes since the last review.'
   )
   .option('--since <commit>', 'Review changes since the specified commit hash.')
+  .option('--autofix', 'Automatically fix issues found during review without prompting.')
+  .option('--no-autofix', 'Disable automatic fixing of issues, even if configured elsewhere.')
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
     await handleReviewCommand(planFile, options, command).catch(handleCommandError);

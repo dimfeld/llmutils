@@ -3,6 +3,7 @@
 
 import { $ } from 'bun';
 import chalk from 'chalk';
+import { confirm } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, relative, dirname } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
@@ -433,6 +434,20 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       rawOutput
     );
 
+    // Check if autofix should be performed
+    let shouldAutofix = false;
+    if (reviewResult.summary.totalIssues > 0) {
+      if (!options.autofix && !options.noAutofix) {
+        // Prompt user for autofix
+        shouldAutofix = await confirm({
+          message: 'Issues were found during review. Would you like to automatically fix them?',
+          default: false,
+        });
+      }
+    }
+
+    const performAutofix = options.autofix || (shouldAutofix && !options.noAutofix);
+
     // Determine format and verbosity from options or config
     const outputFormat = options.format || config.review?.outputFormat || 'terminal';
     const verbosity: VerbosityLevel = options.verbosity || 'normal';
@@ -554,6 +569,32 @@ export async function handleReviewCommand(planFile: string, options: any, comman
             `Warning: Could not store incremental review metadata: ${metadataErrorMessage}`
           )
         );
+      }
+    }
+
+    // Execute autofix if requested or confirmed
+    if (performAutofix && reviewResult.summary.totalIssues > 0) {
+      log(chalk.cyan('\n## Executing Autofix\n'));
+
+      try {
+        // Build the autofix prompt
+        const autofixPrompt = buildAutofixPrompt(planData, reviewResult, diffResult);
+
+        // Execute autofix using the executor in normal mode
+        const autofixOutput = await executor.execute(autofixPrompt, {
+          planId: planData.id?.toString() ?? 'unknown',
+          planTitle: `${planData.title ?? 'Untitled Plan'} - Autofix`,
+          planFilePath: resolvedPlanFile,
+          captureOutput: false, // Allow normal execution output for autofix
+          executionMode: 'normal', // Use full-featured mode for autofix
+        });
+
+        log(chalk.green('Autofix execution completed successfully!'));
+      } catch (autofixErr) {
+        const autofixErrorMessage =
+          autofixErr instanceof Error ? autofixErr.message : String(autofixErr);
+        log(chalk.red(`Error during autofix execution: ${autofixErrorMessage}`));
+        throw new Error(`Autofix execution failed: ${autofixErrorMessage}`);
       }
     }
 
@@ -944,4 +985,97 @@ export function buildReviewPrompt(
   const reviewerPromptWithContext = getReviewerPrompt(contextContent, customInstructions || '');
 
   return reviewerPromptWithContext.prompt;
+}
+
+/**
+ * Creates an autofix prompt that includes the plan context, review findings, and instructions to fix all identified issues
+ */
+function buildAutofixPrompt(
+  planData: PlanSchema,
+  reviewResult: ReturnType<typeof createReviewResult>,
+  diffResult: DiffResult
+): string {
+  const prompt = [
+    `# Autofix Request`,
+    ``,
+    `## Plan Context`,
+    ``,
+    `**Plan ID:** ${planData.id}`,
+    `**Title:** ${planData.title}`,
+    `**Goal:** ${planData.goal}`,
+    ``,
+  ];
+
+  if (planData.details) {
+    prompt.push(`**Details:**`, planData.details, ``);
+  }
+
+  if (planData.tasks && planData.tasks.length > 0) {
+    prompt.push(`**Tasks:**`);
+    planData.tasks.forEach((task, index) => {
+      prompt.push(`${index + 1}. **${task.title}**`);
+      if (task.description) {
+        prompt.push(`   ${task.description}`);
+      }
+      prompt.push(``);
+    });
+  }
+
+  prompt.push(
+    `## Review Findings`,
+    ``,
+    `A code review has identified the following issues that need to be fixed:`,
+    ``
+  );
+
+  // Add issues from the review result
+  if (reviewResult.issues && reviewResult.issues.length > 0) {
+    reviewResult.issues.forEach((issue, index) => {
+      prompt.push(`### Issue ${index + 1}: ${issue.title || 'Unnamed Issue'}`);
+      if (issue.description) {
+        prompt.push(issue.description);
+      }
+      if (issue.file) {
+        prompt.push(`**File:** ${issue.file}`);
+      }
+      if (issue.severity) {
+        prompt.push(`**Severity:** ${issue.severity}`);
+      }
+      prompt.push(``);
+    });
+  } else {
+    // Fallback if structured issues aren't available - include the raw review output
+    prompt.push(`**Review Output:**`);
+    prompt.push(reviewResult.rawOutput || 'No specific issues identified in structured format.');
+    prompt.push(``);
+  }
+
+  prompt.push(
+    `## Files to Fix`,
+    ``,
+    `**Base Branch:** ${diffResult.baseBranch}`,
+    `**Changed Files:**`
+  );
+
+  diffResult.changedFiles.forEach((file) => {
+    prompt.push(`- ${file}`);
+  });
+
+  prompt.push(
+    ``,
+    `## Instructions`,
+    ``,
+    `Please fix all the issues identified in the review while maintaining the plan requirements. Ensure that:`,
+    ``,
+    `1. All identified bugs and issues are resolved`,
+    `2. The code still fulfills the plan's goals and tasks`,
+    `3. Code quality is improved according to the review feedback`,
+    `4. All existing functionality is preserved`,
+    `5. Proper error handling is maintained or improved`,
+    `6. Tests are updated if necessary`,
+    ``,
+    `Focus on making targeted fixes that address the specific issues found during the review.`
+  );
+
+  return prompt.join('\n');
 }
