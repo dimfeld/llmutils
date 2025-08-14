@@ -21,7 +21,7 @@ describe('ClaudeCodeExecutor model selection', () => {
 
   test('automatically selects opus model for review mode when no model specified', async () => {
     let capturedArgs: string[] = [];
-    
+
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock((args: string[]) => {
         capturedArgs = args;
@@ -67,7 +67,7 @@ describe('ClaudeCodeExecutor model selection', () => {
 
   test('automatically selects opus model for planning mode when no model specified', async () => {
     let capturedArgs: string[] = [];
-    
+
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock((args: string[]) => {
         capturedArgs = args;
@@ -113,7 +113,7 @@ describe('ClaudeCodeExecutor model selection', () => {
 
   test('uses default sonnet model for normal mode when no model specified', async () => {
     let capturedArgs: string[] = [];
-    
+
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock((args: string[]) => {
         capturedArgs = args;
@@ -182,7 +182,7 @@ describe('ClaudeCodeExecutor model selection', () => {
 
   test('respects explicitly specified model over automatic selection', async () => {
     let capturedArgs: string[] = [];
-    
+
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock((args: string[]) => {
         capturedArgs = args;

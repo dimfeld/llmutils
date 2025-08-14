@@ -891,7 +891,11 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Automatic model selection for review and planning modes
       let modelToUse = this.sharedOptions.model;
-      if (planInfo && (planInfo.executionMode === 'review' || planInfo.executionMode === 'planning') && !modelToUse) {
+      if (
+        planInfo &&
+        (planInfo.executionMode === 'review' || planInfo.executionMode === 'planning') &&
+        !modelToUse
+      ) {
         modelToUse = 'opus';
       }
 

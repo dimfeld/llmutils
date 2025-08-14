@@ -1881,7 +1881,7 @@ tasks:
       }),
       checkbox: mock(async ({ choices }: { choices: any[] }) => {
         // Return all issues for autofix
-        return choices.map(c => c.value);
+        return choices.map((c) => c.value);
       }),
     }));
 
@@ -2049,7 +2049,7 @@ tasks:
       }),
       checkbox: mock(async ({ choices }: { choices: any[] }) => {
         // Return all issues for autofix
-        return choices.map(c => c.value);
+        return choices.map((c) => c.value);
       }),
     }));
 

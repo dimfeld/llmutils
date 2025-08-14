@@ -483,7 +483,12 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
       try {
         // Build the autofix prompt with validation
-        const autofixPrompt = buildAutofixPrompt(planData, reviewResult, diffResult, selectedIssues);
+        const autofixPrompt = buildAutofixPrompt(
+          planData,
+          reviewResult,
+          diffResult,
+          selectedIssues
+        );
 
         // Execute autofix using the executor in normal mode
         const autofixOutput = await executor.execute(autofixPrompt, {
@@ -596,11 +601,14 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
  */
 async function selectIssuesToFix(issues: ReviewIssue[]): Promise<ReviewIssue[]> {
   // Group issues by severity for better organization
-  const groupedIssues = issues.reduce((acc, issue) => {
-    if (!acc[issue.severity]) acc[issue.severity] = [];
-    acc[issue.severity].push(issue);
-    return acc;
-  }, {} as Record<string, ReviewIssue[]>);
+  const groupedIssues = issues.reduce(
+    (acc, issue) => {
+      if (!acc[issue.severity]) acc[issue.severity] = [];
+      acc[issue.severity].push(issue);
+      return acc;
+    },
+    {} as Record<string, ReviewIssue[]>
+  );
 
   // Create checkbox options with severity indicators
   const options = [];
@@ -885,7 +893,11 @@ export function buildAutofixPrompt(
 
   if (issuesToFix && issuesToFix.length > 0) {
     // Add note if subset selected
-    if (selectedIssues && reviewResult.issues && selectedIssues.length < reviewResult.issues.length) {
+    if (
+      selectedIssues &&
+      reviewResult.issues &&
+      selectedIssues.length < reviewResult.issues.length
+    ) {
       prompt.push(
         `Note: ${selectedIssues.length} of ${reviewResult.issues.length} issues selected for fixing.`,
         ``
