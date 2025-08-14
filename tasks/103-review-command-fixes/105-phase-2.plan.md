@@ -35,6 +35,7 @@ project:
     the identified problems.
 tasks:
   - title: Add --autofix Flag to Review Command
+    done: true
     description: >
       Update the CLI definition in rmplan.ts to add a new --autofix boolean
       option to the review command. This flag will allow users to automatically
@@ -61,6 +62,7 @@ tasks:
           --save/--no-save.
         done: true
   - title: Implement Autofix and Interactive Prompt Logic
+    done: true
     description: >
       In the handleReviewCommand function, after the initial review is complete
       and the reviewResult is created, add logic to check if any issues were
@@ -102,6 +104,7 @@ tasks:
           !options.noAutofix).
         done: true
   - title: Create and Execute Autofix Prompt
+    done: true
     description: >
       If the user confirms the autofix or if the --autofix flag was passed,
       construct a new prompt that includes the original review feedback and
@@ -145,6 +148,7 @@ tasks:
           appropriate error messages.
         done: true
   - title: Add Tests for Autofix Feature
+    done: true
     description: >
       Update the tests for the review command to cover the new --autofix
       functionality. This includes testing the command with the flag set (should
