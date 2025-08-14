@@ -52,14 +52,14 @@ tasks:
 
           The option should be a boolean flag with a description explaining that
           it automatically fixes issues found during review.
-        done: false
+        done: true
       - prompt: >
           Also add a --no-autofix option to explicitly disable autofix even if
           it might be configured elsewhere,
 
           following the pattern used for other boolean options like
           --save/--no-save.
-        done: false
+        done: true
   - title: Implement Autofix and Interactive Prompt Logic
     description: >
       In the handleReviewCommand function, after the initial review is complete
@@ -79,28 +79,28 @@ tasks:
           review.ts,
 
           following the existing import patterns in the file.
-        done: false
+        done: true
       - prompt: >
           After the reviewResult is created (around line 428), add logic to
           check if reviewResult.summary.totalIssues > 0.
 
           If there are issues and options.autofix is not set, create an
           interactive confirmation prompt.
-        done: false
+        done: true
       - prompt: >
           Create the confirm prompt with a message like "Issues were found
           during review. Would you like to automatically fix them?"
 
           Set the default to false for safety. Store the result in a
           shouldAutofix variable.
-        done: false
+        done: true
       - prompt: >
           Combine the autofix flag and prompt result to determine if autofix
           should proceed:
 
           const performAutofix = options.autofix || (shouldAutofix &&
           !options.noAutofix).
-        done: false
+        done: true
   - title: Create and Execute Autofix Prompt
     description: >
       If the user confirms the autofix or if the --autofix flag was passed,
@@ -123,27 +123,27 @@ tasks:
 
           The function should construct a prompt that includes the review
           findings and instructions to fix all identified issues.
-        done: false
+        done: true
       - prompt: >
           In the autofix prompt, include the plan context, the list of issues
           from reviewResult.issues,
 
           and clear instructions to fix each issue while maintaining the plan
           requirements.
-        done: false
+        done: true
       - prompt: >
           If performAutofix is true, log a message indicating that autofix is
           being executed,
 
           then call executor.execute with the autofix prompt and executionMode
           set to 'normal' or undefined.
-        done: false
+        done: true
       - prompt: >
           After the autofix execution completes, log a success message.
 
           Handle any errors that might occur during autofix execution with
           appropriate error messages.
-        done: false
+        done: true
   - title: Add Tests for Autofix Feature
     description: >
       Update the tests for the review command to cover the new --autofix
