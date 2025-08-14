@@ -9,9 +9,9 @@ import {
   detectIssuesInReview,
   buildAutofixPrompt,
   sanitizeBranchName,
-  validateInstructionsFilePath,
   validateFocusAreas,
 } from './review.js';
+import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { generateDiffForReview } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';

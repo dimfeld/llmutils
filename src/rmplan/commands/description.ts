@@ -3,7 +3,6 @@
 
 import chalk from 'chalk';
 import { readFile } from 'node:fs/promises';
-import { isAbsolute, join, resolve, relative } from 'node:path';
 import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -12,43 +11,28 @@ import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getPrDescriptionPrompt } from '../executors/claude_code/agent_prompts.js';
 import { gatherPlanContext } from '../utils/context_gathering.js';
 import type { PlanContext } from '../utils/context_gathering.js';
+import { validateInstructionsFilePath } from '../utils/file_validation.js';
 
 /**
- * Validates that a file path is safe to read and within allowed boundaries
- * Prevents path traversal attacks and ensures the path stays within the git root
+ * Options for the description command
  */
-export function validateInstructionsFilePath(filePath: string, gitRoot: string): string {
-  if (!filePath || typeof filePath !== 'string') {
-    throw new Error('Instructions file path must be a non-empty string');
-  }
+interface DescriptionOptions {
+  executor?: string;
+  model?: string;
+  dryRun?: boolean;
+  instructions?: string;
+  instructionsFile?: string;
+}
 
-  // Resolve the absolute path
-  const absolutePath = isAbsolute(filePath) ? filePath : join(gitRoot, filePath);
-  const resolvedPath = resolve(absolutePath);
-  const resolvedGitRoot = resolve(gitRoot);
-
-  // Ensure the resolved path is within the git root directory
-  const relativePath = relative(resolvedGitRoot, resolvedPath);
-  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
-    throw new Error(`Instructions file path is outside the allowed directory: ${filePath}`);
-  }
-
-  // Additional security check: prevent common dangerous paths
-  const normalizedPath = resolvedPath.toLowerCase();
-  const dangerousPaths = [
-    '/etc/',
-    '/usr/',
-    '/var/',
-    '/home/',
-    '/root/',
-    'c:\\windows\\',
-    'c:\\users\\',
-  ];
-  if (dangerousPaths.some((dangerous) => normalizedPath.includes(dangerous))) {
-    throw new Error(`Instructions file path contains dangerous directory: ${filePath}`);
-  }
-
-  return resolvedPath;
+/**
+ * Command object with parent access for global options
+ */
+interface DescriptionCommand {
+  parent: {
+    opts(): {
+      config?: string;
+    };
+  };
 }
 
 /**
@@ -187,12 +171,17 @@ export function buildPrDescriptionPrompt(
 /**
  * Main handler for the rmplan description command
  */
-export async function handleDescriptionCommand(planFile: string, options: any, command: any) {
+export async function handleDescriptionCommand(
+  planFile: string, 
+  options: DescriptionOptions, 
+  command: DescriptionCommand
+) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
   // Gather plan context using the shared utility
-  const context = await gatherPlanContext(planFile, options, globalOpts);
+  // Description command doesn't use incremental features, so pass empty review options
+  const context = await gatherPlanContext(planFile, {}, globalOpts);
 
   // Check if no changes were detected and early return
   if (context.noChangesDetected) {
@@ -222,11 +211,26 @@ export async function handleDescriptionCommand(planFile: string, options: any, c
       log(chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      log(
-        chalk.yellow(
-          `Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`
-        )
-      );
+      
+      // Different error handling based on error type
+      if (err instanceof Error && err.message.includes('outside the allowed directory')) {
+        // Security error - fail fast
+        throw new Error(`Security error: ${errorMessage}`);
+      } else if (err instanceof Error && (err as any).code === 'ENOENT') {
+        // File not found - fail fast since user explicitly provided the file
+        throw new Error(`Instructions file not found: ${options.instructionsFile}. Please check the file path.`);
+      } else if (err instanceof Error && (err as any).code === 'EACCES') {
+        // Permission error - fail fast  
+        throw new Error(`Cannot read instructions file: ${options.instructionsFile}. Permission denied.`);
+      } else {
+        // Other errors - warn but continue, with clear indication that instructions will be empty
+        log(
+          chalk.yellow(
+            `Warning: Could not read instructions file '${options.instructionsFile}': ${errorMessage}`
+          )
+        );
+        log(chalk.yellow('Continuing without custom instructions.'));
+      }
     }
   }
 

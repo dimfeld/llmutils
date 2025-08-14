@@ -541,7 +541,7 @@ program
   });
 
 program
-  .command('description <plan>')
+  .command('description <planFile>')
   .description('Generate a comprehensive pull request description from plan context and code changes')
   .option(`-x, --executor <name>`, 'The executor to use for description generation')
   .addHelpText('after', `Available executors: ${executorNames}`)
@@ -558,9 +558,9 @@ program
     '--instructions-file <path>',
     'Path to file containing custom description instructions. Overrides config file instructions.'
   )
-  .action(async (plan, options, command) => {
+  .action(async (planFile, options, command) => {
     const { handleDescriptionCommand } = await import('./commands/description.js');
-    await handleDescriptionCommand(plan, options, command).catch(handleCommandError);
+    await handleDescriptionCommand(planFile, options, command).catch(handleCommandError);
   });
 
 program

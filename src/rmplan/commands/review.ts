@@ -5,7 +5,7 @@ import { $ } from 'bun';
 import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join, isAbsolute, resolve, relative, dirname } from 'node:path';
+import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -36,6 +36,7 @@ import {
 } from '../incremental_review.js';
 import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
+import { validateInstructionsFilePath } from '../utils/file_validation.js';
 
 /**
  * Comprehensive error handling for saving review results
@@ -537,43 +538,6 @@ export function sanitizeBranchName(branch: string): string {
   return branch;
 }
 
-/**
- * Validates that a file path is safe to read and within allowed boundaries
- * Prevents path traversal attacks and ensures the path stays within the git root
- */
-export function validateInstructionsFilePath(filePath: string, gitRoot: string): string {
-  if (!filePath || typeof filePath !== 'string') {
-    throw new Error('Instructions file path must be a non-empty string');
-  }
-
-  // Resolve the absolute path
-  const absolutePath = isAbsolute(filePath) ? filePath : join(gitRoot, filePath);
-  const resolvedPath = resolve(absolutePath);
-  const resolvedGitRoot = resolve(gitRoot);
-
-  // Ensure the resolved path is within the git root directory
-  const relativePath = relative(resolvedGitRoot, resolvedPath);
-  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
-    throw new Error(`Instructions file path is outside the allowed directory: ${filePath}`);
-  }
-
-  // Additional security check: prevent common dangerous paths
-  const normalizedPath = resolvedPath.toLowerCase();
-  const dangerousPaths = [
-    '/etc/',
-    '/usr/',
-    '/var/',
-    '/home/',
-    '/root/',
-    'c:\\windows\\',
-    'c:\\users\\',
-  ];
-  if (dangerousPaths.some((dangerous) => normalizedPath.includes(dangerous))) {
-    throw new Error(`Instructions file path contains dangerous directory: ${filePath}`);
-  }
-
-  return resolvedPath;
-}
 
 /**
  * Validates and sanitizes focus areas to prevent injection attacks

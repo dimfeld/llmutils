@@ -936,7 +936,7 @@ export class ClaudeCodeExecutor implements Executor {
 
         args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
         let splitter = createLineSplitter();
-        const capturedOutputLines: string[] = [];
+        let capturedOutputLines: string[] = [];
 
         log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
         const result = await spawnAndLogOutput(args, {
@@ -966,8 +966,9 @@ export class ClaudeCodeExecutor implements Executor {
               if (result.message) {
                 if (captureMode === 'all') {
                   capturedOutputLines.push(result.message);
-                } else if (captureMode === 'result' && result.type === 'result') {
-                  capturedOutputLines.push(result.message);
+                } else if (captureMode === 'result' && result.type === 'assistant') {
+                  // Only save the final message
+                  capturedOutputLines = [result.message];
                 }
               }
             }
