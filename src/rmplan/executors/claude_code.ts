@@ -966,9 +966,13 @@ export class ClaudeCodeExecutor implements Executor {
               if (result.message) {
                 if (captureMode === 'all') {
                   capturedOutputLines.push(result.message);
-                } else if (captureMode === 'result' && result.type === 'assistant') {
+                } else if (
+                  captureMode === 'result' &&
+                  result.type === 'assistant' &&
+                  result.rawMessage
+                ) {
                   // Only save the final message
-                  capturedOutputLines = [result.message];
+                  capturedOutputLines = [result.rawMessage];
                 }
               }
             }

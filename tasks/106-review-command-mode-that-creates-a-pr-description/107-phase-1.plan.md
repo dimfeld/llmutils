@@ -226,6 +226,7 @@ tasks:
           markdown output.
         done: false
   - title: Implement the `description` Command Handler
+    done: true
     description: >
       Create a new `description.ts` file and implement the
       `handleDescriptionCommand` function. This function will orchestrate the
@@ -305,6 +306,7 @@ tasks:
           helpful output.
         done: false
   - title: Register the New `description` Command
+    done: true
     description: >
       Add the `description` command to the main CLI entry point in `rmplan.ts`.
       The command should accept a plan file/ID and support relevant options like

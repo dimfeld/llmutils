@@ -62,6 +62,7 @@ const toolUseCache = new Map<string, string>();
 
 export function formatJsonMessage(input: string): {
   message?: string;
+  rawMessage?: string;
   type: string;
   filePaths?: string[];
 } {
@@ -83,6 +84,7 @@ export function formatJsonMessage(input: string): {
   const timestamp = new Date().toTimeString().split(' ')[0];
 
   const outputLines: string[] = [];
+  let rawMessage: string[] = [];
 
   if (message.type === 'result') {
     if (message.subtype === 'success' || message.subtype === 'error_max_turns') {
@@ -117,6 +119,7 @@ export function formatJsonMessage(input: string): {
     for (const content of m.content) {
       if (typeof content === 'string') {
         outputLines.push(content);
+        rawMessage.push(content);
       } else if (content.type === 'thinking') {
         outputLines.push(chalk.blue(`### Thinking [${timestamp}]`), content.thinking);
       } else if (content.type === 'text') {
@@ -127,6 +130,7 @@ export function formatJsonMessage(input: string): {
         }
 
         outputLines.push(content.text);
+        rawMessage.push(content.text);
       } else if (content.type === 'tool_use') {
         // Store tool use ID mapping
         if ('id' in content) {
@@ -269,6 +273,7 @@ export function formatJsonMessage(input: string): {
     }
     return {
       message: outputLines.join('\n\n'),
+      rawMessage: rawMessage.filter(Boolean).join('\n'),
       type: message.type,
       filePaths: filePaths.length > 0 ? filePaths : undefined,
     };
