@@ -25,6 +25,13 @@ export interface ExecutePlanInfo {
   batchMode?: boolean;
   /** Whether to capture and return output instead of just executing */
   captureOutput?: boolean;
+  /** 
+   * Execution mode for the executor.
+   * - 'simple': Bypasses orchestration and runs prompts directly (used for review-only operations)
+   * - 'normal': Uses full multi-agent orchestration workflow (default behavior)
+   * @default 'normal'
+   */
+  executionMode?: 'simple' | 'normal';
 }
 
 export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {

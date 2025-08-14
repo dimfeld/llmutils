@@ -418,6 +418,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       planTitle: planData.title ?? 'Untitled Plan',
       planFilePath: resolvedPlanFile,
       captureOutput: true, // Enable output capture for review
+      executionMode: 'simple', // Use simple mode for review-only operation
     });
 
     // Use the actual executor output for parsing

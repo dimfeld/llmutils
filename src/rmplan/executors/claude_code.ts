@@ -687,8 +687,8 @@ export class ClaudeCodeExecutor implements Executor {
       contextContent = `${planFileReference}\n\n${contextContent}`;
     }
 
-    // Apply orchestration wrapper when plan information is provided
-    if (planInfo && planInfo.planId) {
+    // Apply orchestration wrapper when plan information is provided and NOT in simple mode
+    if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
       contextContent = wrapWithOrchestration(contextContent, planInfo.planId, {
         batchMode: planInfo.batchMode,
         planFilePath: planInfo.planFilePath,
@@ -810,8 +810,8 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
-    // Generate agent files if plan information is provided
-    if (planInfo && planInfo.planId) {
+    // Generate agent files if plan information is provided and NOT in simple mode
+    if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
       // Load custom instructions for each agent if configured
       const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
         ? await this.loadAgentInstructions(
@@ -997,8 +997,8 @@ export class ClaudeCodeExecutor implements Executor {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
       }
 
-      // Clean up agent files if they were created
-      if (planInfo && planInfo.planId) {
+      // Clean up agent files if they were created (only in normal mode)
+      if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
         await removeAgentFiles(planInfo.planId);
         debugLog(`Removed agent files for plan ${planInfo.planId}`);
       }
