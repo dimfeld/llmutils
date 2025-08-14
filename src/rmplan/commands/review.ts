@@ -1045,42 +1045,8 @@ export function detectIssuesInReview(
 
   // Fallback method: semantic analysis of review output
   if (rawOutput) {
-    const outputLength = rawOutput.length;
-    const lines = rawOutput.split('\n');
-
-    // Look for common issue indicators in the text
-    const issueIndicators = [
-      /\b(?:issue|problem|error|bug|vulnerability|concern)s?\b/gi,
-      /\b(?:critical|major|minor|warning)\b/gi,
-      /\b(?:fix|resolve|address|correct)\b/gi,
-      /\b(?:security|performance|memory|null|undefined)\b/gi,
-      /❌|⚠️|🔴|🟡|✗|\*\*|ERROR|WARNING|CRITICAL/gi,
-    ];
-
-    let issueScore = 0;
-    for (const line of lines.slice(0, 100)) {
-      // Limit analysis to first 100 lines
-      for (const indicator of issueIndicators) {
-        const matches = line.match(indicator);
-        if (matches) {
-          issueScore += matches.length;
-        }
-      }
-    }
-
-    // If output is substantial and contains multiple issue indicators, likely has issues
-    if (outputLength > 500 && issueScore >= 3) {
-      return true;
-    }
-
-    // Check for list-like structures that might indicate issues
-    const listLines = lines.filter(
-      (line) => /^\s*[-*•]\s+/.test(line) || /^\s*\d+\.\s+/.test(line) || /^\s*[►▸•]\s+/.test(line)
-    );
-
-    if (listLines.length >= 2 && issueScore >= 2) {
-      return true;
-    }
+    // The reviewer is told to output this verdict if there are issues
+    return rawOutput.includes('NEEDS_FIXES');
   }
 
   return false;
