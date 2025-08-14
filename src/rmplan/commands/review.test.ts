@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { ModuleMocker } from '../../testing.js';
 import {
   handleReviewCommand,
-  generateDiffForReview,
   buildReviewPrompt,
   detectIssuesInReview,
   buildAutofixPrompt,
@@ -13,6 +12,7 @@ import {
   validateInstructionsFilePath,
   validateFocusAreas,
 } from './review.js';
+import { generateDiffForReview } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
 

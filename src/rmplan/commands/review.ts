@@ -12,10 +12,9 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getReviewerPrompt } from '../executors/claude_code/agent_prompts.js';
-import { readPlanFile, resolvePlanFile, readAllPlans } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { getParentChain, getCompletedChildren } from '../utils/hierarchy.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
+import { gatherPlanContext } from '../utils/context_gathering.js';
 import {
   createReviewResult,
   createFormatter,
@@ -29,10 +28,9 @@ import {
   type ReviewMetadata,
 } from '../review_persistence.js';
 import {
-  getIncrementalDiff,
   storeLastReviewMetadata,
   getLastReviewMetadata,
-  getIncrementalSummary,
+  getIncrementalDiff,
   type IncrementalReviewMetadata,
   type DiffResult,
 } from '../incremental_review.js';
@@ -165,142 +163,25 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
-  // Resolve the plan file (support both file paths and plan IDs)
-  const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+  // Gather plan context using the shared utility
+  const context = await gatherPlanContext(planFile, options, globalOpts);
 
-  // Load the plan details
-  const planData = await readPlanFile(resolvedPlanFile);
-
-  // Validate plan exists and has content
-  if (!planData) {
-    throw new Error(`Could not load plan from: ${resolvedPlanFile}`);
-  }
-
-  // Validate required plan fields
-  if (!planData.goal) {
-    throw new Error(`Plan file is missing required 'goal' field: ${resolvedPlanFile}`);
-  }
-
-  if (!planData.tasks || !Array.isArray(planData.tasks) || planData.tasks.length === 0) {
-    throw new Error(`Plan file must have at least one task: ${resolvedPlanFile}`);
-  }
-
-  // Validate task structure
-  for (const [index, task] of planData.tasks.entries()) {
-    if (!task.title) {
-      throw new Error(
-        `Task ${index + 1} is missing required 'title' field in plan: ${resolvedPlanFile}`
-      );
-    }
-    if (!task.description) {
-      throw new Error(
-        `Task ${index + 1} is missing required 'description' field in plan: ${resolvedPlanFile}`
-      );
-    }
-  }
-
-  log(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
-
-  // Load all plans for hierarchy traversal
-  const gitRoot = await getGitRoot();
-  const plansConfig = globalOpts.config || gitRoot;
-
-  let parentChain: PlanWithFilename[] = [];
-  let completedChildren: PlanWithFilename[] = [];
-
-  try {
-    const { plans: allPlans } = await readAllPlans(plansConfig);
-
-    // Add filename to the current plan for hierarchy compatibility
-    const planWithFilename: PlanWithFilename = {
-      ...planData,
-      filename: resolvedPlanFile,
-    };
-
-    // Use hierarchy utilities to get parent chain
-    if (planData.id) {
-      try {
-        parentChain = getParentChain(planWithFilename, allPlans);
-
-        if (parentChain.length > 0) {
-          log(
-            chalk.cyan(`Parent plan context loaded: ${parentChain[0].id} - ${parentChain[0].title}`)
-          );
-          if (parentChain.length > 1) {
-            log(chalk.cyan(`Found ${parentChain.length} levels of parent plans`));
-          }
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log(chalk.yellow(`Warning: Could not load parent chain: ${errorMessage}`));
-        parentChain = [];
-      }
-
-      // Get completed children if this plan has any
-      try {
-        completedChildren = getCompletedChildren(planData.id, allPlans);
-
-        if (completedChildren.length > 0) {
-          log(chalk.cyan(`Found ${completedChildren.length} completed child plans`));
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log(chalk.yellow(`Warning: Could not load completed children: ${errorMessage}`));
-        completedChildren = [];
-      }
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log(
-      chalk.yellow(
-        `Warning: Could not read plan hierarchy: ${errorMessage}. Continuing with basic review.`
-      )
-    );
-  }
-
-  // Handle incremental review options
-  const incrementalOptions = {
-    incremental: options.incremental || options.sinceLastReview,
-    sinceLastReview: options.sinceLastReview,
-    sinceCommit: options.since,
-    planId: planData.id?.toString(),
-  };
-
-  // Generate incremental summary if applicable
-  let incrementalSummary = null;
-  if (incrementalOptions.incremental && planData.id) {
-    incrementalSummary = await getIncrementalSummary(gitRoot, planData.id.toString(), []);
-    if (incrementalSummary) {
-      log(chalk.cyan(`Incremental review mode enabled`));
-      log(chalk.gray(`Last review: ${incrementalSummary.lastReviewDate?.toLocaleString()}`));
-      if (incrementalSummary.totalFiles === 0) {
-        log(chalk.yellow('No changes detected since last review. Nothing new to review.'));
-        return;
-      }
-      log(
-        chalk.cyan(
-          `Review delta: ${incrementalSummary.newFiles.length} new files, ${incrementalSummary.modifiedFiles.length} modified files`
-        )
-      );
-    }
-  }
-
-  // Generate diff against trunk branch or incremental diff
-  const diffResult = await generateDiffForReview(gitRoot, incrementalOptions);
-
-  if (!diffResult.hasChanges) {
-    const nothingMessage = incrementalOptions.incremental
-      ? 'No changes detected since last review. Nothing to review.'
+  // Check if no changes were detected and early return for review
+  if (context.noChangesDetected) {
+    const nothingMessage = options.incremental || options.sinceLastReview
+      ? 'No changes detected since last review. Nothing new to review.'
       : 'No changes detected compared to trunk branch. Nothing to review.';
     log(chalk.yellow(nothingMessage));
     return;
   }
 
-  const changedFilesMessage = incrementalOptions.incremental
-    ? `Found ${diffResult.changedFiles.length} changed files since last review`
-    : `Found ${diffResult.changedFiles.length} changed files`;
-  log(chalk.cyan(changedFilesMessage));
-  log(chalk.gray(`Comparing against: ${diffResult.baseBranch}`));
+  // Extract context for use in the rest of the function
+  const { resolvedPlanFile, planData, parentChain, completedChildren, diffResult } = context;
+
+  log(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
+
+  // Get git root for the rest of the function (needed for file operations)
+  const gitRoot = await getGitRoot();
 
   // Load custom instructions
   let customInstructions = '';
@@ -558,7 +439,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
           };
 
           await storeLastReviewMetadata(gitRoot, planData.id.toString(), incrementalMetadata);
-          if (incrementalOptions.incremental) {
+          if (options.incremental || options.sinceLastReview) {
             log(chalk.gray('Incremental review metadata updated for future reviews'));
           }
         }
@@ -639,9 +520,6 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     throw new Error(contextualError);
   }
 }
-
-// Maximum diff size to prevent memory issues (10MB)
-const MAX_DIFF_SIZE = 10 * 1024 * 1024;
 
 export function sanitizeBranchName(branch: string): string {
   // Only allow alphanumeric characters, hyphens, underscores, forward slashes, and dots
@@ -728,157 +606,6 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
   return sanitizedAreas;
 }
 
-export async function generateDiffForReview(
-  gitRoot: string,
-  options?: {
-    incremental?: boolean;
-    sinceLastReview?: boolean;
-    sinceCommit?: string;
-    planId?: string;
-  }
-): Promise<DiffResult> {
-  // Handle incremental review options
-  if (options?.incremental || options?.sinceLastReview) {
-    if (!options.planId) {
-      throw new Error('Plan ID is required for incremental reviews');
-    }
-
-    const lastReviewMetadata = await getLastReviewMetadata(gitRoot, options.planId);
-    if (!lastReviewMetadata) {
-      // No previous review found, fall back to regular diff
-      console.log('No previous review found for incremental mode, generating full diff...');
-      return generateRegularDiffForReview(gitRoot);
-    }
-
-    return getIncrementalDiff(
-      gitRoot,
-      lastReviewMetadata.lastReviewCommit,
-      lastReviewMetadata.baseBranch
-    );
-  }
-
-  // Handle explicit since commit
-  if (options?.sinceCommit) {
-    const baseBranch = await getTrunkBranch(gitRoot);
-    if (!baseBranch) {
-      throw new Error('Could not determine trunk branch for comparison');
-    }
-    return getIncrementalDiff(gitRoot, options.sinceCommit, baseBranch);
-  }
-
-  // Regular diff generation
-  return generateRegularDiffForReview(gitRoot);
-}
-
-async function generateRegularDiffForReview(gitRoot: string): Promise<DiffResult> {
-  const baseBranch = await getTrunkBranch(gitRoot);
-  if (!baseBranch) {
-    throw new Error('Could not determine trunk branch for comparison');
-  }
-
-  // Sanitize branch name to prevent command injection
-  const safeBranch = sanitizeBranchName(baseBranch);
-  const usingJj = await getUsingJj();
-
-  let changedFiles: string[] = [];
-  let diffContent = '';
-
-  if (usingJj) {
-    // Use jj commands for diff generation
-    try {
-      // Get list of changed files
-      const filesResult = await $`jj diff --from ${safeBranch} --summary`.cwd(gitRoot).nothrow();
-      if (filesResult.exitCode === 0) {
-        changedFiles = filesResult.stdout
-          .toString()
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line && !line.startsWith('D')) // Filter out deleted files and empty lines
-          .map((line) => {
-            // Handle renames (R old_file new_file) - get the new file name
-            if (line.startsWith('R ')) {
-              const parts = line.split(' ');
-              return parts.length >= 3 ? parts[2] : null;
-            }
-            // Handle additions/modifications (A/M file) - get the file name
-            if (line.length >= 2 && (line.startsWith('A ') || line.startsWith('M '))) {
-              return line.slice(2);
-            }
-            // Unknown format, skip it
-            return null;
-          })
-          .filter((filename): filename is string => filename !== null);
-      } else {
-        throw new Error(
-          `jj diff --summary command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`
-        );
-      }
-
-      // Get full diff content
-      const diffResult = await $`jj diff --from ${safeBranch}`.cwd(gitRoot).nothrow().quiet();
-      if (diffResult.exitCode === 0) {
-        const fullDiff = diffResult.stdout.toString();
-        if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
-          diffContent = `[Diff too large (${Math.round(Buffer.byteLength(fullDiff, 'utf8') / 1024 / 1024)} MB) to include in review. Consider reviewing individual files or splitting the changes.]`;
-        } else {
-          diffContent = fullDiff;
-        }
-      } else {
-        throw new Error(
-          `jj diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`
-        );
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to generate jj diff: ${errorMessage}`);
-    }
-  } else {
-    // Use git commands for diff generation
-    try {
-      // Get list of changed files
-      const filesResult = await $`git diff --name-only ${safeBranch}`
-        .cwd(gitRoot)
-        .nothrow()
-        .quiet();
-      if (filesResult.exitCode === 0) {
-        changedFiles = filesResult.stdout
-          .toString()
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => !!line);
-      } else {
-        throw new Error(
-          `git diff --name-only command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`
-        );
-      }
-
-      // Get full diff content
-      const diffResult = await $`git diff ${safeBranch}`.cwd(gitRoot).nothrow();
-      if (diffResult.exitCode === 0) {
-        const fullDiff = diffResult.stdout.toString();
-        if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
-          diffContent = `[Diff too large (${Math.round(Buffer.byteLength(fullDiff, 'utf8') / 1024 / 1024)} MB) to include in review. Consider reviewing individual files or splitting the changes.]`;
-        } else {
-          diffContent = fullDiff;
-        }
-      } else {
-        throw new Error(
-          `git diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`
-        );
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to generate git diff: ${errorMessage}`);
-    }
-  }
-
-  return {
-    hasChanges: changedFiles.length > 0,
-    changedFiles,
-    baseBranch: baseBranch, // Return original for display purposes
-    diffContent,
-  };
-}
 
 export function buildReviewPrompt(
   planData: PlanSchema,

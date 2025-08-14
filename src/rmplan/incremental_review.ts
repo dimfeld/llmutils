@@ -7,7 +7,7 @@
 import { $ } from 'bun';
 import { readFile, writeFile, mkdir, stat, access, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getUsingJj } from '../common/git.js';
+import { getUsingJj, getTrunkBranch } from '../common/git.js';
 
 /**
  * Result of a diff operation
@@ -455,5 +455,184 @@ export async function getIncrementalSummary(
     modifiedFiles,
     lastReviewDate: metadata.lastReviewTimestamp,
     totalFiles: incrementalDiff.changedFiles.length,
+  };
+}
+
+// Maximum diff size to prevent memory issues (10MB)
+const MAX_DIFF_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Sanitizes branch name to prevent command injection
+ */
+function sanitizeBranchName(branch: string): string {
+  // Only allow alphanumeric characters, hyphens, underscores, forward slashes, and dots
+  // This is a conservative approach for git/jj branch names
+  if (!/^[a-zA-Z0-9._/-]+$/.test(branch)) {
+    throw new Error(`Invalid branch name format: ${branch}`);
+  }
+
+  // Additional security check: prevent path traversal attempts
+  if (branch.includes('..') || branch.startsWith('/') || branch.includes('\\')) {
+    throw new Error(`Invalid branch name format: ${branch}`);
+  }
+
+  return branch;
+}
+
+/**
+ * Generates diff for review, handling both regular and incremental reviews
+ */
+export async function generateDiffForReview(
+  gitRoot: string,
+  options?: {
+    incremental?: boolean;
+    sinceLastReview?: boolean;
+    sinceCommit?: string;
+    planId?: string;
+  }
+): Promise<DiffResult> {
+  // Handle incremental review options
+  if (options?.incremental || options?.sinceLastReview) {
+    if (!options.planId) {
+      throw new Error('Plan ID is required for incremental reviews');
+    }
+
+    const lastReviewMetadata = await getLastReviewMetadata(gitRoot, options.planId);
+    if (!lastReviewMetadata) {
+      // No previous review found, fall back to regular diff
+      console.log('No previous review found for incremental mode, generating full diff...');
+      return generateRegularDiffForReview(gitRoot);
+    }
+
+    return getIncrementalDiff(
+      gitRoot,
+      lastReviewMetadata.lastReviewCommit,
+      lastReviewMetadata.baseBranch
+    );
+  }
+
+  // Handle explicit since commit
+  if (options?.sinceCommit) {
+    const baseBranch = await getTrunkBranch(gitRoot);
+    if (!baseBranch) {
+      throw new Error('Could not determine trunk branch for comparison');
+    }
+    return getIncrementalDiff(gitRoot, options.sinceCommit, baseBranch);
+  }
+
+  // Regular diff generation
+  return generateRegularDiffForReview(gitRoot);
+}
+
+/**
+ * Generates a regular diff against the trunk branch
+ */
+async function generateRegularDiffForReview(gitRoot: string): Promise<DiffResult> {
+  const baseBranch = await getTrunkBranch(gitRoot);
+  if (!baseBranch) {
+    throw new Error('Could not determine trunk branch for comparison');
+  }
+
+  // Sanitize branch name to prevent command injection
+  const safeBranch = sanitizeBranchName(baseBranch);
+  const usingJj = await getUsingJj();
+
+  let changedFiles: string[] = [];
+  let diffContent = '';
+
+  if (usingJj) {
+    // Use jj commands for diff generation
+    try {
+      // Get list of changed files
+      const filesResult = await $`jj diff --from ${safeBranch} --summary`.cwd(gitRoot).nothrow();
+      if (filesResult.exitCode === 0) {
+        changedFiles = filesResult.stdout
+          .toString()
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith('D')) // Filter out deleted files and empty lines
+          .map((line) => {
+            // Handle renames (R old_file new_file) - get the new file name
+            if (line.startsWith('R ')) {
+              const parts = line.split(' ');
+              return parts.length >= 3 ? parts[2] : null;
+            }
+            // Handle additions/modifications (A/M file) - get the file name
+            if (line.length >= 2 && (line.startsWith('A ') || line.startsWith('M '))) {
+              return line.slice(2);
+            }
+            // Unknown format, skip it
+            return null;
+          })
+          .filter((filename): filename is string => filename !== null);
+      } else {
+        throw new Error(
+          `jj diff --summary command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`
+        );
+      }
+
+      // Get full diff content
+      const diffResult = await $`jj diff --from ${safeBranch}`.cwd(gitRoot).nothrow().quiet();
+      if (diffResult.exitCode === 0) {
+        const fullDiff = diffResult.stdout.toString();
+        if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
+          diffContent = `[Diff too large (${Math.round(Buffer.byteLength(fullDiff, 'utf8') / 1024 / 1024)} MB) to include in review. Consider reviewing individual files or splitting the changes.]`;
+        } else {
+          diffContent = fullDiff;
+        }
+      } else {
+        throw new Error(
+          `jj diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`
+        );
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to generate jj diff: ${errorMessage}`);
+    }
+  } else {
+    // Use git commands for diff generation
+    try {
+      // Get list of changed files
+      const filesResult = await $`git diff --name-only ${safeBranch}`
+        .cwd(gitRoot)
+        .nothrow()
+        .quiet();
+      if (filesResult.exitCode === 0) {
+        changedFiles = filesResult.stdout
+          .toString()
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => !!line);
+      } else {
+        throw new Error(
+          `git diff --name-only command failed (exit code ${filesResult.exitCode}): ${filesResult.stderr.toString()}`
+        );
+      }
+
+      // Get full diff content
+      const diffResult = await $`git diff ${safeBranch}`.cwd(gitRoot).nothrow();
+      if (diffResult.exitCode === 0) {
+        const fullDiff = diffResult.stdout.toString();
+        if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
+          diffContent = `[Diff too large (${Math.round(Buffer.byteLength(fullDiff, 'utf8') / 1024 / 1024)} MB) to include in review. Consider reviewing individual files or splitting the changes.]`;
+        } else {
+          diffContent = fullDiff;
+        }
+      } else {
+        throw new Error(
+          `git diff command failed (exit code ${diffResult.exitCode}): ${diffResult.stderr.toString()}`
+        );
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to generate git diff: ${errorMessage}`);
+    }
+  }
+
+  return {
+    hasChanges: changedFiles.length > 0,
+    changedFiles,
+    baseBranch: baseBranch, // Return original for display purposes
+    diffContent,
   };
 }
