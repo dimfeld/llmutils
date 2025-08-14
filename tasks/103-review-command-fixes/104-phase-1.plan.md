@@ -6,14 +6,14 @@ goal: To create a "simple" execution mode that allows the `review` command to
   perform a review without triggering unintended code modifications, fixing the
   core issue with the current implementation.
 id: 104
-status: in_progress
+status: completed
 priority: high
 dependencies: []
 parent: 103
 planGeneratedAt: 2025-08-13T23:59:15.240Z
 promptsGeneratedAt: 2025-08-14T00:03:28.561Z
 createdAt: 2025-08-13T23:54:11.755Z
-updatedAt: 2025-08-14T00:03:28.921Z
+updatedAt: 2025-08-14T17:36:00.000Z
 project:
   title: Refactor the review command to separate review and autofix functionality
   goal: The goal of this project is to modify the `review` command to perform a
@@ -45,6 +45,7 @@ tasks:
       orchestration.
     files:
       - src/rmplan/executors/types.ts
+    done: true
     steps:
       - prompt: >
           Add an optional `executionMode` property to the `ExecutePlanInfo`
@@ -67,6 +68,7 @@ tasks:
       capture.
     files:
       - src/rmplan/executors/claude_code.ts
+    done: true
     steps:
       - prompt: >
           In the `execute` method, add a check for `planInfo?.executionMode ===
@@ -98,6 +100,7 @@ tasks:
       analysis without attempting to fix any issues.
     files:
       - src/rmplan/commands/review.ts
+    done: true
     steps:
       - prompt: >
           In the `handleReviewCommand` function, locate where the executor's
@@ -118,6 +121,7 @@ tasks:
     files:
       - src/rmplan/executors/claude_code.test.ts
       - src/rmplan/commands/review.test.ts
+    done: true
     steps:
       - prompt: >
           In claude_code.test.ts, add a test case that verifies when
