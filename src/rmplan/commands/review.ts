@@ -418,7 +418,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       planId: planData.id?.toString() ?? 'unknown',
       planTitle: planData.title ?? 'Untitled Plan',
       planFilePath: resolvedPlanFile,
-      captureOutput: true, // Enable output capture for review
+      captureOutput: 'result', // Capture only the final result block for review
       executionMode: 'simple', // Use simple mode for review-only operation
     });
 
@@ -586,7 +586,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: `${planData.title ?? 'Untitled Plan'} - Autofix`,
           planFilePath: resolvedPlanFile,
-          captureOutput: false, // Allow normal execution output for autofix
+          captureOutput: 'none', // Allow normal execution output for autofix
           executionMode: 'normal', // Use full-featured mode for autofix
         });
 
@@ -1045,8 +1045,30 @@ export function detectIssuesInReview(
 
   // Fallback method: semantic analysis of review output
   if (rawOutput) {
-    // The reviewer is told to output this verdict if there are issues
-    return rawOutput.includes('NEEDS_FIXES');
+    // Check for explicit verdict from reviewer
+    if (rawOutput.includes('NEEDS_FIXES')) {
+      return true;
+    }
+
+    // Check for common issue indicators
+    const issueIndicators = [
+      'issues were found',
+      'issues need to be addressed',
+      'problems identified',
+      'bugs found',
+      'vulnerabilities detected',
+      'security issue',
+      'critical',
+      'error handling',
+      'memory leak',
+      'performance bottleneck',
+      'missing error handling',
+      'needs to be fixed',
+      'requires attention',
+    ];
+
+    const lowerOutput = rawOutput.toLowerCase();
+    return issueIndicators.some((indicator) => lowerOutput.includes(indicator));
   }
 
   return false;

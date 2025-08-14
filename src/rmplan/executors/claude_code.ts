@@ -936,13 +936,13 @@ export class ClaudeCodeExecutor implements Executor {
 
         args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
         let splitter = createLineSplitter();
-        let capturedOutput = '';
+        const capturedOutputLines: string[] = [];
 
         log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
         const result = await spawnAndLogOutput(args, {
           env: {
             ...process.env,
-            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.CLAUDE_API_KEY ?? '') : '',
           },
           cwd: gitRoot,
           formatStdout: (output) => {
@@ -965,10 +965,34 @@ export class ClaudeCodeExecutor implements Executor {
             const formattedOutput =
               formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
 
-            // Capture output if requested
-            if (planInfo?.captureOutput) {
-              capturedOutput += formattedOutput;
+            // Capture output based on the specified mode
+            const captureMode = planInfo?.captureOutput;
+            if (captureMode === 'all') {
+              // Capture all formatted output
+              capturedOutputLines.push(formattedOutput);
+            } else if (captureMode === 'result') {
+              // Capture only result messages using the same formatting as 'all' mode
+              const resultFormattedMessages = formattedResults.filter((result) => {
+                // Check if this is a result message by looking at the original line
+                const lineIndex = formattedResults.indexOf(result);
+                if (lineIndex >= 0 && lineIndex < lines.length) {
+                  try {
+                    const parsed = JSON.parse(lines[lineIndex]);
+                    return parsed.type === 'result';
+                  } catch (error) {
+                    debugLog(`Error parsing JSON for result filtering: ${error as Error}`);
+                    return false;
+                  }
+                }
+                return false;
+              });
+              
+              if (resultFormattedMessages.length > 0) {
+                const resultOutput = resultFormattedMessages.map((r) => r.message || '').join('\n\n') + '\n\n';
+                capturedOutputLines.push(resultOutput);
+              }
             }
+            // For 'none' or undefined, no capture happens
 
             return formattedOutput;
           },
@@ -978,10 +1002,13 @@ export class ClaudeCodeExecutor implements Executor {
           throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
         }
 
-        // Return captured output if requested
-        if (planInfo?.captureOutput) {
-          return capturedOutput;
+        // Return captured output if any capture mode was enabled, otherwise return void explicitly
+        const captureMode = planInfo?.captureOutput;
+        if (captureMode === 'all' || captureMode === 'result') {
+          return capturedOutputLines.join('');
         }
+        
+        return; // Explicitly return void for 'none' or undefined captureOutput
       }
     } finally {
       // Close the Unix socket server if it exists

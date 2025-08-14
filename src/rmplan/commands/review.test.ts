@@ -651,7 +651,7 @@ tasks:
         expect(planInfo.planId).toBe('123');
         expect(planInfo.planTitle).toBe('Test Simple Execution');
         expect(planInfo.planFilePath).toBe(planFile);
-        expect(planInfo.captureOutput).toBe(true);
+        expect(planInfo.captureOutput).toBe('result');
         return 'Mock review result';
       }),
     };
@@ -2143,7 +2143,7 @@ Please fix all the issues identified in the review.`;
       'test review prompt',
       expect.objectContaining({
         executionMode: 'simple',
-        captureOutput: true,
+        captureOutput: 'result',
       })
     );
 
@@ -2153,7 +2153,7 @@ Please fix all the issues identified in the review.`;
       expect.stringContaining('Autofix Request'),
       expect.objectContaining({
         executionMode: 'normal',
-        captureOutput: false,
+        captureOutput: 'none',
       })
     );
   });

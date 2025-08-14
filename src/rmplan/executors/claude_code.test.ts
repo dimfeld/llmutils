@@ -5325,6 +5325,330 @@ More content
     });
   });
 
+  describe('captureOutput functionality', () => {
+    test('does not capture output when captureOutput is not set (default)', async () => {
+      const mockProcess = mock(() => ({
+        exited: Promise.resolve(0),
+        exitCode: 0,
+        stdout: { destroy: mock() },
+        stderr: { destroy: mock() },
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => ({
+          message: 'Formatted message',
+          filePaths: [],
+        })),
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        // captureOutput not set, should default to 'none'
+      };
+
+      const result = await executor.execute('test content', planInfo);
+
+      // Should return void when not capturing output
+      expect(result).toBeUndefined();
+    });
+
+    test('does not capture output when captureOutput is "none"', async () => {
+      const mockProcess = mock(() => ({
+        exited: Promise.resolve(0),
+        exitCode: 0,
+        stdout: { destroy: mock() },
+        stderr: { destroy: mock() },
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => ({
+          message: 'Formatted message',
+          filePaths: [],
+        })),
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        captureOutput: 'none' as const,
+      };
+
+      const result = await executor.execute('test content', planInfo);
+
+      // Should return void when captureOutput is 'none'
+      expect(result).toBeUndefined();
+    });
+
+    test('captures all output when captureOutput is "all"', async () => {
+      let formatStdout: ((output: string) => string) | undefined;
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          formatStdout = options.formatStdout;
+          // Simulate stdout processing
+          if (formatStdout) {
+            formatStdout('{"type": "output", "content": "line1"}\n');
+            formatStdout('{"type": "output", "content": "line2"}\n');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => ({
+          message: 'Formatted message from: ' + line,
+          filePaths: [],
+        })),
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        captureOutput: 'all' as const,
+      };
+
+      const result = await executor.execute('test content', planInfo);
+
+      // Should return captured output when captureOutput is 'all'
+      expect(result).toBeDefined();
+      expect(typeof result).toBe('string');
+      expect(result).toContain('Formatted message from:');
+    });
+
+    test('captures only result output when captureOutput is "result"', async () => {
+      let formatStdout: ((output: string) => string) | undefined;
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          formatStdout = options.formatStdout;
+          // Simulate stdout processing with mixed output types
+          if (formatStdout) {
+            formatStdout('{"type": "output", "content": "regular output"}\n');
+            formatStdout('{"type": "result", "content": "important result"}\n');
+            formatStdout('{"type": "debug", "content": "debug info"}\n');
+            formatStdout('{"type": "result", "content": "another result"}\n');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => {
+          try {
+            const parsed = JSON.parse(line);
+            return {
+              message: `Formatted: ${parsed.type} - ${parsed.content}`,
+              filePaths: [],
+            };
+          } catch {
+            // Return empty result for malformed JSON, just like the real implementation would skip it
+            return { message: '', filePaths: [] };
+          }
+        }),
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        captureOutput: 'result' as const,
+      };
+
+      const result = await executor.execute('test content', planInfo);
+
+      // Should return only result output when captureOutput is 'result'
+      expect(result).toBeDefined();
+      expect(typeof result).toBe('string');
+      expect(result).toContain('Formatted: result - important result');
+      expect(result).toContain('Formatted: result - another result');
+      expect(result).not.toContain('Formatted: output - regular output');
+      expect(result).not.toContain('Formatted: debug - debug info');
+    });
+
+    test('handles empty result capture gracefully', async () => {
+      let formatStdout: ((output: string) => string) | undefined;
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          formatStdout = options.formatStdout;
+          // Simulate output with no result types
+          if (formatStdout) {
+            formatStdout('{"type": "output", "content": "regular output"}\n');
+            formatStdout('{"type": "debug", "content": "debug info"}\n');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => ({
+          message: 'Formatted message',
+          filePaths: [],
+        })),
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        captureOutput: 'result' as const,
+      };
+
+      const result = await executor.execute('test content', planInfo);
+
+      // Should return empty string when no results captured
+      expect(result).toBeDefined();
+      expect(result).toBe('');
+    });
+
+    test('handles malformed JSON gracefully during result capture', async () => {
+      let formatStdout: ((output: string) => string) | undefined;
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock((args: any, options: any) => {
+          formatStdout = options.formatStdout;
+          // Simulate mixed output with malformed JSON
+          if (formatStdout) {
+            formatStdout('invalid json line\n');
+            formatStdout('{"type": "result", "content": "valid result"}\n');
+            formatStdout('{ malformed json\n');
+          }
+          return Promise.resolve({ exitCode: 0 });
+        }),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => {
+          try {
+            const parsed = JSON.parse(line);
+            return {
+              message: `Formatted: ${parsed.type} - ${parsed.content}`,
+              filePaths: [],
+            };
+          } catch {
+            // Return empty result for malformed JSON
+            return { message: '', filePaths: [] };
+          }
+        }),
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        captureOutput: 'result' as const,
+      };
+
+      const result = await executor.execute('test content', planInfo);
+
+      // Should handle malformed JSON gracefully and still capture valid results
+      expect(result).toBeDefined();
+      expect(result).toContain('Formatted: result - valid result');
+    });
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });
