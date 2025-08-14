@@ -482,6 +482,7 @@ export async function handleRmprCommand(
     planId: 'pr-review',
     planTitle: `PR Review: ${pullRequest.title}`,
     planFilePath: 'N/A',
+    executionMode: 'review',
   });
 
   if (

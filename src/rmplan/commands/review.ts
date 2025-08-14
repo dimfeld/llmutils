@@ -302,7 +302,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       planTitle: planData.title ?? 'Untitled Plan',
       planFilePath: resolvedPlanFile,
       captureOutput: 'result', // Capture only the final result block for review
-      executionMode: 'simple', // Use simple mode for review-only operation
+      executionMode: 'review', // Use review mode for review-only operation
     });
 
     // Use the actual executor output for parsing

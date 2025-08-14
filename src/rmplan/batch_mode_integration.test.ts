@@ -133,6 +133,7 @@ tasks:
       planTitle: 'Batch Processing Plan',
       planFilePath,
       batchMode: true,
+      executionMode: 'normal',
     };
 
     // Execute with batch mode
@@ -357,6 +358,7 @@ tasks:
       planTitle: 'Batch Plan',
       planFilePath: path.join(tempDir, 'batch.yml'),
       batchMode: true,
+      executionMode: 'normal',
     };
 
     await executor.execute('batch content', batchPlanInfo);
@@ -374,6 +376,7 @@ tasks:
       planTitle: 'Regular Plan',
       planFilePath: path.join(tempDir, 'regular.yml'),
       batchMode: false,
+      executionMode: 'normal',
     };
 
     await executor.execute('regular content', regularPlanInfo);
@@ -391,6 +394,7 @@ tasks:
       planTitle: 'Another Batch Plan',
       planFilePath: path.join(tempDir, 'batch2.yml'),
       batchMode: true,
+      executionMode: 'normal',
     };
 
     await executor.execute('second batch content', batchPlanInfo2);

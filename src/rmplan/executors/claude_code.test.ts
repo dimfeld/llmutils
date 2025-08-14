@@ -22,6 +22,7 @@ describe('ClaudeCodeExecutor', () => {
     planId: '123',
     planTitle: 'Test Plan',
     planFilePath: '/test/plans/test-plan.md',
+    executionMode: 'normal',
   };
 
   test('stores plan information when execute is called', async () => {
@@ -3445,6 +3446,7 @@ describe('ClaudeCodeExecutor', () => {
         planTitle: 'Batch Plan',
         planFilePath: '/test/plans/batch-plan.yml',
         batchMode: true,
+        executionMode: 'normal',
       };
 
       await executor.execute('test content', batchModePlanInfo);
@@ -3500,6 +3502,7 @@ describe('ClaudeCodeExecutor', () => {
         planTitle: 'Regular Plan',
         planFilePath: '/test/plans/regular-plan.yml',
         batchMode: false,
+        executionMode: 'normal',
       };
 
       await executor.execute('test content', regularPlanInfo);
@@ -3555,6 +3558,7 @@ describe('ClaudeCodeExecutor', () => {
         planTitle: 'Regular Plan',
         planFilePath: '/test/plans/regular-plan.yml',
         // batchMode is undefined
+        executionMode: 'normal',
       };
 
       await executor.execute('test content', regularPlanInfo);
@@ -3610,6 +3614,7 @@ describe('ClaudeCodeExecutor', () => {
         planTitle: 'Batch Plan',
         planFilePath: '', // Empty path
         batchMode: true,
+        executionMode: 'normal',
       };
 
       await executor.execute('test content', batchModePlanInfoWithoutPath);
@@ -3668,6 +3673,7 @@ describe('ClaudeCodeExecutor', () => {
         planTitle: 'Batch Plan',
         planFilePath: '/absolute/path/to/plan.yml',
         batchMode: true,
+        executionMode: 'normal',
       };
 
       await executor.execute('original content', batchModePlanInfo);
@@ -3721,6 +3727,7 @@ describe('ClaudeCodeExecutor', () => {
         planTitle: 'Batch Plan',
         planFilePath: '/test/batch-plan.yml',
         batchMode: true,
+        executionMode: 'normal',
       };
 
       await executor.execute('batch content', batchModePlanInfo);
@@ -3738,6 +3745,7 @@ describe('ClaudeCodeExecutor', () => {
         planTitle: 'Regular Plan',
         planFilePath: '/test/regular-plan.yml',
         batchMode: false,
+        executionMode: 'normal',
       };
 
       await executor.execute('regular content', regularPlanInfo);
@@ -3804,6 +3812,7 @@ More content
         planTitle: 'Batch Plan',
         planFilePath: '/test/plans/complex-plan.yml',
         batchMode: true,
+        executionMode: 'normal',
       };
 
       await executor.execute(complexContent, batchModePlanInfo);
@@ -5043,8 +5052,8 @@ More content
     }
   });
 
-  describe('Simple execution mode', () => {
-    test('does not call wrapWithOrchestration when executionMode is simple', async () => {
+  describe('Review and Planning execution modes', () => {
+    test('does not call wrapWithOrchestration when executionMode is review', async () => {
       const mockWrapWithOrchestration = mock((content: string) => `[ORCHESTRATED] ${content}`);
       const mockGenerateAgentFiles = mock(() => Promise.resolve());
 
@@ -5099,17 +5108,17 @@ More content
 
       const planInfo = {
         ...mockPlanInfo,
-        executionMode: 'simple' as const,
+        executionMode: 'review' as const,
       };
 
-      // Execute with simple mode
+      // Execute with review mode
       await executor.execute('test content', planInfo);
 
       // Verify wrapWithOrchestration was NOT called
       expect(mockWrapWithOrchestration).not.toHaveBeenCalled();
     });
 
-    test('does not generate agent files when executionMode is simple', async () => {
+    test('does not generate agent files when executionMode is planning', async () => {
       const mockGenerateAgentFiles = mock(() => Promise.resolve());
       const mockRemoveAgentFiles = mock(() => Promise.resolve());
 
@@ -5164,10 +5173,10 @@ More content
 
       const planInfo = {
         ...mockPlanInfo,
-        executionMode: 'simple' as const,
+        executionMode: 'planning' as const,
       };
 
-      // Execute with simple mode
+      // Execute with planning mode
       await executor.execute('test content', planInfo);
 
       // Verify agent files were NOT generated or removed
@@ -5248,7 +5257,7 @@ More content
       expect(mockGenerateAgentFiles).toHaveBeenCalledWith('123', expect.any(Array));
     });
 
-    test('uses orchestration and generates agent files when executionMode is undefined (default behavior)', async () => {
+    test('uses orchestration and generates agent files when executionMode is normal', async () => {
       const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
         return `[ORCHESTRATED: ${planId}] ${content}`;
       });
@@ -5303,15 +5312,15 @@ More content
         mockConfig
       );
 
-      // Create plan info without executionMode (should default to normal behavior)
-      const planInfo = {
+      // Create plan info with executionMode set to normal
+      const planInfo: ExecutePlanInfo = {
         planId: '123',
         planTitle: 'Test Plan',
         planFilePath: '/test/plans/test-plan.md',
-        // No executionMode specified - should default to normal behavior
+        executionMode: 'normal',
       };
 
-      // Execute without specifying executionMode
+      // Execute with normal mode
       await executor.execute('test content', planInfo);
 
       // Verify orchestration was applied (normal behavior)
@@ -5499,8 +5508,18 @@ More content
         formatJsonMessage: mock((line: string) => {
           try {
             const parsed = JSON.parse(line);
+            // Return proper structure for result capture
+            if (parsed.type === 'result') {
+              return {
+                message: `Formatted: ${parsed.type} - ${parsed.content}`,
+                type: 'assistant',
+                rawMessage: `Formatted: ${parsed.type} - ${parsed.content}`,
+                filePaths: [],
+              };
+            }
             return {
               message: `Formatted: ${parsed.type} - ${parsed.content}`,
+              type: parsed.type,
               filePaths: [],
             };
           } catch {
@@ -5528,11 +5547,12 @@ More content
 
       const result = await executor.execute('test content', planInfo);
 
-      // Should return only result output when captureOutput is 'result'
+      // Should return only the LAST result output when captureOutput is 'result'
       expect(result).toBeDefined();
       expect(typeof result).toBe('string');
-      expect(result).toContain('Formatted: result - important result');
-      expect(result).toContain('Formatted: result - another result');
+      // Only the last result message is captured
+      expect(result).toBe('Formatted: result - another result');
+      expect(result).not.toContain('Formatted: result - important result'); // First result is overwritten
       expect(result).not.toContain('Formatted: output - regular output');
       expect(result).not.toContain('Formatted: debug - debug info');
     });
@@ -5614,6 +5634,15 @@ More content
         formatJsonMessage: mock((line: string) => {
           try {
             const parsed = JSON.parse(line);
+            // Return proper structure for result capture
+            if (parsed.type === 'result') {
+              return {
+                message: `Formatted: ${parsed.type} - ${parsed.content}`,
+                type: 'assistant',
+                rawMessage: `Formatted: ${parsed.type} - ${parsed.content}`,
+                filePaths: [],
+              };
+            }
             return {
               message: `Formatted: ${parsed.type} - ${parsed.content}`,
               filePaths: [],

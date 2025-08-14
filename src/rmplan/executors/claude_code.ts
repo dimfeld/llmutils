@@ -687,8 +687,8 @@ export class ClaudeCodeExecutor implements Executor {
       contextContent = `${planFileReference}\n\n${contextContent}`;
     }
 
-    // Apply orchestration wrapper when plan information is provided and NOT in simple mode
-    if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
+    // Apply orchestration wrapper when plan information is provided and in normal mode
+    if (planInfo && planInfo.planId && planInfo.executionMode === 'normal') {
       contextContent = wrapWithOrchestration(contextContent, planInfo.planId, {
         batchMode: planInfo.batchMode,
         planFilePath: planInfo.planFilePath,
@@ -810,8 +810,8 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
-    // Generate agent files if plan information is provided and NOT in simple mode
-    if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
+    // Generate agent files if plan information is provided and in normal mode
+    if (planInfo && planInfo.planId && planInfo.executionMode === 'normal') {
       // Load custom instructions for each agent if configured
       const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
         ? await this.loadAgentInstructions(
@@ -889,13 +889,19 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--mcp-config', mcpConfigFile);
       }
 
+      // Automatic model selection for review and planning modes
+      let modelToUse = this.sharedOptions.model;
+      if (planInfo && (planInfo.executionMode === 'review' || planInfo.executionMode === 'planning') && !modelToUse) {
+        modelToUse = 'opus';
+      }
+
       if (
-        this.sharedOptions.model?.includes('haiku') ||
-        this.sharedOptions.model?.includes('sonnet') ||
-        this.sharedOptions.model?.includes('opus')
+        modelToUse?.includes('haiku') ||
+        modelToUse?.includes('sonnet') ||
+        modelToUse?.includes('opus')
       ) {
-        log(`Using model: ${this.sharedOptions.model}\n`);
-        args.push('--model', this.sharedOptions.model);
+        log(`Using model: ${modelToUse}\n`);
+        args.push('--model', modelToUse);
       } else {
         log('Using default model: sonnet\n');
         args.push('--model', 'sonnet');
@@ -1011,7 +1017,7 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       // Clean up agent files if they were created (only in normal mode)
-      if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
+      if (planInfo && planInfo.planId && planInfo.executionMode === 'normal') {
         await removeAgentFiles(planInfo.planId);
         debugLog(`Removed agent files for plan ${planInfo.planId}`);
       }

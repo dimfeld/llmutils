@@ -106,6 +106,7 @@ export async function executeBatchMode({
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
           batchMode: true,
+          executionMode: 'normal',
         });
       } catch (err) {
         error('Batch execution failed:', err);

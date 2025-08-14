@@ -32,11 +32,11 @@ export interface ExecutePlanInfo {
   captureOutput?: 'none' | 'all' | 'result';
   /**
    * Execution mode for the executor.
-   * - 'simple': Bypasses orchestration and runs prompts directly (used for review-only operations)
-   * - 'normal': Uses full multi-agent orchestration workflow (default behavior)
-   * @default 'normal'
+   * - 'normal': Uses full multi-agent orchestration workflow
+   * - 'review': Bypasses orchestration and runs prompts directly for review operations
+   * - 'planning': Bypasses orchestration and runs prompts directly for planning operations
    */
-  executionMode?: 'simple' | 'normal';
+  executionMode: 'normal' | 'review' | 'planning';
 }
 
 export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {

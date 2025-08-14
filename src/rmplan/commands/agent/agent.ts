@@ -468,6 +468,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             planId: planData.id?.toString() ?? 'unknown',
             planTitle: planData.title ?? 'Untitled Plan',
             planFilePath: currentPlanFile,
+            executionMode: 'normal',
           });
         } catch (err) {
           error('Task execution failed:', err);
@@ -608,6 +609,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
+          executionMode: 'normal',
         });
       } catch (err) {
         error('Execution step failed:', err);

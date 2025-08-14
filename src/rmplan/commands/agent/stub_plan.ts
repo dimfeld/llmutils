@@ -64,6 +64,7 @@ export async function executeStubPlan({
     planId: planData.id?.toString() ?? 'unknown',
     planTitle: planData.title ?? 'Untitled Plan',
     planFilePath: planFilePath,
+    executionMode: 'normal',
   });
 
   // Execute post-apply commands if configured and no error occurred

@@ -462,7 +462,7 @@ export async function handleDescriptionCommand(
       planTitle: planData.title ?? 'Untitled Plan',
       planFilePath: resolvedPlanFile,
       captureOutput: 'result', // Capture only the final result block for description
-      executionMode: 'simple', // Use simple mode for description-only operation
+      executionMode: 'planning', // Use planning mode for description-only operation
     });
 
     // Use the actual executor output

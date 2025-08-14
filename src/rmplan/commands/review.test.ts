@@ -1993,7 +1993,7 @@ tasks:
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
-        if (metadata.executionMode === 'simple') {
+        if (metadata.executionMode === 'review') {
           // First call is the review - return output with issues
           return `## Code Review Summary
 
@@ -2103,7 +2103,7 @@ Please fix all the issues identified in the review.`;
       1,
       'test review prompt',
       expect.objectContaining({
-        executionMode: 'simple',
+        executionMode: 'review',
         captureOutput: 'result',
       })
     );
@@ -2133,7 +2133,7 @@ tasks:
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
-        if (metadata.executionMode === 'simple') {
+        if (metadata.executionMode === 'review') {
           return `## Code Review Summary
 
 ### Major Issues (1)
@@ -2228,7 +2228,7 @@ tasks:
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
-        if (metadata.executionMode === 'simple') {
+        if (metadata.executionMode === 'review') {
           return `## Code Review Summary
 
 ### Minor Issues (1)
@@ -2307,7 +2307,7 @@ tasks:
     expect(mockExecutor.execute).toHaveBeenCalledWith(
       'test review prompt',
       expect.objectContaining({
-        executionMode: 'simple',
+        executionMode: 'review',
       })
     );
   });
@@ -2326,7 +2326,7 @@ tasks:
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
-        if (metadata.executionMode === 'simple') {
+        if (metadata.executionMode === 'review') {
           // Return review output with no issues (avoid bullet points or numbered lists)
           return `## Code Review Summary
 
@@ -2428,7 +2428,7 @@ tasks:
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
-        if (metadata.executionMode === 'simple') {
+        if (metadata.executionMode === 'review') {
           return `## Code Review Summary
 
 ### Critical Issues (1)
@@ -2505,7 +2505,7 @@ tasks:
     expect(mockExecutor.execute).toHaveBeenCalledWith(
       'test review prompt',
       expect.objectContaining({
-        executionMode: 'simple',
+        executionMode: 'review',
       })
     );
   });

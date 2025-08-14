@@ -29,6 +29,7 @@ export async function runPlanContextWithExecutor(
       planId: 'standalone',
       planTitle: 'Standalone Execution',
       planFilePath: 'N/A',
+      executionMode: 'normal',
     };
     await executor.execute(contextContent, executePlanInfo);
   } catch (err) {
