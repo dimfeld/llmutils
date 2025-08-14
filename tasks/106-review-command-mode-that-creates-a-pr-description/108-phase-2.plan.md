@@ -5,7 +5,7 @@ goal: To enhance the `description` command with interactive options for handling
   the generated output, allowing users to easily copy it, save it, or create a
   pull request.
 id: 108
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - 107
@@ -85,6 +85,7 @@ project:
     option.
 tasks:
   - title: Add Output Handling CLI Flags
+    done: true
     description: >
       Extend the `description` command definition in `rmplan.ts` to include
       flags for non-interactive output handling: `--output-file <path>` to save
@@ -111,7 +112,7 @@ tasks:
           three new optional properties:
 
           outputFile?: string, copy?: boolean, and createPr?: boolean
-        done: false
+        done: true
       - prompt: >
           In rmplan.ts, add three new .option() calls to the description command
           definition:
@@ -120,8 +121,9 @@ tasks:
           --create-pr as a boolean flag.
 
           Include appropriate descriptions for each flag.
-        done: false
+        done: true
   - title: Implement Direct Output Actions
+    done: true
     description: >
       In `handleDescriptionCommand`, add logic to process the new CLI flags. If
       a flag is present, perform the corresponding action (write to file, copy
@@ -152,13 +154,13 @@ tasks:
           ../../common/process.js, and
 
           dirname from node:path
-        done: false
+        done: true
       - prompt: >
           After the description is generated (after the executorOutput line),
           add a new section to handle
 
           output flags. Store the generated description in a variable for reuse.
-        done: false
+        done: true
       - prompt: >
           Implement file output handling: if options.outputFile is specified,
           ensure the directory exists
@@ -167,14 +169,14 @@ tasks:
           file using writeFile.
 
           Log a success message indicating where the file was saved.
-        done: false
+        done: true
       - prompt: >
           Implement clipboard handling: if options.copy is true, use the
           clipboard write function
 
           to copy the description. Log a success message that the description
           was copied to clipboard.
-        done: false
+        done: true
       - prompt: >
           Implement PR creation: if options.createPr is true, use logSpawn to
           run
@@ -183,8 +185,9 @@ tasks:
           the process
 
           result and log appropriate success or error messages.
-        done: false
+        done: true
   - title: Implement Interactive Output Prompt
+    done: true
     description: >
       If no output-related flags are provided, use the `@inquirer/prompts`
       library to display a checklist or series of questions to the user. The
@@ -209,21 +212,21 @@ tasks:
       - prompt: >
           Import select, input, and checkbox from @inquirer/prompts at the top
           of the file
-        done: false
+        done: true
       - prompt: >
           After handling the direct output flags, add a check to see if no
           output flags were provided.
 
           If none were provided, show an interactive prompt using checkbox to
           allow multiple selections.
-        done: false
+        done: true
       - prompt: >
           Create the checkbox prompt with options: "Copy to clipboard", "Save to
           file", 
 
           "Create GitHub PR", and "None (just display)". Process the user's
           selections.
-        done: false
+        done: true
       - prompt: >
           For each selected action, implement the corresponding handler:
 
@@ -232,14 +235,15 @@ tasks:
 
           For "Copy to clipboard" and "Create GitHub PR", reuse the logic from
           the direct flag handlers.
-        done: false
+        done: true
       - prompt: >
           Add appropriate error handling for the interactive flow, catching
           prompt cancellations
 
           and handling them gracefully with informative messages.
-        done: false
+        done: true
   - title: Add Tests for Output Handling
+    done: true
     description: >
       Create or update tests for the `description` command to verify the
       behavior of the new output flags and the interactive prompt. Mock external
@@ -266,39 +270,39 @@ tasks:
       - prompt: >
           Add a new describe block for "output handling" tests within the
           existing test suite
-        done: false
+        done: true
       - prompt: >
           Create a test for the --output-file flag that mocks writeFile and
           mkdir, verifies the file
 
           is written with the correct content, and checks that the success
           message is logged
-        done: false
+        done: true
       - prompt: >
           Create a test for the --copy flag that mocks the clipboard write
           function and verifies
 
           it's called with the generated description content
-        done: false
+        done: true
       - prompt: >
           Create a test for the --create-pr flag that mocks logSpawn, verifies
           the correct gh command
 
           is executed, and checks that the description is passed via stdin
-        done: false
+        done: true
       - prompt: >
           Create a test for interactive mode that mocks the checkbox and input
           prompts,
 
           simulates user selections, and verifies the corresponding actions are
           taken
-        done: false
+        done: true
       - prompt: >
           Add error handling tests: test file write failures with EACCES errors,
 
           test gh command failures with non-zero exit codes, and verify
           appropriate error messages
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/commands/review.ts
   - --with-imports
