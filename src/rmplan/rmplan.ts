@@ -333,6 +333,13 @@ program
   .option('--files', 'Show file paths column')
   .option('-u, --user <username>', 'Filter by assignedTo username')
   .option('--mine', 'Show only plans assigned to current user')
+  .option('-n, --number <count>', 'Limit the number of results shown', (value: string) => {
+    const n = Number(value);
+    if (Number.isNaN(n) || n <= 0) {
+      throw new Error(`Count must be a positive integer, saw ${value}`);
+    }
+    return n;
+  })
   .action(async (searchTerms, options, command) => {
     const { handleListCommand } = await import('./commands/list.js');
     await handleListCommand(options, command, searchTerms).catch(handleCommandError);
