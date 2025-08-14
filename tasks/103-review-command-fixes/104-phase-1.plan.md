@@ -125,27 +125,27 @@ tasks:
 
           is not applied to the context content. Mock the wrapWithOrchestration
           function and verify it's not called in simple mode.
-        done: false
+        done: true
       - prompt: >
           Add another test in claude_code.test.ts to verify that agent files are
           not generated when in simple execution mode.
 
           Mock the generateAgentFiles and removeAgentFiles functions and ensure
           they're not called when executionMode is 'simple'.
-        done: false
+        done: true
       - prompt: >
           In review.test.ts, add or update a test to verify that
           handleReviewCommand passes executionMode: 'simple' to the executor.
 
           Mock the executor's execute method and verify it receives the correct
           ExecutePlanInfo with executionMode set to 'simple'.
-        done: false
+        done: true
       - prompt: >
           Add a test to verify that normal mode (or undefined executionMode)
           continues to work as before, with orchestration
 
           and agent file generation happening as expected.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/rmplan.ts
   - src/rmplan/commands/review.ts
