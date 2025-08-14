@@ -391,9 +391,10 @@ describe('handleReviewCommand error handling', () => {
   test('throws error when plan cannot be loaded', async () => {
     const invalidPlanFile = join(testDir, 'invalid.yml');
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => invalidPlanFile,
-      readPlanFile: async () => null,
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () => {
+        throw new Error('Plan file not found: ' + invalidPlanFile);
+      },
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -407,55 +408,42 @@ describe('handleReviewCommand error handling', () => {
     };
 
     await expect(handleReviewCommand(invalidPlanFile, {}, mockCommand)).rejects.toThrow(
-      'Could not load plan from'
+      'Plan file not found'
     );
   });
 
   test('exits early when no changes detected', async () => {
-    const planContent = `
-id: 1
-title: Test Plan
-goal: Test goal
-tasks:
-  - title: Test task
-    description: A test task
-`;
     const planFile = join(testDir, 'no-changes.yml');
-    await writeFile(planFile, planContent);
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 1,
-        title: 'Test Plan',
-        goal: 'Test goal',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task',
-          },
-        ],
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () => ({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 1,
+          title: 'Test Plan',
+          goal: 'Test goal',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: false,
+          changedFiles: [],
+          baseBranch: 'main',
+          diffContent: '',
+        },
+        incrementalSummary: null,
+        noChangesDetected: true,
       }),
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({}),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    // Mock generateDiffForReview to return no changes
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: false,
-        changedFiles: [],
-        baseBranch: 'main',
-        diffContent: '',
-      }),
-      buildReviewPrompt: buildReviewPrompt,
     }));
 
     const mockCommand = {
@@ -469,16 +457,7 @@ tasks:
   });
 
   test('handles executor execution failure', async () => {
-    const planContent = `
-id: 1
-title: Test Plan
-goal: Test goal
-tasks:
-  - title: Test task
-    description: A test task
-`;
     const planFile = join(testDir, 'executor-fail.yml');
-    await writeFile(planFile, planContent);
 
     const mockExecutor = {
       execute: mock(async () => {
@@ -486,18 +465,30 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 1,
-        title: 'Test Plan',
-        goal: 'Test goal',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task',
-          },
-        ],
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () => ({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 1,
+          title: 'Test Plan',
+          goal: 'Test goal',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
       }),
     }));
 
@@ -514,24 +505,6 @@ tasks:
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['test.ts'],
-        baseBranch: 'main',
-        diffContent: 'some diff',
-      }),
-      buildReviewPrompt: (
-        planData: any,
-        diffResult: any,
-        includeDiff: boolean = false,
-        parentChain: any[] = [],
-        completedChildren: any[] = [],
-        customInstructions?: string
-      ) => 'review prompt',
     }));
 
     const mockCommand = {
@@ -1519,7 +1492,7 @@ tasks:
       };
 
       await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        "Plan file is missing required 'goal' field"
+        "goal: Invalid input: expected string, received undefined"
       );
     });
 
@@ -1595,7 +1568,7 @@ tasks:
       };
 
       await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        "Task 1 is missing required 'title' field"
+        "tasks.0.title: Invalid input: expected string, received undefined"
       );
     });
 
@@ -1636,29 +1609,17 @@ tasks:
       };
 
       await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        "Task 1 is missing required 'description' field"
+        "tasks.0.description: Invalid input: expected string, received undefined"
       );
     });
 
     test('validates multiple tasks correctly', async () => {
       const planFile = join(testDir, 'multiple-invalid-tasks.yml');
 
-      await moduleMocker.mock('../plans.js', () => ({
-        resolvePlanFile: async () => planFile,
-        readPlanFile: async () => ({
-          id: 1,
-          title: 'Test Plan',
-          goal: 'Test goal',
-          tasks: [
-            {
-              title: 'Valid task',
-              description: 'This task is valid',
-            },
-            {
-              // Missing title and description
-            },
-          ],
-        }),
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => {
+          throw new Error("tasks.1.title: Invalid input: expected string, received undefined");
+        },
       }));
 
       await moduleMocker.mock('../configLoader.js', () => ({
@@ -1672,7 +1633,7 @@ tasks:
       };
 
       await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        "Task 2 is missing required 'title' field"
+        "tasks.1.title: Invalid input: expected string, received undefined"
       );
     });
   });

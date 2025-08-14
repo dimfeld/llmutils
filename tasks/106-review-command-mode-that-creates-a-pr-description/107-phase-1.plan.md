@@ -84,6 +84,7 @@ project:
     option.
 tasks:
   - title: Refactor Context Gathering Logic
+    done: true
     description: >
       Create a new shared function that encapsulates the context-gathering logic
       currently within the `handleReviewCommand`. This includes resolving the
@@ -162,6 +163,7 @@ tasks:
           identical functionality.
         done: false
   - title: Create the PR Description Prompt
+    done: true
     description: >
       Develop a new prompt function, `getPrDescriptionPrompt`, that takes the
       gathered context and constructs a detailed prompt for an LLM. The prompt
