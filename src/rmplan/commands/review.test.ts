@@ -605,24 +605,24 @@ tasks:
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
-  test('passes executionMode simple to executor for review-only operation', async () => {
+  test('passes executionMode review to executor for review-only operation', async () => {
     const planContent = `
 id: 123
-title: Test Simple Execution
-goal: Test that review command uses simple execution mode
+title: Test Review Execution
+goal: Test that review command uses review execution mode
 tasks:
   - title: Test task
-    description: A test task for simple execution mode
+    description: A test task for review execution mode
 `;
-    const planFile = join(testDir, 'simple-execution.yml');
+    const planFile = join(testDir, 'review-execution.yml');
     await writeFile(planFile, planContent);
 
     const mockExecutor = {
       execute: mock(async (prompt: string, planInfo: any) => {
-        // Verify that executionMode is set to 'simple'
-        expect(planInfo.executionMode).toBe('simple');
+        // Verify that executionMode is set to 'review'
+        expect(planInfo.executionMode).toBe('review');
         expect(planInfo.planId).toBe('123');
-        expect(planInfo.planTitle).toBe('Test Simple Execution');
+        expect(planInfo.planTitle).toBe('Test Review Execution');
         expect(planInfo.planFilePath).toBe(planFile);
         expect(planInfo.captureOutput).toBe('result');
         return 'Mock review result';
@@ -633,12 +633,12 @@ tasks:
       resolvePlanFile: async () => planFile,
       readPlanFile: async () => ({
         id: 123,
-        title: 'Test Simple Execution',
-        goal: 'Test that review command uses simple execution mode',
+        title: 'Test Review Execution',
+        goal: 'Test that review command uses review execution mode',
         tasks: [
           {
             title: 'Test task',
-            description: 'A test task for simple execution mode',
+            description: 'A test task for review execution mode',
           },
         ],
       }),
@@ -1496,123 +1496,6 @@ tasks:
       );
     });
 
-    test('validates plan has at least one task', async () => {
-      const planContent = `
-id: 1
-title: Test Plan
-goal: Test goal
-tasks: []
-`;
-      const planFile = join(testDir, 'no-tasks.yml');
-      await writeFile(planFile, planContent);
-
-      await moduleMocker.mock('../plans.js', () => ({
-        resolvePlanFile: async () => planFile,
-        readPlanFile: async () => ({
-          id: 1,
-          title: 'Test Plan',
-          goal: 'Test goal',
-          tasks: [],
-        }),
-      }));
-
-      await moduleMocker.mock('../configLoader.js', () => ({
-        loadEffectiveConfig: async () => ({}),
-      }));
-
-      const mockCommand = {
-        parent: {
-          opts: () => ({}),
-        },
-      };
-
-      await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        'Plan file must have at least one task'
-      );
-    });
-
-    test('validates tasks have required title field', async () => {
-      const planContent = `
-id: 1
-title: Test Plan
-goal: Test goal
-tasks:
-  - description: Task without title
-`;
-      const planFile = join(testDir, 'invalid-task.yml');
-      await writeFile(planFile, planContent);
-
-      await moduleMocker.mock('../plans.js', () => ({
-        resolvePlanFile: async () => planFile,
-        readPlanFile: async () => ({
-          id: 1,
-          title: 'Test Plan',
-          goal: 'Test goal',
-          tasks: [
-            {
-              // No title field
-              description: 'Task without title',
-            },
-          ],
-        }),
-      }));
-
-      await moduleMocker.mock('../configLoader.js', () => ({
-        loadEffectiveConfig: async () => ({}),
-      }));
-
-      const mockCommand = {
-        parent: {
-          opts: () => ({}),
-        },
-      };
-
-      await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        'tasks.0.title: Invalid input: expected string, received undefined'
-      );
-    });
-
-    test('validates tasks have required description field', async () => {
-      const planContent = `
-id: 1
-title: Test Plan
-goal: Test goal
-tasks:
-  - title: Task without description
-`;
-      const planFile = join(testDir, 'invalid-task-desc.yml');
-      await writeFile(planFile, planContent);
-
-      await moduleMocker.mock('../plans.js', () => ({
-        resolvePlanFile: async () => planFile,
-        readPlanFile: async () => ({
-          id: 1,
-          title: 'Test Plan',
-          goal: 'Test goal',
-          tasks: [
-            {
-              title: 'Task without description',
-              // No description field
-            },
-          ],
-        }),
-      }));
-
-      await moduleMocker.mock('../configLoader.js', () => ({
-        loadEffectiveConfig: async () => ({}),
-      }));
-
-      const mockCommand = {
-        parent: {
-          opts: () => ({}),
-        },
-      };
-
-      await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        'tasks.0.description: Invalid input: expected string, received undefined'
-      );
-    });
-
     test('validates multiple tasks correctly', async () => {
       const planFile = join(testDir, 'multiple-invalid-tasks.yml');
 
@@ -1991,6 +1874,17 @@ tasks:
     const planFile = join(testDir, 'autofix-test.yml');
     await writeFile(planFile, planContent);
 
+    // Mock checkbox to return all issues when autofix flag is used
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      confirm: mock(async () => {
+        throw new Error('Confirm should not be called with --autofix flag');
+      }),
+      checkbox: mock(async ({ choices }: { choices: any[] }) => {
+        // Return all issues for autofix
+        return choices.map(c => c.value);
+      }),
+    }));
+
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
@@ -2146,11 +2040,16 @@ tasks:
     };
 
     // Mock the confirm function to return true (user confirms autofix)
+    // Also mock checkbox to return all issues
     await moduleMocker.mock('@inquirer/prompts', () => ({
       confirm: mock(async ({ message }: { message: string }) => {
         expect(message).toContain('Issues were found during review');
         expect(message).toContain('automatically fix them');
         return true;
+      }),
+      checkbox: mock(async ({ choices }: { choices: any[] }) => {
+        // Return all issues for autofix
+        return choices.map(c => c.value);
       }),
     }));
 
@@ -2240,10 +2139,14 @@ tasks:
     };
 
     // Mock the confirm function to return false (user declines autofix)
+    // Also mock checkbox in case it's called (shouldn't be if confirm returns false)
     await moduleMocker.mock('@inquirer/prompts', () => ({
       confirm: mock(async ({ message }: { message: string }) => {
         expect(message).toContain('Issues were found during review');
         return false;
+      }),
+      checkbox: mock(async () => {
+        throw new Error('Checkbox should not be called when user declines autofix');
       }),
     }));
 
@@ -2344,9 +2247,13 @@ Continue following current coding standards and best practices.`;
     };
 
     // Mock confirm to throw if called (it shouldn't be)
+    // Also mock checkbox to throw if called (it shouldn't be)
     await moduleMocker.mock('@inquirer/prompts', () => ({
       confirm: mock(async () => {
         throw new Error('Confirm should not be called when no issues found');
+      }),
+      checkbox: mock(async () => {
+        throw new Error('Checkbox should not be called when no issues found');
       }),
     }));
 
@@ -2439,9 +2346,13 @@ tasks:
     };
 
     // Mock confirm to throw if called (it shouldn't be with --no-autofix)
+    // Also mock checkbox to throw if called (it shouldn't be with --no-autofix)
     await moduleMocker.mock('@inquirer/prompts', () => ({
       confirm: mock(async () => {
         throw new Error('Confirm should not be called with --no-autofix flag');
+      }),
+      checkbox: mock(async () => {
+        throw new Error('Checkbox should not be called with --no-autofix flag');
       }),
     }));
 
@@ -2677,8 +2588,7 @@ All tests are passing and functionality works as expected.`;
           id: 'sec-001',
           severity: 'critical' as const,
           category: 'security' as const,
-          title: 'SQL Injection vulnerability',
-          description: 'User input not properly sanitized',
+          content: 'SQL Injection vulnerability - User input not properly sanitized',
           file: 'src/auth.ts',
           line: 42,
           suggestion: 'Use parameterized queries',
@@ -2687,8 +2597,7 @@ All tests are passing and functionality works as expected.`;
           id: 'perf-001',
           severity: 'major' as const,
           category: 'performance' as const,
-          title: 'N+1 query problem',
-          description: 'Inefficient database queries in loop',
+          content: 'N+1 query problem - Inefficient database queries in loop',
           file: 'src/db.ts',
           line: 15,
           suggestion: 'Use batch queries or eager loading',

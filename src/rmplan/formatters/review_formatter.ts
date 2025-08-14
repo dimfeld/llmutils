@@ -173,6 +173,7 @@ const ISSUE_MARKERS = [
 // Pre-compiled pattern to exclude legend entries
 const LEGEND_EXCLUSION_PATTERN =
   /^[-*•]\s*\*\*(CRITICAL|MAJOR|MINOR|INFO)\*\*\s+(issues?|concerns?)\s*:/i;
+const VERDICT_EXCLUSION_PATTERN = /VERDICT/i;
 
 // Pre-compiled file path patterns
 const FILE_EXT_PATTERN = '(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs)';
@@ -231,7 +232,7 @@ export function parseReviewerOutput(rawOutput: string): {
     if (!line || line.length > 500) continue; // Skip empty or very long lines
 
     // Skip legend entries that match the exclusion pattern
-    if (LEGEND_EXCLUSION_PATTERN.test(line)) continue;
+    if (LEGEND_EXCLUSION_PATTERN.test(line) || VERDICT_EXCLUSION_PATTERN.test(line)) continue;
 
     // Check for issue markers first (most specific patterns)
     let foundIssue = false;

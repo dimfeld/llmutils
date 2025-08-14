@@ -534,6 +534,7 @@ program
   )
   .option('--since <commit>', 'Review changes since the specified commit hash.')
   .option('--autofix', 'Automatically fix issues found during review without prompting.')
+  .option('--autofix-all', 'Automatically fix all issues without prompting for selection.')
   .option('--no-autofix', 'Disable automatic fixing of issues, even if configured elsewhere.')
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');

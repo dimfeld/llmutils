@@ -144,7 +144,7 @@ The codebase uses Bun's built-in test runner. Tests typically:
 - Verify the output matches expectations
 
 By default, console logging is suppressed in tests. You can enable it for debugging by running with
-`TEST_ALLOW_CONSOLE=true` in the environment.
+`TEST_ALLOW_CONSOLE=true` in the environment. No need to set it to false, it's already false by default.
 
 When adding new features, ensure test coverage for:
 

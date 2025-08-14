@@ -3,7 +3,7 @@
 
 import { $ } from 'bun';
 import chalk from 'chalk';
-import { confirm } from '@inquirer/prompts';
+import { confirm, checkbox } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
@@ -20,6 +20,7 @@ import {
   createFormatter,
   type VerbosityLevel,
   type FormatterOptions,
+  type ReviewIssue,
 } from '../formatters/review_formatter.js';
 import {
   saveReviewResult,
@@ -348,17 +349,37 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     // Check if autofix should be performed - with robust issue detection
     const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
     let shouldAutofix = false;
+    let selectedIssues: ReviewIssue[] | null = null;
+
     if (hasIssues) {
-      if (!options.autofix && !options.noAutofix) {
+      if (options.autofix || options.autofixAll) {
+        shouldAutofix = true;
+        if (!options.autofixAll && reviewResult.issues && reviewResult.issues.length > 0) {
+          // Allow selection unless --autofix-all is used
+          selectedIssues = await selectIssuesToFix(reviewResult.issues);
+          shouldAutofix = selectedIssues.length > 0;
+          if (!shouldAutofix) {
+            log(chalk.yellow('No issues selected for autofix.'));
+          }
+        }
+      } else if (!options.noAutofix) {
         // Prompt user for autofix
         shouldAutofix = await confirm({
           message: 'Issues were found during review. Would you like to automatically fix them?',
           default: false,
         });
+
+        if (shouldAutofix && reviewResult.issues && reviewResult.issues.length > 0) {
+          selectedIssues = await selectIssuesToFix(reviewResult.issues);
+          shouldAutofix = selectedIssues.length > 0;
+          if (!shouldAutofix) {
+            log(chalk.yellow('No issues selected for autofix.'));
+          }
+        }
       }
     }
 
-    const performAutofix = options.autofix || (shouldAutofix && !options.noAutofix);
+    const performAutofix = shouldAutofix && !options.noAutofix;
 
     // Persistence logic - save to structured review history
     const shouldSave =
@@ -462,7 +483,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
       try {
         // Build the autofix prompt with validation
-        const autofixPrompt = buildAutofixPrompt(planData, reviewResult, diffResult);
+        const autofixPrompt = buildAutofixPrompt(planData, reviewResult, diffResult, selectedIssues);
 
         // Execute autofix using the executor in normal mode
         const autofixOutput = await executor.execute(autofixPrompt, {
@@ -568,6 +589,49 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
     });
 
   return sanitizedAreas;
+}
+
+/**
+ * Prompts the user to select which issues to fix from the review results
+ */
+async function selectIssuesToFix(issues: ReviewIssue[]): Promise<ReviewIssue[]> {
+  // Group issues by severity for better organization
+  const groupedIssues = issues.reduce((acc, issue) => {
+    if (!acc[issue.severity]) acc[issue.severity] = [];
+    acc[issue.severity].push(issue);
+    return acc;
+  }, {} as Record<string, ReviewIssue[]>);
+
+  // Create checkbox options with severity indicators
+  const options = [];
+  const severityOrder = ['critical', 'major', 'minor', 'info'] as const;
+  const severityIcons: Record<string, string> = {
+    critical: '🔴',
+    major: '🟠',
+    minor: '🟡',
+    info: 'ℹ️',
+  };
+
+  for (const severity of severityOrder) {
+    const severityIssues = groupedIssues[severity] || [];
+    for (const issue of severityIssues) {
+      const fileInfo = issue.file ? ` (${issue.file}${issue.line ? ':' + issue.line : ''})` : '';
+      options.push({
+        name: `${severityIcons[severity]} [${severity.toUpperCase()}] ${issue.content}${fileInfo}`,
+        value: issue,
+        checked: severity === 'critical' || severity === 'major', // Pre-select critical and major issues
+      });
+    }
+  }
+
+  const selectedIssues = await checkbox({
+    message: 'Select issues to fix:',
+    choices: options,
+    pageSize: 15,
+    loop: false,
+  });
+
+  return selectedIssues;
 }
 
 export function buildReviewPrompt(
@@ -770,7 +834,8 @@ export function detectIssuesInReview(
 export function buildAutofixPrompt(
   planData: PlanSchema,
   reviewResult: ReturnType<typeof createReviewResult>,
-  diffResult: DiffResult
+  diffResult: DiffResult,
+  selectedIssues?: ReviewIssue[] | null
 ): string {
   // Input validation
   if (!planData) {
@@ -816,8 +881,18 @@ export function buildAutofixPrompt(
   );
 
   // Add issues from the review result
-  if (reviewResult.issues && reviewResult.issues.length > 0) {
-    reviewResult.issues.forEach((issue, index) => {
+  const issuesToFix = selectedIssues || reviewResult.issues;
+
+  if (issuesToFix && issuesToFix.length > 0) {
+    // Add note if subset selected
+    if (selectedIssues && reviewResult.issues && selectedIssues.length < reviewResult.issues.length) {
+      prompt.push(
+        `Note: ${selectedIssues.length} of ${reviewResult.issues.length} issues selected for fixing.`,
+        ``
+      );
+    }
+
+    issuesToFix.forEach((issue, index) => {
       prompt.push(`### Issue ${index + 1}: ${issue.content || 'Unnamed Issue'}`);
       if (issue.file) {
         prompt.push(`**File:** ${issue.file}`);
