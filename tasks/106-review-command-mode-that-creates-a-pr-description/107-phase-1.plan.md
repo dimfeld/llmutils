@@ -10,8 +10,9 @@ priority: high
 dependencies: []
 parent: 106
 planGeneratedAt: 2025-08-14T01:21:36.414Z
+promptsGeneratedAt: 2025-08-14T01:47:03.856Z
 createdAt: 2025-08-14T00:55:08.903Z
-updatedAt: 2025-08-14T01:21:36.414Z
+updatedAt: 2025-08-14T01:47:03.856Z
 project:
   title: Implement a `description` command to generate PR descriptions from plan
     context
@@ -83,32 +84,276 @@ project:
     option.
 tasks:
   - title: Refactor Context Gathering Logic
-    description: Create a new shared function that encapsulates the
-      context-gathering logic currently within the `handleReviewCommand`. This
-      includes resolving the plan file, reading plan data, traversing the plan
-      hierarchy (parents and children), and generating a diff of code changes.
-      Update the `review` command to use this new utility, ensuring no
-      regressions.
-    steps: []
+    description: >
+      Create a new shared function that encapsulates the context-gathering logic
+      currently within the `handleReviewCommand`. This includes resolving the
+      plan file, reading plan data, traversing the plan hierarchy (parents and
+      children), and generating a diff of code changes. Update the `review`
+      command to use this new utility, ensuring no regressions.
+
+
+      The new function should be created in
+      `src/rmplan/utils/context_gathering.ts` and should return a structured
+      object containing all gathered context. This follows the existing pattern
+      of utility modules in the utils directory.
+
+
+      Key requirements:
+
+      - Extract lines 168-303 (approximately) from handleReviewCommand
+
+      - Return an object with planData, parentChain, completedChildren, and
+      diffResult
+
+      - Handle incremental review options properly
+
+      - Maintain all existing error handling and logging
+
+      - Use dependency injection for better testability
+    files:
+      - src/rmplan/utils/context_gathering.ts
+      - src/rmplan/utils/context_gathering.test.ts
+      - src/rmplan/commands/review.ts
+    steps:
+      - prompt: >
+          Create a test file at src/rmplan/utils/context_gathering.test.ts that
+          tests the new gatherPlanContext function.
+
+          Include tests for: basic context gathering, parent chain loading,
+          completed children loading, diff generation, and incremental review
+          scenarios.
+
+          Use temporary directories and real filesystem operations rather than
+          mocks where possible.
+        done: false
+      - prompt: >
+          Create src/rmplan/utils/context_gathering.ts with a gatherPlanContext
+          function that takes plan file path, options, and dependencies as
+          parameters.
+
+          The function should return an object with planData, parentChain,
+          completedChildren, and diffResult properties.
+
+          Include proper TypeScript types for the return value and parameters.
+        done: false
+      - prompt: >
+          Extract the context gathering logic from handleReviewCommand (lines
+          168-303 approximately) into the new gatherPlanContext function.
+
+          This includes plan resolution, validation, hierarchy traversal,
+          incremental review handling, and diff generation.
+
+          Ensure all error handling and logging is preserved.
+        done: false
+      - prompt: >
+          Update handleReviewCommand in src/rmplan/commands/review.ts to use the
+          new gatherPlanContext function.
+
+          Replace the extracted code with a call to gatherPlanContext and
+          destructure its return value.
+
+          Ensure the review command continues to work exactly as before.
+        done: false
+      - prompt: >
+          Run all tests for both the new context_gathering module and the
+          existing review command to ensure no regressions.
+
+          Fix any issues that arise and verify that the refactoring maintains
+          identical functionality.
+        done: false
   - title: Create the PR Description Prompt
-    description: Develop a new prompt function, `getPrDescriptionPrompt`, that takes
-      the gathered context and constructs a detailed prompt for an LLM. The
-      prompt should instruct the model to generate a PR description covering
+    description: >
+      Develop a new prompt function, `getPrDescriptionPrompt`, that takes the
+      gathered context and constructs a detailed prompt for an LLM. The prompt
+      should instruct the model to generate a PR description covering
       implementation details, changes, integration, and potential future
       improvements, including optional Mermaid diagrams.
-    steps: []
+
+
+      This follows the existing pattern in
+      src/rmplan/executors/claude_code/agent_prompts.ts where each agent has its
+      own prompt function returning an AgentDefinition.
+
+
+      The prompt should instruct the LLM to generate:
+
+      - Summary of what was implemented
+
+      - List of changes made to existing functionality
+
+      - Explanation of what could have been changed but was intentionally left
+      unchanged
+
+      - Description of how the changes integrate with the existing system
+
+      - Optional Mermaid diagrams if they help explain the architecture or flow
+
+      - Potential future improvements or follow-up work
+    files:
+      - src/rmplan/executors/claude_code/agent_prompts.ts
+      - src/rmplan/executors/claude_code/agent_prompts.test.ts
+    steps:
+      - prompt: >
+          Add a test in agent_prompts.test.ts (create if it doesn't exist) for
+          the new getPrDescriptionPrompt function.
+
+          Test that it returns a properly structured AgentDefinition with name,
+          description, and prompt fields.
+
+          Verify the prompt includes all required sections for PR description
+          generation.
+        done: false
+      - prompt: >
+          Implement getPrDescriptionPrompt in agent_prompts.ts following the
+          existing pattern of other prompt functions.
+
+          The function should accept contextContent and optional
+          customInstructions parameters.
+
+          Return an AgentDefinition with name 'pr-description' and appropriate
+          description.
+        done: false
+      - prompt: >
+          Write the detailed prompt content that instructs the LLM to generate
+          comprehensive PR descriptions.
+
+          Include sections for implementation summary, changes made, integration
+          details, optional diagrams, and future work.
+
+          Ensure the prompt is clear and structured to produce well-formatted
+          markdown output.
+        done: false
   - title: Implement the `description` Command Handler
-    description: "Create a new `description.ts` file and implement the
+    description: >
+      Create a new `description.ts` file and implement the
       `handleDescriptionCommand` function. This function will orchestrate the
       command's flow: call the shared context-gathering function, build the
       prompt, execute it via an LLM executor, and print the resulting
-      description to the console."
-    steps: []
+      description to the console.
+
+
+      The handler should follow the existing pattern of command handlers in
+      src/rmplan/commands/, using similar error handling, configuration loading,
+      and executor setup as seen in the review command.
+
+
+      Key implementation details:
+
+      - Use the gatherPlanContext function from Task 1 to get all necessary
+      context
+
+      - Build the prompt using getPrDescriptionPrompt from Task 2
+
+      - Execute using the existing executor system with appropriate options
+
+      - Print the generated description to stdout
+
+      - Support dry-run mode to show the prompt without execution
+
+      - Handle errors gracefully with informative messages
+    files:
+      - src/rmplan/commands/description.ts
+      - src/rmplan/commands/description.test.ts
+    steps:
+      - prompt: >
+          Create a test file at src/rmplan/commands/description.test.ts with
+          tests for the handleDescriptionCommand function.
+
+          Include tests for: successful description generation, dry-run mode,
+          error handling, and different executor configurations.
+
+          Use temporary plan files and mock executors where necessary.
+        done: false
+      - prompt: >
+          Create src/rmplan/commands/description.ts with the
+          handleDescriptionCommand export.
+
+          Import necessary dependencies including the context gathering utility,
+          prompt function, and executor system.
+
+          Add proper TypeScript types for the function parameters.
+        done: false
+      - prompt: >
+          Implement the main flow of handleDescriptionCommand: load
+          configuration, gather context using gatherPlanContext, and validate
+          the plan has changes.
+
+          Handle the case where no changes are detected by showing an
+          appropriate message and returning early.
+        done: false
+      - prompt: >
+          Build the PR description prompt using getPrDescriptionPrompt with the
+          gathered context.
+
+          Set up the executor using buildExecutorAndLog with appropriate
+          options.
+
+          Handle dry-run mode by printing the prompt and returning without
+          execution.
+        done: false
+      - prompt: |
+          Execute the prompt using the executor and capture the output.
+          Print the generated PR description to stdout using the log function.
+          Add proper error handling with contextual error messages.
+        done: false
+      - prompt: >
+          Run the tests for the description command and fix any issues.
+
+          Ensure all edge cases are handled properly and the command provides
+          helpful output.
+        done: false
   - title: Register the New `description` Command
-    description: Add the `description` command to the main CLI entry point in
-      `rmplan.ts`. The command should accept a plan file/ID and support relevant
-      options like `--executor`, `--model`, and `--dry-run`.
-    steps: []
+    description: >
+      Add the `description` command to the main CLI entry point in `rmplan.ts`.
+      The command should accept a plan file/ID and support relevant options like
+      `--executor`, `--model`, and `--dry-run`.
+
+
+      The registration should follow the existing pattern of other commands in
+      the file, placed near the review command for logical grouping since they
+      share similar functionality.
+
+
+      Command syntax: `rmplan description <plan>`
+
+
+      Options to support:
+
+      - --executor <name>: Choose the executor for LLM execution
+
+      - --model <model>: Override the default model
+
+      - --dry-run: Show the prompt without executing
+
+      - --instructions <text>: Custom instructions for the PR description
+
+      - --instructions-file <path>: Path to file with custom instructions
+    files:
+      - src/rmplan/rmplan.ts
+    steps:
+      - prompt: >
+          Add the description command registration in rmplan.ts after the review
+          command (around line 540).
+
+          Use the same pattern as other commands with proper description and
+          command syntax.
+
+          Include options for executor, model, dry-run, instructions, and
+          instructions-file.
+        done: false
+      - prompt: >
+          Add the dynamic import and action handler for the description command.
+
+          Import handleDescriptionCommand from './commands/description.js' and
+          call it with proper error handling using handleCommandError.
+        done: false
+      - prompt: >
+          Test the command registration by running the CLI with --help to verify
+          the description command appears.
+
+          Test running the actual command with a sample plan file to ensure
+          end-to-end functionality works.
+        done: false
 rmfilter:
   - src/rmplan/commands/review.ts
   - --with-imports
