@@ -31,6 +31,11 @@ export interface ReviewHistoryEntry {
   filePath: string;
 }
 
+export interface ReviewFileContent {
+  metadata: ReviewMetadata;
+  reviewContent: string;
+}
+
 /**
  * Sanitizes a plan ID to create a safe filename component.
  * Removes or replaces characters that are not safe for filenames.
@@ -62,58 +67,31 @@ function formatTimestampForFilename(timestamp: Date): string {
 }
 
 /**
- * Parses metadata from a review file content.
- * Looks for metadata section in markdown format.
+ * Parses review file content from JSON.
  */
-function parseReviewMetadata(content: string): ReviewMetadata | null {
+function parseReviewFile(content: string): ReviewFileContent | null {
   try {
-    const lines = content.split('\n');
-    const metadata: Partial<ReviewMetadata> = {};
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      if (trimmed.startsWith('**Plan ID:**')) {
-        metadata.planId = trimmed.replace('**Plan ID:**', '').trim();
-      } else if (trimmed.startsWith('**Plan Title:**')) {
-        metadata.planTitle = trimmed.replace('**Plan Title:**', '').trim();
-      } else if (trimmed.startsWith('**Commit Hash:**')) {
-        metadata.commitHash = trimmed.replace('**Commit Hash:**', '').trim();
-      } else if (trimmed.startsWith('**Timestamp:**')) {
-        const timestampStr = trimmed.replace('**Timestamp:**', '').trim();
-        metadata.timestamp = new Date(timestampStr);
-      } else if (trimmed.startsWith('**Reviewer:**')) {
-        metadata.reviewer = trimmed.replace('**Reviewer:**', '').trim();
-      } else if (trimmed.startsWith('**Base Branch:**')) {
-        metadata.baseBranch = trimmed.replace('**Base Branch:**', '').trim();
-      } else if (trimmed.startsWith('**Changed Files:**')) {
-        const filesStr = trimmed.replace('**Changed Files:**', '').trim();
-        if (filesStr === '(none)') {
-          metadata.changedFiles = [];
-        } else {
-          metadata.changedFiles = filesStr
-            .split(', ')
-            .map((f) => f.trim())
-            .filter(Boolean);
-        }
-      }
-    }
+    const data = JSON.parse(content);
 
     // Validate required fields
     if (
-      metadata.planId &&
-      metadata.planTitle &&
-      metadata.commitHash &&
-      metadata.timestamp &&
-      metadata.baseBranch &&
-      metadata.changedFiles !== undefined
+      data.metadata &&
+      data.metadata.planId &&
+      data.metadata.planTitle &&
+      data.metadata.commitHash &&
+      data.metadata.timestamp &&
+      data.metadata.baseBranch &&
+      data.metadata.changedFiles !== undefined &&
+      data.reviewContent !== undefined
     ) {
-      return metadata as ReviewMetadata;
+      // Convert timestamp string to Date object
+      data.metadata.timestamp = new Date(data.metadata.timestamp);
+      return data as ReviewFileContent;
     }
 
     return null;
   } catch (error) {
-    debugLog('Failed to parse review metadata: %o', error);
+    debugLog('Failed to parse review file: %o', error);
     return null;
   }
 }
@@ -154,30 +132,22 @@ export async function saveReviewResult(
   // Generate safe filename
   const safePlanId = sanitizePlanIdForFilename(metadata.planId);
   const timestampStr = formatTimestampForFilename(metadata.timestamp);
-  const filename = `review-${safePlanId}-${timestampStr}.md`;
+  const filename = `review-${safePlanId}-${timestampStr}.json`;
   const filePath = join(reviewsDir, filename);
 
-  // Format the file content with metadata header
-  const fileContent = [
-    '# Review Results',
-    '',
-    '## Metadata',
-    '',
-    `**Plan ID:** ${metadata.planId}`,
-    `**Plan Title:** ${metadata.planTitle}`,
-    `**Commit Hash:** ${metadata.commitHash}`,
-    `**Timestamp:** ${metadata.timestamp.toISOString()}`,
-    ...(metadata.reviewer ? [`**Reviewer:** ${metadata.reviewer}`] : []),
-    `**Base Branch:** ${metadata.baseBranch}`,
-    `**Changed Files:** ${metadata.changedFiles.length > 0 ? metadata.changedFiles.join(', ') : '(none)'}`,
-    '',
-    '## Review Content',
-    '',
+  // Create JSON content
+  const fileContent: ReviewFileContent = {
+    metadata: {
+      ...metadata,
+      timestamp: metadata.timestamp, // Will be serialized as ISO string
+    },
     reviewContent,
-  ].join('\n');
+  };
+
+  const jsonContent = JSON.stringify(fileContent, null, 2);
 
   try {
-    await writeFile(filePath, fileContent, 'utf-8');
+    await writeFile(filePath, jsonContent, 'utf-8');
     debugLog('Saved review result to: %s', filePath);
     return filePath;
   } catch (error) {
@@ -206,7 +176,7 @@ export async function loadReviewHistory(reviewsDir: string): Promise<ReviewHisto
   try {
     const files = await readdir(reviewsDir);
     const reviewFiles = files.filter(
-      (file) => file.startsWith('review-') && extname(file) === '.md'
+      (file) => file.startsWith('review-') && extname(file) === '.json'
     );
 
     const historyEntries: ReviewHistoryEntry[] = [];
@@ -215,11 +185,11 @@ export async function loadReviewHistory(reviewsDir: string): Promise<ReviewHisto
       try {
         const filePath = join(reviewsDir, filename);
         const content = await readFile(filePath, 'utf-8');
-        const metadata = parseReviewMetadata(content);
+        const parsed = parseReviewFile(content);
 
-        if (metadata) {
+        if (parsed && parsed.metadata) {
           historyEntries.push({
-            metadata,
+            metadata: parsed.metadata,
             filename,
             filePath,
           });
@@ -367,6 +337,19 @@ export async function getReviewsInDateRange(
     const reviewTime = entry.metadata.timestamp.getTime();
     return reviewTime >= startDate.getTime() && reviewTime <= endDate.getTime();
   });
+}
+
+/**
+ * Loads the full content of a review file including both metadata and review content.
+ */
+export async function loadReviewFile(filePath: string): Promise<ReviewFileContent | null> {
+  try {
+    const content = await readFile(filePath, 'utf-8');
+    return parseReviewFile(content);
+  } catch (error) {
+    debugLog('Failed to load review file %s: %o', filePath, error);
+    return null;
+  }
 }
 
 /**

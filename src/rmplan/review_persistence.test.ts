@@ -7,8 +7,10 @@ import {
   saveReviewResult,
   loadReviewHistory,
   createGitNote,
+  loadReviewFile,
   type ReviewMetadata,
   type ReviewHistoryEntry,
+  type ReviewFileContent,
   createReviewsDirectory,
 } from './review_persistence.js';
 
@@ -50,23 +52,24 @@ describe('saveReviewResult', () => {
     expect(dirStat.isDirectory()).toBe(true);
 
     // Check that the review file was created with correct naming
-    const expectedFilename = 'review-42-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-42-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const fileStat = await stat(reviewFilePath);
     expect(fileStat.isFile()).toBe(true);
 
     // Verify file content includes both metadata and review content
     const savedContent = await readFile(reviewFilePath, 'utf-8');
-    expect(savedContent).toContain('# Review Results');
-    expect(savedContent).toContain('**Plan ID:** 42');
-    expect(savedContent).toContain('**Plan Title:** Test Plan');
-    expect(savedContent).toContain('**Commit Hash:** abc123');
-    expect(savedContent).toContain('**Timestamp:** 2024-01-15T10:30:00.000Z');
-    expect(savedContent).toContain('**Reviewer:** test-user');
-    expect(savedContent).toContain('**Base Branch:** main');
-    expect(savedContent).toContain('**Changed Files:** src/test.ts, src/review.ts');
-    expect(savedContent).toContain('Test review content');
-    expect(savedContent).toContain('Code looks good!');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
+
+    expect(parsedContent.metadata.planId).toBe('42');
+    expect(parsedContent.metadata.planTitle).toBe('Test Plan');
+    expect(parsedContent.metadata.commitHash).toBe('abc123');
+    expect(parsedContent.metadata.timestamp).toBe('2024-01-15T10:30:00.000Z');
+    expect(parsedContent.metadata.reviewer).toBe('test-user');
+    expect(parsedContent.metadata.baseBranch).toBe('main');
+    expect(parsedContent.metadata.changedFiles).toEqual(['src/test.ts', 'src/review.ts']);
+    expect(parsedContent.reviewContent).toContain('Test review content');
+    expect(parsedContent.reviewContent).toContain('Code looks good!');
   });
 
   test('handles missing optional metadata fields gracefully', async () => {
@@ -84,14 +87,15 @@ describe('saveReviewResult', () => {
 
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
-    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const savedContent = await readFile(reviewFilePath, 'utf-8');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
 
-    expect(savedContent).toContain('**Plan ID:** 1');
-    expect(savedContent).toContain('**Commit Hash:** def456');
-    expect(savedContent).not.toContain('**Reviewer:**'); // Should not include empty reviewer
-    expect(savedContent).toContain('Minimal review');
+    expect(parsedContent.metadata.planId).toBe('1');
+    expect(parsedContent.metadata.commitHash).toBe('def456');
+    expect(parsedContent.metadata.reviewer).toBeUndefined(); // Should not include empty reviewer
+    expect(parsedContent.reviewContent).toBe('Minimal review');
   });
 
   test('sanitizes plan ID for safe filename generation', async () => {
@@ -109,7 +113,7 @@ describe('saveReviewResult', () => {
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
     // Check that the filename has sanitized plan ID (note: actual output)
-    const expectedFilename = 'review-plan-with-special-chars-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-plan-with-special-chars-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const fileStat = await stat(reviewFilePath);
     expect(fileStat.isFile()).toBe(true);
@@ -149,7 +153,7 @@ describe('saveReviewResult', () => {
     expect(dirStat.isDirectory()).toBe(true);
 
     // Verify the file was saved
-    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(deepReviewsDir, expectedFilename);
     const fileStat = await stat(reviewFilePath);
     expect(fileStat.isFile()).toBe(true);
@@ -221,8 +225,11 @@ describe('loadReviewHistory', () => {
     // Create an invalid file (not a review file)
     await writeFile(join(reviewsDir, 'not-a-review.txt'), 'Invalid content');
 
-    // Create a file with invalid metadata
-    await writeFile(join(reviewsDir, 'invalid-review.md'), '# Review Results\nMissing metadata');
+    // Create a file with invalid JSON
+    await writeFile(
+      join(reviewsDir, 'review-invalid-2024-01-15T10-30-00-000Z.json'),
+      'Not valid JSON'
+    );
 
     const history = await loadReviewHistory(reviewsDir);
 
@@ -236,7 +243,7 @@ describe('loadReviewHistory', () => {
     await mkdir(reviewsDir, { recursive: true });
 
     // Create a directory where a file should be (to cause read error)
-    await mkdir(join(reviewsDir, 'review-error-2024-01-15T10-30-00-000Z.md'));
+    await mkdir(join(reviewsDir, 'review-error-2024-01-15T10-30-00-000Z.json'));
 
     // Should not throw error, just skip invalid files
     const history = await loadReviewHistory(reviewsDir);
@@ -254,6 +261,7 @@ describe('createGitNote', () => {
     await moduleMocker.mock('./review_persistence.js', () => ({
       saveReviewResult,
       loadReviewHistory,
+      loadReviewFile,
       createReviewsDirectory,
       createGitNote: mock(async () => true), // Always return success for this test
     }));
@@ -349,11 +357,12 @@ describe('Review metadata handling', () => {
 
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
-    const expectedFilename = 'review-42-2024-12-25T09-15-30-123Z.md';
+    const expectedFilename = 'review-42-2024-12-25T09-15-30-123Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const savedContent = await readFile(reviewFilePath, 'utf-8');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
 
-    expect(savedContent).toContain('**Timestamp:** 2024-12-25T09:15:30.123Z');
+    expect(parsedContent.metadata.timestamp).toBe('2024-12-25T09:15:30.123Z');
   });
 
   test('handles multiple changed files correctly', async () => {
@@ -376,13 +385,18 @@ describe('Review metadata handling', () => {
 
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
-    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const savedContent = await readFile(reviewFilePath, 'utf-8');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
 
-    expect(savedContent).toContain(
-      '**Changed Files:** src/auth.ts, src/validation.ts, tests/auth.test.ts, docs/api.md, package.json'
-    );
+    expect(parsedContent.metadata.changedFiles).toEqual([
+      'src/auth.ts',
+      'src/validation.ts',
+      'tests/auth.test.ts',
+      'docs/api.md',
+      'package.json',
+    ]);
   });
 
   test('preserves review content formatting', async () => {
@@ -419,17 +433,60 @@ if (!isValid(input)) {
 
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
-    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const savedContent = await readFile(reviewFilePath, 'utf-8');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
 
-    // Verify original formatting is preserved
-    expect(savedContent).toContain('# Code Review Summary');
-    expect(savedContent).toContain('## Issues Found');
-    expect(savedContent).toContain('- Security vulnerability in auth.ts line 42');
-    expect(savedContent).toContain('```typescript');
-    expect(savedContent).toContain('throw new ValidationError');
-    expect(savedContent).toContain('Overall rating: 8/10');
+    // Verify original formatting is preserved in the review content
+    expect(parsedContent.reviewContent).toContain('# Code Review Summary');
+    expect(parsedContent.reviewContent).toContain('## Issues Found');
+    expect(parsedContent.reviewContent).toContain('- Security vulnerability in auth.ts line 42');
+    expect(parsedContent.reviewContent).toContain('```typescript');
+    expect(parsedContent.reviewContent).toContain('throw new ValidationError');
+    expect(parsedContent.reviewContent).toContain('Overall rating: 8/10');
+  });
+});
+
+describe('loadReviewFile', () => {
+  test('loads full review file content including metadata and review content', async () => {
+    const reviewsDir = join(testDir, '.rmfilter', 'reviews');
+    const reviewContent = 'This is the full review content\nWith multiple lines';
+    const metadata: ReviewMetadata = {
+      planId: '42',
+      planTitle: 'Test Plan',
+      commitHash: 'abc123',
+      timestamp: new Date('2024-01-15T10:30:00Z'),
+      reviewer: 'test-user',
+      baseBranch: 'main',
+      changedFiles: ['src/test.ts'],
+    };
+
+    const filePath = await saveReviewResult(reviewsDir, reviewContent, metadata);
+    const loaded = await loadReviewFile(filePath);
+
+    expect(loaded).not.toBeNull();
+    expect(loaded?.metadata.planId).toBe('42');
+    expect(loaded?.metadata.planTitle).toBe('Test Plan');
+    expect(loaded?.metadata.commitHash).toBe('abc123');
+    expect(loaded?.metadata.timestamp).toEqual(new Date('2024-01-15T10:30:00Z'));
+    expect(loaded?.metadata.reviewer).toBe('test-user');
+    expect(loaded?.metadata.baseBranch).toBe('main');
+    expect(loaded?.metadata.changedFiles).toEqual(['src/test.ts']);
+    expect(loaded?.reviewContent).toBe(reviewContent);
+  });
+
+  test('returns null for non-existent file', async () => {
+    const nonExistentPath = join(testDir, 'does-not-exist.json');
+    const result = await loadReviewFile(nonExistentPath);
+    expect(result).toBeNull();
+  });
+
+  test('returns null for invalid JSON file', async () => {
+    const invalidJsonPath = join(testDir, 'invalid.json');
+    await writeFile(invalidJsonPath, 'This is not JSON', 'utf-8');
+    const result = await loadReviewFile(invalidJsonPath);
+    expect(result).toBeNull();
   });
 });
 
@@ -449,11 +506,12 @@ describe('Error handling and edge cases', () => {
 
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
-    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const savedContent = await readFile(reviewFilePath, 'utf-8');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
 
-    expect(savedContent).toContain(`**Plan Title:** ${longTitle}`);
+    expect(parsedContent.metadata.planTitle).toBe(longTitle);
   });
 
   test('handles special characters in commit hash', async () => {
@@ -470,11 +528,12 @@ describe('Error handling and edge cases', () => {
 
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
-    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const savedContent = await readFile(reviewFilePath, 'utf-8');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
 
-    expect(savedContent).toContain('**Commit Hash:** abc123-def456_xyz789');
+    expect(parsedContent.metadata.commitHash).toBe('abc123-def456_xyz789');
   });
 
   test('handles empty changed files array', async () => {
@@ -491,11 +550,12 @@ describe('Error handling and edge cases', () => {
 
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
-    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const savedContent = await readFile(reviewFilePath, 'utf-8');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
 
-    expect(savedContent).toContain('**Changed Files:** (none)');
+    expect(parsedContent.metadata.changedFiles).toEqual([]);
   });
 
   test('preserves unicode characters in review content', async () => {
@@ -513,11 +573,12 @@ describe('Error handling and edge cases', () => {
 
     await saveReviewResult(reviewsDir, reviewContent, metadata);
 
-    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.md';
+    const expectedFilename = 'review-1-2024-01-15T10-30-00-000Z.json';
     const reviewFilePath = join(reviewsDir, expectedFilename);
     const savedContent = await readFile(reviewFilePath, 'utf-8');
+    const parsedContent: ReviewFileContent = JSON.parse(savedContent);
 
-    expect(savedContent).toContain('✅ Good, ❌ Issues, ⚠️ Warnings');
-    expect(savedContent).toContain('café résumé naïve');
+    expect(parsedContent.reviewContent).toContain('✅ Good, ❌ Issues, ⚠️ Warnings');
+    expect(parsedContent.reviewContent).toContain('café résumé naïve');
   });
 });
