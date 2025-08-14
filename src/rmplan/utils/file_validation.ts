@@ -155,11 +155,11 @@ export function sanitizeProcessInput(content: string): string {
   // sequences that could break the gh command line parsing
   // The gh CLI with --body-file - reads from stdin, so it's already fairly safe,
   // but we still want to validate
-  
+
   // Remove any control characters except for standard whitespace and newlines
   // eslint-disable-next-line no-control-regex
   const sanitized = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-  
+
   return sanitized;
 }
 

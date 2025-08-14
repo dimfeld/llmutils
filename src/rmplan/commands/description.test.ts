@@ -507,7 +507,11 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       expect(mkdirSpy).toHaveBeenCalledWith(testDir, { recursive: true });
-      expect(writeFileSpy).toHaveBeenCalledWith(join(testDir, 'description.md'), 'Generated PR description content', 'utf-8');
+      expect(writeFileSpy).toHaveBeenCalledWith(
+        join(testDir, 'description.md'),
+        'Generated PR description content',
+        'utf-8'
+      );
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
@@ -734,7 +738,11 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // All actions should be performed
-      expect(writeFileSpy).toHaveBeenCalledWith(join(testDir, 'description.md'), 'Generated PR description content', 'utf-8');
+      expect(writeFileSpy).toHaveBeenCalledWith(
+        join(testDir, 'description.md'),
+        'Generated PR description content',
+        'utf-8'
+      );
       expect(clipboardWriteSpy).toHaveBeenCalledWith('Generated PR description content');
       expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--body-file', '-'], {
         stdin: 'Generated PR description content',
@@ -746,7 +754,7 @@ describe('handleDescriptionCommand', () => {
 
       // Mock interactive prompt to simulate user selections
       const clipboardWriteSpy = mock(() => Promise.resolve());
-      
+
       await moduleMocker.mock('@inquirer/prompts', () => ({
         checkbox: mock(async () => ['copy', 'save']),
         input: mock(async () => 'interactive-description.md'),
@@ -1374,9 +1382,9 @@ describe('handleDescriptionCommand', () => {
         },
       };
 
-      await expect(handleDescriptionCommand('test-plan.yml', options as any, command)).rejects.toThrow(
-        '--output-file must be a string path'
-      );
+      await expect(
+        handleDescriptionCommand('test-plan.yml', options as any, command)
+      ).rejects.toThrow('--output-file must be a string path');
     });
 
     test('validates output file paths for security', async () => {

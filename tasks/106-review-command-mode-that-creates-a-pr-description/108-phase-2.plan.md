@@ -13,7 +13,7 @@ parent: 106
 planGeneratedAt: 2025-08-14T01:21:36.414Z
 promptsGeneratedAt: 2025-08-14T03:19:37.519Z
 createdAt: 2025-08-14T00:55:08.903Z
-updatedAt: 2025-08-14T03:19:37.871Z
+updatedAt: 2025-08-14T03:51:17.102Z
 project:
   title: Implement a `description` command to generate PR descriptions from plan
     context

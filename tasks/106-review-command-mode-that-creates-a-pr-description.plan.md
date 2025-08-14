@@ -5,14 +5,14 @@ goal: To create a new `rmplan description` command that, similar to the `review`
   command, gathers context from a plan and code changes, but uses it to generate
   a comprehensive pull request description.
 id: 106
-status: in_progress
+status: done
 priority: medium
 container: true
 dependencies:
   - 107
   - 108
 createdAt: 2025-08-14T00:55:08.903Z
-updatedAt: 2025-08-14T01:47:04.330Z
+updatedAt: 2025-08-14T03:51:17.159Z
 tasks: []
 rmfilter:
   - src/rmplan/commands/review.ts

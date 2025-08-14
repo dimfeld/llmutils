@@ -171,7 +171,8 @@ const ISSUE_MARKERS = [
 ];
 
 // Pre-compiled pattern to exclude legend entries
-const LEGEND_EXCLUSION_PATTERN = /^[-*•]\s*\*\*(CRITICAL|MAJOR|MINOR|INFO)\*\*\s+(issues?|concerns?)\s*:/i;
+const LEGEND_EXCLUSION_PATTERN =
+  /^[-*•]\s*\*\*(CRITICAL|MAJOR|MINOR|INFO)\*\*\s+(issues?|concerns?)\s*:/i;
 
 // Pre-compiled file path patterns
 const FILE_EXT_PATTERN = '(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs)';

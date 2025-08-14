@@ -7,7 +7,12 @@ import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { validateInstructionsFilePath, validateOutputFilePath, sanitizeProcessInput, validateDescriptionOptions } from './file_validation.js';
+import {
+  validateInstructionsFilePath,
+  validateOutputFilePath,
+  sanitizeProcessInput,
+  validateDescriptionOptions,
+} from './file_validation.js';
 
 describe('validateInstructionsFilePath', () => {
   let tempDir: string;
@@ -379,7 +384,9 @@ describe('validateDescriptionOptions', () => {
 
   test('should reject invalid outputFile type', () => {
     const options = { outputFile: 123 };
-    expect(() => validateDescriptionOptions(options)).toThrow('--output-file must be a string path');
+    expect(() => validateDescriptionOptions(options)).toThrow(
+      '--output-file must be a string path'
+    );
   });
 
   test('should reject empty outputFile string', () => {
@@ -403,12 +410,12 @@ describe('validateDescriptionOptions', () => {
   });
 
   test('should handle multiple invalid options', () => {
-    const options = { 
+    const options = {
       outputFile: 123,
       copy: 'invalid',
-      createPr: null
+      createPr: null,
     };
-    
+
     // Should throw on the first validation error
     expect(() => validateDescriptionOptions(options)).toThrow();
   });

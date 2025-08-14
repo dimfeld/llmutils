@@ -703,7 +703,7 @@ CRITICAL: Standalone severity without proper formatting
           other: 0,
         },
         filesReviewed: 0,
-        },
+      },
       issues: [],
       rawOutput: '',
       recommendations: [],
@@ -741,7 +741,7 @@ CRITICAL: Standalone severity without proper formatting
           other: 0,
         },
         filesReviewed: 2,
-        },
+      },
       issues: [
         {
           id: '1',
@@ -803,7 +803,7 @@ CRITICAL: Standalone severity without proper formatting
           other: 0,
         },
         filesReviewed: 1,
-        },
+      },
       issues: [
         {
           id: '1',
@@ -905,7 +905,7 @@ INFO: Consider adding more detailed comments
           other: 0,
         },
         filesReviewed: 1,
-        },
+      },
       issues: [
         {
           id: '1',

@@ -15,7 +15,12 @@ import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getPrDescriptionPrompt } from '../executors/claude_code/agent_prompts.js';
 import { gatherPlanContext } from '../utils/context_gathering.js';
 import type { PlanContext } from '../utils/context_gathering.js';
-import { validateInstructionsFilePath, validateOutputFilePath, sanitizeProcessInput, validateDescriptionOptions } from '../utils/file_validation.js';
+import {
+  validateInstructionsFilePath,
+  validateOutputFilePath,
+  sanitizeProcessInput,
+  validateDescriptionOptions,
+} from '../utils/file_validation.js';
 
 /**
  * Options for the description command
@@ -201,7 +206,7 @@ async function createPullRequest(description: string): Promise<void> {
   const result = await spawnAndLogOutput(['gh', 'pr', 'create', '--body-file', '-'], {
     stdin: sanitizedDescription,
   });
-  
+
   if (result.exitCode === 0) {
     log(chalk.green('GitHub PR created successfully'));
   } else {
@@ -212,14 +217,18 @@ async function createPullRequest(description: string): Promise<void> {
 /**
  * Handles output actions for the generated description with comprehensive error handling
  */
-async function handleOutputActions(description: string, options: DescriptionOptions, gitRoot: string): Promise<void> {
+async function handleOutputActions(
+  description: string,
+  options: DescriptionOptions,
+  gitRoot: string
+): Promise<void> {
   // Check if any direct output flags are provided
   const hasDirectOutputFlags = options.outputFile || options.copy || options.createPr;
 
   if (hasDirectOutputFlags) {
     // Collect all errors to handle partial failures gracefully
     const errors: string[] = [];
-    
+
     // Handle file output
     if (options.outputFile) {
       try {
@@ -252,7 +261,7 @@ async function handleOutputActions(description: string, options: DescriptionOpti
 
     // If any errors occurred, throw a comprehensive error
     if (errors.length > 0) {
-      throw new Error(`Output operations failed:\n${errors.map(e => `  - ${e}`).join('\n')}`);
+      throw new Error(`Output operations failed:\n${errors.map((e) => `  - ${e}`).join('\n')}`);
     }
   } else {
     // Show interactive prompt when no output flags are provided
@@ -315,12 +324,17 @@ async function handleInteractiveOutput(description: string, gitRoot: string): Pr
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        
+
         // For interactive mode, log errors but continue with other actions
-        const actionName = action === 'copy' ? 'copy to clipboard' : 
-                          action === 'save' ? 'save file' : 
-                          action === 'pr' ? 'create GitHub PR' : action;
-        
+        const actionName =
+          action === 'copy'
+            ? 'copy to clipboard'
+            : action === 'save'
+              ? 'save file'
+              : action === 'pr'
+                ? 'create GitHub PR'
+                : action;
+
         const formattedError = `Failed to ${actionName}: ${errorMessage}`;
         errors.push(formattedError);
         log(chalk.red(formattedError));
@@ -334,7 +348,6 @@ async function handleInteractiveOutput(description: string, gitRoot: string): Pr
     if (errors.length > 0) {
       log(chalk.red(`\nFailed actions: ${errors.length}`));
     }
-    
   } catch (err) {
     // Handle prompt cancellation and other interactive errors gracefully
     if (err instanceof Error && err.name === 'ExitPromptError') {
@@ -356,7 +369,7 @@ export async function handleDescriptionCommand(
 ) {
   // Validate CLI options early to prevent runtime errors
   validateDescriptionOptions(options);
-  
+
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
