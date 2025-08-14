@@ -98,11 +98,7 @@ export function buildPrDescriptionPrompt(
       }
     });
 
-    childrenContext.push(
-      `*Note: This PR builds upon the completed child plans above.*`,
-      ``,
-      ``
-    );
+    childrenContext.push(`*Note: This PR builds upon the completed child plans above.*`, ``, ``);
   }
 
   // Build plan context section
@@ -163,7 +159,10 @@ export function buildPrDescriptionPrompt(
   ].join('\n');
 
   // Use the PR description agent template with our context and custom instructions
-  const prDescriptionPromptDefinition = getPrDescriptionPrompt(contextContent, customInstructions || '');
+  const prDescriptionPromptDefinition = getPrDescriptionPrompt(
+    contextContent,
+    customInstructions || ''
+  );
 
   return prDescriptionPromptDefinition.prompt;
 }
@@ -172,8 +171,8 @@ export function buildPrDescriptionPrompt(
  * Main handler for the rmplan description command
  */
 export async function handleDescriptionCommand(
-  planFile: string, 
-  options: DescriptionOptions, 
+  planFile: string,
+  options: DescriptionOptions,
   command: DescriptionCommand
 ) {
   const globalOpts = command.parent.opts();
@@ -211,17 +210,21 @@ export async function handleDescriptionCommand(
       log(chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      
+
       // Different error handling based on error type
       if (err instanceof Error && err.message.includes('outside the allowed directory')) {
         // Security error - fail fast
         throw new Error(`Security error: ${errorMessage}`);
       } else if (err instanceof Error && (err as any).code === 'ENOENT') {
         // File not found - fail fast since user explicitly provided the file
-        throw new Error(`Instructions file not found: ${options.instructionsFile}. Please check the file path.`);
+        throw new Error(
+          `Instructions file not found: ${options.instructionsFile}. Please check the file path.`
+        );
       } else if (err instanceof Error && (err as any).code === 'EACCES') {
-        // Permission error - fail fast  
-        throw new Error(`Cannot read instructions file: ${options.instructionsFile}. Permission denied.`);
+        // Permission error - fail fast
+        throw new Error(
+          `Cannot read instructions file: ${options.instructionsFile}. Permission denied.`
+        );
       } else {
         // Other errors - warn but continue, with clear indication that instructions will be empty
         log(

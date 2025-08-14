@@ -183,12 +183,12 @@ describe('validateInstructionsFilePath', () => {
     test('should work with non-temp git root and detect dangerous paths', () => {
       // Use a non-temp directory to test dangerous path detection
       const fakeGitRoot = '/fake/project';
-      
+
       // These should fail because they try to access system paths
       expect(() => validateInstructionsFilePath('/etc/passwd', fakeGitRoot)).toThrow(
         'Instructions file path is outside the allowed directory'
       );
-      
+
       expect(() => validateInstructionsFilePath('/usr/bin/test', fakeGitRoot)).toThrow(
         'Instructions file path is outside the allowed directory'
       );

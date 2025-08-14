@@ -542,7 +542,9 @@ program
 
 program
   .command('description <planFile>')
-  .description('Generate a comprehensive pull request description from plan context and code changes')
+  .description(
+    'Generate a comprehensive pull request description from plan context and code changes'
+  )
   .option(`-x, --executor <name>`, 'The executor to use for description generation')
   .addHelpText('after', `Available executors: ${executorNames}`)
   .option(

@@ -220,9 +220,9 @@ describe('gatherPlanContext', () => {
     const options = {};
     const globalOpts = { config: tempDir };
 
-    await expect(gatherPlanContext(planFile, options, globalOpts, validationMockDeps)).rejects.toThrow(
-      /goal.*expected string, received undefined/
-    );
+    await expect(
+      gatherPlanContext(planFile, options, globalOpts, validationMockDeps)
+    ).rejects.toThrow(/goal.*expected string, received undefined/);
   });
 
   test('should validate task structure', async () => {
@@ -250,9 +250,9 @@ describe('gatherPlanContext', () => {
     const options = {};
     const globalOpts = { config: tempDir };
 
-    await expect(gatherPlanContext(planFile, options, globalOpts, validationMockDeps)).rejects.toThrow(
-      /tasks\.0\.title.*expected string, received undefined/
-    );
+    await expect(
+      gatherPlanContext(planFile, options, globalOpts, validationMockDeps)
+    ).rejects.toThrow(/tasks\.0\.title.*expected string, received undefined/);
   });
 
   test('should handle hierarchy errors gracefully', async () => {

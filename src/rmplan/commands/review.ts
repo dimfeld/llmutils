@@ -538,7 +538,6 @@ export function sanitizeBranchName(branch: string): string {
   return branch;
 }
 
-
 /**
  * Validates and sanitizes focus areas to prevent injection attacks
  */

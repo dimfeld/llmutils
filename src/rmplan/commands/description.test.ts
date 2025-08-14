@@ -31,11 +31,9 @@ const createMockContext = (overrides: Partial<PlanContext> = {}): PlanContext =>
       {
         title: 'Test task',
         description: 'A test task',
-        steps: [
-          { prompt: 'Do something', done: false }
-        ]
-      }
-    ]
+        steps: [{ prompt: 'Do something', done: false }],
+      },
+    ],
   } as PlanSchema,
   parentChain: [],
   completedChildren: [],
@@ -43,19 +41,19 @@ const createMockContext = (overrides: Partial<PlanContext> = {}): PlanContext =>
     hasChanges: true,
     changedFiles: ['test.ts', 'another.ts'],
     baseBranch: 'main',
-    diffContent: 'mock diff content'
+    diffContent: 'mock diff content',
   },
   noChangesDetected: false,
-  ...overrides
+  ...overrides,
 });
 
 describe('handleDescriptionCommand', () => {
   test('successfully generates a PR description', async () => {
     const mockContext = createMockContext();
-    
+
     // Mock gatherPlanContext
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => mockContext
+      gatherPlanContext: async () => mockContext,
     }));
 
     // Mock config loader
@@ -81,8 +79,8 @@ describe('handleDescriptionCommand', () => {
       getPrDescriptionPrompt: () => ({
         name: 'pr-description',
         description: 'Test prompt',
-        prompt: 'Test prompt content'
-      })
+        prompt: 'Test prompt content',
+      }),
     }));
 
     // Mock log function
@@ -111,10 +109,10 @@ describe('handleDescriptionCommand', () => {
 
   test('handles dry-run mode by printing prompt without execution', async () => {
     const mockContext = createMockContext();
-    
+
     // Mock gatherPlanContext
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => mockContext
+      gatherPlanContext: async () => mockContext,
     }));
 
     // Mock config loader
@@ -140,8 +138,8 @@ describe('handleDescriptionCommand', () => {
       getPrDescriptionPrompt: () => ({
         name: 'pr-description',
         description: 'Test prompt',
-        prompt: 'Test prompt content for dry run'
-      })
+        prompt: 'Test prompt content for dry run',
+      }),
     }));
 
     // Mock log function
@@ -161,7 +159,7 @@ describe('handleDescriptionCommand', () => {
 
     // Executor should not be called in dry-run mode
     expect(mockExecutor.execute).not.toHaveBeenCalled();
-    
+
     // Should log the prompt content
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
     const allOutput = logCalls.join('\n');
@@ -176,13 +174,13 @@ describe('handleDescriptionCommand', () => {
         hasChanges: false,
         changedFiles: [],
         baseBranch: 'main',
-        diffContent: ''
-      }
+        diffContent: '',
+      },
     });
-    
+
     // Mock gatherPlanContext
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => mockContext
+      gatherPlanContext: async () => mockContext,
     }));
 
     // Mock config loader
@@ -215,10 +213,10 @@ describe('handleDescriptionCommand', () => {
 
   test('handles custom instructions from CLI options', async () => {
     const mockContext = createMockContext();
-    
+
     // Mock gatherPlanContext
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => mockContext
+      gatherPlanContext: async () => mockContext,
     }));
 
     // Mock config loader
@@ -243,11 +241,11 @@ describe('handleDescriptionCommand', () => {
     const promptSpy = mock(() => ({
       name: 'pr-description',
       description: 'Test prompt',
-      prompt: 'Test prompt content'
+      prompt: 'Test prompt content',
     }));
 
     await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getPrDescriptionPrompt: promptSpy
+      getPrDescriptionPrompt: promptSpy,
     }));
 
     // Mock log function
@@ -257,7 +255,7 @@ describe('handleDescriptionCommand', () => {
     }));
 
     const options = {
-      instructions: 'Focus on performance improvements'
+      instructions: 'Focus on performance improvements',
     };
     const command = {
       parent: {
@@ -268,18 +266,15 @@ describe('handleDescriptionCommand', () => {
     await handleDescriptionCommand('test-plan.yml', options, command);
 
     // Verify prompt was called with custom instructions
-    expect(promptSpy).toHaveBeenCalledWith(
-      expect.any(String),
-      'Focus on performance improvements'
-    );
+    expect(promptSpy).toHaveBeenCalledWith(expect.any(String), 'Focus on performance improvements');
   });
 
   test('handles different executor configurations', async () => {
     const mockContext = createMockContext();
-    
+
     // Mock gatherPlanContext
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => mockContext
+      gatherPlanContext: async () => mockContext,
     }));
 
     // Mock config loader
@@ -307,8 +302,8 @@ describe('handleDescriptionCommand', () => {
       getPrDescriptionPrompt: () => ({
         name: 'pr-description',
         description: 'Test prompt',
-        prompt: 'Test prompt content'
-      })
+        prompt: 'Test prompt content',
+      }),
     }));
 
     // Mock log function
@@ -319,7 +314,7 @@ describe('handleDescriptionCommand', () => {
 
     const options = {
       executor: 'claude-code',
-      model: 'gpt-4'
+      model: 'gpt-4',
     };
     const command = {
       parent: {
@@ -334,7 +329,7 @@ describe('handleDescriptionCommand', () => {
       'claude-code', // executor name from options
       expect.objectContaining({
         model: 'gpt-4',
-        interactive: false
+        interactive: false,
       }),
       expect.any(Object) // config
     );
@@ -342,10 +337,10 @@ describe('handleDescriptionCommand', () => {
 
   test('handles execution errors gracefully', async () => {
     const mockContext = createMockContext();
-    
+
     // Mock gatherPlanContext
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => mockContext
+      gatherPlanContext: async () => mockContext,
     }));
 
     // Mock config loader
@@ -373,8 +368,8 @@ describe('handleDescriptionCommand', () => {
       getPrDescriptionPrompt: () => ({
         name: 'pr-description',
         description: 'Test prompt',
-        prompt: 'Test prompt content'
-      })
+        prompt: 'Test prompt content',
+      }),
     }));
 
     // Mock log function
@@ -390,16 +385,17 @@ describe('handleDescriptionCommand', () => {
       },
     };
 
-    await expect(handleDescriptionCommand('test-plan.yml', options, command))
-      .rejects.toThrow('Description generation failed: Execution failed');
+    await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+      'Description generation failed: Execution failed'
+    );
   });
 
   test('validates plan has required fields', async () => {
     // Mock gatherPlanContext to throw an error for invalid plan
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
       gatherPlanContext: async () => {
-        throw new Error("Invalid plan file invalid-plan.yml:\n  - goal: Required");
-      }
+        throw new Error('Invalid plan file invalid-plan.yml:\n  - goal: Required');
+      },
     }));
 
     // Mock config loader
@@ -417,7 +413,8 @@ describe('handleDescriptionCommand', () => {
     };
 
     // This should be caught by gatherPlanContext's validation
-    await expect(handleDescriptionCommand('invalid-plan.yml', options, command))
-      .rejects.toThrow("Invalid plan file invalid-plan.yml:\n  - goal: Required");
+    await expect(handleDescriptionCommand('invalid-plan.yml', options, command)).rejects.toThrow(
+      'Invalid plan file invalid-plan.yml:\n  - goal: Required'
+    );
   });
 });

@@ -5,14 +5,14 @@ goal: To implement the foundational `description` command that generates a PR
   description and refactor the shared context-gathering logic from the `review`
   command.
 id: 107
-status: in_progress
+status: done
 priority: high
 dependencies: []
 parent: 106
 planGeneratedAt: 2025-08-14T01:21:36.414Z
 promptsGeneratedAt: 2025-08-14T01:47:03.856Z
 createdAt: 2025-08-14T00:55:08.903Z
-updatedAt: 2025-08-14T01:47:04.277Z
+updatedAt: 2025-08-14T02:46:58.475Z
 project:
   title: Implement a `description` command to generate PR descriptions from plan
     context

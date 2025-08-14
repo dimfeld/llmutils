@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve, relative } from 'node:path';
 /**
  * Validates that a file path is safe to read and within allowed boundaries
  * Prevents path traversal attacks and ensures the path stays within the git root
- * 
+ *
  * @param filePath - The file path to validate (can be relative or absolute)
  * @param gitRoot - The git root directory to constrain paths within
  * @returns The resolved absolute path if validation passes
@@ -39,20 +39,21 @@ export function validateInstructionsFilePath(filePath: string, gitRoot: string):
   // Only apply this check if the path is actually outside the git root or attempts to access system directories
   const normalizedPath = resolvedPath.toLowerCase();
   const normalizedGitRoot = resolvedGitRoot.toLowerCase();
-  
+
   // Skip dangerous path check if we're within a temp directory or git root is already safe
-  const isTempPath = normalizedPath.includes('/tmp/') || 
-                     normalizedPath.includes('/var/folders/') || // macOS temp
-                     normalizedPath.includes('\\temp\\') ||
-                     normalizedGitRoot.includes('/tmp/') ||
-                     normalizedGitRoot.includes('/var/folders/');
-  
+  const isTempPath =
+    normalizedPath.includes('/tmp/') ||
+    normalizedPath.includes('/var/folders/') || // macOS temp
+    normalizedPath.includes('\\temp\\') ||
+    normalizedGitRoot.includes('/tmp/') ||
+    normalizedGitRoot.includes('/var/folders/');
+
   if (!isTempPath) {
     const dangerousPaths = [
       '/etc/',
       '/usr/',
-      '/var/log/',    // More specific - /var itself might contain temp dirs
-      '/var/www/',    // More specific
+      '/var/log/', // More specific - /var itself might contain temp dirs
+      '/var/www/', // More specific
       '/home/',
       '/root/',
       'c:\\windows\\',
