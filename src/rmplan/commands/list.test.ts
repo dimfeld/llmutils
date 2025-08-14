@@ -334,6 +334,10 @@ describe('handleListCommand', () => {
   });
 
   test('filters by ready status', async () => {
+    // Clear mocks (but don't clear cache - let beforeEach handle that)
+    mockTable.mockClear();
+    mockLog.mockClear();
+
     // Create a simple pending plan with no dependencies (so it's ready)
     const plan = {
       id: 1,
@@ -348,9 +352,8 @@ describe('handleListCommand', () => {
           description: 'Do task',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step',
-              status: 'pending',
+              done: false,
             },
           ],
         },

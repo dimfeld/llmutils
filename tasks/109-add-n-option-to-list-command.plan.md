@@ -4,7 +4,7 @@ title: Add -n option to list command
 goal: To add the `-n` option to the `list` command, implement the
   result-limiting logic, and verify its correctness with unit tests.
 id: 109
-status: in_progress
+status: done
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-08-14T01:24:13.332Z
@@ -13,6 +13,7 @@ createdAt: 2025-08-14T01:22:01.173Z
 updatedAt: 2025-08-14T01:27:08.852Z
 tasks:
   - title: Add the `-n` option to the `list` command definition
+    done: true
     description: >
       Add a new option `-n, --number <count>` to the `list` command in
       `src/rmplan/rmplan.ts`. 
@@ -39,8 +40,9 @@ tasks:
 
           This follows the existing pattern where intArg is passed as the third
           argument to handle integer parsing.
-        done: false
+        done: true
   - title: Implement the result limiting logic in the `handleListCommand` function
+    done: true
     description: >
       Modify the `handleListCommand` function in `src/rmplan/commands/list.ts`
       to respect the new `number` option.
@@ -69,7 +71,7 @@ tasks:
           last N items using 
 
           `planArray = planArray.slice(-options.number)`.
-        done: false
+        done: true
       - prompt: >
           Update the final status message (around line 317) to indicate when
           results are limited.
@@ -78,8 +80,9 @@ tasks:
           like 
 
           "Showing 5 of 12 plan(s) (limited to 5)" when the limit is applied.
-        done: false
+        done: true
   - title: Add unit tests for the new `-n` option
+    done: true
     description: >
       Update the test file `src/rmplan/commands/list.test.ts` to include
       comprehensive tests for the new functionality.
@@ -108,7 +111,7 @@ tasks:
           data rows) and that
 
           the status message indicates "Showing 5 of 10 plan(s)".
-        done: false
+        done: true
       - prompt: >
           Add a test for the edge case where `-n` is larger than the number of
           available plans.
@@ -117,7 +120,7 @@ tasks:
           shown and the message
 
           correctly indicates "Showing 3 of 3 plan(s)".
-        done: false
+        done: true
       - prompt: >
           Add a test that combines the `-n` option with status filtering.
 
@@ -126,7 +129,7 @@ tasks:
 
           Verify the limit is applied after filtering and the correct plans are
           shown.
-        done: false
+        done: true
       - prompt: >
           Add a test that verifies the `-n` option works correctly with sorting.
 
@@ -135,7 +138,7 @@ tasks:
 
           Verify that the last 3 items after sorting are displayed (which should
           be the 3 highest IDs).
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/commands/list.ts
   - src/rmplan/rmplan.ts
