@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'bun:test';
-import { getImplementerPrompt, getTesterPrompt, getReviewerPrompt, getPrDescriptionPrompt } from './agent_prompts.ts';
+import {
+  getImplementerPrompt,
+  getTesterPrompt,
+  getReviewerPrompt,
+  getPrDescriptionPrompt,
+} from './agent_prompts.ts';
 
 describe('Agent Prompts', () => {
   const sampleSingleTask = `## Current Task: Implement user authentication
@@ -464,7 +469,8 @@ The current tasks to implement are:
 
       expect(result).toMatchObject({
         name: 'pr-description',
-        description: 'Generates comprehensive pull request descriptions from plan context and code changes',
+        description:
+          'Generates comprehensive pull request descriptions from plan context and code changes',
         prompt: expect.any(String),
       });
     });

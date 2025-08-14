@@ -13,8 +13,14 @@ interface MockDependencies {
   readAllPlans: (config: string) => Promise<{ plans: Map<number, PlanWithFilename> }>;
   generateDiffForReview: (gitRoot: string, options?: any) => Promise<DiffResult>;
   getGitRoot: () => Promise<string>;
-  getParentChain: (plan: PlanWithFilename, allPlans: Map<number, PlanWithFilename>) => PlanWithFilename[];
-  getCompletedChildren: (planId: number, allPlans: Map<number, PlanWithFilename>) => PlanWithFilename[];
+  getParentChain: (
+    plan: PlanWithFilename,
+    allPlans: Map<number, PlanWithFilename>
+  ) => PlanWithFilename[];
+  getCompletedChildren: (
+    planId: number,
+    allPlans: Map<number, PlanWithFilename>
+  ) => PlanWithFilename[];
   getIncrementalSummary: (gitRoot: string, planId: string, opts: any[]) => Promise<any>;
 }
 
@@ -30,22 +36,25 @@ describe('gatherPlanContext', () => {
     planFile = join(tempDir, 'test-plan.md');
 
     // Create a basic plan file
-    await writeFile(planFile, JSON.stringify({
-      id: 123,
-      title: 'Test Plan',
-      goal: 'Test plan goal',
-      details: 'Test plan details',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'First task description',
-          steps: [
-            { prompt: 'Step 1', done: true },
-            { prompt: 'Step 2', done: false }
-          ]
-        }
-      ]
-    }));
+    await writeFile(
+      planFile,
+      JSON.stringify({
+        id: 123,
+        title: 'Test Plan',
+        goal: 'Test plan goal',
+        details: 'Test plan details',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task description',
+            steps: [
+              { prompt: 'Step 1', done: true },
+              { prompt: 'Step 2', done: false },
+            ],
+          },
+        ],
+      })
+    );
 
     // Setup mock dependencies
     mockDeps = {
@@ -56,12 +65,12 @@ describe('gatherPlanContext', () => {
         hasChanges: true,
         changedFiles: ['src/test.ts', 'src/another.ts'],
         baseBranch: 'main',
-        diffContent: 'mock diff content'
+        diffContent: 'mock diff content',
       }),
       getGitRoot: async () => gitRoot,
       getParentChain: () => [],
       getCompletedChildren: () => [],
-      getIncrementalSummary: async () => null
+      getIncrementalSummary: async () => null,
     };
   });
 
@@ -91,7 +100,7 @@ describe('gatherPlanContext', () => {
       id: 100,
       title: 'Parent Plan',
       goal: 'Parent goal',
-      filename: 'parent.md'
+      filename: 'parent.md',
     };
 
     const childPlan = {
@@ -102,9 +111,9 @@ describe('gatherPlanContext', () => {
       tasks: [
         {
           title: 'Child Task',
-          description: 'Child task description'
-        }
-      ]
+          description: 'Child task description',
+        },
+      ],
     };
 
     // Update plan file to have a parent
@@ -134,7 +143,7 @@ describe('gatherPlanContext', () => {
       goal: 'Child goal',
       status: 'done',
       parent: 123,
-      filename: 'child.md'
+      filename: 'child.md',
     };
 
     const allPlans = new Map<number, PlanWithFilename>();
@@ -160,7 +169,7 @@ describe('gatherPlanContext', () => {
       lastReviewDate: new Date('2023-01-01'),
       totalFiles: 2,
       newFiles: ['new.ts'],
-      modifiedFiles: ['modified.ts']
+      modifiedFiles: ['modified.ts'],
     };
 
     mockDeps.getIncrementalSummary = async () => incrementalSummary;
@@ -180,7 +189,7 @@ describe('gatherPlanContext', () => {
       hasChanges: false,
       changedFiles: [],
       baseBranch: 'main',
-      diffContent: ''
+      diffContent: '',
     });
 
     const options = {};
@@ -196,7 +205,7 @@ describe('gatherPlanContext', () => {
     // Create plan with missing goal
     const invalidPlan = {
       id: 123,
-      title: 'Test Plan'
+      title: 'Test Plan',
       // missing goal
     };
     await writeFile(planFile, JSON.stringify(invalidPlan));
@@ -204,8 +213,9 @@ describe('gatherPlanContext', () => {
     const options = {};
     const globalOpts = { config: tempDir };
 
-    await expect(gatherPlanContext(planFile, options, globalOpts, mockDeps))
-      .rejects.toThrow("Plan file is missing required 'goal' field");
+    await expect(gatherPlanContext(planFile, options, globalOpts, mockDeps)).rejects.toThrow(
+      "Plan file is missing required 'goal' field"
+    );
   });
 
   test('should validate task structure', async () => {
@@ -217,23 +227,26 @@ describe('gatherPlanContext', () => {
       tasks: [
         {
           // missing title
-          description: 'Task description'
-        }
-      ]
+          description: 'Task description',
+        },
+      ],
     };
     await writeFile(planFile, JSON.stringify(planWithInvalidTask));
 
     const options = {};
     const globalOpts = { config: tempDir };
 
-    await expect(gatherPlanContext(planFile, options, globalOpts, mockDeps))
-      .rejects.toThrow("Task 1 is missing required 'title' field");
+    await expect(gatherPlanContext(planFile, options, globalOpts, mockDeps)).rejects.toThrow(
+      "Task 1 is missing required 'title' field"
+    );
   });
 
   test('should handle hierarchy errors gracefully', async () => {
     const allPlans = new Map<number, PlanWithFilename>();
-    
-    mockDeps.readAllPlans = async () => { throw new Error('Failed to read plans'); };
+
+    mockDeps.readAllPlans = async () => {
+      throw new Error('Failed to read plans');
+    };
 
     const options = {};
     const globalOpts = { config: tempDir };
@@ -251,7 +264,7 @@ describe('gatherPlanContext', () => {
       lastReviewDate: new Date('2023-01-01'),
       totalFiles: 0,
       newFiles: [],
-      modifiedFiles: []
+      modifiedFiles: [],
     };
 
     mockDeps.getIncrementalSummary = async () => incrementalSummary;
@@ -273,8 +286,8 @@ describe('gatherPlanContext', () => {
         hasChanges: true,
         changedFiles: ['custom-file.ts'],
         baseBranch: 'feature-branch',
-        diffContent: 'custom diff'
-      })
+        diffContent: 'custom diff',
+      }),
     };
 
     const options = {};
@@ -288,21 +301,21 @@ describe('gatherPlanContext', () => {
 
   test('should pass incremental options correctly to diff generation', async () => {
     let capturedOptions: any;
-    
+
     mockDeps.generateDiffForReview = async (gitRoot: string, options?: any) => {
       capturedOptions = options;
       return {
         hasChanges: true,
         changedFiles: ['test.ts'],
         baseBranch: 'main',
-        diffContent: 'diff'
+        diffContent: 'diff',
       };
     };
 
-    const options = { 
-      incremental: true, 
-      sinceLastReview: true, 
-      since: 'abc123' 
+    const options = {
+      incremental: true,
+      sinceLastReview: true,
+      since: 'abc123',
     };
     const globalOpts = { config: tempDir };
 

@@ -168,9 +168,10 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
   // Check if no changes were detected and early return for review
   if (context.noChangesDetected) {
-    const nothingMessage = options.incremental || options.sinceLastReview
-      ? 'No changes detected since last review. Nothing new to review.'
-      : 'No changes detected compared to trunk branch. Nothing to review.';
+    const nothingMessage =
+      options.incremental || options.sinceLastReview
+        ? 'No changes detected since last review. Nothing new to review.'
+        : 'No changes detected compared to trunk branch. Nothing to review.';
     log(chalk.yellow(nothingMessage));
     return;
   }
@@ -605,7 +606,6 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
 
   return sanitizedAreas;
 }
-
 
 export function buildReviewPrompt(
   planData: PlanSchema,

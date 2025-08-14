@@ -70,7 +70,7 @@ const defaultDependencies: ContextGatheringDependencies = {
 /**
  * Gathers comprehensive context for a plan including hierarchy and diff information.
  * This function encapsulates the context-gathering logic previously embedded in handleReviewCommand.
- * 
+ *
  * @param planFile - Plan file path or ID
  * @param options - Command options including incremental review settings
  * @param globalOpts - Global CLI options including config path
@@ -193,7 +193,7 @@ export async function gatherPlanContext(
   // Generate incremental summary if applicable
   let incrementalSummary = null;
   let noChangesDetected = false;
-  
+
   if (incrementalOptions.incremental && planData.id) {
     incrementalSummary = await deps.getIncrementalSummary(gitRoot, planData.id.toString(), []);
     if (incrementalSummary) {

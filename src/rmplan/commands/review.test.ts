@@ -1492,7 +1492,7 @@ tasks:
       };
 
       await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        "goal: Invalid input: expected string, received undefined"
+        'goal: Invalid input: expected string, received undefined'
       );
     });
 
@@ -1568,7 +1568,7 @@ tasks:
       };
 
       await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        "tasks.0.title: Invalid input: expected string, received undefined"
+        'tasks.0.title: Invalid input: expected string, received undefined'
       );
     });
 
@@ -1609,7 +1609,7 @@ tasks:
       };
 
       await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        "tasks.0.description: Invalid input: expected string, received undefined"
+        'tasks.0.description: Invalid input: expected string, received undefined'
       );
     });
 
@@ -1618,7 +1618,7 @@ tasks:
 
       await moduleMocker.mock('../utils/context_gathering.js', () => ({
         gatherPlanContext: async () => {
-          throw new Error("tasks.1.title: Invalid input: expected string, received undefined");
+          throw new Error('tasks.1.title: Invalid input: expected string, received undefined');
         },
       }));
 
@@ -1633,7 +1633,7 @@ tasks:
       };
 
       await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
-        "tasks.1.title: Invalid input: expected string, received undefined"
+        'tasks.1.title: Invalid input: expected string, received undefined'
       );
     });
   });

@@ -260,7 +260,8 @@ export function getPrDescriptionPrompt(
 
   return {
     name: 'pr-description',
-    description: 'Generates comprehensive pull request descriptions from plan context and code changes',
+    description:
+      'Generates comprehensive pull request descriptions from plan context and code changes',
     prompt: `You are a pull request description generator that creates comprehensive, professional descriptions for code changes.
 
 ## Context and Plan Details
