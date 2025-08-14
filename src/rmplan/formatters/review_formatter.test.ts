@@ -179,7 +179,6 @@ describe('generateReviewSummary', () => {
         description: 'test',
       },
     ];
-    expect(generateReviewSummary(criticalIssues, 1).overallRating).toBe('poor');
 
     // Poor rating with many major issues
     const manyMajorIssues: ReviewIssue[] = Array.from({ length: 6 }, (_, i) => ({
@@ -189,7 +188,6 @@ describe('generateReviewSummary', () => {
       title: 'Major',
       description: 'test',
     }));
-    expect(generateReviewSummary(manyMajorIssues, 1).overallRating).toBe('poor');
 
     // Fair rating with some major issues
     const someMajorIssues: ReviewIssue[] = Array.from({ length: 3 }, (_, i) => ({
@@ -199,16 +197,11 @@ describe('generateReviewSummary', () => {
       title: 'Major',
       description: 'test',
     }));
-    expect(generateReviewSummary(someMajorIssues, 1).overallRating).toBe('fair');
 
     // Good rating with one major issue
     const oneMajorIssue: ReviewIssue[] = [
       { id: '1', severity: 'major', category: 'bug', title: 'Major', description: 'test' },
     ];
-    expect(generateReviewSummary(oneMajorIssue, 1).overallRating).toBe('good');
-
-    // Excellent rating with no issues
-    expect(generateReviewSummary([], 1).overallRating).toBe('excellent');
   });
 });
 
@@ -235,7 +228,6 @@ describe('JsonFormatter', () => {
         other: 0,
       },
       filesReviewed: 2,
-      overallRating: 'poor',
     },
     issues: [
       {
@@ -324,7 +316,6 @@ describe('MarkdownFormatter', () => {
         other: 0,
       },
       filesReviewed: 1,
-      overallRating: 'poor',
     },
     issues: [
       {
@@ -351,7 +342,6 @@ describe('MarkdownFormatter', () => {
     expect(output).toContain('**Plan:** test-plan - Test Plan');
     expect(output).toContain('**Base Branch:** main');
     expect(output).toContain('## Summary');
-    expect(output).toContain('- **Overall Rating:** POOR');
     expect(output).toContain('- **Total Issues:** 1');
   });
 
@@ -414,7 +404,6 @@ describe('TerminalFormatter', () => {
         other: 0,
       },
       filesReviewed: 1,
-      overallRating: 'poor',
     },
     issues: [
       {
@@ -440,7 +429,6 @@ describe('TerminalFormatter', () => {
     expect(output).toContain('Plan: test-plan - Test Plan');
     expect(output).toContain('Base Branch: main');
     expect(output).toContain('📊 Summary');
-    expect(output).toContain('Overall Rating: POOR');
     expect(output).toContain('Total Issues: 1');
   });
 
@@ -723,8 +711,7 @@ CRITICAL: Standalone severity without proper formatting
           other: 0,
         },
         filesReviewed: 0,
-        overallRating: 'excellent',
-      },
+        },
       issues: [],
       rawOutput: '',
       recommendations: [],
@@ -735,7 +722,6 @@ CRITICAL: Standalone severity without proper formatting
     const output = formatter.format(minimalResult, { verbosity: 'normal', colorEnabled: false });
 
     expect(output).toContain('📋 Code Review Report');
-    expect(output).toContain('Overall Rating: EXCELLENT');
     expect(output).toContain('Total Issues: 0');
     expect(output).not.toContain('🔍 Issues Found');
   });
@@ -763,8 +749,7 @@ CRITICAL: Standalone severity without proper formatting
           other: 0,
         },
         filesReviewed: 2,
-        overallRating: 'poor',
-      },
+        },
       issues: [
         {
           id: '1',
@@ -827,8 +812,7 @@ CRITICAL: Standalone severity without proper formatting
           other: 0,
         },
         filesReviewed: 1,
-        overallRating: 'poor',
-      },
+        },
       issues: [
         {
           id: '1',
@@ -885,7 +869,6 @@ CRITICAL: Standalone severity without proper formatting
 
     expect(summary.totalIssues).toBe(15);
     expect(summary.minorCount).toBe(15);
-    expect(summary.overallRating).toBe('good'); // > 10 minor issues
     expect(summary.categoryCounts.style).toBe(15);
   });
 
@@ -933,8 +916,7 @@ INFO: Consider adding more detailed comments
           other: 0,
         },
         filesReviewed: 1,
-        overallRating: 'poor',
-      },
+        },
       issues: [
         {
           id: '1',

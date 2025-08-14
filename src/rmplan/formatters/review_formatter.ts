@@ -34,7 +34,6 @@ export interface ReviewSummary {
   infoCount: number;
   categoryCounts: Record<ReviewCategory, number>;
   filesReviewed: number;
-  overallRating: 'excellent' | 'good' | 'fair' | 'poor';
 }
 
 export interface ReviewResult {
@@ -172,6 +171,9 @@ const ISSUE_MARKERS = [
   /^(CRITICAL|MAJOR|MINOR|INFO):\s*(.+)/i, // Severity prefixes
 ];
 
+// Pre-compiled pattern to exclude legend entries
+const LEGEND_EXCLUSION_PATTERN = /^[-*•]\s*\*\*(CRITICAL|MAJOR|MINOR|INFO)\*\*\s+(issues?|concerns?)\s*:/i;
+
 // Pre-compiled file path patterns
 const FILE_EXT_PATTERN = '(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs)';
 const PATH_COMPONENT_PATTERN = '[a-zA-Z0-9._/-]{1,100}'; // Limited length to prevent ReDoS
@@ -228,6 +230,9 @@ export function parseReviewerOutput(rawOutput: string): {
     const line = lines[i].trim();
     if (!line || line.length > 500) continue; // Skip empty or very long lines
 
+    // Skip legend entries that match the exclusion pattern
+    if (LEGEND_EXCLUSION_PATTERN.test(line)) continue;
+
     // Check for issue markers first (most specific patterns)
     let foundIssue = false;
     for (const marker of ISSUE_MARKERS) {
@@ -239,10 +244,21 @@ export function parseReviewerOutput(rawOutput: string): {
         let severity: ReviewSeverity = 'info';
         let category: ReviewCategory = 'other';
 
+        // First check for explicit severity tags in the content
+        const severityTagMatch = content.match(/^(CRITICAL|MAJOR|MINOR):/i);
+        if (severityTagMatch) {
+          const tag = severityTagMatch[1].toLowerCase() as ReviewSeverity;
+          severity = tag;
+          // Keep default category as 'other' for explicit tags unless pattern matching provides a better one
+        }
+
         // Use optimized pattern matching with early termination
+        // If we already found an explicit severity tag, only update category but not severity
         for (const pattern of ISSUE_PATTERNS) {
           if (pattern.pattern.test(content)) {
-            severity = pattern.severity;
+            if (!severityTagMatch) {
+              severity = pattern.severity;
+            }
             category = pattern.category;
             break;
           }
@@ -358,7 +374,6 @@ export function generateReviewSummary(issues: ReviewIssue[], filesReviewed: numb
       other: 0,
     },
     filesReviewed,
-    overallRating: 'excellent',
   };
 
   // Count by severity
@@ -379,19 +394,6 @@ export function generateReviewSummary(issues: ReviewIssue[], filesReviewed: numb
     }
 
     summary.categoryCounts[issue.category]++;
-  }
-
-  // Determine overall rating
-  if (summary.criticalCount > 0) {
-    summary.overallRating = 'poor';
-  } else if (summary.majorCount > 5) {
-    summary.overallRating = 'poor';
-  } else if (summary.majorCount > 2) {
-    summary.overallRating = 'fair';
-  } else if (summary.majorCount > 0 || summary.minorCount > 10) {
-    summary.overallRating = 'good';
-  } else {
-    summary.overallRating = 'excellent';
   }
 
   return summary;
@@ -489,7 +491,6 @@ export class MarkdownFormatter implements ReviewFormatter {
 
     // Summary
     sections.push('## Summary');
-    sections.push(`- **Overall Rating:** ${result.summary.overallRating.toUpperCase()}`);
     sections.push(`- **Total Issues:** ${result.summary.totalIssues}`);
     sections.push(`- **Files Reviewed:** ${result.summary.filesReviewed}`);
     sections.push('');
@@ -615,9 +616,6 @@ export class TerminalFormatter implements ReviewFormatter {
 
     // Summary
     sections.push(color('📊 Summary', chalk.bold.yellow));
-
-    const ratingColor = this.getRatingColor(result.summary.overallRating, colorEnabled);
-    sections.push(`Overall Rating: ${ratingColor(result.summary.overallRating.toUpperCase())}`);
     sections.push(`Total Issues: ${result.summary.totalIssues}`);
     sections.push(`Files Reviewed: ${result.summary.filesReviewed}`);
     sections.push('');
