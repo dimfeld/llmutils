@@ -84,14 +84,14 @@ describe('wrapWithOrchestration', () => {
         planFilePath: testPlanFilePath,
       });
 
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toContain(
         'coordinate between specialized agents to complete the coding tasks described below'
       );
 
       // Should contain batch-specific workflow instructions
-      expect(result).toContain('Task Selection Phase (Batch Mode Only)');
-      expect(result).toContain('Plan Update Phase (Batch Mode Only)');
+      expect(result).toContain('Task Selection Phase');
+      expect(result).toContain('Plan Update Phase');
       expect(result).toContain('analyze all provided tasks and select a logical subset to work on');
 
       // Should contain task selection guidelines
@@ -101,7 +101,9 @@ describe('wrapWithOrchestration', () => {
       expect(result).toContain('Logical dependencies');
       expect(result).toContain('Efficiency');
       expect(result).toContain('Reasonable scope');
-      expect(result).toContain('Select 2-5 related tasks rather than attempting all tasks at once');
+      expect(result).toContain(
+        'Select a single task or 2-5 related tasks rather than attempting all tasks at once'
+      );
 
       // Should contain plan file update instructions
       expect(result).toContain('Plan File Updates');
@@ -124,7 +126,7 @@ describe('wrapWithOrchestration', () => {
         batchMode: true,
       });
 
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toContain('PLAN_FILE_PATH_NOT_PROVIDED');
       expect(result).toContain(
         'use the Edit tool to update the plan file at: @PLAN_FILE_PATH_NOT_PROVIDED'
@@ -139,9 +141,9 @@ describe('wrapWithOrchestration', () => {
 
       expect(result).toContain('```yaml');
       expect(result).toContain('tasks:');
-      expect(result).toContain('id: "task-1"');
-      expect(result).toContain('done: false  # Change this to true when completed');
-      expect(result).toContain('done: true   # Already completed');
+      expect(result).toContain('title:');
+      expect(result).toContain('done: true  # Already completed');
+      expect(result).toContain('# Add done: true here if this has been completed');
     });
 
     test('contains critical completion warnings in batch mode', () => {
@@ -166,11 +168,11 @@ describe('wrapWithOrchestration', () => {
       });
 
       // Check numbered workflow steps are adjusted for batch mode
-      expect(result).toContain('1. **Task Selection Phase (Batch Mode Only)**');
+      expect(result).toContain('1. **Task Selection Phase**');
       expect(result).toContain('2. **Implementation Phase**');
       expect(result).toContain('3. **Testing Phase**');
       expect(result).toContain('4. **Review Phase**');
-      expect(result).toContain('5. **Plan Update Phase (Batch Mode Only)**');
+      expect(result).toContain('5. **Plan Update Phase**');
       expect(result).toContain('6. **Iteration**');
 
       // Check step references in iteration section
@@ -184,7 +186,7 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toContain(
-        '**In batch mode**: You must update the plan file to mark completed tasks as done before finishing'
+        'You must update the plan file to mark completed tasks as done before stopping'
       );
       expect(result).toContain(
         "**Be selective**: Don't attempt all tasks at once - choose a reasonable subset that works well together"
@@ -299,7 +301,7 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toBeString();
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toEndWith('');
     });
 
@@ -311,7 +313,7 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toBeString();
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toEndWith(whitespaceContent);
     });
 
@@ -323,7 +325,7 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toBeString();
-      expect(result).toContain('BATCH TASK PROCESSING MODE');
+      expect(result).toContain('# Batch Task Processing Mode');
       expect(result).toContain(longContent);
       expect(result.length).toBeGreaterThan(longContent.length);
     });
@@ -377,7 +379,7 @@ describe('wrapWithOrchestration', () => {
           planFilePath: testPlanFilePath,
         });
 
-        expect(result).toContain('BATCH TASK PROCESSING MODE');
+        expect(result).toContain('# Batch Task Processing Mode');
         expect(result).toContain('Task Selection Phase');
       }
     });

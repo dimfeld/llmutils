@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'bun:test';
-import { getImplementerPrompt, getTesterPrompt, getReviewerPrompt } from './agent_prompts.ts';
+import {
+  getImplementerPrompt,
+  getTesterPrompt,
+  getReviewerPrompt,
+  getPrDescriptionPrompt,
+} from './agent_prompts.ts';
 
 describe('Agent Prompts', () => {
   const sampleSingleTask = `## Current Task: Implement user authentication
@@ -441,6 +446,109 @@ The current tasks to implement are:
       expectedInstructions.forEach((instruction) => {
         expect(prompt).toContain(instruction);
       });
+    });
+  });
+
+  describe('getPrDescriptionPrompt', () => {
+    const sampleContextWithPlan = `## Plan Context: Implement user authentication feature
+
+**Plan Title:** Add authentication system
+**Plan Goal:** Create secure user login/logout functionality
+
+## Changes Made:
+- Created authentication middleware in src/auth/middleware.ts
+- Added login/logout routes in src/auth/routes.ts
+- Implemented session management in src/auth/session.ts
+
+## Diff Summary:
++150 lines added across 3 new files
++25 lines modified in existing routing configuration`;
+
+    test('returns correct AgentDefinition structure', () => {
+      const result = getPrDescriptionPrompt(sampleContextWithPlan);
+
+      expect(result).toMatchObject({
+        name: 'pr-description',
+        description:
+          'Generates comprehensive pull request descriptions from plan context and code changes',
+        prompt: expect.any(String),
+      });
+    });
+
+    test('includes context content in prompt', () => {
+      const result = getPrDescriptionPrompt(sampleContextWithPlan);
+
+      expect(result.prompt).toContain(sampleContextWithPlan);
+    });
+
+    test('contains all required PR description sections in prompt', () => {
+      const result = getPrDescriptionPrompt(sampleContextWithPlan);
+      const prompt = result.prompt;
+
+      // Check for key sections that should be included
+      expect(prompt).toContain('Summary of Implementation');
+      expect(prompt).toContain('Changes Made to Existing Functionality');
+      expect(prompt).toContain('What Was Intentionally Not Changed');
+      expect(prompt).toContain('System Integration');
+      expect(prompt).toContain('Mermaid diagrams');
+      expect(prompt).toContain('Future Improvements and Follow-up Work');
+    });
+
+    test('includes custom instructions when provided', () => {
+      const customInstructions = 'Focus on security aspects and performance implications';
+      const result = getPrDescriptionPrompt(sampleContextWithPlan, customInstructions);
+
+      expect(result.prompt).toContain('## Custom Instructions');
+      expect(result.prompt).toContain(customInstructions);
+      expect(result.prompt).toContain(sampleContextWithPlan);
+    });
+
+    test('works without custom instructions', () => {
+      const result = getPrDescriptionPrompt(sampleContextWithPlan);
+
+      expect(result.prompt).not.toContain('## Custom Instructions');
+      expect(result.prompt).toContain('## Context and Plan Details');
+      expect(result.prompt).toContain(sampleContextWithPlan);
+    });
+
+    test('prompt structure follows expected format', () => {
+      const result = getPrDescriptionPrompt(sampleContextWithPlan);
+      const prompt = result.prompt;
+
+      // Verify basic structure elements are present
+      expect(prompt).toContain('## Context and Plan Details');
+      expect(prompt).toContain('## Your Task');
+      expect(prompt).toContain('Generate a comprehensive pull request description');
+    });
+
+    test('empty custom instructions do not add section', () => {
+      const result = getPrDescriptionPrompt(sampleContextWithPlan, '');
+
+      expect(result.prompt).not.toContain('## Custom Instructions');
+      expect(result.prompt).toContain('## Context and Plan Details');
+    });
+
+    test('undefined custom instructions do not add section', () => {
+      const result = getPrDescriptionPrompt(sampleContextWithPlan, undefined);
+
+      expect(result.prompt).not.toContain('## Custom Instructions');
+      expect(result.prompt).toContain('## Context and Plan Details');
+    });
+
+    test('maintains proper prompt structure with custom instructions', () => {
+      const customInstructions = 'Focus on API compatibility';
+      const result = getPrDescriptionPrompt(sampleContextWithPlan, customInstructions);
+      const prompt = result.prompt;
+
+      const contextIndex = prompt.indexOf('## Context and Plan Details');
+      const customIndex = prompt.indexOf('## Custom Instructions');
+      const taskIndex = prompt.indexOf('## Your Task');
+
+      expect(contextIndex).toBeGreaterThan(-1);
+      expect(customIndex).toBeGreaterThan(-1);
+      expect(taskIndex).toBeGreaterThan(-1);
+      expect(customIndex).toBeGreaterThan(contextIndex);
+      expect(taskIndex).toBeGreaterThan(customIndex);
     });
   });
 });

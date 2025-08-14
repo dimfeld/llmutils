@@ -334,6 +334,10 @@ describe('handleListCommand', () => {
   });
 
   test('filters by ready status', async () => {
+    // Clear mocks (but don't clear cache - let beforeEach handle that)
+    mockTable.mockClear();
+    mockLog.mockClear();
+
     // Create a simple pending plan with no dependencies (so it's ready)
     const plan = {
       id: 1,
@@ -348,9 +352,8 @@ describe('handleListCommand', () => {
           description: 'Do task',
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -796,6 +799,284 @@ describe('handleListCommand', () => {
     // Check that the dependency is found and shows as done
     const depsColumn = mainPlanRow[6];
     expect(depsColumn).toContain('10✓');
+  });
+
+  test('limits results when -n option is used', async () => {
+    // Clear cache and mocks
+    clearPlanCache();
+    mockTable.mockClear();
+    mockLog.mockClear();
+
+    // Create 10 test plans
+    const plans = [];
+    for (let i = 1; i <= 10; i++) {
+      plans.push({
+        id: i,
+        title: `Plan ${i}`,
+        goal: `Goal ${i}`,
+        details: 'Details',
+        status: 'pending',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ prompt: 'Do step', done: false }],
+          },
+        ],
+      });
+    }
+
+    // Write plan files
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    const options = {
+      number: 5,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    // Check that table was called and has exactly 6 rows (1 header + 5 data rows)
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(6); // Header + 5 plans
+
+    // Check the status message shows limiting
+    const logCalls = mockLog.mock.calls;
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing'));
+    expect(showingCall).toBeTruthy();
+    expect(showingCall[0]).toBe('Showing 5 of 10 plan(s) (limited to 5)');
+
+    // Verify the last 5 plans are shown (IDs 6-10)
+    const shownIds = tableData.slice(1).map((row) => row[0]);
+    expect(shownIds).toEqual([6, 7, 8, 9, 10]);
+  });
+
+  test('shows all plans when -n is larger than available plans', async () => {
+    // Clear cache and mocks
+    clearPlanCache();
+    mockTable.mockClear();
+    mockLog.mockClear();
+
+    // Create 3 test plans
+    const plans = [];
+    for (let i = 1; i <= 3; i++) {
+      plans.push({
+        id: i,
+        title: `Plan ${i}`,
+        goal: `Goal ${i}`,
+        details: 'Details',
+        status: 'pending',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ prompt: 'Do step', done: false }],
+          },
+        ],
+      });
+    }
+
+    // Write plan files
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    const options = {
+      number: 10,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    // Check that table was called and has 4 rows (1 header + 3 data rows)
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(4); // Header + 3 plans
+
+    // Check the status message doesn't show limiting (since all plans are shown)
+    const logCalls = mockLog.mock.calls;
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing'));
+    expect(showingCall).toBeTruthy();
+    expect(showingCall[0]).toBe('Showing 3 of 3 plan(s)');
+  });
+
+  test('combines -n option with status filtering', async () => {
+    // Clear cache and mocks
+    clearPlanCache();
+    mockTable.mockClear();
+    mockLog.mockClear();
+
+    // Create plans with different statuses
+    const plans = [
+      {
+        id: 1,
+        title: 'Done Plan 1',
+        goal: 'Done goal 1',
+        details: 'Details',
+        status: 'done',
+        tasks: [],
+      },
+      {
+        id: 2,
+        title: 'Done Plan 2',
+        goal: 'Done goal 2',
+        details: 'Details',
+        status: 'done',
+        tasks: [],
+      },
+      {
+        id: 3,
+        title: 'Done Plan 3',
+        goal: 'Done goal 3',
+        details: 'Details',
+        status: 'done',
+        tasks: [],
+      },
+      {
+        id: 4,
+        title: 'Done Plan 4',
+        goal: 'Done goal 4',
+        details: 'Details',
+        status: 'done',
+        tasks: [],
+      },
+      {
+        id: 5,
+        title: 'Pending Plan',
+        goal: 'Pending goal',
+        details: 'Details',
+        status: 'pending',
+        tasks: [],
+      },
+    ];
+
+    // Write plan files
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    const options = {
+      status: ['done'],
+      number: 2,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    // Check that table was called and has 3 rows (1 header + 2 data rows)
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(3); // Header + 2 plans
+
+    // Check the status message shows limiting applied after filtering
+    const logCalls = mockLog.mock.calls;
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing'));
+    expect(showingCall).toBeTruthy();
+    expect(showingCall[0]).toBe('Showing 2 of 4 plan(s) (limited to 2)');
+
+    // Verify the last 2 done plans are shown (IDs 3 and 4)
+    const shownIds = tableData.slice(1).map((row) => row[0]);
+    expect(shownIds).toEqual([3, 4]);
+  });
+
+  test('combines -n option with sorting', async () => {
+    // Clear cache and mocks
+    clearPlanCache();
+    mockTable.mockClear();
+    mockLog.mockClear();
+
+    // Create plans with different IDs, not in order
+    const plans = [
+      {
+        id: 5,
+        title: 'Plan 5',
+        goal: 'Goal 5',
+        details: 'Details',
+        status: 'pending',
+        tasks: [],
+      },
+      {
+        id: 1,
+        title: 'Plan 1',
+        goal: 'Goal 1',
+        details: 'Details',
+        status: 'pending',
+        tasks: [],
+      },
+      {
+        id: 3,
+        title: 'Plan 3',
+        goal: 'Goal 3',
+        details: 'Details',
+        status: 'pending',
+        tasks: [],
+      },
+      {
+        id: 8,
+        title: 'Plan 8',
+        goal: 'Goal 8',
+        details: 'Details',
+        status: 'pending',
+        tasks: [],
+      },
+      {
+        id: 2,
+        title: 'Plan 2',
+        goal: 'Goal 2',
+        details: 'Details',
+        status: 'pending',
+        tasks: [],
+      },
+    ];
+
+    // Write plan files
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    const options = {
+      sort: 'id',
+      reverse: true, // Sort by ID in reverse order (highest first)
+      number: 3,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    // Check that table was called and has 4 rows (1 header + 3 data rows)
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(4); // Header + 3 plans
+
+    // Check the status message shows limiting
+    const logCalls = mockLog.mock.calls;
+    const showingCall = logCalls.find((call) => call[0] && call[0].toString().includes('Showing'));
+    expect(showingCall).toBeTruthy();
+    expect(showingCall[0]).toBe('Showing 3 of 5 plan(s) (limited to 3)');
+
+    // With reverse sort, the order should be [8, 5, 3, 2, 1]
+    // Taking the last 3 should give us [3, 2, 1]
+    const shownIds = tableData.slice(1).map((row) => row[0]);
+    expect(shownIds).toEqual([3, 2, 1]);
   });
 });
 

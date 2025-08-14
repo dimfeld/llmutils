@@ -23,6 +23,20 @@ export interface ExecutePlanInfo {
   planFilePath: string;
   /** Whether batch mode is enabled for processing multiple tasks */
   batchMode?: boolean;
+  /**
+   * Output capture mode:
+   * - 'none': No output capture (default)
+   * - 'all': Capture all output like the original boolean true behavior
+   * - 'result': Capture only the final "result" block from the executor
+   */
+  captureOutput?: 'none' | 'all' | 'result';
+  /**
+   * Execution mode for the executor.
+   * - 'simple': Bypasses orchestration and runs prompts directly (used for review-only operations)
+   * - 'normal': Uses full multi-agent orchestration workflow (default behavior)
+   * @default 'normal'
+   */
+  executionMode?: 'simple' | 'normal';
 }
 
 export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {
@@ -65,6 +79,7 @@ export interface Executor {
    * The asynchronous function that executes the generated context.
    * @param contextContent - The string content for execution (output from `rmfilter` or direct prompt).
    * @param planInfo - Plan information containing planId, planTitle, and planFilePath.
+   * @returns Promise<void> for normal execution, or Promise<string> when captureOutput is 'all' or 'result'.
    */
-  execute: (contextContent: string, planInfo: ExecutePlanInfo) => Promise<void>;
+  execute: (contextContent: string, planInfo: ExecutePlanInfo) => Promise<void | string>;
 }

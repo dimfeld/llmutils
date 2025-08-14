@@ -116,6 +116,7 @@ tasks:
       task: batchTask,
       filePathPrefix: '@/',
       includeCurrentPlanContext: false,
+      batchMode: true,
     });
 
     // Verify prompt includes batch mode plan file reference
@@ -210,6 +211,7 @@ tasks:
         task: testCase.task,
         filePathPrefix: '@/',
         includeCurrentPlanContext: false,
+        batchMode: testCase.shouldDetectBatch, // Use explicit batch mode based on test expectation
       });
 
       if (testCase.shouldDetectBatch) {
@@ -257,6 +259,7 @@ tasks:
       task: batchTask,
       filePathPrefix: '@/',
       includeCurrentPlanContext: false,
+      batchMode: true,
     });
 
     expect(absoluteResult).toContain('@/nested/deep/plan.yml: This is the plan file you must edit');
@@ -273,6 +276,7 @@ tasks:
       task: batchTask,
       filePathPrefix: '@/',
       includeCurrentPlanContext: false,
+      batchMode: true,
     });
 
     expect(relativeResult).toContain(
@@ -289,6 +293,7 @@ tasks:
       task: batchTask,
       filePathPrefix: '$WORKSPACE/',
       includeCurrentPlanContext: false,
+      batchMode: true,
     });
 
     expect(customPrefixResult).toContain(
@@ -305,6 +310,7 @@ tasks:
       task: batchTask,
       // filePathPrefix intentionally omitted
       includeCurrentPlanContext: false,
+      batchMode: true,
     });
 
     expect(noPrefixResult).toContain('no-prefix-plan.yml: This is the plan file you must edit');
@@ -433,6 +439,7 @@ tasks:
         task: batchTask,
         filePathPrefix: '@/',
         includeCurrentPlanContext: false,
+        batchMode: true,
       })
     ).rejects.toThrow('Git repository not found');
   });
@@ -478,6 +485,7 @@ tasks:
       task: complexBatchTask,
       filePathPrefix: '@/',
       includeCurrentPlanContext: true,
+      batchMode: true,
     });
 
     // Verify all components are included

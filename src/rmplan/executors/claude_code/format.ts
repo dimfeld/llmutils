@@ -60,7 +60,12 @@ export type Message =
 // Cache for tool use IDs mapped to their names
 const toolUseCache = new Map<string, string>();
 
-export function formatJsonMessage(input: string): { message?: string; filePaths?: string[] } {
+export function formatJsonMessage(input: string): {
+  message?: string;
+  rawMessage?: string;
+  type: string;
+  filePaths?: string[];
+} {
   // TODOS implemented:
   // - Cache tool use IDs across calls so that we can print the tool names with the results
   // - When reading and writing files, just show number of lines read and written
@@ -69,7 +74,7 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
   debugLog(input);
 
   if (input.startsWith('[DEBUG]')) {
-    return {};
+    return { type: '' };
   }
 
   const filePaths: string[] = [];
@@ -79,6 +84,7 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
   const timestamp = new Date().toTimeString().split(' ')[0];
 
   const outputLines: string[] = [];
+  let rawMessage: string[] = [];
 
   if (message.type === 'result') {
     if (message.subtype === 'success' || message.subtype === 'error_max_turns') {
@@ -91,7 +97,7 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
         `Session ID: ${message.session_id}`,
         result
       );
-      return { message: outputLines.join('\n') };
+      return { message: outputLines.join('\n'), type: message.type };
     }
   } else if (message.type === 'system' && message.subtype === 'init') {
     outputLines.push(
@@ -106,13 +112,14 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
       );
     }
 
-    return { message: outputLines.join('\n') };
+    return { message: outputLines.join('\n'), type: message.type };
   } else if (message.type === 'assistant' || message.type === 'user') {
     const m = message.message;
 
     for (const content of m.content) {
       if (typeof content === 'string') {
         outputLines.push(content);
+        rawMessage.push(content);
       } else if (content.type === 'thinking') {
         outputLines.push(chalk.blue(`### Thinking [${timestamp}]`), content.thinking);
       } else if (content.type === 'text') {
@@ -123,6 +130,7 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
         }
 
         outputLines.push(content.text);
+        rawMessage.push(content.text);
       } else if (content.type === 'tool_use') {
         // Store tool use ID mapping
         if ('id' in content) {
@@ -265,11 +273,16 @@ export function formatJsonMessage(input: string): { message?: string; filePaths?
     }
     return {
       message: outputLines.join('\n\n'),
+      rawMessage: rawMessage.filter(Boolean).join('\n'),
+      type: message.type,
       filePaths: filePaths.length > 0 ? filePaths : undefined,
     };
   }
 
-  return { message: `Unknown message: ${JSON.stringify(message)}` };
+  return {
+    message: `Unknown message: ${JSON.stringify(message)}`,
+    type: (message as Record<string, unknown>)?.type as string,
+  };
 }
 
 function formatValue(value: unknown): string {

@@ -49,8 +49,14 @@ export class CopyPasteExecutor implements Executor {
     return options;
   }
 
-  async execute(contextContent: string, _planInfo: ExecutePlanInfo) {
-    // This executor doesn't use plan information
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+    // Handle output capture mode for review
+    if (planInfo.captureOutput) {
+      // In capture mode, we can't interact with the user, so we just return the context content
+      return contextContent;
+    }
+
+    // Normal execution: interactive copy-paste
     await clipboard.write(contextContent);
 
     log(

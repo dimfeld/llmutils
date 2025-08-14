@@ -672,7 +672,7 @@ export class ClaudeCodeExecutor implements Executor {
     return server;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo) {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
     // Clear tracked files set for proper state isolation between runs
     this.trackedFiles.clear();
 
@@ -687,8 +687,8 @@ export class ClaudeCodeExecutor implements Executor {
       contextContent = `${planFileReference}\n\n${contextContent}`;
     }
 
-    // Apply orchestration wrapper when plan information is provided
-    if (planInfo && planInfo.planId) {
+    // Apply orchestration wrapper when plan information is provided and NOT in simple mode
+    if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
       contextContent = wrapWithOrchestration(contextContent, planInfo.planId, {
         batchMode: planInfo.batchMode,
         planFilePath: planInfo.planFilePath,
@@ -810,8 +810,8 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
-    // Generate agent files if plan information is provided
-    if (planInfo && planInfo.planId) {
+    // Generate agent files if plan information is provided and NOT in simple mode
+    if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
       // Load custom instructions for each agent if configured
       const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
         ? await this.loadAgentInstructions(
@@ -936,17 +936,20 @@ export class ClaudeCodeExecutor implements Executor {
 
         args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
         let splitter = createLineSplitter();
+        let capturedOutputLines: string[] = [];
 
         log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
         const result = await spawnAndLogOutput(args, {
           env: {
             ...process.env,
-            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.CLAUDE_API_KEY ?? '') : '',
           },
           cwd: gitRoot,
           formatStdout: (output) => {
             let lines = splitter(output);
             const formattedResults = lines.map(formatJsonMessage);
+            // Capture output based on the specified mode
+            const captureMode = planInfo?.captureOutput;
 
             // Extract file paths and add them to trackedFiles set
             for (const result of formattedResults) {
@@ -959,15 +962,38 @@ export class ClaudeCodeExecutor implements Executor {
                   this.trackedFiles.add(absolutePath);
                 }
               }
+
+              if (result.message) {
+                if (captureMode === 'all') {
+                  capturedOutputLines.push(result.message);
+                } else if (
+                  captureMode === 'result' &&
+                  result.type === 'assistant' &&
+                  result.rawMessage
+                ) {
+                  // Only save the final message
+                  capturedOutputLines = [result.rawMessage];
+                }
+              }
             }
 
-            return formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
+            const formattedOutput =
+              formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
+            return formattedOutput;
           },
         });
 
         if (result.exitCode !== 0) {
           throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
         }
+
+        // Return captured output if any capture mode was enabled, otherwise return void explicitly
+        const captureMode = planInfo?.captureOutput;
+        if (captureMode === 'all' || captureMode === 'result') {
+          return capturedOutputLines.join('');
+        }
+
+        return; // Explicitly return void for 'none' or undefined captureOutput
       }
     } finally {
       // Close the Unix socket server if it exists
@@ -984,8 +1010,8 @@ export class ClaudeCodeExecutor implements Executor {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
       }
 
-      // Clean up agent files if they were created
-      if (planInfo && planInfo.planId) {
+      // Clean up agent files if they were created (only in normal mode)
+      if (planInfo && planInfo.planId && planInfo.executionMode !== 'simple') {
         await removeAgentFiles(planInfo.planId);
         debugLog(`Removed agent files for plan ${planInfo.planId}`);
       }

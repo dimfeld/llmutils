@@ -1,21 +1,22 @@
 ---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Test Data Generation System
 goal: Create automated test data generation for all test suites
 id: 104
-status: pending
+status: in_progress
 priority: medium
 parent: 103
-createdAt: '2024-01-15T10:00:00Z'
-updatedAt: '2024-01-15T10:00:00Z'
-planGeneratedAt: '2024-01-15T09:30:00Z'
+planGeneratedAt: 2024-01-15T09:30:00Z
+createdAt: 2024-01-15T10:00:00Z
+updatedAt: 2025-08-13T21:04:33.420Z
 tasks:
   - title: Design test data factory system
+    done: false
     description: Create a flexible factory pattern for generating test data
     files:
       - src/tests/factories/index.ts
       - src/tests/factories/user.ts
       - src/tests/factories/product.ts
-    done: false
     steps:
       - prompt: Create base factory class with builder pattern
         done: false
@@ -24,10 +25,10 @@ tasks:
       - prompt: Add support for related data generation
         done: false
   - title: Integrate with test suites
+    done: false
     description: Replace hardcoded test data with factory-generated data
     files:
       - src/tests/**/*.test.ts
-    done: false
     steps:
       - prompt: Update unit tests to use factories
         done: false

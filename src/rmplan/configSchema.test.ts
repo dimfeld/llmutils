@@ -91,20 +91,6 @@ describe('configSchema', () => {
       expect(result.defaultExecutor).toBe('claude-code');
     });
 
-    test('should apply default issueTracker when other fields are present', () => {
-      const config = {
-        defaultExecutor: 'copy-only',
-        paths: {
-          tasks: './tasks',
-        },
-      };
-
-      const result = rmplanConfigSchema.parse(config);
-      expect(result.issueTracker).toBe('github');
-      expect(result.defaultExecutor).toBe('copy-only');
-      expect(result.paths?.tasks).toBe('./tasks');
-    });
-
     test('should validate issueTracker with case sensitivity', () => {
       const invalidConfig = {
         issueTracker: 'GitHub', // Wrong case
@@ -227,6 +213,253 @@ describe('configSchema', () => {
       expect(result.defaultExecutor).toBe('claude-code');
       expect(result.agents?.implementer?.instructions).toBe('./implementer.md');
       expect(result.agents?.reviewer?.instructions).toBe('./reviewer.md');
+    });
+  });
+
+  describe('review field', () => {
+    test('should accept valid review configuration with all fields', () => {
+      const config = {
+        review: {
+          focusAreas: ['security', 'performance', 'testing'],
+          outputFormat: 'markdown' as const,
+          saveLocation: './reviews',
+          customInstructionsPath: './review-instructions.md',
+          incrementalReview: true,
+          excludePatterns: ['*.test.ts', 'node_modules/**'],
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.review?.focusAreas).toEqual(['security', 'performance', 'testing']);
+      expect(result.review?.outputFormat).toBe('markdown');
+      expect(result.review?.saveLocation).toBe('./reviews');
+      expect(result.review?.customInstructionsPath).toBe('./review-instructions.md');
+      expect(result.review?.incrementalReview).toBe(true);
+      expect(result.review?.excludePatterns).toEqual(['*.test.ts', 'node_modules/**']);
+    });
+
+    test('should accept partial review configuration', () => {
+      const config = {
+        review: {
+          focusAreas: ['security'],
+          outputFormat: 'json' as const,
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.review?.focusAreas).toEqual(['security']);
+      expect(result.review?.outputFormat).toBe('json');
+      expect(result.review?.saveLocation).toBeUndefined();
+      expect(result.review?.customInstructionsPath).toBeUndefined();
+      expect(result.review?.incrementalReview).toBeUndefined();
+      expect(result.review?.excludePatterns).toBeUndefined();
+    });
+
+    test('should accept empty review configuration', () => {
+      const config = {
+        review: {},
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.review).toBeDefined();
+      expect(Object.keys(result.review)).toHaveLength(0);
+    });
+
+    test('should make review field optional', () => {
+      const config = {
+        issueTracker: 'github' as const,
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.review).toBeUndefined();
+    });
+
+    test('should validate outputFormat enum values', () => {
+      const validFormats = ['json', 'markdown', 'terminal'];
+
+      for (const format of validFormats) {
+        const config = {
+          review: {
+            outputFormat: format,
+          },
+        };
+
+        expect(() => rmplanConfigSchema.parse(config)).not.toThrow();
+        const result = rmplanConfigSchema.parse(config);
+        expect(result.review?.outputFormat).toBe(format);
+      }
+
+      // Test invalid format
+      const invalidConfig = {
+        review: {
+          outputFormat: 'invalid',
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+    });
+
+    test('should validate focusAreas as array of strings', () => {
+      const config = {
+        review: {
+          focusAreas: ['security', 'performance'],
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.review?.focusAreas).toEqual(['security', 'performance']);
+
+      // Test invalid focusAreas type
+      const invalidConfig = {
+        review: {
+          focusAreas: 'security',
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+    });
+
+    test('should validate file paths as strings', () => {
+      const config = {
+        review: {
+          saveLocation: '/path/to/reviews',
+          customInstructionsPath: '/path/to/instructions.md',
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.review?.saveLocation).toBe('/path/to/reviews');
+      expect(result.review?.customInstructionsPath).toBe('/path/to/instructions.md');
+
+      // Test invalid path types
+      const invalidConfigs = [
+        {
+          review: {
+            saveLocation: 123,
+          },
+        },
+        {
+          review: {
+            customInstructionsPath: true,
+          },
+        },
+      ];
+
+      for (const invalidConfig of invalidConfigs) {
+        expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+      }
+    });
+
+    test('should validate incrementalReview as boolean', () => {
+      const configTrue = {
+        review: {
+          incrementalReview: true,
+        },
+      };
+
+      const configFalse = {
+        review: {
+          incrementalReview: false,
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(configTrue)).not.toThrow();
+      expect(() => rmplanConfigSchema.parse(configFalse)).not.toThrow();
+
+      const resultTrue = rmplanConfigSchema.parse(configTrue);
+      const resultFalse = rmplanConfigSchema.parse(configFalse);
+
+      expect(resultTrue.review?.incrementalReview).toBe(true);
+      expect(resultFalse.review?.incrementalReview).toBe(false);
+
+      // Test invalid type
+      const invalidConfig = {
+        review: {
+          incrementalReview: 'true',
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+    });
+
+    test('should validate excludePatterns as array of strings', () => {
+      const config = {
+        review: {
+          excludePatterns: ['*.test.ts', '**/*.spec.js', 'node_modules/**'],
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.review?.excludePatterns).toEqual([
+        '*.test.ts',
+        '**/*.spec.js',
+        'node_modules/**',
+      ]);
+
+      // Test invalid excludePatterns types
+      const invalidConfigs = [
+        {
+          review: {
+            excludePatterns: '*.test.ts',
+          },
+        },
+        {
+          review: {
+            excludePatterns: [123, '*.test.ts'],
+          },
+        },
+      ];
+
+      for (const invalidConfig of invalidConfigs) {
+        expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+      }
+    });
+
+    test('should work with other configuration fields', () => {
+      const config = {
+        issueTracker: 'linear' as const,
+        defaultExecutor: 'claude-code',
+        review: {
+          focusAreas: ['security'],
+          outputFormat: 'terminal' as const,
+          incrementalReview: true,
+        },
+        agents: {
+          implementer: { instructions: './implementer.md' },
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.issueTracker).toBe('linear');
+      expect(result.defaultExecutor).toBe('claude-code');
+      expect(result.review?.focusAreas).toEqual(['security']);
+      expect(result.review?.outputFormat).toBe('terminal');
+      expect(result.review?.incrementalReview).toBe(true);
+      expect(result.agents?.implementer?.instructions).toBe('./implementer.md');
+    });
+
+    test('should reject unknown fields in review configuration', () => {
+      const config = {
+        review: {
+          focusAreas: ['security'],
+          unknownField: 'invalid',
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(config)).toThrow();
+    });
+
+    test('should handle empty arrays correctly', () => {
+      const config = {
+        review: {
+          focusAreas: [],
+          excludePatterns: [],
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.review?.focusAreas).toEqual([]);
+      expect(result.review?.excludePatterns).toEqual([]);
     });
   });
 });

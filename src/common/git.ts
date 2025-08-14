@@ -17,8 +17,9 @@
 import { $ } from 'bun';
 import { findUp } from 'find-up';
 import * as path from 'node:path';
-import { debugLog } from '../logging.js';
+import { debugLog, log } from '../logging.js';
 import { CURRENT_DIFF, parseJjRename } from '../rmfilter/additional_docs.js';
+import chalk from 'chalk';
 
 let cachedGitRoot = new Map<string, string>();
 let cachedGitRepository: string | undefined;
@@ -148,6 +149,31 @@ export async function getCurrentGitBranch(cwd?: string): Promise<string | null> 
     debugLog('Error getting current Git branch: %o', error);
     return null;
   }
+}
+
+/**
+ * Gets the current commit hash from the repository
+ */
+export async function getCurrentCommitHash(gitRoot: string): Promise<string | null> {
+  try {
+    const usingJj = await getUsingJj();
+
+    if (usingJj) {
+      const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow();
+      if (result.exitCode === 0) {
+        return result.stdout.toString().trim();
+      }
+    } else {
+      const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow();
+      if (result.exitCode === 0) {
+        return result.stdout.toString().trim();
+      }
+    }
+  } catch (error) {
+    log(chalk.yellow(`Warning: Could not get current commit hash: ${(error as Error).message}`));
+  }
+
+  return null;
 }
 
 /**

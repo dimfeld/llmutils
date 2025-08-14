@@ -1535,7 +1535,7 @@ describe('rmplanAgent - Batch Tasks Mode Integration', () => {
     await fs.writeFile(path.join(srcDir, 'main.js'), 'console.log("Hello world");');
 
     const options = {
-            'no-log': true,
+      'no-log': true,
       nonInteractive: true,
       executor: 'copy-only',
     };

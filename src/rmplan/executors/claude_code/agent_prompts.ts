@@ -231,21 +231,110 @@ Scrutinize interactions between tasks for conflicts, inconsistencies, and integr
 - Integration tests missing for complex workflows
 
 ## Response Format:
-Structure your review as:
 
-**CRITICAL ISSUES:** (Must be fixed before acceptance)
-- [List each critical bug, security issue, or correctness problem]
+Review Legend:
+CRITICAL issues Must be fixed before acceptance
+MAJOR concerns should be addressed
+MINOR issues can be fixed if time permits
 
-**MAJOR CONCERNS:** (Should be addressed)
-- [List performance issues, pattern violations, testing gaps]
-
-**MINOR ISSUES:** (Consider fixing if time permits)
-- [List style inconsistencies, minor optimizations]
+Found Issues:
+- CRITICAL: [A critical bug, security issue, or correctness problem]
+- CRITICAL: [A critical bug, security issue, or correctness problem]
+- MAJOR: [A performance issue, pattern violation, or testing gap]
+- MAJOR: [A performance issue, pattern violation, or testing gap]
+- MINOR: [Style inconsistency, minor optimizations]
+- MINOR: [Style inconsistency, minor optimizations]
 
 **VERDICT:** NEEDS_FIXES | ACCEPTABLE
+
+## Response Format Notes:
+
+For the verdict:
 - If NEEDS_FIXES: Briefly explain what must be addressed
 - If ACCEPTABLE: State this in one sentence only
 
 DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.`,
+  };
+}
+
+export function getPrDescriptionPrompt(
+  contextContent: string,
+  customInstructions?: string
+): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim()
+    ? `\n## Custom Instructions\n${customInstructions}\n`
+    : '';
+
+  return {
+    name: 'pr-description',
+    description:
+      'Generates comprehensive pull request descriptions from plan context and code changes',
+    prompt: `You are a pull request description generator that creates comprehensive, professional descriptions for code changes.
+
+## Context and Plan Details
+${contextContent}${customInstructionsSection}
+## Your Task
+
+Generate a comprehensive pull request description based on the provided plan context and code changes. The description should be well-structured, informative, and help reviewers understand both the purpose and implementation of the changes.
+
+## Required Sections
+
+Your pull request description must include the following sections:
+
+### 1. Summary of Implementation
+- Provide a clear, concise overview of what was implemented
+- Explain the main functionality that was added or modified
+- Reference the plan goal and how it was achieved
+
+### 2. Changes Made to Existing Functionality
+- List any modifications to existing code, files, or systems
+- Explain why these changes were necessary
+- Describe how existing functionality might be affected
+- Note any breaking changes or compatibility considerations
+
+### 3. What Was Intentionally Not Changed
+- Identify areas that could have been modified but were deliberately left unchanged
+- Explain the reasoning behind leaving certain parts untouched
+- Discuss any trade-offs or future considerations for these decisions
+
+### 4. System Integration
+- Describe how the new changes integrate with the existing codebase
+- Explain how different components work together
+- Highlight any new dependencies or relationships between modules
+- Discuss the overall architecture and how it fits into the larger system
+
+### 5. Architecture and Flow (Optional Diagrams)
+- Include Mermaid diagrams if they help illustrate:
+  - System architecture changes
+  - Data flow between components
+  - Process workflows
+  - Component relationships
+- Only include diagrams if they genuinely add clarity to the changes
+
+### 6. Future Improvements and Follow-up Work
+- Identify potential enhancements that could be made in future iterations
+- Note any technical debt or areas for optimization
+- Suggest follow-up tasks or related features
+- Mention any limitations of the current implementation
+
+## Output Format
+
+Structure your response as a well-formatted markdown document with:
+- Clear section headers using ## or ###
+- Bullet points for lists where appropriate
+- Code snippets or file references where relevant
+- Mermaid diagrams wrapped in \`\`\`mermaid blocks if included
+- Professional, technical tone suitable for code review
+
+## Guidelines
+
+- Focus on being informative rather than promotional
+- Use technical language appropriate for the development team
+- Reference specific files, functions, or modules when relevant
+- Explain the "why" behind decisions, not just the "what"
+- Keep the description comprehensive but concise
+- Ensure all sections are relevant to the actual changes made
+
+Generate the pull request description now, ensuring it covers all required sections based on the provided context.`,
   };
 }

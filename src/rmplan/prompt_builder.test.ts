@@ -401,7 +401,7 @@ describe('prompt_builder', () => {
           task: regularTask,
           filePathPrefix: '@/',
           includeCurrentPlanContext: false,
-          batchMode: true,
+          batchMode: false, // Regular mode means batchMode: false
         });
 
         expect(result).not.toContain('## Plan File for Task Updates');
@@ -438,6 +438,7 @@ describe('prompt_builder', () => {
           task: batchTask,
           filePathPrefix: '@/',
           includeCurrentPlanContext: false,
+          batchMode: true,
         });
 
         expect(result).toContain('## Plan File for Task Updates');

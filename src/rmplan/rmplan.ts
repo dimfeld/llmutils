@@ -333,6 +333,13 @@ program
   .option('--files', 'Show file paths column')
   .option('-u, --user <username>', 'Filter by assignedTo username')
   .option('--mine', 'Show only plans assigned to current user')
+  .option('-n, --number <count>', 'Limit the number of results shown', (value: string) => {
+    const n = Number(value);
+    if (Number.isNaN(n) || n <= 0) {
+      throw new Error(`Count must be a positive integer, saw ${value}`);
+    }
+    return n;
+  })
   .action(async (searchTerms, options, command) => {
     const { handleListCommand } = await import('./commands/list.js');
     await handleListCommand(options, command, searchTerms).catch(handleCommandError);
@@ -475,6 +482,90 @@ program
     options.noDependsOn = intArg(options.noDependsOn);
     options.parent = intArg(options.parent);
     await handleSetCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
+  });
+
+program
+  .command('review <planFile>')
+  .description(
+    'Analyze code changes on current branch against plan requirements using reviewer agent'
+  )
+  .option(`-x, --executor <name>`, 'The executor to use for review execution')
+  .addHelpText('after', `Available executors: ${executorNames}`)
+  .option(
+    '-m, --model <model>',
+    'Specify the LLM model to use for the review. Overrides model from rmplan config.'
+  )
+  .option('--dry-run', 'Generate and print the review prompt but do not execute it', false)
+  .option(
+    '--instructions <text>',
+    'Inline custom instructions for the review. Overrides config file instructions.'
+  )
+  .option(
+    '--instructions-file <path>',
+    'Path to file containing custom review instructions. Overrides config file instructions.'
+  )
+  .option(
+    '--focus <areas>',
+    'Comma-separated list of focus areas (e.g., security,performance,testing). Overrides config focus areas.'
+  )
+  .option(
+    '--format <format>',
+    'Output format for review results: json, markdown, or terminal. Overrides config setting.',
+    'terminal'
+  )
+  .option('--verbosity <level>', 'Output verbosity level: minimal, normal, or detailed.', 'normal')
+  .option(
+    '--output-file <path>',
+    'Save review results to the specified file path. Format determined by --format option.'
+  )
+  .option('--save', 'Save review results to .rmfilter/reviews/ directory with metadata tracking.')
+  .option('--no-save', 'Disable automatic saving of review results (overrides config settings).')
+  .option('--git-note', 'Create a Git note with review summary attached to the current commit.')
+  .option('--no-color', 'Disable colored output in terminal format.')
+  .option(
+    '--show-files',
+    'Include changed files list in output (enabled by default except in minimal verbosity).'
+  )
+  .option('--no-suggestions', 'Hide suggestions in the formatted output.')
+  .option('--incremental', 'Only review changes since the last review for this plan.')
+  .option(
+    '--since-last-review',
+    'Alias for --incremental. Only review changes since the last review.'
+  )
+  .option('--since <commit>', 'Review changes since the specified commit hash.')
+  .option('--autofix', 'Automatically fix issues found during review without prompting.')
+  .option('--no-autofix', 'Disable automatic fixing of issues, even if configured elsewhere.')
+  .action(async (planFile, options, command) => {
+    const { handleReviewCommand } = await import('./commands/review.js');
+    await handleReviewCommand(planFile, options, command).catch(handleCommandError);
+  });
+
+program
+  .command('description <planFile>')
+  .description(
+    'Generate a comprehensive pull request description from plan context and code changes'
+  )
+  .option(`-x, --executor <name>`, 'The executor to use for description generation')
+  .addHelpText('after', `Available executors: ${executorNames}`)
+  .option(
+    '-m, --model <model>',
+    'Specify the LLM model to use for description generation. Overrides model from rmplan config.'
+  )
+  .option('--dry-run', 'Generate and print the description prompt but do not execute it', false)
+  .option(
+    '--instructions <text>',
+    'Inline custom instructions for the PR description. Overrides config file instructions.'
+  )
+  .option(
+    '--instructions-file <path>',
+    'Path to file containing custom description instructions. Overrides config file instructions.'
+  )
+  .option('--output-file <path>', 'Save the generated description to the specified file')
+  .option('--copy', 'Copy the generated description to the clipboard')
+  .option('--create-pr', 'Create a GitHub PR using the generated description with gh CLI')
+  .action(async (planFile, options, command) => {
+    const { handleDescriptionCommand } = await import('./commands/description.js');
+    await handleDescriptionCommand(planFile, options, command).catch(handleCommandError);
   });
 
 program

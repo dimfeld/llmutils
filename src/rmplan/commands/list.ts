@@ -135,6 +135,14 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     return 0;
   });
 
+  // Store the original filtered count before applying limit
+  const originalFilteredCount = planArray.length;
+
+  // Apply result limit if specified
+  if (options.number && options.number > 0) {
+    planArray = planArray.slice(-options.number);
+  }
+
   // Prepare table data
   const tableData: string[][] = [];
 
@@ -314,7 +322,14 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   const output = table(tableData, tableConfig);
   log(output);
 
-  log(`Showing ${planArray.length} of ${plans.size} plan(s)`);
+  // Display appropriate status message
+  if (options.number && options.number > 0 && planArray.length < originalFilteredCount) {
+    log(
+      `Showing ${planArray.length} of ${originalFilteredCount} plan(s) (limited to ${options.number})`
+    );
+  } else {
+    log(`Showing ${planArray.length} of ${plans.size} plan(s)`);
+  }
 
   // Display duplicate IDs if any exist
   const duplicateIds = Object.keys(duplicates)

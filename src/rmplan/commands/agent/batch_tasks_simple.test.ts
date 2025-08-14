@@ -17,7 +17,9 @@ describe('--serial-tasks flag simple smoke tests', () => {
 
       const helpOutput = helpResult.stdout.toString();
       expect(helpOutput).toContain('--serial-tasks');
-      expect(helpOutput).toContain('Disable batch task execution mode and process tasks one at a time');
+      expect(helpOutput).toContain(
+        'Disable batch task execution mode and process tasks one at a time'
+      );
 
       // Test that the flag doesn't cause parsing errors when used
       const flagResult = await $`bun ${rmplanPath} agent --serial-tasks --help`.nothrow();

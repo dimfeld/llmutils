@@ -31,8 +31,15 @@ export class CopyOnlyExecutor implements Executor {
     return { rmfilter: false };
   }
 
-  async execute(contextContent: string, _planInfo: ExecutePlanInfo) {
-    // This executor doesn't use plan information
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+    // Handle output capture mode for review
+    if (planInfo.captureOutput) {
+      // In capture mode, we just return the context content as the "output"
+      // since this executor doesn't actually process the content
+      return contextContent;
+    }
+
+    // Normal execution: interactive clipboard copying
     while (true) {
       await clipboard.write(contextContent);
       log(
