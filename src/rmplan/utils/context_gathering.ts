@@ -100,29 +100,6 @@ export async function gatherPlanContext(
     throw new Error(`Could not load plan from: ${resolvedPlanFile}`);
   }
 
-  // Validate required plan fields
-  if (!planData.goal) {
-    throw new Error(`Plan file is missing required 'goal' field: ${resolvedPlanFile}`);
-  }
-
-  if (!planData.tasks || !Array.isArray(planData.tasks) || planData.tasks.length === 0) {
-    throw new Error(`Plan file must have at least one task: ${resolvedPlanFile}`);
-  }
-
-  // Validate task structure
-  for (const [index, task] of planData.tasks.entries()) {
-    if (!task.title) {
-      throw new Error(
-        `Task ${index + 1} is missing required 'title' field in plan: ${resolvedPlanFile}`
-      );
-    }
-    if (!task.description) {
-      throw new Error(
-        `Task ${index + 1} is missing required 'description' field in plan: ${resolvedPlanFile}`
-      );
-    }
-  }
-
   log(chalk.green(`Loading plan context: ${planData.id} - ${planData.title}`));
 
   // Load all plans for hierarchy traversal
