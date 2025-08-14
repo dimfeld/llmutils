@@ -630,6 +630,93 @@ tasks:
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
+  test('passes executionMode simple to executor for review-only operation', async () => {
+    const planContent = `
+id: 123
+title: Test Simple Execution
+goal: Test that review command uses simple execution mode
+tasks:
+  - title: Test task
+    description: A test task for simple execution mode
+`;
+    const planFile = join(testDir, 'simple-execution.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, planInfo: any) => {
+        // Verify that executionMode is set to 'simple'
+        expect(planInfo.executionMode).toBe('simple');
+        expect(planInfo.planId).toBe('123');
+        expect(planInfo.planTitle).toBe('Test Simple Execution');
+        expect(planInfo.planFilePath).toBe(planFile);
+        expect(planInfo.captureOutput).toBe(true);
+        return 'Mock review result';
+      }),
+    };
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 123,
+        title: 'Test Simple Execution',
+        goal: 'Test that review command uses simple execution mode',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task for simple execution mode',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff content',
+      }),
+      buildReviewPrompt: (
+        planData: any,
+        diffResult: any,
+        includeDiff: boolean = false,
+        parentChain: any[] = [],
+        completedChildren: any[] = [],
+        customInstructions?: string
+      ) => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(planFile, {}, mockCommand);
+
+    // Verify the executor was called with correct executionMode
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+    
+    // The assertions for executionMode are in the mock function above
+    // which will throw if the values don't match expected
+  });
+
   test('respects dry-run option', async () => {
     const planContent = `
 id: 1

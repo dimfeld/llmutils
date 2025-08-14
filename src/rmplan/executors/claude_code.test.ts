@@ -5043,6 +5043,288 @@ More content
     }
   });
 
+  describe('Simple execution mode', () => {
+    test('does not call wrapWithOrchestration when executionMode is simple', async () => {
+      const mockWrapWithOrchestration = mock((content: string) => `[ORCHESTRATED] ${content}`);
+      const mockGenerateAgentFiles = mock(() => Promise.resolve());
+      
+      // Mock dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+        generateAgentFiles: mockGenerateAgentFiles,
+        removeAgentFiles: mock(() => Promise.resolve()),
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+        getImplementerPrompt: mock(() => ({ name: 'implementer', prompt: 'test' })),
+        getTesterPrompt: mock(() => ({ name: 'tester', prompt: 'test' })),
+        getReviewerPrompt: mock(() => ({ name: 'reviewer', prompt: 'test' })),
+      }));
+
+      await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
+        CleanupRegistry: {
+          getInstance: mock(() => ({
+            register: mock(() => mock()),
+          })),
+        },
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        executionMode: 'simple' as const,
+      };
+
+      // Execute with simple mode
+      await executor.execute('test content', planInfo);
+
+      // Verify wrapWithOrchestration was NOT called
+      expect(mockWrapWithOrchestration).not.toHaveBeenCalled();
+    });
+
+    test('does not generate agent files when executionMode is simple', async () => {
+      const mockGenerateAgentFiles = mock(() => Promise.resolve());
+      const mockRemoveAgentFiles = mock(() => Promise.resolve());
+
+      // Mock dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mock((content: string) => content),
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+        generateAgentFiles: mockGenerateAgentFiles,
+        removeAgentFiles: mockRemoveAgentFiles,
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+        getImplementerPrompt: mock(() => ({ name: 'implementer', prompt: 'test' })),
+        getTesterPrompt: mock(() => ({ name: 'tester', prompt: 'test' })),
+        getReviewerPrompt: mock(() => ({ name: 'reviewer', prompt: 'test' })),
+      }));
+
+      await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
+        CleanupRegistry: {
+          getInstance: mock(() => ({
+            register: mock(() => mock()),
+          })),
+        },
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        executionMode: 'simple' as const,
+      };
+
+      // Execute with simple mode
+      await executor.execute('test content', planInfo);
+
+      // Verify agent files were NOT generated or removed
+      expect(mockGenerateAgentFiles).not.toHaveBeenCalled();
+      expect(mockRemoveAgentFiles).not.toHaveBeenCalled();
+    });
+
+    test('uses orchestration and generates agent files in normal mode', async () => {
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return `[ORCHESTRATED: ${planId}] ${content}`;
+      });
+      const mockGenerateAgentFiles = mock(() => Promise.resolve());
+
+      // Mock dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+        generateAgentFiles: mockGenerateAgentFiles,
+        removeAgentFiles: mock(() => Promise.resolve()),
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+        getImplementerPrompt: mock(() => ({ name: 'implementer', prompt: 'test' })),
+        getTesterPrompt: mock(() => ({ name: 'tester', prompt: 'test' })),
+        getReviewerPrompt: mock(() => ({ name: 'reviewer', prompt: 'test' })),
+      }));
+
+      await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
+        CleanupRegistry: {
+          getInstance: mock(() => ({
+            register: mock(() => mock()),
+          })),
+        },
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      const planInfo = {
+        ...mockPlanInfo,
+        executionMode: 'normal' as const,
+      };
+
+      // Execute with normal mode
+      await executor.execute('test content', planInfo);
+
+      // Verify orchestration was applied
+      expect(mockWrapWithOrchestration).toHaveBeenCalledWith('test content', '123', {
+        batchMode: undefined,
+        planFilePath: '/test/plans/test-plan.md',
+      });
+
+      // Verify agent files were generated
+      expect(mockGenerateAgentFiles).toHaveBeenCalledWith('123', expect.any(Array));
+    });
+
+    test('uses orchestration and generates agent files when executionMode is undefined (default behavior)', async () => {
+      const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
+        return `[ORCHESTRATED: ${planId}] ${content}`;
+      });
+      const mockGenerateAgentFiles = mock(() => Promise.resolve());
+
+      // Mock dependencies
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
+        createLineSplitter: mock(() => (output: string) => output.split('\n')),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock((line: string) => line),
+      }));
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mockWrapWithOrchestration,
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+        generateAgentFiles: mockGenerateAgentFiles,
+        removeAgentFiles: mock(() => Promise.resolve()),
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+        getImplementerPrompt: mock(() => ({ name: 'implementer', prompt: 'test' })),
+        getTesterPrompt: mock(() => ({ name: 'tester', prompt: 'test' })),
+        getReviewerPrompt: mock(() => ({ name: 'reviewer', prompt: 'test' })),
+      }));
+
+      await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
+        CleanupRegistry: {
+          getInstance: mock(() => ({
+            register: mock(() => mock()),
+          })),
+        },
+      }));
+
+      const executor = new ClaudeCodeExecutor(
+        {
+          allowedTools: [],
+          disallowedTools: [],
+          allowAllTools: false,
+          permissionsMcp: { enabled: false },
+        },
+        mockSharedOptions,
+        mockConfig
+      );
+
+      // Create plan info without executionMode (should default to normal behavior)
+      const planInfo = {
+        planId: '123',
+        planTitle: 'Test Plan',
+        planFilePath: '/test/plans/test-plan.md',
+        // No executionMode specified - should default to normal behavior
+      };
+
+      // Execute without specifying executionMode
+      await executor.execute('test content', planInfo);
+
+      // Verify orchestration was applied (normal behavior)
+      expect(mockWrapWithOrchestration).toHaveBeenCalledWith('test content', '123', {
+        batchMode: undefined,
+        planFilePath: '/test/plans/test-plan.md',
+      });
+
+      // Verify agent files were generated (normal behavior)
+      expect(mockGenerateAgentFiles).toHaveBeenCalledWith('123', expect.any(Array));
+    });
+  });
+
   afterEach(() => {
     moduleMocker.clear();
   });

@@ -54,7 +54,7 @@ tasks:
           orchestration and runs prompts directly,
 
           while 'normal' mode uses the full multi-agent orchestration workflow.
-        done: false
+        done: true
   - title: Implement Simple Execution Logic in ClaudeCodeExecutor
     description: >
       Update the `ClaudeCodeExecutor`'s `execute` method to check for
@@ -74,20 +74,20 @@ tasks:
 
           When in simple mode, skip the `wrapWithOrchestration` call and keep
           the original contextContent unchanged.
-        done: false
+        done: true
       - prompt: >
           Ensure that agent file generation (the `generateAgentFiles` and
           cleanup logic) is only executed when NOT in simple mode.
 
           Move the agent file generation block inside a conditional that checks
           for normal mode or undefined executionMode.
-        done: false
+        done: true
       - prompt: >
           Verify that all other features like output capture, permissions MCP,
           and interactive mode continue to work correctly
 
           in both simple and normal execution modes.
-        done: false
+        done: true
   - title: Set Review Command to Use Simple Execution Mode
     description: >
       Modify the `handleReviewCommand` function to call the executor with
@@ -105,7 +105,7 @@ tasks:
 
           Add `executionMode: 'simple'` to the ExecutePlanInfo object to enable
           simple execution mode for reviews.
-        done: false
+        done: true
   - title: Add Tests for Simple Execution Mode
     description: >
       Create comprehensive unit tests for the `ClaudeCodeExecutor` to validate
