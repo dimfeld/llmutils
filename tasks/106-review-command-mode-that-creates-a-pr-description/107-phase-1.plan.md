@@ -1,0 +1,126 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+title: Change description command - Core Functionality and Context Refactoring
+goal: To implement the foundational `description` command that generates a PR
+  description and refactor the shared context-gathering logic from the `review`
+  command.
+id: 107
+status: pending
+priority: high
+dependencies: []
+parent: 106
+planGeneratedAt: 2025-08-14T01:21:36.414Z
+createdAt: 2025-08-14T00:55:08.903Z
+updatedAt: 2025-08-14T01:21:36.414Z
+project:
+  title: Implement a `description` command to generate PR descriptions from plan
+    context
+  goal: To create a new `rmplan description` command that, similar to the `review`
+    command, gathers context from a plan and code changes, but uses it to
+    generate a comprehensive pull request description.
+  details: >
+    This project introduces a new `description` command to streamline the
+    process of writing pull request descriptions. The command will leverage the
+    existing context-gathering mechanisms of the `review` command by refactoring
+    this logic into a shared utility.
+
+
+    The new command will:
+
+    1.  Accept a plan file path or ID as input.
+
+    2.  Gather context including the plan's details, tasks, hierarchy
+    (parent/child plans), and a diff of code changes.
+
+    3.  Use a specialized prompt to instruct an LLM to generate a detailed PR
+    description.
+
+    4.  The generated description will cover what was implemented, what changed,
+    what was intentionally not changed, how the changes integrate, optional
+    Mermaid diagrams, and potential future work.
+
+    5.  Provide interactive options to the user for handling the output, such as
+    copying to the clipboard, saving to a file, or creating a PR directly using
+    the GitHub CLI.
+
+
+    Unlike the `review` command, this new command will not support incremental
+    reviews, issue detection, or autofixing, as its sole purpose is text
+    generation.
+
+
+    **Acceptance Criteria:**
+
+    - A new `rmplan description <plan>` command is available in the CLI.
+
+    - The context-gathering logic from the `review` command is successfully
+    refactored into a shared function without breaking existing `review`
+    functionality.
+
+    - The `description` command generates a PR description and prints it to the
+    console.
+
+    - The user is prompted with options to copy the description, save it to a
+    file, or create a PR.
+
+    - The command is documented and has corresponding tests.
+
+
+    **Technical Considerations:**
+
+    - The refactoring of context-gathering logic from
+    `src/rmplan/commands/review.ts` is a critical first step. This shared
+    utility will be used by both `review` and the new `description` command.
+
+    - A new prompt will be created, likely in
+    `src/rmplan/executors/claude_code/agent_prompts.ts`, specifically for
+    generating PR descriptions.
+
+    - The `@inquirer/prompts` library will be used for interactive output
+    handling.
+
+    - The GitHub CLI (`gh`) will be invoked as a subprocess for the "Create PR"
+    option.
+tasks:
+  - title: Refactor Context Gathering Logic
+    description: Create a new shared function that encapsulates the
+      context-gathering logic currently within the `handleReviewCommand`. This
+      includes resolving the plan file, reading plan data, traversing the plan
+      hierarchy (parents and children), and generating a diff of code changes.
+      Update the `review` command to use this new utility, ensuring no
+      regressions.
+    steps: []
+  - title: Create the PR Description Prompt
+    description: Develop a new prompt function, `getPrDescriptionPrompt`, that takes
+      the gathered context and constructs a detailed prompt for an LLM. The
+      prompt should instruct the model to generate a PR description covering
+      implementation details, changes, integration, and potential future
+      improvements, including optional Mermaid diagrams.
+    steps: []
+  - title: Implement the `description` Command Handler
+    description: "Create a new `description.ts` file and implement the
+      `handleDescriptionCommand` function. This function will orchestrate the
+      command's flow: call the shared context-gathering function, build the
+      prompt, execute it via an LLM executor, and print the resulting
+      description to the console."
+    steps: []
+  - title: Register the New `description` Command
+    description: Add the `description` command to the main CLI entry point in
+      `rmplan.ts`. The command should accept a plan file/ID and support relevant
+      options like `--executor`, `--model`, and `--dry-run`.
+    steps: []
+rmfilter:
+  - src/rmplan/commands/review.ts
+  - --with-imports
+  - --
+  - src/rmplan/rmplan.ts
+---
+
+This phase focuses on establishing the core logic. We will first refactor the context-gathering code out of the `review` command into a reusable function. This ensures that both the existing `review` command and the new `description` command use the same, consistent method for understanding the state of a plan and its associated code changes. Then, we will build the new `description` command on top of this refactored logic, implementing the prompt and basic execution flow to generate and display a PR description.
+
+**Acceptance Criteria:**
+- A new shared function exists that gathers plan data, hierarchy, and diff context.
+- The `review` command is updated to use this shared function and continues to work as expected.
+- A new `rmplan description` command is registered in the CLI.
+- The `description` command can successfully generate a PR description and print it to the console.
+- The new command and refactored function are covered by unit tests.
