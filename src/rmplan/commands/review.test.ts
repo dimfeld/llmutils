@@ -712,7 +712,7 @@ tasks:
 
     // Verify the executor was called with correct executionMode
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
-    
+
     // The assertions for executionMode are in the mock function above
     // which will throw if the values don't match expected
   });

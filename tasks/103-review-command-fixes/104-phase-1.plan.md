@@ -6,14 +6,14 @@ goal: To create a "simple" execution mode that allows the `review` command to
   perform a review without triggering unintended code modifications, fixing the
   core issue with the current implementation.
 id: 104
-status: completed
+status: done
 priority: high
 dependencies: []
 parent: 103
 planGeneratedAt: 2025-08-13T23:59:15.240Z
 promptsGeneratedAt: 2025-08-14T00:03:28.561Z
 createdAt: 2025-08-13T23:54:11.755Z
-updatedAt: 2025-08-14T17:36:00.000Z
+updatedAt: 2025-08-14T00:15:23.392Z
 project:
   title: Refactor the review command to separate review and autofix functionality
   goal: The goal of this project is to modify the `review` command to perform a
@@ -35,6 +35,7 @@ project:
     the identified problems.
 tasks:
   - title: Add Execution Mode to Executor Interface
+    done: true
     description: >
       Modify the `ExecutePlanInfo` interface in the executor type definitions to
       include a new optional `executionMode` property. This property will accept
@@ -45,7 +46,6 @@ tasks:
       orchestration.
     files:
       - src/rmplan/executors/types.ts
-    done: true
     steps:
       - prompt: >
           Add an optional `executionMode` property to the `ExecutePlanInfo`
@@ -57,6 +57,7 @@ tasks:
           while 'normal' mode uses the full multi-agent orchestration workflow.
         done: true
   - title: Implement Simple Execution Logic in ClaudeCodeExecutor
+    done: true
     description: >
       Update the `ClaudeCodeExecutor`'s `execute` method to check for
       `executionMode: 'simple'`. When this mode is active, the executor should
@@ -68,7 +69,6 @@ tasks:
       capture.
     files:
       - src/rmplan/executors/claude_code.ts
-    done: true
     steps:
       - prompt: >
           In the `execute` method, add a check for `planInfo?.executionMode ===
@@ -91,6 +91,7 @@ tasks:
           in both simple and normal execution modes.
         done: true
   - title: Set Review Command to Use Simple Execution Mode
+    done: true
     description: >
       Modify the `handleReviewCommand` function to call the executor with
       `executionMode: 'simple'` in the `ExecutePlanInfo` object. This change
@@ -100,7 +101,6 @@ tasks:
       analysis without attempting to fix any issues.
     files:
       - src/rmplan/commands/review.ts
-    done: true
     steps:
       - prompt: >
           In the `handleReviewCommand` function, locate where the executor's
@@ -110,6 +110,7 @@ tasks:
           simple execution mode for reviews.
         done: true
   - title: Add Tests for Simple Execution Mode
+    done: true
     description: >
       Create comprehensive unit tests for the `ClaudeCodeExecutor` to validate
       the behavior of the simple execution mode, ensuring it does not invoke the
@@ -121,7 +122,6 @@ tasks:
     files:
       - src/rmplan/executors/claude_code.test.ts
       - src/rmplan/commands/review.test.ts
-    done: true
     steps:
       - prompt: >
           In claude_code.test.ts, add a test case that verifies when

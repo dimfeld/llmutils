@@ -101,7 +101,9 @@ describe('wrapWithOrchestration', () => {
       expect(result).toContain('Logical dependencies');
       expect(result).toContain('Efficiency');
       expect(result).toContain('Reasonable scope');
-      expect(result).toContain('Select a single task or 2-5 related tasks rather than attempting all tasks at once');
+      expect(result).toContain(
+        'Select a single task or 2-5 related tasks rather than attempting all tasks at once'
+      );
 
       // Should contain plan file update instructions
       expect(result).toContain('Plan File Updates');

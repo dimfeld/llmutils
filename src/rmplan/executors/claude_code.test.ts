@@ -5047,7 +5047,7 @@ More content
     test('does not call wrapWithOrchestration when executionMode is simple', async () => {
       const mockWrapWithOrchestration = mock((content: string) => `[ORCHESTRATED] ${content}`);
       const mockGenerateAgentFiles = mock(() => Promise.resolve());
-      
+
       // Mock dependencies
       await moduleMocker.mock('../../common/process.ts', () => ({
         spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),

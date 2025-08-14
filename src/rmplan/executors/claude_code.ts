@@ -962,8 +962,9 @@ export class ClaudeCodeExecutor implements Executor {
               }
             }
 
-            const formattedOutput = formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
-            
+            const formattedOutput =
+              formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
+
             // Capture output if requested
             if (planInfo?.captureOutput) {
               capturedOutput += formattedOutput;
