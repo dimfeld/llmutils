@@ -929,5 +929,420 @@ describe('handleDescriptionCommand', () => {
         'Failed to create GitHub PR: gh command failed with exit code 1: fatal: not a git repository'
       );
     });
+
+    test('handles interactive prompt cancellation gracefully', async () => {
+      const mockContext = createMockContext();
+
+      // Mock interactive prompt to simulate user cancellation
+      const ExitPromptError = class extends Error {
+        constructor() {
+          super('User cancelled prompt');
+          this.name = 'ExitPromptError';
+        }
+      };
+
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(async () => {
+          throw new ExitPromptError();
+        }),
+        input: mock(async () => 'test.md'),
+        select: mock(async () => 'none'),
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {}; // No output flags provided - should trigger interactive mode
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      // Should not throw, should handle cancellation gracefully
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should log cancellation message
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('Action cancelled by user.');
+    });
+
+    test('handles interactive mode errors within actions', async () => {
+      const mockContext = createMockContext();
+
+      // Mock interactive prompt to select copy action
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(async () => ['copy']),
+        input: mock(async () => 'test.md'),
+        select: mock(async () => 'none'),
+      }));
+
+      // Mock clipboard to fail
+      await moduleMocker.mock('../../common/clipboard.js', () => ({
+        write: mock(() => Promise.reject(new Error('Clipboard access denied'))),
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {}; // No output flags provided - should trigger interactive mode
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      // Should not throw, should handle the error gracefully
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should log error message
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('Failed to copy to clipboard: Clipboard access denied');
+    });
+
+    test('handles interactive mode file save errors', async () => {
+      const mockContext = createMockContext();
+
+      // Mock interactive prompt to select save action
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(async () => ['save']),
+        input: mock(async () => 'test-file.md'),
+        select: mock(async () => 'none'),
+      }));
+
+      // Mock filesystem operations to fail
+      await moduleMocker.mock('node:fs/promises', () => ({
+        readFile: mock(async () => 'mock file content'),
+        writeFile: mock(() => Promise.reject(new Error('EACCES: Permission denied'))),
+        mkdir: mock(() => Promise.resolve()),
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {}; // No output flags provided - should trigger interactive mode
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      // Should not throw, should handle the error gracefully
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should log error message
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('Failed to save file: EACCES: Permission denied');
+    });
+
+    test('handles interactive mode PR creation errors', async () => {
+      const mockContext = createMockContext();
+
+      // Mock interactive prompt to select PR creation
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(async () => ['pr']),
+        input: mock(async () => 'test.md'),
+        select: mock(async () => 'none'),
+      }));
+
+      // Mock spawnAndLogOutput to simulate gh command failure
+      const spawnSpy = mock(async () => ({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'fatal: not a git repository',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {}; // No output flags provided - should trigger interactive mode
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      // Should not throw, should handle the error gracefully
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should log error message
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain(
+        'Failed to create GitHub PR: gh command failed with exit code 1: fatal: not a git repository'
+      );
+    });
+
+    test('handles interactive mode when user selects no actions', async () => {
+      const mockContext = createMockContext();
+
+      // Mock interactive prompt to select none/empty selection
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(async () => ['none']), // User explicitly selects "none"
+        input: mock(async () => 'test.md'),
+        select: mock(async () => 'none'),
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {}; // No output flags provided - should trigger interactive mode
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should log "no actions selected" message
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('No additional actions selected.');
+    });
+
+    test('handles interactive mode when user selects empty array', async () => {
+      const mockContext = createMockContext();
+
+      // Mock interactive prompt to return empty array
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(async () => []), // User selects nothing
+        input: mock(async () => 'test.md'),
+        select: mock(async () => 'none'),
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {}; // No output flags provided - should trigger interactive mode
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should log "no actions selected" message
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('No additional actions selected.');
+    });
   });
 });
