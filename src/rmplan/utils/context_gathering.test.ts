@@ -210,11 +210,18 @@ describe('gatherPlanContext', () => {
     };
     await writeFile(planFile, JSON.stringify(invalidPlan));
 
+    // Use real readPlanFile function for validation in this test
+    const { readPlanFile } = await import('../plans.js');
+    const validationMockDeps = {
+      ...mockDeps,
+      readPlanFile,
+    };
+
     const options = {};
     const globalOpts = { config: tempDir };
 
-    await expect(gatherPlanContext(planFile, options, globalOpts, mockDeps)).rejects.toThrow(
-      "Plan file is missing required 'goal' field"
+    await expect(gatherPlanContext(planFile, options, globalOpts, validationMockDeps)).rejects.toThrow(
+      /goal.*expected string, received undefined/
     );
   });
 
@@ -233,11 +240,18 @@ describe('gatherPlanContext', () => {
     };
     await writeFile(planFile, JSON.stringify(planWithInvalidTask));
 
+    // Use real readPlanFile function for validation in this test
+    const { readPlanFile } = await import('../plans.js');
+    const validationMockDeps = {
+      ...mockDeps,
+      readPlanFile,
+    };
+
     const options = {};
     const globalOpts = { config: tempDir };
 
-    await expect(gatherPlanContext(planFile, options, globalOpts, mockDeps)).rejects.toThrow(
-      "Task 1 is missing required 'title' field"
+    await expect(gatherPlanContext(planFile, options, globalOpts, validationMockDeps)).rejects.toThrow(
+      /tasks\.0\.title.*expected string, received undefined/
     );
   });
 

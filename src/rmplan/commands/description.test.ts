@@ -398,7 +398,7 @@ describe('handleDescriptionCommand', () => {
     // Mock gatherPlanContext to throw an error for invalid plan
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
       gatherPlanContext: async () => {
-        throw new Error("Plan file is missing required 'goal' field");
+        throw new Error("Invalid plan file invalid-plan.yml:\n  - goal: Required");
       }
     }));
 
@@ -418,6 +418,6 @@ describe('handleDescriptionCommand', () => {
 
     // This should be caught by gatherPlanContext's validation
     await expect(handleDescriptionCommand('invalid-plan.yml', options, command))
-      .rejects.toThrow("Plan file is missing required 'goal' field");
+      .rejects.toThrow("Invalid plan file invalid-plan.yml:\n  - goal: Required");
   });
 });
