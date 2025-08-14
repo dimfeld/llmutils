@@ -541,6 +541,29 @@ program
   });
 
 program
+  .command('description <plan>')
+  .description('Generate a comprehensive pull request description from plan context and code changes')
+  .option(`-x, --executor <name>`, 'The executor to use for description generation')
+  .addHelpText('after', `Available executors: ${executorNames}`)
+  .option(
+    '-m, --model <model>',
+    'Specify the LLM model to use for description generation. Overrides model from rmplan config.'
+  )
+  .option('--dry-run', 'Generate and print the description prompt but do not execute it', false)
+  .option(
+    '--instructions <text>',
+    'Inline custom instructions for the PR description. Overrides config file instructions.'
+  )
+  .option(
+    '--instructions-file <path>',
+    'Path to file containing custom description instructions. Overrides config file instructions.'
+  )
+  .action(async (plan, options, command) => {
+    const { handleDescriptionCommand } = await import('./commands/description.js');
+    await handleDescriptionCommand(plan, options, command).catch(handleCommandError);
+  });
+
+program
   .command('answer-pr [prIdentifier]')
   .description(
     'Address Pull Request (PR) review comments using an LLM. If no PR identifier is provided, it will try to detect the PR from the current branch.'
