@@ -452,6 +452,11 @@ describe('handleDescriptionCommand', () => {
         mkdir: mkdirSpy,
       }));
 
+      // Mock getGitRoot to return test directory
+      await moduleMocker.mock('../../common/git.js', () => ({
+        getGitRoot: mock(async () => testDir),
+      }));
+
       // Mock gatherPlanContext
       await moduleMocker.mock('../utils/context_gathering.js', () => ({
         gatherPlanContext: async () => mockContext,
@@ -491,7 +496,7 @@ describe('handleDescriptionCommand', () => {
       }));
 
       const options = {
-        outputFile: '/test/path/description.md',
+        outputFile: 'description.md', // Use relative path
       };
       const command = {
         parent: {
@@ -501,12 +506,12 @@ describe('handleDescriptionCommand', () => {
 
       await handleDescriptionCommand('test-plan.yml', options, command);
 
-      expect(mkdirSpy).toHaveBeenCalledWith('/test/path', { recursive: true });
-      expect(writeFileSpy).toHaveBeenCalledWith('/test/path/description.md', 'Generated PR description content', 'utf-8');
+      expect(mkdirSpy).toHaveBeenCalledWith(testDir, { recursive: true });
+      expect(writeFileSpy).toHaveBeenCalledWith(join(testDir, 'description.md'), 'Generated PR description content', 'utf-8');
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
-      expect(allOutput).toContain('Description saved to: /test/path/description.md');
+      expect(allOutput).toContain('Description saved to: description.md');
     });
 
     test('handles --copy flag', async () => {
@@ -672,6 +677,11 @@ describe('handleDescriptionCommand', () => {
         spawnAndLogOutput: spawnSpy,
       }));
 
+      // Mock getGitRoot to return test directory
+      await moduleMocker.mock('../../common/git.js', () => ({
+        getGitRoot: mock(async () => testDir),
+      }));
+
       // Mock gatherPlanContext
       await moduleMocker.mock('../utils/context_gathering.js', () => ({
         gatherPlanContext: async () => mockContext,
@@ -711,7 +721,7 @@ describe('handleDescriptionCommand', () => {
       }));
 
       const options = {
-        outputFile: '/test/description.md',
+        outputFile: 'description.md', // Use relative path
         copy: true,
         createPr: true,
       };
@@ -724,7 +734,7 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // All actions should be performed
-      expect(writeFileSpy).toHaveBeenCalledWith('/test/description.md', 'Generated PR description content', 'utf-8');
+      expect(writeFileSpy).toHaveBeenCalledWith(join(testDir, 'description.md'), 'Generated PR description content', 'utf-8');
       expect(clipboardWriteSpy).toHaveBeenCalledWith('Generated PR description content');
       expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--body-file', '-'], {
         stdin: 'Generated PR description content',
@@ -813,6 +823,11 @@ describe('handleDescriptionCommand', () => {
         mkdir: mock(() => Promise.resolve()),
       }));
 
+      // Mock getGitRoot to return test directory
+      await moduleMocker.mock('../../common/git.js', () => ({
+        getGitRoot: mock(async () => testDir),
+      }));
+
       // Mock gatherPlanContext
       await moduleMocker.mock('../utils/context_gathering.js', () => ({
         gatherPlanContext: async () => mockContext,
@@ -852,7 +867,7 @@ describe('handleDescriptionCommand', () => {
       }));
 
       const options = {
-        outputFile: '/test/description.md',
+        outputFile: 'description.md', // Use relative path
       };
       const command = {
         parent: {
@@ -861,7 +876,7 @@ describe('handleDescriptionCommand', () => {
       };
 
       await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
-        'Failed to write description to file: EACCES: Permission denied'
+        'Output operations failed'
       );
     });
 
@@ -1343,6 +1358,374 @@ describe('handleDescriptionCommand', () => {
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
       expect(allOutput).toContain('No additional actions selected.');
+    });
+  });
+
+  describe('security and validation', () => {
+    test('validates CLI options early and rejects invalid types', async () => {
+      const options = {
+        outputFile: 123, // Invalid type
+        copy: 'invalid',
+        createPr: null,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await expect(handleDescriptionCommand('test-plan.yml', options as any, command)).rejects.toThrow(
+        '--output-file must be a string path'
+      );
+    });
+
+    test('validates output file paths for security', async () => {
+      const mockContext = createMockContext();
+
+      // Mock filesystem operations
+      await moduleMocker.mock('node:fs/promises', () => ({
+        readFile: mock(async () => 'mock file content'),
+        writeFile: mock(() => Promise.resolve()),
+        mkdir: mock(() => Promise.resolve()),
+      }));
+
+      // Mock getGitRoot to return test directory
+      await moduleMocker.mock('../../common/git.js', () => ({
+        getGitRoot: mock(async () => testDir),
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        outputFile: '../../../etc/passwd', // Path traversal attempt
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+        'Output operations failed'
+      );
+    });
+
+    test('sanitizes process input for PR creation', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput to capture the sanitized input
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor that returns content with control characters
+      const mockExecutor = {
+        execute: mock(async () => 'Description with control chars\x01\x02\x1F'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Verify that the input was sanitized (control characters removed)
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--body-file', '-'], {
+        stdin: 'Description with control chars',
+      });
+    });
+
+    test('handles process input with null bytes safely', async () => {
+      const mockContext = createMockContext();
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor that returns content with null bytes
+      const mockExecutor = {
+        execute: mock(async () => 'Description with null\x00byte'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+        'Process input contains null byte character'
+      );
+    });
+
+    test('handles partial failures in multiple output actions gracefully', async () => {
+      const mockContext = createMockContext();
+
+      // Mock filesystem operations that fail
+      await moduleMocker.mock('node:fs/promises', () => ({
+        readFile: mock(async () => 'mock file content'),
+        writeFile: mock(() => Promise.reject(new Error('File write failed'))),
+        mkdir: mock(() => Promise.resolve()),
+      }));
+
+      // Mock clipboard that succeeds
+      const clipboardWriteSpy = mock(() => Promise.resolve());
+      await moduleMocker.mock('../../common/clipboard.js', () => ({
+        write: clipboardWriteSpy,
+      }));
+
+      // Mock spawnAndLogOutput that fails
+      const spawnSpy = mock(async () => ({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'Git error',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock getGitRoot to return test directory
+      await moduleMocker.mock('../../common/git.js', () => ({
+        getGitRoot: mock(async () => testDir),
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        outputFile: 'description.md', // Use relative path
+        copy: true,
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      // Should fail with comprehensive error message
+      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+        'Output operations failed'
+      );
+
+      // Should still have attempted clipboard operation (which succeeded)
+      expect(clipboardWriteSpy).toHaveBeenCalledWith('Generated PR description content');
+    });
+
+    test('handles interactive mode with path validation errors', async () => {
+      const mockContext = createMockContext();
+
+      // Mock interactive prompt to select save action
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(async () => ['save']),
+        input: mock(async () => '../../../etc/passwd'), // Dangerous path
+        select: mock(async () => 'none'),
+      }));
+
+      // Mock getGitRoot to return test directory
+      await moduleMocker.mock('../../common/git.js', () => ({
+        getGitRoot: mock(async () => testDir),
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {}; // No output flags provided - should trigger interactive mode
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      // Should not throw, should handle the error gracefully
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should log error message about path traversal
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('Failed to save file');
+      expect(allOutput).toContain('path traversal');
     });
   });
 });

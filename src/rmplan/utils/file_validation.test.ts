@@ -7,7 +7,7 @@ import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { validateInstructionsFilePath } from './file_validation.js';
+import { validateInstructionsFilePath, validateOutputFilePath, sanitizeProcessInput, validateDescriptionOptions } from './file_validation.js';
 
 describe('validateInstructionsFilePath', () => {
   let tempDir: string;
@@ -239,5 +239,187 @@ describe('validateInstructionsFilePath', () => {
       const result = validateInstructionsFilePath('instructions.txt', '.');
       expect(result).toContain('instructions.txt');
     });
+  });
+});
+
+describe('validateOutputFilePath', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'rmplan-output-validation-test-'));
+  });
+
+  afterEach(async () => {
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  describe('valid paths', () => {
+    test('should accept relative path within git root', () => {
+      const result = validateOutputFilePath('output.txt', tempDir);
+      expect(result).toBe(join(tempDir, 'output.txt'));
+    });
+
+    test('should accept nested relative path within git root', () => {
+      const result = validateOutputFilePath('docs/output.txt', tempDir);
+      expect(result).toBe(join(tempDir, 'docs/output.txt'));
+    });
+
+    test('should accept absolute path within git root', () => {
+      const absolutePath = join(tempDir, 'output.txt');
+      const result = validateOutputFilePath(absolutePath, tempDir);
+      expect(result).toBe(absolutePath);
+    });
+  });
+
+  describe('security validation', () => {
+    test('should reject path traversal with ..', () => {
+      expect(() => validateOutputFilePath('../output.txt', tempDir)).toThrow(
+        'Output file path contains potentially dangerous path traversal sequence'
+      );
+    });
+
+    test('should reject nested path traversal', () => {
+      expect(() => validateOutputFilePath('docs/../../../output.txt', tempDir)).toThrow(
+        'Output file path contains potentially dangerous path traversal sequence'
+      );
+    });
+
+    test('should reject paths with null bytes', () => {
+      expect(() => validateOutputFilePath('output\0.txt', tempDir)).toThrow(
+        'Output file path contains null byte character'
+      );
+    });
+
+    test('should reject empty string', () => {
+      expect(() => validateOutputFilePath('', tempDir)).toThrow(
+        'Output file path must be a non-empty string'
+      );
+    });
+
+    test('should reject non-string input', () => {
+      expect(() => validateOutputFilePath(123 as any, tempDir)).toThrow(
+        'Output file path must be a non-empty string'
+      );
+    });
+
+    test('should reject absolute path outside git root', () => {
+      expect(() => validateOutputFilePath('/etc/passwd', tempDir)).toThrow(
+        'Output file path is outside the allowed directory'
+      );
+    });
+
+    test('should reject dangerous system paths', () => {
+      expect(() => validateOutputFilePath('/var/log/test.log', tempDir)).toThrow(
+        'Output file path is outside the allowed directory'
+      );
+    });
+  });
+});
+
+describe('sanitizeProcessInput', () => {
+  test('should pass through clean content unchanged', () => {
+    const clean = 'This is a normal PR description\nWith multiple lines\nAnd normal characters.';
+    expect(sanitizeProcessInput(clean)).toBe(clean);
+  });
+
+  test('should preserve newlines and standard whitespace', () => {
+    const content = 'Line 1\nLine 2\n\nLine 4\t\tIndented';
+    expect(sanitizeProcessInput(content)).toBe(content);
+  });
+
+  test('should remove null bytes', () => {
+    expect(() => sanitizeProcessInput('content\0injection')).toThrow(
+      'Process input contains null byte character'
+    );
+  });
+
+  test('should remove control characters but preserve newlines', () => {
+    const input = 'Normal text\x01\x02\x03\nSecond line\x1F';
+    const expected = 'Normal text\nSecond line';
+    expect(sanitizeProcessInput(input)).toBe(expected);
+  });
+
+  test('should handle Unicode content safely', () => {
+    const unicode = 'PR with Unicode: 🚀 测试 💡';
+    expect(sanitizeProcessInput(unicode)).toBe(unicode);
+  });
+
+  test('should reject non-string input', () => {
+    expect(() => sanitizeProcessInput(123 as any)).toThrow('Process input must be a string');
+    expect(() => sanitizeProcessInput(null as any)).toThrow('Process input must be a string');
+    expect(() => sanitizeProcessInput(undefined as any)).toThrow('Process input must be a string');
+  });
+
+  test('should handle empty string', () => {
+    expect(sanitizeProcessInput('')).toBe('');
+  });
+
+  test('should preserve markdown formatting', () => {
+    const markdown = '# Title\n\n## Summary\n- Item 1\n- Item 2\n\n```code\nblock\n```';
+    expect(sanitizeProcessInput(markdown)).toBe(markdown);
+  });
+});
+
+describe('validateDescriptionOptions', () => {
+  test('should pass valid options', () => {
+    const validOptions = {
+      outputFile: 'test.txt',
+      copy: true,
+      createPr: false,
+    };
+    expect(() => validateDescriptionOptions(validOptions)).not.toThrow();
+  });
+
+  test('should allow undefined options', () => {
+    const options = {};
+    expect(() => validateDescriptionOptions(options)).not.toThrow();
+  });
+
+  test('should reject invalid outputFile type', () => {
+    const options = { outputFile: 123 };
+    expect(() => validateDescriptionOptions(options)).toThrow('--output-file must be a string path');
+  });
+
+  test('should reject empty outputFile string', () => {
+    const options = { outputFile: '' };
+    expect(() => validateDescriptionOptions(options)).toThrow('--output-file cannot be empty');
+  });
+
+  test('should reject whitespace-only outputFile', () => {
+    const options = { outputFile: '   ' };
+    expect(() => validateDescriptionOptions(options)).toThrow('--output-file cannot be empty');
+  });
+
+  test('should reject invalid copy type', () => {
+    const options = { copy: 'true' };
+    expect(() => validateDescriptionOptions(options)).toThrow('--copy must be a boolean flag');
+  });
+
+  test('should reject invalid createPr type', () => {
+    const options = { createPr: 1 };
+    expect(() => validateDescriptionOptions(options)).toThrow('--create-pr must be a boolean flag');
+  });
+
+  test('should handle multiple invalid options', () => {
+    const options = { 
+      outputFile: 123,
+      copy: 'invalid',
+      createPr: null
+    };
+    
+    // Should throw on the first validation error
+    expect(() => validateDescriptionOptions(options)).toThrow();
+  });
+
+  test('should allow extra valid properties', () => {
+    const options = {
+      outputFile: 'test.txt',
+      copy: true,
+      createPr: false,
+      someOtherProperty: 'value',
+    };
+    expect(() => validateDescriptionOptions(options)).not.toThrow();
   });
 });

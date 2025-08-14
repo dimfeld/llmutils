@@ -15,7 +15,7 @@ import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getPrDescriptionPrompt } from '../executors/claude_code/agent_prompts.js';
 import { gatherPlanContext } from '../utils/context_gathering.js';
 import type { PlanContext } from '../utils/context_gathering.js';
-import { validateInstructionsFilePath } from '../utils/file_validation.js';
+import { validateInstructionsFilePath, validateOutputFilePath, sanitizeProcessInput, validateDescriptionOptions } from '../utils/file_validation.js';
 
 /**
  * Options for the description command
@@ -29,6 +29,7 @@ interface DescriptionOptions {
   outputFile?: string;
   copy?: boolean;
   createPr?: boolean;
+  [key: string]: unknown;
 }
 
 /**
@@ -175,62 +176,94 @@ export function buildPrDescriptionPrompt(
 }
 
 /**
- * Handles output actions for the generated description
+ * Shared helper function to write file output safely
  */
-async function handleOutputActions(description: string, options: DescriptionOptions): Promise<void> {
-  // Check if any direct output flags are provided
-  const hasDirectOutputFlags = options.outputFile || options.copy || options.createPr;
+async function writeFileOutput(filePath: string, content: string, gitRoot: string): Promise<void> {
+  const validatedPath = validateOutputFilePath(filePath, gitRoot);
+  await mkdir(dirname(validatedPath), { recursive: true });
+  await writeFile(validatedPath, content, 'utf-8');
+  log(chalk.green(`Description saved to: ${filePath}`));
+}
 
-  if (hasDirectOutputFlags) {
-    // Handle direct output flags
-    if (options.outputFile) {
-      try {
-        // Ensure the directory exists
-        await mkdir(dirname(options.outputFile), { recursive: true });
-        await writeFile(options.outputFile, description, 'utf-8');
-        log(chalk.green(`Description saved to: ${options.outputFile}`));
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        throw new Error(`Failed to write description to file: ${errorMessage}`);
-      }
-    }
+/**
+ * Shared helper function to copy content to clipboard safely
+ */
+async function copyToClipboard(content: string): Promise<void> {
+  await write(content);
+  log(chalk.green('Description copied to clipboard'));
+}
 
-    if (options.copy) {
-      try {
-        await write(description);
-        log(chalk.green('Description copied to clipboard'));
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        throw new Error(`Failed to copy description to clipboard: ${errorMessage}`);
-      }
-    }
-
-    if (options.createPr) {
-      try {
-        const result = await spawnAndLogOutput(['gh', 'pr', 'create', '--body-file', '-'], {
-          stdin: description,
-        });
-        
-        if (result.exitCode === 0) {
-          log(chalk.green('GitHub PR created successfully'));
-        } else {
-          throw new Error(`gh command failed with exit code ${result.exitCode}: ${result.stderr}`);
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        throw new Error(`Failed to create GitHub PR: ${errorMessage}`);
-      }
-    }
+/**
+ * Shared helper function to create PR safely
+ */
+async function createPullRequest(description: string): Promise<void> {
+  const sanitizedDescription = sanitizeProcessInput(description);
+  const result = await spawnAndLogOutput(['gh', 'pr', 'create', '--body-file', '-'], {
+    stdin: sanitizedDescription,
+  });
+  
+  if (result.exitCode === 0) {
+    log(chalk.green('GitHub PR created successfully'));
   } else {
-    // Show interactive prompt when no output flags are provided
-    await handleInteractiveOutput(description);
+    throw new Error(`gh command failed with exit code ${result.exitCode}: ${result.stderr}`);
   }
 }
 
 /**
- * Handles interactive output prompt when no direct flags are provided
+ * Handles output actions for the generated description with comprehensive error handling
  */
-async function handleInteractiveOutput(description: string): Promise<void> {
+async function handleOutputActions(description: string, options: DescriptionOptions, gitRoot: string): Promise<void> {
+  // Check if any direct output flags are provided
+  const hasDirectOutputFlags = options.outputFile || options.copy || options.createPr;
+
+  if (hasDirectOutputFlags) {
+    // Collect all errors to handle partial failures gracefully
+    const errors: string[] = [];
+    
+    // Handle file output
+    if (options.outputFile) {
+      try {
+        await writeFileOutput(options.outputFile, description, gitRoot);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        errors.push(`Failed to write description to file: ${errorMessage}`);
+      }
+    }
+
+    // Handle clipboard copy
+    if (options.copy) {
+      try {
+        await copyToClipboard(description);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        errors.push(`Failed to copy description to clipboard: ${errorMessage}`);
+      }
+    }
+
+    // Handle PR creation
+    if (options.createPr) {
+      try {
+        await createPullRequest(description);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        errors.push(`Failed to create GitHub PR: ${errorMessage}`);
+      }
+    }
+
+    // If any errors occurred, throw a comprehensive error
+    if (errors.length > 0) {
+      throw new Error(`Output operations failed:\n${errors.map(e => `  - ${e}`).join('\n')}`);
+    }
+  } else {
+    // Show interactive prompt when no output flags are provided
+    await handleInteractiveOutput(description, gitRoot);
+  }
+}
+
+/**
+ * Handles interactive output prompt when no direct flags are provided with consistent error handling
+ */
+async function handleInteractiveOutput(description: string, gitRoot: string): Promise<void> {
   try {
     const actions = await checkbox({
       message: 'What would you like to do with the generated description?',
@@ -247,58 +280,63 @@ async function handleInteractiveOutput(description: string): Promise<void> {
       return;
     }
 
+    // Collect errors instead of failing fast to handle partial failures gracefully
+    const errors: string[] = [];
+    const successes: string[] = [];
+
     // Process each selected action
     for (const action of actions) {
-      switch (action) {
-        case 'copy':
-          try {
-            await write(description);
-            log(chalk.green('Description copied to clipboard'));
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            log(chalk.red(`Failed to copy to clipboard: ${errorMessage}`));
-          }
-          break;
+      try {
+        switch (action) {
+          case 'copy':
+            await copyToClipboard(description);
+            successes.push('Copied to clipboard');
+            break;
 
-        case 'save':
-          try {
+          case 'save': {
             const filename = await input({
               message: 'Enter filename to save the description:',
               default: 'pr-description.md',
             });
 
-            if (filename) {
-              // Ensure the directory exists
-              await mkdir(dirname(filename), { recursive: true });
-              await writeFile(filename, description, 'utf-8');
-              log(chalk.green(`Description saved to: ${filename}`));
-            }
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            log(chalk.red(`Failed to save file: ${errorMessage}`));
-          }
-          break;
-
-        case 'pr':
-          try {
-            const result = await spawnAndLogOutput(['gh', 'pr', 'create', '--body-file', '-'], {
-              stdin: description,
-            });
-            
-            if (result.exitCode === 0) {
-              log(chalk.green('GitHub PR created successfully'));
+            if (filename && filename.trim()) {
+              await writeFileOutput(filename.trim(), description, gitRoot);
+              successes.push(`Saved to file: ${filename.trim()}`);
             } else {
-              log(chalk.red(`Failed to create GitHub PR: gh command failed with exit code ${result.exitCode}: ${result.stderr}`));
+              log(chalk.yellow('File save cancelled - no filename provided.'));
             }
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            log(chalk.red(`Failed to create GitHub PR: ${errorMessage}`));
+            break;
           }
-          break;
+
+          case 'pr':
+            await createPullRequest(description);
+            successes.push('GitHub PR created');
+            break;
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        
+        // For interactive mode, log errors but continue with other actions
+        const actionName = action === 'copy' ? 'copy to clipboard' : 
+                          action === 'save' ? 'save file' : 
+                          action === 'pr' ? 'create GitHub PR' : action;
+        
+        const formattedError = `Failed to ${actionName}: ${errorMessage}`;
+        errors.push(formattedError);
+        log(chalk.red(formattedError));
       }
     }
+
+    // Summary of results
+    if (successes.length > 0) {
+      log(chalk.green(`\nCompleted actions: ${successes.join(', ')}`));
+    }
+    if (errors.length > 0) {
+      log(chalk.red(`\nFailed actions: ${errors.length}`));
+    }
+    
   } catch (err) {
-    // Handle prompt cancellation gracefully
+    // Handle prompt cancellation and other interactive errors gracefully
     if (err instanceof Error && err.name === 'ExitPromptError') {
       log(chalk.gray('Action cancelled by user.'));
     } else {
@@ -316,6 +354,9 @@ export async function handleDescriptionCommand(
   options: DescriptionOptions,
   command: DescriptionCommand
 ) {
+  // Validate CLI options early to prevent runtime errors
+  validateDescriptionOptions(options);
+  
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -419,7 +460,7 @@ export async function handleDescriptionCommand(
     log('\n' + generatedDescription);
 
     // Handle output actions based on CLI flags
-    await handleOutputActions(generatedDescription, options);
+    await handleOutputActions(generatedDescription, options, gitRoot);
 
     log(chalk.green('\nPR description generated successfully!'));
   } catch (err) {
