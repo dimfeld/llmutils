@@ -11,8 +11,9 @@ dependencies:
   - 107
 parent: 106
 planGeneratedAt: 2025-08-14T01:21:36.414Z
+promptsGeneratedAt: 2025-08-14T03:19:37.519Z
 createdAt: 2025-08-14T00:55:08.903Z
-updatedAt: 2025-08-14T01:21:36.414Z
+updatedAt: 2025-08-14T03:19:37.519Z
 project:
   title: Implement a `description` command to generate PR descriptions from plan
     context
@@ -84,30 +85,220 @@ project:
     option.
 tasks:
   - title: Add Output Handling CLI Flags
-    description: "Extend the `description` command definition in `rmplan.ts` to
-      include flags for non-interactive output handling: `--output-file <path>`
-      to save to a file, `--copy` to copy to the clipboard, and `--create-pr` to
-      initiate PR creation."
-    steps: []
+    description: >
+      Extend the `description` command definition in `rmplan.ts` to include
+      flags for non-interactive output handling: `--output-file <path>` to save
+      to a file, `--copy` to copy to the clipboard, and `--create-pr` to
+      initiate PR creation. Also update the DescriptionOptions interface in
+      description.ts to include these new options.
+
+
+      The flags should follow the existing patterns in the codebase:
+
+      - Use `.option()` method on the command object
+
+      - Include helpful descriptions for each flag
+
+      - Make --output-file accept a path parameter
+
+      - Make --copy and --create-pr boolean flags
+    files:
+      - src/rmplan/rmplan.ts
+      - src/rmplan/commands/description.ts
+    steps:
+      - prompt: >
+          Update the DescriptionOptions interface in description.ts to include
+          three new optional properties:
+
+          outputFile?: string, copy?: boolean, and createPr?: boolean
+        done: false
+      - prompt: >
+          In rmplan.ts, add three new .option() calls to the description command
+          definition:
+
+          --output-file with a path parameter, --copy as a boolean flag, and
+          --create-pr as a boolean flag.
+
+          Include appropriate descriptions for each flag.
+        done: false
   - title: Implement Direct Output Actions
-    description: In `handleDescriptionCommand`, add logic to process the new CLI
-      flags. If a flag is present, perform the corresponding action (write to
-      file, copy to clipboard, or invoke `gh pr create`) immediately after the
-      description is generated.
-    steps: []
+    description: >
+      In `handleDescriptionCommand`, add logic to process the new CLI flags. If
+      a flag is present, perform the corresponding action (write to file, copy
+      to clipboard, or invoke `gh pr create`) immediately after the description
+      is generated.
+
+
+      For file output: Use writeFile from node:fs/promises and ensure the
+      directory exists
+
+      For clipboard: Use the write function from src/common/clipboard.ts
+
+      For PR creation: Use logSpawn from src/common/process.ts to run the gh CLI
+      command
+
+
+      The implementation should handle these flags after the description is
+      successfully generated but before the success message. Multiple flags can
+      be specified together (e.g., both --copy and --output-file).
+    files:
+      - src/rmplan/commands/description.ts
+    steps:
+      - prompt: >
+          Import the necessary utilities at the top of the file: writeFile and
+          mkdir from node:fs/promises,
+
+          write from ../../common/clipboard.js, logSpawn from
+          ../../common/process.js, and
+
+          dirname from node:path
+        done: false
+      - prompt: >
+          After the description is generated (after the executorOutput line),
+          add a new section to handle
+
+          output flags. Store the generated description in a variable for reuse.
+        done: false
+      - prompt: >
+          Implement file output handling: if options.outputFile is specified,
+          ensure the directory exists
+
+          using mkdir with recursive option, then write the description to the
+          file using writeFile.
+
+          Log a success message indicating where the file was saved.
+        done: false
+      - prompt: >
+          Implement clipboard handling: if options.copy is true, use the
+          clipboard write function
+
+          to copy the description. Log a success message that the description
+          was copied to clipboard.
+        done: false
+      - prompt: >
+          Implement PR creation: if options.createPr is true, use logSpawn to
+          run
+
+          'gh pr create --body-file -' and pipe the description to stdin. Handle
+          the process
+
+          result and log appropriate success or error messages.
+        done: false
   - title: Implement Interactive Output Prompt
-    description: If no output-related flags are provided, use the
-      `@inquirer/prompts` library to display a checklist or series of questions
-      to the user. The prompt will offer choices to copy to clipboard, write to
-      a file, or create a PR, and the command will act based on the user's
-      selection.
-    steps: []
+    description: >
+      If no output-related flags are provided, use the `@inquirer/prompts`
+      library to display a checklist or series of questions to the user. The
+      prompt will offer choices to copy to clipboard, write to a file, or create
+      a PR, and the command will act based on the user's selection.
+
+
+      Use the select prompt with multiple choices, allowing the user to choose
+      one or more actions.
+
+      The interactive prompt should only appear when none of the output flags
+      (--output-file, --copy, --create-pr) are provided.
+
+
+      For the file output option in interactive mode, prompt for the filename
+      using the input function.
+
+      Show clear action descriptions in the prompt choices.
+    files:
+      - src/rmplan/commands/description.ts
+    steps:
+      - prompt: >
+          Import select, input, and checkbox from @inquirer/prompts at the top
+          of the file
+        done: false
+      - prompt: >
+          After handling the direct output flags, add a check to see if no
+          output flags were provided.
+
+          If none were provided, show an interactive prompt using checkbox to
+          allow multiple selections.
+        done: false
+      - prompt: >
+          Create the checkbox prompt with options: "Copy to clipboard", "Save to
+          file", 
+
+          "Create GitHub PR", and "None (just display)". Process the user's
+          selections.
+        done: false
+      - prompt: >
+          For each selected action, implement the corresponding handler:
+
+          For "Save to file", use input prompt to ask for the filename, then
+          save the file.
+
+          For "Copy to clipboard" and "Create GitHub PR", reuse the logic from
+          the direct flag handlers.
+        done: false
+      - prompt: >
+          Add appropriate error handling for the interactive flow, catching
+          prompt cancellations
+
+          and handling them gracefully with informative messages.
+        done: false
   - title: Add Tests for Output Handling
-    description: Create or update tests for the `description` command to verify the
+    description: >
+      Create or update tests for the `description` command to verify the
       behavior of the new output flags and the interactive prompt. Mock external
       dependencies like the clipboard, filesystem, and the `gh` CLI subprocess
       to test the command's logic in isolation.
-    steps: []
+
+
+      The tests should cover:
+
+      - Each individual flag (--output-file, --copy, --create-pr)
+
+      - Multiple flags used together
+
+      - Interactive mode when no flags are provided
+
+      - Error cases (file write failures, gh command failures)
+
+
+      Use the existing test structure in description.test.ts as a template,
+      following the ModuleMocker pattern already established.
+    files:
+      - src/rmplan/commands/description.test.ts
+    steps:
+      - prompt: >
+          Add a new describe block for "output handling" tests within the
+          existing test suite
+        done: false
+      - prompt: >
+          Create a test for the --output-file flag that mocks writeFile and
+          mkdir, verifies the file
+
+          is written with the correct content, and checks that the success
+          message is logged
+        done: false
+      - prompt: >
+          Create a test for the --copy flag that mocks the clipboard write
+          function and verifies
+
+          it's called with the generated description content
+        done: false
+      - prompt: >
+          Create a test for the --create-pr flag that mocks logSpawn, verifies
+          the correct gh command
+
+          is executed, and checks that the description is passed via stdin
+        done: false
+      - prompt: >
+          Create a test for interactive mode that mocks the checkbox and input
+          prompts,
+
+          simulates user selections, and verifies the corresponding actions are
+          taken
+        done: false
+      - prompt: >
+          Add error handling tests: test file write failures with EACCES errors,
+
+          test gh command failures with non-zero exit codes, and verify
+          appropriate error messages
+        done: false
 rmfilter:
   - src/rmplan/commands/review.ts
   - --with-imports
