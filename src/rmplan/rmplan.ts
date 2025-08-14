@@ -541,7 +541,7 @@ program
   });
 
 program
-  .command('description <planFile>')
+  .command('pr-description <planFile>')
   .description(
     'Generate a comprehensive pull request description from plan context and code changes'
   )
