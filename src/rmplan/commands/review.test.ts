@@ -2554,7 +2554,7 @@ tasks:
       summary: { totalIssues: 2 },
       issues: [],
     } as any;
-    
+
     const result = detectIssuesInReview(reviewResult, 'Some review output');
     expect(result).toBe(true);
   });
@@ -2564,7 +2564,7 @@ tasks:
       summary: { totalIssues: 0 },
       issues: [{ id: 'test-issue', title: 'Test Issue' }],
     } as any;
-    
+
     const result = detectIssuesInReview(reviewResult, 'Some review output');
     expect(result).toBe(true);
   });
@@ -2574,7 +2574,7 @@ tasks:
       summary: { totalIssues: 0 },
       issues: [],
     } as any;
-    
+
     const rawOutput = `## Code Review Summary
 
 Several issues were found during the review:
@@ -2583,7 +2583,7 @@ Several issues were found during the review:
 - Bug in error handling logic
 
 These issues need to be addressed before merging.`;
-    
+
     const result = detectIssuesInReview(reviewResult, rawOutput);
     expect(result).toBe(true);
   });
@@ -2593,7 +2593,7 @@ These issues need to be addressed before merging.`;
       summary: { totalIssues: 0 },
       issues: [],
     } as any;
-    
+
     const rawOutput = `Review Results:
 
 1. Memory leak in component lifecycle
@@ -2601,7 +2601,7 @@ These issues need to be addressed before merging.`;
 3. Performance bottleneck in rendering
 
 Recommendations for fixes are provided below.`;
-    
+
     const result = detectIssuesInReview(reviewResult, rawOutput);
     expect(result).toBe(true);
   });
@@ -2611,14 +2611,14 @@ Recommendations for fixes are provided below.`;
       summary: { totalIssues: 0 },
       issues: [],
     } as any;
-    
+
     const rawOutput = `## Code Review Summary
 
 The code review has been completed successfully.
 No issues were identified in the implementation.
 The code follows best practices and coding standards.
 All tests are passing and functionality works as expected.`;
-    
+
     const result = detectIssuesInReview(reviewResult, rawOutput);
     expect(result).toBe(false);
   });
@@ -2637,32 +2637,36 @@ All tests are passing and functionality works as expected.`;
       goal: 'Test goal',
       tasks: [],
     };
-    
+
     const validReviewResult = {
       issues: [{ title: 'Test Issue', description: 'Test description' }],
       rawOutput: 'Test output',
     } as any;
-    
+
     const validDiffResult = {
       baseBranch: 'main',
       changedFiles: ['test.ts'],
     } as any;
-    
+
     // Test null planData
-    expect(() => buildAutofixPrompt(null as any, validReviewResult, validDiffResult))
-      .toThrow('planData is required for autofix prompt generation');
-    
+    expect(() => buildAutofixPrompt(null as any, validReviewResult, validDiffResult)).toThrow(
+      'planData is required for autofix prompt generation'
+    );
+
     // Test null reviewResult
-    expect(() => buildAutofixPrompt(validPlanData, null as any, validDiffResult))
-      .toThrow('reviewResult is required for autofix prompt generation');
-    
+    expect(() => buildAutofixPrompt(validPlanData, null as any, validDiffResult)).toThrow(
+      'reviewResult is required for autofix prompt generation'
+    );
+
     // Test null diffResult
-    expect(() => buildAutofixPrompt(validPlanData, validReviewResult, null as any))
-      .toThrow('diffResult is required for autofix prompt generation');
-    
+    expect(() => buildAutofixPrompt(validPlanData, validReviewResult, null as any)).toThrow(
+      'diffResult is required for autofix prompt generation'
+    );
+
     // Test valid inputs
-    expect(() => buildAutofixPrompt(validPlanData, validReviewResult, validDiffResult))
-      .not.toThrow();
+    expect(() =>
+      buildAutofixPrompt(validPlanData, validReviewResult, validDiffResult)
+    ).not.toThrow();
   });
 
   test('buildAutofixPrompt creates proper autofix prompt structure', async () => {

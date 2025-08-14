@@ -5,7 +5,7 @@ goal: To build upon the review-only functionality by adding an `--autofix`
   option and an interactive prompt, allowing users to explicitly trigger an
   automated code-fixing process based on the review results.
 id: 105
-status: in_progress
+status: done
 priority: high
 dependencies:
   - 104
@@ -13,7 +13,7 @@ parent: 103
 planGeneratedAt: 2025-08-13T23:59:15.240Z
 promptsGeneratedAt: 2025-08-14T00:19:30.410Z
 createdAt: 2025-08-13T23:54:11.755Z
-updatedAt: 2025-08-14T00:19:30.786Z
+updatedAt: 2025-08-14T00:40:08.784Z
 project:
   title: Refactor the review command to separate review and autofix functionality
   goal: The goal of this project is to modify the `review` command to perform a

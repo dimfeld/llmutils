@@ -593,16 +593,17 @@ export async function handleReviewCommand(planFile: string, options: any, comman
         log(chalk.green('Autofix execution completed successfully!'));
       } catch (autofixErr) {
         // Enhanced error handling with context preservation
-        const autofixErrorMessage = autofixErr instanceof Error ? autofixErr.message : String(autofixErr);
+        const autofixErrorMessage =
+          autofixErr instanceof Error ? autofixErr.message : String(autofixErr);
         const contextualError = `Autofix execution failed: ${autofixErrorMessage}`;
-        
+
         log(chalk.red(`Error during autofix execution: ${autofixErrorMessage}`));
-        
+
         // Preserve stack trace for debugging
         if (autofixErr instanceof Error && autofixErr.stack) {
           log(chalk.gray(`Stack trace: ${autofixErr.stack}`));
         }
-        
+
         throw new Error(contextualError);
       }
     }
@@ -612,23 +613,29 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     // Enhanced error handling with better context preservation
     const errorMessage = err instanceof Error ? err.message : String(err);
     const contextualError = `Review execution failed: ${errorMessage}`;
-    
+
     // Log additional context for debugging
     if (err instanceof Error) {
       if (err.stack) {
         log(chalk.gray(`Stack trace: ${err.stack}`));
       }
-      
+
       // Provide specific guidance based on error type
       if (err.message.includes('timeout')) {
-        log(chalk.yellow('Hint: Consider using a different model or reducing the scope of the review.'));
+        log(
+          chalk.yellow(
+            'Hint: Consider using a different model or reducing the scope of the review.'
+          )
+        );
       } else if (err.message.includes('permission')) {
-        log(chalk.yellow('Hint: Check file permissions and ensure you have access to the repository.'));
+        log(
+          chalk.yellow('Hint: Check file permissions and ensure you have access to the repository.')
+        );
       } else if (err.message.includes('network')) {
         log(chalk.yellow('Hint: Check your internet connection and API credentials.'));
       }
     }
-    
+
     throw new Error(contextualError);
   }
 }
@@ -1028,7 +1035,11 @@ export function detectIssuesInReview(
   }
 
   // Secondary method: check if issues array has content
-  if (reviewResult?.issues && Array.isArray(reviewResult.issues) && reviewResult.issues.length > 0) {
+  if (
+    reviewResult?.issues &&
+    Array.isArray(reviewResult.issues) &&
+    reviewResult.issues.length > 0
+  ) {
     return true;
   }
 
@@ -1036,18 +1047,19 @@ export function detectIssuesInReview(
   if (rawOutput) {
     const outputLength = rawOutput.length;
     const lines = rawOutput.split('\n');
-    
+
     // Look for common issue indicators in the text
     const issueIndicators = [
       /\b(?:issue|problem|error|bug|vulnerability|concern)s?\b/gi,
       /\b(?:critical|major|minor|warning)\b/gi,
       /\b(?:fix|resolve|address|correct)\b/gi,
       /\b(?:security|performance|memory|null|undefined)\b/gi,
-      /❌|⚠️|🔴|🟡|✗|\*\*|ERROR|WARNING|CRITICAL/gi
+      /❌|⚠️|🔴|🟡|✗|\*\*|ERROR|WARNING|CRITICAL/gi,
     ];
-    
+
     let issueScore = 0;
-    for (const line of lines.slice(0, 100)) { // Limit analysis to first 100 lines
+    for (const line of lines.slice(0, 100)) {
+      // Limit analysis to first 100 lines
       for (const indicator of issueIndicators) {
         const matches = line.match(indicator);
         if (matches) {
@@ -1055,19 +1067,17 @@ export function detectIssuesInReview(
         }
       }
     }
-    
+
     // If output is substantial and contains multiple issue indicators, likely has issues
     if (outputLength > 500 && issueScore >= 3) {
       return true;
     }
-    
+
     // Check for list-like structures that might indicate issues
-    const listLines = lines.filter(line => 
-      /^\s*[-*•]\s+/.test(line) || 
-      /^\s*\d+\.\s+/.test(line) ||
-      /^\s*[►▸•]\s+/.test(line)
+    const listLines = lines.filter(
+      (line) => /^\s*[-*•]\s+/.test(line) || /^\s*\d+\.\s+/.test(line) || /^\s*[►▸•]\s+/.test(line)
     );
-    
+
     if (listLines.length >= 2 && issueScore >= 2) {
       return true;
     }
