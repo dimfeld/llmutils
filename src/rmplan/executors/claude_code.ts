@@ -948,6 +948,8 @@ export class ClaudeCodeExecutor implements Executor {
           formatStdout: (output) => {
             let lines = splitter(output);
             const formattedResults = lines.map(formatJsonMessage);
+            // Capture output based on the specified mode
+            const captureMode = planInfo?.captureOutput;
 
             // Extract file paths and add them to trackedFiles set
             for (const result of formattedResults) {
@@ -960,40 +962,18 @@ export class ClaudeCodeExecutor implements Executor {
                   this.trackedFiles.add(absolutePath);
                 }
               }
+
+              if (result.message) {
+                if (captureMode === 'all') {
+                  capturedOutputLines.push(result.message);
+                } else if (captureMode === 'result' && result.type === 'result') {
+                  capturedOutputLines.push(result.message);
+                }
+              }
             }
 
             const formattedOutput =
               formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
-
-            // Capture output based on the specified mode
-            const captureMode = planInfo?.captureOutput;
-            if (captureMode === 'all') {
-              // Capture all formatted output
-              capturedOutputLines.push(formattedOutput);
-            } else if (captureMode === 'result') {
-              // Capture only result messages using the same formatting as 'all' mode
-              const resultFormattedMessages = formattedResults.filter((result) => {
-                // Check if this is a result message by looking at the original line
-                const lineIndex = formattedResults.indexOf(result);
-                if (lineIndex >= 0 && lineIndex < lines.length) {
-                  try {
-                    const parsed = JSON.parse(lines[lineIndex]);
-                    return parsed.type === 'result';
-                  } catch (error) {
-                    debugLog(`Error parsing JSON for result filtering: ${error as Error}`);
-                    return false;
-                  }
-                }
-                return false;
-              });
-              
-              if (resultFormattedMessages.length > 0) {
-                const resultOutput = resultFormattedMessages.map((r) => r.message || '').join('\n\n') + '\n\n';
-                capturedOutputLines.push(resultOutput);
-              }
-            }
-            // For 'none' or undefined, no capture happens
-
             return formattedOutput;
           },
         });
@@ -1007,7 +987,7 @@ export class ClaudeCodeExecutor implements Executor {
         if (captureMode === 'all' || captureMode === 'result') {
           return capturedOutputLines.join('');
         }
-        
+
         return; // Explicitly return void for 'none' or undefined captureOutput
       }
     } finally {
