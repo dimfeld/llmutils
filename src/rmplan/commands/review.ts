@@ -434,9 +434,10 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       rawOutput
     );
 
-    // Check if autofix should be performed
+    // Check if autofix should be performed - with robust issue detection
+    const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
     let shouldAutofix = false;
-    if (reviewResult.summary.totalIssues > 0) {
+    if (hasIssues) {
       if (!options.autofix && !options.noAutofix) {
         // Prompt user for autofix
         shouldAutofix = await confirm({
@@ -572,12 +573,12 @@ export async function handleReviewCommand(planFile: string, options: any, comman
       }
     }
 
-    // Execute autofix if requested or confirmed
-    if (performAutofix && reviewResult.summary.totalIssues > 0) {
+    // Execute autofix if requested or confirmed and issues were detected
+    if (performAutofix && hasIssues) {
       log(chalk.cyan('\n## Executing Autofix\n'));
 
       try {
-        // Build the autofix prompt
+        // Build the autofix prompt with validation
         const autofixPrompt = buildAutofixPrompt(planData, reviewResult, diffResult);
 
         // Execute autofix using the executor in normal mode
@@ -591,17 +592,44 @@ export async function handleReviewCommand(planFile: string, options: any, comman
 
         log(chalk.green('Autofix execution completed successfully!'));
       } catch (autofixErr) {
-        const autofixErrorMessage =
-          autofixErr instanceof Error ? autofixErr.message : String(autofixErr);
+        // Enhanced error handling with context preservation
+        const autofixErrorMessage = autofixErr instanceof Error ? autofixErr.message : String(autofixErr);
+        const contextualError = `Autofix execution failed: ${autofixErrorMessage}`;
+        
         log(chalk.red(`Error during autofix execution: ${autofixErrorMessage}`));
-        throw new Error(`Autofix execution failed: ${autofixErrorMessage}`);
+        
+        // Preserve stack trace for debugging
+        if (autofixErr instanceof Error && autofixErr.stack) {
+          log(chalk.gray(`Stack trace: ${autofixErr.stack}`));
+        }
+        
+        throw new Error(contextualError);
       }
     }
 
     log(chalk.green('\nCode review completed successfully!'));
   } catch (err) {
+    // Enhanced error handling with better context preservation
     const errorMessage = err instanceof Error ? err.message : String(err);
-    throw new Error(`Review execution failed: ${errorMessage}`);
+    const contextualError = `Review execution failed: ${errorMessage}`;
+    
+    // Log additional context for debugging
+    if (err instanceof Error) {
+      if (err.stack) {
+        log(chalk.gray(`Stack trace: ${err.stack}`));
+      }
+      
+      // Provide specific guidance based on error type
+      if (err.message.includes('timeout')) {
+        log(chalk.yellow('Hint: Consider using a different model or reducing the scope of the review.'));
+      } else if (err.message.includes('permission')) {
+        log(chalk.yellow('Hint: Check file permissions and ensure you have access to the repository.'));
+      } else if (err.message.includes('network')) {
+        log(chalk.yellow('Hint: Check your internet connection and API credentials.'));
+      }
+    }
+    
+    throw new Error(contextualError);
   }
 }
 
@@ -988,6 +1016,67 @@ export function buildReviewPrompt(
 }
 
 /**
+ * Robust issue detection that combines multiple methods to determine if issues exist
+ */
+export function detectIssuesInReview(
+  reviewResult: ReturnType<typeof createReviewResult>,
+  rawOutput: string
+): boolean {
+  // Primary method: check totalIssues count
+  if (reviewResult?.summary?.totalIssues > 0) {
+    return true;
+  }
+
+  // Secondary method: check if issues array has content
+  if (reviewResult?.issues && Array.isArray(reviewResult.issues) && reviewResult.issues.length > 0) {
+    return true;
+  }
+
+  // Fallback method: semantic analysis of review output
+  if (rawOutput) {
+    const outputLength = rawOutput.length;
+    const lines = rawOutput.split('\n');
+    
+    // Look for common issue indicators in the text
+    const issueIndicators = [
+      /\b(?:issue|problem|error|bug|vulnerability|concern)s?\b/gi,
+      /\b(?:critical|major|minor|warning)\b/gi,
+      /\b(?:fix|resolve|address|correct)\b/gi,
+      /\b(?:security|performance|memory|null|undefined)\b/gi,
+      /❌|⚠️|🔴|🟡|✗|\*\*|ERROR|WARNING|CRITICAL/gi
+    ];
+    
+    let issueScore = 0;
+    for (const line of lines.slice(0, 100)) { // Limit analysis to first 100 lines
+      for (const indicator of issueIndicators) {
+        const matches = line.match(indicator);
+        if (matches) {
+          issueScore += matches.length;
+        }
+      }
+    }
+    
+    // If output is substantial and contains multiple issue indicators, likely has issues
+    if (outputLength > 500 && issueScore >= 3) {
+      return true;
+    }
+    
+    // Check for list-like structures that might indicate issues
+    const listLines = lines.filter(line => 
+      /^\s*[-*•]\s+/.test(line) || 
+      /^\s*\d+\.\s+/.test(line) ||
+      /^\s*[►▸•]\s+/.test(line)
+    );
+    
+    if (listLines.length >= 2 && issueScore >= 2) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Creates an autofix prompt that includes the plan context, review findings, and instructions to fix all identified issues
  */
 export function buildAutofixPrompt(
@@ -995,6 +1084,16 @@ export function buildAutofixPrompt(
   reviewResult: ReturnType<typeof createReviewResult>,
   diffResult: DiffResult
 ): string {
+  // Input validation
+  if (!planData) {
+    throw new Error('planData is required for autofix prompt generation');
+  }
+  if (!reviewResult) {
+    throw new Error('reviewResult is required for autofix prompt generation');
+  }
+  if (!diffResult) {
+    throw new Error('diffResult is required for autofix prompt generation');
+  }
   const prompt = [
     `# Autofix Request`,
     ``,

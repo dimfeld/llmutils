@@ -7,6 +7,8 @@ import {
   handleReviewCommand,
   generateDiffForReview,
   buildReviewPrompt,
+  detectIssuesInReview,
+  buildAutofixPrompt,
   sanitizeBranchName,
   validateInstructionsFilePath,
   validateFocusAreas,
@@ -2098,6 +2100,30 @@ tasks:
         completedChildren: any[] = [],
         customInstructions?: string
       ) => 'test review prompt',
+      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
+        // Simulate issues found to trigger autofix
+        return rawOutput.includes('Critical Issues') || rawOutput.includes('Major Issues');
+      },
+      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
+        return `# Autofix Request
+
+## Plan Context
+
+**Plan ID:** ${planData.id}
+**Title:** ${planData.title}
+
+## Review Findings
+
+### Issue 1: Security Vulnerability
+- Unsafe input validation
+
+### Issue 2: Performance Issue
+- N+1 query problem
+
+## Instructions
+
+Please fix all the issues identified in the review.`;
+      },
     }));
 
     const mockCommand = {
@@ -2206,6 +2232,12 @@ tasks:
         diffContent: 'test diff',
       }),
       buildReviewPrompt: () => 'test review prompt',
+      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
+        return rawOutput.includes('Major Issues');
+      },
+      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
+        return `# Autofix Request for ${planData.title}`;
+      },
     }));
 
     const mockCommand = {
@@ -2293,6 +2325,12 @@ tasks:
         diffContent: 'test diff',
       }),
       buildReviewPrompt: () => 'test review prompt',
+      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
+        return rawOutput.includes('Minor Issues');
+      },
+      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
+        throw new Error('buildAutofixPrompt should not be called when user declines');
+      },
     }));
 
     const mockCommand = {
@@ -2390,6 +2428,13 @@ Continue following current coding standards and best practices.`;
         diffContent: 'test diff',
       }),
       buildReviewPrompt: () => 'test review prompt',
+      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
+        // No issues found - the review output indicates all is well
+        return false;
+      },
+      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
+        throw new Error('buildAutofixPrompt should not be called when no issues found');
+      },
     }));
 
     const mockCommand = {
@@ -2478,6 +2523,12 @@ tasks:
         diffContent: 'test diff',
       }),
       buildReviewPrompt: () => 'test review prompt',
+      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
+        return rawOutput.includes('Critical Issues');
+      },
+      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
+        throw new Error('buildAutofixPrompt should not be called with --no-autofix flag');
+      },
     }));
 
     const mockCommand = {
@@ -2496,6 +2547,122 @@ tasks:
         executionMode: 'simple',
       })
     );
+  });
+
+  test('detectIssuesInReview - detects issues via totalIssues count', () => {
+    const reviewResult = {
+      summary: { totalIssues: 2 },
+      issues: [],
+    } as any;
+    
+    const result = detectIssuesInReview(reviewResult, 'Some review output');
+    expect(result).toBe(true);
+  });
+
+  test('detectIssuesInReview - detects issues via issues array', () => {
+    const reviewResult = {
+      summary: { totalIssues: 0 },
+      issues: [{ id: 'test-issue', title: 'Test Issue' }],
+    } as any;
+    
+    const result = detectIssuesInReview(reviewResult, 'Some review output');
+    expect(result).toBe(true);
+  });
+
+  test('detectIssuesInReview - semantic fallback detection with issue indicators', () => {
+    const reviewResult = {
+      summary: { totalIssues: 0 },
+      issues: [],
+    } as any;
+    
+    const rawOutput = `## Code Review Summary
+
+Several issues were found during the review:
+- Critical security vulnerability in authentication
+- Performance problem with database queries
+- Bug in error handling logic
+
+These issues need to be addressed before merging.`;
+    
+    const result = detectIssuesInReview(reviewResult, rawOutput);
+    expect(result).toBe(true);
+  });
+
+  test('detectIssuesInReview - semantic fallback with list structure', () => {
+    const reviewResult = {
+      summary: { totalIssues: 0 },
+      issues: [],
+    } as any;
+    
+    const rawOutput = `Review Results:
+
+1. Memory leak in component lifecycle
+2. Missing error handling in API calls
+3. Performance bottleneck in rendering
+
+Recommendations for fixes are provided below.`;
+    
+    const result = detectIssuesInReview(reviewResult, rawOutput);
+    expect(result).toBe(true);
+  });
+
+  test('detectIssuesInReview - no issues detected when clean', () => {
+    const reviewResult = {
+      summary: { totalIssues: 0 },
+      issues: [],
+    } as any;
+    
+    const rawOutput = `## Code Review Summary
+
+The code review has been completed successfully.
+No issues were identified in the implementation.
+The code follows best practices and coding standards.
+All tests are passing and functionality works as expected.`;
+    
+    const result = detectIssuesInReview(reviewResult, rawOutput);
+    expect(result).toBe(false);
+  });
+
+  test('detectIssuesInReview - handles null/undefined inputs safely', () => {
+    expect(detectIssuesInReview(null as any, '')).toBe(false);
+    expect(detectIssuesInReview(undefined as any, '')).toBe(false);
+    expect(detectIssuesInReview({} as any, '')).toBe(false);
+    expect(detectIssuesInReview({ summary: {} } as any, '')).toBe(false);
+  });
+
+  test('buildAutofixPrompt - validates required inputs', () => {
+    const validPlanData = {
+      id: 42,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      tasks: [],
+    };
+    
+    const validReviewResult = {
+      issues: [{ title: 'Test Issue', description: 'Test description' }],
+      rawOutput: 'Test output',
+    } as any;
+    
+    const validDiffResult = {
+      baseBranch: 'main',
+      changedFiles: ['test.ts'],
+    } as any;
+    
+    // Test null planData
+    expect(() => buildAutofixPrompt(null as any, validReviewResult, validDiffResult))
+      .toThrow('planData is required for autofix prompt generation');
+    
+    // Test null reviewResult
+    expect(() => buildAutofixPrompt(validPlanData, null as any, validDiffResult))
+      .toThrow('reviewResult is required for autofix prompt generation');
+    
+    // Test null diffResult
+    expect(() => buildAutofixPrompt(validPlanData, validReviewResult, null as any))
+      .toThrow('diffResult is required for autofix prompt generation');
+    
+    // Test valid inputs
+    expect(() => buildAutofixPrompt(validPlanData, validReviewResult, validDiffResult))
+      .not.toThrow();
   });
 
   test('buildAutofixPrompt creates proper autofix prompt structure', async () => {
