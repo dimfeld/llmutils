@@ -5,7 +5,7 @@ goal: To enhance the `description` command with interactive options for handling
   the generated output, allowing users to easily copy it, save it, or create a
   pull request.
 id: 108
-status: pending
+status: in_progress
 priority: medium
 dependencies:
   - 107
@@ -13,7 +13,7 @@ parent: 106
 planGeneratedAt: 2025-08-14T01:21:36.414Z
 promptsGeneratedAt: 2025-08-14T03:19:37.519Z
 createdAt: 2025-08-14T00:55:08.903Z
-updatedAt: 2025-08-14T03:19:37.519Z
+updatedAt: 2025-08-14T03:19:37.871Z
 project:
   title: Implement a `description` command to generate PR descriptions from plan
     context

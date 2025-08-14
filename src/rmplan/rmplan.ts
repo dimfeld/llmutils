@@ -560,6 +560,9 @@ program
     '--instructions-file <path>',
     'Path to file containing custom description instructions. Overrides config file instructions.'
   )
+  .option('--output-file <path>', 'Save the generated description to the specified file')
+  .option('--copy', 'Copy the generated description to the clipboard')
+  .option('--create-pr', 'Create a GitHub PR using the generated description with gh CLI')
   .action(async (planFile, options, command) => {
     const { handleDescriptionCommand } = await import('./commands/description.js');
     await handleDescriptionCommand(planFile, options, command).catch(handleCommandError);
