@@ -231,18 +231,25 @@ Scrutinize interactions between tasks for conflicts, inconsistencies, and integr
 - Integration tests missing for complex workflows
 
 ## Response Format:
-Structure your review as:
 
-**CRITICAL ISSUES:** (Must be fixed before acceptance)
-- [List each critical bug, security issue, or correctness problem]
+Review Legend:
+CRITICAL issues Must be fixed before acceptance
+MAJOR concerns should be addressed
+MINOR issues can be fixed if time permits
 
-**MAJOR CONCERNS:** (Should be addressed)
-- [List performance issues, pattern violations, testing gaps]
-
-**MINOR ISSUES:** (Consider fixing if time permits)
-- [List style inconsistencies, minor optimizations]
+Found Issues:
+- CRITICAL: [A critical bug, security issue, or correctness problem]
+- CRITICAL: [A critical bug, security issue, or correctness problem]
+- MAJOR: [A performance issue, pattern violation, or testing gap]
+- MAJOR: [A performance issue, pattern violation, or testing gap]
+- MINOR: [Style inconsistency, minor optimizations]
+- MINOR: [Style inconsistency, minor optimizations]
 
 **VERDICT:** NEEDS_FIXES | ACCEPTABLE
+
+## Response Format Notes:
+
+For the verdict:
 - If NEEDS_FIXES: Briefly explain what must be addressed
 - If ACCEPTABLE: State this in one sentence only
 
