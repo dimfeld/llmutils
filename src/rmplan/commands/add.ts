@@ -78,7 +78,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     status: options.status || 'pending',
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
     dependencies: needArrayOrUndefined(options.dependsOn),
-    parent: options.parent,
+    parent: options.parent ? Number(options.parent) : undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],

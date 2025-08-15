@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { log, warn } from '../../../logging.js';
+import { debugLog, log, warn } from '../../../logging.js';
 import { resolveTasksDir, type RmplanConfig } from '../../configSchema.js';
 import { clearPlanCache, readAllPlans, writePlanFile } from '../../plans.js';
 
@@ -79,7 +79,7 @@ export async function checkAndMarkParentDone(
       }
     }
     if (allChangedFiles.size > 0) {
-      parentPlan.changedFiles = Array.from(allChangedFiles);
+      parentPlan.changedFiles = Array.from(allChangedFiles).sort();
     }
 
     await writePlanFile(parentPlan.filename, parentPlan);

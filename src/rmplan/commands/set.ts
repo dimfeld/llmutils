@@ -7,6 +7,7 @@ import { resolveTasksDir } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { wouldCreateCircularDependency } from './validate.js';
+import { checkAndMarkParentDone } from './agent/parent_plans.js';
 
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
 
@@ -56,6 +57,11 @@ export async function handleSetCommand(
     if (!options.statusDescription && plan.statusDescription) {
       delete plan.statusDescription;
       log('Cleared status description (status changed)');
+    }
+
+    if (plan.parent && plan.status === 'done') {
+      const config = await loadEffectiveConfig(globalOpts?.config);
+      await checkAndMarkParentDone(plan.parent, config);
     }
   }
 

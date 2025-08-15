@@ -564,6 +564,8 @@ export async function writePlanFile(
     throw new Error(`Invalid plan data:\n${errors}`);
   }
 
+  result.data.updatedAt = new Date().toISOString();
+
   // Separate the details field from the rest of the plan
   const { details, ...planWithoutDetails } = result.data;
 
