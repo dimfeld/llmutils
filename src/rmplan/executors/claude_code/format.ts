@@ -261,6 +261,25 @@ export function formatJsonMessage(input: string): {
 
           formattedResult = lines.join('\n');
         } else if (
+          toolName === 'Bash' &&
+          typeof result === 'object' &&
+          ('stdout' in result || 'stderr' in result)
+        ) {
+          let stdout = (result as any).stdout?.trim();
+          let stderr = (result as any).stderr?.trim();
+
+          let lines: string[] = [];
+
+          if (stderr) {
+            lines.push(chalk.red('Stderr:\n') + stderr);
+          }
+
+          if (stdout) {
+            lines.push(chalk.green('Stdout:\n') + stdout);
+          }
+
+          formattedResult = lines.join('\n\n');
+        } else if (
           typeof result === 'object' &&
           result !== null &&
           'file_path' in result &&
