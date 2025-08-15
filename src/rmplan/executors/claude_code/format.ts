@@ -232,7 +232,7 @@ export function formatJsonMessage(input: string): {
           const color = content.name === 'Task' ? chalk.red : chalk.cyan;
           outputLines.push(
             color(`### Invoke Tool: ${content.name} [${timestamp}]`),
-            yaml.stringify(content.input ?? {})
+            yaml.stringify(content.input ?? {}).trim()
           );
         }
       } else if (content.type === 'tool_result') {
@@ -248,6 +248,18 @@ export function formatJsonMessage(input: string): {
         let formattedResult: string;
         if (toolName === 'Read' && typeof result === 'string') {
           formattedResult = `Lines: ${result.split('\n').length}`;
+        } else if (
+          toolName === 'Edit' &&
+          typeof result === 'string' &&
+          result.includes('has been updated.')
+        ) {
+          let lines = result.split('\n');
+          if (lines.length > 15) {
+            lines = lines.slice(0, 15);
+            lines.push('(truncated long output...)');
+          }
+
+          formattedResult = lines.join('\n');
         } else if (
           typeof result === 'object' &&
           result !== null &&
@@ -286,5 +298,8 @@ export function formatJsonMessage(input: string): {
 }
 
 function formatValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
   return yaml.stringify(value).trim();
 }
