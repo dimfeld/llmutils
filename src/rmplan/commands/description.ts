@@ -201,11 +201,14 @@ async function copyToClipboard(content: string): Promise<void> {
 /**
  * Shared helper function to create PR safely
  */
-async function createPullRequest(description: string): Promise<void> {
+async function createPullRequest(title: string, description: string): Promise<void> {
   const sanitizedDescription = sanitizeProcessInput(description);
-  const result = await spawnAndLogOutput(['gh', 'pr', 'create', '--body-file', '-'], {
-    stdin: sanitizedDescription,
-  });
+  const result = await spawnAndLogOutput(
+    ['gh', 'pr', 'create', '--draft', '--title', title, '--body-file', '-'],
+    {
+      stdin: sanitizedDescription,
+    }
+  );
 
   if (result.exitCode === 0) {
     log(chalk.green('GitHub PR created successfully'));
@@ -218,6 +221,7 @@ async function createPullRequest(description: string): Promise<void> {
  * Handles output actions for the generated description with comprehensive error handling
  */
 async function handleOutputActions(
+  title: string,
   description: string,
   options: DescriptionOptions,
   gitRoot: string
@@ -252,7 +256,7 @@ async function handleOutputActions(
     // Handle PR creation
     if (options.createPr) {
       try {
-        await createPullRequest(description);
+        await createPullRequest(title, description);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         errors.push(`Failed to create GitHub PR: ${errorMessage}`);
@@ -265,14 +269,18 @@ async function handleOutputActions(
     }
   } else {
     // Show interactive prompt when no output flags are provided
-    await handleInteractiveOutput(description, gitRoot);
+    await handleInteractiveOutput(title, description, gitRoot);
   }
 }
 
 /**
  * Handles interactive output prompt when no direct flags are provided with consistent error handling
  */
-async function handleInteractiveOutput(description: string, gitRoot: string): Promise<void> {
+async function handleInteractiveOutput(
+  title: string,
+  description: string,
+  gitRoot: string
+): Promise<void> {
   try {
     const actions = await checkbox({
       message: 'What would you like to do with the generated description?',
@@ -318,7 +326,7 @@ async function handleInteractiveOutput(description: string, gitRoot: string): Pr
           }
 
           case 'pr':
-            await createPullRequest(description);
+            await createPullRequest(title, description);
             successes.push('GitHub PR created');
             break;
         }
@@ -473,7 +481,12 @@ export async function handleDescriptionCommand(
     log('\n' + generatedDescription);
 
     // Handle output actions based on CLI flags
-    await handleOutputActions(generatedDescription, options, gitRoot);
+    await handleOutputActions(
+      planData.title || `Plan ${planData.id}`,
+      generatedDescription,
+      options,
+      gitRoot
+    );
 
     log(chalk.green('\nPR description generated successfully!'));
   } catch (err) {
