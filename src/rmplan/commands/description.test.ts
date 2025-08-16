@@ -645,7 +645,7 @@ describe('handleDescriptionCommand', () => {
 
       await handleDescriptionCommand('test-plan.yml', options, command);
 
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--body-file', '-'], {
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
         stdin: 'Generated PR description content',
       });
 
@@ -744,7 +744,7 @@ describe('handleDescriptionCommand', () => {
         'utf-8'
       );
       expect(clipboardWriteSpy).toHaveBeenCalledWith('Generated PR description content');
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--body-file', '-'], {
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
         stdin: 'Generated PR description content',
       });
     });
@@ -1517,7 +1517,7 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Verify that the input was sanitized (control characters removed)
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--body-file', '-'], {
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
         stdin: 'Description with control chars',
       });
     });

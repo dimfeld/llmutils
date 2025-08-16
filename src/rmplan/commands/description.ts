@@ -20,6 +20,7 @@ import {
   validateOutputFilePath,
   sanitizeProcessInput,
   validateDescriptionOptions,
+  sanitizeTitlePrefix,
 } from '../utils/file_validation.js';
 
 /**
@@ -199,16 +200,46 @@ async function copyToClipboard(content: string): Promise<void> {
 }
 
 /**
+ * Configuration options for PR creation
+ */
+interface PrCreationOptions {
+  /** Whether the PR should be created as a draft */
+  draft?: boolean;
+  /** Prefix to add to the PR title */
+  titlePrefix?: string;
+}
+
+/**
  * Shared helper function to create PR safely
  */
-async function createPullRequest(title: string, description: string): Promise<void> {
+async function createPullRequest(title: string, description: string, options: PrCreationOptions = {}): Promise<void> {
   const sanitizedDescription = sanitizeProcessInput(description);
-  const result = await spawnAndLogOutput(
-    ['gh', 'pr', 'create', '--draft', '--title', title, '--body-file', '-'],
-    {
-      stdin: sanitizedDescription,
-    }
-  );
+  
+  // Apply title prefix if configured
+  let finalTitle = title;
+  if (options.titlePrefix) {
+    const sanitizedPrefix = sanitizeTitlePrefix(options.titlePrefix);
+    finalTitle = `${sanitizedPrefix}${title}`;
+  }
+  
+  // Ensure title doesn't exceed GitHub's PR title limit of 256 characters
+  if (finalTitle.length > 256) {
+    finalTitle = finalTitle.substring(0, 256).trim();
+  }
+  
+  // Build command arguments conditionally
+  const ghArgs = ['gh', 'pr', 'create'];
+  
+  // Only add --draft flag if draft is true (maintaining backward compatibility)
+  if (options.draft !== false) {
+    ghArgs.push('--draft');
+  }
+  
+  ghArgs.push('--title', finalTitle, '--body-file', '-');
+  
+  const result = await spawnAndLogOutput(ghArgs, {
+    stdin: sanitizedDescription,
+  });
 
   if (result.exitCode === 0) {
     log(chalk.green('GitHub PR created successfully'));
@@ -224,7 +255,8 @@ async function handleOutputActions(
   title: string,
   description: string,
   options: DescriptionOptions,
-  gitRoot: string
+  gitRoot: string,
+  prCreationConfig: PrCreationOptions
 ): Promise<void> {
   // Check if any direct output flags are provided
   const hasDirectOutputFlags = options.outputFile || options.copy || options.createPr;
@@ -256,7 +288,7 @@ async function handleOutputActions(
     // Handle PR creation
     if (options.createPr) {
       try {
-        await createPullRequest(title, description);
+        await createPullRequest(title, description, prCreationConfig);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         errors.push(`Failed to create GitHub PR: ${errorMessage}`);
@@ -269,7 +301,7 @@ async function handleOutputActions(
     }
   } else {
     // Show interactive prompt when no output flags are provided
-    await handleInteractiveOutput(title, description, gitRoot);
+    await handleInteractiveOutput(title, description, gitRoot, prCreationConfig);
   }
 }
 
@@ -279,7 +311,8 @@ async function handleOutputActions(
 async function handleInteractiveOutput(
   title: string,
   description: string,
-  gitRoot: string
+  gitRoot: string,
+  prCreationConfig: PrCreationOptions
 ): Promise<void> {
   try {
     const actions = await checkbox({
@@ -326,7 +359,7 @@ async function handleInteractiveOutput(
           }
 
           case 'pr':
-            await createPullRequest(title, description);
+            await createPullRequest(title, description, prCreationConfig);
             successes.push('GitHub PR created');
             break;
         }
@@ -380,6 +413,9 @@ export async function handleDescriptionCommand(
 
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
+  
+  // Extract prCreation settings with fallback to default (draft: true)
+  const prCreationConfig = config.prCreation || { draft: true };
 
   // Gather plan context using the shared utility
   // Description command doesn't use incremental features, so pass empty review options
@@ -485,7 +521,8 @@ export async function handleDescriptionCommand(
       planData.title || `Plan ${planData.id}`,
       generatedDescription,
       options,
-      gitRoot
+      gitRoot,
+      prCreationConfig
     );
 
     log(chalk.green('\nPR description generated successfully!'));

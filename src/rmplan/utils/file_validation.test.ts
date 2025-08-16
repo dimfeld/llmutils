@@ -12,6 +12,7 @@ import {
   validateOutputFilePath,
   sanitizeProcessInput,
   validateDescriptionOptions,
+  sanitizeTitlePrefix,
 } from './file_validation.js';
 
 describe('validateInstructionsFilePath', () => {
@@ -428,5 +429,76 @@ describe('validateDescriptionOptions', () => {
       someOtherProperty: 'value',
     };
     expect(() => validateDescriptionOptions(options)).not.toThrow();
+  });
+});
+
+describe('sanitizeTitlePrefix', () => {
+  test('should handle basic valid prefixes', () => {
+    expect(sanitizeTitlePrefix('[Feature] ')).toBe('[Feature] ');
+    expect(sanitizeTitlePrefix('WIP: ')).toBe('WIP: ');
+    expect(sanitizeTitlePrefix('🚀 ')).toBe('🚀 ');
+    expect(sanitizeTitlePrefix('')).toBe('');
+  });
+
+  test('should remove shell metacharacters', () => {
+    expect(sanitizeTitlePrefix('[Feature] `echo test`')).toBe('[Feature] echo test');
+    expect(sanitizeTitlePrefix('$USER: ')).toBe('USER: ');
+    expect(sanitizeTitlePrefix('test; rm -rf /')).toBe('test rm -rf /');
+    expect(sanitizeTitlePrefix('test|grep')).toBe('testgrep');
+    expect(sanitizeTitlePrefix('test&background')).toBe('testbackground');
+    expect(sanitizeTitlePrefix('test<input')).toBe('testinput');
+    expect(sanitizeTitlePrefix('test>output')).toBe('testoutput');
+    expect(sanitizeTitlePrefix('test\\escape')).toBe('testescape');
+  });
+
+  test('should remove control characters', () => {
+    expect(sanitizeTitlePrefix('test\x01control')).toBe('testcontrol');
+    expect(sanitizeTitlePrefix('test\x02\x1Fmore')).toBe('testmore');
+    expect(sanitizeTitlePrefix('test\x7F')).toBe('test');
+  });
+
+  test('should preserve safe punctuation', () => {
+    expect(sanitizeTitlePrefix('[Feature]: Bug fix - v1.0')).toBe('[Feature]: Bug fix - v1.0');
+    expect(sanitizeTitlePrefix('(hotfix) @user #123')).toBe('(hotfix) @user #123');
+    expect(sanitizeTitlePrefix('fix.js + test.ts')).toBe('fix.js + test.ts');
+  });
+
+  test('should limit length to 100 characters', () => {
+    const longPrefix = 'a'.repeat(150);
+    const result = sanitizeTitlePrefix(longPrefix);
+    expect(result.length).toBe(100);
+    expect(result).toBe('a'.repeat(100));
+  });
+
+  test('should trim after truncation', () => {
+    const prefixWithSpaces = 'a'.repeat(98) + '   ';
+    const result = sanitizeTitlePrefix(prefixWithSpaces);
+    expect(result.length).toBe(98); // Trimmed length will be less than 100
+    expect(result).toBe('a'.repeat(98));
+  });
+
+  test('should throw error for null bytes', () => {
+    expect(() => sanitizeTitlePrefix('test\0null')).toThrow(
+      'Title prefix contains null byte character'
+    );
+  });
+
+  test('should throw error for non-string input', () => {
+    expect(() => sanitizeTitlePrefix(123 as any)).toThrow('Title prefix must be a string');
+    expect(() => sanitizeTitlePrefix(null as any)).toThrow('Title prefix must be a string');
+    expect(() => sanitizeTitlePrefix(undefined as any)).toThrow('Title prefix must be a string');
+  });
+
+  test('should handle complex real-world scenarios', () => {
+    // Dangerous injection attempt
+    expect(sanitizeTitlePrefix('[Fix] `rm -rf /` && echo "pwned"')).toBe(
+      '[Fix] rm -rf /  echo "pwned"'
+    );
+    
+    // Mixed control characters and shell metacharacters
+    expect(sanitizeTitlePrefix('test\x01`danger`\x02|pipe')).toBe('testdangerpipe');
+    
+    // Unicode with dangerous characters
+    expect(sanitizeTitlePrefix('🚀 Feature: `$(whoami)`')).toBe('🚀 Feature: (whoami)');
   });
 });

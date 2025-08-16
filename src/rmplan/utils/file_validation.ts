@@ -164,6 +164,39 @@ export function sanitizeProcessInput(content: string): string {
 }
 
 /**
+ * Sanitizes title prefix to prevent command injection and ensure safe use in shell commands
+ * Removes control characters, limits length, and removes shell metacharacters
+ *
+ * @param prefix - The title prefix to sanitize
+ * @returns The sanitized prefix, limited to 100 characters
+ */
+export function sanitizeTitlePrefix(prefix: string): string {
+  if (typeof prefix !== 'string') {
+    throw new Error('Title prefix must be a string');
+  }
+
+  // Check for null bytes which can be used for command injection
+  if (prefix.includes('\0')) {
+    throw new Error('Title prefix contains null byte character');
+  }
+
+  // Remove control characters except for standard whitespace (space, tab)
+  // eslint-disable-next-line no-control-regex
+  let sanitized = prefix.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  // Remove shell metacharacters that could break the gh command
+  // Keep basic punctuation like dashes, brackets, colons that are common in prefixes
+  sanitized = sanitized.replace(/[`$;|&<>\\]/g, '');
+
+  // Limit length to 100 characters to keep titles reasonable
+  if (sanitized.length > 100) {
+    sanitized = sanitized.substring(0, 100).trim();
+  }
+
+  return sanitized;
+}
+
+/**
  * Validates CLI options to ensure they have expected types and values
  * Provides early validation to prevent runtime errors
  *
