@@ -60,6 +60,16 @@ export type Message =
 // Cache for tool use IDs mapped to their names
 const toolUseCache = new Map<string, string>();
 
+function truncateString(result: string, maxLines = 15): string {
+  let lines = result.split('\n');
+  if (lines.length > maxLines) {
+    lines = lines.slice(0, maxLines);
+    lines.push('(truncated long output...)');
+  }
+
+  return lines.join('\n');
+}
+
 export function formatJsonMessage(input: string): {
   message?: string;
   rawMessage?: string;
@@ -253,13 +263,11 @@ export function formatJsonMessage(input: string): {
           typeof result === 'string' &&
           result.includes('has been updated.')
         ) {
-          let lines = result.split('\n');
-          if (lines.length > 15) {
-            lines = lines.slice(0, 15);
-            lines.push('(truncated long output...)');
-          }
-
-          formattedResult = lines.join('\n');
+          formattedResult = truncateString(result);
+        } else if ((toolName === 'LS' || toolName === 'Glob') && typeof result === 'string') {
+          // This tends to have a lot of files listed and isn't useful
+          // to the user
+          formattedResult = truncateString(result, 10);
         } else if (
           toolName === 'Bash' &&
           typeof result === 'object' &&
