@@ -43,6 +43,7 @@ project:
     - Title prefix is properly sanitized to prevent injection attacks
 tasks:
   - title: Add prCreation schema to configSchema.ts
+    done: true
     description: >
       Add a new `prCreation` field to the `rmplanConfigSchema` in
       `src/rmplan/configSchema.ts` with Zod validation for `draft` (boolean,
@@ -79,8 +80,9 @@ tasks:
 
           Follow the same pattern as the `answerPr` and `review` sections using
           .strict().optional() with proper descriptions.
-        done: false
+        done: true
   - title: Update getDefaultConfig function
+    done: true
     description: >
       Modify the `getDefaultConfig` function in `src/rmplan/configSchema.ts` to
       include default values for the new `prCreation` configuration, setting
@@ -96,8 +98,9 @@ tasks:
 
           This maintains backward compatibility by ensuring PRs are created as
           drafts by default when config doesn't specify otherwise.
-        done: false
+        done: true
   - title: Add config schema tests
+    done: true
     description: >
       Create comprehensive tests in `src/rmplan/configSchema.test.ts` for the
       new `prCreation` configuration. Tests should follow the established
@@ -129,35 +132,35 @@ tasks:
 
           Include tests for valid configurations with all fields, partial
           configs, and ensure the field is optional.
-        done: false
+        done: true
       - prompt: >
           Add tests to verify draft field defaults to true when not specified in
           config and when prCreation object exists but draft is undefined.
 
           Also test that explicitly setting draft to false is preserved
           correctly.
-        done: false
+        done: true
       - prompt: >
           Add validation tests that reject invalid types: non-boolean values for
           draft and non-string values for titlePrefix.
 
           Include tests for null and numeric values following the existing
           validation test patterns.
-        done: false
+        done: true
       - prompt: >
           Add tests for edge cases including empty titlePrefix string (should be
           valid), special characters in titlePrefix,
 
           empty prCreation object, and rejection of unknown fields within
           prCreation due to .strict().
-        done: false
+        done: true
       - prompt: >
           Add a test verifying prCreation works correctly alongside other
           configuration fields like issueTracker and review.
 
           Also update the getDefaultConfig test to verify it includes the new
           prCreation field with draft: true.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/configSchema.ts
   - src/rmplan/commands/description.ts
