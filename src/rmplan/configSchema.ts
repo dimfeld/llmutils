@@ -141,10 +141,7 @@ export const rmplanConfigSchema = z
           .optional()
           .default(true)
           .describe('Whether PRs should be created as drafts by default'),
-        titlePrefix: z
-          .string()
-          .optional()
-          .describe('Prefix to add to PR titles when creating PRs'),
+        titlePrefix: z.string().optional().describe('Prefix to add to PR titles when creating PRs'),
       })
       .strict()
       .optional()
