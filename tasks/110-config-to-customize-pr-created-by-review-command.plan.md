@@ -4,14 +4,14 @@ title: config to customize PR created by review command
 goal: Enable users to configure default settings for PRs created by rmplan
   commands, including draft status and title prefix
 id: 110
-status: pending
+status: in_progress
 priority: medium
 container: true
 dependencies:
   - 111
   - 112
 createdAt: 2025-08-16T00:21:10.187Z
-updatedAt: 2025-08-16T00:25:44.555Z
+updatedAt: 2025-08-16T00:27:33.640Z
 tasks: []
 rmfilter:
   - src/rmplan/configSchema.ts

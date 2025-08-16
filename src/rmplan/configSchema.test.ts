@@ -61,6 +61,13 @@ describe('configSchema', () => {
       expect(defaultConfig.issueTracker).toBe('github');
     });
 
+    test('should include prCreation with default draft value true', () => {
+      const defaultConfig = getDefaultConfig();
+
+      expect(defaultConfig).toHaveProperty('prCreation');
+      expect(defaultConfig.prCreation).toEqual({ draft: true });
+    });
+
     test('should return a valid configuration according to schema', () => {
       const defaultConfig = getDefaultConfig();
 
@@ -69,6 +76,7 @@ describe('configSchema', () => {
 
       const validatedConfig = rmplanConfigSchema.parse(defaultConfig);
       expect(validatedConfig.issueTracker).toBe('github');
+      expect(validatedConfig.prCreation?.draft).toBe(true);
     });
   });
 
@@ -114,6 +122,205 @@ describe('configSchema', () => {
 
       const result = rmplanConfigSchema.parse(config);
       expect(result.issueTracker).toBe('github'); // Should use default
+    });
+  });
+
+  describe('prCreation field', () => {
+    test('should accept valid prCreation configuration with all fields', () => {
+      const config = {
+        prCreation: {
+          draft: false,
+          titlePrefix: '[Feature] ',
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation?.draft).toBe(false);
+      expect(result.prCreation?.titlePrefix).toBe('[Feature] ');
+    });
+
+    test('should accept partial prCreation configuration with only draft', () => {
+      const config = {
+        prCreation: {
+          draft: true,
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation?.draft).toBe(true);
+      expect(result.prCreation?.titlePrefix).toBeUndefined();
+    });
+
+    test('should accept partial prCreation configuration with only titlePrefix', () => {
+      const config = {
+        prCreation: {
+          titlePrefix: '[WIP] ',
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation?.draft).toBe(true); // Should use default
+      expect(result.prCreation?.titlePrefix).toBe('[WIP] ');
+    });
+
+    test('should make prCreation field optional', () => {
+      const config = {
+        issueTracker: 'github' as const,
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation).toBeUndefined();
+    });
+
+    test('should default draft to true when not specified in config', () => {
+      const config = {
+        prCreation: {
+          titlePrefix: 'Test: ',
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation?.draft).toBe(true);
+    });
+
+    test('should default draft to true when prCreation exists but draft is undefined', () => {
+      const config = {
+        prCreation: {
+          draft: undefined,
+          titlePrefix: 'Test: ',
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation?.draft).toBe(true);
+    });
+
+    test('should preserve explicitly set draft false value', () => {
+      const config = {
+        prCreation: {
+          draft: false,
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation?.draft).toBe(false);
+    });
+
+    test('should reject non-boolean values for draft', () => {
+      const invalidConfigs = [
+        {
+          prCreation: {
+            draft: 'true',
+          },
+        },
+        {
+          prCreation: {
+            draft: 1,
+          },
+        },
+        {
+          prCreation: {
+            draft: null,
+          },
+        },
+      ];
+
+      for (const invalidConfig of invalidConfigs) {
+        expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+      }
+    });
+
+    test('should reject non-string values for titlePrefix', () => {
+      const invalidConfigs = [
+        {
+          prCreation: {
+            titlePrefix: 123,
+          },
+        },
+        {
+          prCreation: {
+            titlePrefix: true,
+          },
+        },
+        {
+          prCreation: {
+            titlePrefix: null,
+          },
+        },
+      ];
+
+      for (const invalidConfig of invalidConfigs) {
+        expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+      }
+    });
+
+    test('should accept empty titlePrefix string', () => {
+      const config = {
+        prCreation: {
+          titlePrefix: '',
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation?.titlePrefix).toBe('');
+      expect(result.prCreation?.draft).toBe(true); // Should use default
+    });
+
+    test('should accept titlePrefix with special characters', () => {
+      const config = {
+        prCreation: {
+          titlePrefix: '[🚀] Feature: ',
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation?.titlePrefix).toBe('[🚀] Feature: ');
+    });
+
+    test('should accept empty prCreation object', () => {
+      const config = {
+        prCreation: {},
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.prCreation).toBeDefined();
+      expect(result.prCreation?.draft).toBe(true); // Should use default
+      expect(result.prCreation?.titlePrefix).toBeUndefined();
+    });
+
+    test('should reject unknown fields within prCreation due to strict', () => {
+      const config = {
+        prCreation: {
+          draft: true,
+          titlePrefix: 'Test: ',
+          unknownField: 'invalid',
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(config)).toThrow();
+    });
+
+    test('should work correctly alongside other configuration fields', () => {
+      const config = {
+        issueTracker: 'linear' as const,
+        defaultExecutor: 'claude-code',
+        prCreation: {
+          draft: false,
+          titlePrefix: '[Feature] ',
+        },
+        review: {
+          focusAreas: ['security'],
+          outputFormat: 'json' as const,
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.issueTracker).toBe('linear');
+      expect(result.defaultExecutor).toBe('claude-code');
+      expect(result.prCreation?.draft).toBe(false);
+      expect(result.prCreation?.titlePrefix).toBe('[Feature] ');
+      expect(result.review?.focusAreas).toEqual(['security']);
+      expect(result.review?.outputFormat).toBe('json');
     });
   });
 

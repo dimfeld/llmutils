@@ -133,6 +133,22 @@ export const rmplanConfigSchema = z
           .describe('Default value for whether to commit changes after processing'),
       })
       .optional(),
+    /** Default settings for PR creation */
+    prCreation: z
+      .object({
+        draft: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe('Whether PRs should be created as drafts by default'),
+        titlePrefix: z
+          .string()
+          .optional()
+          .describe('Prefix to add to PR titles when creating PRs'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for PR creation behavior'),
     /** Custom API key environment variables for specific models or model prefixes */
     modelApiKeys: z
       .record(z.string(), z.string().describe('Environment variable name to use for API key'))
@@ -284,5 +300,6 @@ export function getDefaultConfig(): RmplanConfig {
     postApplyCommands: [],
     defaultExecutor: DEFAULT_EXECUTOR,
     workspaceCreation: undefined,
+    prCreation: { draft: true },
   };
 }
