@@ -212,15 +212,19 @@ interface PrCreationOptions {
 /**
  * Shared helper function to create PR safely
  */
-async function createPullRequest(title: string, description: string, options: PrCreationOptions = {}): Promise<void> {
+async function createPullRequest(
+  title: string,
+  description: string,
+  options: PrCreationOptions = {}
+): Promise<void> {
   const sanitizedDescription = sanitizeProcessInput(description);
-  
+
   // Apply title prefix if configured (already sanitized at config loading stage)
   let finalTitle = title;
   if (options.titlePrefix) {
     finalTitle = `${options.titlePrefix}${title}`;
   }
-  
+
   // Ensure title doesn't exceed GitHub's PR title limit of 256 characters
   // Account for the entire command line - gh command + arguments + title
   const baseCommandLength = 'gh pr create --draft --title --body-file -'.length + 10; // Add buffer
@@ -228,17 +232,17 @@ async function createPullRequest(title: string, description: string, options: Pr
   if (finalTitle.length > maxTitleLength) {
     finalTitle = finalTitle.substring(0, maxTitleLength).trim();
   }
-  
+
   // Build command arguments conditionally
   const ghArgs = ['gh', 'pr', 'create'];
-  
+
   // Only add --draft flag if draft is explicitly true
   if (options.draft === true) {
     ghArgs.push('--draft');
   }
-  
+
   ghArgs.push('--title', finalTitle, '--body-file', '-');
-  
+
   const result = await spawnAndLogOutput(ghArgs, {
     stdin: sanitizedDescription,
   });
@@ -415,14 +419,14 @@ export async function handleDescriptionCommand(
 
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
-  
+
   // Extract prCreation settings with proper defaults for partial configuration
   const prCreationConfig = {
     draft: true, // Default to draft mode for backward compatibility
     titlePrefix: undefined,
     ...config.prCreation, // Override with actual config values
   };
-  
+
   // Sanitize title prefix at config loading stage if provided
   if (prCreationConfig.titlePrefix) {
     prCreationConfig.titlePrefix = sanitizeTitlePrefix(prCreationConfig.titlePrefix);

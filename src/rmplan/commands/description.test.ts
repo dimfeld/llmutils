@@ -645,9 +645,12 @@ describe('handleDescriptionCommand', () => {
 
       await handleDescriptionCommand('test-plan.yml', options, command);
 
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
@@ -718,9 +721,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Should NOT include --draft flag when draft is false
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--title', 'Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--title', 'Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
@@ -791,9 +797,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Should include the prefix in the title
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', '[FEATURE] Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', '[FEATURE] Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
@@ -864,9 +873,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Should default to draft mode (includes --draft flag)
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
@@ -963,9 +975,12 @@ describe('handleDescriptionCommand', () => {
         'utf-8'
       );
       expect(clipboardWriteSpy).toHaveBeenCalledWith('Generated PR description content');
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
     });
 
     test('handles interactive mode when no flags provided', async () => {
@@ -1736,9 +1751,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Verify that the input was sanitized (control characters removed)
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
-        stdin: 'Description with control chars',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Description with control chars',
+        }
+      );
     });
 
     test('handles process input with null bytes safely', async () => {
@@ -1979,9 +1997,9 @@ describe('handleDescriptionCommand', () => {
       await moduleMocker.mock('../configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           defaultExecutor: 'copy-only',
-          prCreation: { 
-            draft: true, 
-            titlePrefix: '[TEST`$;|&<>\\] ' // Contains shell metacharacters
+          prCreation: {
+            draft: true,
+            titlePrefix: '[TEST`$;|&<>\\] ', // Contains shell metacharacters
           },
         }),
       }));
@@ -2024,9 +2042,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Should sanitize the dangerous characters from the prefix
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', '[TEST] Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', '[TEST] Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
     });
 
     test('handles very long title prefix by truncating to GitHub limits', async () => {
@@ -2054,9 +2075,9 @@ describe('handleDescriptionCommand', () => {
       await moduleMocker.mock('../configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           defaultExecutor: 'copy-only',
-          prCreation: { 
-            draft: true, 
-            titlePrefix: longPrefix
+          prCreation: {
+            draft: true,
+            titlePrefix: longPrefix,
           },
         }),
       }));
@@ -2131,9 +2152,9 @@ describe('handleDescriptionCommand', () => {
       await moduleMocker.mock('../configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           defaultExecutor: 'copy-only',
-          prCreation: { 
+          prCreation: {
             draft: false,
-            titlePrefix: '[NON-DRAFT] '
+            titlePrefix: '[NON-DRAFT] ',
           },
         }),
       }));
@@ -2176,9 +2197,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Should create non-draft PR with prefix
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--title', '[NON-DRAFT] Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--title', '[NON-DRAFT] Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
     });
 
     test('simulates real config file with comprehensive error handling', async () => {
@@ -2203,15 +2227,15 @@ describe('handleDescriptionCommand', () => {
       await moduleMocker.mock('../configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           defaultExecutor: 'copy-only',
-          prCreation: { 
+          prCreation: {
             draft: false,
-            titlePrefix: '[FEATURE] '
+            titlePrefix: '[FEATURE] ',
           },
           issueTracker: 'github',
           postApplyCommands: [],
           paths: {
-            tasks: './tasks'
-          }
+            tasks: './tasks',
+          },
         }),
       }));
 
@@ -2256,9 +2280,12 @@ describe('handleDescriptionCommand', () => {
       );
 
       // Verify the command was called with correct configuration
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--title', '[FEATURE] Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--title', '[FEATURE] Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
     });
 
     test('integration test with interactive mode and config-driven PR creation', async () => {
@@ -2290,9 +2317,9 @@ describe('handleDescriptionCommand', () => {
       await moduleMocker.mock('../configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           defaultExecutor: 'copy-only',
-          prCreation: { 
+          prCreation: {
             draft: true,
-            titlePrefix: '[AUTO] '
+            titlePrefix: '[AUTO] ',
           },
         }),
       }));
@@ -2333,9 +2360,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Should use config for PR creation in interactive mode
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', '[AUTO] Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content from interactive mode',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', '[AUTO] Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content from interactive mode',
+        }
+      );
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
@@ -2364,8 +2394,8 @@ describe('handleDescriptionCommand', () => {
       await moduleMocker.mock('../configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           defaultExecutor: 'copy-only',
-          prCreation: { 
-            titlePrefix: '[PARTIAL] '
+          prCreation: {
+            titlePrefix: '[PARTIAL] ',
             // No draft field - should use default behavior
           },
         }),
@@ -2409,9 +2439,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Should use titlePrefix from config and default to draft mode
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', '[PARTIAL] Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', '[PARTIAL] Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
     });
 
     test('handles empty prCreation object correctly', async () => {
@@ -2478,9 +2511,12 @@ describe('handleDescriptionCommand', () => {
       await handleDescriptionCommand('test-plan.yml', options, command);
 
       // Should default to draft mode with no prefix when prCreation is empty object
-      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
-        stdin: 'Generated PR description content',
-      });
+      expect(spawnSpy).toHaveBeenCalledWith(
+        ['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'],
+        {
+          stdin: 'Generated PR description content',
+        }
+      );
     });
   });
 });

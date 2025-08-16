@@ -494,10 +494,10 @@ describe('sanitizeTitlePrefix', () => {
     expect(sanitizeTitlePrefix('[Fix] `rm -rf /` && echo "pwned"')).toBe(
       '[Fix] rm -rf /  echo "pwned"'
     );
-    
+
     // Mixed control characters and shell metacharacters
     expect(sanitizeTitlePrefix('test\x01`danger`\x02|pipe')).toBe('testdangerpipe');
-    
+
     // Unicode with dangerous characters
     expect(sanitizeTitlePrefix('🚀 Feature: `$(whoami)`')).toBe('🚀 Feature: (whoami)');
   });
