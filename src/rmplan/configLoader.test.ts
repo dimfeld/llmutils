@@ -141,6 +141,7 @@ describe('configLoader', () => {
         issueTracker: 'github',
         defaultExecutor: DEFAULT_EXECUTOR,
         postApplyCommands: [],
+        prCreation: { draft: true },
         workspaceCreation: undefined,
       });
     });
