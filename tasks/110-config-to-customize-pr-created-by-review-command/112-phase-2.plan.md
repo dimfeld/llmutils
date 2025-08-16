@@ -152,6 +152,7 @@ tasks:
       Update mock configurations to include the prCreation field with
       appropriate test values. Ensure tests verify that the gh command is called
       with the correct arguments based on configuration.
+    done: true
     files:
       - src/rmplan/commands/description.test.ts
     steps:
@@ -159,15 +160,15 @@ tasks:
           Update the existing test mocks for loadEffectiveConfig to include
           prCreation configuration with test values like { draft: true } or {
           draft: false, titlePrefix: '[TEST] ' }.
-        done: false
+        done: true
       - prompt: >
           Add a new test case that verifies createPullRequest is called without
           the --draft flag when prCreation.draft is false.
-        done: false
+        done: true
       - prompt: >
           Add a test case that verifies the title prefix is correctly prepended
           to PR titles when prCreation.titlePrefix is configured.
-        done: false
+        done: true
       - prompt: >
           Add a test case that verifies backward compatibility by ensuring draft
           defaults to true when prCreation is not configured.
@@ -185,6 +186,7 @@ tasks:
       and the interaction between CLI flags and config settings. These tests
       should verify the actual gh command construction rather than just mocking
       everything.
+    done: true
     files:
       - src/rmplan/commands/description.test.ts
     steps:
@@ -192,26 +194,26 @@ tasks:
           Add a test suite "PR creation with configuration" that tests the full
           flow from config loading to gh command execution with different
           prCreation configurations.
-        done: false
+        done: true
       - prompt: >
           Create a test that verifies sanitization works correctly by attempting
           to use a prefix with dangerous characters and ensuring they are
           properly sanitized.
-        done: false
+        done: true
       - prompt: >
           Add a test for the edge case where titlePrefix is very long, verifying
           it gets truncated appropriately to fit within GitHub's title length
           limits.
-        done: false
+        done: true
       - prompt: >
           Create a test that verifies the --create-pr CLI flag works correctly
           with both draft and non-draft configurations.
-        done: false
+        done: true
       - prompt: >
           Add a test that simulates a real config file with prCreation settings
           and verifies the entire flow works as expected, including proper error
           handling.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/configSchema.ts
   - src/rmplan/commands/description.ts

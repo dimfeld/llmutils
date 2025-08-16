@@ -583,7 +583,7 @@ describe('handleDescriptionCommand', () => {
       expect(allOutput).toContain('Description copied to clipboard');
     });
 
-    test('handles --create-pr flag', async () => {
+    test('handles --create-pr flag with default draft config', async () => {
       const mockContext = createMockContext();
 
       // Mock spawnAndLogOutput
@@ -601,7 +601,7 @@ describe('handleDescriptionCommand', () => {
         gatherPlanContext: async () => mockContext,
       }));
 
-      // Mock config loader
+      // Mock config loader - no prCreation config, should default to draft: true
       await moduleMocker.mock('../configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           defaultExecutor: 'copy-only',
@@ -645,6 +645,225 @@ describe('handleDescriptionCommand', () => {
 
       await handleDescriptionCommand('test-plan.yml', options, command);
 
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content',
+      });
+
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('GitHub PR created successfully');
+    });
+
+    test('creates PR without --draft flag when draft is false in config', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with draft: false
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: { draft: false },
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should NOT include --draft flag when draft is false
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--title', 'Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content',
+      });
+
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('GitHub PR created successfully');
+    });
+
+    test('prepends title prefix when configured', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with titlePrefix
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: { draft: true, titlePrefix: '[FEATURE] ' },
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should include the prefix in the title
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', '[FEATURE] Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content',
+      });
+
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('GitHub PR created successfully');
+    });
+
+    test('backward compatibility - defaults to draft true when prCreation not configured', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with NO prCreation config
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          // No prCreation field
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should default to draft mode (includes --draft flag)
       expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
         stdin: 'Generated PR description content',
       });
@@ -1734,6 +1953,465 @@ describe('handleDescriptionCommand', () => {
       const allOutput = logCalls.join('\n');
       expect(allOutput).toContain('Failed to save file');
       expect(allOutput).toContain('path traversal');
+    });
+  });
+
+  describe('PR creation with configuration', () => {
+    test('sanitizes dangerous characters in title prefix', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with dangerous titlePrefix
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: { 
+            draft: true, 
+            titlePrefix: '[TEST`$;|&<>\\] ' // Contains shell metacharacters
+          },
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should sanitize the dangerous characters from the prefix
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', '[TEST] Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content',
+      });
+    });
+
+    test('handles very long title prefix by truncating to GitHub limits', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Create a very long prefix that would exceed GitHub's 256 character title limit
+      const longPrefix = '[' + 'A'.repeat(200) + '] ';
+
+      // Mock config loader with very long titlePrefix
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: { 
+            draft: true, 
+            titlePrefix: longPrefix
+          },
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Get the actual call to verify title was truncated
+      expect(spawnSpy).toHaveBeenCalledTimes(1);
+      const actualCall = spawnSpy.mock.calls[0];
+      const titleIndex = actualCall[0].indexOf('--title') + 1;
+      const actualTitle = actualCall[0][titleIndex];
+
+      // Verify title was truncated to 256 characters or less
+      expect(actualTitle.length).toBeLessThanOrEqual(256);
+      expect(actualTitle).toContain('Test Plan'); // Should still contain the original title
+    });
+
+    test('works with both draft and non-draft settings via CLI flag', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with non-draft setting
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: { 
+            draft: false,
+            titlePrefix: '[NON-DRAFT] '
+          },
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should create non-draft PR with prefix
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--title', '[NON-DRAFT] Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content',
+      });
+    });
+
+    test('simulates real config file with comprehensive error handling', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput to simulate gh command failure
+      const spawnSpy = mock(async () => ({
+        exitCode: 128,
+        stdout: '',
+        stderr: 'fatal: not in a git repository',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with realistic complex config
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: { 
+            draft: false,
+            titlePrefix: '[FEATURE] '
+          },
+          issueTracker: 'github',
+          postApplyCommands: [],
+          paths: {
+            tasks: './tasks'
+          }
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      // Should throw error due to gh command failure
+      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+        'Failed to create GitHub PR: gh command failed with exit code 128: fatal: not in a git repository'
+      );
+
+      // Verify the command was called with correct configuration
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--title', '[FEATURE] Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content',
+      });
+    });
+
+    test('integration test with interactive mode and config-driven PR creation', async () => {
+      const mockContext = createMockContext();
+
+      // Mock interactive prompt to select PR creation
+      await moduleMocker.mock('@inquirer/prompts', () => ({
+        checkbox: mock(async () => ['pr']),
+        input: mock(async () => 'test.md'),
+        select: mock(async () => 'none'),
+      }));
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with real-world config
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: { 
+            draft: true,
+            titlePrefix: '[AUTO] '
+          },
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content from interactive mode'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {}; // No flags - should trigger interactive mode
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should use config for PR creation in interactive mode
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', '[AUTO] Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content from interactive mode',
+      });
+
+      const logCalls = logSpy.mock.calls.map((call) => call[0]);
+      const allOutput = logCalls.join('\n');
+      expect(allOutput).toContain('Completed actions: GitHub PR created');
+    });
+
+    test('validates config values and applies defaults correctly', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with partial prCreation config (only titlePrefix, no draft)
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: { 
+            titlePrefix: '[PARTIAL] '
+            // No draft field - should use default behavior
+          },
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should use titlePrefix from config and default to draft mode
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', '[PARTIAL] Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content',
+      });
     });
   });
 });
