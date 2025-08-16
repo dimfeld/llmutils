@@ -10,8 +10,9 @@ dependencies:
   - 111
 parent: 110
 planGeneratedAt: 2025-08-16T00:25:44.550Z
+promptsGeneratedAt: 2025-08-16T06:51:01.707Z
 createdAt: 2025-08-16T00:21:10.187Z
-updatedAt: 2025-08-16T00:25:44.553Z
+updatedAt: 2025-08-16T06:51:01.708Z
 project:
   title: Add configuration options for customizing auto-created PRs in rmplan
   goal: Enable users to configure default settings for PRs created by rmplan
@@ -42,33 +43,172 @@ project:
     - Title prefix is properly sanitized to prevent injection attacks
 tasks:
   - title: Update createPullRequest function to use config
-    description: Modify the `createPullRequest` function in
+    description: >
+      Modify the `createPullRequest` function in
       `src/rmplan/commands/description.ts` to accept configuration options and
       use them when building the `gh pr create` command. Remove the hardcoded
-      `--draft` flag and make it conditional based on config.
-    steps: []
+      `--draft` flag and make it conditional based on config. The function
+      should accept a new parameter for PR creation options that includes the
+      draft setting and titlePrefix. When building the gh command arguments,
+      only include the --draft flag if the config.draft is true. The title
+      parameter should have the prefix prepended if configured.
+    files:
+      - src/rmplan/commands/description.ts
+    steps:
+      - prompt: >
+          Add a new interface `PrCreationOptions` before the createPullRequest
+          function that includes optional draft (boolean) and titlePrefix
+          (string) fields.
+        done: false
+      - prompt: >
+          Update the createPullRequest function signature to accept a third
+          parameter of type PrCreationOptions with a default value of an empty
+          object.
+        done: false
+      - prompt: >
+          Modify the createPullRequest function implementation to build the gh
+          command arguments conditionally. Only add '--draft' to the arguments
+          array if options.draft is true. If options.titlePrefix is provided,
+          prepend it to the title parameter.
+        done: false
+      - prompt: >
+          Update the spawnAndLogOutput call to use the dynamically built
+          arguments array instead of the hardcoded one.
+        done: false
   - title: Load and apply prCreation config in description command
-    description: Update `handleDescriptionCommand` in
-      `src/rmplan/commands/description.ts` to load the `prCreation` config from
-      the effective configuration and pass it to the `createPullRequest`
-      function. Apply title prefix if configured.
-    steps: []
+    description: >
+      Update `handleDescriptionCommand` in `src/rmplan/commands/description.ts`
+      to load the `prCreation` config from the effective configuration and pass
+      it to the `createPullRequest` function. The config is already loaded via
+      loadEffectiveConfig, so we need to extract the prCreation settings and
+      apply them when creating PRs. Apply title prefix if configured, ensuring
+      it's properly combined with the plan title. Default to draft:true if
+      prCreation is not configured to maintain backward compatibility.
+    files:
+      - src/rmplan/commands/description.ts
+    steps:
+      - prompt: >
+          In handleDescriptionCommand, after loading the config, extract the
+          prCreation settings into a variable with a default fallback to {
+          draft: true } if prCreation is undefined.
+        done: false
+      - prompt: >
+          Update the call to createPullRequest in handleOutputActions to pass
+          the prCreation config as the third parameter.
+        done: false
+      - prompt: >
+          Update the interactive handleInteractiveOutput function's
+          createPullRequest call to also pass the prCreation config, which will
+          need to be passed as a parameter to this function.
+        done: false
+      - prompt: >
+          Modify the handleOutputActions function signature to accept the
+          prCreation config and pass it through to both createPullRequest and
+          handleInteractiveOutput.
+        done: false
   - title: Add title prefix sanitization
-    description: Implement a sanitization function for the title prefix to prevent
-      command injection and ensure the prefix is safe to use in shell commands
-      and PR titles. Include validation for maximum length and allowed
-      characters.
-    steps: []
+    description: >
+      Implement a sanitization function for the title prefix to prevent command
+      injection and ensure the prefix is safe to use in shell commands and PR
+      titles. Include validation for maximum length and allowed characters. The
+      function should be added to the file_validation utilities and used when
+      applying the title prefix. Sanitization should remove control characters,
+      limit length to 100 characters, and ensure no shell metacharacters that
+      could break the gh command are present.
+    files:
+      - src/rmplan/utils/file_validation.ts
+      - src/rmplan/commands/description.ts
+    steps:
+      - prompt: >
+          Add a new function `sanitizeTitlePrefix` to
+          src/rmplan/utils/file_validation.ts that takes a string and returns a
+          sanitized version. It should remove control characters, limit length
+          to 100 characters, and remove shell metacharacters like backticks,
+          dollar signs, and semicolons.
+        done: false
+      - prompt: >
+          Export the sanitizeTitlePrefix function and add comprehensive JSDoc
+          documentation explaining its purpose and the sanitization rules it
+          applies.
+        done: false
+      - prompt: >
+          Import sanitizeTitlePrefix in src/rmplan/commands/description.ts and
+          use it in the createPullRequest function to sanitize the titlePrefix
+          before applying it to the title.
+        done: false
+      - prompt: >
+          Add validation in createPullRequest to ensure the combined title
+          (prefix + original title) doesn't exceed GitHub's PR title length
+          limit of 256 characters, truncating if necessary.
+        done: false
   - title: Update description command tests
-    description: Modify existing tests in `src/rmplan/commands/description.test.ts`
-      to account for the new configuration options. Add new test cases for
+    description: >
+      Modify existing tests in `src/rmplan/commands/description.test.ts` to
+      account for the new configuration options. Add new test cases for
       draft/non-draft PR creation, title prefix application, and edge cases.
-    steps: []
+      Update mock configurations to include the prCreation field with
+      appropriate test values. Ensure tests verify that the gh command is called
+      with the correct arguments based on configuration.
+    files:
+      - src/rmplan/commands/description.test.ts
+    steps:
+      - prompt: >
+          Update the existing test mocks for loadEffectiveConfig to include
+          prCreation configuration with test values like { draft: true } or {
+          draft: false, titlePrefix: '[TEST] ' }.
+        done: false
+      - prompt: >
+          Add a new test case that verifies createPullRequest is called without
+          the --draft flag when prCreation.draft is false.
+        done: false
+      - prompt: >
+          Add a test case that verifies the title prefix is correctly prepended
+          to PR titles when prCreation.titlePrefix is configured.
+        done: false
+      - prompt: >
+          Add a test case that verifies backward compatibility by ensuring draft
+          defaults to true when prCreation is not configured.
+        done: false
+      - prompt: >
+          Mock spawnAndLogOutput to capture the gh command arguments and verify
+          they match the expected configuration.
+        done: false
   - title: Add integration tests for config-driven PR creation
-    description: Create integration tests that verify the end-to-end flow of loading
-      config and creating PRs with the specified settings, including scenarios
-      with missing config, partial config, and various prefix formats.
-    steps: []
+    description: >
+      Create integration tests that verify the end-to-end flow of loading config
+      and creating PRs with the specified settings, including scenarios with
+      missing config, partial config, and various prefix formats. Tests should
+      cover edge cases like very long prefixes, special characters in prefixes,
+      and the interaction between CLI flags and config settings. These tests
+      should verify the actual gh command construction rather than just mocking
+      everything.
+    files:
+      - src/rmplan/commands/description.test.ts
+    steps:
+      - prompt: >
+          Add a test suite "PR creation with configuration" that tests the full
+          flow from config loading to gh command execution with different
+          prCreation configurations.
+        done: false
+      - prompt: >
+          Create a test that verifies sanitization works correctly by attempting
+          to use a prefix with dangerous characters and ensuring they are
+          properly sanitized.
+        done: false
+      - prompt: >
+          Add a test for the edge case where titlePrefix is very long, verifying
+          it gets truncated appropriately to fit within GitHub's title length
+          limits.
+        done: false
+      - prompt: >
+          Create a test that verifies the --create-pr CLI flag works correctly
+          with both draft and non-draft configurations.
+        done: false
+      - prompt: >
+          Add a test that simulates a real config file with prCreation settings
+          and verifies the entire flow works as expected, including proper error
+          handling.
+        done: false
 rmfilter:
   - src/rmplan/configSchema.ts
   - src/rmplan/commands/description.ts
