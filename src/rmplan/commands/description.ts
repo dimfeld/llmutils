@@ -215,23 +215,25 @@ interface PrCreationOptions {
 async function createPullRequest(title: string, description: string, options: PrCreationOptions = {}): Promise<void> {
   const sanitizedDescription = sanitizeProcessInput(description);
   
-  // Apply title prefix if configured
+  // Apply title prefix if configured (already sanitized at config loading stage)
   let finalTitle = title;
   if (options.titlePrefix) {
-    const sanitizedPrefix = sanitizeTitlePrefix(options.titlePrefix);
-    finalTitle = `${sanitizedPrefix}${title}`;
+    finalTitle = `${options.titlePrefix}${title}`;
   }
   
   // Ensure title doesn't exceed GitHub's PR title limit of 256 characters
-  if (finalTitle.length > 256) {
-    finalTitle = finalTitle.substring(0, 256).trim();
+  // Account for the entire command line - gh command + arguments + title
+  const baseCommandLength = 'gh pr create --draft --title --body-file -'.length + 10; // Add buffer
+  const maxTitleLength = 256 - baseCommandLength;
+  if (finalTitle.length > maxTitleLength) {
+    finalTitle = finalTitle.substring(0, maxTitleLength).trim();
   }
   
   // Build command arguments conditionally
   const ghArgs = ['gh', 'pr', 'create'];
   
-  // Only add --draft flag if draft is true (maintaining backward compatibility)
-  if (options.draft !== false) {
+  // Only add --draft flag if draft is explicitly true
+  if (options.draft === true) {
     ghArgs.push('--draft');
   }
   
@@ -414,8 +416,17 @@ export async function handleDescriptionCommand(
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   
-  // Extract prCreation settings with fallback to default (draft: true)
-  const prCreationConfig = config.prCreation || { draft: true };
+  // Extract prCreation settings with proper defaults for partial configuration
+  const prCreationConfig = {
+    draft: true, // Default to draft mode for backward compatibility
+    titlePrefix: undefined,
+    ...config.prCreation, // Override with actual config values
+  };
+  
+  // Sanitize title prefix at config loading stage if provided
+  if (prCreationConfig.titlePrefix) {
+    prCreationConfig.titlePrefix = sanitizeTitlePrefix(prCreationConfig.titlePrefix);
+  }
 
   // Gather plan context using the shared utility
   // Description command doesn't use incremental features, so pass empty review options

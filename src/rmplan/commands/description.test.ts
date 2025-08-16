@@ -2413,5 +2413,74 @@ describe('handleDescriptionCommand', () => {
         stdin: 'Generated PR description content',
       });
     });
+
+    test('handles empty prCreation object correctly', async () => {
+      const mockContext = createMockContext();
+
+      // Mock spawnAndLogOutput
+      const spawnSpy = mock(async () => ({
+        exitCode: 0,
+        stdout: 'PR created successfully',
+        stderr: '',
+      }));
+      await moduleMocker.mock('../../common/process.js', () => ({
+        spawnAndLogOutput: spawnSpy,
+      }));
+
+      // Mock gatherPlanContext
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () => mockContext,
+      }));
+
+      // Mock config loader with empty prCreation object
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'copy-only',
+          prCreation: {}, // Empty object - should use all defaults
+        }),
+      }));
+
+      // Mock executor
+      const mockExecutor = {
+        execute: mock(async () => 'Generated PR description content'),
+        prepareStepOptions: () => ({ rmfilter: true }),
+      };
+
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: () => mockExecutor,
+        DEFAULT_EXECUTOR: 'copy-only',
+      }));
+
+      // Mock the prompt function
+      await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+        getPrDescriptionPrompt: () => ({
+          name: 'pr-description',
+          description: 'Test prompt',
+          prompt: 'Test prompt content',
+        }),
+      }));
+
+      // Mock log function
+      const logSpy = mock(() => {});
+      await moduleMocker.mock('../../logging.js', () => ({
+        log: logSpy,
+      }));
+
+      const options = {
+        createPr: true,
+      };
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleDescriptionCommand('test-plan.yml', options, command);
+
+      // Should default to draft mode with no prefix when prCreation is empty object
+      expect(spawnSpy).toHaveBeenCalledWith(['gh', 'pr', 'create', '--draft', '--title', 'Test Plan', '--body-file', '-'], {
+        stdin: 'Generated PR description content',
+      });
+    });
   });
 });
