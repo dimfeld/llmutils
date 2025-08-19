@@ -321,8 +321,8 @@ program
   )
   .option(
     '--sort <field>',
-    'Sort by: id, title, status, priority, created, updated (default: id)',
-    'id'
+    'Sort by: id, title, status, priority, created, updated (default: created)',
+    'created'
   )
   .option('--reverse', 'Reverse sort order')
   .option(

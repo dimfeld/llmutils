@@ -99,16 +99,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
         bVal = b.priority ? priorityOrder[b.priority] || 0 : 0;
         break;
       }
-      case 'created':
-        aVal = a.createdAt || '';
-        bVal = b.createdAt || '';
-        break;
       case 'updated':
         aVal = a.updatedAt || '';
         bVal = b.updatedAt || '';
         break;
-      case 'id':
-      default: {
+      case 'id': {
         let aNum = Number(a.id || 0);
         let bNum = Number(b.id || 0);
 
@@ -128,6 +123,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
         break;
       }
+      case 'created':
+      default:
+        aVal = a.createdAt || '';
+        bVal = b.createdAt || '';
+        break;
     }
 
     if (aVal < bVal) return options.reverse ? 1 : -1;
