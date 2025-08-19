@@ -624,9 +624,11 @@ export async function saveMultiPhaseYaml(
     // Add metadata if not present
     const now = new Date().toISOString();
     phase.planGeneratedAt = now;
-    // Use createdAt from update/stub plan if available for all phases
-    phase.createdAt =
-      options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
+    // Use createdAt from stub/update plan if we are updating it. Otherwise
+    // this is a new file so we want a new createdAt.
+    phase.createdAt = actuallyMultiphase
+      ? now
+      : options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
     phase.updatedAt = now;
 
     phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;
