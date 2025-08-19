@@ -5,7 +5,6 @@
   "properties": {
     "issueTracker": {
       "description": "Issue tracking service to use for import commands and issue-related operations",
-      "default": "github",
       "type": "string",
       "enum": [
         "github",
@@ -145,6 +144,25 @@
           "type": "boolean"
         }
       },
+      "additionalProperties": false
+    },
+    "prCreation": {
+      "description": "Configuration for PR creation behavior",
+      "type": "object",
+      "properties": {
+        "draft": {
+          "description": "Whether PRs should be created as drafts by default",
+          "default": true,
+          "type": "boolean"
+        },
+        "titlePrefix": {
+          "description": "Prefix to add to PR titles when creating PRs",
+          "type": "string"
+        }
+      },
+      "required": [
+        "draft"
+      ],
       "additionalProperties": false
     },
     "modelApiKeys": {
@@ -411,8 +429,5 @@
       "additionalProperties": false
     }
   },
-  "required": [
-    "issueTracker"
-  ],
   "additionalProperties": false
 }
