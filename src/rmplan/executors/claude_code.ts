@@ -829,9 +829,21 @@ export class ClaudeCodeExecutor implements Executor {
         : undefined;
 
       const agentDefinitions = [
-        getImplementerPrompt(originalContextContent, implementerInstructions, this.options.agents?.implementer?.model),
-        getTesterPrompt(originalContextContent, testerInstructions, this.options.agents?.tester?.model),
-        getReviewerPrompt(originalContextContent, reviewerInstructions, this.options.agents?.reviewer?.model),
+        getImplementerPrompt(
+          originalContextContent,
+          implementerInstructions,
+          this.options.agents?.implementer?.model
+        ),
+        getTesterPrompt(
+          originalContextContent,
+          testerInstructions,
+          this.options.agents?.tester?.model
+        ),
+        getReviewerPrompt(
+          originalContextContent,
+          reviewerInstructions,
+          this.options.agents?.reviewer?.model
+        ),
       ];
       await generateAgentFiles(planInfo.planId, agentDefinitions);
       log(chalk.blue(`Created agent files for plan ${planInfo.planId}`));
@@ -928,6 +940,7 @@ export class ClaudeCodeExecutor implements Executor {
           env: {
             ...process.env,
             ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+            CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
           },
           cwd: gitRoot,
           stdio: ['inherit', 'inherit', 'inherit'],
@@ -953,6 +966,7 @@ export class ClaudeCodeExecutor implements Executor {
           env: {
             ...process.env,
             ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.CLAUDE_API_KEY ?? '') : '',
+            CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
           },
           cwd: gitRoot,
           formatStdout: (output) => {
