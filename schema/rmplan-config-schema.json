@@ -233,12 +233,6 @@
       },
       "additionalProperties": false
     },
-    "instructions": {
-      "description": "Paths to custom instruction documents",
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
     "planning": {
       "type": "object",
       "properties": {

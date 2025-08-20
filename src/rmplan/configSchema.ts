@@ -157,7 +157,6 @@ export const rmplanConfigSchema = z
     defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
-    instructions: z.object({}).optional().describe('Paths to custom instruction documents'),
     /** Planning-related configuration options */
     planning: z
       .object({
