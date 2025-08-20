@@ -396,6 +396,43 @@
                 "enabled"
               ],
               "additionalProperties": false
+            },
+            "agents": {
+              "description": "Configuration for specialized agents",
+              "type": "object",
+              "properties": {
+                "implementer": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "description": "Model to use for the implementer agent",
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "tester": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "description": "Model to use for the tester agent",
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "reviewer": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "description": "Model to use for the reviewer agent",
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
