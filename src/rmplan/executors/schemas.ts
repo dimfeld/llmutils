@@ -31,6 +31,26 @@ export const claudeCodeOptionsSchema = z.object({
     })
     .optional()
     .describe('Configuration for the permissions MCP server'),
+  agents: z
+    .object({
+      implementer: z
+        .object({
+          model: z.string().optional().describe('Model to use for the implementer agent'),
+        })
+        .optional(),
+      tester: z
+        .object({
+          model: z.string().optional().describe('Model to use for the tester agent'),
+        })
+        .optional(),
+      reviewer: z
+        .object({
+          model: z.string().optional().describe('Model to use for the reviewer agent'),
+        })
+        .optional(),
+    })
+    .optional()
+    .describe('Configuration for specialized agents'),
 });
 
 /**

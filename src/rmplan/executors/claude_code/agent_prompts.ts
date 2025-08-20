@@ -4,7 +4,8 @@ const contextTaskFocus = `The "Context and Task" section may contain more tasks 
 
 export function getImplementerPrompt(
   contextContent: string,
-  customInstructions?: string
+  customInstructions?: string,
+  model?: string
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -13,6 +14,7 @@ export function getImplementerPrompt(
   return {
     name: 'implementer',
     description: 'Implements the requested functionality following project standards and patterns',
+    model,
     prompt: `You are an implementer agent focused on writing high-quality code.
 
 ## Context and Task
@@ -70,7 +72,8 @@ Do not mark anything in the plan file as done. This is your manager's responsibi
 
 export function getTesterPrompt(
   contextContent: string,
-  customInstructions?: string
+  customInstructions?: string,
+  model?: string
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -80,6 +83,7 @@ export function getTesterPrompt(
     name: 'tester',
     description:
       'Analyzes existing tests and ensures comprehensive test coverage for the implemented code',
+    model,
     prompt: `You are a testing agent focused on ensuring comprehensive test coverage.
 
 ## Context and Task
@@ -150,7 +154,8 @@ Remember: Your goal is to ensure all tests pass and that the code has comprehens
 
 export function getReviewerPrompt(
   contextContent: string,
-  customInstructions?: string
+  customInstructions?: string,
+  model?: string
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -160,6 +165,7 @@ export function getReviewerPrompt(
     name: 'reviewer',
     description:
       'Reviews implementation and tests for quality, security, and adherence to project standards',
+    model,
     prompt: `You are a critical code reviewer whose job is to find problems and issues with implementations. Your output will be used by other agents to determine if they need to go back and fix things, so you must be thorough in identifying actual problems.
 
 CRITICAL: Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.

@@ -829,9 +829,9 @@ export class ClaudeCodeExecutor implements Executor {
         : undefined;
 
       const agentDefinitions = [
-        getImplementerPrompt(originalContextContent, implementerInstructions),
-        getTesterPrompt(originalContextContent, testerInstructions),
-        getReviewerPrompt(originalContextContent, reviewerInstructions),
+        getImplementerPrompt(originalContextContent, implementerInstructions, this.options.agents?.implementer?.model),
+        getTesterPrompt(originalContextContent, testerInstructions, this.options.agents?.tester?.model),
+        getReviewerPrompt(originalContextContent, reviewerInstructions, this.options.agents?.reviewer?.model),
       ];
       await generateAgentFiles(planInfo.planId, agentDefinitions);
       log(chalk.blue(`Created agent files for plan ${planInfo.planId}`));

@@ -121,6 +121,54 @@ ${agent.prompt}
       expect(content).toContain('Updated prompt');
       expect(content).not.toContain('Original');
     });
+
+    test('includes model in frontmatter when provided', async () => {
+      const agents: AgentDefinition[] = [
+        {
+          name: 'implementer',
+          description: 'Implements new features',
+          prompt: 'You are an implementation agent that writes code.',
+          model: 'claude-3-haiku',
+        },
+        {
+          name: 'tester',
+          description: 'Tests the implementation',
+          prompt: 'You are a testing agent that writes tests.',
+          // No model specified
+        },
+      ];
+
+      await generateAgentFiles('test-plan-model', agents);
+
+      // Check implementer file has model
+      const implementerPath = path.join(agentsDir, 'rmplan-test-plan-model-implementer.md');
+      const implementerContent = await fs.readFile(implementerPath, 'utf-8');
+      
+      expect(implementerContent).toContain('model: claude-3-haiku');
+      const expectedImplementerContent = `---
+name: rmplan-test-plan-model-implementer
+description: Implements new features
+model: claude-3-haiku
+---
+
+You are an implementation agent that writes code.
+`;
+      expect(implementerContent).toBe(expectedImplementerContent);
+
+      // Check tester file doesn't have model
+      const testerPath = path.join(agentsDir, 'rmplan-test-plan-model-tester.md');
+      const testerContent = await fs.readFile(testerPath, 'utf-8');
+      
+      expect(testerContent).not.toContain('model:');
+      const expectedTesterContent = `---
+name: rmplan-test-plan-model-tester
+description: Tests the implementation
+---
+
+You are a testing agent that writes tests.
+`;
+      expect(testerContent).toBe(expectedTesterContent);
+    });
   });
 
   describe('removeAgentFiles', () => {
