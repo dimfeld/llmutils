@@ -145,9 +145,13 @@ function buildImportantGuidelines(options: OrchestrationOptions): string {
     ? `
 - Subagents will have access to the entire list of incomplete tasks from the plan file, so be sure to include which tasks to focus on in your subagent instructions.
 - **Be selective**: Don't attempt all tasks at once - choose a reasonable subset that works well together.
-- You must update the plan file to mark completed tasks as done before stopping.
 
-When updating tasks, use the command 'rmplan set-task-done <planId> <taskIndex>'. To set Task 2 done for plan 165, use 'rmplan set-task-done 165 2'. To set multiple tasks done, just run the command multiple times.
+## Marking Tasks Done
+
+You must update the plan file to mark completed tasks as done before stopping.
+
+When updating tasks, use the Bash command 'rmplan set-task-done <planId> --index <taskIndex>' or 'rmplan set-task-done <planId> --title "<taskTitle>"'.
+To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --index 2'. To set multiple tasks done, just run the command multiple times.
 `
     : '';
 
