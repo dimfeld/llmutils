@@ -608,8 +608,24 @@ export async function saveMultiPhaseYaml(
     }
   }
 
+  // Log the appropriate IDs based on the scenario
   if (!quiet) {
-    log(chalk.blue('Using Project ID:'), nextId);
+    const mainPlanId =
+      options.updatePlan?.data?.id || options.stubPlan?.data?.id || options.projectId;
+    if (actuallyMultiphase) {
+      if (mainPlanId) {
+        log(chalk.blue('Parent Plan ID:'), mainPlanId);
+      }
+      const phaseIds = [];
+      for (let i = 0; i < parsedYaml.phases.length; i++) {
+        phaseIds.push(nextId + i);
+      }
+      log(chalk.blue('Phase IDs:'), phaseIds.join(', '));
+    } else if (mainPlanId) {
+      log(chalk.blue('Updating Plan ID:'), mainPlanId);
+    } else {
+      log(chalk.blue('New Plan ID:'), nextId);
+    }
   }
 
   // First pass: generate IDs and update dependencies
