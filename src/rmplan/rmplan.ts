@@ -180,6 +180,23 @@ program
   });
 
 program
+  .command('set-task-done <planFile>')
+  .description('Mark a specific task as done by title or index. Can be a file path or plan ID.')
+  .option('--title <title>', 'Task title to mark as done')
+  .option('--index <index>', 'Task index to mark as done (1-based)', (value: string) => {
+    const n = Number(value);
+    if (Number.isNaN(n) || n <= 0) {
+      throw new Error(`Task index must be a positive integer, saw ${value}`);
+    }
+    return n;
+  })
+  .option('--commit', 'Commit changes to jj/git')
+  .action(async (planFile, options, command) => {
+    const { handleSetTaskDoneCommand } = await import('./commands/set-task-done.js');
+    await handleSetTaskDoneCommand(planFile, options, command).catch(handleCommandError);
+  });
+
+program
   .command('merge <planFile>')
   .description('Merge child plans into their parent plan. Can be a file path or plan ID.')
   .option(

@@ -317,6 +317,148 @@ export async function markTaskDone(
 }
 
 /**
+ * Marks a specific task as done by title or index in a plan file and updates plan metadata.
+ * This function handles task-level completion by task identifier, integrating with
+ * the refactored common utilities for Git operations and commit functionality.
+ *
+ * The function handles:
+ * - Finding tasks by title (exact match) or index (one-based)
+ * - Updating task and all its steps' completion status
+ * - Refreshing plan metadata including timestamps and changed files
+ * - Determining if the entire plan is now complete
+ * - Optionally committing changes using the appropriate VCS (Git/Jujutsu)
+ * - Providing formatted output for user feedback
+ *
+ * @param planFile - Path or ID of the plan file to update
+ * @param options - Configuration options including task identifier and whether to commit
+ * @param baseDir - Optional base directory for Git operations
+ * @param config - Optional RmplanConfig for path configuration
+ * @returns Promise resolving to completion status and user-facing message
+ * @throws {Error} When plan file cannot be loaded/written or task not found
+ */
+export async function setTaskDone(
+  planFile: string,
+  options: { taskIdentifier: string | number; commit?: boolean },
+  baseDir?: string,
+  config?: RmplanConfig
+): Promise<{ planComplete: boolean; message: string }> {
+  // 1. Load and parse the plan file
+  let planData = await readPlanFile(planFile);
+
+  // 2. Find the task by title or index
+  let taskIndex: number = -1;
+  let task: PlanSchema['tasks'][0] | undefined;
+
+  if (typeof options.taskIdentifier === 'string') {
+    // Find by title (exact match)
+    taskIndex = planData.tasks.findIndex((t) => t.title === options.taskIdentifier);
+    if (taskIndex === -1) {
+      throw new Error(`Task with title "${options.taskIdentifier}" not found in plan`);
+    }
+    task = planData.tasks[taskIndex];
+  } else {
+    // Find by index (one-based)
+    const userIndex = options.taskIdentifier;
+    if (userIndex < 1 || userIndex > planData.tasks.length) {
+      throw new Error(
+        `Invalid task index: ${userIndex}. Plan has ${planData.tasks.length} tasks (use 1-${planData.tasks.length})`
+      );
+    }
+    taskIndex = userIndex - 1; // Convert to zero-based
+    task = planData.tasks[taskIndex];
+  }
+
+  // 3. Check if task is already done
+  if (task.done) {
+    return { planComplete: false, message: `Task "${task.title}" is already marked as done.` };
+  }
+
+  // 4. Mark task and all its steps as done
+  task.done = true;
+  for (const step of task.steps) {
+    step.done = true;
+  }
+  log(chalk.bold(`Marked task "${task.title}" and all its steps as done\n`));
+
+  // 5. Build output message
+  let output: string[] = [];
+  output.push(`${task.title}`);
+  if (task.description) {
+    output.push(`\n${task.description}`);
+  }
+  if (task.steps.length > 0) {
+    output.push(`\n(${task.steps.length} steps marked as done)`);
+  }
+
+  // 6. Update metadata fields
+  const gitRoot = await getGitRoot(baseDir);
+
+  // Always update the updatedAt timestamp
+  planData.updatedAt = new Date().toISOString();
+
+  // Update changedFiles by comparing against baseBranch (or main/master if not set)
+  try {
+    // Build exclude paths from config
+    const excludePaths: string[] = [];
+    if (config?.paths?.tasks) {
+      // Resolve tasks path relative to git root if it's relative
+      const tasksPath = path.isAbsolute(config.paths.tasks)
+        ? config.paths.tasks
+        : path.join(gitRoot, config.paths.tasks);
+
+      // Make it relative to git root for comparison
+      excludePaths.push(path.relative(gitRoot, tasksPath));
+    }
+
+    const options: GetChangedFilesOptions = {
+      baseBranch: planData.baseBranch,
+      excludePaths,
+    };
+
+    const changedFiles = await getChangedFilesOnBranch(gitRoot, options);
+    if (changedFiles.length > 0) {
+      planData.changedFiles = changedFiles;
+    }
+  } catch (err) {
+    // Log but don't fail if we can't get changed files
+    warn(`Failed to get changed files: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Check if plan is now complete
+  const stillPending = findNextActionableItem(planData);
+  const planComplete = !stillPending;
+
+  // If plan is complete, update status to 'done'
+  if (planComplete) {
+    planData.status = 'done';
+  }
+
+  // 7. Write updated plan back
+  await writePlanFile(planFile, planData);
+
+  // 8. Optionally commit
+  const message = output.join('\n');
+  log(boldMarkdownHeaders(message));
+  if (options.commit) {
+    log('');
+    await commitAll(message, baseDir);
+  }
+
+  // 9. Check if parent plan should be marked done
+  if (planComplete && planData.parent && config) {
+    try {
+      await checkAndMarkParentDone(planData.parent, config, baseDir);
+    } catch (err) {
+      // Log but don't fail the operation
+      warn(`Failed to check parent plan: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 10. Return result
+  return { planComplete, message };
+}
+
+/**
  * Checks if a parent plan's children are all complete and marks the parent as done if so.
  * This function is called after marking a child plan as complete to propagate completion
  * status up the plan hierarchy.

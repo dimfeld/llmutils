@@ -49,7 +49,7 @@ export const phaseSchema = z
       z
         .object({
           title: z.string(),
-          done: z.boolean().default(false).optional(),
+          done: z.boolean().default(false),
           description: z.string(),
           files: z.array(z.string()).default([]).optional(),
           examples: z.array(z.string()).optional(),

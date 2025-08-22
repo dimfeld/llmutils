@@ -144,8 +144,11 @@ function buildImportantGuidelines(options: OrchestrationOptions): string {
   const batchModeGuidelines = options.batchMode
     ? `
 - Subagents will have access to the entire list of incomplete tasks from the plan file, so be sure to include which tasks to focus on in your subagent instructions.
+- **Be selective**: Don't attempt all tasks at once - choose a reasonable subset that works well together.
 - You must update the plan file to mark completed tasks as done before stopping.
-- **Be selective**: Don't attempt all tasks at once - choose a reasonable subset that works well together.`
+
+When updating tasks, use the command 'rmplan set-task-done <planId> <taskIndex>'. To set Task 2 done for plan 165, use 'rmplan set-task-done 165 2'. To set multiple tasks done, just run the command multiple times.
+`
     : '';
 
   return baseGuidelines + batchModeGuidelines;
