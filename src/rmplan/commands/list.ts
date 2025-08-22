@@ -74,6 +74,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   }
 
   // Sort based on the specified field
+  // TODO Secondary sorts for low-cardinality fields like status and priority
   planArray.sort((a, b) => {
     let aVal: string | number;
     let bVal: string | number;
@@ -128,6 +129,12 @@ export async function handleListCommand(options: any, command: any, searchTerms?
         aVal = a.createdAt || '';
         bVal = b.createdAt || '';
         break;
+    }
+
+    if (aVal === bVal) {
+      // Always fall back to ID sort.
+      aVal = a.id || '';
+      bVal = b.id || '';
     }
 
     if (aVal < bVal) return options.reverse ? 1 : -1;
