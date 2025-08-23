@@ -32,8 +32,8 @@ export async function handleSetTaskDoneCommand(
 
   const config = await loadEffectiveConfig(globalOpts.config);
   const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
-  
-  const result = await setTaskDone(
+
+  await setTaskDone(
     resolvedPlanFile,
     {
       taskIdentifier: options.title || options.index!,
@@ -42,14 +42,4 @@ export async function handleSetTaskDoneCommand(
     gitRoot,
     config
   );
-
-  // If plan is complete and we're in a workspace, release the lock
-  if (result.planComplete) {
-    try {
-      await WorkspaceLock.releaseLock(gitRoot);
-      log('Released workspace lock');
-    } catch (err) {
-      // Ignore lock release errors - workspace might not be locked
-    }
-  }
 }
