@@ -9,45 +9,178 @@ status: pending
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-24T22:39:10.663Z
+promptsGeneratedAt: 2025-08-24T22:42:07.074Z
 createdAt: 2025-08-24T22:31:39.657Z
-updatedAt: 2025-08-24T22:39:10.664Z
+updatedAt: 2025-08-24T22:42:07.075Z
 tasks:
   - title: Update CLI definition for the 'add' command
     done: false
-    description: Modify the `rmplan add` command in `src/rmplan/rmplan.ts` to
-      include the new `--cleanup <planId>` option. The existing `<title...>`
-      argument should be made optional to allow for default title generation
-      when using `--cleanup`.
-    steps: []
+    description: >
+      Modify the `rmplan add` command in `src/rmplan/rmplan.ts` to include the
+      new `--cleanup <planId>` option. The existing `<title...>` argument should
+      be made optional to allow for default title generation when using
+      `--cleanup`. This involves changing the command definition from requiring
+      a title to making it optional, and adding the cleanup option that accepts
+      a plan ID parameter.
+    files:
+      - src/rmplan/rmplan.ts
+    steps:
+      - prompt: >
+          Update the `add` command definition in `src/rmplan/rmplan.ts` (around
+          line 130) to make the `<title...>` argument optional by changing it to
+          `[title...]`. This allows the command to work without a title when
+          using the `--cleanup` option.
+        done: false
+      - prompt: >
+          Add a new `--cleanup <planId>` option to the `add` command definition.
+          This option should accept a plan ID parameter that will be used to
+          reference the plan that needs cleanup. Use the existing pattern of
+          other options in the command for consistency.
+        done: false
   - title: Implement cleanup plan creation and relationship linking
     done: false
-    description: In `src/rmplan/commands/add.ts`, add logic to handle the
-      `--cleanup` option. This includes finding the referenced plan, generating
-      the new plan's title if one isn't provided, and setting the `parent`
-      property on the new cleanup plan.
-    steps: []
+    description: >
+      In `src/rmplan/commands/add.ts`, add logic to handle the `--cleanup`
+      option. This includes finding the referenced plan using existing utilities
+      like `readAllPlans`, generating the new plan's title if one isn't provided
+      using the pattern "<referenced plan title> cleanup", and setting the
+      `parent` property on the new cleanup plan. The implementation should
+      validate that the referenced plan exists and handle error cases
+      appropriately.
+    files:
+      - src/rmplan/commands/add.ts
+    steps:
+      - prompt: >
+          Update the `handleAddCommand` function signature and initial logic to
+          handle the case where `title` array might be empty (when using
+          `--cleanup` without a title). Add early validation to check if the
+          `--cleanup` option is provided and if so, convert the planId to a
+          number and validate it exists using `readAllPlans`.
+        done: false
+      - prompt: >
+          Add logic to find the referenced plan when `--cleanup` option is used.
+          Use the existing `readAllPlans` utility to get all plans, then find
+          the plan with the matching ID. Throw an appropriate error if the
+          referenced plan is not found, similar to the existing parent plan
+          validation pattern.
+        done: false
+      - prompt: >
+          Implement default title generation for cleanup plans. When no title is
+          provided and `--cleanup` is used, generate a default title by
+          appending " cleanup" to the referenced plan's title. If a custom title
+          is provided, use it instead. Store the final title in the `planTitle`
+          variable.
+        done: false
+      - prompt: >
+          Set the `parent` property of the new cleanup plan to the referenced
+          plan's ID when using `--cleanup`. This establishes the parent-child
+          relationship where the cleanup plan is a child of the original plan
+          that needs cleanup.
+        done: false
   - title: Aggregate `changedFiles` into the new plan's `rmfilter`
     done: false
-    description: Extend the logic in `add.ts` to collect all file paths from the
+    description: >
+      Extend the logic in `add.ts` to collect all file paths from the
       `changedFiles` property of both the referenced plan and any of its
       children that are marked as "done". These files will populate the
-      `rmfilter` of the new cleanup plan.
-    steps: []
+      `rmfilter` of the new cleanup plan, providing the necessary context files
+      for the cleanup work. Use a Set for deduplication and sort the final array
+      for consistency.
+    files:
+      - src/rmplan/commands/add.ts
+    steps:
+      - prompt: >
+          When `--cleanup` is used, collect all file paths from the referenced
+          plan's `changedFiles` property (if it exists). Use a Set to store the
+          file paths for automatic deduplication.
+        done: false
+      - prompt: >
+          Find all child plans of the referenced plan by filtering the plans
+          where the `parent` property matches the referenced plan's ID. For each
+          child plan that has a `status` of "done", add its `changedFiles` to
+          the Set of collected files.
+        done: false
+      - prompt: >
+          Convert the Set of collected file paths to a sorted array and assign
+          it to the new plan's `rmfilter` property. This ensures the cleanup
+          plan has access to all the files that were modified during the
+          original work and any completed follow-up work.
+        done: false
   - title: Update the referenced plan's dependencies
     done: false
-    description: Modify the referenced plan file to add the newly created cleanup
-      plan's ID to its `dependencies` array. This establishes the reverse
-      dependency link, ensuring the original work is not considered complete
-      until the cleanup is done.
-    steps: []
+    description: >
+      Modify the referenced plan file to add the newly created cleanup plan's ID
+      to its `dependencies` array. This establishes the reverse dependency link,
+      ensuring the original work is not considered complete until the cleanup is
+      done. Follow the existing pattern used for parent plan updates in the
+      current add command implementation.
+    files:
+      - src/rmplan/commands/add.ts
+    steps:
+      - prompt: >
+          After creating the new cleanup plan, update the referenced plan to
+          include the cleanup plan's ID in its `dependencies` array. Follow the
+          same pattern used for parent plan updates: check if dependencies array
+          exists (create if not), add the new plan ID if not already present,
+          and update the timestamp.
+        done: false
+      - prompt: >
+          If the referenced plan's status is "done", change it to "in_progress"
+          since it now has a new dependency (the cleanup plan) that needs to be
+          completed. Log this status change to inform the user, similar to the
+          existing parent plan status update messaging.
+        done: false
+      - prompt: >
+          Write the updated referenced plan back to disk using `writePlanFile`
+          and log the dependency update to provide user feedback about the
+          relationship establishment.
+        done: false
   - title: Add tests for the `--cleanup` option
     done: false
-    description: Create new tests in `src/rmplan/commands/add.test.ts` to validate
-      the entire `--cleanup` workflow. Tests should cover default title
+    description: >
+      Create comprehensive tests in `src/rmplan/commands/add.test.ts` to
+      validate the entire `--cleanup` workflow. Tests should cover default title
       generation, `rmfilter` aggregation from a parent and a "done" child,
       correct parent/dependency linking, and error handling for non-existent
-      plan IDs.
-    steps: []
+      plan IDs. Follow the existing test patterns in the file using temporary
+      directories and real filesystem operations.
+    files:
+      - src/rmplan/commands/add.test.ts
+    steps:
+      - prompt: >
+          Add a test that verifies basic cleanup plan creation with default
+          title generation. Create a parent plan, use the `--cleanup` option
+          without providing a custom title, and verify that the new plan has the
+          correct title format ("<parent title> cleanup"), parent relationship,
+          and that the parent plan's dependencies are updated.
+        done: false
+      - prompt: >
+          Add a test that verifies custom title handling with the `--cleanup`
+          option. Create a parent plan, use `--cleanup` with a custom title, and
+          verify that the custom title is used instead of the generated default
+          title while all other relationships are established correctly.
+        done: false
+      - prompt: >
+          Add a test that verifies `rmfilter` aggregation from multiple sources.
+          Create a parent plan with `changedFiles`, create a child plan of that
+          parent with status "done" and its own `changedFiles`, then create a
+          cleanup plan and verify that its `rmfilter` contains all the files
+          from both the parent and the completed child, properly deduplicated
+          and sorted.
+        done: false
+      - prompt: >
+          Add a test that verifies error handling when referencing a
+          non-existent plan ID. Use the `--cleanup` option with a plan ID that
+          doesn't exist and verify that an appropriate error message is thrown,
+          similar to the existing parent plan error handling test.
+        done: false
+      - prompt: >
+          Add a test that verifies the referenced plan's status change from
+          "done" to "in_progress" when a cleanup dependency is added. Create a
+          plan with status "done", create a cleanup plan for it, and verify that
+          the original plan's status is changed and the dependency relationship
+          is established correctly.
+        done: false
 rmfilter:
   - src/rmplan/commands/add.ts
   - src/rmplan/planSchema.ts
