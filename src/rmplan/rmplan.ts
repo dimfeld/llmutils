@@ -127,7 +127,7 @@ program
   });
 
 program
-  .command('add <title...>')
+  .command('add [title...]')
   .description('Create a new plan stub file that can be filled with tasks using generate')
   .option('--edit', 'Open the newly created plan file in your editor')
   .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
@@ -144,10 +144,12 @@ program
   .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
   .option('--assign <username>', 'Assign the plan to a user')
+  .option('--cleanup <planId>', 'Create a cleanup plan for the specified plan ID')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
     options.dependsOn = intArg(options.dependsOn);
     options.parent = intArg(options.parent);
+    options.cleanup = intArg(options.cleanup);
     await handleAddCommand(title, options, command).catch(handleCommandError);
   });
 

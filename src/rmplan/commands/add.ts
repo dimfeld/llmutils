@@ -16,8 +16,8 @@ import { updatePlanProperties } from '../planPropertiesUpdater.js';
 export async function handleAddCommand(title: string[], options: any, command: any) {
   const globalOpts = command.parent.opts();
 
-  // Join the title arguments to form the complete plan title
-  const planTitle = title.join(' ');
+  let planTitle: string;
+  let referencedPlan: PlanSchema & { filename: string } | null = null;
 
   // Load the effective configuration
   const config = await loadEffectiveConfig(globalOpts.config);
@@ -38,6 +38,35 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   // Ensure the target directory exists
   await fs.mkdir(targetDir, { recursive: true });
+
+  // Handle cleanup option
+  if (options.cleanup !== undefined) {
+    // Validate that cleanup plan ID is provided
+    if (typeof options.cleanup !== 'number') {
+      throw new Error('--cleanup option requires a numeric plan ID');
+    }
+
+    // Load all plans to find the referenced plan
+    const { plans: allPlans } = await readAllPlans(targetDir);
+    const foundPlan = allPlans.get(options.cleanup);
+    if (!foundPlan) {
+      throw new Error(`Plan with ID ${options.cleanup} not found`);
+    }
+    referencedPlan = foundPlan;
+
+    // Generate default title if none provided, otherwise use custom title
+    if (title.length === 0) {
+      planTitle = `${referencedPlan.title} cleanup`;
+    } else {
+      planTitle = title.join(' ');
+    }
+  } else {
+    // Regular flow - title is required when not using cleanup
+    if (title.length === 0) {
+      throw new Error('Plan title is required when not using --cleanup option');
+    }
+    planTitle = title.join(' ');
+  }
 
   // Generate a unique numeric plan ID
   const planId = await generateNumericPlanId(targetDir);
@@ -78,11 +107,32 @@ export async function handleAddCommand(title: string[], options: any, command: a
     status: options.status || 'pending',
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
     dependencies: needArrayOrUndefined(options.dependsOn),
-    parent: options.parent ? Number(options.parent) : undefined,
+    parent: referencedPlan ? referencedPlan.id : (options.parent ? Number(options.parent) : undefined),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
   };
+
+  // Handle cleanup-specific logic: aggregate changedFiles into rmfilter
+  if (referencedPlan) {
+    const filePaths = new Set<string>();
+    
+    // Add files from the referenced plan
+    if (referencedPlan.changedFiles) {
+      referencedPlan.changedFiles.forEach(file => filePaths.add(file));
+    }
+
+    // Find all child plans of the referenced plan with status "done"
+    const { plans: allPlans } = await readAllPlans(targetDir);
+    for (const childPlan of allPlans.values()) {
+      if (childPlan.parent === referencedPlan.id && childPlan.status === 'done' && childPlan.changedFiles) {
+        childPlan.changedFiles.forEach(file => filePaths.add(file));
+      }
+    }
+
+    // Convert to sorted array and set as rmfilter
+    plan.rmfilter = Array.from(filePaths).sort();
+  }
 
   // Apply additional properties using the shared function
   updatePlanProperties(plan, {
@@ -92,13 +142,14 @@ export async function handleAddCommand(title: string[], options: any, command: a
     assign: options.assign,
   });
 
-  // If parent is specified, update the parent plan's dependencies
-  if (options.parent !== undefined) {
+  // Update parent plan dependencies - handles both regular parent and cleanup cases
+  const parentPlanId = referencedPlan ? referencedPlan.id : options.parent;
+  if (parentPlanId !== undefined) {
     const { plans: allPlans } = await readAllPlans(targetDir);
 
-    const parentPlan = allPlans.get(options.parent);
+    const parentPlan = allPlans.get(parentPlanId);
     if (!parentPlan) {
-      throw new Error(`Parent plan with ID ${options.parent} not found`);
+      throw new Error(`Parent plan with ID ${parentPlanId} not found`);
     }
 
     // Add this plan's ID to the parent's dependencies

@@ -5,13 +5,13 @@ goal: To implement the complete functionality for the `--cleanup` option,
   including plan creation, relationship linking, `rmfilter` population, and
   testing.
 id: 114
-status: pending
+status: in_progress
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-24T22:39:10.663Z
 promptsGeneratedAt: 2025-08-24T22:42:07.074Z
 createdAt: 2025-08-24T22:31:39.657Z
-updatedAt: 2025-08-24T22:42:07.075Z
+updatedAt: 2025-08-24T22:42:07.477Z
 tasks:
   - title: Update CLI definition for the 'add' command
     done: false
