@@ -341,10 +341,10 @@ describe('setTaskDone', () => {
     const afterUpdate = Date.now();
 
     const updatedPlan = await readPlanFile(planFile);
-    
+
     // createdAt should remain unchanged
     expect(updatedPlan.createdAt).toBe(originalTime);
-    
+
     // updatedAt should be updated
     expect(updatedPlan.updatedAt).not.toBe(originalTime);
     const updatedTime = new Date(updatedPlan.updatedAt!).getTime();

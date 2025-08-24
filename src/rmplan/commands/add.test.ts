@@ -31,8 +31,9 @@ describe('rmplan add command', () => {
 
   test('creates plan with numeric ID when no plans exist', async () => {
     // Run rmplan add command
-    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Test Title" --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-      .cwd(tempDir);
+    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Test Title" --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
+      tempDir
+    );
 
     // The file should be named 1-test-title.plan.md since no plans exist
     const planPath = path.join(tasksDir, '1-test-title.plan.md');
@@ -265,8 +266,9 @@ describe('rmplan add command', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Run rmplan add command with parent option
-    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Child Plan" --parent 1 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-      .cwd(tempDir);
+    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Child Plan" --parent 1 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
+      tempDir
+    );
 
     // The child file should be named 2-child-plan.plan.md
     const childPlanPath = path.join(tasksDir, '2-child-plan.plan.md');
@@ -326,8 +328,9 @@ describe('rmplan add command', () => {
       );
 
       // Run rmplan add command with --cleanup option (no custom title)
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 10 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-        .cwd(tempDir);
+      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 10 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
+        tempDir
+      );
 
       // The cleanup file should be named 11-parent-plan-cleanup.plan.md
       const cleanupPlanPath = path.join(tasksDir, '11-parent-plan-cleanup.plan.md');
@@ -372,8 +375,9 @@ describe('rmplan add command', () => {
       );
 
       // Run rmplan add command with --cleanup option and custom title
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Custom Cleanup Title" --cleanup 20 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-        .cwd(tempDir);
+      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Custom Cleanup Title" --cleanup 20 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
+        tempDir
+      );
 
       // The cleanup file should be named 21-custom-cleanup-title.plan.md
       const cleanupPlanPath = path.join(tasksDir, '21-custom-cleanup-title.plan.md');
@@ -455,8 +459,9 @@ describe('rmplan add command', () => {
       );
 
       // Run rmplan add command with --cleanup option
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 30 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-        .cwd(tempDir);
+      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 30 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
+        tempDir
+      );
 
       // The cleanup file should be named 33-parent-with-files-cleanup.plan.md
       const cleanupPlanPath = path.join(tasksDir, '33-parent-with-files-cleanup.plan.md');
@@ -472,14 +477,14 @@ describe('rmplan add command', () => {
       expect(cleanupPlan.id).toBe(33);
       expect(cleanupPlan.title).toBe('Parent With Files cleanup');
       expect(cleanupPlan.parent).toBe(30);
-      
+
       // Verify rmfilter contains files from parent and done child (deduplicated and sorted)
       expect(cleanupPlan.rmfilter).toEqual([
         'shared.ts',
-        'src/file1.ts', 
+        'src/file1.ts',
         'src/file2.ts',
         'src/file3.ts',
-        'test/file.test.ts'
+        'test/file.test.ts',
       ]);
 
       // Read and verify parent plan was updated with dependency
@@ -525,8 +530,9 @@ describe('rmplan add command', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Run rmplan add command with --cleanup option
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 40 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-        .cwd(tempDir);
+      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 40 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
+        tempDir
+      );
 
       // The cleanup file should be named 41-done-plan-cleanup.plan.md
       const cleanupPlanPath = path.join(tasksDir, '41-done-plan-cleanup.plan.md');

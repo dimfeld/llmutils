@@ -150,8 +150,8 @@ function buildImportantGuidelines(options: OrchestrationOptions): string {
 
 You must update the plan file to mark completed tasks as done before stopping.
 
-When updating tasks, use the Bash command 'rmplan set-task-done <planId> --index <taskIndex>' or 'rmplan set-task-done <planId> --title "<taskTitle>"'.
-To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --index 2'. To set multiple tasks done, just run the command multiple times.
+When updating tasks, use the Bash command 'rmplan set-task-done <planId> --title "<taskTitle>"'.
+To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'. To set multiple tasks done, just run the command multiple times.
 `
     : '';
 

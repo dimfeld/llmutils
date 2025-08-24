@@ -23,8 +23,11 @@ export async function generateAgentFiles(planId: string, agents: AgentDefinition
     const fileName = `rmplan-${planId}-${agent.name}.md`;
     const filePath = path.join(agentsDir, fileName);
 
-    const frontmatter = [`name: rmplan-${planId}-${agent.name}`, `description: ${agent.description}`];
-    
+    const frontmatter = [
+      `name: rmplan-${planId}-${agent.name}`,
+      `description: ${agent.description}`,
+    ];
+
     if (agent.model) {
       frontmatter.push(`model: ${agent.model}`);
     }

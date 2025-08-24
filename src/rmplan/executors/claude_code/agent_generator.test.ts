@@ -143,7 +143,7 @@ ${agent.prompt}
       // Check implementer file has model
       const implementerPath = path.join(agentsDir, 'rmplan-test-plan-model-implementer.md');
       const implementerContent = await fs.readFile(implementerPath, 'utf-8');
-      
+
       expect(implementerContent).toContain('model: claude-3-haiku');
       const expectedImplementerContent = `---
 name: rmplan-test-plan-model-implementer
@@ -158,7 +158,7 @@ You are an implementation agent that writes code.
       // Check tester file doesn't have model
       const testerPath = path.join(agentsDir, 'rmplan-test-plan-model-tester.md');
       const testerContent = await fs.readFile(testerPath, 'utf-8');
-      
+
       expect(testerContent).not.toContain('model:');
       const expectedTesterContent = `---
 name: rmplan-test-plan-model-tester
