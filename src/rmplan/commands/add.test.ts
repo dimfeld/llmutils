@@ -344,7 +344,7 @@ describe('rmplan add command', () => {
       // Read and verify cleanup plan content
       const cleanupPlan = await readPlanFile(cleanupPlanPath);
       expect(cleanupPlan.id).toBe(11);
-      expect(cleanupPlan.title).toBe('Parent Plan cleanup');
+      expect(cleanupPlan.title).toBe('Parent Plan - Cleanup');
       expect(cleanupPlan.parent).toBe(10);
       expect(cleanupPlan.status).toBe('pending');
 
@@ -546,7 +546,7 @@ describe('rmplan add command', () => {
       // Read and verify cleanup plan content
       const cleanupPlan = await readPlanFile(cleanupPlanPath);
       expect(cleanupPlan.id).toBe(41);
-      expect(cleanupPlan.title).toBe('Done Plan cleanup');
+      expect(cleanupPlan.title).toBe('Done Plan - Cleanup');
       expect(cleanupPlan.parent).toBe(40);
       expect(cleanupPlan.status).toBe('pending');
 

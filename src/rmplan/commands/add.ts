@@ -59,7 +59,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
     // Generate default title if none provided, otherwise use custom title
     if (title.length === 0) {
-      planTitle = `${referencedPlan.title} cleanup`;
+      planTitle = `${referencedPlan.title} - Cleanup`;
     } else {
       planTitle = title.join(' ');
     }
@@ -145,21 +145,12 @@ export async function handleAddCommand(title: string[], options: any, command: a
   }
 
   // Apply additional properties using the shared function
-  // For cleanup plans, don't apply CLI rmfilter to avoid merging with generated rmfilter
-  if (referencedPlan) {
-    updatePlanProperties(plan, {
-      issue: options.issue,
-      doc: options.doc,
-      assign: options.assign,
-    });
-  } else {
-    updatePlanProperties(plan, {
-      rmfilter: options.rmfilter,
-      issue: options.issue,
-      doc: options.doc,
-      assign: options.assign,
-    });
-  }
+  updatePlanProperties(plan, {
+    rmfilter: options.rmfilter,
+    issue: options.issue,
+    doc: options.doc,
+    assign: options.assign,
+  });
 
   // Update parent plan dependencies - handles both regular parent and cleanup cases
   const parentPlanId = referencedPlan ? referencedPlan.id : options.parent;
