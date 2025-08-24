@@ -5,16 +5,20 @@ goal: To implement the complete functionality for the `--cleanup` option,
   including plan creation, relationship linking, `rmfilter` population, and
   testing.
 id: 114
-status: in_progress
+status: done
 priority: high
+container: false
 dependencies: []
+issue: []
+pullRequest: []
+docs: []
 planGeneratedAt: 2025-08-24T22:39:10.663Z
 promptsGeneratedAt: 2025-08-24T22:42:07.074Z
 createdAt: 2025-08-24T22:31:39.657Z
-updatedAt: 2025-08-24T22:42:07.477Z
+updatedAt: 2025-08-24T23:12:31.454Z
 tasks:
   - title: Update CLI definition for the 'add' command
-    done: false
+    done: true
     description: >
       Modify the `rmplan add` command in `src/rmplan/rmplan.ts` to include the
       new `--cleanup <planId>` option. The existing `<title...>` argument should
@@ -24,6 +28,7 @@ tasks:
       a plan ID parameter.
     files:
       - src/rmplan/rmplan.ts
+    docs: []
     steps:
       - prompt: >
           Update the `add` command definition in `src/rmplan/rmplan.ts` (around
@@ -38,7 +43,7 @@ tasks:
           other options in the command for consistency.
         done: true
   - title: Implement cleanup plan creation and relationship linking
-    done: false
+    done: true
     description: >
       In `src/rmplan/commands/add.ts`, add logic to handle the `--cleanup`
       option. This includes finding the referenced plan using existing utilities
@@ -49,6 +54,7 @@ tasks:
       appropriately.
     files:
       - src/rmplan/commands/add.ts
+    docs: []
     steps:
       - prompt: >
           Update the `handleAddCommand` function signature and initial logic to
@@ -78,7 +84,7 @@ tasks:
           that needs cleanup.
         done: true
   - title: Aggregate `changedFiles` into the new plan's `rmfilter`
-    done: false
+    done: true
     description: >
       Extend the logic in `add.ts` to collect all file paths from the
       `changedFiles` property of both the referenced plan and any of its
@@ -88,6 +94,7 @@ tasks:
       for consistency.
     files:
       - src/rmplan/commands/add.ts
+    docs: []
     steps:
       - prompt: >
           When `--cleanup` is used, collect all file paths from the referenced
@@ -107,7 +114,7 @@ tasks:
           original work and any completed follow-up work.
         done: true
   - title: Update the referenced plan's dependencies
-    done: false
+    done: true
     description: >
       Modify the referenced plan file to add the newly created cleanup plan's ID
       to its `dependencies` array. This establishes the reverse dependency link,
@@ -116,6 +123,7 @@ tasks:
       current add command implementation.
     files:
       - src/rmplan/commands/add.ts
+    docs: []
     steps:
       - prompt: >
           After creating the new cleanup plan, update the referenced plan to
@@ -146,6 +154,7 @@ tasks:
       directories and real filesystem operations.
     files:
       - src/rmplan/commands/add.test.ts
+    docs: []
     steps:
       - prompt: >
           Add a test that verifies basic cleanup plan creation with default
@@ -181,6 +190,10 @@ tasks:
           the original plan's status is changed and the dependency relationship
           is established correctly.
         done: true
+changedFiles:
+  - src/rmplan/commands/add.test.ts
+  - src/rmplan/commands/add.ts
+  - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan/commands/add.ts
   - src/rmplan/planSchema.ts

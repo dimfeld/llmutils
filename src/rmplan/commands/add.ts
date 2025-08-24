@@ -59,7 +59,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
     // Generate default title if none provided, otherwise use custom title
     if (title.length === 0) {
-      planTitle = `${referencedPlan.title} - Cleanup`;
+      planTitle = `${referencedPlan.title} cleanup`;
     } else {
       planTitle = title.join(' ');
     }
