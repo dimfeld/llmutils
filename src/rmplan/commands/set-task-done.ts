@@ -2,11 +2,9 @@
 // Marks a specific task in a plan YAML as done by title or index
 
 import { getGitRoot } from '../../common/git.js';
-import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFile } from '../plans.js';
 import { setTaskDone } from '../plans/mark_done.js';
-import { WorkspaceLock } from '../workspace/workspace_lock.js';
 
 export interface SetTaskDoneOptions {
   title?: string;

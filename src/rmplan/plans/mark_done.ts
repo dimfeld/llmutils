@@ -357,14 +357,14 @@ export async function setTaskDone(
     }
     task = planData.tasks[taskIndex];
   } else {
-    // Find by index (one-based)
+    // Find by index (zero-based)
     const userIndex = options.taskIdentifier;
-    if (userIndex < 1 || userIndex > planData.tasks.length) {
+    if (userIndex < 0 || userIndex > planData.tasks.length - 1) {
       throw new Error(
         `Invalid task index: ${userIndex}. Plan has ${planData.tasks.length} tasks (use 1-${planData.tasks.length})`
       );
     }
-    taskIndex = userIndex - 1; // Convert to zero-based
+    taskIndex = userIndex;
     task = planData.tasks[taskIndex];
   }
 

@@ -185,10 +185,10 @@ program
   .command('set-task-done <planFile>')
   .description('Mark a specific task as done by title or index. Can be a file path or plan ID.')
   .option('--title <title>', 'Task title to mark as done')
-  .option('--index <index>', 'Task index to mark as done (1-based)', (value: string) => {
+  .option('--index <index>', 'Task index to mark as done (0-based)', (value: string) => {
     const n = Number(value);
-    if (Number.isNaN(n) || n <= 0) {
-      throw new Error(`Task index must be a positive integer, saw ${value}`);
+    if (Number.isNaN(n) || n < 0) {
+      throw new Error(`Task index must be a non-negative integer, saw ${value}`);
     }
     return n;
   })
