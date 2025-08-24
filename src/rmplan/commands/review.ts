@@ -3,7 +3,7 @@
 
 import { $ } from 'bun';
 import chalk from 'chalk';
-import { confirm, checkbox } from '@inquirer/prompts';
+import { confirm, checkbox, select } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
@@ -38,6 +38,7 @@ import {
 import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
+import { createCleanupPlan, type CleanupPlanOptions } from '../utils/cleanup_plan_creator.js';
 
 /**
  * Comprehensive error handling for saving review results
@@ -349,6 +350,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
     // Check if autofix should be performed - with robust issue detection
     const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
     let shouldAutofix = false;
+    let shouldCreateCleanupPlan = false;
     let selectedIssues: ReviewIssue[] | null = null;
 
     if (hasIssues) {
@@ -356,25 +358,53 @@ export async function handleReviewCommand(planFile: string, options: any, comman
         shouldAutofix = true;
         if (!options.autofixAll && reviewResult.issues && reviewResult.issues.length > 0) {
           // Allow selection unless --autofix-all is used
-          selectedIssues = await selectIssuesToFix(reviewResult.issues);
+          selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
           shouldAutofix = selectedIssues.length > 0;
           if (!shouldAutofix) {
             log(chalk.yellow('No issues selected for autofix.'));
           }
         }
+      } else if (options.createCleanupPlan) {
+        shouldCreateCleanupPlan = true;
+        if (reviewResult.issues && reviewResult.issues.length > 0) {
+          selectedIssues = await selectIssuesToFix(reviewResult.issues, 'include in cleanup plan');
+          shouldCreateCleanupPlan = selectedIssues.length > 0;
+          if (!shouldCreateCleanupPlan) {
+            log(chalk.yellow('No issues selected for cleanup plan.'));
+          }
+        }
       } else if (!options.noAutofix) {
-        // Prompt user for autofix
-        shouldAutofix = await confirm({
-          message: 'Issues were found during review. Would you like to automatically fix them?',
-          default: false,
+        // Prompt user for action
+        const action = await select({
+          message: 'Issues were found during review. What would you like to do?',
+          choices: [
+            { name: 'Fix now (apply fixes immediately)', value: 'fix' },
+            { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
+            { name: 'Exit (do nothing)', value: 'exit' },
+          ],
+          default: 'exit',
         });
 
-        if (shouldAutofix && reviewResult.issues && reviewResult.issues.length > 0) {
-          selectedIssues = await selectIssuesToFix(reviewResult.issues);
-          shouldAutofix = selectedIssues.length > 0;
-          if (!shouldAutofix) {
-            log(chalk.yellow('No issues selected for autofix.'));
+        if (action === 'fix') {
+          shouldAutofix = true;
+          if (reviewResult.issues && reviewResult.issues.length > 0) {
+            selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
+            shouldAutofix = selectedIssues.length > 0;
+            if (!shouldAutofix) {
+              log(chalk.yellow('No issues selected for autofix.'));
+            }
           }
+        } else if (action === 'cleanup') {
+          shouldCreateCleanupPlan = true;
+          if (reviewResult.issues && reviewResult.issues.length > 0) {
+            selectedIssues = await selectIssuesToFix(reviewResult.issues, 'include in cleanup plan');
+            shouldCreateCleanupPlan = selectedIssues.length > 0;
+            if (!shouldCreateCleanupPlan) {
+              log(chalk.yellow('No issues selected for cleanup plan.'));
+            }
+          }
+        } else {
+          log(chalk.gray('No action taken.'));
         }
       }
     }
@@ -474,6 +504,32 @@ export async function handleReviewCommand(planFile: string, options: any, comman
             `Warning: Could not store incremental review metadata: ${metadataErrorMessage}`
           )
         );
+      }
+    }
+
+    // Create cleanup plan if requested
+    if (shouldCreateCleanupPlan && hasIssues && planData.id) {
+      log(chalk.cyan('\n## Creating Cleanup Plan\n'));
+
+      try {
+        const cleanupOptions: CleanupPlanOptions = {
+          priority: options.cleanupPriority || 'medium',
+          assign: options.cleanupAssign,
+        };
+
+        const cleanupResult = await createCleanupPlan(
+          planData.id,
+          selectedIssues || reviewResult.issues || [],
+          cleanupOptions,
+          globalOpts
+        );
+
+        log(chalk.green(`✓ Created cleanup plan: ${cleanupResult.filePath} for ID ${chalk.green(cleanupResult.planId)}`));
+        log(chalk.gray(`  Next step: Use "rmplan generate --plan ${cleanupResult.planId}" or "rmplan run ${cleanupResult.planId}"`));
+      } catch (cleanupErr) {
+        const cleanupErrorMessage = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+        log(chalk.red(`Error creating cleanup plan: ${cleanupErrorMessage}`));
+        throw new Error(`Cleanup plan creation failed: ${cleanupErrorMessage}`);
       }
     }
 
@@ -597,9 +653,10 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
 }
 
 /**
- * Prompts the user to select which issues to fix from the review results
+ * Prompts the user to select which issues to address from the review results
+ * (issues can be either fixed immediately or included in a cleanup plan)
  */
-async function selectIssuesToFix(issues: ReviewIssue[]): Promise<ReviewIssue[]> {
+async function selectIssuesToFix(issues: ReviewIssue[], purpose: string = 'fix'): Promise<ReviewIssue[]> {
   // Group issues by severity for better organization
   const groupedIssues = issues.reduce(
     (acc, issue) => {
@@ -633,7 +690,7 @@ async function selectIssuesToFix(issues: ReviewIssue[]): Promise<ReviewIssue[]> 
   }
 
   const selectedIssues = await checkbox({
-    message: 'Select issues to fix:',
+    message: `Select issues to ${purpose}:`,
     choices: options,
     pageSize: 15,
     loop: false,
