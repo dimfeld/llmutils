@@ -17,7 +17,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
   const globalOpts = command.parent.opts();
 
   let planTitle: string;
-  let referencedPlan: PlanSchema & { filename: string } | null = null;
+  let referencedPlan: (PlanSchema & { filename: string }) | null = null;
 
   // Load the effective configuration
   const config = await loadEffectiveConfig(globalOpts.config);
@@ -39,15 +39,18 @@ export async function handleAddCommand(title: string[], options: any, command: a
   // Ensure the target directory exists
   await fs.mkdir(targetDir, { recursive: true });
 
+  // Load all plans once at the beginning to avoid race conditions
+  const { plans: allPlans } = await readAllPlans(targetDir);
+
   // Handle cleanup option
   if (options.cleanup !== undefined) {
-    // Validate that cleanup plan ID is provided
+    // Validate that cleanup plan ID is provided and is positive
     if (typeof options.cleanup !== 'number') {
       throw new Error('--cleanup option requires a numeric plan ID');
     }
-
-    // Load all plans to find the referenced plan
-    const { plans: allPlans } = await readAllPlans(targetDir);
+    if (options.cleanup <= 0) {
+      throw new Error('--cleanup option requires a positive plan ID');
+    }
     const foundPlan = allPlans.get(options.cleanup);
     if (!foundPlan) {
       throw new Error(`Plan with ID ${options.cleanup} not found`);
@@ -56,7 +59,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
     // Generate default title if none provided, otherwise use custom title
     if (title.length === 0) {
-      planTitle = `${referencedPlan.title} cleanup`;
+      planTitle = `${referencedPlan.title} - Cleanup`;
     } else {
       planTitle = title.join(' ');
     }
@@ -107,7 +110,11 @@ export async function handleAddCommand(title: string[], options: any, command: a
     status: options.status || 'pending',
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
     dependencies: needArrayOrUndefined(options.dependsOn),
-    parent: referencedPlan ? referencedPlan.id : (options.parent ? Number(options.parent) : undefined),
+    parent: referencedPlan
+      ? referencedPlan.id
+      : options.parent
+        ? Number(options.parent)
+        : undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
@@ -116,17 +123,20 @@ export async function handleAddCommand(title: string[], options: any, command: a
   // Handle cleanup-specific logic: aggregate changedFiles into rmfilter
   if (referencedPlan) {
     const filePaths = new Set<string>();
-    
+
     // Add files from the referenced plan
     if (referencedPlan.changedFiles) {
-      referencedPlan.changedFiles.forEach(file => filePaths.add(file));
+      referencedPlan.changedFiles.forEach((file) => filePaths.add(file));
     }
 
     // Find all child plans of the referenced plan with status "done"
-    const { plans: allPlans } = await readAllPlans(targetDir);
     for (const childPlan of allPlans.values()) {
-      if (childPlan.parent === referencedPlan.id && childPlan.status === 'done' && childPlan.changedFiles) {
-        childPlan.changedFiles.forEach(file => filePaths.add(file));
+      if (
+        childPlan.parent === referencedPlan.id &&
+        childPlan.status === 'done' &&
+        childPlan.changedFiles
+      ) {
+        childPlan.changedFiles.forEach((file) => filePaths.add(file));
       }
     }
 
@@ -135,18 +145,25 @@ export async function handleAddCommand(title: string[], options: any, command: a
   }
 
   // Apply additional properties using the shared function
-  updatePlanProperties(plan, {
-    rmfilter: options.rmfilter,
-    issue: options.issue,
-    doc: options.doc,
-    assign: options.assign,
-  });
+  // For cleanup plans, don't apply CLI rmfilter to avoid merging with generated rmfilter
+  if (referencedPlan) {
+    updatePlanProperties(plan, {
+      issue: options.issue,
+      doc: options.doc,
+      assign: options.assign,
+    });
+  } else {
+    updatePlanProperties(plan, {
+      rmfilter: options.rmfilter,
+      issue: options.issue,
+      doc: options.doc,
+      assign: options.assign,
+    });
+  }
 
   // Update parent plan dependencies - handles both regular parent and cleanup cases
   const parentPlanId = referencedPlan ? referencedPlan.id : options.parent;
   if (parentPlanId !== undefined) {
-    const { plans: allPlans } = await readAllPlans(targetDir);
-
     const parentPlan = allPlans.get(parentPlanId);
     if (!parentPlan) {
       throw new Error(`Parent plan with ID ${parentPlanId} not found`);
