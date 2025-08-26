@@ -132,6 +132,10 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
         })
       );
 
+      commentData.sort((a, b) => {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+
       debugLog(
         `Successfully fetched Linear issue ${parsed.identifier} with ${commentData.length} comments`
       );
