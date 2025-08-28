@@ -159,9 +159,6 @@ export function buildPrDescriptionPrompt(
     changedFilesSection.push(`- ${file}`);
   });
 
-  // Always include diff for description generation
-  changedFilesSection.push(``, `**Full Diff:**`, ``, '```diff', diffResult.diffContent, '```');
-
   // Combine everything into the final context content
   const contextContent = [
     ...parentContext,
