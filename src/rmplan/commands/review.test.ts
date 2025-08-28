@@ -2650,3 +2650,449 @@ All tests are passing and functionality works as expected.`;
     expect(autofixPrompt).toContain('maintaining the plan requirements');
   });
 });
+
+describe('Auto-selection of branch-specific plans', () => {
+  test('auto-selects plan when no planFile provided and branch-specific plan exists', async () => {
+    const planContent = `
+id: 42
+title: Branch-specific Plan
+goal: Test auto-selection functionality
+createdAt: 2024-01-01T00:00:00.000Z
+tasks:
+  - title: Test task
+    description: A test task on this branch
+`;
+
+    const planFile = join(testDir, 'branch-plan.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        return 'Mock review result';
+      }),
+    };
+
+    // Mock findBranchSpecificPlan to return a plan
+    await moduleMocker.mock('../plans.js', () => ({
+      findBranchSpecificPlan: mock(async () => ({
+        id: 42,
+        title: 'Branch-specific Plan',
+        goal: 'Test auto-selection functionality',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        filename: planFile,
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task on this branch',
+          },
+        ],
+      })),
+      // Keep other needed functions
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 42,
+        title: 'Branch-specific Plan',
+        goal: 'Test auto-selection functionality',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task on this branch',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call without planFile - should auto-select
+    await handleReviewCommand(undefined, {}, mockCommand);
+
+    // Verify the executor was called
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('throws error when no planFile provided and no branch-specific plans exist', async () => {
+    // Mock findBranchSpecificPlan to return null (no plans found)
+    await moduleMocker.mock('../plans.js', () => ({
+      findBranchSpecificPlan: mock(async () => null),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({}),
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
+      'No plan file specified and no plans found that are unique to this branch'
+    );
+  });
+
+  test('still works with explicit planFile when provided', async () => {
+    const planContent = `
+id: 1
+title: Explicit Plan
+goal: Test explicit plan selection
+tasks:
+  - title: Test task
+    description: A test task
+`;
+    const planFile = join(testDir, 'explicit-plan.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async () => 'Mock review result'),
+    };
+
+    // Mock findBranchSpecificPlan - should NOT be called when planFile is provided
+    await moduleMocker.mock('../plans.js', () => ({
+      findBranchSpecificPlan: mock(async () => {
+        throw new Error('findBranchSpecificPlan should not be called when planFile is provided');
+      }),
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 1,
+        title: 'Explicit Plan',
+        goal: 'Test explicit plan selection',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({}),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Call with explicit planFile - should NOT trigger auto-selection
+    await handleReviewCommand(planFile, {}, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('includes auto-selection logging in output', async () => {
+    const planContent = `
+id: 100
+title: Auto-selected Plan
+goal: Test auto-selection logging
+tasks:
+  - title: Test task
+    description: A test task for logging
+`;
+    const planFile = join(testDir, 'auto-selected-plan.yml');
+    await writeFile(planFile, planContent);
+
+    const mockExecutor = {
+      execute: mock(async () => 'Mock review result'),
+    };
+
+    // Capture log calls to verify auto-selection messages
+    const logCalls: string[] = [];
+    const mockLog = mock((message: string) => {
+      logCalls.push(message);
+    });
+
+    await moduleMocker.mock('../plans.js', () => ({
+      findBranchSpecificPlan: mock(async () => ({
+        id: 100,
+        title: 'Auto-selected Plan',
+        goal: 'Test auto-selection logging',
+        filename: planFile,
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task for logging',
+          },
+        ],
+      })),
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 100,
+        title: 'Auto-selected Plan',
+        goal: 'Test auto-selection logging',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task for logging',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({}),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    // Mock the log function to capture calls
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: mockLog,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(undefined, {}, mockCommand);
+
+    // Verify auto-selection logging occurred
+    const autoSelectionLogs = logCalls.filter(msg => 
+      msg.includes('Auto-selected plan') || 
+      msg.includes('100 - Auto-selected Plan')
+    );
+    expect(autoSelectionLogs.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Branch-specific plan discovery', () => {
+  test('getNewPlanFilesOnBranch finds new plan files using git', async () => {
+    // Import the function to test it directly
+    const { getNewPlanFilesOnBranch } = await import('../plans.js');
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getTrunkBranch: async () => 'main',
+      getUsingJj: async () => false,
+    }));
+
+    await moduleMocker.mock('bun', () => ({
+      $: mock().mockImplementation((template: TemplateStringsArray) => {
+        const command = template.join('');
+        if (command.includes('git diff --name-status')) {
+          return {
+            cwd: mock(() => ({ nothrow: () => ({ text: () => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml' }) })),
+            nothrow: mock(() => ({ text: () => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml' })),
+            text: mock(() => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml'),
+          };
+        }
+        return {
+          cwd: mock(() => ({ nothrow: () => ({ text: () => '' }) })),
+          nothrow: mock(() => ({ text: () => '' })),
+          text: mock(() => ''),
+        };
+      }),
+    }));
+
+    const result = await getNewPlanFilesOnBranch('/test/repo', '/test/repo');
+    expect(result).toContain('/test/repo/some/plan.yml');
+    expect(result).not.toContain('/test/repo/other/file.txt'); // Not a plan file
+    expect(result).not.toContain('/test/repo/existing.yml'); // Modified, not added
+  });
+
+  test('getNewPlanFilesOnBranch finds new plan files using jj', async () => {
+    const { getNewPlanFilesOnBranch } = await import('../plans.js');
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getTrunkBranch: async () => 'main',
+      getUsingJj: async () => true,
+    }));
+
+    await moduleMocker.mock('bun', () => ({
+      $: mock().mockImplementation((template: TemplateStringsArray) => {
+        const command = template.join('');
+        if (command.includes('jj diff --from')) {
+          return {
+            cwd: mock(() => ({ nothrow: () => ({ text: () => '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml' }) })),
+            nothrow: mock(() => ({ text: () => '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml' })),
+            text: mock(() => '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml'),
+          };
+        }
+        return {
+          cwd: mock(() => ({ nothrow: () => ({ text: () => '' }) })),
+          nothrow: mock(() => ({ text: () => '' })),
+          text: mock(() => ''),
+        };
+      }),
+    }));
+
+    const result = await getNewPlanFilesOnBranch('/test/repo', '/test/repo/tasks');
+    expect(result).toContain('/test/repo/tasks/new-plan.yml');
+    expect(result).toContain('/test/repo/tasks/another.plan.md');
+    expect(result).not.toContain('/test/repo/existing/modified.yml'); // Not a new file
+  });
+
+  test('findBranchSpecificPlan sorts by createdAt then by ID', async () => {
+    const { findBranchSpecificPlan } = await import('../plans.js');
+
+    // Mock plans with different timestamps and IDs
+    const plan1File = join(testDir, 'plan1.yml');
+    const plan2File = join(testDir, 'plan2.yml');
+    const plan3File = join(testDir, 'plan3.yml');
+
+    await moduleMocker.mock('../plans.js', () => ({
+      findBranchSpecificPlan,
+      getNewPlanFilesOnBranch: mock(async () => [plan1File, plan2File, plan3File]),
+      readPlanFile: mock(async (filePath: string) => {
+        if (filePath === plan1File) {
+          return {
+            id: 3,
+            title: 'Plan 3',
+            goal: 'Third plan',
+            createdAt: '2024-01-03T00:00:00.000Z', // Newest
+          };
+        } else if (filePath === plan2File) {
+          return {
+            id: 1,
+            title: 'Plan 1',
+            goal: 'First plan',
+            createdAt: '2024-01-01T00:00:00.000Z', // Oldest
+          };
+        } else if (filePath === plan3File) {
+          return {
+            id: 2,
+            title: 'Plan 2',
+            goal: 'Second plan',
+            createdAt: '2024-01-02T00:00:00.000Z', // Middle
+          };
+        }
+        return null;
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: { tasks: testDir },
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    const result = await findBranchSpecificPlan();
+
+    // Should select plan with earliest createdAt (plan1 with 2024-01-01)
+    expect(result?.id).toBe(1);
+    expect(result?.title).toBe('Plan 1');
+  });
+
+  test('findBranchSpecificPlan falls back to ID sorting when createdAt missing', async () => {
+    const { findBranchSpecificPlan } = await import('../plans.js');
+
+    const plan1File = join(testDir, 'plan1.yml');
+    const plan2File = join(testDir, 'plan2.yml');
+
+    await moduleMocker.mock('../plans.js', () => ({
+      findBranchSpecificPlan,
+      getNewPlanFilesOnBranch: mock(async () => [plan1File, plan2File]),
+      readPlanFile: mock(async (filePath: string) => {
+        if (filePath === plan1File) {
+          return {
+            id: 5,
+            title: 'Plan 5',
+            goal: 'Higher ID plan',
+            // No createdAt
+          };
+        } else if (filePath === plan2File) {
+          return {
+            id: 2,
+            title: 'Plan 2',
+            goal: 'Lower ID plan',
+            // No createdAt
+          };
+        }
+        return null;
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: { tasks: testDir },
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    const result = await findBranchSpecificPlan();
+
+    // Should select plan with lowest ID (plan2 with ID 2)
+    expect(result?.id).toBe(2);
+    expect(result?.title).toBe('Plan 2');
+  });
+});

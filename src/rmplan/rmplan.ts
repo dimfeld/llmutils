@@ -504,9 +504,9 @@ program
   });
 
 program
-  .command('review <planFile>')
+  .command('review [planFile]')
   .description(
-    'Analyze code changes on current branch against plan requirements using reviewer agent'
+    'Analyze code changes on current branch against plan requirements using reviewer agent. If no plan is specified, automatically selects the oldest plan that exists only on this branch.'
   )
   .option(`-x, --executor <name>`, 'The executor to use for review execution')
   .addHelpText('after', `Available executors: ${executorNames}`)

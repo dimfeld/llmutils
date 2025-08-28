@@ -7,6 +7,7 @@ import { confirm, checkbox, select } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
+import { findBranchSpecificPlan } from '../plans.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
@@ -162,12 +163,29 @@ async function saveReviewResultWithErrorHandling(
   }
 }
 
-export async function handleReviewCommand(planFile: string, options: any, command: any) {
+export async function handleReviewCommand(planFile: string | undefined, options: any, command: any) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
+  // If no planFile is provided, try to auto-select one from branch-specific plans
+  let resolvedPlanFile = planFile;
+  if (!resolvedPlanFile) {
+    const autoSelectedPlan = await findBranchSpecificPlan(globalOpts.config);
+    
+    if (!autoSelectedPlan) {
+      throw new Error(
+        'No plan file specified and no plans found that are unique to this branch. ' +
+        'Please specify a plan file explicitly or create a plan for this branch.'
+      );
+    }
+    
+    resolvedPlanFile = autoSelectedPlan.filename;
+    log(chalk.cyan(`Auto-selected plan: ${autoSelectedPlan.id} - ${autoSelectedPlan.title}`));
+    log(chalk.gray(`Plan file: ${autoSelectedPlan.filename}`));
+  }
+
   // Gather plan context using the shared utility
-  const context = await gatherPlanContext(planFile, options, globalOpts);
+  const context = await gatherPlanContext(resolvedPlanFile, options, globalOpts);
 
   // Check if no changes were detected and early return for review
   if (context.noChangesDetected) {
@@ -180,7 +198,7 @@ export async function handleReviewCommand(planFile: string, options: any, comman
   }
 
   // Extract context for use in the rest of the function
-  const { resolvedPlanFile, planData, parentChain, completedChildren, diffResult } = context;
+  const { resolvedPlanFile: contextPlanFile, planData, parentChain, completedChildren, diffResult } = context;
 
   log(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
 
