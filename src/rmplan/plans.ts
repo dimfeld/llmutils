@@ -697,22 +697,25 @@ export function isTaskDone(task: PlanSchema['tasks'][0]): boolean {
 /**
  * Gets plan files that exist only on the current branch (not on the trunk branch).
  * This is useful for finding plans created specifically for the current work.
- * 
+ *
  * @param gitRoot - The git repository root
- * @param tasksDir - Directory containing plan files  
+ * @param tasksDir - Directory containing plan files
  * @returns Array of plan file paths that are new on the current branch
  */
-export async function getNewPlanFilesOnBranch(gitRoot: string, tasksDir: string): Promise<string[]> {
+export async function getNewPlanFilesOnBranch(
+  gitRoot: string,
+  tasksDir: string
+): Promise<string[]> {
   const trunkBranch = await getTrunkBranch(gitRoot);
   const isJj = await getUsingJj();
-  
+
   let newFiles: string[] = [];
-  
+
   if (isJj) {
     // Use jj to find new files
     const from = `latest(ancestors(${trunkBranch})&ancestors(@))`;
     const output = await $`jj diff --from ${from} --types`.cwd(gitRoot).nothrow().text();
-    
+
     // Look for lines like "-F some/file.yml" which means file was added
     const lines = output.split('\n');
     for (const line of lines) {
@@ -730,14 +733,14 @@ export async function getNewPlanFilesOnBranch(gitRoot: string, tasksDir: string)
   } else {
     // Use git to find new files
     const output = await $`git diff --name-status ${trunkBranch}`.cwd(gitRoot).nothrow().text();
-    
+
     // Look for lines like "A some/file.yml" which means file was added
     const lines = output.split('\n');
     for (const line of lines) {
       if (line.startsWith('A\t')) {
         const filePath = line.slice(2).trim();
         if (filePath.match(/\.(plan\.md|yml|yaml)$/)) {
-          // Check if file is in tasks directory  
+          // Check if file is in tasks directory
           const fullPath = path.join(gitRoot, filePath);
           if (fullPath.startsWith(tasksDir)) {
             newFiles.push(fullPath);
@@ -746,21 +749,23 @@ export async function getNewPlanFilesOnBranch(gitRoot: string, tasksDir: string)
       }
     }
   }
-  
+
   return newFiles;
 }
 
 /**
  * Finds plans that only exist on the current branch and selects the best candidate.
  * Plans are sorted by createdAt timestamp (oldest first), then by ID (lowest first).
- * 
+ *
  * @param configPath - Optional path to rmplan config file
  * @returns The best plan candidate or null if none found
  */
-export async function findBranchSpecificPlan(configPath?: string): Promise<(PlanSchema & { filename: string }) | null> {
+export async function findBranchSpecificPlan(
+  configPath?: string
+): Promise<(PlanSchema & { filename: string }) | null> {
   const config = await loadEffectiveConfig(configPath);
   const gitRoot = await getGitRoot();
-  
+
   let tasksDir: string;
   if (config.paths?.tasks) {
     tasksDir = path.isAbsolute(config.paths.tasks)
@@ -769,24 +774,24 @@ export async function findBranchSpecificPlan(configPath?: string): Promise<(Plan
   } else {
     tasksDir = gitRoot;
   }
-  
+
   // Get plan files that are new on this branch
   const newPlanFiles = await getNewPlanFilesOnBranch(gitRoot, tasksDir);
-  
+
   if (newPlanFiles.length === 0) {
     return null;
   }
-  
+
   // Read and parse the plan files
   const planCandidates: Array<PlanSchema & { filename: string }> = [];
-  
+
   for (const filePath of newPlanFiles) {
     try {
       const planData = await readPlanFile(filePath);
       if (planData.id) {
         planCandidates.push({
           ...planData,
-          filename: filePath
+          filename: filePath,
         });
       }
     } catch (err) {
@@ -794,11 +799,11 @@ export async function findBranchSpecificPlan(configPath?: string): Promise<(Plan
       debugLog(`Skipping unparseable plan file: ${filePath}`, err);
     }
   }
-  
+
   if (planCandidates.length === 0) {
     return null;
   }
-  
+
   // Sort by createdAt (oldest first), then by ID (lowest first)
   planCandidates.sort((a, b) => {
     // Compare by createdAt first if both have it
@@ -814,11 +819,11 @@ export async function findBranchSpecificPlan(configPath?: string): Promise<(Plan
     } else if (!a.createdAt && b.createdAt) {
       return 1; // Plans with createdAt come first
     }
-    
+
     // If createdAt is equal or both missing, compare by ID
     const aId = a.id || 0;
     const bId = b.id || 0;
-    
+
     if (typeof aId === 'number' && typeof bId === 'number') {
       return aId - bId;
     } else if (typeof aId === 'number') {
@@ -829,6 +834,6 @@ export async function findBranchSpecificPlan(configPath?: string): Promise<(Plan
       return String(aId).localeCompare(String(bId));
     }
   });
-  
+
   return planCandidates[0];
 }

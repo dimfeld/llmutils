@@ -163,7 +163,11 @@ async function saveReviewResultWithErrorHandling(
   }
 }
 
-export async function handleReviewCommand(planFile: string | undefined, options: any, command: any) {
+export async function handleReviewCommand(
+  planFile: string | undefined,
+  options: any,
+  command: any
+) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -171,14 +175,14 @@ export async function handleReviewCommand(planFile: string | undefined, options:
   let resolvedPlanFile = planFile;
   if (!resolvedPlanFile) {
     const autoSelectedPlan = await findBranchSpecificPlan(globalOpts.config);
-    
+
     if (!autoSelectedPlan) {
       throw new Error(
         'No plan file specified and no plans found that are unique to this branch. ' +
-        'Please specify a plan file explicitly or create a plan for this branch.'
+          'Please specify a plan file explicitly.'
       );
     }
-    
+
     resolvedPlanFile = autoSelectedPlan.filename;
     log(chalk.cyan(`Auto-selected plan: ${autoSelectedPlan.id} - ${autoSelectedPlan.title}`));
     log(chalk.gray(`Plan file: ${autoSelectedPlan.filename}`));
@@ -198,7 +202,13 @@ export async function handleReviewCommand(planFile: string | undefined, options:
   }
 
   // Extract context for use in the rest of the function
-  const { resolvedPlanFile: contextPlanFile, planData, parentChain, completedChildren, diffResult } = context;
+  const {
+    resolvedPlanFile: contextPlanFile,
+    planData,
+    parentChain,
+    completedChildren,
+    diffResult,
+  } = context;
 
   log(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
 
@@ -415,7 +425,10 @@ export async function handleReviewCommand(planFile: string | undefined, options:
         } else if (action === 'cleanup') {
           shouldCreateCleanupPlan = true;
           if (reviewResult.issues && reviewResult.issues.length > 0) {
-            selectedIssues = await selectIssuesToFix(reviewResult.issues, 'include in cleanup plan');
+            selectedIssues = await selectIssuesToFix(
+              reviewResult.issues,
+              'include in cleanup plan'
+            );
             shouldCreateCleanupPlan = selectedIssues.length > 0;
             if (!shouldCreateCleanupPlan) {
               log(chalk.yellow('No issues selected for cleanup plan.'));
@@ -542,10 +555,19 @@ export async function handleReviewCommand(planFile: string | undefined, options:
           globalOpts
         );
 
-        log(chalk.green(`✓ Created cleanup plan: ${cleanupResult.filePath} for ID ${chalk.green(cleanupResult.planId)}`));
-        log(chalk.gray(`  Next step: Use "rmplan generate --plan ${cleanupResult.planId}" or "rmplan run ${cleanupResult.planId}"`));
+        log(
+          chalk.green(
+            `✓ Created cleanup plan: ${cleanupResult.filePath} for ID ${chalk.green(cleanupResult.planId)}`
+          )
+        );
+        log(
+          chalk.gray(
+            `  Next step: Use "rmplan generate --plan ${cleanupResult.planId}" or "rmplan run ${cleanupResult.planId}"`
+          )
+        );
       } catch (cleanupErr) {
-        const cleanupErrorMessage = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+        const cleanupErrorMessage =
+          cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
         log(chalk.red(`Error creating cleanup plan: ${cleanupErrorMessage}`));
         throw new Error(`Cleanup plan creation failed: ${cleanupErrorMessage}`);
       }
@@ -674,7 +696,10 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
  * Prompts the user to select which issues to address from the review results
  * (issues can be either fixed immediately or included in a cleanup plan)
  */
-async function selectIssuesToFix(issues: ReviewIssue[], purpose: string = 'fix'): Promise<ReviewIssue[]> {
+async function selectIssuesToFix(
+  issues: ReviewIssue[],
+  purpose: string = 'fix'
+): Promise<ReviewIssue[]> {
   // Group issues by severity for better organization
   const groupedIssues = issues.reduce(
     (acc, issue) => {
