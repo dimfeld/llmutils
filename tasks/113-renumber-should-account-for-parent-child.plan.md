@@ -14,7 +14,7 @@ createdAt: 2025-08-19T19:45:01.416Z
 updatedAt: 2025-08-29T05:14:58.866Z
 tasks:
   - title: Build Plan Hierarchy Representation
-    done: false
+    done: true
     description: >
       Create helper functions to process the full list of plans into a
       structured representation, such as a map of parent IDs to their child plan
@@ -33,22 +33,22 @@ tasks:
           parent plan IDs and values are arrays of child plan objects. This
           should iterate through all plans and group children under their parent
           IDs.
-        done: false
+        done: true
       - prompt: >
           Create a helper function `findPlanFamily` that takes a plan ID and the
           parent-child hierarchy map and returns all plans in that family (the
           root parent and all its descendants). Use a breadth-first or
           depth-first traversal to collect the complete family tree starting
           from a given plan.
-        done: false
+        done: true
       - prompt: >
           Create a helper function `findRootParent` that takes a plan ID and the
           allPlans map and traverses upward through parent relationships to find
           the topmost parent in the hierarchy. This will be used to identify
           family roots when processing disordered hierarchies.
-        done: false
+        done: true
   - title: Identify Disordered Plan Families
-    done: false
+    done: true
     description: >
       Implement logic to scan the complete plan hierarchy and identify any
       parent plan whose ID is greater than one of its children's IDs. This logic
@@ -64,22 +64,22 @@ tasks:
           identifies families where a parent has an ID greater than any of its
           children or descendants. The function should return a Set of root
           parent IDs representing families that need reordering.
-        done: false
+        done: true
       - prompt: >
           Implement logic within `findDisorderedFamilies` to traverse each
           plan's complete family tree and check for ID ordering violations. When
           a violation is found, ensure we capture the root parent of the family
           rather than intermediate parents to avoid processing the same family
           multiple times.
-        done: false
+        done: true
       - prompt: >
           Add validation to ensure that a plan isn't processed multiple times if
           it belongs to an already identified disordered family. This prevents
           duplicate processing when multiple branches of the same family tree
           have ordering issues.
-        done: false
+        done: true
   - title: Implement Topological Sort for Plan Families
-    done: false
+    done: true
     description: >
       Create a function that takes a family of plans (a parent and all its
       descendants) and returns a new list of those plans in a topologically
@@ -95,24 +95,24 @@ tasks:
           family plans and returns them sorted in topological order. The
           function should ensure parents come before children and that sibling
           dependencies are respected using a topological sort algorithm.
-        done: false
+        done: true
       - prompt: >
           Implement the core topological sort algorithm using Kahn's algorithm
           or similar approach. Build a dependency graph from both parent-child
           relationships and explicit dependency arrays, then perform the
           topological sort ensuring parents always precede their children.
-        done: false
+        done: true
       - prompt: >
           Add cycle detection to the topological sort to handle any circular
           dependencies within a family. If a cycle is detected, throw a
           descriptive error message indicating which plans are involved in the
           circular dependency.
-        done: false
+        done: true
       - prompt: >
           Ensure the sorting preserves the constraint that parent plans always
           have lower IDs than children, even when there are complex dependency
           relationships between siblings within the family.
-        done: false
+        done: true
   - title: Implement ID Reassignment for a Sorted Family
     done: false
     description: >
