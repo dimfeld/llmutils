@@ -318,7 +318,7 @@ async function handleInteractiveOutput(
   prCreationConfig: PrCreationOptions
 ): Promise<void> {
   try {
-    const actions = await checkbox({
+    const action = await select({
       message: 'What would you like to do with the generated description?',
       choices: [
         { name: 'Copy to clipboard', value: 'copy' },
@@ -328,69 +328,54 @@ async function handleInteractiveOutput(
       ],
     });
 
-    if (actions.length === 0 || actions.includes('none')) {
+    if (action === 'none') {
       log(chalk.gray('No additional actions selected.'));
       return;
     }
 
-    // Collect errors instead of failing fast to handle partial failures gracefully
-    const errors: string[] = [];
-    const successes: string[] = [];
+    // Handle the single selected action
+    try {
+      switch (action) {
+        case 'copy':
+          await copyToClipboard(description);
+          log(chalk.green('Copied to clipboard'));
+          break;
 
-    // Process each selected action
-    for (const action of actions) {
-      try {
-        switch (action) {
-          case 'copy':
-            await copyToClipboard(description);
-            successes.push('Copied to clipboard');
-            break;
+        case 'save': {
+          const filename = await input({
+            message: 'Enter filename to save the description:',
+            default: 'pr-description.md',
+          });
 
-          case 'save': {
-            const filename = await input({
-              message: 'Enter filename to save the description:',
-              default: 'pr-description.md',
-            });
-
-            if (filename && filename.trim()) {
-              await writeFileOutput(filename.trim(), description, gitRoot);
-              successes.push(`Saved to file: ${filename.trim()}`);
-            } else {
-              log(chalk.yellow('File save cancelled - no filename provided.'));
-            }
-            break;
+          if (filename && filename.trim()) {
+            await writeFileOutput(filename.trim(), description, gitRoot);
+          } else {
+            log(chalk.yellow('File save cancelled - no filename provided.'));
           }
-
-          case 'pr':
-            await createPullRequest(title, description, prCreationConfig);
-            successes.push('GitHub PR created');
-            break;
+          break;
         }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
 
-        // For interactive mode, log errors but continue with other actions
-        const actionName =
-          action === 'copy'
-            ? 'copy to clipboard'
-            : action === 'save'
-              ? 'save file'
-              : action === 'pr'
-                ? 'create GitHub PR'
-                : action;
-
-        const formattedError = `Failed to ${actionName}: ${errorMessage}`;
-        errors.push(formattedError);
-        log(chalk.red(formattedError));
+        case 'pr':
+          await createPullRequest(title, description, prCreationConfig);
+          log(chalk.green('GitHub PR created successfully'));
+          break;
       }
-    }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
 
-    // Summary of results
-    if (successes.length > 0) {
-      log(chalk.green(`\nCompleted actions: ${successes.join(', ')}`));
-    }
-    if (errors.length > 0) {
-      log(chalk.red(`\nFailed actions: ${errors.length}`));
+      // For interactive mode, provide specific error context
+      const actionName =
+        action === 'copy'
+          ? 'copy to clipboard'
+          : action === 'save'
+            ? 'save file'
+            : action === 'pr'
+              ? 'create GitHub PR'
+              : action;
+
+      const formattedError = `Failed to ${actionName}: ${errorMessage}`;
+      log(chalk.red(formattedError));
+      throw new Error(formattedError);
     }
   } catch (err) {
     // Handle prompt cancellation and other interactive errors gracefully

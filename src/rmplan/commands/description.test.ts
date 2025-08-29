@@ -51,9 +51,8 @@ describe('handleDescriptionCommand', () => {
   test('successfully generates a PR description', async () => {
     // Mock @inquirer/prompts to prevent hanging
     await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(async () => ['none']), // Select none to skip interactive actions
+      select: mock(async () => 'none'), // Select none to skip interactive actions
       input: mock(async () => 'test.md'),
-      select: mock(async () => 'none'),
     }));
     const mockContext = createMockContext();
 
@@ -220,9 +219,8 @@ describe('handleDescriptionCommand', () => {
   test('handles custom instructions from CLI options', async () => {
     // Mock @inquirer/prompts to prevent hanging
     await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(async () => ['none']), // Select none to skip interactive actions
+      select: mock(async () => 'none'), // Select none to skip interactive actions
       input: mock(async () => 'test.md'),
-      select: mock(async () => 'none'),
     }));
 
     const mockContext = createMockContext();
@@ -285,9 +283,8 @@ describe('handleDescriptionCommand', () => {
   test('handles different executor configurations', async () => {
     // Mock @inquirer/prompts to prevent hanging
     await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(async () => ['none']), // Select none to skip interactive actions
+      select: mock(async () => 'none'), // Select none to skip interactive actions
       input: mock(async () => 'test.md'),
-      select: mock(async () => 'none'),
     }));
 
     const mockContext = createMockContext();
@@ -990,9 +987,8 @@ describe('handleDescriptionCommand', () => {
       const clipboardWriteSpy = mock(() => Promise.resolve());
 
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => ['copy', 'save']),
+        select: mock(async () => 'copy'),
         input: mock(async () => 'interactive-description.md'),
-        select: mock(async () => 'none'),
       }));
 
       await moduleMocker.mock('node:fs/promises', () => ({
@@ -1199,11 +1195,10 @@ describe('handleDescriptionCommand', () => {
       };
 
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => {
+        select: mock(async () => {
           throw new ExitPromptError();
         }),
         input: mock(async () => 'test.md'),
-        select: mock(async () => 'none'),
       }));
 
       // Mock gatherPlanContext
@@ -1265,9 +1260,8 @@ describe('handleDescriptionCommand', () => {
 
       // Mock interactive prompt to select copy action
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => ['copy']),
+        select: mock(async () => 'copy'),
         input: mock(async () => 'test.md'),
-        select: mock(async () => 'none'),
       }));
 
       // Mock clipboard to fail
@@ -1334,9 +1328,8 @@ describe('handleDescriptionCommand', () => {
 
       // Mock interactive prompt to select save action
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => ['save']),
+        select: mock(async () => 'save'),
         input: mock(async () => 'test-file.md'),
-        select: mock(async () => 'none'),
       }));
 
       // Mock filesystem operations to fail
@@ -1405,9 +1398,8 @@ describe('handleDescriptionCommand', () => {
 
       // Mock interactive prompt to select PR creation
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => ['pr']),
+        select: mock(async () => 'pr'),
         input: mock(async () => 'test.md'),
-        select: mock(async () => 'none'),
       }));
 
       // Mock spawnAndLogOutput to simulate gh command failure
@@ -1481,9 +1473,8 @@ describe('handleDescriptionCommand', () => {
 
       // Mock interactive prompt to select none/empty selection
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => ['none']), // User explicitly selects "none"
+        select: mock(async () => 'none'), // User explicitly selects "none"
         input: mock(async () => 'test.md'),
-        select: mock(async () => 'none'),
       }));
 
       // Mock gatherPlanContext
@@ -1544,9 +1535,8 @@ describe('handleDescriptionCommand', () => {
 
       // Mock interactive prompt to return empty array
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => []), // User selects nothing
+        select: mock(async () => 'none'), // User selects nothing
         input: mock(async () => 'test.md'),
-        select: mock(async () => 'none'),
       }));
 
       // Mock gatherPlanContext
@@ -1908,9 +1898,8 @@ describe('handleDescriptionCommand', () => {
 
       // Mock interactive prompt to select save action
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => ['save']),
+        select: mock(async () => 'save'),
         input: mock(async () => '../../../etc/passwd'), // Dangerous path
-        select: mock(async () => 'none'),
       }));
 
       // Mock getGitRoot to return test directory
@@ -2293,9 +2282,8 @@ describe('handleDescriptionCommand', () => {
 
       // Mock interactive prompt to select PR creation
       await moduleMocker.mock('@inquirer/prompts', () => ({
-        checkbox: mock(async () => ['pr']),
+        select: mock(async () => 'pr'),
         input: mock(async () => 'test.md'),
-        select: mock(async () => 'none'),
       }));
 
       // Mock spawnAndLogOutput
@@ -2369,7 +2357,7 @@ describe('handleDescriptionCommand', () => {
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       const allOutput = logCalls.join('\n');
-      expect(allOutput).toContain('Completed actions: GitHub PR created');
+      expect(allOutput).toContain('GitHub PR created successfully');
     });
 
     test('validates config values and applies defaults correctly', async () => {
