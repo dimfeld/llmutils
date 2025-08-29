@@ -1275,6 +1275,50 @@ describe('rmplan renumber', () => {
     expect(child2Index).toBeLessThan(child3Index);
   });
 
+  test('reassignFamilyIds function with various family sizes', async () => {
+    const { reassignFamilyIds } = await import('./renumber.js');
+
+    // Test single plan family (should return empty mapping)
+    const singleFamily = [
+      { plan: { id: 42, title: 'Single Plan' }, filePath: '/path/to/42.yml' }
+    ];
+    const singleMapping = reassignFamilyIds(singleFamily);
+    expect(singleMapping.size).toBe(0);
+
+    // Test two-plan family (parent-child swap)
+    const twoFamily = [
+      { plan: { id: 10, title: 'Parent' }, filePath: '/path/to/parent.yml' },
+      { plan: { id: 5, title: 'Child' }, filePath: '/path/to/child.yml' }
+    ];
+    const twoMapping = reassignFamilyIds(twoFamily);
+    expect(Array.from(twoMapping.entries())).toEqual([[10, 5], [5, 10]]);
+
+    // Test three-plan family with complex IDs
+    const threeFamily = [
+      { plan: { id: 20, title: 'Root' }, filePath: '/path/to/root.yml' },
+      { plan: { id: 10, title: 'Middle' }, filePath: '/path/to/middle.yml' },
+      { plan: { id: 5, title: 'Leaf' }, filePath: '/path/to/leaf.yml' }
+    ];
+    const threeMapping = reassignFamilyIds(threeFamily);
+    expect(Array.from(threeMapping.entries())).toEqual([[20, 5], [10, 10], [5, 20]]);
+
+    // Test that existing IDs are reused in sorted order
+    const unorderedFamily = [
+      { plan: { id: 100, title: 'First in topological order' }, filePath: '/path/to/a.yml' },
+      { plan: { id: 15, title: 'Second in topological order' }, filePath: '/path/to/b.yml' },
+      { plan: { id: 3, title: 'Third in topological order' }, filePath: '/path/to/c.yml' },
+      { plan: { id: 42, title: 'Fourth in topological order' }, filePath: '/path/to/d.yml' }
+    ];
+    const unorderedMapping = reassignFamilyIds(unorderedFamily);
+    // Should assign sorted IDs [3, 15, 42, 100] to plans in topological order
+    expect(Array.from(unorderedMapping.entries())).toEqual([
+      [100, 3],   // First plan gets lowest ID
+      [15, 15],   // Second plan gets second lowest ID
+      [3, 42],    // Third plan gets third lowest ID
+      [42, 100]   // Fourth plan gets highest ID
+    ]);
+  });
+
   test('cycle detection in topological sort', async () => {
     // Create a cycle: child1 depends on child2, child2 depends on child1
     await createPlan(10, 'Parent Plan', '10-parent.yml');
@@ -1331,11 +1375,63 @@ describe('rmplan renumber', () => {
     }).toThrow(/circular dependency/i);
   });
 
-  // NOTE: End-to-end integration tests for hierarchical renumbering are commented out
-  // because the hierarchical renumbering phase has not been implemented in handleRenumber yet.
-  // These tests should be uncommented once Tasks 4-6 from the plan are completed.
+  // End-to-end integration tests for hierarchical renumbering
+  // These tests verify the complete workflow from Tasks 4-6
+  
+  test('debug hierarchical detection on simple case', async () => {
+    // Create a disordered hierarchy: parent ID 10 has child with ID 5
+    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    
+    const childPlan: PlanSchema = {
+      id: 5,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10, // Parent relationship creates hierarchical disorder
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
 
-  /*
+    // Import the hierarchical helper functions
+    const {
+      buildParentChildHierarchy,
+      findDisorderedFamilies,
+      findPlanFamily,
+      topologicalSortFamily,
+      reassignFamilyIds,
+    } = await import('./renumber.js');
+
+    // Build allPlans map just like in the real code
+    const allPlans = new Map<string, Record<string, any>>();
+    const parentPlan = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
+    const child = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+
+    allPlans.set(path.join(tasksDir, '10-parent.yml'), parentPlan);
+    allPlans.set(path.join(tasksDir, '5-child.yml'), child);
+
+    // Test the hierarchical detection pipeline step by step
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    const disorderedRoots = findDisorderedFamilies(allPlans, hierarchy);
+
+    if (disorderedRoots.size > 0) {
+      const rootId = Array.from(disorderedRoots)[0];
+      const family = findPlanFamily(rootId, allPlans, hierarchy);
+      const sortedFamily = topologicalSortFamily(family);
+      const idMappings = reassignFamilyIds(sortedFamily);
+      
+      // Verify the ID mappings are correct
+      expect(Array.from(idMappings.entries())).toEqual([[10, 5], [5, 10]]);
+    }
+
+    // The hierarchy should detect this as a disordered family
+    expect(disorderedRoots.size).toBe(1);
+    expect(disorderedRoots.has(10)).toBe(true);
+  });
+
   test('end-to-end hierarchical renumbering with parent-child inversion', async () => {
     // Create a disordered hierarchy: parent ID 10 has child with ID 5
     await createPlan(10, 'Parent Plan', '10-parent.yml');
@@ -1354,12 +1450,19 @@ describe('rmplan renumber', () => {
     };
     await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
 
+
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
 
+    // Verify the hierarchical renumbering worked correctly
+    const files = await fs.promises.readdir(tasksDir);
+    const parentPlanAfter = await readPlanFile(path.join(tasksDir, '5-parent.yml'));
+    const childPlanAfter = await readPlanFile(path.join(tasksDir, '10-child.yml'));
+
     // After renumbering, parent should have lower ID than child
-    const updatedParent = await readPlanFile(path.join(tasksDir, '5-parent.yml'));
-    const updatedChild = await readPlanFile(path.join(tasksDir, '10-child.yml'));
+    // The IDs should be swapped: parent gets 5, child gets 10
+    const updatedParent = parentPlanAfter;
+    const updatedChild = childPlanAfter;
 
     expect(updatedParent.id).toBe(5); // Parent gets the lower ID
     expect(updatedChild.id).toBe(10); // Child gets the higher ID
@@ -1368,7 +1471,6 @@ describe('rmplan renumber', () => {
     expect(updatedChild.title).toBe('Child Plan');
 
     // Verify files were renamed correctly
-    const files = await fs.promises.readdir(tasksDir);
     expect(files).toContain('5-parent.yml');
     expect(files).toContain('10-child.yml');
     expect(files).not.toContain('10-parent.yml'); // Old filename should be gone
@@ -1412,7 +1514,10 @@ describe('rmplan renumber', () => {
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
 
+    const files2 = await fs.promises.readdir(tasksDir);
+
     // After renumbering, should have parent (5), child1 (8), child2 (15)
+    // Files should be renamed based on their new IDs
     const updatedParent = await readPlanFile(path.join(tasksDir, '5-parent.yml'));
     const updatedChild1 = await readPlanFile(path.join(tasksDir, '8-child1.yml'));
     const updatedChild2 = await readPlanFile(path.join(tasksDir, '15-child2.yml'));
@@ -1473,6 +1578,8 @@ describe('rmplan renumber', () => {
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
 
+    const files3 = await fs.promises.readdir(tasksDir);
+
     // Disordered family should be reordered
     const updatedDisorderedParent = await readPlanFile(path.join(tasksDir, '5-disordered-parent.yml'));
     const updatedDisorderedChild = await readPlanFile(path.join(tasksDir, '10-disordered-child.yml'));
@@ -1509,6 +1616,8 @@ describe('rmplan renumber', () => {
     // Run in dry-run mode
     await handleRenumber({ dryRun: true }, createMockCommand());
 
+    const files4 = await fs.promises.readdir(tasksDir);
+
     // Files should remain unchanged
     const parentAfter = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
     const childAfter = await readPlanFile(path.join(tasksDir, '5-child.yml'));
@@ -1518,11 +1627,9 @@ describe('rmplan renumber', () => {
     expect(childAfter.parent).toBe(10); // Should not be changed
 
     // Original files should still exist
-    const files = await fs.promises.readdir(tasksDir);
-    expect(files).toContain('10-parent.yml');
-    expect(files).toContain('5-child.yml');
-    expect(files).not.toContain('5-parent.yml'); // New files should not exist
-    expect(files).not.toContain('10-child.yml');
+    expect(files4).toContain('10-parent.yml');
+    expect(files4).toContain('5-child.yml');
+    expect(files4).not.toContain('5-parent.yml'); // New files should not exist
+    expect(files4).not.toContain('10-child.yml');
   });
-  */
 });

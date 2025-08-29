@@ -683,59 +683,63 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     }
   }
 
-  if (plansToRenumber.length === 0) {
-    log('No plans need renumbering.');
-    return;
-  }
-
-  // Sort plans to renumber by their current ID to maintain relative order
-  plansToRenumber.sort((a, b) => {
-    if (!a.currentId && !b.currentId) {
-      return a.filePath.localeCompare(b.filePath);
-    }
-
-    const aId = String(a.currentId);
-    const bId = String(b.currentId);
-
-    // Try to parse as numbers first
-    const aNum = Number(aId);
-    const bNum = Number(bId);
-
-    if (!isNaN(aNum) && !isNaN(bNum)) {
-      return aNum - bNum;
-    }
-
-    // If one is numeric and one isn't, numeric comes first
-    if (!isNaN(aNum)) return -1;
-    if (!isNaN(bNum)) return 1;
-
-    // Both are alphanumeric, sort alphabetically
-    return aId.localeCompare(bId);
-  });
-
-  log(`\nFound ${plansToRenumber.length} plans to renumber:`);
-  // Use the current max numeric ID to avoid conflicts during renumbering
-  let nextId = maxNumericId;
-
+  // ========================================
+  // CONFLICT RESOLUTION ID ASSIGNMENTS
+  // ========================================
   const idMappings = new Map<string, number>();
   const newFileIds = new Map<string, { id: number; reason: 'missing' | 'conflict' }>();
   const plansToWrite = new Set<string>();
-  for (const plan of plansToRenumber) {
-    nextId++;
-    idMappings.set(String(plan.currentId), nextId);
-    newFileIds.set(plan.filePath, { id: nextId, reason: plan.reason });
-    plansToWrite.add(plan.filePath);
+  
+  if (plansToRenumber.length > 0) {
+    // Sort plans to renumber by their current ID to maintain relative order
+    plansToRenumber.sort((a, b) => {
+      if (!a.currentId && !b.currentId) {
+        return a.filePath.localeCompare(b.filePath);
+      }
 
-    log(
-      `  ✓ Renumbered ${plan.currentId || 'missing'} → ${nextId} in ${path.relative(tasksDirectory, plan.filePath)}`
-    );
+      const aId = String(a.currentId);
+      const bId = String(b.currentId);
+
+      // Try to parse as numbers first
+      const aNum = Number(aId);
+      const bNum = Number(bId);
+
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        return aNum - bNum;
+      }
+
+      // If one is numeric and one isn't, numeric comes first
+      if (!isNaN(aNum)) return -1;
+      if (!isNaN(bNum)) return 1;
+
+      // Both are alphanumeric, sort alphabetically
+      return aId.localeCompare(bId);
+    });
+
+    log(`\nFound ${plansToRenumber.length} plans to renumber:`);
+    // Use the current max numeric ID to avoid conflicts during renumbering
+    let nextId = maxNumericId;
+
+    for (const plan of plansToRenumber) {
+      nextId++;
+      idMappings.set(String(plan.currentId), nextId);
+      newFileIds.set(plan.filePath, { id: nextId, reason: plan.reason });
+      plansToWrite.add(plan.filePath);
+
+      log(
+        `  ✓ Renumbered ${plan.currentId || 'missing'} → ${nextId} in ${path.relative(tasksDirectory, plan.filePath)}`
+      );
+    }
+  } else {
+    log('No ID conflicts found.');
   }
 
   // ========================================
   // HIERARCHICAL REORDERING PHASE
   // ========================================
-  // After conflict resolution, check for parent-child ordering violations
-  // and reorder families to ensure parents have lower IDs than their children
+  // Check for parent-child ordering violations and reorder families
+  // to ensure parents have lower IDs than their children.
+  // This phase runs independently of conflict resolution.
   
   log('\nChecking for hierarchical ordering violations...');
   
@@ -834,6 +838,12 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     }
   } else {
     log('No hierarchical ordering violations found');
+  }
+
+  // Exit early if no changes are needed at all
+  if (plansToRenumber.length === 0 && hierarchicalChangesCount === 0) {
+    log('\nNo changes needed.');
+    return;
   }
 
   if (!options.dryRun) {
