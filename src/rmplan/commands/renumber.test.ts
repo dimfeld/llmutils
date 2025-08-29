@@ -1374,10 +1374,97 @@ describe('rmplan renumber', () => {
     const hierarchy = buildParentChildHierarchy(allPlans);
     const family = findPlanFamily(10, allPlans, hierarchy);
 
-    // Test that topologicalSortFamily throws an error for circular dependencies
-    expect(() => {
-      topologicalSortFamily(family);
-    }).toThrow(/circular dependency/i);
+    // With the new hierarchical sort, cycles among siblings should be handled gracefully
+    // by falling back to ID-based ordering rather than throwing an error
+    const sortedFamily = topologicalSortFamily(family);
+    expect(sortedFamily.length).toBe(3); // All plans should still be sorted
+  });
+
+  test('parent with dependencies on children - hierarchical sort handles correctly', async () => {
+    // Test the specific case mentioned:
+    // 3: no parent, dependencies 1 and 2 (parent that depends on its children)
+    // 2: parent 3, dependencies 1 (child that depends on sibling)
+    // 1: parent 3 (child with no dependencies)
+    // Expected result: 3 → 1, 1 → 2, 2 → 3 (parent gets lowest ID, siblings ordered by dependencies)
+
+    const parentPlan: PlanSchema = {
+      id: 3,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'pending',
+      priority: 'medium',
+      dependencies: [1, 2], // Parent depends on children - should still get lowest ID
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '3-parent.yml'), yaml.stringify(parentPlan));
+
+    const child1Plan: PlanSchema = {
+      id: 1,
+      title: 'Child 1',
+      goal: 'Child 1 goal',
+      details: 'Child 1 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 3,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '1-child1.yml'), yaml.stringify(child1Plan));
+
+    const child2Plan: PlanSchema = {
+      id: 2,
+      title: 'Child 2',
+      goal: 'Child 2 goal',
+      details: 'Child 2 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 3,
+      dependencies: [1], // Child 2 depends on child 1
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '2-child2.yml'), yaml.stringify(child2Plan));
+
+    const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily, reassignFamilyIds } =
+      await import('./renumber.js');
+
+    const allPlans = new Map();
+    const parent = await readPlanFile(path.join(tasksDir, '3-parent.yml'));
+    const child1 = await readPlanFile(path.join(tasksDir, '1-child1.yml'));
+    const child2 = await readPlanFile(path.join(tasksDir, '2-child2.yml'));
+
+    allPlans.set(path.join(tasksDir, '3-parent.yml'), parent);
+    allPlans.set(path.join(tasksDir, '1-child1.yml'), child1);
+    allPlans.set(path.join(tasksDir, '2-child2.yml'), child2);
+
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    const family = findPlanFamily(3, allPlans, hierarchy);
+
+    // Sort the family hierarchically
+    const sortedFamily = topologicalSortFamily(family);
+    expect(sortedFamily.length).toBe(3);
+
+    // The parent (ID 3) should come first, despite depending on its children
+    expect(sortedFamily[0].plan.id).toBe(3);
+
+    // Child 1 (ID 1) should come before child 2 (ID 2) since child 2 depends on child 1
+    const child1Index = sortedFamily.findIndex((p) => p.plan.id === 1);
+    const child2Index = sortedFamily.findIndex((p) => p.plan.id === 2);
+    expect(child1Index).toBeGreaterThan(0); // Should come after parent
+    expect(child2Index).toBeGreaterThan(child1Index); // Should come after child 1
+
+    // Test the ID reassignment
+    const idMapping = reassignFamilyIds(sortedFamily);
+
+    // Expected mappings: 3→1, 1→2, 2→3
+    expect(idMapping.get(3)).toBe(1); // Parent gets lowest ID
+    expect(idMapping.get(1)).toBe(2); // Child 1 gets middle ID
+    expect(idMapping.get(2)).toBe(3); // Child 2 gets highest ID
   });
 
   // End-to-end integration tests for hierarchical renumbering

@@ -368,11 +368,12 @@ export function findDisorderedFamilies(
 }
 
 /**
- * Performs a topological sort on a family of plans, ensuring parents come before children
- * and respecting explicit dependencies between siblings.
+ * Performs a hierarchical sort on a family of plans for ID assignment purposes.
+ * Parents come first (get lower IDs), then children are ordered by their dependencies.
+ * This is NOT a traditional topological sort - it's optimized for ID reassignment where
+ * parents must have lower IDs than their children, regardless of explicit dependencies.
  * @param family Array of family plans with their file paths
- * @returns Array of plans sorted in topological order
- * @throws Error if a circular dependency is detected
+ * @returns Array of plans sorted in hierarchical order (parents first, then children by dependencies)
  */
 export function topologicalSortFamily(
   family: Array<{ plan: Record<string, any>; filePath: string }>
@@ -413,107 +414,165 @@ export function topologicalSortFamily(
     }
   }
 
-  // Build the dependency graph
-  // Each node points to its dependencies (what it depends on)
-  const dependsOn = new Map<number, Set<number>>();
-  const dependents = new Map<number, Set<number>>(); // Reverse graph for Kahn's algorithm
+  // Build hierarchy levels: group plans by their depth in the parent-child tree
+  const levelMap = new Map<number, number>(); // planId -> depth level
+  const parentToChildren = new Map<number, Set<number>>(); // parentId -> Set of childIds
 
-  // Initialize maps for all plans
-  for (const familyMember of family) {
-    const planId = familyMember.plan.id;
-    if (typeof planId === 'number') {
-      dependsOn.set(planId, new Set());
-      dependents.set(planId, new Set());
-    }
-  }
-
-  // Add parent-child dependencies (children depend on their parents)
+  // First pass: identify parent-child relationships within the family
   for (const familyMember of family) {
     const planId = familyMember.plan.id;
     const parentId = familyMember.plan.parent;
 
-    if (typeof planId === 'number' && typeof parentId === 'number' && planById.has(parentId)) {
-      const planDeps = dependsOn.get(planId);
-      const parentDependents = dependents.get(parentId);
-      if (planDeps && parentDependents) {
-        planDeps.add(parentId);
-        parentDependents.add(planId);
+    if (typeof planId === 'number') {
+      // If this plan has a parent within the family, record the relationship
+      if (typeof parentId === 'number' && planById.has(parentId)) {
+        if (!parentToChildren.has(parentId)) {
+          parentToChildren.set(parentId, new Set());
+        }
+        parentToChildren.get(parentId)!.add(planId);
       }
     }
   }
 
-  // Add explicit dependencies from the dependencies array
+  // Second pass: calculate depth levels (0 = root, 1 = child of root, etc.)
+  const calculateLevel = (planId: number, visited = new Set<number>()): number => {
+    if (visited.has(planId)) {
+      // Circular parent relationship - treat as root level
+      return 0;
+    }
+
+    if (levelMap.has(planId)) {
+      return levelMap.get(planId)!;
+    }
+
+    visited.add(planId);
+
+    const plan = planById.get(planId)?.plan;
+    if (!plan || typeof plan.parent !== 'number' || !planById.has(plan.parent)) {
+      // No parent within family = root level
+      levelMap.set(planId, 0);
+      return 0;
+    }
+
+    // Has a parent within family - level is parent level + 1
+    const level = calculateLevel(plan.parent, visited) + 1;
+    levelMap.set(planId, level);
+    return level;
+  };
+
+  // Calculate levels for all plans
+  for (const familyMember of family) {
+    if (typeof familyMember.plan.id === 'number') {
+      calculateLevel(familyMember.plan.id);
+    }
+  }
+
+  // Group plans by level
+  const levelGroups = new Map<number, Array<{ plan: Record<string, any>; filePath: string }>>();
   for (const familyMember of family) {
     const planId = familyMember.plan.id;
-    const explicitDeps = familyMember.plan.dependencies;
+    if (typeof planId === 'number') {
+      const level = levelMap.get(planId) ?? 0;
+      if (!levelGroups.has(level)) {
+        levelGroups.set(level, []);
+      }
+      levelGroups.get(level)!.push(familyMember);
+    }
+  }
 
-    if (typeof planId === 'number' && Array.isArray(explicitDeps)) {
-      for (const depId of explicitDeps) {
-        if (typeof depId === 'number' && planById.has(depId)) {
-          const planDeps = dependsOn.get(planId);
-          const depDependents = dependents.get(depId);
-          if (planDeps && depDependents) {
-            planDeps.add(depId);
-            depDependents.add(planId);
+  // Within each level, sort by dependencies (siblings only)
+  const result: Array<{ plan: Record<string, any>; filePath: string }> = [];
+  const sortedLevels = Array.from(levelGroups.keys()).sort((a, b) => a - b);
+
+  for (const level of sortedLevels) {
+    const plansAtLevel = levelGroups.get(level)!;
+
+    if (plansAtLevel.length === 1) {
+      result.push(plansAtLevel[0]);
+      continue;
+    }
+
+    // For siblings at the same level, sort by dependencies using topological sort
+    const siblingDependsOn = new Map<number, Set<number>>();
+    const siblingDependents = new Map<number, Set<number>>();
+
+    // Initialize for all siblings at this level
+    for (const sibling of plansAtLevel) {
+      const siblingId = sibling.plan.id;
+      if (typeof siblingId === 'number') {
+        siblingDependsOn.set(siblingId, new Set());
+        siblingDependents.set(siblingId, new Set());
+      }
+    }
+
+    // Add dependencies only between siblings (same level)
+    const siblingIds = new Set(
+      plansAtLevel.map((s) => s.plan.id).filter((id) => typeof id === 'number')
+    );
+
+    for (const sibling of plansAtLevel) {
+      const siblingId = sibling.plan.id;
+      const explicitDeps = sibling.plan.dependencies;
+
+      if (typeof siblingId === 'number' && Array.isArray(explicitDeps)) {
+        for (const depId of explicitDeps) {
+          // Only add dependency if it's another sibling at the same level
+          if (typeof depId === 'number' && siblingIds.has(depId)) {
+            siblingDependsOn.get(siblingId)?.add(depId);
+            siblingDependents.get(depId)?.add(siblingId);
           }
         }
       }
     }
-  }
 
-  // Kahn's algorithm for topological sorting
-  const result: Array<{ plan: Record<string, any>; filePath: string }> = [];
-  const inDegree = new Map<number, number>();
+    // Topological sort for this level only
+    const levelResult: Array<{ plan: Record<string, any>; filePath: string }> = [];
+    const inDegree = new Map<number, number>();
 
-  // Calculate in-degrees (number of dependencies)
-  for (const [planId, deps] of dependsOn) {
-    inDegree.set(planId, deps.size);
-  }
-
-  // Find all nodes with no dependencies
-  const queue: number[] = [];
-  for (const [planId, degree] of inDegree) {
-    if (degree === 0) {
-      queue.push(planId);
-    }
-  }
-
-  // Process nodes with no dependencies
-  while (queue.length > 0) {
-    const currentId = queue.shift()!;
-    const currentPlan = planById.get(currentId);
-
-    if (currentPlan) {
-      result.push(currentPlan);
+    for (const [siblingId, deps] of siblingDependsOn) {
+      inDegree.set(siblingId, deps.size);
     }
 
-    // Remove this node from the graph and update in-degrees
-    const currentDependents = dependents.get(currentId) || new Set();
-    for (const dependentId of currentDependents) {
-      const currentInDegree = inDegree.get(dependentId);
-      if (currentInDegree !== undefined) {
-        const newInDegree = currentInDegree - 1;
-        inDegree.set(dependentId, newInDegree);
+    const queue: number[] = [];
+    for (const [siblingId, degree] of inDegree) {
+      if (degree === 0) {
+        queue.push(siblingId);
+      }
+    }
 
-        if (newInDegree === 0) {
-          queue.push(dependentId);
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      const currentPlan = planById.get(currentId);
+
+      if (currentPlan) {
+        levelResult.push(currentPlan);
+      }
+
+      const currentDependents = siblingDependents.get(currentId) || new Set();
+      for (const dependentId of currentDependents) {
+        const currentInDegree = inDegree.get(dependentId);
+        if (currentInDegree !== undefined) {
+          const newInDegree = currentInDegree - 1;
+          inDegree.set(dependentId, newInDegree);
+
+          if (newInDegree === 0) {
+            queue.push(dependentId);
+          }
         }
       }
     }
-  }
 
-  // Check for cycles
-  if (result.length !== family.length) {
-    const unprocessedIds: number[] = [];
-    for (const [planId, degree] of inDegree) {
-      if (degree > 0) {
-        unprocessedIds.push(planId);
-      }
+    // Check for cycles at this level
+    if (levelResult.length !== plansAtLevel.length) {
+      // If there's a cycle among siblings, fall back to ID-based ordering
+      debugLog(
+        `Circular dependency detected among siblings at level ${level}, falling back to ID ordering`
+      );
+      plansAtLevel.sort((a, b) => (a.plan.id as number) - (b.plan.id as number));
+      result.push(...plansAtLevel);
+    } else {
+      result.push(...levelResult);
     }
-
-    throw new Error(
-      `Circular dependency detected in plan family. Plans involved in cycle: ${unprocessedIds.join(', ')}`
-    );
   }
 
   return result;
