@@ -38,7 +38,7 @@ const TRUNK_BRANCHES = ['main', 'master'] as const;
  * @param allPlans Map of all plans keyed by file path
  * @returns Map where keys are parent plan IDs and values are arrays of child plan objects with their file paths
  */
-function buildParentChildHierarchy(allPlans: Map<string, Record<string, any>>): Map<number, Array<{ plan: Record<string, any>; filePath: string }>> {
+export function buildParentChildHierarchy(allPlans: Map<string, Record<string, any>>): Map<number, Array<{ plan: Record<string, any>; filePath: string }>> {
   const hierarchy = new Map<number, Array<{ plan: Record<string, any>; filePath: string }>>();
   
   for (const [filePath, plan] of allPlans) {
@@ -61,7 +61,7 @@ function buildParentChildHierarchy(allPlans: Map<string, Record<string, any>>): 
  * @param parentChildHierarchy Pre-built hierarchy map from buildParentChildHierarchy
  * @returns Array of all plans in the family tree with their file paths
  */
-function findPlanFamily(
+export function findPlanFamily(
   planId: number, 
   allPlans: Map<string, Record<string, any>>, 
   parentChildHierarchy: Map<number, Array<{ plan: Record<string, any>; filePath: string }>>
@@ -123,7 +123,7 @@ function findPlanFamily(
  * @param allPlans Map of all plans keyed by file path
  * @returns The ID of the root parent, or the original plan ID if it has no parent
  */
-function findRootParent(planId: number, allPlans: Map<string, Record<string, any>>): number {
+export function findRootParent(planId: number, allPlans: Map<string, Record<string, any>>): number {
   let currentId = planId;
   const visited = new Set<number>();
   
@@ -160,7 +160,7 @@ function findRootParent(planId: number, allPlans: Map<string, Record<string, any
  * @param parentChildHierarchy Pre-built hierarchy map from buildParentChildHierarchy
  * @returns Set of root parent IDs for families that need reordering
  */
-function findDisorderedFamilies(
+export function findDisorderedFamilies(
   allPlans: Map<string, Record<string, any>>, 
   parentChildHierarchy: Map<number, Array<{ plan: Record<string, any>; filePath: string }>>
 ): Set<number> {
@@ -232,7 +232,7 @@ function findDisorderedFamilies(
  * @returns Array of plans sorted in topological order
  * @throws Error if a circular dependency is detected
  */
-function topologicalSortFamily(family: Array<{ plan: Record<string, any>; filePath: string }>): Array<{ plan: Record<string, any>; filePath: string }> {
+export function topologicalSortFamily(family: Array<{ plan: Record<string, any>; filePath: string }>): Array<{ plan: Record<string, any>; filePath: string }> {
   if (family.length <= 1) {
     return family;
   }

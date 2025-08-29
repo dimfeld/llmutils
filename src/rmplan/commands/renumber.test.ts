@@ -849,4 +849,97 @@ describe('rmplan renumber', () => {
       expect(plan.title).toBe(`Plan ${i}`);
     }
   });
+
+  test('hierarchy helper functions work correctly', async () => {
+    // Create a simple hierarchy: parent (ID 10) -> child (ID 5)
+    // This is disordered since parent ID > child ID
+    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    
+    const childPlan: PlanSchema = {
+      id: 5,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10, // Parent relationship
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+
+    // Create a grandchild (ID 3) -> depends on child (ID 5)
+    const grandchildPlan: PlanSchema = {
+      id: 3,
+      title: 'Grandchild Plan',
+      goal: 'Grandchild goal',
+      details: 'Grandchild details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 5, // Parent is the child
+      dependencies: [5], // Also has explicit dependency
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '3-grandchild.yml'), yaml.stringify(grandchildPlan));
+
+    // Mock the imported functions to test them independently
+    const { 
+      buildParentChildHierarchy,
+      findRootParent,
+      findPlanFamily,
+      findDisorderedFamilies,
+      topologicalSortFamily
+    } = await import('./renumber.js');
+
+    // Build allPlans map
+    const allPlans = new Map();
+    const parentPlan = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
+    const child = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    const grandchild = await readPlanFile(path.join(tasksDir, '3-grandchild.yml'));
+    
+    allPlans.set(path.join(tasksDir, '10-parent.yml'), parentPlan);
+    allPlans.set(path.join(tasksDir, '5-child.yml'), child);
+    allPlans.set(path.join(tasksDir, '3-grandchild.yml'), grandchild);
+
+    // Test buildParentChildHierarchy
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    expect(hierarchy.has(10)).toBe(true); // Parent 10 should have children
+    expect(hierarchy.has(5)).toBe(true);  // Child 5 should have children (grandchild 3)
+    expect(hierarchy.get(10)!.length).toBe(1); // Parent should have 1 child
+    expect(hierarchy.get(5)!.length).toBe(1);  // Child should have 1 child (grandchild)
+    expect(hierarchy.get(10)![0].plan.id).toBe(5); // Parent's child should be plan 5
+    expect(hierarchy.get(5)![0].plan.id).toBe(3);  // Child's child should be plan 3
+
+    // Test findRootParent
+    expect(findRootParent(3, allPlans)).toBe(10); // Grandchild's root should be 10
+    expect(findRootParent(5, allPlans)).toBe(10); // Child's root should be 10  
+    expect(findRootParent(10, allPlans)).toBe(10); // Parent's root should be itself
+
+    // Test findPlanFamily
+    const family = findPlanFamily(10, allPlans, hierarchy);
+    expect(family.length).toBe(3); // Should find all 3 plans in the family
+    const familyIds = family.map(f => f.plan.id).sort((a, b) => a - b);
+    expect(familyIds).toEqual([3, 5, 10]); // Should contain all family members
+
+    // Test findDisorderedFamilies
+    const disorderedRoots = findDisorderedFamilies(allPlans, hierarchy);
+    expect(disorderedRoots.has(10)).toBe(true); // Root 10 should be identified as disordered
+
+    // Test topologicalSortFamily
+    const sortedFamily = topologicalSortFamily(family);
+    expect(sortedFamily.length).toBe(3);
+    
+    // Verify topological order: parent (10) should come before child (5) and grandchild (3)
+    // Child (5) should come before grandchild (3)
+    const sortedIds = sortedFamily.map(f => f.plan.id);
+    const parentIndex = sortedIds.indexOf(10);
+    const childIndex = sortedIds.indexOf(5);
+    const grandchildIndex = sortedIds.indexOf(3);
+    
+    expect(parentIndex).toBeLessThan(childIndex); // Parent before child
+    expect(childIndex).toBeLessThan(grandchildIndex); // Child before grandchild
+  });
 });
