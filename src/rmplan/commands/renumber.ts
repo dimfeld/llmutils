@@ -17,19 +17,25 @@ function validateSafePath(filePath: string, baseDir: string): string | null {
   try {
     // Handle already absolute paths
     const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
-    
+
     // Ensure the resolved path is within the base directory or its subdirectories
     const relativePath = path.relative(baseDir, resolvedPath);
-    
+
     // Check for path traversal attempts
-    if (relativePath.startsWith('..') || relativePath.includes(`..${path.sep}`) || path.isAbsolute(relativePath)) {
+    if (
+      relativePath.startsWith('..') ||
+      relativePath.includes(`..${path.sep}`) ||
+      path.isAbsolute(relativePath)
+    ) {
       debugLog(`Unsafe path detected: ${filePath} resolves outside base directory ${baseDir}`);
       return null;
     }
-    
+
     return resolvedPath;
   } catch (error) {
-    debugLog(`Path validation error for ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    debugLog(
+      `Path validation error for ${filePath}: ${error instanceof Error ? error.message : String(error)}`
+    );
     return null;
   }
 }
@@ -91,15 +97,18 @@ export function buildParentChildHierarchy(
     if (!plan || typeof plan !== 'object') {
       continue;
     }
-    
+
     // Validate parent ID is a valid positive number and exists in the plan set
-    if (typeof plan.parent === 'number' && 
-        !Number.isNaN(plan.parent) && 
-        plan.parent > 0 && 
-        validPlanIds.has(plan.parent) &&
-        typeof plan.id === 'number' && 
-        plan.parent !== plan.id) { // Prevent self-referencing
-      
+    if (
+      typeof plan.parent === 'number' &&
+      !Number.isNaN(plan.parent) &&
+      plan.parent > 0 &&
+      validPlanIds.has(plan.parent) &&
+      typeof plan.id === 'number' &&
+      plan.parent !== plan.id
+    ) {
+      // Prevent self-referencing
+
       if (!hierarchy.has(plan.parent)) {
         hierarchy.set(plan.parent, []);
       }
@@ -131,12 +140,12 @@ export function findPlanFamily(
     debugLog(`Invalid planId provided to findPlanFamily: ${planId}`);
     return [];
   }
-  
+
   if (!allPlans || allPlans.size === 0) {
     debugLog('No plans provided to findPlanFamily');
     return [];
   }
-  
+
   if (!parentChildHierarchy) {
     debugLog('No parentChildHierarchy provided to findPlanFamily');
     return [];
@@ -206,7 +215,7 @@ export function findRootParent(planId: number, allPlans: Map<string, Record<stri
     debugLog(`Invalid planId provided to findRootParent: ${planId}`);
     return planId;
   }
-  
+
   if (!allPlans || allPlans.size === 0) {
     debugLog('No plans provided to findRootParent');
     return planId;
@@ -276,7 +285,7 @@ export function findDisorderedFamilies(
     debugLog('No plans provided to findDisorderedFamilies');
     return new Set();
   }
-  
+
   if (!parentChildHierarchy) {
     debugLog('No parentChildHierarchy provided to findDisorderedFamilies');
     return new Set();
@@ -373,18 +382,24 @@ export function topologicalSortFamily(
     debugLog('Invalid family array provided to topologicalSortFamily');
     return [];
   }
-  
+
   if (family.length <= 1) {
     return family;
   }
-  
+
   // Validate that all family members have valid plan objects and IDs
   for (let i = 0; i < family.length; i++) {
     const member = family[i];
-    if (!member || typeof member !== 'object' || 
-        !member.plan || typeof member.plan !== 'object' ||
-        typeof member.plan.id !== 'number' || Number.isNaN(member.plan.id) ||
-        !member.filePath || typeof member.filePath !== 'string') {
+    if (
+      !member ||
+      typeof member !== 'object' ||
+      !member.plan ||
+      typeof member.plan !== 'object' ||
+      typeof member.plan.id !== 'number' ||
+      Number.isNaN(member.plan.id) ||
+      !member.filePath ||
+      typeof member.filePath !== 'string'
+    ) {
       debugLog(`Invalid family member at index ${i} in topologicalSortFamily`);
       return [];
     }
@@ -524,13 +539,18 @@ export function reassignFamilyIds(
   if (sortedFamily.length <= 1) {
     return idMapping;
   }
-  
+
   // Validate that all family members have valid plan objects and IDs
   for (let i = 0; i < sortedFamily.length; i++) {
     const member = sortedFamily[i];
-    if (!member || typeof member !== 'object' || 
-        !member.plan || typeof member.plan !== 'object' ||
-        typeof member.plan.id !== 'number' || Number.isNaN(member.plan.id)) {
+    if (
+      !member ||
+      typeof member !== 'object' ||
+      !member.plan ||
+      typeof member.plan !== 'object' ||
+      typeof member.plan.id !== 'number' ||
+      Number.isNaN(member.plan.id)
+    ) {
       debugLog(`Invalid family member at index ${i} in reassignFamilyIds`);
       return new Map(); // Return empty mapping on validation failure
     }
@@ -803,7 +823,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   const idMappings = new Map<string, number>();
   const newFileIds = new Map<string, { id: number; reason: 'missing' | 'conflict' }>();
   const plansToWrite = new Set<string>();
-  
+
   if (plansToRenumber.length > 0) {
     // Sort plans to renumber by their current ID to maintain relative order
     plansToRenumber.sort((a, b) => {
@@ -854,45 +874,45 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   // Check for parent-child ordering violations and reorder families
   // to ensure parents have lower IDs than their children.
   // This phase runs independently of conflict resolution.
-  
+
   log('\nChecking for hierarchical ordering violations...');
-  
+
   // Build hierarchy representation from all plans (after conflict resolution)
   const parentChildHierarchy = buildParentChildHierarchy(allPlans);
-  
+
   // Find families that have ordering violations
   const disorderedFamilyRoots = findDisorderedFamilies(allPlans, parentChildHierarchy);
-  
+
   // Global mapping for all hierarchical ID changes
   const hierarchicalIdMappings = new Map<number, number>();
   let hierarchicalChangesCount = 0;
-  
+
   if (disorderedFamilyRoots.size > 0) {
     log(`Found ${disorderedFamilyRoots.size} families with ordering violations`);
-    
+
     // Process each disordered family
     for (const rootId of disorderedFamilyRoots) {
       // Get the complete family tree
       const family = findPlanFamily(rootId, allPlans, parentChildHierarchy);
-      
+
       if (family.length <= 1) {
         continue; // Skip single-plan families
       }
-      
+
       log(`  Processing family rooted at ID ${rootId} (${family.length} plans)`);
-      
+
       try {
         // Perform topological sort on the family
         const sortedFamily = topologicalSortFamily(family);
-        
+
         // Reassign IDs within the family
         const familyIdMappings = reassignFamilyIds(sortedFamily);
-        
+
         // Add to global mapping
         for (const [oldId, newId] of familyIdMappings) {
           hierarchicalIdMappings.set(oldId, newId);
           hierarchicalChangesCount++;
-          
+
           if (!options.dryRun) {
             log(`    ${oldId} → ${newId}`);
           } else {
@@ -900,32 +920,34 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
           }
         }
       } catch (error) {
-        log(`  Error processing family rooted at ID ${rootId}: ${error instanceof Error ? error.message : String(error)}`);
+        log(
+          `  Error processing family rooted at ID ${rootId}: ${error instanceof Error ? error.message : String(error)}`
+        );
         // Continue processing other families even if one fails
       }
     }
-    
+
     if (!options.dryRun && hierarchicalChangesCount > 0) {
       log(`\nApplying ${hierarchicalChangesCount} hierarchical ID changes to all plans...`);
-      
+
       // Apply all hierarchical ID changes to plan objects in memory
       for (const [filePath, plan] of allPlans) {
         let planModified = false;
-        
+
         // Update the plan's own ID if it was changed
         if (typeof plan.id === 'number' && hierarchicalIdMappings.has(plan.id)) {
           const newId = hierarchicalIdMappings.get(plan.id)!;
           plan.id = newId;
           planModified = true;
         }
-        
+
         // Update the plan's parent ID if it was changed
         if (typeof plan.parent === 'number' && hierarchicalIdMappings.has(plan.parent)) {
           const newParentId = hierarchicalIdMappings.get(plan.parent)!;
           plan.parent = newParentId;
           planModified = true;
         }
-        
+
         // Update dependencies if any were changed
         if (Array.isArray(plan.dependencies) && plan.dependencies.length > 0) {
           let dependenciesChanged = false;
@@ -937,13 +959,13 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
             }
             return dep;
           });
-          
+
           if (dependenciesChanged) {
             plan.dependencies = updatedDependencies;
             planModified = true;
           }
         }
-        
+
         // If plan was modified, mark it for writing
         if (planModified) {
           plansToWrite.add(filePath);
@@ -1043,30 +1065,30 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     }
 
     const renumberedByPath = new Map(plansToRenumber.map((plan) => [plan.filePath, plan]));
-    
+
     // Build a reverse mapping of current plan IDs to their original IDs
     // This includes both conflict resolution changes and hierarchical changes
     const currentIdToOriginalId = new Map<number, number>();
-    
+
     // Add conflict resolution ID mappings
     for (const [, planInfo] of newFileIds) {
-      const originalPlan = [...allPlans.values()].find(p => p.id === planInfo.id);
+      const originalPlan = [...allPlans.values()].find((p) => p.id === planInfo.id);
       if (originalPlan) {
         // Find the original ID from renumberedByPath
-        const renumberInfo = [...renumberedByPath.values()].find(info => 
-          newFileIds.get(info.filePath)?.id === planInfo.id
+        const renumberInfo = [...renumberedByPath.values()].find(
+          (info) => newFileIds.get(info.filePath)?.id === planInfo.id
         );
         if (renumberInfo?.currentId) {
           currentIdToOriginalId.set(planInfo.id, renumberInfo.currentId);
         }
       }
     }
-    
+
     // Add hierarchical ID mappings (reverse them: new ID -> old ID)
     for (const [oldId, newId] of hierarchicalIdMappings) {
       currentIdToOriginalId.set(newId, oldId);
     }
-    
+
     // Process all file operations with proper error handling and rollback
     interface FileOperation {
       originalPath: string;
@@ -1074,10 +1096,11 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       plan: PlanSchema;
       needsRename: boolean;
     }
-    
+
     const fileOperations: FileOperation[] = [];
-    const completedOperations: { originalPath: string; newPath: string; backupPath?: string }[] = [];
-    
+    const completedOperations: { originalPath: string; newPath: string; backupPath?: string }[] =
+      [];
+
     try {
       // First, prepare all file operations and validate paths
       for (const filePath of plansToWrite) {
@@ -1087,13 +1110,14 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         }
 
         let writeFilePath = filePath;
-        
+
         // Handle file renaming for both conflict resolution and hierarchical changes
         // First, check if this plan was renumbered due to conflicts
         const conflictOldId = renumberedByPath.get(filePath)?.currentId;
         // Then, check if this plan's current ID came from hierarchical renumbering
-        const hierarchicalOriginalId = typeof plan.id === 'number' ? currentIdToOriginalId.get(plan.id) : undefined;
-        
+        const hierarchicalOriginalId =
+          typeof plan.id === 'number' ? currentIdToOriginalId.get(plan.id) : undefined;
+
         // Determine the original ID for file renaming based on which type of change occurred
         // Priority: conflict resolution changes take precedence over hierarchical changes
         // since conflict resolution happens first and hierarchical changes work on the result
@@ -1103,7 +1127,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         } else if (hierarchicalOriginalId) {
           originalIdForFileRename = hierarchicalOriginalId;
         }
-        
+
         if (originalIdForFileRename) {
           let parsed = path.parse(filePath);
           if (parsed.name.startsWith(`${originalIdForFileRename}-`)) {
@@ -1115,7 +1139,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         // Check if directory starts with old parent ID and update it
         // This handles both conflict resolution parent changes and hierarchical parent changes
         const conflictOldParentId = oldParent.get(filePath);
-        
+
         // Also check if the current parent ID was changed due to hierarchical renumbering
         let hierarchicalOldParentId: number | undefined;
         if (typeof plan.parent === 'number') {
@@ -1127,7 +1151,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
             }
           }
         }
-        
+
         // Determine the old parent ID for directory renaming based on which type of change occurred
         // Priority: conflict resolution changes take precedence over hierarchical changes
         let oldParentIdForDirRename: number | undefined;
@@ -1136,7 +1160,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         } else if (hierarchicalOldParentId) {
           oldParentIdForDirRename = hierarchicalOldParentId;
         }
-        
+
         if (oldParentIdForDirRename && plan.parent) {
           let currentPath = path.parse(writeFilePath);
           const dirParts = currentPath.dir.split(path.sep);
@@ -1156,66 +1180,66 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
             log(`  ✓ Updated directory path from ${currentPath.dir} to ${newDir}`);
           }
         }
-        
+
         // Validate the target path
         const targetDir = path.dirname(writeFilePath);
         const safeTargetPath = validateSafePath(writeFilePath, gitRoot);
         if (!safeTargetPath) {
           throw new Error(`Unsafe target path detected: ${writeFilePath}`);
         }
-        
+
         fileOperations.push({
           originalPath: filePath,
           newPath: safeTargetPath,
           plan: plan as PlanSchema,
-          needsRename: writeFilePath !== filePath
+          needsRename: writeFilePath !== filePath,
         });
       }
-      
+
       // Execute file operations with proper error handling
       for (const operation of fileOperations) {
         try {
           // Ensure target directory exists
           const targetDir = path.dirname(operation.newPath);
           await fs.promises.mkdir(targetDir, { recursive: true });
-          
+
           // If this is a rename operation, create a backup of the original file
           let backupPath: string | undefined;
           if (operation.needsRename && fs.existsSync(operation.originalPath)) {
             backupPath = `${operation.originalPath}.backup.${Date.now()}`;
             await fs.promises.copyFile(operation.originalPath, backupPath);
           }
-          
+
           // Write the new file
           await writePlanFile(operation.newPath, operation.plan);
-          
+
           // If this was a rename operation, remove the original file
           if (operation.needsRename && operation.originalPath !== operation.newPath) {
             await fs.promises.unlink(operation.originalPath);
           }
-          
+
           // Track completed operation
           completedOperations.push({
             originalPath: operation.originalPath,
             newPath: operation.newPath,
-            backupPath
+            backupPath,
           });
-          
+
           // Clean up backup file if operation was successful
           if (backupPath && fs.existsSync(backupPath)) {
             await fs.promises.unlink(backupPath);
           }
-          
         } catch (operationError) {
-          log(`Error processing file ${operation.originalPath}: ${operationError instanceof Error ? operationError.message : String(operationError)}`);
+          log(
+            `Error processing file ${operation.originalPath}: ${operationError instanceof Error ? operationError.message : String(operationError)}`
+          );
           throw operationError; // Re-throw to trigger rollback
         }
       }
-      
     } catch (error) {
       // Rollback completed operations on error
       log('\nError during file operations, attempting rollback...');
-      
+
       for (const completed of completedOperations.reverse()) {
         try {
           // If we have a backup, restore it
@@ -1223,18 +1247,21 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
             await fs.promises.copyFile(completed.backupPath, completed.originalPath);
             await fs.promises.unlink(completed.backupPath);
           }
-          
+
           // Remove the new file if it exists and is different from original
           if (completed.newPath !== completed.originalPath && fs.existsSync(completed.newPath)) {
             await fs.promises.unlink(completed.newPath);
           }
-          
         } catch (rollbackError) {
-          log(`Warning: Failed to rollback operation for ${completed.originalPath}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
+          log(
+            `Warning: Failed to rollback operation for ${completed.originalPath}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+          );
         }
       }
-      
-      throw new Error(`File operations failed: ${error instanceof Error ? error.message : String(error)}`);
+
+      throw new Error(
+        `File operations failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
 
     log('\nRenumbering complete!');

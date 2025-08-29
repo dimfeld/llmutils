@@ -1279,43 +1279,48 @@ describe('rmplan renumber', () => {
     const { reassignFamilyIds } = await import('./renumber.js');
 
     // Test single plan family (should return empty mapping)
-    const singleFamily = [
-      { plan: { id: 42, title: 'Single Plan' }, filePath: '/path/to/42.yml' }
-    ];
+    const singleFamily = [{ plan: { id: 42, title: 'Single Plan' }, filePath: '/path/to/42.yml' }];
     const singleMapping = reassignFamilyIds(singleFamily);
     expect(singleMapping.size).toBe(0);
 
     // Test two-plan family (parent-child swap)
     const twoFamily = [
       { plan: { id: 10, title: 'Parent' }, filePath: '/path/to/parent.yml' },
-      { plan: { id: 5, title: 'Child' }, filePath: '/path/to/child.yml' }
+      { plan: { id: 5, title: 'Child' }, filePath: '/path/to/child.yml' },
     ];
     const twoMapping = reassignFamilyIds(twoFamily);
-    expect(Array.from(twoMapping.entries())).toEqual([[10, 5], [5, 10]]);
+    expect(Array.from(twoMapping.entries())).toEqual([
+      [10, 5],
+      [5, 10],
+    ]);
 
     // Test three-plan family with complex IDs
     const threeFamily = [
       { plan: { id: 20, title: 'Root' }, filePath: '/path/to/root.yml' },
       { plan: { id: 10, title: 'Middle' }, filePath: '/path/to/middle.yml' },
-      { plan: { id: 5, title: 'Leaf' }, filePath: '/path/to/leaf.yml' }
+      { plan: { id: 5, title: 'Leaf' }, filePath: '/path/to/leaf.yml' },
     ];
     const threeMapping = reassignFamilyIds(threeFamily);
-    expect(Array.from(threeMapping.entries())).toEqual([[20, 5], [10, 10], [5, 20]]);
+    expect(Array.from(threeMapping.entries())).toEqual([
+      [20, 5],
+      [10, 10],
+      [5, 20],
+    ]);
 
     // Test that existing IDs are reused in sorted order
     const unorderedFamily = [
       { plan: { id: 100, title: 'First in topological order' }, filePath: '/path/to/a.yml' },
       { plan: { id: 15, title: 'Second in topological order' }, filePath: '/path/to/b.yml' },
       { plan: { id: 3, title: 'Third in topological order' }, filePath: '/path/to/c.yml' },
-      { plan: { id: 42, title: 'Fourth in topological order' }, filePath: '/path/to/d.yml' }
+      { plan: { id: 42, title: 'Fourth in topological order' }, filePath: '/path/to/d.yml' },
     ];
     const unorderedMapping = reassignFamilyIds(unorderedFamily);
     // Should assign sorted IDs [3, 15, 42, 100] to plans in topological order
     expect(Array.from(unorderedMapping.entries())).toEqual([
-      [100, 3],   // First plan gets lowest ID
-      [15, 15],   // Second plan gets second lowest ID
-      [3, 42],    // Third plan gets third lowest ID
-      [42, 100]   // Fourth plan gets highest ID
+      [100, 3], // First plan gets lowest ID
+      [15, 15], // Second plan gets second lowest ID
+      [3, 42], // Third plan gets third lowest ID
+      [42, 100], // Fourth plan gets highest ID
     ]);
   });
 
@@ -1377,11 +1382,11 @@ describe('rmplan renumber', () => {
 
   // End-to-end integration tests for hierarchical renumbering
   // These tests verify the complete workflow from Tasks 4-6
-  
+
   test('debug hierarchical detection on simple case', async () => {
     // Create a disordered hierarchy: parent ID 10 has child with ID 5
     await createPlan(10, 'Parent Plan', '10-parent.yml');
-    
+
     const childPlan: PlanSchema = {
       id: 5,
       title: 'Child Plan',
@@ -1422,9 +1427,12 @@ describe('rmplan renumber', () => {
       const family = findPlanFamily(rootId, allPlans, hierarchy);
       const sortedFamily = topologicalSortFamily(family);
       const idMappings = reassignFamilyIds(sortedFamily);
-      
+
       // Verify the ID mappings are correct
-      expect(Array.from(idMappings.entries())).toEqual([[10, 5], [5, 10]]);
+      expect(Array.from(idMappings.entries())).toEqual([
+        [10, 5],
+        [5, 10],
+      ]);
     }
 
     // The hierarchy should detect this as a disordered family
@@ -1435,7 +1443,7 @@ describe('rmplan renumber', () => {
   test('end-to-end hierarchical renumbering with parent-child inversion', async () => {
     // Create a disordered hierarchy: parent ID 10 has child with ID 5
     await createPlan(10, 'Parent Plan', '10-parent.yml');
-    
+
     const childPlan: PlanSchema = {
       id: 5,
       title: 'Child Plan',
@@ -1449,7 +1457,6 @@ describe('rmplan renumber', () => {
       tasks: [],
     };
     await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
-
 
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
@@ -1480,7 +1487,7 @@ describe('rmplan renumber', () => {
   test('end-to-end hierarchical renumbering with siblings and dependencies', async () => {
     // Create a disordered hierarchy with dependencies between siblings
     await createPlan(15, 'Parent Plan', '15-parent.yml');
-    
+
     const child1Plan: PlanSchema = {
       id: 5,
       title: 'Child 1 - No dependencies',
@@ -1523,7 +1530,7 @@ describe('rmplan renumber', () => {
     const updatedChild2 = await readPlanFile(path.join(tasksDir, '15-child2.yml'));
 
     expect(updatedParent.id).toBe(5);
-    expect(updatedChild1.id).toBe(8);  
+    expect(updatedChild1.id).toBe(8);
     expect(updatedChild2.id).toBe(15);
 
     // Verify parent-child relationships are maintained
@@ -1542,7 +1549,7 @@ describe('rmplan renumber', () => {
 
   test('end-to-end hierarchical renumbering preserves non-disordered families', async () => {
     // Create one disordered family and one properly ordered family
-    
+
     // Disordered family: parent (10) -> child (5)
     await createPlan(10, 'Disordered Parent', '10-disordered-parent.yml');
     const disorderedChild: PlanSchema = {
@@ -1581,8 +1588,12 @@ describe('rmplan renumber', () => {
     const files3 = await fs.promises.readdir(tasksDir);
 
     // Disordered family should be reordered
-    const updatedDisorderedParent = await readPlanFile(path.join(tasksDir, '5-disordered-parent.yml'));
-    const updatedDisorderedChild = await readPlanFile(path.join(tasksDir, '10-disordered-child.yml'));
+    const updatedDisorderedParent = await readPlanFile(
+      path.join(tasksDir, '5-disordered-parent.yml')
+    );
+    const updatedDisorderedChild = await readPlanFile(
+      path.join(tasksDir, '10-disordered-child.yml')
+    );
     expect(updatedDisorderedParent.id).toBe(5);
     expect(updatedDisorderedChild.id).toBe(10);
     expect(updatedDisorderedChild.parent).toBe(5);
@@ -1598,7 +1609,7 @@ describe('rmplan renumber', () => {
   test('end-to-end hierarchical renumbering dry run mode', async () => {
     // Create a disordered hierarchy
     await createPlan(10, 'Parent Plan', '10-parent.yml');
-    
+
     const childPlan: PlanSchema = {
       id: 5,
       title: 'Child Plan',
@@ -1621,7 +1632,7 @@ describe('rmplan renumber', () => {
     // Files should remain unchanged
     const parentAfter = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
     const childAfter = await readPlanFile(path.join(tasksDir, '5-child.yml'));
-    
+
     expect(parentAfter.id).toBe(10); // Should not be changed
     expect(childAfter.id).toBe(5); // Should not be changed
     expect(childAfter.parent).toBe(10); // Should not be changed
