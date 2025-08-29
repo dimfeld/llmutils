@@ -731,6 +731,111 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     );
   }
 
+  // ========================================
+  // HIERARCHICAL REORDERING PHASE
+  // ========================================
+  // After conflict resolution, check for parent-child ordering violations
+  // and reorder families to ensure parents have lower IDs than their children
+  
+  log('\nChecking for hierarchical ordering violations...');
+  
+  // Build hierarchy representation from all plans (after conflict resolution)
+  const parentChildHierarchy = buildParentChildHierarchy(allPlans);
+  
+  // Find families that have ordering violations
+  const disorderedFamilyRoots = findDisorderedFamilies(allPlans, parentChildHierarchy);
+  
+  // Global mapping for all hierarchical ID changes
+  const hierarchicalIdMappings = new Map<number, number>();
+  let hierarchicalChangesCount = 0;
+  
+  if (disorderedFamilyRoots.size > 0) {
+    log(`Found ${disorderedFamilyRoots.size} families with ordering violations`);
+    
+    // Process each disordered family
+    for (const rootId of disorderedFamilyRoots) {
+      // Get the complete family tree
+      const family = findPlanFamily(rootId, allPlans, parentChildHierarchy);
+      
+      if (family.length <= 1) {
+        continue; // Skip single-plan families
+      }
+      
+      log(`  Processing family rooted at ID ${rootId} (${family.length} plans)`);
+      
+      try {
+        // Perform topological sort on the family
+        const sortedFamily = topologicalSortFamily(family);
+        
+        // Reassign IDs within the family
+        const familyIdMappings = reassignFamilyIds(sortedFamily);
+        
+        // Add to global mapping
+        for (const [oldId, newId] of familyIdMappings) {
+          hierarchicalIdMappings.set(oldId, newId);
+          hierarchicalChangesCount++;
+          
+          if (!options.dryRun) {
+            log(`    ${oldId} → ${newId}`);
+          } else {
+            log(`    ${oldId} → ${newId} (would change)`);
+          }
+        }
+      } catch (error) {
+        log(`  Error processing family rooted at ID ${rootId}: ${error instanceof Error ? error.message : String(error)}`);
+        // Continue processing other families even if one fails
+      }
+    }
+    
+    if (!options.dryRun && hierarchicalChangesCount > 0) {
+      log(`\nApplying ${hierarchicalChangesCount} hierarchical ID changes to all plans...`);
+      
+      // Apply all hierarchical ID changes to plan objects in memory
+      for (const [filePath, plan] of allPlans) {
+        let planModified = false;
+        
+        // Update the plan's own ID if it was changed
+        if (typeof plan.id === 'number' && hierarchicalIdMappings.has(plan.id)) {
+          const newId = hierarchicalIdMappings.get(plan.id)!;
+          plan.id = newId;
+          planModified = true;
+        }
+        
+        // Update the plan's parent ID if it was changed
+        if (typeof plan.parent === 'number' && hierarchicalIdMappings.has(plan.parent)) {
+          const newParentId = hierarchicalIdMappings.get(plan.parent)!;
+          plan.parent = newParentId;
+          planModified = true;
+        }
+        
+        // Update dependencies if any were changed
+        if (Array.isArray(plan.dependencies) && plan.dependencies.length > 0) {
+          let dependenciesChanged = false;
+          const updatedDependencies = plan.dependencies.map((dep: any) => {
+            const depNum = Number(dep);
+            if (!Number.isNaN(depNum) && hierarchicalIdMappings.has(depNum)) {
+              dependenciesChanged = true;
+              return hierarchicalIdMappings.get(depNum)!;
+            }
+            return dep;
+          });
+          
+          if (dependenciesChanged) {
+            plan.dependencies = updatedDependencies;
+            planModified = true;
+          }
+        }
+        
+        // If plan was modified, mark it for writing
+        if (planModified) {
+          plansToWrite.add(filePath);
+        }
+      }
+    }
+  } else {
+    log('No hierarchical ordering violations found');
+  }
+
   if (!options.dryRun) {
     log('\nRenumbering plans...');
 
@@ -814,32 +919,80 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     }
 
     const renumberedByPath = new Map(plansToRenumber.map((plan) => [plan.filePath, plan]));
+    
+    // Build a reverse mapping of current plan IDs to their original IDs
+    // This includes both conflict resolution changes and hierarchical changes
+    const currentIdToOriginalId = new Map<number, number>();
+    
+    // Add conflict resolution ID mappings
+    for (const [, planInfo] of newFileIds) {
+      const originalPlan = [...allPlans.values()].find(p => p.id === planInfo.id);
+      if (originalPlan) {
+        // Find the original ID from renumberedByPath
+        const renumberInfo = [...renumberedByPath.values()].find(info => 
+          newFileIds.get(info.filePath)?.id === planInfo.id
+        );
+        if (renumberInfo?.currentId) {
+          currentIdToOriginalId.set(planInfo.id, renumberInfo.currentId);
+        }
+      }
+    }
+    
+    // Add hierarchical ID mappings (reverse them: new ID -> old ID)
+    for (const [oldId, newId] of hierarchicalIdMappings) {
+      currentIdToOriginalId.set(newId, oldId);
+    }
+    
     for (const filePath of plansToWrite) {
       const plan = allPlans.get(filePath)!;
 
       let writeFilePath = filePath;
-      // If the plan filepath starts with the id, renumber it.
-      const oldId = renumberedByPath.get(filePath)?.currentId;
-      if (oldId) {
+      
+      // Handle file renaming for both conflict resolution and hierarchical changes
+      // First, check if this plan was renumbered due to conflicts
+      const conflictOldId = renumberedByPath.get(filePath)?.currentId;
+      // Then, check if this plan's current ID came from hierarchical renumbering
+      const hierarchicalOriginalId = typeof plan.id === 'number' ? currentIdToOriginalId.get(plan.id) : undefined;
+      
+      // Use the appropriate original ID for file renaming
+      const originalIdForFileRename = conflictOldId || hierarchicalOriginalId;
+      
+      if (originalIdForFileRename) {
         let parsed = path.parse(filePath);
-        if (parsed.name.startsWith(`${oldId}-`)) {
-          let suffix = parsed.base.slice(`${oldId}-`.length);
-
+        if (parsed.name.startsWith(`${originalIdForFileRename}-`)) {
+          let suffix = parsed.base.slice(`${originalIdForFileRename}-`.length);
           writeFilePath = path.join(parsed.dir, `${plan.id}-${suffix}`);
         }
       }
 
       // Check if directory starts with old parent ID and update it
-      const oldParentId = oldParent.get(filePath);
-      if (oldParentId && plan.parent) {
+      // This handles both conflict resolution parent changes and hierarchical parent changes
+      const conflictOldParentId = oldParent.get(filePath);
+      
+      // Also check if the current parent ID was changed due to hierarchical renumbering
+      let hierarchicalOldParentId: number | undefined;
+      if (typeof plan.parent === 'number') {
+        // Find if this parent ID was the result of hierarchical renumbering
+        for (const [oldId, newId] of hierarchicalIdMappings) {
+          if (newId === plan.parent) {
+            hierarchicalOldParentId = oldId;
+            break;
+          }
+        }
+      }
+      
+      // Use either the conflict resolution old parent ID or hierarchical old parent ID
+      const oldParentIdForDirRename = conflictOldParentId || hierarchicalOldParentId;
+      
+      if (oldParentIdForDirRename && plan.parent) {
         let currentPath = path.parse(writeFilePath);
         const dirParts = currentPath.dir.split(path.sep);
 
         // Find if any directory part starts with the old parent ID
         const updatedDirParts = dirParts.map((part) => {
-          if (part.startsWith(`${oldParentId}-`)) {
+          if (part.startsWith(`${oldParentIdForDirRename}-`)) {
             // Replace old parent ID with new parent ID
-            return `${plan.parent}-${part.slice(`${oldParentId}-`.length)}`;
+            return `${plan.parent}-${part.slice(`${oldParentIdForDirRename}-`.length)}`;
           }
           return part;
         });
@@ -847,6 +1000,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         const newDir = updatedDirParts.join(path.sep);
         if (newDir !== currentPath.dir) {
           writeFilePath = path.join(newDir, currentPath.base);
+          log(`  ✓ Updated directory path from ${currentPath.dir} to ${newDir}`);
         }
       }
 

@@ -114,7 +114,7 @@ tasks:
           relationships between siblings within the family.
         done: true
   - title: Implement ID Reassignment for a Sorted Family
-    done: false
+    done: true
     description: >
       Develop the logic that takes a topologically sorted family of plans,
       gathers their current IDs into a pool, sorts the ID pool numerically, and
@@ -130,21 +130,21 @@ tasks:
           sorted array of family plans and returns a Map of old ID to new ID
           mappings. Extract all current IDs from the family, sort them
           numerically, and assign them to plans in their new topological order.
-        done: false
+        done: true
       - prompt: >
           Implement logic to collect all existing IDs from the family plans into
           an array, sort this array numerically (lowest to highest), and then
           assign these sorted IDs to the plans in their topologically sorted
           order, ensuring parents get lower IDs than their children.
-        done: false
+        done: true
       - prompt: >
           Create the return mapping structure that will be used by the main
           renumbering logic to update all plan references globally. The mapping
           should be clear about which old ID maps to which new ID for use in
           updating dependencies and parent references across all plans.
-        done: false
+        done: true
   - title: Integrate Hierarchical Renumbering into the Main Command
-    done: false
+    done: true
     description: >
       Modify the `handleRenumber` function to add a new phase that orchestrates
       the hierarchical reordering. This phase will use the previously developed
@@ -162,32 +162,32 @@ tasks:
           Create a clear section comment indicating the start of the
           hierarchical reordering phase and add logic to identify all disordered
           families using the helper functions.
-        done: false
+        done: true
       - prompt: >
           For each disordered family identified, collect the complete family
           tree, perform topological sorting, and generate ID reassignment
           mappings. Accumulate all these mappings into a global ID change map
           that will be used to update all plan references.
-        done: false
+        done: true
       - prompt: >
           Implement the global update logic that applies all ID changes to all
           plans in memory. Update the `id`, `parent`, and `dependencies` fields
           of all affected plans, and add these plans to the `plansToWrite` set
           so they get persisted to disk.
-        done: false
+        done: true
       - prompt: >
           Add appropriate logging to track the hierarchical reordering process,
           similar to the existing logging patterns. Include information about
           how many families were reordered and which specific ID changes were
           made.
-        done: false
+        done: true
       - prompt: >
           Ensure the hierarchical reordering phase respects the `--dry-run`
           option by only performing the analysis and logging what would be
           changed without actually modifying plan objects when in dry-run mode.
-        done: false
+        done: true
   - title: Update File Writing and Renaming Logic
-    done: false
+    done: true
     description: >
       Ensure the final step of writing plans to disk correctly handles the
       changes from the new hierarchical reordering phase. This includes renaming
@@ -203,24 +203,24 @@ tasks:
           415-453) to understand how it handles ID changes from conflict
           resolution. Identify where additional logic needs to be added to
           handle ID changes from hierarchical reordering.
-        done: false
+        done: true
       - prompt: >
           Extend the file renaming logic to handle cases where both the plan ID
           and parent ID have changed due to hierarchical reordering. Ensure that
           directory names based on parent IDs are correctly updated when parents
           are renumbered.
-        done: false
+        done: true
       - prompt: >
           Test the integration between the new hierarchical ID mappings and the
           existing file renaming logic. Ensure that all ID mappings (both from
           conflict resolution and hierarchical reordering) are properly applied
           to file paths and directory structures.
-        done: false
+        done: true
       - prompt: >
           Add validation to ensure that file operations are performed in the
           correct order, particularly when both parent and child plans are being
           renamed, to avoid conflicts during the file system operations.
-        done: false
+        done: true
   - title: Add Comprehensive Tests for Hierarchical Renumbering
     done: true
     description: >
