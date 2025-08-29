@@ -555,8 +555,15 @@ program
   .option('--autofix', 'Automatically fix issues found during review without prompting.')
   .option('--autofix-all', 'Automatically fix all issues without prompting for selection.')
   .option('--no-autofix', 'Disable automatic fixing of issues, even if configured elsewhere.')
-  .option('--create-cleanup-plan', 'Create a cleanup plan for selected issues instead of fixing immediately.')
-  .option('--cleanup-priority <level>', 'Set the priority level for cleanup plan (low, medium, high, urgent)', 'medium')
+  .option(
+    '--create-cleanup-plan',
+    'Create a cleanup plan for selected issues instead of fixing immediately.'
+  )
+  .option(
+    '--cleanup-priority <level>',
+    'Set the priority level for cleanup plan (low, medium, high, urgent)',
+    'medium'
+  )
   .option('--cleanup-assign <username>', 'Assign the cleanup plan to a user')
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');

@@ -141,7 +141,9 @@ export async function createCleanupPlan(
 
     // Write the updated parent plan
     await writePlanFile(referencedPlan.filename, referencedPlan);
-    log(chalk.gray(`  Updated parent plan ${referencedPlan.id} to include dependency on ${planId}`));
+    log(
+      chalk.gray(`  Updated parent plan ${referencedPlan.id} to include dependency on ${planId}`)
+    );
   }
 
   // Write the cleanup plan to the new file
@@ -159,11 +161,14 @@ export async function createCleanupPlan(
  */
 function buildCleanupGoal(referencedPlan: PlanSchema, reviewIssues: ReviewIssue[]): string {
   const issueCount = reviewIssues.length;
-  const severityGroups = reviewIssues.reduce((acc, issue) => {
-    if (!acc[issue.severity]) acc[issue.severity] = 0;
-    acc[issue.severity]++;
-    return acc;
-  }, {} as Record<string, number>);
+  const severityGroups = reviewIssues.reduce(
+    (acc, issue) => {
+      if (!acc[issue.severity]) acc[issue.severity] = 0;
+      acc[issue.severity]++;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
 
   const severityDescriptions = Object.entries(severityGroups)
     .map(([severity, count]) => `${count} ${severity}`)
@@ -184,11 +189,14 @@ function buildCleanupDetails(referencedPlan: PlanSchema, reviewIssues: ReviewIss
   ];
 
   // Group issues by severity for better organization
-  const groupedIssues = reviewIssues.reduce((acc, issue) => {
-    if (!acc[issue.severity]) acc[issue.severity] = [];
-    acc[issue.severity].push(issue);
-    return acc;
-  }, {} as Record<string, ReviewIssue[]>);
+  const groupedIssues = reviewIssues.reduce(
+    (acc, issue) => {
+      if (!acc[issue.severity]) acc[issue.severity] = [];
+      acc[issue.severity].push(issue);
+      return acc;
+    },
+    {} as Record<string, ReviewIssue[]>
+  );
 
   const severityOrder = ['critical', 'major', 'minor', 'info'] as const;
   const severityIcons: Record<string, string> = {

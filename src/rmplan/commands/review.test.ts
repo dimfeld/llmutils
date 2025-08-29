@@ -2921,9 +2921,8 @@ tasks:
     await handleReviewCommand(undefined, {}, mockCommand);
 
     // Verify auto-selection logging occurred
-    const autoSelectionLogs = logCalls.filter(msg => 
-      msg.includes('Auto-selected plan') || 
-      msg.includes('100 - Auto-selected Plan')
+    const autoSelectionLogs = logCalls.filter(
+      (msg) => msg.includes('Auto-selected plan') || msg.includes('100 - Auto-selected Plan')
     );
     expect(autoSelectionLogs.length).toBeGreaterThan(0);
   });
@@ -2944,8 +2943,14 @@ describe('Branch-specific plan discovery', () => {
         const command = template.join('');
         if (command.includes('git diff --name-status')) {
           return {
-            cwd: mock(() => ({ nothrow: () => ({ text: () => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml' }) })),
-            nothrow: mock(() => ({ text: () => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml' })),
+            cwd: mock(() => ({
+              nothrow: () => ({
+                text: () => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml',
+              }),
+            })),
+            nothrow: mock(() => ({
+              text: () => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml',
+            })),
             text: mock(() => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml'),
           };
         }
@@ -2976,9 +2981,19 @@ describe('Branch-specific plan discovery', () => {
         const command = template.join('');
         if (command.includes('jj diff --from')) {
           return {
-            cwd: mock(() => ({ nothrow: () => ({ text: () => '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml' }) })),
-            nothrow: mock(() => ({ text: () => '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml' })),
-            text: mock(() => '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml'),
+            cwd: mock(() => ({
+              nothrow: () => ({
+                text: () =>
+                  '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml',
+              }),
+            })),
+            nothrow: mock(() => ({
+              text: () =>
+                '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml',
+            })),
+            text: mock(
+              () => '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml'
+            ),
           };
         }
         return {
