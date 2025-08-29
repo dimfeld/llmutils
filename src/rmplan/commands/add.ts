@@ -142,6 +142,14 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
     // Convert to sorted array and set as rmfilter
     plan.rmfilter = Array.from(filePaths).sort();
+
+    // Copy over the rmfilter args from the referenced plan
+    if (referencedPlan.rmfilter?.length) {
+      if (plan.rmfilter.length) {
+        plan.rmfilter.push('--');
+      }
+      plan.rmfilter.push(...referencedPlan.rmfilter);
+    }
   }
 
   // Apply additional properties using the shared function
