@@ -7,6 +7,33 @@ import type { PlanSchema } from '../planSchema.js';
 import { getGitRoot, getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
 import { debugLog, log } from '../../logging.js';
 
+/**
+ * Validates that a file path is safe and doesn't contain path traversal attacks.
+ * @param filePath The file path to validate (can be relative or absolute)
+ * @param baseDir The base directory to resolve relative paths against
+ * @returns The safe absolute path, or null if the path is unsafe
+ */
+function validateSafePath(filePath: string, baseDir: string): string | null {
+  try {
+    // Handle already absolute paths
+    const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+    
+    // Ensure the resolved path is within the base directory or its subdirectories
+    const relativePath = path.relative(baseDir, resolvedPath);
+    
+    // Check for path traversal attempts
+    if (relativePath.startsWith('..') || relativePath.includes(`..${path.sep}`) || path.isAbsolute(relativePath)) {
+      debugLog(`Unsafe path detected: ${filePath} resolves outside base directory ${baseDir}`);
+      return null;
+    }
+    
+    return resolvedPath;
+  } catch (error) {
+    debugLog(`Path validation error for ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
 interface PlanToRenumber {
   filePath: string;
   currentId: number | undefined;
@@ -41,19 +68,38 @@ const TRUNK_BRANCHES = ['main', 'master'] as const;
 export function buildParentChildHierarchy(
   allPlans: Map<string, Record<string, any>>
 ): Map<number, Array<{ plan: Record<string, any>; filePath: string }>> {
+  if (!allPlans || allPlans.size === 0) {
+    return new Map();
+  }
+
   const hierarchy = new Map<number, Array<{ plan: Record<string, any>; filePath: string }>>();
 
   // First, build a set of all valid plan IDs
   const validPlanIds = new Set<number>();
-  for (const [, plan] of allPlans) {
-    if (typeof plan.id === 'number') {
+  for (const [filePath, plan] of allPlans) {
+    if (!plan || typeof plan !== 'object') {
+      debugLog(`Invalid plan object for file ${filePath}, skipping`);
+      continue;
+    }
+    if (typeof plan.id === 'number' && !Number.isNaN(plan.id) && plan.id > 0) {
       validPlanIds.add(plan.id);
     }
   }
 
   // Then, build hierarchy only for children whose parents actually exist
   for (const [filePath, plan] of allPlans) {
-    if (typeof plan.parent === 'number' && validPlanIds.has(plan.parent)) {
+    if (!plan || typeof plan !== 'object') {
+      continue;
+    }
+    
+    // Validate parent ID is a valid positive number and exists in the plan set
+    if (typeof plan.parent === 'number' && 
+        !Number.isNaN(plan.parent) && 
+        plan.parent > 0 && 
+        validPlanIds.has(plan.parent) &&
+        typeof plan.id === 'number' && 
+        plan.parent !== plan.id) { // Prevent self-referencing
+      
       if (!hierarchy.has(plan.parent)) {
         hierarchy.set(plan.parent, []);
       }
@@ -80,6 +126,22 @@ export function findPlanFamily(
   allPlans: Map<string, Record<string, any>>,
   parentChildHierarchy: Map<number, Array<{ plan: Record<string, any>; filePath: string }>>
 ): Array<{ plan: Record<string, any>; filePath: string }> {
+  // Validate inputs
+  if (!Number.isInteger(planId) || planId <= 0) {
+    debugLog(`Invalid planId provided to findPlanFamily: ${planId}`);
+    return [];
+  }
+  
+  if (!allPlans || allPlans.size === 0) {
+    debugLog('No plans provided to findPlanFamily');
+    return [];
+  }
+  
+  if (!parentChildHierarchy) {
+    debugLog('No parentChildHierarchy provided to findPlanFamily');
+    return [];
+  }
+
   const family: Array<{ plan: Record<string, any>; filePath: string }> = [];
   const visited = new Set<number>();
   const queue = [planId];
@@ -87,13 +149,14 @@ export function findPlanFamily(
   // First, find the plan object for the starting plan ID
   let startingPlan: { plan: Record<string, any>; filePath: string } | undefined;
   for (const [filePath, plan] of allPlans) {
-    if (typeof plan.id === 'number' && plan.id === planId) {
+    if (plan && typeof plan === 'object' && typeof plan.id === 'number' && plan.id === planId) {
       startingPlan = { plan, filePath };
       break;
     }
   }
 
   if (!startingPlan) {
+    debugLog(`Plan with ID ${planId} not found in allPlans`);
     return family;
   }
 
@@ -138,15 +201,30 @@ export function findPlanFamily(
  * @returns The ID of the root parent, or the original plan ID if it has no parent
  */
 export function findRootParent(planId: number, allPlans: Map<string, Record<string, any>>): number {
+  // Validate inputs
+  if (!Number.isInteger(planId) || planId <= 0) {
+    debugLog(`Invalid planId provided to findRootParent: ${planId}`);
+    return planId;
+  }
+  
+  if (!allPlans || allPlans.size === 0) {
+    debugLog('No plans provided to findRootParent');
+    return planId;
+  }
+
   let currentId = planId;
   const visited = new Set<number>();
+  const maxIterations = allPlans.size; // Prevent infinite loops even if logic fails
+  let iterations = 0;
 
-  while (true) {
+  while (iterations < maxIterations) {
     // Prevent infinite loops due to circular parent relationships
     if (visited.has(currentId)) {
+      debugLog(`Circular parent relationship detected at plan ID ${currentId}`);
       break;
     }
     visited.add(currentId);
+    iterations++;
 
     // Find the plan with this ID
     let currentPlan: Record<string, any> | undefined;
@@ -193,6 +271,17 @@ export function findDisorderedFamilies(
   allPlans: Map<string, Record<string, any>>,
   parentChildHierarchy: Map<number, Array<{ plan: Record<string, any>; filePath: string }>>
 ): Set<number> {
+  // Validate inputs
+  if (!allPlans || allPlans.size === 0) {
+    debugLog('No plans provided to findDisorderedFamilies');
+    return new Set();
+  }
+  
+  if (!parentChildHierarchy) {
+    debugLog('No parentChildHierarchy provided to findDisorderedFamilies');
+    return new Set();
+  }
+
   const disorderedRoots = new Set<number>();
   const processedFamilies = new Set<number>();
 
@@ -279,8 +368,26 @@ export function findDisorderedFamilies(
 export function topologicalSortFamily(
   family: Array<{ plan: Record<string, any>; filePath: string }>
 ): Array<{ plan: Record<string, any>; filePath: string }> {
+  // Validate inputs
+  if (!family || !Array.isArray(family)) {
+    debugLog('Invalid family array provided to topologicalSortFamily');
+    return [];
+  }
+  
   if (family.length <= 1) {
     return family;
+  }
+  
+  // Validate that all family members have valid plan objects and IDs
+  for (let i = 0; i < family.length; i++) {
+    const member = family[i];
+    if (!member || typeof member !== 'object' || 
+        !member.plan || typeof member.plan !== 'object' ||
+        typeof member.plan.id !== 'number' || Number.isNaN(member.plan.id) ||
+        !member.filePath || typeof member.filePath !== 'string') {
+      debugLog(`Invalid family member at index ${i} in topologicalSortFamily`);
+      return [];
+    }
   }
 
   // Build a map for quick ID lookup
@@ -408,8 +515,25 @@ export function reassignFamilyIds(
 ): Map<number, number> {
   const idMapping = new Map<number, number>();
 
+  // Validate inputs
+  if (!sortedFamily || !Array.isArray(sortedFamily)) {
+    debugLog('Invalid sortedFamily array provided to reassignFamilyIds');
+    return idMapping;
+  }
+
   if (sortedFamily.length <= 1) {
     return idMapping;
+  }
+  
+  // Validate that all family members have valid plan objects and IDs
+  for (let i = 0; i < sortedFamily.length; i++) {
+    const member = sortedFamily[i];
+    if (!member || typeof member !== 'object' || 
+        !member.plan || typeof member.plan !== 'object' ||
+        typeof member.plan.id !== 'number' || Number.isNaN(member.plan.id)) {
+      debugLog(`Invalid family member at index ${i} in reassignFamilyIds`);
+      return new Map(); // Return empty mapping on validation failure
+    }
   }
 
   // Collect all existing IDs from the family
@@ -459,13 +583,8 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
           if (path.isAbsolute(file)) {
             return file;
           }
-          // Validate relative path to prevent path traversal
-          const normalized = path.normalize(file);
-          if (normalized.includes('..')) {
-            debugLog(`Skipping potentially unsafe path: ${file}`);
-            return null;
-          }
-          return path.join(gitRoot, normalized);
+          // Validate path to prevent path traversal attacks
+          return validateSafePath(file, gitRoot);
         })
         .filter((file): file is string => {
           return (
@@ -541,19 +660,14 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   // Build a set of preferred plans and their ancestors
   const preferredPlans = new Set<string>();
   if (options.keep) {
-    // Normalize the file paths with validation
+    // Validate the file paths to prevent path traversal attacks
     const preferredFilePaths = options.keep
       .map((p: string) => {
         if (path.isAbsolute(p)) {
           return p;
         }
-        // Validate relative path to prevent path traversal
-        const normalized = path.normalize(p);
-        if (normalized.includes('..')) {
-          debugLog(`Skipping potentially unsafe preferred path: ${p}`);
-          return null;
-        }
-        return path.join(tasksDirectory, normalized);
+        // Validate path to prevent path traversal attacks
+        return validateSafePath(p, tasksDirectory);
       })
       .filter((p): p is string => p !== null);
 
@@ -953,72 +1067,174 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       currentIdToOriginalId.set(newId, oldId);
     }
     
-    for (const filePath of plansToWrite) {
-      const plan = allPlans.get(filePath)!;
-
-      let writeFilePath = filePath;
-      
-      // Handle file renaming for both conflict resolution and hierarchical changes
-      // First, check if this plan was renumbered due to conflicts
-      const conflictOldId = renumberedByPath.get(filePath)?.currentId;
-      // Then, check if this plan's current ID came from hierarchical renumbering
-      const hierarchicalOriginalId = typeof plan.id === 'number' ? currentIdToOriginalId.get(plan.id) : undefined;
-      
-      // Use the appropriate original ID for file renaming
-      const originalIdForFileRename = conflictOldId || hierarchicalOriginalId;
-      
-      if (originalIdForFileRename) {
-        let parsed = path.parse(filePath);
-        if (parsed.name.startsWith(`${originalIdForFileRename}-`)) {
-          let suffix = parsed.base.slice(`${originalIdForFileRename}-`.length);
-          writeFilePath = path.join(parsed.dir, `${plan.id}-${suffix}`);
+    // Process all file operations with proper error handling and rollback
+    interface FileOperation {
+      originalPath: string;
+      newPath: string;
+      plan: PlanSchema;
+      needsRename: boolean;
+    }
+    
+    const fileOperations: FileOperation[] = [];
+    const completedOperations: { originalPath: string; newPath: string; backupPath?: string }[] = [];
+    
+    try {
+      // First, prepare all file operations and validate paths
+      for (const filePath of plansToWrite) {
+        const plan = allPlans.get(filePath);
+        if (!plan) {
+          throw new Error(`Plan not found for file path: ${filePath}`);
         }
-      }
 
-      // Check if directory starts with old parent ID and update it
-      // This handles both conflict resolution parent changes and hierarchical parent changes
-      const conflictOldParentId = oldParent.get(filePath);
-      
-      // Also check if the current parent ID was changed due to hierarchical renumbering
-      let hierarchicalOldParentId: number | undefined;
-      if (typeof plan.parent === 'number') {
-        // Find if this parent ID was the result of hierarchical renumbering
-        for (const [oldId, newId] of hierarchicalIdMappings) {
-          if (newId === plan.parent) {
-            hierarchicalOldParentId = oldId;
-            break;
+        let writeFilePath = filePath;
+        
+        // Handle file renaming for both conflict resolution and hierarchical changes
+        // First, check if this plan was renumbered due to conflicts
+        const conflictOldId = renumberedByPath.get(filePath)?.currentId;
+        // Then, check if this plan's current ID came from hierarchical renumbering
+        const hierarchicalOriginalId = typeof plan.id === 'number' ? currentIdToOriginalId.get(plan.id) : undefined;
+        
+        // Determine the original ID for file renaming based on which type of change occurred
+        // Priority: conflict resolution changes take precedence over hierarchical changes
+        // since conflict resolution happens first and hierarchical changes work on the result
+        let originalIdForFileRename: number | undefined;
+        if (conflictOldId) {
+          originalIdForFileRename = conflictOldId;
+        } else if (hierarchicalOriginalId) {
+          originalIdForFileRename = hierarchicalOriginalId;
+        }
+        
+        if (originalIdForFileRename) {
+          let parsed = path.parse(filePath);
+          if (parsed.name.startsWith(`${originalIdForFileRename}-`)) {
+            let suffix = parsed.base.slice(`${originalIdForFileRename}-`.length);
+            writeFilePath = path.join(parsed.dir, `${plan.id}-${suffix}`);
           }
         }
-      }
-      
-      // Use either the conflict resolution old parent ID or hierarchical old parent ID
-      const oldParentIdForDirRename = conflictOldParentId || hierarchicalOldParentId;
-      
-      if (oldParentIdForDirRename && plan.parent) {
-        let currentPath = path.parse(writeFilePath);
-        const dirParts = currentPath.dir.split(path.sep);
 
-        // Find if any directory part starts with the old parent ID
-        const updatedDirParts = dirParts.map((part) => {
-          if (part.startsWith(`${oldParentIdForDirRename}-`)) {
-            // Replace old parent ID with new parent ID
-            return `${plan.parent}-${part.slice(`${oldParentIdForDirRename}-`.length)}`;
+        // Check if directory starts with old parent ID and update it
+        // This handles both conflict resolution parent changes and hierarchical parent changes
+        const conflictOldParentId = oldParent.get(filePath);
+        
+        // Also check if the current parent ID was changed due to hierarchical renumbering
+        let hierarchicalOldParentId: number | undefined;
+        if (typeof plan.parent === 'number') {
+          // Find if this parent ID was the result of hierarchical renumbering
+          for (const [oldId, newId] of hierarchicalIdMappings) {
+            if (newId === plan.parent) {
+              hierarchicalOldParentId = oldId;
+              break;
+            }
           }
-          return part;
+        }
+        
+        // Determine the old parent ID for directory renaming based on which type of change occurred
+        // Priority: conflict resolution changes take precedence over hierarchical changes
+        let oldParentIdForDirRename: number | undefined;
+        if (conflictOldParentId) {
+          oldParentIdForDirRename = conflictOldParentId;
+        } else if (hierarchicalOldParentId) {
+          oldParentIdForDirRename = hierarchicalOldParentId;
+        }
+        
+        if (oldParentIdForDirRename && plan.parent) {
+          let currentPath = path.parse(writeFilePath);
+          const dirParts = currentPath.dir.split(path.sep);
+
+          // Find if any directory part starts with the old parent ID
+          const updatedDirParts = dirParts.map((part) => {
+            if (part.startsWith(`${oldParentIdForDirRename}-`)) {
+              // Replace old parent ID with new parent ID
+              return `${plan.parent}-${part.slice(`${oldParentIdForDirRename}-`.length)}`;
+            }
+            return part;
+          });
+
+          const newDir = updatedDirParts.join(path.sep);
+          if (newDir !== currentPath.dir) {
+            writeFilePath = path.join(newDir, currentPath.base);
+            log(`  ✓ Updated directory path from ${currentPath.dir} to ${newDir}`);
+          }
+        }
+        
+        // Validate the target path
+        const targetDir = path.dirname(writeFilePath);
+        const safeTargetPath = validateSafePath(writeFilePath, gitRoot);
+        if (!safeTargetPath) {
+          throw new Error(`Unsafe target path detected: ${writeFilePath}`);
+        }
+        
+        fileOperations.push({
+          originalPath: filePath,
+          newPath: safeTargetPath,
+          plan: plan as PlanSchema,
+          needsRename: writeFilePath !== filePath
         });
-
-        const newDir = updatedDirParts.join(path.sep);
-        if (newDir !== currentPath.dir) {
-          writeFilePath = path.join(newDir, currentPath.base);
-          log(`  ✓ Updated directory path from ${currentPath.dir} to ${newDir}`);
+      }
+      
+      // Execute file operations with proper error handling
+      for (const operation of fileOperations) {
+        try {
+          // Ensure target directory exists
+          const targetDir = path.dirname(operation.newPath);
+          await fs.promises.mkdir(targetDir, { recursive: true });
+          
+          // If this is a rename operation, create a backup of the original file
+          let backupPath: string | undefined;
+          if (operation.needsRename && fs.existsSync(operation.originalPath)) {
+            backupPath = `${operation.originalPath}.backup.${Date.now()}`;
+            await fs.promises.copyFile(operation.originalPath, backupPath);
+          }
+          
+          // Write the new file
+          await writePlanFile(operation.newPath, operation.plan);
+          
+          // If this was a rename operation, remove the original file
+          if (operation.needsRename && operation.originalPath !== operation.newPath) {
+            await fs.promises.unlink(operation.originalPath);
+          }
+          
+          // Track completed operation
+          completedOperations.push({
+            originalPath: operation.originalPath,
+            newPath: operation.newPath,
+            backupPath
+          });
+          
+          // Clean up backup file if operation was successful
+          if (backupPath && fs.existsSync(backupPath)) {
+            await fs.promises.unlink(backupPath);
+          }
+          
+        } catch (operationError) {
+          log(`Error processing file ${operation.originalPath}: ${operationError instanceof Error ? operationError.message : String(operationError)}`);
+          throw operationError; // Re-throw to trigger rollback
         }
       }
-
-      await writePlanFile(writeFilePath, plan as PlanSchema);
-
-      if (writeFilePath !== filePath) {
-        await Bun.file(filePath).unlink();
+      
+    } catch (error) {
+      // Rollback completed operations on error
+      log('\nError during file operations, attempting rollback...');
+      
+      for (const completed of completedOperations.reverse()) {
+        try {
+          // If we have a backup, restore it
+          if (completed.backupPath && fs.existsSync(completed.backupPath)) {
+            await fs.promises.copyFile(completed.backupPath, completed.originalPath);
+            await fs.promises.unlink(completed.backupPath);
+          }
+          
+          // Remove the new file if it exists and is different from original
+          if (completed.newPath !== completed.originalPath && fs.existsSync(completed.newPath)) {
+            await fs.promises.unlink(completed.newPath);
+          }
+          
+        } catch (rollbackError) {
+          log(`Warning: Failed to rollback operation for ${completed.originalPath}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
+        }
       }
+      
+      throw new Error(`File operations failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     log('\nRenumbering complete!');
