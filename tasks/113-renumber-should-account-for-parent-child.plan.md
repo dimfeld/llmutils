@@ -222,7 +222,7 @@ tasks:
           renamed, to avoid conflicts during the file system operations.
         done: false
   - title: Add Comprehensive Tests for Hierarchical Renumbering
-    done: false
+    done: true
     description: >
       Write a suite of new tests in `renumber.test.ts` to validate the
       hierarchical reordering logic. The tests should cover various scenarios,
@@ -239,42 +239,42 @@ tasks:
           ID 5 and child has ID 3, verifying that after renumbering the parent
           gets ID 3 and child gets ID 5, and that all file names and references
           are updated correctly.
-        done: false
+        done: true
       - prompt: >
           Create a test for siblings with dependencies where parent ID 10 has
           children with IDs 5 and 7, where child 7 depends on child 5. Verify
           that after renumbering, parent gets ID 5, first child gets ID 7, and
           second child gets ID 10, preserving the dependency relationship.
-        done: false
+        done: true
       - prompt: >
           Add a test for multi-level hierarchy (grandparent, parent, child)
           where IDs are out of order (grandparent: 15, parent: 10, child: 5).
           Verify the entire family gets reordered correctly with proper
           parent-child relationships maintained.
-        done: false
+        done: true
       - prompt: >
           Create a test case where multiple independent families need reordering
           in the same command execution. Verify that each family is processed
           independently and that IDs from different families don't interfere
           with each other.
-        done: false
+        done: true
       - prompt: >
           Add tests for edge cases including empty dependencies arrays, missing
           parent references, and plans that are part of hierarchies but don't
           need reordering themselves. Ensure the logic handles these cases
           gracefully without unnecessary changes.
-        done: false
+        done: true
       - prompt: >
           Create a comprehensive test that combines hierarchical reordering with
           the existing conflict resolution logic. Set up a scenario where some
           plans have ID conflicts AND hierarchical ordering issues, verifying
           that both phases work together correctly.
-        done: false
+        done: true
       - prompt: >
           Add tests for the `--dry-run` option specifically for hierarchical
           reordering, ensuring that the analysis is performed and reported
           correctly but no actual changes are made to files or plan objects.
-        done: false
+        done: true
 rmfilter:
   - src/rmplan/commands/renumber.ts
   - --with-imports

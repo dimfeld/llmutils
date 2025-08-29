@@ -41,12 +41,24 @@ const TRUNK_BRANCHES = ['main', 'master'] as const;
 export function buildParentChildHierarchy(allPlans: Map<string, Record<string, any>>): Map<number, Array<{ plan: Record<string, any>; filePath: string }>> {
   const hierarchy = new Map<number, Array<{ plan: Record<string, any>; filePath: string }>>();
   
+  // First, build a set of all valid plan IDs
+  const validPlanIds = new Set<number>();
+  for (const [, plan] of allPlans) {
+    if (typeof plan.id === 'number') {
+      validPlanIds.add(plan.id);
+    }
+  }
+  
+  // Then, build hierarchy only for children whose parents actually exist
   for (const [filePath, plan] of allPlans) {
-    if (plan.parent && typeof plan.parent === 'number') {
+    if (typeof plan.parent === 'number' && validPlanIds.has(plan.parent)) {
       if (!hierarchy.has(plan.parent)) {
         hierarchy.set(plan.parent, []);
       }
-      hierarchy.get(plan.parent)!.push({ plan, filePath });
+      const children = hierarchy.get(plan.parent);
+      if (children) {
+        children.push({ plan, filePath });
+      }
     }
   }
   
@@ -73,7 +85,7 @@ export function findPlanFamily(
   // First, find the plan object for the starting plan ID
   let startingPlan: { plan: Record<string, any>; filePath: string } | undefined;
   for (const [filePath, plan] of allPlans) {
-    if (plan.id === planId) {
+    if (typeof plan.id === 'number' && plan.id === planId) {
       startingPlan = { plan, filePath };
       break;
     }
@@ -98,7 +110,7 @@ export function findPlanFamily(
     } else {
       // Find the plan object for this ID
       for (const [filePath, plan] of allPlans) {
-        if (plan.id === currentId) {
+        if (typeof plan.id === 'number' && plan.id === currentId) {
           family.push({ plan, filePath });
           break;
         }
@@ -108,7 +120,7 @@ export function findPlanFamily(
     // Add children to queue
     const children = parentChildHierarchy.get(currentId) || [];
     for (const child of children) {
-      if (!visited.has(child.plan.id)) {
+      if (typeof child.plan.id === 'number' && !visited.has(child.plan.id)) {
         queue.push(child.plan.id);
       }
     }
@@ -137,13 +149,28 @@ export function findRootParent(planId: number, allPlans: Map<string, Record<stri
     // Find the plan with this ID
     let currentPlan: Record<string, any> | undefined;
     for (const [, plan] of allPlans) {
-      if (plan.id === currentId) {
+      if (typeof plan.id === 'number' && plan.id === currentId) {
         currentPlan = plan;
         break;
       }
     }
     
-    if (!currentPlan || !currentPlan.parent || typeof currentPlan.parent !== 'number') {
+    // If we can't find the current plan, or it has no valid parent, stop here
+    if (!currentPlan || typeof currentPlan.parent !== 'number') {
+      break;
+    }
+    
+    // Check if the parent actually exists in the plan set
+    let parentExists = false;
+    for (const [, plan] of allPlans) {
+      if (typeof plan.id === 'number' && plan.id === currentPlan.parent) {
+        parentExists = true;
+        break;
+      }
+    }
+    
+    // If parent doesn't exist, stop traversal here
+    if (!parentExists) {
       break;
     }
     
@@ -167,9 +194,17 @@ export function findDisorderedFamilies(
   const disorderedRoots = new Set<number>();
   const processedFamilies = new Set<number>();
   
+  // Build a set of all valid plan IDs for quick lookup
+  const validPlanIds = new Set<number>();
+  for (const [, plan] of allPlans) {
+    if (typeof plan.id === 'number') {
+      validPlanIds.add(plan.id);
+    }
+  }
+  
   // Check each plan to see if it has ordering violations
   for (const [, plan] of allPlans) {
-    if (!plan.id || typeof plan.id !== 'number') {
+    if (typeof plan.id !== 'number') {
       continue;
     }
     
@@ -189,26 +224,33 @@ export function findDisorderedFamilies(
     // Get the complete family tree for this root
     const family = findPlanFamily(rootParentId, allPlans, parentChildHierarchy);
     
+    // Only process families with more than one member
+    if (family.length <= 1) {
+      continue;
+    }
+    
     // Check for ordering violations within the family
     let hasViolation = false;
     for (const familyMember of family) {
       const memberId = familyMember.plan.id;
       const memberParentId = familyMember.plan.parent;
       
-      // If this plan has a parent, check if parent ID > child ID
-      if (memberParentId && typeof memberParentId === 'number') {
+      // Check parent-child ordering violations (only for existing parents)
+      if (typeof memberParentId === 'number' && validPlanIds.has(memberParentId)) {
         if (memberParentId > memberId) {
           hasViolation = true;
           break;
         }
       }
       
-      // Also check if this plan has children with lower IDs
-      const children = parentChildHierarchy.get(memberId) || [];
-      for (const child of children) {
-        if (memberId > child.plan.id) {
-          hasViolation = true;
-          break;
+      // Check if this plan has children with lower IDs
+      const children = parentChildHierarchy.get(memberId);
+      if (children) {
+        for (const child of children) {
+          if (typeof child.plan.id === 'number' && memberId > child.plan.id) {
+            hasViolation = true;
+            break;
+          }
         }
       }
       
@@ -240,7 +282,7 @@ export function topologicalSortFamily(family: Array<{ plan: Record<string, any>;
   // Build a map for quick ID lookup
   const planById = new Map<number, { plan: Record<string, any>; filePath: string }>();
   for (const familyMember of family) {
-    if (familyMember.plan.id && typeof familyMember.plan.id === 'number') {
+    if (typeof familyMember.plan.id === 'number') {
       planById.set(familyMember.plan.id, familyMember);
     }
   }
@@ -265,8 +307,12 @@ export function topologicalSortFamily(family: Array<{ plan: Record<string, any>;
     const parentId = familyMember.plan.parent;
     
     if (typeof planId === 'number' && typeof parentId === 'number' && planById.has(parentId)) {
-      dependsOn.get(planId)!.add(parentId);
-      dependents.get(parentId)!.add(planId);
+      const planDeps = dependsOn.get(planId);
+      const parentDependents = dependents.get(parentId);
+      if (planDeps && parentDependents) {
+        planDeps.add(parentId);
+        parentDependents.add(planId);
+      }
     }
   }
   
@@ -278,8 +324,12 @@ export function topologicalSortFamily(family: Array<{ plan: Record<string, any>;
     if (typeof planId === 'number' && Array.isArray(explicitDeps)) {
       for (const depId of explicitDeps) {
         if (typeof depId === 'number' && planById.has(depId)) {
-          dependsOn.get(planId)!.add(depId);
-          dependents.get(depId)!.add(planId);
+          const planDeps = dependsOn.get(planId);
+          const depDependents = dependents.get(depId);
+          if (planDeps && depDependents) {
+            planDeps.add(depId);
+            depDependents.add(planId);
+          }
         }
       }
     }
@@ -314,11 +364,14 @@ export function topologicalSortFamily(family: Array<{ plan: Record<string, any>;
     // Remove this node from the graph and update in-degrees
     const currentDependents = dependents.get(currentId) || new Set();
     for (const dependentId of currentDependents) {
-      const currentInDegree = inDegree.get(dependentId)!;
-      inDegree.set(dependentId, currentInDegree - 1);
-      
-      if (currentInDegree - 1 === 0) {
-        queue.push(dependentId);
+      const currentInDegree = inDegree.get(dependentId);
+      if (currentInDegree !== undefined) {
+        const newInDegree = currentInDegree - 1;
+        inDegree.set(dependentId, newInDegree);
+        
+        if (newInDegree === 0) {
+          queue.push(dependentId);
+        }
       }
     }
   }
@@ -338,6 +391,43 @@ export function topologicalSortFamily(family: Array<{ plan: Record<string, any>;
   }
   
   return result;
+}
+
+/**
+ * Takes a topologically sorted family of plans and reassigns their IDs using their existing ID pool.
+ * The IDs are reassigned in sorted numerical order to the plans in their topological order.
+ * @param sortedFamily Array of family plans sorted in topological order
+ * @returns Map of old ID to new ID mappings for the family
+ */
+export function reassignFamilyIds(sortedFamily: Array<{ plan: Record<string, any>; filePath: string }>): Map<number, number> {
+  const idMapping = new Map<number, number>();
+  
+  if (sortedFamily.length <= 1) {
+    return idMapping;
+  }
+  
+  // Collect all existing IDs from the family
+  const existingIds: number[] = [];
+  for (const familyMember of sortedFamily) {
+    if (typeof familyMember.plan.id === 'number') {
+      existingIds.push(familyMember.plan.id);
+    }
+  }
+  
+  // Sort the existing IDs numerically (lowest to highest)
+  existingIds.sort((a, b) => a - b);
+  
+  // Assign the sorted IDs to the plans in their topological order
+  for (let i = 0; i < sortedFamily.length; i++) {
+    const familyMember = sortedFamily[i];
+    if (typeof familyMember.plan.id === 'number' && i < existingIds.length) {
+      const oldId = familyMember.plan.id;
+      const newId = existingIds[i];
+      idMapping.set(oldId, newId);
+    }
+  }
+  
+  return idMapping;
 }
 
 export async function handleRenumber(options: RenumberOptions, command: RenumberCommand) {

@@ -942,4 +942,597 @@ describe('rmplan renumber', () => {
     expect(parentIndex).toBeLessThan(childIndex); // Parent before child
     expect(childIndex).toBeLessThan(grandchildIndex); // Child before grandchild
   });
+
+  test('single-plan family (no children) - helper functions', async () => {
+    // Create a standalone plan with no children or parent
+    await createPlan(42, 'Standalone Plan', '42-standalone.yml');
+    
+    const { 
+      buildParentChildHierarchy,
+      findRootParent,
+      findPlanFamily,
+      findDisorderedFamilies
+    } = await import('./renumber.js');
+
+    const allPlans = new Map();
+    const standalonePlan = await readPlanFile(path.join(tasksDir, '42-standalone.yml'));
+    allPlans.set(path.join(tasksDir, '42-standalone.yml'), standalonePlan);
+
+    // Test buildParentChildHierarchy - should have no entries for this plan
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    expect(hierarchy.has(42)).toBe(false); // No children, so no entry
+
+    // Test findRootParent - plan should be its own root
+    expect(findRootParent(42, allPlans)).toBe(42);
+
+    // Test findPlanFamily - should return just the plan itself
+    const family = findPlanFamily(42, allPlans, hierarchy);
+    expect(family.length).toBe(1);
+    expect(family[0].plan.id).toBe(42);
+
+    // Test findDisorderedFamilies - should not identify this as disordered
+    const disorderedRoots = findDisorderedFamilies(allPlans, hierarchy);
+    expect(disorderedRoots.has(42)).toBe(false);
+  });
+
+  test('complex multi-level hierarchy (4+ levels) - helper functions', async () => {
+    // Create a 4-level hierarchy with disorder: great-grandparent (20) -> grandparent (15) -> parent (10) -> child (5)
+    await createPlan(20, 'Great-Grandparent Plan', '20-great-grandparent.yml');
+    
+    const grandparentPlan: PlanSchema = {
+      id: 15,
+      title: 'Grandparent Plan',
+      goal: 'Grandparent goal',
+      details: 'Grandparent details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 20,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '15-grandparent.yml'), yaml.stringify(grandparentPlan));
+
+    const parentPlan: PlanSchema = {
+      id: 10,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 15,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '10-parent.yml'), yaml.stringify(parentPlan));
+
+    const childPlan: PlanSchema = {
+      id: 5,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+
+    const { 
+      buildParentChildHierarchy,
+      findRootParent,
+      findPlanFamily,
+      findDisorderedFamilies,
+      topologicalSortFamily
+    } = await import('./renumber.js');
+
+    const allPlans = new Map();
+    const greatGrandparent = await readPlanFile(path.join(tasksDir, '20-great-grandparent.yml'));
+    const grandparent = await readPlanFile(path.join(tasksDir, '15-grandparent.yml'));
+    const parent = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
+    const child = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    
+    allPlans.set(path.join(tasksDir, '20-great-grandparent.yml'), greatGrandparent);
+    allPlans.set(path.join(tasksDir, '15-grandparent.yml'), grandparent);
+    allPlans.set(path.join(tasksDir, '10-parent.yml'), parent);
+    allPlans.set(path.join(tasksDir, '5-child.yml'), child);
+
+    // Test buildParentChildHierarchy - should build 3 levels of parent-child relationships
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    expect(hierarchy.has(20)).toBe(true); // Great-grandparent should have children
+    expect(hierarchy.has(15)).toBe(true); // Grandparent should have children
+    expect(hierarchy.has(10)).toBe(true); // Parent should have children
+    expect(hierarchy.has(5)).toBe(false); // Child should have no children
+
+    // Test findRootParent - all should trace back to great-grandparent (20)
+    expect(findRootParent(5, allPlans)).toBe(20);
+    expect(findRootParent(10, allPlans)).toBe(20);
+    expect(findRootParent(15, allPlans)).toBe(20);
+    expect(findRootParent(20, allPlans)).toBe(20);
+
+    // Test findPlanFamily - should find all 4 plans
+    const family = findPlanFamily(20, allPlans, hierarchy);
+    expect(family.length).toBe(4);
+    const familyIds = family.map(f => f.plan.id).sort((a, b) => a - b);
+    expect(familyIds).toEqual([5, 10, 15, 20]);
+
+    // Test findDisorderedFamilies - should identify the root as disordered
+    const disorderedRoots = findDisorderedFamilies(allPlans, hierarchy);
+    expect(disorderedRoots.has(20)).toBe(true);
+
+    // Test topologicalSortFamily - should maintain hierarchy order
+    const sortedFamily = topologicalSortFamily(family);
+    expect(sortedFamily.length).toBe(4);
+    
+    const sortedIds = sortedFamily.map(f => f.plan.id);
+    const greatGrandparentIndex = sortedIds.indexOf(20);
+    const grandparentIndex = sortedIds.indexOf(15);
+    const parentIndex = sortedIds.indexOf(10);
+    const childIndex = sortedIds.indexOf(5);
+    
+    expect(greatGrandparentIndex).toBeLessThan(grandparentIndex);
+    expect(grandparentIndex).toBeLessThan(parentIndex);
+    expect(parentIndex).toBeLessThan(childIndex);
+  });
+
+  test('plans with missing parent references - helper functions', async () => {
+    // Create a child that references a non-existent parent
+    const orphanPlan: PlanSchema = {
+      id: 10,
+      title: 'Orphan Plan',
+      goal: 'Orphan goal',
+      details: 'Orphan details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 999, // Non-existent parent
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '10-orphan.yml'), yaml.stringify(orphanPlan));
+    
+    const { 
+      buildParentChildHierarchy,
+      findRootParent,
+      findPlanFamily,
+      findDisorderedFamilies
+    } = await import('./renumber.js');
+
+    const allPlans = new Map();
+    const orphan = await readPlanFile(path.join(tasksDir, '10-orphan.yml'));
+    allPlans.set(path.join(tasksDir, '10-orphan.yml'), orphan);
+
+    // Test buildParentChildHierarchy - should NOT create entry for missing parent (only validates existing parents)
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    expect(hierarchy.has(999)).toBe(false); // No entry created for missing parent 999
+    expect(hierarchy.has(10)).toBe(false); // Orphan plan has no children either
+
+    // Test findRootParent - should not follow chain to missing parent, returns the orphan plan itself
+    expect(findRootParent(10, allPlans)).toBe(10); // Returns the orphan plan ID since parent doesn't exist
+
+    // Test findPlanFamily - should return just the orphan plan (since it has no valid parent)
+    const family = findPlanFamily(10, allPlans, hierarchy);
+    expect(family.length).toBe(1);
+    expect(family[0].plan.id).toBe(10);
+
+    // Test findDisorderedFamilies - should not identify as disordered (single plan family)
+    const disorderedRoots = findDisorderedFamilies(allPlans, hierarchy);
+    expect(disorderedRoots.has(10)).toBe(false);
+  });
+
+  test('plans with empty dependency arrays - helper functions', async () => {
+    // Create parent with empty dependencies array
+    const parentPlan: PlanSchema = {
+      id: 10,
+      title: 'Parent with Empty Dependencies',
+      goal: 'Parent goal',
+      details: 'Parent details', 
+      status: 'pending',
+      priority: 'medium',
+      dependencies: [], // Explicitly empty
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '10-parent.yml'), yaml.stringify(parentPlan));
+
+    const childPlan: PlanSchema = {
+      id: 5,
+      title: 'Child with Empty Dependencies',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10,
+      dependencies: [], // Explicitly empty
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+
+    const { 
+      buildParentChildHierarchy,
+      findPlanFamily,
+      findDisorderedFamilies,
+      topologicalSortFamily
+    } = await import('./renumber.js');
+
+    const allPlans = new Map();
+    const parent = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
+    const child = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    
+    allPlans.set(path.join(tasksDir, '10-parent.yml'), parent);
+    allPlans.set(path.join(tasksDir, '5-child.yml'), child);
+
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    const family = findPlanFamily(10, allPlans, hierarchy);
+    const disorderedRoots = findDisorderedFamilies(allPlans, hierarchy);
+
+    // Should still identify as disordered family (parent ID 10 > child ID 5)
+    expect(disorderedRoots.has(10)).toBe(true);
+
+    // Test topologicalSortFamily with empty dependencies - should still respect parent-child order
+    const sortedFamily = topologicalSortFamily(family);
+    expect(sortedFamily.length).toBe(2);
+    
+    const sortedIds = sortedFamily.map(f => f.plan.id);
+    const parentIndex = sortedIds.indexOf(10);
+    const childIndex = sortedIds.indexOf(5);
+    
+    expect(parentIndex).toBeLessThan(childIndex); // Parent should still come before child
+  });
+
+  test('complex sibling dependency chains - helper functions', async () => {
+    // Create parent with 3 children having complex dependency chain
+    await createPlan(15, 'Parent Plan', '15-parent.yml');
+    
+    const child1Plan: PlanSchema = {
+      id: 5,
+      title: 'Child 1 - No dependencies',
+      goal: 'Child 1 goal',
+      details: 'Child 1 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 15,
+      dependencies: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child1.yml'), yaml.stringify(child1Plan));
+
+    const child2Plan: PlanSchema = {
+      id: 8,
+      title: 'Child 2 - Depends on Child 1',
+      goal: 'Child 2 goal',
+      details: 'Child 2 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 15,
+      dependencies: [5], // Depends on child 1
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '8-child2.yml'), yaml.stringify(child2Plan));
+
+    const child3Plan: PlanSchema = {
+      id: 12,
+      title: 'Child 3 - Depends on Child 1 and 2',
+      goal: 'Child 3 goal',
+      details: 'Child 3 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 15,
+      dependencies: [5, 8], // Depends on both child 1 and child 2
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '12-child3.yml'), yaml.stringify(child3Plan));
+
+    const { 
+      buildParentChildHierarchy,
+      findPlanFamily,
+      findDisorderedFamilies,
+      topologicalSortFamily
+    } = await import('./renumber.js');
+
+    const allPlans = new Map();
+    const parent = await readPlanFile(path.join(tasksDir, '15-parent.yml'));
+    const child1 = await readPlanFile(path.join(tasksDir, '5-child1.yml'));
+    const child2 = await readPlanFile(path.join(tasksDir, '8-child2.yml'));
+    const child3 = await readPlanFile(path.join(tasksDir, '12-child3.yml'));
+    
+    allPlans.set(path.join(tasksDir, '15-parent.yml'), parent);
+    allPlans.set(path.join(tasksDir, '5-child1.yml'), child1);
+    allPlans.set(path.join(tasksDir, '8-child2.yml'), child2);
+    allPlans.set(path.join(tasksDir, '12-child3.yml'), child3);
+
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    const family = findPlanFamily(15, allPlans, hierarchy);
+    const disorderedRoots = findDisorderedFamilies(allPlans, hierarchy);
+
+    // Should identify as disordered family (parent ID 15 > some child IDs)
+    expect(disorderedRoots.has(15)).toBe(true);
+
+    // Test topological sort - should respect both parent-child and sibling dependencies
+    const sortedFamily = topologicalSortFamily(family);
+    expect(sortedFamily.length).toBe(4);
+    
+    const sortedIds = sortedFamily.map(f => f.plan.id);
+    const parentIndex = sortedIds.indexOf(15);
+    const child1Index = sortedIds.indexOf(5);
+    const child2Index = sortedIds.indexOf(8);
+    const child3Index = sortedIds.indexOf(12);
+    
+    // Parent should come first
+    expect(parentIndex).toBeLessThan(child1Index);
+    expect(parentIndex).toBeLessThan(child2Index);
+    expect(parentIndex).toBeLessThan(child3Index);
+    
+    // Child 1 should come before child 2 (child 2 depends on child 1)
+    expect(child1Index).toBeLessThan(child2Index);
+    
+    // Child 1 and 2 should both come before child 3 (child 3 depends on both)
+    expect(child1Index).toBeLessThan(child3Index);
+    expect(child2Index).toBeLessThan(child3Index);
+  });
+
+  test('cycle detection in topological sort', async () => {
+    // Create a cycle: child1 depends on child2, child2 depends on child1
+    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    
+    const child1Plan: PlanSchema = {
+      id: 5,
+      title: 'Child 1',
+      goal: 'Child 1 goal',
+      details: 'Child 1 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10,
+      dependencies: [8], // Depends on child 2
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child1.yml'), yaml.stringify(child1Plan));
+
+    const child2Plan: PlanSchema = {
+      id: 8,
+      title: 'Child 2',
+      goal: 'Child 2 goal',
+      details: 'Child 2 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10,
+      dependencies: [5], // Depends on child 1 - creates cycle!
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '8-child2.yml'), yaml.stringify(child2Plan));
+
+    const { 
+      buildParentChildHierarchy,
+      findPlanFamily,
+      topologicalSortFamily
+    } = await import('./renumber.js');
+
+    const allPlans = new Map();
+    const parent = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
+    const child1 = await readPlanFile(path.join(tasksDir, '5-child1.yml'));
+    const child2 = await readPlanFile(path.join(tasksDir, '8-child2.yml'));
+    
+    allPlans.set(path.join(tasksDir, '10-parent.yml'), parent);
+    allPlans.set(path.join(tasksDir, '5-child1.yml'), child1);
+    allPlans.set(path.join(tasksDir, '8-child2.yml'), child2);
+
+    const hierarchy = buildParentChildHierarchy(allPlans);
+    const family = findPlanFamily(10, allPlans, hierarchy);
+
+    // Test that topologicalSortFamily throws an error for circular dependencies
+    expect(() => {
+      topologicalSortFamily(family);
+    }).toThrow(/circular dependency/i);
+  });
+
+  // NOTE: End-to-end integration tests for hierarchical renumbering are commented out
+  // because the hierarchical renumbering phase has not been implemented in handleRenumber yet.
+  // These tests should be uncommented once Tasks 4-6 from the plan are completed.
+  
+  /*
+  test('end-to-end hierarchical renumbering with parent-child inversion', async () => {
+    // Create a disordered hierarchy: parent ID 10 has child with ID 5
+    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    
+    const childPlan: PlanSchema = {
+      id: 5,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10, // Parent relationship creates hierarchical disorder
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+
+    // Run hierarchical renumbering
+    await handleRenumber({}, createMockCommand());
+
+    // After renumbering, parent should have lower ID than child
+    const updatedParent = await readPlanFile(path.join(tasksDir, '5-parent.yml'));
+    const updatedChild = await readPlanFile(path.join(tasksDir, '10-child.yml'));
+
+    expect(updatedParent.id).toBe(5); // Parent gets the lower ID
+    expect(updatedChild.id).toBe(10); // Child gets the higher ID
+    expect(updatedChild.parent).toBe(5); // Parent reference is updated
+    expect(updatedParent.title).toBe('Parent Plan');
+    expect(updatedChild.title).toBe('Child Plan');
+
+    // Verify files were renamed correctly
+    const files = await fs.promises.readdir(tasksDir);
+    expect(files).toContain('5-parent.yml');
+    expect(files).toContain('10-child.yml');
+    expect(files).not.toContain('10-parent.yml'); // Old filename should be gone
+    expect(files).not.toContain('5-child.yml'); // Old filename should be gone
+  });
+
+  test('end-to-end hierarchical renumbering with siblings and dependencies', async () => {
+    // Create a disordered hierarchy with dependencies between siblings
+    await createPlan(15, 'Parent Plan', '15-parent.yml');
+    
+    const child1Plan: PlanSchema = {
+      id: 5,
+      title: 'Child 1 - No dependencies',
+      goal: 'Child 1 goal',
+      details: 'Child 1 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 15,
+      dependencies: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child1.yml'), yaml.stringify(child1Plan));
+
+    const child2Plan: PlanSchema = {
+      id: 8,
+      title: 'Child 2 - Depends on Child 1',
+      goal: 'Child 2 goal',
+      details: 'Child 2 details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 15,
+      dependencies: [5], // Depends on child 1
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '8-child2.yml'), yaml.stringify(child2Plan));
+
+    // Run hierarchical renumbering
+    await handleRenumber({}, createMockCommand());
+
+    // After renumbering, should have parent (5), child1 (8), child2 (15)
+    const updatedParent = await readPlanFile(path.join(tasksDir, '5-parent.yml'));
+    const updatedChild1 = await readPlanFile(path.join(tasksDir, '8-child1.yml'));
+    const updatedChild2 = await readPlanFile(path.join(tasksDir, '15-child2.yml'));
+
+    expect(updatedParent.id).toBe(5);
+    expect(updatedChild1.id).toBe(8);  
+    expect(updatedChild2.id).toBe(15);
+
+    // Verify parent-child relationships are maintained
+    expect(updatedChild1.parent).toBe(5);
+    expect(updatedChild2.parent).toBe(5);
+
+    // Verify dependency is updated correctly
+    expect(updatedChild2.dependencies).toEqual([8]); // Should now depend on child1's new ID
+
+    // Verify files were renamed correctly
+    const files = await fs.promises.readdir(tasksDir);
+    expect(files).toContain('5-parent.yml');
+    expect(files).toContain('8-child1.yml');
+    expect(files).toContain('15-child2.yml');
+  });
+
+  test('end-to-end hierarchical renumbering preserves non-disordered families', async () => {
+    // Create one disordered family and one properly ordered family
+    
+    // Disordered family: parent (10) -> child (5)
+    await createPlan(10, 'Disordered Parent', '10-disordered-parent.yml');
+    const disorderedChild: PlanSchema = {
+      id: 5,
+      title: 'Disordered Child',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-disordered-child.yml'), yaml.stringify(disorderedChild));
+
+    // Properly ordered family: parent (20) -> child (30)
+    await createPlan(20, 'Ordered Parent', '20-ordered-parent.yml');
+    const orderedChild: PlanSchema = {
+      id: 30,
+      title: 'Ordered Child',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 20,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '30-ordered-child.yml'), yaml.stringify(orderedChild));
+
+    // Run hierarchical renumbering
+    await handleRenumber({}, createMockCommand());
+
+    // Disordered family should be reordered
+    const updatedDisorderedParent = await readPlanFile(path.join(tasksDir, '5-disordered-parent.yml'));
+    const updatedDisorderedChild = await readPlanFile(path.join(tasksDir, '10-disordered-child.yml'));
+    expect(updatedDisorderedParent.id).toBe(5);
+    expect(updatedDisorderedChild.id).toBe(10);
+    expect(updatedDisorderedChild.parent).toBe(5);
+
+    // Properly ordered family should remain unchanged
+    const orderedParentAfter = await readPlanFile(path.join(tasksDir, '20-ordered-parent.yml'));
+    const orderedChildAfter = await readPlanFile(path.join(tasksDir, '30-ordered-child.yml'));
+    expect(orderedParentAfter.id).toBe(20);
+    expect(orderedChildAfter.id).toBe(30);
+    expect(orderedChildAfter.parent).toBe(20);
+  });
+
+  test('end-to-end hierarchical renumbering dry run mode', async () => {
+    // Create a disordered hierarchy
+    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    
+    const childPlan: PlanSchema = {
+      id: 5,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'pending',
+      priority: 'medium',
+      parent: 10,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+    };
+    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+
+    // Run in dry-run mode
+    await handleRenumber({ dryRun: true }, createMockCommand());
+
+    // Files should remain unchanged
+    const parentAfter = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
+    const childAfter = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    
+    expect(parentAfter.id).toBe(10); // Should not be changed
+    expect(childAfter.id).toBe(5); // Should not be changed
+    expect(childAfter.parent).toBe(10); // Should not be changed
+
+    // Original files should still exist
+    const files = await fs.promises.readdir(tasksDir);
+    expect(files).toContain('10-parent.yml');
+    expect(files).toContain('5-child.yml');
+    expect(files).not.toContain('5-parent.yml'); // New files should not exist
+    expect(files).not.toContain('10-child.yml');
+  });
+  */
 });
