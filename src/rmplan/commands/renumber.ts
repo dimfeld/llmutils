@@ -51,6 +51,7 @@ interface PlanToRenumber {
 interface RenumberOptions {
   dryRun?: boolean;
   keep?: string[];
+  conflictsOnly?: boolean;
 }
 
 interface RenumberCommand {
@@ -934,105 +935,110 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   // to ensure parents have lower IDs than their children.
   // This phase runs independently of conflict resolution.
 
-  log('\nChecking for hierarchical ordering violations...');
-
-  // Build hierarchy representation from all plans (after conflict resolution)
-  const parentChildHierarchy = buildParentChildHierarchy(allPlans);
-
-  // Find families that have ordering violations
-  const disorderedFamilyRoots = findDisorderedFamilies(allPlans, parentChildHierarchy);
-
-  // Global mapping for all hierarchical ID changes
+  // Initialize hierarchical variables outside conditional block
   const hierarchicalIdMappings = new Map<number, number>();
   let hierarchicalChangesCount = 0;
 
-  if (disorderedFamilyRoots.size > 0) {
-    log(`Found ${disorderedFamilyRoots.size} families with ordering violations`);
+  // Skip hierarchical ordering if --conflicts-only option is specified
+  if (options.conflictsOnly) {
+    log('\nSkipping hierarchical ordering violations check (--conflicts-only specified)');
+  } else {
+    log('\nChecking for hierarchical ordering violations...');
 
-    // Process each disordered family
-    for (const rootId of disorderedFamilyRoots) {
-      // Get the complete family tree
-      const family = findPlanFamily(rootId, allPlans, parentChildHierarchy);
+    // Build hierarchy representation from all plans (after conflict resolution)
+    const parentChildHierarchy = buildParentChildHierarchy(allPlans);
 
-      if (family.length <= 1) {
-        continue; // Skip single-plan families
-      }
+    // Find families that have ordering violations
+    const disorderedFamilyRoots = findDisorderedFamilies(allPlans, parentChildHierarchy);
 
-      log(`  Processing family rooted at ID ${rootId} (${family.length} plans)`);
+    if (disorderedFamilyRoots.size > 0) {
+      log(`Found ${disorderedFamilyRoots.size} families with ordering violations`);
 
-      try {
-        // Perform topological sort on the family
-        const sortedFamily = topologicalSortFamily(family);
+      // Process each disordered family
+      for (const rootId of disorderedFamilyRoots) {
+        // Get the complete family tree
+        const family = findPlanFamily(rootId, allPlans, parentChildHierarchy);
 
-        // Reassign IDs within the family
-        const familyIdMappings = reassignFamilyIds(sortedFamily);
-
-        // Add to global mapping
-        for (const [oldId, newId] of familyIdMappings) {
-          hierarchicalIdMappings.set(oldId, newId);
-          hierarchicalChangesCount++;
-
-          if (!options.dryRun) {
-            log(`    ${oldId} → ${newId}`);
-          } else {
-            log(`    ${oldId} → ${newId} (would change)`);
-          }
-        }
-      } catch (error) {
-        log(
-          `  Error processing family rooted at ID ${rootId}: ${error instanceof Error ? error.message : String(error)}`
-        );
-        // Continue processing other families even if one fails
-      }
-    }
-
-    if (!options.dryRun && hierarchicalChangesCount > 0) {
-      log(`\nApplying ${hierarchicalChangesCount} hierarchical ID changes to all plans...`);
-
-      // Apply all hierarchical ID changes to plan objects in memory
-      for (const [filePath, plan] of allPlans) {
-        let planModified = false;
-
-        // Update the plan's own ID if it was changed
-        if (typeof plan.id === 'number' && hierarchicalIdMappings.has(plan.id)) {
-          const newId = hierarchicalIdMappings.get(plan.id)!;
-          plan.id = newId;
-          planModified = true;
+        if (family.length <= 1) {
+          continue; // Skip single-plan families
         }
 
-        // Update the plan's parent ID if it was changed
-        if (typeof plan.parent === 'number' && hierarchicalIdMappings.has(plan.parent)) {
-          const newParentId = hierarchicalIdMappings.get(plan.parent)!;
-          plan.parent = newParentId;
-          planModified = true;
-        }
+        log(`  Processing family rooted at ID ${rootId} (${family.length} plans)`);
 
-        // Update dependencies if any were changed
-        if (Array.isArray(plan.dependencies) && plan.dependencies.length > 0) {
-          let dependenciesChanged = false;
-          const updatedDependencies = plan.dependencies.map((dep: any) => {
-            const depNum = Number(dep);
-            if (!Number.isNaN(depNum) && hierarchicalIdMappings.has(depNum)) {
-              dependenciesChanged = true;
-              return hierarchicalIdMappings.get(depNum)!;
+        try {
+          // Perform topological sort on the family
+          const sortedFamily = topologicalSortFamily(family);
+
+          // Reassign IDs within the family
+          const familyIdMappings = reassignFamilyIds(sortedFamily);
+
+          // Add to global mapping
+          for (const [oldId, newId] of familyIdMappings) {
+            hierarchicalIdMappings.set(oldId, newId);
+            hierarchicalChangesCount++;
+
+            if (!options.dryRun) {
+              log(`    ${oldId} → ${newId}`);
+            } else {
+              log(`    ${oldId} → ${newId} (would change)`);
             }
-            return dep;
-          });
+          }
+        } catch (error) {
+          log(
+            `  Error processing family rooted at ID ${rootId}: ${error instanceof Error ? error.message : String(error)}`
+          );
+          // Continue processing other families even if one fails
+        }
+      }
 
-          if (dependenciesChanged) {
-            plan.dependencies = updatedDependencies;
+      if (!options.dryRun && hierarchicalChangesCount > 0) {
+        log(`\nApplying ${hierarchicalChangesCount} hierarchical ID changes to all plans...`);
+
+        // Apply all hierarchical ID changes to plan objects in memory
+        for (const [filePath, plan] of allPlans) {
+          let planModified = false;
+
+          // Update the plan's own ID if it was changed
+          if (typeof plan.id === 'number' && hierarchicalIdMappings.has(plan.id)) {
+            const newId = hierarchicalIdMappings.get(plan.id)!;
+            plan.id = newId;
             planModified = true;
           }
-        }
 
-        // If plan was modified, mark it for writing
-        if (planModified) {
-          plansToWrite.add(filePath);
+          // Update the plan's parent ID if it was changed
+          if (typeof plan.parent === 'number' && hierarchicalIdMappings.has(plan.parent)) {
+            const newParentId = hierarchicalIdMappings.get(plan.parent)!;
+            plan.parent = newParentId;
+            planModified = true;
+          }
+
+          // Update dependencies if any were changed
+          if (Array.isArray(plan.dependencies) && plan.dependencies.length > 0) {
+            let dependenciesChanged = false;
+            const updatedDependencies = plan.dependencies.map((dep: any) => {
+              const depNum = Number(dep);
+              if (!Number.isNaN(depNum) && hierarchicalIdMappings.has(depNum)) {
+                dependenciesChanged = true;
+                return hierarchicalIdMappings.get(depNum)!;
+              }
+              return dep;
+            });
+
+            if (dependenciesChanged) {
+              plan.dependencies = updatedDependencies;
+              planModified = true;
+            }
+          }
+
+          // If plan was modified, mark it for writing
+          if (planModified) {
+            plansToWrite.add(filePath);
+          }
         }
       }
+    } else {
+      log('No hierarchical ordering violations found');
     }
-  } else {
-    log('No hierarchical ordering violations found');
   }
 
   // Exit early if no changes are needed at all

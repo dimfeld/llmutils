@@ -421,6 +421,7 @@ program
     '--keep <files...>',
     `Do not change IDs for these plan file paths when resolving conflicts`
   )
+  .option('--conflicts-only', 'Only resolve ID conflicts, skip hierarchical ordering violations')
   .action(async (options, command) => {
     const { handleRenumber } = await import('./commands/renumber.js');
     await handleRenumber(options, command).catch(handleCommandError);
