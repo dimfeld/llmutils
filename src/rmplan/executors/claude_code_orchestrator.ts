@@ -147,8 +147,16 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
       let messages = lines.map((line) => JSON.parse(line) as Message);
 
       const resultMessage = messages.find((m) => m.type === 'result');
-      if (resultMessage && resultMessage.subtype === 'success') {
+      if (resultMessage && resultMessage.subtype === 'success' && resultMessage.result) {
         generationOutput = resultMessage.result;
+      } else {
+        let lastAssistant = messages.findLast((m) => m.type === 'assistant');
+        if (lastAssistant?.message) {
+          let lastText = lastAssistant.message.content.findLast((c) => c.type === 'text');
+          if (lastText) {
+            generationOutput = lastText.text;
+          }
+        }
       }
 
       const formatted = lines
