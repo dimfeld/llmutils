@@ -58,6 +58,14 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       };
     }
 
+    // Match on a copied branch name
+    const branchMatch = trimmedSpec.match(/-([A-Z][A-Z0-9]*-\d+)$/);
+    if (branchMatch) {
+      return {
+        identifier: branchMatch[1],
+      };
+    }
+
     // Invalid format
     return null;
   }
