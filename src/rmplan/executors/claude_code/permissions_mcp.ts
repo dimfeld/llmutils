@@ -15,6 +15,13 @@ export const PermissionInputSchema = z.object({
   input: z.object({}).passthrough().describe('The input for the tool'),
 });
 
+// Define the schema for the review feedback input
+export const ReviewFeedbackInputSchema = z.object({
+  reviewerFeedback: z
+    .string()
+    .describe('The output from the reviewer subagent that needs user feedback'),
+});
+
 // Create the FastMCP server
 const server = new FastMCP({
   name: 'permissions-server',
@@ -73,6 +80,38 @@ async function requestPermissionFromParent(tool_name: string, input: any): Promi
   });
 }
 
+// Send a review feedback request to the parent process and wait for response
+async function requestReviewFeedbackFromParent(reviewerFeedback: string): Promise<string> {
+  if (!parentSocket) {
+    throw new Error('Not connected to parent process');
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = {
+      type: 'review_feedback_request',
+      reviewerFeedback,
+    };
+
+    // Set up one-time listener for the response
+    const responseHandler = (data: Buffer) => {
+      try {
+        const response = JSON.parse(data.toString());
+        if (response.type === 'review_feedback_response') {
+          parentSocket!.off('data', responseHandler);
+          resolve(response.userFeedback || '');
+        }
+      } catch (err) {
+        reject(err as Error);
+      }
+    };
+
+    parentSocket!.on('data', responseHandler);
+
+    // Send the request
+    parentSocket!.write(JSON.stringify(request) + '\n');
+  });
+}
+
 // Define the approval prompt tool
 server.addTool({
   name: 'approval_prompt',
@@ -112,6 +151,39 @@ server.addTool({
               behavior: 'deny',
               message: `Permission request failed: ${err as Error}`,
             }),
+          },
+        ],
+      };
+    }
+  },
+});
+
+// Define the review feedback prompt tool
+server.addTool({
+  name: 'review_feedback_prompt',
+  description: 'Prompts the user for feedback on reviewer output',
+  parameters: ReviewFeedbackInputSchema,
+  execute: async ({ reviewerFeedback }) => {
+    try {
+      // Request review feedback from the parent process
+      const userFeedback = await requestReviewFeedbackFromParent(reviewerFeedback);
+
+      // Return the user's feedback as text
+      return {
+        content: [
+          {
+            type: 'text',
+            text: userFeedback,
+          },
+        ],
+      };
+    } catch (err) {
+      // If communication fails, return an empty string
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Review feedback request failed: ${err as Error}`,
           },
         ],
       };

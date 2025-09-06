@@ -21,6 +21,10 @@ export const claudeCodeOptionsSchema = z.object({
       enabled: z.boolean(),
       defaultResponse: z.enum(['yes', 'no']).optional(),
       timeout: z.number().optional().describe('Timeout in milliseconds for permission prompts'),
+      reviewFeedbackTimeout: z
+        .number()
+        .optional()
+        .describe('Timeout in milliseconds for review feedback prompts'),
       autoApproveCreatedFileDeletion: z
         .boolean()
         .default(false)

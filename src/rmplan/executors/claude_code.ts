@@ -15,7 +15,7 @@ import { formatJsonMessage } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import * as net from 'net';
-import { confirm, select } from '@inquirer/prompts';
+import { confirm, select, editor } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 import { waitForEnter } from '../../common/terminal.ts';
@@ -655,9 +655,74 @@ export class ClaudeCodeExecutor implements Executor {
             };
 
             socket.write(JSON.stringify(response) + '\n');
+          } else if (message.type === 'review_feedback_request') {
+            const { reviewerFeedback } = message;
+
+            // Display the reviewer feedback to the user
+            console.log(chalk.blue('\n📝 Reviewer Feedback:'));
+            console.log(chalk.white(reviewerFeedback));
+            console.log();
+
+            // Determine the timeout to use
+            const reviewFeedbackTimeout =
+              this.options.permissionsMcp?.reviewFeedbackTimeout ??
+              this.options.permissionsMcp?.timeout;
+
+            // Create a promise that resolves with an empty string after timeout
+            let promptActive = true;
+            const timeoutPromise = reviewFeedbackTimeout
+              ? new Promise<string>((resolve) => {
+                  setTimeout(() => {
+                    if (promptActive) {
+                      log('\nReview feedback prompt timed out, returning empty response');
+                      resolve('');
+                    }
+                  }, reviewFeedbackTimeout);
+                })
+              : null;
+
+            // Create an AbortController for the prompt
+            const controller = new AbortController();
+
+            // Prompt the user for multi-line feedback
+            const editorPromise = editor(
+              {
+                message: "Please provide your feedback on the reviewer's analysis:",
+                default: '',
+                waitForUseInput: false,
+              },
+              { signal: controller.signal }
+            );
+
+            // Race between the editor prompt and the timeout
+            let userFeedback: string;
+            try {
+              userFeedback = await Promise.race(
+                [editorPromise, timeoutPromise as Promise<string>].filter(Boolean)
+              );
+              controller.abort(); // Cancel the editor if timeout wins
+              promptActive = false;
+            } catch (err: any) {
+              // If the prompt was aborted (timeout occurred), use empty string
+              if (err.name === 'AbortPromptError' && reviewFeedbackTimeout) {
+                userFeedback = '';
+                log(chalk.yellow('Review feedback prompt timed out. Using empty response.'));
+              } else {
+                userFeedback = '';
+                debugLog('Error in review feedback prompt:', err);
+              }
+            }
+
+            // Send response back to MCP server
+            const response = {
+              type: 'review_feedback_response',
+              userFeedback,
+            };
+
+            socket.write(JSON.stringify(response) + '\n');
           }
         } catch (err) {
-          debugLog('Error handling permission request:', err);
+          debugLog('Error handling socket message:', err);
         }
       });
     });
