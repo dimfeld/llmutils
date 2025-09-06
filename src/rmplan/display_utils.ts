@@ -45,10 +45,10 @@ export function getCombinedGoal(plan: PlanSchema): string {
  */
 type PartialPlan = {
   title?: string;
-  goal: string;
+  goal?: string;
   project?: {
     title: string;
-    goal: string;
+    goal?: string;
     details?: string;
   };
 };

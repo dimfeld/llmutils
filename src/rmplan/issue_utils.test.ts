@@ -28,7 +28,7 @@ describe('createStubPlanFromIssue', () => {
 
     expect(result.id).toBe(1);
     expect(result.title).toBe('Test Issue with Project');
-    expect(result.goal).toBe('Implement: Test Issue with Project');
+    expect(result.goal).toBeUndefined();
     expect(result.issue).toEqual(['https://linear.app/company/issue/TEAM-123']);
   });
 

@@ -41,12 +41,18 @@ export function buildProjectContextSection(planData: PlanSchema): string {
       parts.push(`## Project Details:\n\n${planData.project.details}\n`);
     }
 
-    parts.push(
-      `# Current Phase Goal: ${planData.goal}\n\n## Phase Details:\n\n${planData.details}\n`
-    );
+    if (planData.goal) {
+      parts.push(`# Current Phase Goal: ${planData.goal}\n\n## Phase Details:\n\n${planData.details}\n`);
+    } else {
+      parts.push(`## Phase Details:\n\n${planData.details}\n`);
+    }
   } else {
     // No project-level context, use phase as top-level
-    parts.push(`# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`);
+    if (planData.goal) {
+      parts.push(`# Project Goal: ${planData.goal}\n\n## Project Details:\n\n${planData.details}\n`);
+    } else {
+      parts.push(`## Project Details:\n\n${planData.details}\n`);
+    }
   }
 
   return parts.join('\n');

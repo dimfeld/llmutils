@@ -168,7 +168,6 @@ export function createStubPlanFromIssue(
   const stubPlan: PlanSchema = {
     id: planId,
     title: issueData.issue.title,
-    goal: `Implement: ${issueData.issue.title}`,
     details: issueData.plan,
     status: 'pending',
     issue: [issueData.issue.html_url],

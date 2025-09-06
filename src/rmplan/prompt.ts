@@ -133,19 +133,19 @@ export interface PhaseGenerationContext {
   overallProjectDetails: string;
   overallProjectTitle?: string; // Optional project title
   currentPhaseTitle?: string;
-  currentPhaseGoal: string;
+  currentPhaseGoal?: string;
   currentPhaseDetails: string;
   currentPhaseTasks: Array<{ title: string; description: string }>; // Tasks from the current phase YAML (before step generation)
   previousPhasesInfo: Array<{
     id: string | number;
     title: string;
-    goal: string;
+    goal?: string;
     description: string;
   }>; // Info from dependent, completed phases
   parentPlanInfo?: {
     id: number;
     title: string;
-    goal: string;
+    goal?: string;
     details: string;
     docURLs?: string[]; // URLs from parent plan docs
   }; // Info from parent plan
@@ -286,8 +286,7 @@ export function generatePhaseStepsPrompt(context: PhaseGenerationContext): strin
 ${context.previousPhasesInfo
   .map(
     (phase) =>
-      `## ${phase.title} (ID: ${phase.id})
-**Goal:** ${phase.goal}
+      `## ${phase.title} (ID: ${phase.id})${phase.goal ? `\n**Goal:** ${phase.goal}` : ''}
 **Description:** ${phase.description}`
   )
   .join('\n\n')}
@@ -332,8 +331,7 @@ ${context.changedFilesFromDependencies.join('\n')}
   if (context.parentPlanInfo) {
     parentPlanSection = `## Parent Plan Context
 
-**Parent Plan:** ${context.parentPlanInfo.title} (ID: ${context.parentPlanInfo.id})
-**Parent Goal:** ${context.parentPlanInfo.goal}
+**Parent Plan:** ${context.parentPlanInfo.title} (ID: ${context.parentPlanInfo.id})${context.parentPlanInfo.goal ? `\n**Parent Goal:** ${context.parentPlanInfo.goal}` : ''}
 **Parent Details:** ${context.parentPlanInfo.details}
 `;
 
@@ -476,7 +474,7 @@ You are tasked with taking a single, detailed project plan and reorganizing its 
 
 You have been provided with:
 - **Title**: ${plan.title || 'Not specified'}
-- **Goal**: ${plan.goal}
+${plan.goal ? `- **Goal**: ${plan.goal}` : ''}
 - **Details**: ${plan.details}
 - **Tasks**: A list of ${plan.tasks.length} tasks, each containing:
   - Title
@@ -625,8 +623,7 @@ export function generateClaudeCodePhaseStepsPlanningPrompt(
 ${context.previousPhasesInfo
   .map(
     (phase) =>
-      `## ${phase.title} (ID: ${phase.id})
-**Goal:** ${phase.goal}
+      `## ${phase.title} (ID: ${phase.id})${phase.goal ? `\n**Goal:** ${phase.goal}` : ''}
 **Description:** ${phase.description}`
   )
   .join('\n\n')}
@@ -668,8 +665,7 @@ ${context.changedFilesFromDependencies.join('\n')}
   if (context.parentPlanInfo) {
     parentPlanSection = `## Parent Plan Context
 
-**Parent Plan:** ${context.parentPlanInfo.title} (ID: ${context.parentPlanInfo.id})
-**Parent Goal:** ${context.parentPlanInfo.goal}
+**Parent Plan:** ${context.parentPlanInfo.title} (ID: ${context.parentPlanInfo.id})${context.parentPlanInfo.goal ? `\n**Parent Goal:** ${context.parentPlanInfo.goal}` : ''}
 **Parent Details:** ${context.parentPlanInfo.details}
 `;
 

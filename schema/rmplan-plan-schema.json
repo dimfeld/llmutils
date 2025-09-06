@@ -120,8 +120,7 @@
         }
       },
       "required": [
-        "title",
-        "goal"
+        "title"
       ],
       "additionalProperties": false
     },
@@ -190,6 +189,7 @@
         },
         "required": [
           "title",
+          "done",
           "description",
           "steps"
         ],
@@ -215,7 +215,6 @@
     }
   },
   "required": [
-    "goal",
     "tasks"
   ],
   "additionalProperties": false

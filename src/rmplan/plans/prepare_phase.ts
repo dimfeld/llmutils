@@ -293,7 +293,7 @@ async function gatherPhaseGenerationContext(
 
     // Check if the phase has project-level fields
     if (currentPhaseData.project) {
-      overallProjectGoal = currentPhaseData.project.goal;
+      overallProjectGoal = currentPhaseData.project.goal || '';
       overallProjectDetails = currentPhaseData.project.details || '';
       overallProjectTitle = currentPhaseData.project.title;
     }
@@ -302,14 +302,14 @@ async function gatherPhaseGenerationContext(
     const previousPhasesInfo: Array<{
       id: number;
       title: string;
-      goal: string;
+      goal?: string;
       description: string;
     }> = [];
     const changedFilesFromDependencies: string[] = [];
 
     // 4. Process parent plan info
     let parentPlanInfo:
-      | { id: number; title: string; goal: string; details: string; docURLs?: string[] }
+      | { id: number; title: string; goal?: string; details: string; docURLs?: string[] }
       | undefined;
     if (currentPhaseData.parent) {
       const parentPlan = allPlans.get(currentPhaseData.parent);
