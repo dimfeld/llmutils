@@ -9,21 +9,21 @@ describe('Review Feedback Schema Configuration', () => {
         {
           permissionsMcp: {
             enabled: true,
-            reviewFeedbackTimeout: 1000
-          }
+            reviewFeedbackTimeout: 1000,
+          },
         },
         {
           permissionsMcp: {
             enabled: true,
-            reviewFeedbackTimeout: 30000
-          }
+            reviewFeedbackTimeout: 30000,
+          },
         },
         {
           permissionsMcp: {
             enabled: true,
-            reviewFeedbackTimeout: 0
-          }
-        }
+            reviewFeedbackTimeout: 0,
+          },
+        },
       ];
 
       for (const config of validConfigs) {
@@ -40,27 +40,27 @@ describe('Review Feedback Schema Configuration', () => {
         {
           permissionsMcp: {
             enabled: true,
-            reviewFeedbackTimeout: 'invalid' // string instead of number
-          }
+            reviewFeedbackTimeout: 'invalid', // string instead of number
+          },
         },
         {
           permissionsMcp: {
             enabled: true,
-            reviewFeedbackTimeout: true // boolean instead of number
-          }
+            reviewFeedbackTimeout: true, // boolean instead of number
+          },
         },
         {
           permissionsMcp: {
             enabled: true,
-            reviewFeedbackTimeout: null // null value
-          }
+            reviewFeedbackTimeout: null, // null value
+          },
         },
         {
           permissionsMcp: {
             enabled: true,
-            reviewFeedbackTimeout: [] // array instead of number
-          }
-        }
+            reviewFeedbackTimeout: [], // array instead of number
+          },
+        },
       ];
 
       for (const config of invalidConfigs) {
@@ -73,8 +73,8 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: -1 // negative timeout - this is allowed by the basic number schema
-        }
+          reviewFeedbackTimeout: -1, // negative timeout - this is allowed by the basic number schema
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -87,9 +87,9 @@ describe('Review Feedback Schema Configuration', () => {
     test('is optional and can be omitted', () => {
       const config = {
         permissionsMcp: {
-          enabled: true
+          enabled: true,
           // reviewFeedbackTimeout is omitted
-        }
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -104,8 +104,8 @@ describe('Review Feedback Schema Configuration', () => {
         permissionsMcp: {
           enabled: true,
           timeout: 15000,
-          reviewFeedbackTimeout: 25000
-        }
+          reviewFeedbackTimeout: 25000,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -121,8 +121,8 @@ describe('Review Feedback Schema Configuration', () => {
         permissionsMcp: {
           enabled: true,
           timeout: 5000,
-          reviewFeedbackTimeout: 30000 // Much longer than general timeout
-        }
+          reviewFeedbackTimeout: 30000, // Much longer than general timeout
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -140,14 +140,14 @@ describe('Review Feedback Schema Configuration', () => {
       // Test that the schema has the expected description
       const schemaShape = claudeCodeOptionsSchema.shape.permissionsMcp;
       expect(schemaShape).toBeDefined();
-      
+
       // Since we can't directly access the description from Zod schemas easily,
       // we'll test that the field exists and accepts the right type
       const testConfig = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: 20000
-        }
+          reviewFeedbackTimeout: 20000,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(testConfig);
@@ -167,13 +167,13 @@ describe('Review Feedback Schema Configuration', () => {
           defaultResponse: 'no' as const,
           timeout: 10000,
           reviewFeedbackTimeout: 30000,
-          autoApproveCreatedFileDeletion: true
+          autoApproveCreatedFileDeletion: true,
         },
         agents: {
           implementer: { model: 'claude-3-opus' },
           tester: { model: 'claude-3-sonnet' },
-          reviewer: { model: 'claude-3-haiku' }
-        }
+          reviewer: { model: 'claude-3-haiku' },
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(completeConfig);
@@ -195,8 +195,8 @@ describe('Review Feedback Schema Configuration', () => {
           defaultResponse: 'yes' as const,
           timeout: 5000,
           reviewFeedbackTimeout: 15000,
-          autoApproveCreatedFileDeletion: false
-        }
+          autoApproveCreatedFileDeletion: false,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -212,7 +212,7 @@ describe('Review Feedback Schema Configuration', () => {
 
     test('permissionsMcp can be undefined', () => {
       const config = {
-        allowedTools: ['Write', 'Edit']
+        allowedTools: ['Write', 'Edit'],
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -225,9 +225,9 @@ describe('Review Feedback Schema Configuration', () => {
     test('permissionsMcp.enabled is required when permissionsMcp is defined', () => {
       const config = {
         permissionsMcp: {
-          reviewFeedbackTimeout: 10000
+          reviewFeedbackTimeout: 10000,
           // enabled field is missing
-        }
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -238,9 +238,9 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: 20000
+          reviewFeedbackTimeout: 20000,
           // no general timeout field
-        }
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -257,8 +257,8 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: 0
-        }
+          reviewFeedbackTimeout: 0,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -272,8 +272,8 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: Number.MAX_SAFE_INTEGER
-        }
+          reviewFeedbackTimeout: Number.MAX_SAFE_INTEGER,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -287,8 +287,8 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: -100
-        }
+          reviewFeedbackTimeout: -100,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -302,8 +302,8 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: 10.5
-        }
+          reviewFeedbackTimeout: 10.5,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -318,8 +318,8 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: Infinity
-        }
+          reviewFeedbackTimeout: Infinity,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -331,8 +331,8 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: NaN
-        }
+          reviewFeedbackTimeout: NaN,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
@@ -345,13 +345,13 @@ describe('Review Feedback Schema Configuration', () => {
     test('TypeScript type checking works correctly', () => {
       // This test ensures that the TypeScript types are correct
       type PermissionsMcpType = z.infer<typeof claudeCodeOptionsSchema>['permissionsMcp'];
-      
+
       const validPermissionsMcp: PermissionsMcpType = {
         enabled: true,
         defaultResponse: 'yes',
         timeout: 10000,
         reviewFeedbackTimeout: 20000,
-        autoApproveCreatedFileDeletion: false
+        autoApproveCreatedFileDeletion: false,
       };
 
       expect(validPermissionsMcp.reviewFeedbackTimeout).toBe(20000);
@@ -359,7 +359,7 @@ describe('Review Feedback Schema Configuration', () => {
 
       // Test that the field is optional
       const minimalPermissionsMcp: PermissionsMcpType = {
-        enabled: true
+        enabled: true,
       };
 
       expect(minimalPermissionsMcp.reviewFeedbackTimeout).toBeUndefined();
@@ -369,13 +369,13 @@ describe('Review Feedback Schema Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: 15000
-        }
+          reviewFeedbackTimeout: 15000,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
       expect(result.success).toBe(true);
-      
+
       if (result.success) {
         const reviewTimeout = result.data.permissionsMcp?.reviewFeedbackTimeout;
         expect(typeof reviewTimeout).toBe('number');

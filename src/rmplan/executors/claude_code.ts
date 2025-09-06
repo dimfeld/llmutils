@@ -671,7 +671,7 @@ export class ClaudeCodeExecutor implements Executor {
 
             // Create an AbortController for the prompt
             const controller = new AbortController();
-            
+
             // Prompt the user for multi-line feedback
             const editorPromise = editor(
               {
@@ -683,7 +683,7 @@ export class ClaudeCodeExecutor implements Executor {
             );
 
             let userFeedback: string;
-            
+
             if (reviewFeedbackTimeout) {
               // Create a timeout promise that aborts the controller
               const timeoutPromise = new Promise<string>((resolve) => {
@@ -693,7 +693,7 @@ export class ClaudeCodeExecutor implements Executor {
                   resolve(''); // Then resolve with empty string
                 }, reviewFeedbackTimeout);
               });
-              
+
               try {
                 userFeedback = await Promise.race([editorPromise, timeoutPromise]);
               } catch (err: any) {

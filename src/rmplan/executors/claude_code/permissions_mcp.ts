@@ -59,29 +59,29 @@ export function cleanupForTests() {
 // Test helper function to set the parent socket (for testing only)
 export function setParentSocket(socket: net.Socket | null) {
   parentSocket = socket;
-  
+
   // Set up data handling for test sockets
   if (socket) {
     // Remove any existing listeners to avoid duplicates
     socket.removeAllListeners('data');
     socket.removeAllListeners('error');
     socket.removeAllListeners('close');
-    
+
     // Handle incoming data from parent process
     socket.on('data', (data: Buffer) => {
       messageBuffer += data.toString();
-      
+
       // Check for complete messages (ended by newline)
       let newlineIndex;
       while ((newlineIndex = messageBuffer.indexOf('\n')) !== -1) {
         const messageStr = messageBuffer.slice(0, newlineIndex);
         messageBuffer = messageBuffer.slice(newlineIndex + 1);
-        
+
         if (messageStr.length > MAX_JSON_SIZE) {
           console.error('Message too large, ignoring');
           continue;
         }
-        
+
         try {
           const message = JSON.parse(messageStr);
           handleParentResponse(message);
@@ -89,7 +89,7 @@ export function setParentSocket(socket: net.Socket | null) {
           console.error('Failed to parse JSON message:', err);
         }
       }
-      
+
       // Prevent buffer from growing too large
       if (messageBuffer.length > MAX_JSON_SIZE) {
         console.error('Message buffer too large, clearing');
@@ -129,18 +129,18 @@ function connectToParent(socketPath: string) {
   // Handle incoming data from parent process
   parentSocket.on('data', (data: Buffer) => {
     messageBuffer += data.toString();
-    
+
     // Check for complete messages (ended by newline)
     let newlineIndex;
     while ((newlineIndex = messageBuffer.indexOf('\n')) !== -1) {
       const messageStr = messageBuffer.slice(0, newlineIndex);
       messageBuffer = messageBuffer.slice(newlineIndex + 1);
-      
+
       if (messageStr.length > MAX_JSON_SIZE) {
         console.error('Message too large, ignoring');
         continue;
       }
-      
+
       try {
         const message = JSON.parse(messageStr);
         handleParentResponse(message);
@@ -148,7 +148,7 @@ function connectToParent(socketPath: string) {
         console.error('Failed to parse JSON message:', err);
       }
     }
-    
+
     // Prevent buffer from growing too large
     if (messageBuffer.length > MAX_JSON_SIZE) {
       console.error('Message buffer too large, clearing');
@@ -182,15 +182,15 @@ function handleParentResponse(message: any) {
     console.error('Received message without requestId:', message);
     return;
   }
-  
+
   const resolver = pendingRequests.get(message.requestId);
   if (!resolver) {
     console.error('No pending request found for requestId:', message.requestId);
     return;
   }
-  
+
   pendingRequests.delete(message.requestId);
-  
+
   if (message.type === 'permission_response') {
     resolver(message.approved);
   } else if (message.type === 'review_feedback_response') {

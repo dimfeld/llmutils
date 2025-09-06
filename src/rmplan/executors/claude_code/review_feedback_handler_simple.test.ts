@@ -8,13 +8,13 @@ describe('Review Feedback Handler Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: 30000
-        }
+          reviewFeedbackTimeout: 30000,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
       expect(result.success).toBe(true);
-      
+
       if (result.success) {
         expect(result.data.permissionsMcp?.reviewFeedbackTimeout).toBe(30000);
         expect(result.data.permissionsMcp?.enabled).toBe(true);
@@ -27,8 +27,8 @@ describe('Review Feedback Handler Configuration', () => {
         permissionsMcp: {
           enabled: true,
           timeout: 15000,
-          reviewFeedbackTimeout: 25000
-        }
+          reviewFeedbackTimeout: 25000,
+        },
       };
 
       const resultBoth = claudeCodeOptionsSchema.safeParse(configBoth);
@@ -42,8 +42,8 @@ describe('Review Feedback Handler Configuration', () => {
       const configGeneral = {
         permissionsMcp: {
           enabled: true,
-          timeout: 15000
-        }
+          timeout: 15000,
+        },
       };
 
       const resultGeneral = claudeCodeOptionsSchema.safeParse(configGeneral);
@@ -57,8 +57,8 @@ describe('Review Feedback Handler Configuration', () => {
       const configReviewOnly = {
         permissionsMcp: {
           enabled: true,
-          reviewFeedbackTimeout: 25000
-        }
+          reviewFeedbackTimeout: 25000,
+        },
       };
 
       const resultReviewOnly = claudeCodeOptionsSchema.safeParse(configReviewOnly);
@@ -72,28 +72,29 @@ describe('Review Feedback Handler Configuration', () => {
     test('timeout fallback logic implementation', () => {
       // Simulate the timeout logic from the actual implementation
       function getReviewFeedbackTimeout(options: any) {
-        return options.permissionsMcp?.reviewFeedbackTimeout ?? 
-               options.permissionsMcp?.timeout;
+        return options.permissionsMcp?.reviewFeedbackTimeout ?? options.permissionsMcp?.timeout;
       }
 
       // Test cases
       const testCases = [
         {
           options: { permissionsMcp: { enabled: true, reviewFeedbackTimeout: 30000 } },
-          expected: 30000
+          expected: 30000,
         },
         {
           options: { permissionsMcp: { enabled: true, timeout: 15000 } },
-          expected: 15000
+          expected: 15000,
         },
         {
-          options: { permissionsMcp: { enabled: true, timeout: 10000, reviewFeedbackTimeout: 20000 } },
-          expected: 20000
+          options: {
+            permissionsMcp: { enabled: true, timeout: 10000, reviewFeedbackTimeout: 20000 },
+          },
+          expected: 20000,
         },
         {
           options: { permissionsMcp: { enabled: true } },
-          expected: undefined
-        }
+          expected: undefined,
+        },
       ];
 
       for (const testCase of testCases) {
@@ -107,11 +108,11 @@ describe('Review Feedback Handler Configuration', () => {
     test('review_feedback_request message structure', () => {
       const createReviewFeedbackRequest = (reviewerFeedback: string) => ({
         type: 'review_feedback_request',
-        reviewerFeedback
+        reviewerFeedback,
       });
 
       const request = createReviewFeedbackRequest('Test feedback from reviewer');
-      
+
       expect(request.type).toBe('review_feedback_request');
       expect(request.reviewerFeedback).toBe('Test feedback from reviewer');
       expect(Object.keys(request)).toEqual(['type', 'reviewerFeedback']);
@@ -120,11 +121,11 @@ describe('Review Feedback Handler Configuration', () => {
     test('review_feedback_response message structure', () => {
       const createReviewFeedbackResponse = (userFeedback: string) => ({
         type: 'review_feedback_response',
-        userFeedback
+        userFeedback,
       });
 
       const response = createReviewFeedbackResponse('User response to review');
-      
+
       expect(response.type).toBe('review_feedback_response');
       expect(response.userFeedback).toBe('User response to review');
       expect(Object.keys(response)).toEqual(['type', 'userFeedback']);
@@ -133,7 +134,7 @@ describe('Review Feedback Handler Configuration', () => {
     test('message serialization works correctly', () => {
       const request = {
         type: 'review_feedback_request',
-        reviewerFeedback: 'Multi\nline\nfeedback with special chars: !@#$%^&*()'
+        reviewerFeedback: 'Multi\nline\nfeedback with special chars: !@#$%^&*()',
       };
 
       const serialized = JSON.stringify(request);
@@ -149,7 +150,7 @@ describe('Review Feedback Handler Configuration', () => {
       for (const feedback of testCases) {
         const response = {
           type: 'review_feedback_response',
-          userFeedback: feedback
+          userFeedback: feedback,
         };
 
         const serialized = JSON.stringify(response);
@@ -181,14 +182,14 @@ describe('Review Feedback Handler Configuration', () => {
         'Multi\nline\nfeedback',
         'Feedback with\n\nEmpty lines',
         '',
-        'Line 1\nLine 2\nLine 3\nLong feedback with lots of detail...'
+        'Line 1\nLine 2\nLine 3\nLong feedback with lots of detail...',
       ];
 
       for (const input of testInputs) {
         // Simulate what the editor would return
         const editorResult = input;
         expect(typeof editorResult).toBe('string');
-        
+
         // Test that newlines are preserved
         if (input.includes('\n')) {
           expect(editorResult).toContain('\n');
@@ -202,7 +203,7 @@ describe('Review Feedback Handler Configuration', () => {
       // Test the timeout promise logic
       function createTimeoutPromise(timeout?: number): Promise<string> | null {
         if (!timeout) return null;
-        
+
         return new Promise<string>((resolve) => {
           setTimeout(() => {
             resolve('');
@@ -213,7 +214,7 @@ describe('Review Feedback Handler Configuration', () => {
       // Test with timeout
       const withTimeout = createTimeoutPromise(10);
       expect(withTimeout).not.toBeNull();
-      
+
       if (withTimeout) {
         const result = await withTimeout;
         expect(result).toBe('');
@@ -227,8 +228,8 @@ describe('Review Feedback Handler Configuration', () => {
     test('Promise.race behavior for timeout', async () => {
       // Simulate the Promise.race logic used in the implementation
       const shortPromise = Promise.resolve('quick result');
-      const longPromise = new Promise(resolve => setTimeout(() => resolve('slow result'), 100));
-      
+      const longPromise = new Promise((resolve) => setTimeout(() => resolve('slow result'), 100));
+
       const result = await Promise.race([shortPromise, longPromise]);
       expect(result).toBe('quick result');
     });
@@ -238,11 +239,11 @@ describe('Review Feedback Handler Configuration', () => {
     test('AbortController signal handling', () => {
       const controller = new AbortController();
       const signal = controller.signal;
-      
+
       expect(signal.aborted).toBe(false);
-      
+
       controller.abort();
-      
+
       expect(signal.aborted).toBe(true);
     });
 
@@ -251,7 +252,7 @@ describe('Review Feedback Handler Configuration', () => {
       const errorTypes = [
         { name: 'AbortPromptError', message: 'User cancelled prompt' },
         { name: 'SocketError', message: 'Socket connection failed' },
-        { name: 'TimeoutError', message: 'Operation timed out' }
+        { name: 'TimeoutError', message: 'Operation timed out' },
       ];
 
       for (const errorType of errorTypes) {
@@ -273,8 +274,8 @@ describe('Review Feedback Handler Configuration', () => {
           defaultResponse: 'no' as const,
           timeout: 10000,
           reviewFeedbackTimeout: 20000,
-          autoApproveCreatedFileDeletion: false
-        }
+          autoApproveCreatedFileDeletion: false,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(fullConfig);
@@ -295,8 +296,8 @@ describe('Review Feedback Handler Configuration', () => {
       const config = {
         permissionsMcp: {
           enabled: false,
-          reviewFeedbackTimeout: 15000
-        }
+          reviewFeedbackTimeout: 15000,
+        },
       };
 
       const result = claudeCodeOptionsSchema.safeParse(config);
