@@ -127,7 +127,7 @@ tasks:
           timeout logging.
         done: false
   - title: Update Orchestrator Prompt to Use the New Tool
-    done: false
+    done: true
     description: >
       This task involves modifying the orchestrator's system prompt in
       `orchestrator_prompt.ts`. The "Review Phase" of the workflow instructions
@@ -158,7 +158,7 @@ tasks:
           revisions.
         done: false
   - title: Update Orchestrator Prompt to Prioritize User Feedback
-    done: false
+    done: true
     description: >
       This task enhances the orchestrator's instructions to ensure it correctly
       interprets the user's feedback. The prompt will be updated to state that
