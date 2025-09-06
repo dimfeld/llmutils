@@ -89,6 +89,8 @@ export interface IssueWithComments {
   issue: IssueData;
   /** Array of comments on the issue */
   comments: CommentData[];
+  /** Children issues (subissues) if fetched hierarchically */
+  children?: IssueWithComments[];
 }
 
 /**
@@ -132,6 +134,13 @@ export interface IssueTrackerClient {
    * @returns Promise resolving to issue with comments
    */
   fetchIssue(identifier: string): Promise<IssueWithComments>;
+
+  /**
+   * Fetch a single issue with its comments and children (subissues) recursively
+   * @param identifier - The issue identifier (number, key, or URL)
+   * @returns Promise resolving to issue with comments and children
+   */
+  fetchIssueWithChildren?(identifier: string): Promise<IssueWithComments>;
 
   /**
    * Fetch all open issues (without comments)

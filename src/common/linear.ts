@@ -169,6 +169,119 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
   }
 
   /**
+   * Fetch a single issue with its comments and children (subissues) recursively from Linear
+   */
+  async fetchIssueWithChildren(identifier: string): Promise<IssueWithComments> {
+    debugLog(`Fetching Linear issue with children: ${identifier}`);
+
+    const client = getLinearClient();
+    const parsed = this.parseIssueIdentifier(identifier);
+
+    if (!parsed) {
+      throw new Error(`Invalid Linear issue identifier: ${identifier}`);
+    }
+
+    try {
+      // Fetch the main issue by its identifier (e.g., "TEAM-123")
+      const issue = await client.issue(parsed.identifier);
+
+      if (!issue) {
+        throw new Error(`Issue not found: ${parsed.identifier}`);
+      }
+
+      // Fetch comments, children, and related data
+      const [commentsConnection, childrenConnection, state, labels, project] = await Promise.all([
+        issue.comments(),
+        issue.children(),
+        issue.state,
+        issue.labels(),
+        issue.project,
+      ]);
+
+      const comments = commentsConnection.nodes;
+      const children = childrenConnection.nodes;
+
+      debugLog(`Fetched issue ${parsed.identifier} with ${children.length} children`);
+
+      // Map Linear issue data to generic IssueData format
+      const creator = await issue.creator;
+      const assignee = await issue.assignee;
+      const issueData: IssueData = {
+        id: issue.id,
+        number: issue.identifier,
+        title: issue.title,
+        body: issue.description || undefined,
+        htmlUrl: issue.url,
+        state: state?.name || 'Unknown',
+        user: creator ? this.mapLinearUserToUserData(creator) : undefined,
+        assignees: assignee ? [this.mapLinearUserToUserData(assignee)!] : [],
+        labels: labels?.nodes?.length
+          ? labels.nodes.map((label: any) => ({
+              id: label.id,
+              name: label.name,
+              color: label.color || undefined,
+            }))
+          : undefined,
+        createdAt: issue.createdAt.toISOString(),
+        updatedAt: issue.updatedAt.toISOString(),
+        pullRequest: false,
+        project: project
+          ? {
+              name: project.name,
+              description: project.description || undefined,
+            }
+          : undefined,
+      };
+
+      // Map Linear comments to generic CommentData format
+      const commentData: CommentData[] = await Promise.all(
+        comments.map(async (comment) => {
+          const user = await comment.user;
+          return {
+            id: comment.id,
+            body: comment.body || '',
+            user: user ? this.mapLinearUserToUserData(user) : undefined,
+            createdAt: comment.createdAt.toISOString(),
+            updatedAt: comment.updatedAt?.toISOString(),
+            htmlUrl: undefined,
+          };
+        })
+      );
+
+      commentData.sort((a, b) => {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+
+      // Recursively fetch children with their comments and subchildren
+      const childrenWithComments: IssueWithComments[] = [];
+      for (const child of children) {
+        try {
+          const childWithComments = await this.fetchIssueWithChildren(child.identifier);
+          childrenWithComments.push(childWithComments);
+        } catch (error) {
+          debugLog(`Failed to fetch child issue ${child.identifier}: ${error}`);
+          // Continue with other children if one fails
+        }
+      }
+
+      debugLog(
+        `Successfully fetched Linear issue ${parsed.identifier} with ${commentData.length} comments and ${childrenWithComments.length} children`
+      );
+
+      return {
+        issue: issueData,
+        comments: commentData,
+        children: childrenWithComments.length > 0 ? childrenWithComments : undefined,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to fetch Linear issue with children ${parsed.identifier}: ${errorMessage}`
+      );
+    }
+  }
+
+  /**
    * Fetch all open issues from the user's workspace
    */
   async fetchAllOpenIssues(): Promise<IssueData[]> {
@@ -213,8 +326,8 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
             htmlUrl: issue.url,
             state: state?.name || 'Unknown',
             user: this.mapLinearUserToUserData(await issue.creator),
-            assignees: (await issue.assignee) 
-              ? [this.mapLinearUserToUserData(await issue.assignee)!] 
+            assignees: (await issue.assignee)
+              ? [this.mapLinearUserToUserData(await issue.assignee)!]
               : [],
             labels: labels?.nodes?.length
               ? labels.nodes.map((label: any) => ({

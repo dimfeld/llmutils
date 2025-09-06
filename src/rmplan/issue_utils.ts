@@ -31,6 +31,184 @@ export interface IssueInstructionData {
   suggestedFileName: string;
 }
 
+// Type definitions for hierarchical selection
+interface ParentSelectionValue {
+  type: 'parent';
+  content: string | undefined;
+}
+
+interface ChildSelectionValue {
+  type: 'child';
+  childIndex: number;
+  content: string | undefined;
+}
+
+type HierarchicalSelectionValue = ParentSelectionValue | ChildSelectionValue;
+
+/**
+ * Select comments from a hierarchical issue structure for inclusion in the plan
+ *
+ * @param data - The issue and comments data with optional children
+ * @param includeTitle - Whether to include the issue title in the selection
+ * @returns Array of selected content from the hierarchical structure
+ */
+export async function selectHierarchicalIssueComments(
+  data: IssueWithComments,
+  includeTitle = true
+): Promise<{
+  parentContent: string[];
+  childrenContent: Array<{ issueData: IssueWithComments; selectedContent: string[] }>;
+}> {
+  // First, let user select which subissues to include
+  let selectedChildren: IssueWithComments[] = [];
+
+  if (data.children && data.children.length > 0) {
+    const childChoices = data.children.map((child, index) => ({
+      name: `${child.issue.number}: ${child.issue.title}`,
+      value: index,
+      checked: true, // Default to checked
+    }));
+
+    const selectedChildIndices = await checkbox({
+      message: `Select subissues to import for ${data.issue.number} - ${data.issue.title}:`,
+      choices: childChoices,
+      required: false,
+    });
+
+    selectedChildren = selectedChildIndices.map((index) => data.children![index]);
+
+    if (selectedChildren.length === 0) {
+      console.log('No subissues selected for import.\n');
+    } else {
+      console.log(
+        `Selected ${selectedChildren.length} of ${data.children.length} subissue(s) for import.\n`
+      );
+    }
+  }
+  const LINE_PADDING = 4;
+  const MAX_HEIGHT = Math.floor(process.stdout.rows / 3) - 10; // Reduce height for hierarchical display
+
+  // Build hierarchical choices
+  const items: Array<{
+    name: string;
+    description: string;
+    checked: boolean;
+    value: HierarchicalSelectionValue;
+  }> = [
+    includeTitle
+      ? {
+          name: `📋 Parent: ${data.issue.title}`,
+          description: `Title: ${data.issue.title}`,
+          checked: true,
+          value: {
+            type: 'parent',
+            content: `This project is designed to implement the feature: ${data.issue.title}`,
+          } as ParentSelectionValue,
+        }
+      : undefined,
+    {
+      name: singleLineWithPrefix(
+        '📝 Parent Body: ',
+        data.issue.body?.replaceAll(/\n+/g, '  ') ?? '',
+        LINE_PADDING
+      ),
+      checked: true,
+      description: limitLines(data.issue.body ?? '', MAX_HEIGHT),
+      value: { type: 'parent', content: data.issue.body } as ParentSelectionValue,
+    },
+    ...data.comments.map((comment) => {
+      const name = `💬 Parent Comment (${comment.user?.name ?? comment.user?.login}): `;
+      return {
+        name: singleLineWithPrefix(
+          name,
+          comment.body?.replaceAll(/\n+/g, '  ') ?? '',
+          LINE_PADDING
+        ),
+        checked: false,
+        description: limitLines(comment.body ?? '', MAX_HEIGHT),
+        value: { type: 'parent', content: comment.body } as ParentSelectionValue,
+      };
+    }),
+  ].filter((i): i is NonNullable<typeof i> => i != null);
+
+  // Add selected children
+  if (selectedChildren.length > 0) {
+    for (let i = 0; i < selectedChildren.length; i++) {
+      const child = selectedChildren[i];
+      const childPrefix = `🔗 Child ${i + 1} (${child.issue.title})`;
+
+      // Add child body
+      items.push({
+        name: singleLineWithPrefix(
+          `${childPrefix} Body: `,
+          child.issue.body?.replaceAll(/\n+/g, '  ') ?? '',
+          LINE_PADDING
+        ),
+        checked: false,
+        description: limitLines(child.issue.body ?? '', MAX_HEIGHT),
+        value: { type: 'child', childIndex: i, content: child.issue.body } as ChildSelectionValue,
+      });
+
+      // Add child comments
+      child.comments.forEach((comment) => {
+        const name = `${childPrefix} Comment (${comment.user?.name ?? comment.user?.login}): `;
+        items.push({
+          name: singleLineWithPrefix(
+            name,
+            comment.body?.replaceAll(/\n+/g, '  ') ?? '',
+            LINE_PADDING
+          ),
+          checked: false,
+          description: limitLines(comment.body ?? '', MAX_HEIGHT),
+          value: { type: 'child', childIndex: i, content: comment.body } as ChildSelectionValue,
+        });
+      });
+    }
+  }
+
+  const withIndex = items.map((item, i) => ({ ...item, value: i }));
+  const chosen = await checkbox({
+    message: `Select content from ${data.issue.number} - ${data.issue.title}${selectedChildren.length > 0 ? ` and ${selectedChildren.length} selected child issue(s)` : ''}`,
+    required: true,
+    shortcuts: {
+      all: 'a',
+    },
+    pageSize: Math.min(15, process.stdout.rows - 5),
+    choices: withIndex,
+  });
+
+  // Process the selected items
+  const parentContent: string[] = [];
+  const childrenContentMap = new Map<number, string[]>();
+
+  chosen
+    .sort((a, b) => a - b)
+    .map((index) => items[index])
+    .filter((item): item is NonNullable<typeof item> => item != null)
+    .forEach((item) => {
+      if (item.value.type === 'parent') {
+        if (item.value.content) {
+          parentContent.push(item.value.content);
+        }
+      } else if (item.value.type === 'child' && item.value.content) {
+        const childValue = item.value as ChildSelectionValue;
+        const childIndex = childValue.childIndex;
+        if (!childrenContentMap.has(childIndex)) {
+          childrenContentMap.set(childIndex, []);
+        }
+        childrenContentMap.get(childIndex)!.push(childValue.content!);
+      }
+    });
+
+  // Build children content array
+  const childrenContent = selectedChildren.map((child, index) => ({
+    issueData: child,
+    selectedContent: childrenContentMap.get(index) || [],
+  }));
+
+  return { parentContent, childrenContent };
+}
+
 /**
  * Select comments from an issue for inclusion in the plan
  *
@@ -94,6 +272,101 @@ export async function selectIssueComments(
     .sort((a, b) => a - b)
     .map((a) => items[a].value)
     .filter((s): s is string => s != null && s != undefined && s != '');
+}
+
+/**
+ * Data structure returned by getHierarchicalInstructionsFromIssue
+ */
+export interface HierarchicalIssueInstructionData {
+  parentIssue: IssueInstructionData;
+  childIssues: Array<{
+    issueData: IssueInstructionData;
+    selectedContent: string[];
+  }>;
+}
+
+/**
+ * Get hierarchical instructions and metadata from an issue using any issue tracker client
+ *
+ * @param issueTracker - The issue tracker client to use
+ * @param issueSpec - The issue identifier or pre-fetched issue data
+ * @param includeTitleInDetails - Whether to include the title in the details
+ * @returns Hierarchical issue instruction data for creating plan trees
+ */
+export async function getHierarchicalInstructionsFromIssue(
+  issueTracker: IssueTrackerClient,
+  issueSpec: string | IssueWithComments,
+  includeTitleInDetails = true
+): Promise<HierarchicalIssueInstructionData> {
+  let data: IssueWithComments;
+
+  if (typeof issueSpec === 'string') {
+    // Use fetchIssueWithChildren if available, fallback to regular fetchIssue
+    if (issueTracker.fetchIssueWithChildren) {
+      data = await issueTracker.fetchIssueWithChildren(issueSpec);
+    } else {
+      data = await issueTracker.fetchIssue(issueSpec);
+    }
+  } else {
+    data = issueSpec;
+  }
+
+  // Get hierarchical content selection
+  const { parentContent, childrenContent } = await selectHierarchicalIssueComments(
+    data,
+    includeTitleInDetails
+  );
+
+  // Parse RmprOptions from parent issue body and comments
+  let rmprOptions: RmprOptions | null = null;
+  if (data.issue.body) {
+    const issueOptions = parseCommandOptionsFromComment(data.issue.body);
+    rmprOptions = issueOptions.options;
+  }
+  for (const comment of data.comments) {
+    if (comment.body) {
+      const commentOptions = parseCommandOptionsFromComment(comment.body);
+      if (commentOptions.options) {
+        rmprOptions = rmprOptions
+          ? combineRmprOptions(rmprOptions, commentOptions.options)
+          : commentOptions.options;
+      }
+    }
+  }
+
+  // Create parent issue instruction data
+  const parentIssueData: IssueInstructionData = {
+    suggestedFileName:
+      `issue-${data.issue.number}-${data.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase(),
+    issue: {
+      ...data.issue,
+      html_url: data.issue.htmlUrl,
+    },
+    plan: parentContent.join('\n\n'),
+    rmprOptions,
+  };
+
+  // Create child issue instruction data
+  const childIssues = childrenContent
+    .filter((child) => child.selectedContent.length > 0)
+    .map((child) => ({
+      issueData: {
+        suggestedFileName:
+          `issue-${child.issueData.issue.number}-${child.issueData.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase(),
+        issue: {
+          ...child.issueData.issue,
+          html_url: child.issueData.issue.htmlUrl,
+        },
+        plan: child.selectedContent.join('\n\n'),
+        rmprOptions: null, // Child issues don't inherit parent options
+      } as IssueInstructionData,
+      selectedContent: child.selectedContent,
+    }));
+
+  return {
+    parentIssue: parentIssueData,
+    childIssues,
+  };
 }
 
 /**

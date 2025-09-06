@@ -18,7 +18,9 @@ import { getGitRoot } from '../../../common/git.js';
 import {
   createStubPlanFromIssue,
   getInstructionsFromIssue,
+  getHierarchicalInstructionsFromIssue,
   type IssueInstructionData,
+  type HierarchicalIssueInstructionData,
 } from '../../issue_utils.js';
 import type { PlanSchema } from '../../planSchema.js';
 import {
@@ -99,17 +101,225 @@ async function selectNewComments(
 }
 
 /**
+ * Import a single issue hierarchically with its subissues and create stub plan files
+ *
+ * @param issueSpecifier - The issue number or URL
+ * @param tasksDir - Directory where plan files are stored
+ * @param issueTracker - The issue tracker client to use
+ * @returns Object with success count and parent plan ID
+ */
+async function importHierarchicalIssue(
+  issueSpecifier: string,
+  tasksDir: string,
+  issueTracker: IssueTrackerClient
+): Promise<{ successCount: number; parentPlanId?: number }> {
+  log(`Importing issue hierarchically: ${issueSpecifier}`);
+
+  // Check if the issue tracker supports hierarchical fetching
+  if (!issueTracker.fetchIssueWithChildren) {
+    throw new Error('Issue tracker does not support hierarchical issue fetching');
+  }
+
+  // Get hierarchical instructions from the issue
+  const hierarchicalData = await getHierarchicalInstructionsFromIssue(
+    issueTracker,
+    issueSpecifier,
+    false
+  );
+  const parentIssueUrl = hierarchicalData.parentIssue.issue.html_url;
+
+  // Get the next available numeric IDs
+  const maxId = await getMaxNumericPlanId(tasksDir);
+  const parentPlanId = maxId + 1;
+  let currentMaxId = maxId;
+
+  // Check if parent plan already exists
+  const { plans } = await readAllPlans(tasksDir, false);
+  let existingParentPlan: (PlanSchema & { filename: string }) | undefined;
+
+  for (const plan of plans.values()) {
+    if (plan.issue && plan.issue.includes(parentIssueUrl)) {
+      existingParentPlan = plan;
+      break;
+    }
+  }
+
+  let parentPlan: PlanSchema;
+  let parentPlanPath: string;
+
+  if (existingParentPlan) {
+    // Update existing parent plan
+    log(`Updating existing parent plan for issue: ${parentIssueUrl}`);
+    parentPlanPath = existingParentPlan.filename;
+
+    const currentPlan = await readPlanFile(parentPlanPath);
+    const existingDetails = currentPlan.details || '';
+
+    // Check if parent content has changed
+    const hasNewContent =
+      hierarchicalData.parentIssue.plan &&
+      !existingDetails.includes(hierarchicalData.parentIssue.plan.trim());
+
+    if (hasNewContent) {
+      let updatedDetails = existingDetails.trim();
+      if (updatedDetails && !updatedDetails.endsWith('\n')) {
+        updatedDetails += '\n';
+      }
+      if (updatedDetails) {
+        updatedDetails += '\n';
+      }
+      updatedDetails += hierarchicalData.parentIssue.plan;
+
+      parentPlan = {
+        ...currentPlan,
+        title: hierarchicalData.parentIssue.issue.title,
+        details: updatedDetails,
+        updatedAt: new Date().toISOString(),
+      };
+    } else {
+      parentPlan = currentPlan;
+    }
+  } else {
+    // Create new parent plan
+    parentPlan = createStubPlanFromIssue(hierarchicalData.parentIssue, parentPlanId);
+    currentMaxId = parentPlanId;
+
+    const filenameSuffix = hierarchicalData.parentIssue.suggestedFileName.endsWith('.plan.md')
+      ? hierarchicalData.parentIssue.suggestedFileName
+      : hierarchicalData.parentIssue.suggestedFileName.endsWith('.md')
+        ? hierarchicalData.parentIssue.suggestedFileName.replace(/\.md$/, '.plan.md')
+        : `${hierarchicalData.parentIssue.suggestedFileName}.plan.md`;
+    const filename = `${parentPlanId}-${filenameSuffix}`;
+    parentPlanPath = path.join(tasksDir, filename);
+  }
+
+  let successCount = 0;
+
+  // Import child issues as separate plans with parent relationship
+  const childPlanIds: number[] = [];
+  for (const child of hierarchicalData.childIssues) {
+    const childIssueUrl = child.issueData.issue.html_url;
+
+    // Check if child already exists
+    let existingChildPlan: (PlanSchema & { filename: string }) | undefined;
+    for (const plan of plans.values()) {
+      if (plan.issue && plan.issue.includes(childIssueUrl)) {
+        existingChildPlan = plan;
+        break;
+      }
+    }
+
+    let childPlan: PlanSchema;
+    let childPlanPath: string;
+
+    if (existingChildPlan) {
+      // Update existing child plan
+      log(`Updating existing child plan for issue: ${childIssueUrl}`);
+      childPlanPath = existingChildPlan.filename;
+
+      const currentChildPlan = await readPlanFile(childPlanPath);
+      const existingChildDetails = currentChildPlan.details || '';
+
+      const hasNewChildContent =
+        child.issueData.plan && !existingChildDetails.includes(child.issueData.plan.trim());
+
+      if (hasNewChildContent) {
+        let updatedChildDetails = existingChildDetails.trim();
+        if (updatedChildDetails && !updatedChildDetails.endsWith('\n')) {
+          updatedChildDetails += '\n';
+        }
+        if (updatedChildDetails) {
+          updatedChildDetails += '\n';
+        }
+        updatedChildDetails += child.issueData.plan;
+
+        childPlan = {
+          ...currentChildPlan,
+          title: child.issueData.issue.title,
+          details: updatedChildDetails,
+          parent: (existingParentPlan?.id ?? parentPlanId) as number,
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        // Ensure parent relationship is set
+        childPlan = {
+          ...currentChildPlan,
+          parent: (existingParentPlan?.id ?? parentPlanId) as number,
+        };
+      }
+
+      if (currentChildPlan.id) {
+        childPlanIds.push(currentChildPlan.id);
+      }
+    } else {
+      // Create new child plan
+      currentMaxId++;
+      childPlan = createStubPlanFromIssue(child.issueData, currentMaxId);
+      childPlan.parent = (existingParentPlan?.id ?? parentPlanId) as number;
+
+      const childFilenameSuffix = child.issueData.suggestedFileName.endsWith('.plan.md')
+        ? child.issueData.suggestedFileName
+        : child.issueData.suggestedFileName.endsWith('.md')
+          ? child.issueData.suggestedFileName.replace(/\.md$/, '.plan.md')
+          : `${child.issueData.suggestedFileName}.plan.md`;
+      const childFilename = `${currentMaxId}-${childFilenameSuffix}`;
+      childPlanPath = path.join(tasksDir, childFilename);
+
+      childPlanIds.push(currentMaxId);
+    }
+
+    // Write the child plan
+    await writePlanFile(childPlanPath, childPlan);
+    successCount++;
+
+    log(`${existingChildPlan ? 'Updated' : 'Created'} child plan: ${childPlanPath}`);
+    log(`Child Plan ID: ${childPlan.id}`);
+  }
+
+  // Update parent plan dependencies to include all children
+  if (childPlanIds.length > 0) {
+    const existingDependencies = parentPlan.dependencies || [];
+    const newDependencies = [...new Set([...existingDependencies, ...childPlanIds])];
+    parentPlan.dependencies = newDependencies;
+  }
+
+  // Write the parent plan
+  await writePlanFile(parentPlanPath, parentPlan);
+  successCount++;
+
+  log(`${existingParentPlan ? 'Updated' : 'Created'} parent plan: ${parentPlanPath}`);
+  log(`Parent Plan ID: ${parentPlan.id}`);
+  if (childPlanIds.length > 0) {
+    log(
+      `Created/updated ${childPlanIds.length} child plan(s) with IDs: ${childPlanIds.join(', ')}`
+    );
+  }
+
+  return {
+    successCount,
+    parentPlanId: (existingParentPlan?.id ?? parentPlanId) as number,
+  };
+}
+
+/**
  * Import a single issue and create a stub plan file
  *
  * @param issueSpecifier - The issue number or URL
  * @param tasksDir - Directory where plan files are stored
+ * @param issueTracker - The issue tracker client to use
+ * @param withSubissues - Whether to import subissues hierarchically
  * @returns True if import was successful, false if already imported
  */
 async function importSingleIssue(
   issueSpecifier: string,
   tasksDir: string,
-  issueTracker: IssueTrackerClient
+  issueTracker: IssueTrackerClient,
+  withSubissues = false
 ): Promise<boolean> {
+  if (withSubissues && issueTracker.fetchIssueWithChildren) {
+    const result = await importHierarchicalIssue(issueSpecifier, tasksDir, issueTracker);
+    return result.successCount > 0;
+  }
   log(`Importing issue: ${issueSpecifier}`);
 
   // Fetch issue and comments using the generic interface
@@ -162,7 +372,8 @@ async function importSingleIssue(
       rmprOptions.rmfilter &&
       JSON.stringify(currentPlan.rmfilter) !== JSON.stringify(rmprOptions.rmfilter);
     const projectChanged =
-      JSON.stringify(currentPlan.project) !== JSON.stringify(
+      JSON.stringify(currentPlan.project) !==
+      JSON.stringify(
         data.issue.project
           ? {
               title: data.issue.project.name,
@@ -352,7 +563,12 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
       const issueUrl = allIssues.find((i) => i.number === issueNumber)?.htmlUrl;
       const wasAlreadyImported = issueUrl ? importedUrls.has(issueUrl) : false;
 
-      const success = await importSingleIssue(issueNumber.toString(), tasksDir, issueTracker);
+      const success = await importSingleIssue(
+        issueNumber.toString(),
+        tasksDir,
+        issueTracker,
+        options.withSubissues
+      );
       if (success) {
         successCount++;
         if (wasAlreadyImported) {
@@ -380,8 +596,25 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   }
 
   // Single issue import mode
-  const success = await importSingleIssue(issueSpecifier, tasksDir, issueTracker);
+  if (options.withSubissues && !issueTracker.fetchIssueWithChildren) {
+    log(
+      'Warning: --with-subissues flag is only supported for Linear issue tracker. Importing without subissues.'
+    );
+  }
+
+  const success = await importSingleIssue(
+    issueSpecifier,
+    tasksDir,
+    issueTracker,
+    options.withSubissues
+  );
   if (success) {
-    log('Use "rmplan generate" to add tasks to this plan.');
+    if (options.withSubissues) {
+      log(
+        'Use "rmplan generate" to add tasks to these plans, or use "rmplan agent --next-ready <parent-plan>" for hierarchical workflow.'
+      );
+    } else {
+      log('Use "rmplan generate" to add tasks to this plan.');
+    }
   }
 }
