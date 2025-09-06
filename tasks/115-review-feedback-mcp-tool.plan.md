@@ -14,7 +14,7 @@ createdAt: 2025-09-06T21:37:23.877Z
 updatedAt: 2025-09-06T22:18:16.990Z
 tasks:
   - title: Extend MCP Server with Review Feedback Tool
-    done: false
+    done: true
     description: >
       This task involves adding a new tool named `review_feedback_prompt` to the
       existing permissions MCP server. The tool will accept a single string
@@ -53,7 +53,7 @@ tasks:
           message if the socket communication fails.
         done: false
   - title: Implement User Prompt Handling in the Main Executor
-    done: false
+    done: true
     description: >
       This task focuses on the main `claude_code.ts` executor. The
       `createPermissionSocketServer` method will be updated to handle the new
@@ -89,7 +89,7 @@ tasks:
           empty string if the user cancels or if an error occurs.
         done: false
   - title: Add Configurable Timeout for the Review Feedback Prompt
-    done: false
+    done: true
     description: >
       This task adds a configurable timeout to the new user prompt. A new
       option, `reviewFeedbackTimeout`, will be added to the `permissionsMcp`

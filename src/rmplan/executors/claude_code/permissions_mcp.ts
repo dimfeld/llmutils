@@ -31,6 +31,11 @@ const server = new FastMCP({
 // Unix socket connection for communication with parent process
 let parentSocket: net.Socket | null = null;
 
+// Test helper function to set the parent socket (for testing only)
+export function setParentSocket(socket: net.Socket | null) {
+  parentSocket = socket;
+}
+
 // Connect to the parent process via Unix socket
 function connectToParent(socketPath: string) {
   parentSocket = net.createConnection(socketPath, () => {
@@ -81,7 +86,7 @@ async function requestPermissionFromParent(tool_name: string, input: any): Promi
 }
 
 // Send a review feedback request to the parent process and wait for response
-async function requestReviewFeedbackFromParent(reviewerFeedback: string): Promise<string> {
+export async function requestReviewFeedbackFromParent(reviewerFeedback: string): Promise<string> {
   if (!parentSocket) {
     throw new Error('Not connected to parent process');
   }
