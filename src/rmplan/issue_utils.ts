@@ -177,6 +177,14 @@ export function createStubPlanFromIssue(
     updatedAt: now,
   };
 
+  // Add project information if present in the issue
+  if (issueData.issue.project) {
+    stubPlan.project = {
+      title: issueData.issue.project.name,
+      details: issueData.issue.project.description,
+    };
+  }
+
   // Add rmfilter arguments if they were parsed from the issue
   if (issueData.rmprOptions && issueData.rmprOptions.rmfilter) {
     stubPlan.rmfilter = issueData.rmprOptions.rmfilter;

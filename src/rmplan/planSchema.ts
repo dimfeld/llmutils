@@ -8,7 +8,7 @@ export const statusSchema = z.enum(['pending', 'in_progress', 'done', 'cancelled
 export const phaseSchema = z
   .object({
     title: z.string().optional(),
-    goal: z.string(),
+    goal: z.string().optional(),
     details: z
       .string()
       .optional()
@@ -40,7 +40,7 @@ export const phaseSchema = z
     project: z
       .object({
         title: z.string(),
-        goal: z.string(),
+        goal: z.string().optional(),
         details: z.string().optional(),
       })
       .strict()

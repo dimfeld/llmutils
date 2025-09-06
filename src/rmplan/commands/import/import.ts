@@ -161,9 +161,19 @@ async function importSingleIssue(
       rmprOptions &&
       rmprOptions.rmfilter &&
       JSON.stringify(currentPlan.rmfilter) !== JSON.stringify(rmprOptions.rmfilter);
+    const projectChanged =
+      JSON.stringify(currentPlan.project) !== JSON.stringify(
+        data.issue.project
+          ? {
+              title: data.issue.project.name,
+              goal: data.issue.project.description || data.issue.project.name,
+              details: data.issue.project.description,
+            }
+          : undefined
+      );
     const hasNewComments = newComments.length > 0;
 
-    if (!titleChanged && !rmfilterChanged && !hasNewComments) {
+    if (!titleChanged && !rmfilterChanged && !projectChanged && !hasNewComments) {
       log(`No updates needed for plan ${currentPlan.id} - all content is already up to date.`);
       return true;
     }
@@ -195,6 +205,18 @@ async function importSingleIssue(
       updatedPlan.rmfilter = rmprOptions.rmfilter;
     }
 
+    // Update project if present in the new issue data
+    if (data.issue.project) {
+      updatedPlan.project = {
+        title: data.issue.project.name,
+        goal: data.issue.project.description || data.issue.project.name,
+        details: data.issue.project.description,
+      };
+    } else if (currentPlan.project) {
+      // Remove project field if the issue no longer has a project
+      updatedPlan.project = undefined;
+    }
+
     // Write the updated plan
     await writePlanFile(fullPath, updatedPlan);
 
@@ -205,6 +227,15 @@ async function importSingleIssue(
     }
     if (rmfilterChanged) {
       log(`Updated rmfilter options`);
+    }
+    if (projectChanged) {
+      if (data.issue.project && currentPlan.project) {
+        log(`Updated project from "${currentPlan.project.title}" to "${data.issue.project.name}"`);
+      } else if (data.issue.project) {
+        log(`Added project: "${data.issue.project.name}"`);
+      } else if (currentPlan.project) {
+        log(`Removed project: "${currentPlan.project.title}"`);
+      }
     }
     if (hasNewComments) {
       log(`Added ${newComments.length} new comment(s) to the plan.`);

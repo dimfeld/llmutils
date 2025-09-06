@@ -134,6 +134,7 @@ describe('LinearIssueTrackerClient', () => {
             ],
           })),
           state: Promise.resolve({ name: 'In Progress' }),
+          project: Promise.resolve(null),
           createdAt: new Date('2024-01-15T10:30:00Z'),
           updatedAt: new Date('2024-01-16T14:22:00Z'),
           comments: mock(async () => ({
@@ -202,6 +203,7 @@ describe('LinearIssueTrackerClient', () => {
         createdAt: '2024-01-15T10:30:00.000Z',
         updatedAt: '2024-01-16T14:22:00.000Z',
         pullRequest: false,
+        project: undefined,
       });
 
       expect(result.comments).toEqual([
@@ -250,6 +252,7 @@ describe('LinearIssueTrackerClient', () => {
           assignee: undefined,
           labels: mock(async () => ({ nodes: [] })),
           state: Promise.resolve(undefined),
+          project: Promise.resolve(null),
           createdAt: new Date('2024-01-01T00:00:00Z'),
           updatedAt: new Date('2024-01-01T00:00:00Z'),
           comments: mock(async () => ({ nodes: [] })),
@@ -271,14 +274,57 @@ describe('LinearIssueTrackerClient', () => {
         htmlUrl: 'https://linear.app/company/issue/TEAM-456',
         state: 'Unknown',
         user: undefined,
-        assignees: undefined,
+        assignees: [],
         labels: undefined,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T00:00:00.000Z',
         pullRequest: false,
+        project: undefined,
       });
 
       expect(result.comments).toEqual([]);
+    });
+
+    test('fetches issue with project data successfully', async () => {
+      const mockLinearClient = {
+        issue: mock(async (id: string) => ({
+          id: 'issue-uuid-789',
+          identifier: 'TEAM-789',
+          title: 'Project Issue',
+          description: 'This issue belongs to a project',
+          url: 'https://linear.app/company/issue/TEAM-789',
+          creator: {
+            id: 'user-uuid-1',
+            name: 'John Doe',
+            email: 'john@example.com',
+          },
+          assignee: null,
+          labels: mock(async () => ({ nodes: [] })),
+          state: Promise.resolve({ name: 'Todo' }),
+          project: Promise.resolve({
+            name: 'My Awesome Project',
+            description: 'This is a comprehensive project to improve our platform',
+          }),
+          createdAt: new Date('2024-01-20T10:00:00Z'),
+          updatedAt: new Date('2024-01-20T10:00:00Z'),
+          comments: mock(async () => ({ nodes: [] })),
+        })),
+      };
+
+      await moduleMocker.mock('./linear_client.ts', () => ({
+        getLinearClient: mock(() => mockLinearClient),
+      }));
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssue('TEAM-789');
+
+      expect(result.issue.project).toEqual({
+        name: 'My Awesome Project',
+        description: 'This is a comprehensive project to improve our platform',
+      });
+
+      expect(result.issue.id).toBe('issue-uuid-789');
+      expect(result.issue.title).toBe('Project Issue');
     });
 
     test('throws error for invalid identifier', async () => {
@@ -416,6 +462,7 @@ describe('LinearIssueTrackerClient', () => {
             assignee: undefined,
             labels: mock(async () => ({ nodes: [] })),
             state: Promise.resolve({ name: 'In Progress' }),
+            project: Promise.resolve(null),
             createdAt: new Date('2024-01-01T00:00:00Z'),
             updatedAt: new Date('2024-01-01T00:00:00Z'),
           },
@@ -457,6 +504,7 @@ describe('LinearIssueTrackerClient', () => {
             assignee: undefined,
             labels: mock(async () => ({ nodes: [] })),
             state: Promise.resolve({ name: 'In Progress' }),
+            project: Promise.resolve(null),
             createdAt: new Date('2024-01-01T00:00:00Z'),
             updatedAt: new Date('2024-01-01T00:00:00Z'),
           },
@@ -475,6 +523,7 @@ describe('LinearIssueTrackerClient', () => {
               nodes: [{ id: 'label-1', name: 'Bug', color: '#ff0000' }],
             })),
             state: Promise.resolve({ name: 'Todo' }),
+            project: Promise.resolve(null),
             createdAt: new Date('2024-01-02T00:00:00Z'),
             updatedAt: new Date('2024-01-02T00:00:00Z'),
           },
@@ -498,6 +547,7 @@ describe('LinearIssueTrackerClient', () => {
             assignee: undefined,
             labels: mock(async () => ({ nodes: [] })),
             state: Promise.resolve({ name: 'Open' }),
+            project: Promise.resolve(null),
             createdAt: new Date('2024-01-03T00:00:00Z'),
             updatedAt: new Date('2024-01-03T00:00:00Z'),
           },
@@ -532,11 +582,12 @@ describe('LinearIssueTrackerClient', () => {
           avatarUrl: undefined,
           login: undefined,
         },
-        assignees: undefined,
+        assignees: [],
         labels: undefined,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T00:00:00.000Z',
         pullRequest: false,
+        project: undefined,
       });
       expect(result[1]).toEqual({
         id: 'issue-2',
@@ -559,6 +610,7 @@ describe('LinearIssueTrackerClient', () => {
         createdAt: '2024-01-02T00:00:00.000Z',
         updatedAt: '2024-01-02T00:00:00.000Z',
         pullRequest: false,
+        project: undefined,
       });
       expect(result[2].id).toBe('issue-3');
 

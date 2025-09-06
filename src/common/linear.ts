@@ -36,9 +36,9 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
    * - Linear URL with slug: https://linear.app/workspace/issue/TEAM-123/some-title-slug
    */
   parseIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
-    const trimmedSpec = spec.trim().toUpperCase();
+    const trimmedSpec = spec.trim();
 
-    // Linear issue key format: TEAM-123
+    // Linear issue key format: TEAM-123 (must already be uppercase)
     const keyMatch = trimmedSpec.match(/^([A-Z][A-Z0-9]*-\d+)$/);
     if (keyMatch) {
       return {
@@ -48,21 +48,21 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
 
     // Linear URL format: https://linear.app/workspace/issue/TEAM-123[/optional-slug]
     const urlMatch = trimmedSpec.match(
-      /^https:\/\/linear\.app\/([^/]+)\/issue\/([A-Z][A-Z0-9]*-\d+)(?:\/[^/]*)?$/
+      /^https:\/\/linear\.app\/([^/]+)\/issue\/([A-Z][A-Z0-9]*-\d+)(?:\/[^/]*)?$/i
     );
     if (urlMatch) {
       return {
-        identifier: urlMatch[2],
+        identifier: urlMatch[2].toUpperCase(),
         owner: urlMatch[1], // workspace name
         url: trimmedSpec,
       };
     }
 
-    // Match on a copied branch name
-    const branchMatch = trimmedSpec.match(/-([A-Z][A-Z0-9]*-\d+)$/);
+    // Match on a copied branch name (case-insensitive for the branch part, but issue ID must be uppercase)
+    const branchMatch = trimmedSpec.match(/-([A-Z][A-Z0-9]*-\d+)$/i);
     if (branchMatch) {
       return {
-        identifier: branchMatch[1],
+        identifier: branchMatch[1].toUpperCase(),
       };
     }
 
@@ -96,7 +96,11 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       const comments = commentsConnection.nodes;
 
       // Fetch related data
-      const [state, labels] = await Promise.all([issue.state, issue.labels()]);
+      const [state, labels, project] = await Promise.all([
+        issue.state,
+        issue.labels(),
+        issue.project,
+      ]);
 
       debugLog('Fetched issue', issue);
 
@@ -111,7 +115,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
         htmlUrl: issue.url,
         state: state?.name || 'Unknown',
         user: creator ? this.mapLinearUserToUserData(creator) : undefined,
-        assignees: [this.mapLinearUserToUserData(assignee)].filter((x) => x !== undefined),
+        assignees: assignee ? [this.mapLinearUserToUserData(assignee)!] : [],
         labels: labels?.nodes?.length
           ? labels.nodes.map((label: any) => ({
               id: label.id,
@@ -122,6 +126,12 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
         createdAt: issue.createdAt.toISOString(),
         updatedAt: issue.updatedAt.toISOString(),
         pullRequest: false, // Linear doesn't have pull requests
+        project: project
+          ? {
+              name: project.name,
+              description: project.description || undefined,
+            }
+          : undefined,
       };
 
       // Map Linear comments to generic CommentData format
@@ -189,7 +199,11 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       // Map Linear issues to generic IssueData format
       const issueData: IssueData[] = await Promise.all(
         allIssues.map(async (issue) => {
-          const [state, labels] = await Promise.all([issue.state, issue.labels()]);
+          const [state, labels, project] = await Promise.all([
+            issue.state,
+            issue.labels(),
+            issue.project,
+          ]);
 
           return {
             id: issue.id,
@@ -199,9 +213,9 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
             htmlUrl: issue.url,
             state: state?.name || 'Unknown',
             user: this.mapLinearUserToUserData(await issue.creator),
-            assignees: [this.mapLinearUserToUserData(await issue.assignee)].filter(
-              (x) => x != undefined
-            ),
+            assignees: (await issue.assignee) 
+              ? [this.mapLinearUserToUserData(await issue.assignee)!] 
+              : [],
             labels: labels?.nodes?.length
               ? labels.nodes.map((label: any) => ({
                   id: label.id,
@@ -212,6 +226,12 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
             createdAt: issue.createdAt.toISOString(),
             updatedAt: issue.updatedAt.toISOString(),
             pullRequest: false,
+            project: project
+              ? {
+                  name: project.name,
+                  description: project.description || undefined,
+                }
+              : undefined,
           };
         })
       );

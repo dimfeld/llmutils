@@ -54,6 +54,13 @@ export interface IssueData {
   updatedAt: string;
   /** Whether this is a pull request (GitHub specific) */
   pullRequest?: boolean;
+  /** Project information (if the issue belongs to a project) */
+  project?: {
+    /** Project name/title */
+    name: string;
+    /** Project description */
+    description?: string;
+  };
 }
 
 /**
