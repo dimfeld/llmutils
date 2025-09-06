@@ -72,9 +72,11 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toContain('mcp__permissions__review_feedback_prompt tool');
-      expect(result).toContain('Pass the reviewer\'s complete output as the reviewerFeedback parameter');
-      expect(result).toContain('Wait for the user\'s response before proceeding');
-      expect(result).toContain('user\'s feedback will help determine whether to proceed');
+      expect(result).toContain(
+        "Pass the reviewer's complete output as the reviewerFeedback parameter"
+      );
+      expect(result).toContain("Wait for the user's response before proceeding");
+      expect(result).toContain("user's feedback will help determine whether to proceed");
     });
 
     test('contains user feedback priority instructions in normal mode', () => {
@@ -84,10 +86,14 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toContain('## User Feedback Priority');
-      expect(result).toContain('User feedback from the review feedback tool is the ultimate source of truth');
+      expect(result).toContain(
+        'User feedback from the review feedback tool is the ultimate source of truth'
+      );
       expect(result).toContain('MUST take precedence over all reviewer agent suggestions');
       expect(result).toContain('User feedback can override any reviewer recommendation');
-      expect(result).toContain('even if the reviewer agent marks an issue as high priority or critical');
+      expect(result).toContain(
+        'even if the reviewer agent marks an issue as high priority or critical'
+      );
     });
 
     test('generates standard orchestration instructions when batchMode is not provided', () => {
@@ -312,9 +318,11 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toContain('mcp__permissions__review_feedback_prompt tool');
-      expect(result).toContain('Pass the reviewer\'s complete output as the reviewerFeedback parameter');
-      expect(result).toContain('Wait for the user\'s response before proceeding');
-      expect(result).toContain('user\'s feedback will help determine whether to proceed');
+      expect(result).toContain(
+        "Pass the reviewer's complete output as the reviewerFeedback parameter"
+      );
+      expect(result).toContain("Wait for the user's response before proceeding");
+      expect(result).toContain("user's feedback will help determine whether to proceed");
     });
 
     test('contains user feedback priority instructions', () => {
@@ -324,11 +332,17 @@ describe('wrapWithOrchestration', () => {
       });
 
       expect(result).toContain('## User Feedback Priority');
-      expect(result).toContain('User feedback from the review feedback tool is the ultimate source of truth');
+      expect(result).toContain(
+        'User feedback from the review feedback tool is the ultimate source of truth'
+      );
       expect(result).toContain('MUST take precedence over all reviewer agent suggestions');
       expect(result).toContain('User feedback can override any reviewer recommendation');
-      expect(result).toContain('even if the reviewer agent marks an issue as high priority or critical');
-      expect(result).toContain('user indicates certain reviewer feedback is incorrect or not important');
+      expect(result).toContain(
+        'even if the reviewer agent marks an issue as high priority or critical'
+      );
+      expect(result).toContain(
+        'user indicates certain reviewer feedback is incorrect or not important'
+      );
       expect(result).toContain('user maintains ultimate control');
     });
 
