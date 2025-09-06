@@ -461,7 +461,7 @@ export class ClaudeCodeExecutor implements Executor {
           const message = JSON.parse(data.toString());
 
           if (message.type === 'permission_request') {
-            const { tool_name, input } = message;
+            const { requestId, tool_name, input } = message;
 
             // Check if this tool is already in the always allowed set
             const allowedValue = this.alwaysAllowedTools.get(tool_name);
@@ -651,12 +651,13 @@ export class ClaudeCodeExecutor implements Executor {
             // Send response back to MCP server
             const response = {
               type: 'permission_response',
+              requestId,
               approved,
             };
 
             socket.write(JSON.stringify(response) + '\n');
           } else if (message.type === 'review_feedback_request') {
-            const { reviewerFeedback } = message;
+            const { requestId, reviewerFeedback } = message;
 
             // Display the reviewer feedback to the user
             console.log(chalk.blue('\n📝 Reviewer Feedback:'));
@@ -668,22 +669,9 @@ export class ClaudeCodeExecutor implements Executor {
               this.options.permissionsMcp?.reviewFeedbackTimeout ??
               this.options.permissionsMcp?.timeout;
 
-            // Create a promise that resolves with an empty string after timeout
-            let promptActive = true;
-            const timeoutPromise = reviewFeedbackTimeout
-              ? new Promise<string>((resolve) => {
-                  setTimeout(() => {
-                    if (promptActive) {
-                      log('\nReview feedback prompt timed out, returning empty response');
-                      resolve('');
-                    }
-                  }, reviewFeedbackTimeout);
-                })
-              : null;
-
             // Create an AbortController for the prompt
             const controller = new AbortController();
-
+            
             // Prompt the user for multi-line feedback
             const editorPromise = editor(
               {
@@ -694,20 +682,35 @@ export class ClaudeCodeExecutor implements Executor {
               { signal: controller.signal }
             );
 
-            // Race between the editor prompt and the timeout
             let userFeedback: string;
-            try {
-              userFeedback = await Promise.race(
-                [editorPromise, timeoutPromise as Promise<string>].filter(Boolean)
-              );
-              controller.abort(); // Cancel the editor if timeout wins
-              promptActive = false;
-            } catch (err: any) {
-              // If the prompt was aborted (timeout occurred), use empty string
-              if (err.name === 'AbortPromptError' && reviewFeedbackTimeout) {
-                userFeedback = '';
-                log(chalk.yellow('Review feedback prompt timed out. Using empty response.'));
-              } else {
+            
+            if (reviewFeedbackTimeout) {
+              // Create a timeout promise that aborts the controller
+              const timeoutPromise = new Promise<string>((resolve) => {
+                setTimeout(() => {
+                  controller.abort(); // Abort the editor first
+                  log('\nReview feedback prompt timed out, returning empty response');
+                  resolve(''); // Then resolve with empty string
+                }, reviewFeedbackTimeout);
+              });
+              
+              try {
+                userFeedback = await Promise.race([editorPromise, timeoutPromise]);
+              } catch (err: any) {
+                // If the prompt was aborted (timeout occurred), use empty string
+                if (err.name === 'AbortPromptError') {
+                  userFeedback = '';
+                  log(chalk.yellow('Review feedback prompt timed out. Using empty response.'));
+                } else {
+                  userFeedback = '';
+                  debugLog('Error in review feedback prompt:', err);
+                }
+              }
+            } else {
+              // No timeout, just wait for the editor
+              try {
+                userFeedback = await editorPromise;
+              } catch (err: any) {
                 userFeedback = '';
                 debugLog('Error in review feedback prompt:', err);
               }
@@ -716,6 +719,7 @@ export class ClaudeCodeExecutor implements Executor {
             // Send response back to MCP server
             const response = {
               type: 'review_feedback_response',
+              requestId,
               userFeedback,
             };
 

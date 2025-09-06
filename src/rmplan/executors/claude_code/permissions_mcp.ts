@@ -31,9 +31,93 @@ const server = new FastMCP({
 // Unix socket connection for communication with parent process
 let parentSocket: net.Socket | null = null;
 
+// Map to track pending requests by correlation ID
+const pendingRequests = new Map<string, (value: any) => void>();
+let requestCounter = 0;
+
+// Generate a unique request ID
+function generateRequestId(): string {
+  return `req_${Date.now()}_${++requestCounter}`;
+}
+
+// Maximum JSON message size (1MB)
+const MAX_JSON_SIZE = 1024 * 1024;
+
+// Buffer for accumulating partial JSON messages
+let messageBuffer = '';
+
+// Test helper function to clean up for testing (for testing only)
+export function cleanupForTests() {
+  pendingRequests.clear();
+  messageBuffer = '';
+  if (parentSocket) {
+    parentSocket.removeAllListeners();
+    parentSocket = null;
+  }
+}
+
 // Test helper function to set the parent socket (for testing only)
 export function setParentSocket(socket: net.Socket | null) {
   parentSocket = socket;
+  
+  // Set up data handling for test sockets
+  if (socket) {
+    // Remove any existing listeners to avoid duplicates
+    socket.removeAllListeners('data');
+    socket.removeAllListeners('error');
+    socket.removeAllListeners('close');
+    
+    // Handle incoming data from parent process
+    socket.on('data', (data: Buffer) => {
+      messageBuffer += data.toString();
+      
+      // Check for complete messages (ended by newline)
+      let newlineIndex;
+      while ((newlineIndex = messageBuffer.indexOf('\n')) !== -1) {
+        const messageStr = messageBuffer.slice(0, newlineIndex);
+        messageBuffer = messageBuffer.slice(newlineIndex + 1);
+        
+        if (messageStr.length > MAX_JSON_SIZE) {
+          console.error('Message too large, ignoring');
+          continue;
+        }
+        
+        try {
+          const message = JSON.parse(messageStr);
+          handleParentResponse(message);
+        } catch (err) {
+          console.error('Failed to parse JSON message:', err);
+        }
+      }
+      
+      // Prevent buffer from growing too large
+      if (messageBuffer.length > MAX_JSON_SIZE) {
+        console.error('Message buffer too large, clearing');
+        messageBuffer = '';
+      }
+    });
+
+    socket.on('error', (err) => {
+      console.error('Socket error:', err);
+      // Reject all pending requests
+      for (const [id, reject] of pendingRequests.entries()) {
+        reject(new Error('Socket connection error'));
+      }
+      pendingRequests.clear();
+    });
+
+    socket.on('close', () => {
+      // Reject all pending requests
+      for (const [id, reject] of pendingRequests.entries()) {
+        reject(new Error('Socket connection closed'));
+      }
+      pendingRequests.clear();
+    });
+  } else {
+    // Clear pending requests when socket is null (but don't reject them in cleanup)
+    pendingRequests.clear();
+    messageBuffer = '';
+  }
 }
 
 // Connect to the parent process via Unix socket
@@ -42,14 +126,79 @@ function connectToParent(socketPath: string) {
     // Connection established
   });
 
+  // Handle incoming data from parent process
+  parentSocket.on('data', (data: Buffer) => {
+    messageBuffer += data.toString();
+    
+    // Check for complete messages (ended by newline)
+    let newlineIndex;
+    while ((newlineIndex = messageBuffer.indexOf('\n')) !== -1) {
+      const messageStr = messageBuffer.slice(0, newlineIndex);
+      messageBuffer = messageBuffer.slice(newlineIndex + 1);
+      
+      if (messageStr.length > MAX_JSON_SIZE) {
+        console.error('Message too large, ignoring');
+        continue;
+      }
+      
+      try {
+        const message = JSON.parse(messageStr);
+        handleParentResponse(message);
+      } catch (err) {
+        console.error('Failed to parse JSON message:', err);
+      }
+    }
+    
+    // Prevent buffer from growing too large
+    if (messageBuffer.length > MAX_JSON_SIZE) {
+      console.error('Message buffer too large, clearing');
+      messageBuffer = '';
+    }
+  });
+
   parentSocket.on('error', (err) => {
     console.error('Socket error:', err);
+    // Reject all pending requests
+    for (const [id, reject] of pendingRequests.entries()) {
+      reject(new Error('Socket connection error'));
+    }
+    pendingRequests.clear();
     process.exit(1);
   });
 
   parentSocket.on('close', () => {
+    // Reject all pending requests
+    for (const [id, reject] of pendingRequests.entries()) {
+      reject(new Error('Socket connection closed'));
+    }
+    pendingRequests.clear();
     process.exit(0);
   });
+}
+
+// Handle responses from the parent process
+function handleParentResponse(message: any) {
+  if (!message.requestId) {
+    console.error('Received message without requestId:', message);
+    return;
+  }
+  
+  const resolver = pendingRequests.get(message.requestId);
+  if (!resolver) {
+    console.error('No pending request found for requestId:', message.requestId);
+    return;
+  }
+  
+  pendingRequests.delete(message.requestId);
+  
+  if (message.type === 'permission_response') {
+    resolver(message.approved);
+  } else if (message.type === 'review_feedback_response') {
+    resolver(message.userFeedback || '');
+  } else {
+    console.error('Unknown response type:', message.type);
+    resolver(null);
+  }
 }
 
 // Send a request to the parent process and wait for response
@@ -59,29 +208,38 @@ async function requestPermissionFromParent(tool_name: string, input: any): Promi
   }
 
   return new Promise((resolve, reject) => {
+    const requestId = generateRequestId();
     const request = {
       type: 'permission_request',
+      requestId,
       tool_name,
       input,
     };
 
-    // Set up one-time listener for the response
-    const responseHandler = (data: Buffer) => {
-      try {
-        const response = JSON.parse(data.toString());
-        if (response.type === 'permission_response') {
-          parentSocket!.off('data', responseHandler);
-          resolve(response.approved);
-        }
-      } catch (err) {
-        reject(err as Error);
-      }
-    };
+    // Store the resolver for this request
+    pendingRequests.set(requestId, resolve);
 
-    parentSocket!.on('data', responseHandler);
+    // Set up a timeout to clean up pending requests
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId);
+      reject(new Error('Permission request timed out'));
+    }, 30000); // 30 second timeout
 
-    // Send the request
-    parentSocket!.write(JSON.stringify(request) + '\n');
+    // Override the resolver to also clear the timeout
+    const originalResolver = pendingRequests.get(requestId)!;
+    pendingRequests.set(requestId, (value) => {
+      clearTimeout(timeout);
+      originalResolver(value);
+    });
+
+    try {
+      // Send the request
+      parentSocket!.write(JSON.stringify(request) + '\n');
+    } catch (err) {
+      clearTimeout(timeout);
+      pendingRequests.delete(requestId);
+      reject(err as Error);
+    }
   });
 }
 
@@ -92,28 +250,37 @@ export async function requestReviewFeedbackFromParent(reviewerFeedback: string):
   }
 
   return new Promise((resolve, reject) => {
+    const requestId = generateRequestId();
     const request = {
       type: 'review_feedback_request',
+      requestId,
       reviewerFeedback,
     };
 
-    // Set up one-time listener for the response
-    const responseHandler = (data: Buffer) => {
-      try {
-        const response = JSON.parse(data.toString());
-        if (response.type === 'review_feedback_response') {
-          parentSocket!.off('data', responseHandler);
-          resolve(response.userFeedback || '');
-        }
-      } catch (err) {
-        reject(err as Error);
-      }
-    };
+    // Store the resolver for this request
+    pendingRequests.set(requestId, resolve);
 
-    parentSocket!.on('data', responseHandler);
+    // Set up a timeout to clean up pending requests
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId);
+      reject(new Error('Review feedback request timed out'));
+    }, 30000); // 30 second timeout
 
-    // Send the request
-    parentSocket!.write(JSON.stringify(request) + '\n');
+    // Override the resolver to also clear the timeout
+    const originalResolver = pendingRequests.get(requestId)!;
+    pendingRequests.set(requestId, (value) => {
+      clearTimeout(timeout);
+      originalResolver(value);
+    });
+
+    try {
+      // Send the request
+      parentSocket!.write(JSON.stringify(request) + '\n');
+    } catch (err) {
+      clearTimeout(timeout);
+      pendingRequests.delete(requestId);
+      reject(err as Error);
+    }
   });
 }
 
@@ -188,7 +355,7 @@ server.addTool({
         content: [
           {
             type: 'text',
-            text: `Review feedback request failed: ${err as Error}`,
+            text: '', // Return empty string on error, not error message
           },
         ],
       };

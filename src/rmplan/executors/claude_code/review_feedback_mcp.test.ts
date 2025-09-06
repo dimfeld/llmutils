@@ -109,8 +109,13 @@ Issue 3: Performance concerns`
               if (request.type === 'review_feedback_request') {
                 const response = responses[responseIndex] || {
                   type: 'review_feedback_response',
+                  requestId: request.requestId, // Echo back the requestId
                   userFeedback: 'Default response'
                 };
+                // If the response doesn't have a requestId, add it
+                if (!response.requestId) {
+                  response.requestId = request.requestId;
+                }
                 responseIndex++;
                 
                 socket.write(JSON.stringify(response) + '\n');
@@ -131,6 +136,7 @@ Issue 3: Performance concerns`
       const mockResponse = {
         type: 'review_feedback_response',
         userFeedback: 'This looks good to me'
+        // requestId will be added by the mock server
       };
 
       server = await createMockServer([mockResponse]);
@@ -156,13 +162,16 @@ Issue 3: Performance concerns`
       expect(result).toBe('This looks good to me');
       
       socket?.end();
-      setParentSocket(null); // Clean up
+      // Import and use cleanup function
+      const { cleanupForTests } = await import('./permissions_mcp.ts');
+      cleanupForTests(); // Clean up
     });
 
     test('requestReviewFeedbackFromParent handles empty response', async () => {
       const mockResponse = {
         type: 'review_feedback_response',
         userFeedback: ''
+        // requestId will be added by the mock server
       };
 
       server = await createMockServer([mockResponse]);
@@ -182,13 +191,15 @@ Issue 3: Performance concerns`
       expect(result).toBe('');
       
       socket?.end();
-      setParentSocket(null);
+      const { cleanupForTests } = await import('./permissions_mcp.ts');
+      cleanupForTests();
     });
 
     test('requestReviewFeedbackFromParent handles missing userFeedback field', async () => {
       const mockResponse = {
         type: 'review_feedback_response'
         // userFeedback field is missing
+        // requestId will be added by the mock server
       };
 
       server = await createMockServer([mockResponse]);
@@ -209,13 +220,15 @@ Issue 3: Performance concerns`
       expect(result).toBe('');
       
       socket?.end();
-      setParentSocket(null);
+      const { cleanupForTests } = await import('./permissions_mcp.ts');
+      cleanupForTests();
     });
 
     test('requestReviewFeedbackFromParent throws error when not connected', async () => {
       // Don't set up a mock parentSocket, so it should be null
       const { requestReviewFeedbackFromParent, setParentSocket } = await import('./permissions_mcp.ts');
-      setParentSocket(null); // Ensure socket is null
+      const { cleanupForTests } = await import('./permissions_mcp.ts');
+      cleanupForTests(); // Ensure socket is null
       
       await expect(requestReviewFeedbackFromParent('test')).rejects.toThrow('Not connected to parent process');
     });
@@ -309,13 +322,15 @@ Issue 3: Performance concerns`
       
       const expectedMessage = {
         type: 'review_feedback_request',
+        requestId: 'req_123_1', // Mock requestId
         reviewerFeedback
       };
       
       // Test that the message format is correct
       expect(expectedMessage.type).toBe('review_feedback_request');
+      expect(expectedMessage.requestId).toBe('req_123_1');
       expect(expectedMessage.reviewerFeedback).toBe(reviewerFeedback);
-      expect(Object.keys(expectedMessage)).toEqual(['type', 'reviewerFeedback']);
+      expect(Object.keys(expectedMessage)).toEqual(['type', 'requestId', 'reviewerFeedback']);
     });
 
     test('review_feedback_response message handles various userFeedback values', () => {
@@ -330,16 +345,19 @@ Issue 3: Performance concerns`
       for (const userFeedback of testCases) {
         const responseMessage = {
           type: 'review_feedback_response',
+          requestId: 'req_123_1', // Mock requestId
           userFeedback
         };
         
         expect(responseMessage.type).toBe('review_feedback_response');
+        expect(responseMessage.requestId).toBe('req_123_1');
         
         // Test that the response format can be JSON serialized/parsed
         const serialized = JSON.stringify(responseMessage);
         const parsed = JSON.parse(serialized);
         
         expect(parsed.type).toBe('review_feedback_response');
+        expect(parsed.requestId).toBe('req_123_1');
         expect(parsed.userFeedback).toBe(userFeedback);
       }
     });
