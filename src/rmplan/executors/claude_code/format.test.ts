@@ -111,7 +111,7 @@ describe('formatJsonMessage', () => {
     test('returns empty object for debug messages', () => {
       const debugMessage = '[DEBUG] Some debug information';
       const result = formatJsonMessage(debugMessage);
-      expect(result).toEqual({});
+      expect(result).toEqual({ type: '' });
     });
 
     test('handles multiple tool invocations with mixed file operations', () => {
@@ -416,7 +416,7 @@ describe('formatJsonMessage', () => {
 
     test('returns empty object for debug messages', () => {
       const result = formatJsonMessage('[DEBUG] debug info');
-      expect(result).toEqual({});
+      expect(result).toEqual({ type: '' });
     });
   });
 });

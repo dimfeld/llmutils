@@ -19,7 +19,7 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
     planFilePath,
   });
 
-  expect(batchResult).toContain('BATCH TASK PROCESSING MODE');
+  expect(batchResult).toContain('# Batch Task Processing Mode');
   expect(batchResult).toContain('Analyze all provided tasks');
   expect(batchResult).toContain('Select a logical subset');
   expect(batchResult).toContain('Update the plan file');
@@ -37,7 +37,7 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
     planFilePath,
   });
 
-  expect(explicitNonBatchResult).not.toContain('BATCH TASK PROCESSING MODE');
+  expect(explicitNonBatchResult).not.toContain('# Batch Task Processing Mode');
   expect(explicitNonBatchResult).not.toContain('@/path/to/test/plan.yml');
   expect(explicitNonBatchResult).toContain(`rmplan-${planId}-implementer`);
 });
@@ -52,7 +52,7 @@ test('wrapWithOrchestration handles missing planFilePath gracefully', () => {
     // planFilePath is undefined
   });
 
-  expect(result).toContain('BATCH TASK PROCESSING MODE');
+  expect(result).toContain('# Batch Task Processing Mode');
   expect(result).toContain('@PLAN_FILE_PATH_NOT_PROVIDED');
 });
 
@@ -67,19 +67,19 @@ test('wrapWithOrchestration includes batch mode workflow instructions', () => {
   });
 
   // Check for batch-specific workflow phases
-  expect(result).toContain('Task Selection Phase (Batch Mode Only)');
-  expect(result).toContain('analyze all provided tasks and select a logical subset');
+  expect(result).toContain('1. **Task Selection Phase**');
+  expect(result).toContain('analyze all provided tasks and select a logical subset to work on');
   expect(result).toContain('Document your selection and reasoning');
   expect(result).toContain('Focus on 2-5 related tasks');
 
   // Check for plan update instructions
-  expect(result).toContain('Plan Update Phase (Batch Mode Only)');
+  expect(result).toContain('5. **Plan Update Phase**');
   expect(result).toContain('After all selected tasks are successfully completed');
   expect(result).toContain('use the Edit tool to update the plan file');
   expect(result).toContain('Mark each completed task with `done: true`');
 
   // Check for batch mode guidelines
-  expect(result).toContain('Be selective');
+  expect(result).toContain('**Be selective**');
   expect(result).toContain("Don't attempt all tasks at once");
   expect(result).toContain('choose a reasonable subset that works well together');
 });
