@@ -3458,7 +3458,7 @@ describe('ClaudeCodeExecutor', () => {
         {
           batchMode: true,
           planFilePath: '/test/plans/batch-plan.yml',
-          enableReviewFeedback: true,
+          enableReviewFeedback: false,
         }
       );
     });
@@ -3515,7 +3515,7 @@ describe('ClaudeCodeExecutor', () => {
         {
           batchMode: false,
           planFilePath: '/test/plans/regular-plan.yml',
-          enableReviewFeedback: true,
+          enableReviewFeedback: false,
         }
       );
     });
@@ -3572,7 +3572,7 @@ describe('ClaudeCodeExecutor', () => {
         {
           batchMode: undefined,
           planFilePath: '/test/plans/regular-plan.yml',
-          enableReviewFeedback: true,
+          enableReviewFeedback: false,
         }
       );
     });
@@ -3629,7 +3629,7 @@ describe('ClaudeCodeExecutor', () => {
         {
           batchMode: true,
           planFilePath: '',
-          enableReviewFeedback: true,
+          enableReviewFeedback: false,
         }
       );
     });
@@ -5256,7 +5256,7 @@ More content
       expect(mockWrapWithOrchestration).toHaveBeenCalledWith('test content', '123', {
         batchMode: undefined,
         planFilePath: '/test/plans/test-plan.md',
-        enableReviewFeedback: true,
+        enableReviewFeedback: false,
       });
 
       // Verify agent files were generated
@@ -5333,7 +5333,7 @@ More content
       expect(mockWrapWithOrchestration).toHaveBeenCalledWith('test content', '123', {
         batchMode: undefined,
         planFilePath: '/test/plans/test-plan.md',
-        enableReviewFeedback: true,
+        enableReviewFeedback: false,
       });
 
       // Verify agent files were generated (normal behavior)

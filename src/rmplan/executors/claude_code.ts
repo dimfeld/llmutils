@@ -771,7 +771,7 @@ export class ClaudeCodeExecutor implements Executor {
       contextContent = wrapWithOrchestration(contextContent, planInfo.planId, {
         batchMode: planInfo.batchMode,
         planFilePath: planInfo.planFilePath,
-        enableReviewFeedback: this.options.enableReviewFeedback !== false,
+        enableReviewFeedback: this.options.enableReviewFeedback === true,
       });
     }
 
@@ -877,7 +877,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Construct the MCP configuration object with stdio transport
       const permissionsMcpArgs = [permissionsMcpPath, unixSocketPath];
-      if (this.options.enableReviewFeedback !== false) {
+      if (this.options.enableReviewFeedback === true) {
         permissionsMcpArgs.push('--enable-review-feedback');
       }
 

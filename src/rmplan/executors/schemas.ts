@@ -57,7 +57,7 @@ export const claudeCodeOptionsSchema = z.object({
     .describe('Configuration for specialized agents'),
   enableReviewFeedback: z
     .boolean()
-    .default(true)
+    .default(false)
     .optional()
     .describe('Enable the review feedback MCP tool for interactive review feedback'),
 });

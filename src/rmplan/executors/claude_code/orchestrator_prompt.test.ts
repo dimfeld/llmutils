@@ -65,18 +65,18 @@ describe('wrapWithOrchestration', () => {
       expect(result).not.toContain(testPlanFilePath);
     });
 
-    test('contains review feedback tool instructions in normal mode', () => {
+    test('excludes review feedback tool instructions in normal mode by default', () => {
       const result = wrapWithOrchestration(testContextContent, testPlanId, {
         batchMode: false,
         planFilePath: testPlanFilePath,
       });
 
-      expect(result).toContain('mcp__permissions__review_feedback_prompt tool');
-      expect(result).toContain(
+      expect(result).not.toContain('mcp__permissions__review_feedback_prompt tool');
+      expect(result).not.toContain(
         "Pass the reviewer's complete output as the reviewerFeedback parameter"
       );
-      expect(result).toContain("Wait for the user's response before proceeding");
-      expect(result).toContain("user's feedback will help determine whether to proceed");
+      expect(result).not.toContain("Wait for the user's response before proceeding");
+      expect(result).not.toContain("user's feedback will help determine whether to proceed");
     });
 
     test('contains user feedback priority instructions in normal mode', () => {
@@ -311,18 +311,18 @@ describe('wrapWithOrchestration', () => {
       expect(result).toContain('delegate implementation tasks to the appropriate agents');
     });
 
-    test('contains review feedback tool instructions', () => {
+    test('excludes review feedback tool instructions by default', () => {
       const result = wrapWithOrchestration(testContextContent, testPlanId, {
         batchMode: true,
         planFilePath: testPlanFilePath,
       });
 
-      expect(result).toContain('mcp__permissions__review_feedback_prompt tool');
-      expect(result).toContain(
+      expect(result).not.toContain('mcp__permissions__review_feedback_prompt tool');
+      expect(result).not.toContain(
         "Pass the reviewer's complete output as the reviewerFeedback parameter"
       );
-      expect(result).toContain("Wait for the user's response before proceeding");
-      expect(result).toContain("user's feedback will help determine whether to proceed");
+      expect(result).not.toContain("Wait for the user's response before proceeding");
+      expect(result).not.toContain("user's feedback will help determine whether to proceed");
     });
 
     test('contains user feedback priority instructions', () => {
@@ -488,13 +488,13 @@ describe('wrapWithOrchestration', () => {
       expect(result).not.toContain("user's feedback will help determine whether to proceed");
     });
 
-    test('includes review feedback instructions when enableReviewFeedback is undefined (default)', () => {
+    test('excludes review feedback instructions when enableReviewFeedback is undefined (default)', () => {
       const result = wrapWithOrchestration(testContextContent, testPlanId, {
-        // enableReviewFeedback is undefined, should default to true
+        // enableReviewFeedback is undefined, should default to false
       });
 
-      expect(result).toContain('mcp__permissions__review_feedback_prompt tool');
-      expect(result).toContain(
+      expect(result).not.toContain('mcp__permissions__review_feedback_prompt tool');
+      expect(result).not.toContain(
         "Pass the reviewer's complete output as the reviewerFeedback parameter"
       );
     });
