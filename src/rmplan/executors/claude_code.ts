@@ -672,17 +672,19 @@ export class ClaudeCodeExecutor implements Executor {
             // Create an AbortController for the prompt
             const controller = new AbortController();
 
+            const noFeedbackMessage = 'No feedback provided. Use the review analysis as-is.';
+
             // Prompt the user for multi-line feedback
             const editorPromise = editor(
               {
-                message: "Please provide your feedback on the reviewer's analysis:",
+                message: `Reviewer subaagent feedback:\n${reviewerFeedback}\n\nPlease provide your feedback on the reviewer's analysis, or just quit to use it as-is:`,
                 default: '',
                 waitForUseInput: false,
               },
               { signal: controller.signal }
             );
 
-            let userFeedback: string;
+            let userFeedback = '';
 
             if (reviewFeedbackTimeout) {
               // Create a timeout promise that aborts the controller
@@ -690,7 +692,7 @@ export class ClaudeCodeExecutor implements Executor {
                 setTimeout(() => {
                   controller.abort(); // Abort the editor first
                   log('\nReview feedback prompt timed out, returning empty response');
-                  resolve(''); // Then resolve with empty string
+                  resolve(noFeedbackMessage); // Then resolve with empty string
                 }, reviewFeedbackTimeout);
               });
 
@@ -716,11 +718,13 @@ export class ClaudeCodeExecutor implements Executor {
               }
             }
 
+            userFeedback = userFeedback.trim();
+
             // Send response back to MCP server
             const response = {
               type: 'review_feedback_response',
               requestId,
-              userFeedback,
+              userFeedback: userFeedback || noFeedbackMessage,
             };
 
             socket.write(JSON.stringify(response) + '\n');

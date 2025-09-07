@@ -223,7 +223,7 @@ async function requestPermissionFromParent(tool_name: string, input: any): Promi
     const timeout = setTimeout(() => {
       pendingRequests.delete(requestId);
       reject(new Error('Permission request timed out'));
-    }, 30000); // 30 second timeout
+    }, 600000); // 10 minute timeout
 
     // Override the resolver to also clear the timeout
     const originalResolver = pendingRequests.get(requestId)!;
