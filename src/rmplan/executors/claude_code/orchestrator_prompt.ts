@@ -95,7 +95,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
 
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Use the Task tool to invoke the reviewer agent with subagent_type="rmplan-${planId}-reviewer"
-   - Tell the reviewer what was just implemented and what project requirements those changes fulfill.
+   - Tell the reviewer which tasks were just implemented and what project requirements those changes fulfill.
    - Ask the reviewer to analyze the codebase and ensures its quality and adherence to the task requirements
    - The reviewer is instructed to only focus on problems; don't expect positive feedback even if the code is perfect.`;
 

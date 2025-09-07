@@ -195,6 +195,9 @@ Scrutinize interactions between tasks for conflicts, inconsistencies, and integr
 - Missing integration tests for task interactions
 - Performance bottlenecks introduced by task combinations
 
+The implementation may be incomplete. If the directions indicate that only certain tasks in the plan have been done, it is okay to focus on those tasks;
+the later tasks will be implemented in a future batch of work.
+
 ## Critical Issues to Flag:
 
 ### Code Correctness (HIGH PRIORITY)
@@ -239,11 +242,6 @@ Scrutinize interactions between tasks for conflicts, inconsistencies, and integr
 - Integration tests missing for complex workflows
 
 ## Response Format:
-
-Review Legend:
-CRITICAL issues Must be fixed before acceptance
-MAJOR concerns should be addressed
-MINOR issues can be fixed if time permits
 
 Found Issues:
 - CRITICAL: [A critical bug, security issue, or correctness problem]
