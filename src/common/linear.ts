@@ -38,8 +38,8 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
   parseIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
     const trimmedSpec = spec.trim();
 
-    // Linear issue key format: TEAM-123 (must already be uppercase)
-    const keyMatch = trimmedSpec.match(/^([A-Z][A-Z0-9]*-\d+)$/);
+    // Linear issue key format: TEAM-123 (we allow case-insensitive)
+    const keyMatch = trimmedSpec.toUpperCase().match(/^([A-Z][A-Z0-9]*-\d+)$/);
     if (keyMatch) {
       return {
         identifier: keyMatch[1],
@@ -59,7 +59,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
     }
 
     // Match on a copied branch name (case-insensitive for the branch part, but issue ID must be uppercase)
-    const branchMatch = trimmedSpec.match(/-([A-Z][A-Z0-9]*-\d+)$/i);
+    const branchMatch = trimmedSpec.toUpperCase().match(/-([A-Z][A-Z0-9]*-\d+)$/i);
     if (branchMatch) {
       return {
         identifier: branchMatch[1].toUpperCase(),
