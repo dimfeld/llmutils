@@ -208,7 +208,7 @@ Scrutinize interactions between tasks for conflicts, inconsistencies, and integr
 - Catching errors and just printing a log message (which will likely not be seen in production). Errors should be bubbled up, especially unexpected errors.
 
 ### Security Vulnerabilities (HIGH PRIORITY)
-- Path traversal vulnerabilities
+- Path traversal vulnerabilities (filesystem only. Object stores like S3 are not vulnerable to this)
 - SQL injection or command injection risks
 - Unsafe deserialization
 - Missing input validation or sanitization
