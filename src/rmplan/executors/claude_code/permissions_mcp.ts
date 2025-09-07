@@ -330,38 +330,40 @@ server.addTool({
   },
 });
 
-// Define the review feedback prompt tool
-server.addTool({
-  name: 'review_feedback_prompt',
-  description: 'Prompts the user for feedback on reviewer output',
-  parameters: ReviewFeedbackInputSchema,
-  execute: async ({ reviewerFeedback }) => {
-    try {
-      // Request review feedback from the parent process
-      const userFeedback = await requestReviewFeedbackFromParent(reviewerFeedback);
+// Conditionally define the review feedback prompt tool based on command line argument
+if (process.argv.includes('--enable-review-feedback')) {
+  server.addTool({
+    name: 'review_feedback_prompt',
+    description: 'Prompts the user for feedback on reviewer output',
+    parameters: ReviewFeedbackInputSchema,
+    execute: async ({ reviewerFeedback }) => {
+      try {
+        // Request review feedback from the parent process
+        const userFeedback = await requestReviewFeedbackFromParent(reviewerFeedback);
 
-      // Return the user's feedback as text
-      return {
-        content: [
-          {
-            type: 'text',
-            text: userFeedback,
-          },
-        ],
-      };
-    } catch (err) {
-      // If communication fails, return an empty string
-      return {
-        content: [
-          {
-            type: 'text',
-            text: '', // Return empty string on error, not error message
-          },
-        ],
-      };
-    }
-  },
-});
+        // Return the user's feedback as text
+        return {
+          content: [
+            {
+              type: 'text',
+              text: userFeedback,
+            },
+          ],
+        };
+      } catch (err) {
+        // If communication fails, return an empty string
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '', // Return empty string on error, not error message
+            },
+          ],
+        };
+      }
+    },
+  });
+}
 
 // Start the server if this file is run directly
 if (import.meta.main) {

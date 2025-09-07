@@ -3458,6 +3458,7 @@ describe('ClaudeCodeExecutor', () => {
         {
           batchMode: true,
           planFilePath: '/test/plans/batch-plan.yml',
+          enableReviewFeedback: true,
         }
       );
     });
@@ -3514,6 +3515,7 @@ describe('ClaudeCodeExecutor', () => {
         {
           batchMode: false,
           planFilePath: '/test/plans/regular-plan.yml',
+          enableReviewFeedback: true,
         }
       );
     });
@@ -3570,6 +3572,7 @@ describe('ClaudeCodeExecutor', () => {
         {
           batchMode: undefined,
           planFilePath: '/test/plans/regular-plan.yml',
+          enableReviewFeedback: true,
         }
       );
     });
@@ -3626,6 +3629,7 @@ describe('ClaudeCodeExecutor', () => {
         {
           batchMode: true,
           planFilePath: '',
+          enableReviewFeedback: true,
         }
       );
     });
@@ -5037,10 +5041,11 @@ More content
       // Verify that each agent prompt function was called with the correct custom instructions
       expect(mockGetImplementerPrompt).toHaveBeenCalledWith(
         'test content',
-        implementerInstructions
+        implementerInstructions,
+        undefined
       );
-      expect(mockGetTesterPrompt).toHaveBeenCalledWith('test content', testerInstructions);
-      expect(mockGetReviewerPrompt).toHaveBeenCalledWith('test content', reviewerInstructions);
+      expect(mockGetTesterPrompt).toHaveBeenCalledWith('test content', testerInstructions, undefined);
+      expect(mockGetReviewerPrompt).toHaveBeenCalledWith('test content', reviewerInstructions, undefined);
 
       // Verify all prompt functions were called exactly once
       expect(mockGetImplementerPrompt).toHaveBeenCalledTimes(1);
@@ -5251,6 +5256,7 @@ More content
       expect(mockWrapWithOrchestration).toHaveBeenCalledWith('test content', '123', {
         batchMode: undefined,
         planFilePath: '/test/plans/test-plan.md',
+        enableReviewFeedback: true,
       });
 
       // Verify agent files were generated
@@ -5327,6 +5333,7 @@ More content
       expect(mockWrapWithOrchestration).toHaveBeenCalledWith('test content', '123', {
         batchMode: undefined,
         planFilePath: '/test/plans/test-plan.md',
+        enableReviewFeedback: true,
       });
 
       // Verify agent files were generated (normal behavior)

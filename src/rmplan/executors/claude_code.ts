@@ -669,52 +669,58 @@ export class ClaudeCodeExecutor implements Executor {
               this.options.permissionsMcp?.reviewFeedbackTimeout ??
               this.options.permissionsMcp?.timeout;
 
-            // Create an AbortController for the prompt
-            const controller = new AbortController();
-
             const noFeedbackMessage = 'No feedback provided. Use the review analysis as-is.';
 
-            // Prompt the user for multi-line feedback
-            const editorPromise = editor(
-              {
-                message: `Reviewer subaagent feedback:\n${reviewerFeedback}\n\nPlease provide your feedback on the reviewer's analysis, or just quit to use it as-is:`,
-                default: '',
-                waitForUseInput: false,
-              },
-              { signal: controller.signal }
-            );
-
-            let userFeedback = '';
-
+            // First, ask if user wants to provide feedback with a simple confirm prompt
+            let wantsToProvideFeedback = false;
             if (reviewFeedbackTimeout) {
-              // Create a timeout promise that aborts the controller
-              const timeoutPromise = new Promise<string>((resolve) => {
+              // Create a timeout promise for the confirm prompt
+              const confirmTimeoutPromise = new Promise<boolean>((resolve) => {
                 setTimeout(() => {
-                  controller.abort(); // Abort the editor first
-                  log('\nReview feedback prompt timed out, returning empty response');
-                  resolve(noFeedbackMessage); // Then resolve with empty string
+                  log('\nReview feedback confirm prompt timed out, using review as-is');
+                  resolve(false); // Default to not providing feedback
                 }, reviewFeedbackTimeout);
               });
 
+              // Create the confirm prompt
+              const confirmPromise = confirm({
+                message: 'Do you want to provide feedback on the reviewer analysis?',
+                default: false,
+              });
+
               try {
-                userFeedback = await Promise.race([editorPromise, timeoutPromise]);
+                wantsToProvideFeedback = await Promise.race([confirmPromise, confirmTimeoutPromise]);
               } catch (err: any) {
-                // If the prompt was aborted (timeout occurred), use empty string
-                if (err.name === 'AbortPromptError') {
-                  userFeedback = '';
-                  log(chalk.yellow('Review feedback prompt timed out. Using empty response.'));
-                } else {
-                  userFeedback = '';
-                  debugLog('Error in review feedback prompt:', err);
-                }
+                wantsToProvideFeedback = false;
+                debugLog('Error in review feedback confirm prompt:', err);
               }
             } else {
-              // No timeout, just wait for the editor
+              // No timeout, just ask for confirmation
               try {
-                userFeedback = await editorPromise;
+                wantsToProvideFeedback = await confirm({
+                  message: 'Do you want to provide feedback on the reviewer analysis?',
+                  default: false,
+                });
+              } catch (err: any) {
+                wantsToProvideFeedback = false;
+                debugLog('Error in review feedback confirm prompt:', err);
+              }
+            }
+
+            let userFeedback = '';
+
+            // Only show editor if user wants to provide feedback
+            if (wantsToProvideFeedback) {
+              try {
+                // Editor prompt has no timeout - user can take their time to write feedback
+                userFeedback = await editor({
+                  message: `Please provide your feedback on the reviewer's analysis:`,
+                  default: '',
+                  waitForUseInput: false,
+                });
               } catch (err: any) {
                 userFeedback = '';
-                debugLog('Error in review feedback prompt:', err);
+                debugLog('Error in review feedback editor prompt:', err);
               }
             }
 
@@ -765,6 +771,7 @@ export class ClaudeCodeExecutor implements Executor {
       contextContent = wrapWithOrchestration(contextContent, planInfo.planId, {
         batchMode: planInfo.batchMode,
         planFilePath: planInfo.planFilePath,
+        enableReviewFeedback: this.options.enableReviewFeedback !== false,
       });
     }
 
@@ -869,12 +876,17 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       // Construct the MCP configuration object with stdio transport
+      const permissionsMcpArgs = [permissionsMcpPath, unixSocketPath];
+      if (this.options.enableReviewFeedback !== false) {
+        permissionsMcpArgs.push('--enable-review-feedback');
+      }
+
       const mcpConfig = {
         mcpServers: {
           permissions: {
             type: 'stdio',
             command: process.execPath,
-            args: [permissionsMcpPath, unixSocketPath],
+            args: permissionsMcpArgs,
           },
         },
       };

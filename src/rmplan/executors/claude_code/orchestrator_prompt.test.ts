@@ -460,4 +460,70 @@ describe('wrapWithOrchestration', () => {
       expect(result).toContain('Multi-Agent Orchestration Instructions');
     });
   });
+
+  describe('enableReviewFeedback option', () => {
+    test('includes review feedback instructions when enableReviewFeedback is true', () => {
+      const result = wrapWithOrchestration(testContextContent, testPlanId, {
+        enableReviewFeedback: true,
+      });
+
+      expect(result).toContain('mcp__permissions__review_feedback_prompt tool');
+      expect(result).toContain(
+        "Pass the reviewer's complete output as the reviewerFeedback parameter"
+      );
+      expect(result).toContain("Wait for the user's response before proceeding");
+      expect(result).toContain("user's feedback will help determine whether to proceed");
+    });
+
+    test('excludes review feedback instructions when enableReviewFeedback is false', () => {
+      const result = wrapWithOrchestration(testContextContent, testPlanId, {
+        enableReviewFeedback: false,
+      });
+
+      expect(result).not.toContain('mcp__permissions__review_feedback_prompt tool');
+      expect(result).not.toContain(
+        "Pass the reviewer's complete output as the reviewerFeedback parameter"
+      );
+      expect(result).not.toContain("Wait for the user's response before proceeding");
+      expect(result).not.toContain("user's feedback will help determine whether to proceed");
+    });
+
+    test('includes review feedback instructions when enableReviewFeedback is undefined (default)', () => {
+      const result = wrapWithOrchestration(testContextContent, testPlanId, {
+        // enableReviewFeedback is undefined, should default to true
+      });
+
+      expect(result).toContain('mcp__permissions__review_feedback_prompt tool');
+      expect(result).toContain(
+        "Pass the reviewer's complete output as the reviewerFeedback parameter"
+      );
+    });
+
+    test('works with enableReviewFeedback in batch mode', () => {
+      const resultWithFeedback = wrapWithOrchestration(testContextContent, testPlanId, {
+        batchMode: true,
+        enableReviewFeedback: true,
+      });
+
+      const resultWithoutFeedback = wrapWithOrchestration(testContextContent, testPlanId, {
+        batchMode: true,
+        enableReviewFeedback: false,
+      });
+
+      expect(resultWithFeedback).toContain('mcp__permissions__review_feedback_prompt tool');
+      expect(resultWithoutFeedback).not.toContain('mcp__permissions__review_feedback_prompt tool');
+    });
+
+    test('still includes reviewer analysis instructions when review feedback is disabled', () => {
+      const result = wrapWithOrchestration(testContextContent, testPlanId, {
+        enableReviewFeedback: false,
+      });
+
+      // Should still contain the basic review phase instructions
+      expect(result).toContain('Review Phase');
+      expect(result).toContain(`rmplan-${testPlanId}-reviewer`);
+      expect(result).toContain('Ask the reviewer to analyze the codebase');
+      expect(result).toContain('The reviewer is instructed to only focus on problems');
+    });
+  });
 });
