@@ -144,7 +144,7 @@ export async function selectHierarchicalIssueComments(
           child.issue.body?.replaceAll(/\n+/g, '  ') ?? '',
           LINE_PADDING
         ),
-        checked: false,
+        checked: true,
         description: limitLines(child.issue.body ?? '', MAX_HEIGHT),
         value: { type: 'child', childIndex: i, content: child.issue.body } as ChildSelectionValue,
       });
@@ -191,7 +191,7 @@ export async function selectHierarchicalIssueComments(
           parentContent.push(item.value.content);
         }
       } else if (item.value.type === 'child' && item.value.content) {
-        const childValue = item.value as ChildSelectionValue;
+        const childValue = item.value;
         const childIndex = childValue.childIndex;
         if (!childrenContentMap.has(childIndex)) {
           childrenContentMap.set(childIndex, []);
@@ -205,6 +205,12 @@ export async function selectHierarchicalIssueComments(
     issueData: child,
     selectedContent: childrenContentMap.get(index) || [],
   }));
+
+  console.log({
+    selectedChildren,
+    parentContent,
+    childrenContent,
+  })
 
   return { parentContent, childrenContent };
 }
@@ -348,7 +354,6 @@ export async function getHierarchicalInstructionsFromIssue(
 
   // Create child issue instruction data
   const childIssues = childrenContent
-    .filter((child) => child.selectedContent.length > 0)
     .map((child) => ({
       issueData: {
         suggestedFileName:

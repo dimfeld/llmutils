@@ -199,7 +199,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       ]);
 
       const comments = commentsConnection.nodes;
-      const children = childrenConnection.nodes;
+      const children = childrenConnection.nodes.sort((a, b) => (a.subIssueSortOrder ?? 0) - (b.subIssueSortOrder ?? 0));
 
       debugLog(`Fetched issue ${parsed.identifier} with ${children.length} children`);
 
@@ -259,7 +259,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
           const childWithComments = await this.fetchIssueWithChildren(child.identifier);
           childrenWithComments.push(childWithComments);
         } catch (error) {
-          debugLog(`Failed to fetch child issue ${child.identifier}: ${error}`);
+          debugLog(`Failed to fetch child issue ${child.identifier}: ${error as Error}`);
           // Continue with other children if one fails
         }
       }
