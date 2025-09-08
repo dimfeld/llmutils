@@ -263,7 +263,7 @@ Before implementing changes:
 - Understand the project structure and where your changes fit
 - Review any relevant tests to understand expected behavior
 
-${todoDirections}
+${todoDirections || ''}
 
 ### Follow Best Practices
 Ensure your implementation:

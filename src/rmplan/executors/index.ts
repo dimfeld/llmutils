@@ -8,12 +8,14 @@ import {
 } from './copy_only_statemachine.ts';
 import { CopyPasteExecutor } from './copy_paste.ts';
 import { OneCallExecutor } from './one-call';
+import { CodexCliExecutor } from './codex_cli';
 import { DEFAULT_EXECUTOR } from '../constants.js';
 import {
   ClaudeCodeExecutorName,
   CopyOnlyExecutorName,
   CopyPasteExecutorName,
   OneCallExecutorName,
+  CodexCliExecutorName,
 } from './schemas.js';
 
 // Re-export for backward compatibility
@@ -31,6 +33,8 @@ export {
   CopyPasteExecutorName,
   OneCallExecutor,
   OneCallExecutorName,
+  CodexCliExecutor,
+  CodexCliExecutorName,
 };
 
 export function defaultModelForExecutor(executorId: string, modelType: 'execution' | 'answerPr') {
