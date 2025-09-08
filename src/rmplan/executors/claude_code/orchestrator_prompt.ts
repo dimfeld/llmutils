@@ -94,13 +94,14 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
    - Have the tester run the tests and work on fixing any failures`;
 
-  const reviewFeedbackInstructions = options.enableReviewFeedback === true
-    ? `
+  const reviewFeedbackInstructions =
+    options.enableReviewFeedback === true
+      ? `
    - **After receiving the reviewer's output**, use the mcp__permissions__review_feedback_prompt tool to get user feedback:
      - Pass the reviewer's complete output as the reviewerFeedback parameter
      - Wait for the user's response before proceeding to determine next steps
      - The user's feedback will help determine whether to proceed to the next phase or return to implementation for revisions`
-    : '';
+      : '';
 
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Use the Task tool to invoke the reviewer agent with subagent_type="rmplan-${planId}-reviewer"
