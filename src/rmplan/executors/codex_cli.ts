@@ -58,13 +58,12 @@ export class CodexCliExecutor implements Executor {
     const { exitCode } = await spawnAndLogOutput(
       [
         'codex',
+        // Allow web search
+        '--search',
         'exec',
-        // We don't have interactive mode for permissions yet
-        '--ask-for-approval',
-        'never',
         // Defaults to read-only in exec mode, so allow writing to the workspace
         '--sandbox',
-        '--workspace-write',
+        'workspace-write',
         prompt,
       ],
       {
@@ -73,7 +72,7 @@ export class CodexCliExecutor implements Executor {
     );
 
     if (exitCode !== 0) {
-      error(`codex exec exited with code ${exitCode}`);
+      throw new Error(`codex exited with code ${exitCode}`);
     } else {
       log('codex exec completed');
     }
