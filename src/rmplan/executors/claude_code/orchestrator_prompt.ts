@@ -140,7 +140,7 @@ ${finalPhase}${iterationSteps}`;
 /**
  * Builds the important guidelines section
  */
-function buildImportantGuidelines(options: OrchestrationOptions): string {
+function buildImportantGuidelines(planId: string, options: OrchestrationOptions): string {
   const baseGuidelines = `## Important Guidelines
 
 - **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate agents.
@@ -167,7 +167,7 @@ function buildImportantGuidelines(options: OrchestrationOptions): string {
 
 You must update the plan file to mark completed tasks as done before stopping.
 
-When updating tasks, use the Bash command 'rmplan set-task-done <planId> --title "<taskTitle>"'.
+When updating tasks, use the Bash command 'rmplan set-task-done ${planId} --title "<taskTitle>"'.
 To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'. To set multiple tasks done, just run the command multiple times.
 `
     : '';
@@ -186,7 +186,7 @@ export function wrapWithOrchestration(
   const batchModeInstructions = buildBatchModeInstructions(options);
   const availableAgents = buildAvailableAgents(planId);
   const workflowInstructions = buildWorkflowInstructions(planId, options);
-  const importantGuidelines = buildImportantGuidelines(options);
+  const importantGuidelines = buildImportantGuidelines(planId, options);
 
   const header = `# Multi-Agent Orchestration Instructions
 

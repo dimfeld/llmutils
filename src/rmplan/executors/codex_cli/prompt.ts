@@ -18,7 +18,7 @@ export function buildCodexOrchestrationPrompt(contextContent: string, options: B
 You may be provided multiple incomplete tasks from a plan. Your responsibilities:
 - Analyze all tasks to understand scope and dependencies
 - Select a reasonable subset (1–3 tightly related tasks) to complete in this pass
-- Execute fully (implementation, tests, review), then repeat if time allows
+- Execute fully (implementation, tests, review), then repeat until the review is ACCEPTABLE.
 
 Only mark tasks done after they are implemented, tested, and reviewed.
 `
