@@ -28,8 +28,7 @@ Only mark tasks done after they are implemented, tested, and reviewed.
     ? `
 ## Plan Updates
 After successfully completing selected tasks, update the plan file conservatively:
-- Mark each completed task as done using the CLI to avoid YAML merge conflicts:
-  - Run: \`rmplan set-task-done ${options.planId} --title "<exact task title>"\`
+- Mark each completed task as done by executing the following command: \`rmplan set-task-done ${options.planId} --title "<exact task title>"\`
 - Do not mark partially-complete tasks as done.
 `
     : '';
@@ -41,7 +40,10 @@ Adapt to the repository's language, tools, and conventions.
 ${batchModeHeader}
 `;
 
-  const workflow = `## Workflow (Single-Loop, No Subagents)
+  const workflow = `## Workflow
+
+Your development process should follow best practices, and include the following steps:
+
 1) IMPLEMENTATION
    - Read the context and identify the concrete, minimal set of changes required.
    - Modify code incrementally. Prefer small, safe steps.
@@ -57,8 +59,8 @@ ${batchModeHeader}
      - Run formatting if available (e.g., prettier/ruff format/black/clang-format/gofmt/cargo fmt, etc.).
    - Fix failures and iterate until green.
 
-3) REVIEW (Self-review)
-   - Critically review diffs and recent changes (use \`git diff\` or \`jj log -r '@-..trunk()'\`).
+3) REVIEW
+   - Critically review the tasks you just completed.
    - Identify bugs, violations of patterns, security issues, or inadequate tests.
    - If issues are found, write a short Review Report (issues + verdict NEEDS_FIXES) and loop back to IMPLEMENTATION to address them.
    - If acceptable, write a short Review Report with verdict ACCEPTABLE and proceed.
@@ -70,6 +72,11 @@ ${planUpdate}
 - Prefer bottom-up refactors; update utilities first, then callers.
 - Keep changes minimal and focused; follow strict typing and error handling if applicable.
 - For large or ambiguous tasks, break work into small, verifiable steps.
+
+## Reading Files
+- Always read the file in full, do not be lazy
+- Before making any code changes, start by finding & reading ALL of it
+- Never make changes without reading the entire file
 
 ## Deliverable
 - Apply changes directly in the working tree.
