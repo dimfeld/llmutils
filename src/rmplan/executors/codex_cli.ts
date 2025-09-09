@@ -54,16 +54,20 @@ export class CodexCliExecutor implements Executor {
       batchMode: planInfo.batchMode === true,
     });
 
+    const allowAllTools = process.env.ALLOW_ALL_TOOLS === 'true';
+    const sandboxSettings = allowAllTools
+      ? ['--dangerously-bypass-approvals-and-sandbox']
+      : // Defaults to read-only in exec mode, so allow writing to the workspace
+        ['--sandbox', 'workspace-write'];
+
     // Run `codex exec "<prompt>"` and stream output to the user
     const { exitCode } = await spawnAndLogOutput(
       [
         'codex',
-        // Allow web search
+        // Allow web search, not sure if this actually applies in exec mode
         '--search',
         'exec',
-        // Defaults to read-only in exec mode, so allow writing to the workspace
-        '--sandbox',
-        'workspace-write',
+        ...sandboxSettings,
         prompt,
       ],
       {
