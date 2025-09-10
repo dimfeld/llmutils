@@ -56,6 +56,7 @@ describe('rmplan merge', () => {
       goal: 'Parent goal',
       title: 'Parent Plan',
       details: 'Parent details',
+      container: true,
       tasks: [
         {
           title: 'Parent task 1',
@@ -141,6 +142,8 @@ describe('rmplan merge', () => {
 
     // Check dependencies were merged (10, 11, 12 with duplicates removed)
     expect(updatedParent.dependencies).toEqual([10, 11, 12]);
+    // Container flag should be cleared after merge
+    expect(updatedParent.container).toBe(false);
 
     // Verify grandchild's parent was updated
     const updatedGrandchild = await readPlanFile(grandchildFile);

@@ -125,6 +125,10 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
   if (mergedDetails.length > 0) {
     mainPlan.details = mergedDetails.join('\n\n');
   }
+  // If the main plan was marked as a container, clear it after merging
+  if (mainPlan.container) {
+    mainPlan.container = false;
+  }
 
   // Prepare ID sets for pruning dependencies and grandchildren updates
   const childIds = new Set(childrenToMerge.map((c) => c.id).filter(Boolean));
