@@ -689,7 +689,10 @@ export class ClaudeCodeExecutor implements Executor {
               });
 
               try {
-                wantsToProvideFeedback = await Promise.race([confirmPromise, confirmTimeoutPromise]);
+                wantsToProvideFeedback = await Promise.race([
+                  confirmPromise,
+                  confirmTimeoutPromise,
+                ]);
               } catch (err: any) {
                 wantsToProvideFeedback = false;
                 debugLog('Error in review feedback confirm prompt:', err);

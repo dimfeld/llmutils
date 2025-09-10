@@ -5044,8 +5044,16 @@ More content
         implementerInstructions,
         undefined
       );
-      expect(mockGetTesterPrompt).toHaveBeenCalledWith('test content', testerInstructions, undefined);
-      expect(mockGetReviewerPrompt).toHaveBeenCalledWith('test content', reviewerInstructions, undefined);
+      expect(mockGetTesterPrompt).toHaveBeenCalledWith(
+        'test content',
+        testerInstructions,
+        undefined
+      );
+      expect(mockGetReviewerPrompt).toHaveBeenCalledWith(
+        'test content',
+        reviewerInstructions,
+        undefined
+      );
 
       // Verify all prompt functions were called exactly once
       expect(mockGetImplementerPrompt).toHaveBeenCalledTimes(1);

@@ -199,7 +199,9 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       ]);
 
       const comments = commentsConnection.nodes;
-      const children = childrenConnection.nodes.sort((a, b) => (a.subIssueSortOrder ?? 0) - (b.subIssueSortOrder ?? 0));
+      const children = childrenConnection.nodes.sort(
+        (a, b) => (a.subIssueSortOrder ?? 0) - (b.subIssueSortOrder ?? 0)
+      );
 
       debugLog(`Fetched issue ${parsed.identifier} with ${children.length} children`);
 

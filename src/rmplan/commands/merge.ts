@@ -182,9 +182,11 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
       if (plan.dependencies.length !== originalLen) {
         plan.updatedAt = new Date().toISOString();
         await writePlanFile(plan.filename, plan);
-        log(`Removed ${originalLen - plan.dependencies.length} dangling dependenc(ies) from ${
-          plan.title || `Plan ${plan.id}`
-        }`);
+        log(
+          `Removed ${originalLen - plan.dependencies.length} dangling dependenc(ies) from ${
+            plan.title || `Plan ${plan.id}`
+          }`
+        );
       }
     }
   }

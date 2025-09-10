@@ -237,14 +237,14 @@ async function importHierarchicalIssue(
           ...currentChildPlan,
           title: child.issueData.issue.title,
           details: updatedChildDetails,
-          parent: (existingParentPlan?.id ?? parentPlanId),
+          parent: existingParentPlan?.id ?? parentPlanId,
           updatedAt: new Date().toISOString(),
         };
       } else {
         // Ensure parent relationship is set
         childPlan = {
           ...currentChildPlan,
-          parent: (existingParentPlan?.id ?? parentPlanId),
+          parent: existingParentPlan?.id ?? parentPlanId,
         };
       }
 
@@ -255,7 +255,7 @@ async function importHierarchicalIssue(
       // Create new child plan
       currentMaxId++;
       childPlan = createStubPlanFromIssue(child.issueData, currentMaxId);
-      childPlan.parent = (existingParentPlan?.id ?? parentPlanId);
+      childPlan.parent = existingParentPlan?.id ?? parentPlanId;
 
       const childFilenameSuffix = child.issueData.suggestedFileName.endsWith('.plan.md')
         ? child.issueData.suggestedFileName
@@ -297,7 +297,7 @@ async function importHierarchicalIssue(
 
   return {
     successCount,
-    parentPlanId: (existingParentPlan?.id ?? parentPlanId),
+    parentPlanId: existingParentPlan?.id ?? parentPlanId,
   };
 }
 

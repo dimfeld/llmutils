@@ -563,12 +563,8 @@ export async function saveMultiPhaseYaml(
   // Format phase title + details into a single Markdown document to include in details
   const detailsSections: string[] = [];
   if (projectInfo.details?.trim()) {
-    const projectHeader = projectInfo.title?.trim()
-      ? `## ${projectInfo.title.trim()}`
-      : undefined;
-    detailsSections.push(
-      [projectHeader, projectInfo.details.trim()].filter(Boolean).join('\n\n')
-    );
+    const projectHeader = projectInfo.title?.trim() ? `## ${projectInfo.title.trim()}` : undefined;
+    detailsSections.push([projectHeader, projectInfo.details.trim()].filter(Boolean).join('\n\n'));
   }
 
   parsedYaml.phases.forEach((phase: any, idx: number) => {
@@ -696,8 +692,13 @@ export async function saveMultiPhaseYaml(
     for (const field of arrayFieldsToPreserve) {
       const stubValue = options.stubPlan.data[field];
       const newValue = combinedPlan[field];
-      if ((stubValue == null || Array.isArray(stubValue)) && (newValue == null || Array.isArray(newValue))) {
-        (combinedPlan as any)[field] = Array.from(new Set([...(stubValue || []), ...(newValue || [])]));
+      if (
+        (stubValue == null || Array.isArray(stubValue)) &&
+        (newValue == null || Array.isArray(newValue))
+      ) {
+        (combinedPlan as any)[field] = Array.from(
+          new Set([...(stubValue || []), ...(newValue || [])])
+        );
       } else if (stubValue !== undefined) {
         (combinedPlan as any)[field] = stubValue;
       }
@@ -728,7 +729,8 @@ export async function saveMultiPhaseYaml(
 
   if (options.commit) {
     const gitRoot = await getGitRoot();
-    const projectTitle = combinedPlan.title || combinedPlan.goal || parsedYaml.title || parsedYaml.goal;
+    const projectTitle =
+      combinedPlan.title || combinedPlan.goal || parsedYaml.title || parsedYaml.goal;
     const commitMessage = `Add plan: ${projectTitle}`;
     await commitAll(commitMessage, gitRoot);
     if (!quiet) {

@@ -210,7 +210,7 @@ export async function selectHierarchicalIssueComments(
     selectedChildren,
     parentContent,
     childrenContent,
-  })
+  });
 
   return { parentContent, childrenContent };
 }
@@ -353,20 +353,19 @@ export async function getHierarchicalInstructionsFromIssue(
   };
 
   // Create child issue instruction data
-  const childIssues = childrenContent
-    .map((child) => ({
-      issueData: {
-        suggestedFileName:
-          `issue-${child.issueData.issue.number}-${child.issueData.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase(),
-        issue: {
-          ...child.issueData.issue,
-          html_url: child.issueData.issue.htmlUrl,
-        },
-        plan: child.selectedContent.join('\n\n'),
-        rmprOptions: null, // Child issues don't inherit parent options
-      } as IssueInstructionData,
-      selectedContent: child.selectedContent,
-    }));
+  const childIssues = childrenContent.map((child) => ({
+    issueData: {
+      suggestedFileName:
+        `issue-${child.issueData.issue.number}-${child.issueData.issue.title.replace(/[^a-zA-Z0-9]+/g, '-')}.md`.toLowerCase(),
+      issue: {
+        ...child.issueData.issue,
+        html_url: child.issueData.issue.htmlUrl,
+      },
+      plan: child.selectedContent.join('\n\n'),
+      rmprOptions: null, // Child issues don't inherit parent options
+    } as IssueInstructionData,
+    selectedContent: child.selectedContent,
+  }));
 
   return {
     parentIssue: parentIssueData,
