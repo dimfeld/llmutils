@@ -122,4 +122,101 @@ describe('rmplan split - manual', () => {
     expect(child.details).toContain('## Feature');
     expect(child.details).toContain('Implement feature');
   });
+
+  test('interactive selection splits chosen tasks', async () => {
+    // Mock checkbox to select tasks 1 and 3 (indices 0 and 2)
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(async () => [0, 2]),
+    }));
+    // Mock ai.generateText for multi-task title generation
+    await moduleMocker.mock('ai', () => ({
+      generateText: mock(async () => ({ text: 'Interactive Child Title' })),
+    }));
+
+    const parentPlan: PlanSchema = {
+      id: 1,
+      goal: 'Parent goal',
+      title: 'Parent Plan',
+      tasks: [
+        { title: 'One', description: 'Desc one' },
+        { title: 'Two', description: 'Desc two' },
+        { title: 'Three', description: 'Desc three' },
+      ],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+    await handleSplitCommand(parentFile, { select: true }, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    // Remaining should only be the middle task
+    expect(updatedParent.tasks.map((t) => t.title)).toEqual(['Two']);
+    expect(updatedParent.dependencies).toEqual([2]);
+
+    const childFile = join(testDir, '2-interactive-child-title.plan.md');
+    const child = await readPlanFile(childFile);
+    expect(child.id).toBe(2);
+    expect(child.parent).toBe(1);
+    expect(child.title).toBe('Interactive Child Title');
+    expect(child.details).toContain('## One');
+    expect(child.details).toContain('Desc one');
+    expect(child.details).toContain('## Three');
+    expect(child.details).toContain('Desc three');
+  });
+
+  test('interactive selection with no tasks selected does nothing', async () => {
+    // Mock checkbox to return empty selection
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(async () => []),
+    }));
+
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Goal',
+      tasks: [
+        { title: 'A', description: 'A1' },
+        { title: 'B', description: 'B1' },
+      ],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+    await handleSplitCommand(parentFile, { select: true }, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    // Nothing changed
+    expect(updatedParent.tasks?.length).toBe(2);
+    expect(updatedParent.dependencies).toBeUndefined();
+  });
+
+  test('interactive selection canceled gracefully', async () => {
+    // Mock checkbox to throw (simulate cancel)
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(async () => {
+        throw new Error('Canceled');
+      }),
+    }));
+
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Goal',
+      tasks: [
+        { title: 'A', description: 'A1' },
+        { title: 'B', description: 'B1' },
+      ],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+    await handleSplitCommand(parentFile, { select: true }, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.tasks?.length).toBe(2);
+    expect(updatedParent.dependencies).toBeUndefined();
+  });
 });

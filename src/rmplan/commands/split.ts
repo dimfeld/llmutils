@@ -21,6 +21,7 @@ import type { Command } from 'commander';
 import { resolveTasksDir } from '../configSchema.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
 import { generateText } from 'ai';
+import { checkbox } from '@inquirer/prompts';
 
 // --- Manual split helpers ---
 
@@ -302,8 +303,45 @@ export async function handleSplitCommand(planArg: string, options: any, command:
   }
 
   if (options.select) {
-    throw new Error(
-      'Interactive selection mode is not implemented yet in this phase. Use --auto or await the next update.'
-    );
+    const config = await loadEffectiveConfig(globalOpts.config);
+
+    if (!validatedPlan.tasks || validatedPlan.tasks.length === 0) {
+      throw new Error('Parent plan has no tasks to select');
+    }
+
+    // Build checkbox choices from tasks
+    const choices = validatedPlan.tasks.map((t, idx) => ({
+      name: `#${idx + 1} ${t.title}`,
+      value: idx,
+      checked: false,
+      // Include a short preview of the description for context
+      description: (t.description || '').split('\n').slice(0, 6).join('\n'),
+    }));
+
+    let selected: number[] = [];
+    try {
+      selected = await checkbox({
+        message: `Select tasks to split from: ${validatedPlan.title || 'Untitled Plan'}`,
+        required: false,
+        pageSize: Math.min(10, choices.length + 2),
+        shortcuts: { all: 'a' },
+        choices,
+      });
+    } catch (err) {
+      // User likely canceled the prompt
+      log(chalk.yellow('Selection canceled. No tasks were split.'));
+      return;
+    }
+
+    if (!selected || selected.length === 0) {
+      log(chalk.yellow('No tasks selected. Nothing to do.'));
+      return;
+    }
+
+    const parentWithPath = { ...validatedPlan, filename: resolvedPlanFile } as PlanSchema & {
+      filename: string;
+    };
+    await manualSplitPlan(parentWithPath, selected, config);
+    return;
   }
 }
