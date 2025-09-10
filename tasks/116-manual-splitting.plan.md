@@ -13,10 +13,10 @@ docs: []
 planGeneratedAt: 2025-09-10T02:39:46.333Z
 promptsGeneratedAt: 2025-09-10T03:13:45.489Z
 createdAt: 2025-09-10T02:28:16.765Z
-updatedAt: 2025-09-10T03:13:46.019Z
+updatedAt: 2025-09-10T03:18:26.242Z
 tasks:
   - title: Update CLI Definition for Split Command
-    done: false
+    done: true
     description: >
       Update the `rmplan.ts` file to add the new `--auto`, `--tasks
       <specifier>`, and `--select` options to the `split` command definition.
@@ -35,9 +35,9 @@ tasks:
           string, and `--select` for interactive task selection. Include
           appropriate help text explaining each option and follow the existing
           patterns used by other commands in the file.
-        done: false
+        done: true
   - title: Refactor the Split Command Handler
-    done: false
+    done: true
     description: >
       Modify the `handleSplitCommand` function in `src/rmplan/commands/split.ts`
       to support multiple splitting modes. The current LLM-based logic should be
@@ -54,14 +54,14 @@ tasks:
           LLM-based splitting logic into a conditional block that only executes
           when options.auto is true. Add branching logic to handle different
           splitting modes based on which flag is present.
-        done: false
+        done: true
       - prompt: >
           Add validation logic to ensure that --auto, --tasks, and --select
           flags are mutually exclusive. Throw appropriate error messages if more
           than one flag is specified or if no mode flag is provided.
-        done: false
+        done: true
   - title: Create a Task Specifier Parsing Utility
-    done: false
+    done: true
     description: >
       Implement a utility function that parses task index specifier strings like
       "1-3,5,7" into a sorted array of unique zero-based indices. The parser
@@ -79,13 +79,13 @@ tasks:
           zero-based indices. Handle single numbers, ranges, and comma-separated
           combinations. Include comprehensive error handling for malformed
           input.
-        done: false
+        done: true
       - prompt: >
           Write comprehensive unit tests for the parseTaskSpecifier function
           covering various input formats, edge cases, error conditions, and
           malformed input scenarios. Test single numbers, ranges, combinations,
           and invalid inputs.
-        done: false
+        done: true
   - title: Implement Core Manual Splitting Logic
     done: false
     description: >
@@ -253,7 +253,21 @@ tasks:
           user feedback messages are appropriate and informative throughout the
           splitting process.
         done: false
-changedFiles: []
+changedFiles:
+  - src/common/linear.ts
+  - src/rmplan/commands/import/import.ts
+  - src/rmplan/commands/merge.ts
+  - src/rmplan/commands/split.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/codex_cli/prompt.ts
+  - src/rmplan/issue_utils.ts
+  - src/rmplan/plans.ts
+  - src/rmplan/process_markdown.ts
+  - src/rmplan/rmplan.ts
+  - src/rmplan/utils/task_specifier_parser.test.ts
+  - src/rmplan/utils/task_specifier_parser.ts
 rmfilter:
   - src/rmplan/commands/split.ts
   - --with-imports
