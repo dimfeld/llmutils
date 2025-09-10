@@ -50,6 +50,8 @@ describe('rmplan split - manual', () => {
     expect(parseTaskSpecifier('3', 5)).toEqual([2]);
     expect(parseTaskSpecifier('2-2', 3)).toEqual([1]);
     expect(parseTaskSpecifier('5-3', 6)).toEqual([2, 3, 4]);
+    // Range exceeding task count should clamp to available tasks
+    expect(parseTaskSpecifier('1-5', 3)).toEqual([0, 1, 2]);
   });
 
   test('manual split of single task uses task title and description', async () => {
@@ -218,5 +220,127 @@ describe('rmplan split - manual', () => {
     const updatedParent = await readPlanFile(parentFile);
     expect(updatedParent.tasks?.length).toBe(2);
     expect(updatedParent.dependencies).toBeUndefined();
+  });
+
+  test('splitting all tasks sets container flag and removes all tasks', async () => {
+    // Mock ai.generateText to avoid network for multi-task split
+    await moduleMocker.mock('ai', () => ({
+      generateText: mock(async () => ({ text: 'All Tasks Child' })),
+    }));
+
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Goal',
+      tasks: [
+        { title: 'A', description: 'A1' },
+        { title: 'B', description: 'B1' },
+      ],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+    await handleSplitCommand(parentFile, { tasks: '1-2' }, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.tasks?.length).toBe(0);
+    expect(updatedParent.container).toBe(true);
+    expect(updatedParent.dependencies).toEqual([2]);
+
+    const childFile = join(testDir, '2-all-tasks-child.plan.md');
+    const child = await readPlanFile(childFile);
+    expect(child.parent).toBe(1);
+    expect(child.tasks?.length).toBe(0);
+    expect(child.details).toContain('## A');
+    expect(child.details).toContain('## B');
+  });
+
+  test('invalid task specifier throws helpful errors', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Goal',
+      tasks: [
+        { title: 'A', description: 'A1' },
+        { title: 'B', description: 'B1' },
+      ],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+
+    await expect(handleSplitCommand(parentFile, { tasks: '' }, command)).rejects.toThrow(
+      /Empty task specifier/
+    );
+    await expect(
+      handleSplitCommand(parentFile, { tasks: '0', select: false }, command)
+    ).rejects.toThrow(/Task indices must be positive/);
+    await expect(handleSplitCommand(parentFile, { tasks: '3' }, command)).rejects.toThrow(
+      /Task index 3 out of range/
+    );
+    await expect(handleSplitCommand(parentFile, { tasks: 'a-b' }, command)).rejects.toThrow(
+      /Invalid task specifier segment/
+    );
+  });
+
+  test('argument validation: mutually exclusive and missing flags', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Goal',
+      tasks: [
+        { title: 'A', description: 'A1' },
+        { title: 'B', description: 'B1' },
+      ],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+
+    await expect(
+      handleSplitCommand(parentFile, { tasks: '1', select: true }, command)
+    ).rejects.toThrow(/mutually exclusive/);
+
+    await expect(handleSplitCommand(parentFile, {}, command)).rejects.toThrow(
+      /No mode specified\. Choose one of: --auto \(LLM-based\), --tasks <specifier> \(manual\), or --select \(interactive\)\./
+    );
+  });
+
+  test('auto mode flows through with mocked LLM pipeline', async () => {
+    // Arrange mocks for LLM pipeline and YAML processing
+    await moduleMocker.mock('../prompt.js', () => ({
+      generateSplitPlanPrompt: mock(() => 'prompt'),
+    }));
+    await moduleMocker.mock('../../common/model_factory.js', () => ({
+      createModel: mock(async () => ({})),
+    }));
+    await moduleMocker.mock('../llm_utils/run_and_apply.js', () => ({
+      runStreamingPrompt: mock(async () => ({ text: '---\nphases: []' })),
+    }));
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      findYamlStart: mock((t: string) => t),
+      saveMultiPhaseYaml: mock(async () => 'Saved OK'),
+    }));
+    await moduleMocker.mock('../fix_yaml.js', () => ({
+      fixYaml: mock(async () => ({ phases: [] })),
+    }));
+    await moduleMocker.mock('../planSchema.js', () => ({
+      multiPhasePlanSchema: { safeParse: mock(() => ({ success: true, data: { phases: [] } })) },
+    }));
+
+    const parentPlan: PlanSchema = {
+      id: 10,
+      title: 'Big Plan',
+      goal: 'Goal',
+      tasks: [{ title: 'A', description: 'A1' }],
+    };
+    const parentFile = join(testDir, '10-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+    await expect(handleSplitCommand(parentFile, { auto: true }, command)).resolves.toBeUndefined();
   });
 });

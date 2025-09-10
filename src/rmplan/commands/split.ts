@@ -166,9 +166,10 @@ export async function handleSplitCommand(planArg: string, options: any, command:
   const globalOpts = command.parent!.opts();
 
   // Validate mutually exclusive modes
+  const hasTasksFlag = options && Object.prototype.hasOwnProperty.call(options, 'tasks');
   const modeFlags = [
     options?.auto ? 'auto' : null,
-    options?.tasks ? 'tasks' : null,
+    hasTasksFlag ? 'tasks' : null,
     options?.select ? 'select' : null,
   ].filter(Boolean) as string[];
 
@@ -291,7 +292,7 @@ export async function handleSplitCommand(planArg: string, options: any, command:
   }
 
   // Manual modes
-  if (options.tasks) {
+  if (hasTasksFlag) {
     const config = await loadEffectiveConfig(globalOpts.config);
     const indices = parseTaskSpecifier(options.tasks, validatedPlan.tasks?.length || 0);
     // Use validatedPlan with filename context from resolvedPlanFile
