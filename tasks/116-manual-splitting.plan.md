@@ -5,7 +5,7 @@ goal: To provide users with more control over how plans are split by adding
   manual and interactive methods, in addition to the existing automated
   LLM-based approach.
 id: 116
-status: pending
+status: in_progress
 priority: medium
 dependencies: []
 issue: []
@@ -13,7 +13,7 @@ docs: []
 planGeneratedAt: 2025-09-10T02:39:46.333Z
 promptsGeneratedAt: 2025-09-10T03:13:45.489Z
 createdAt: 2025-09-10T02:28:16.765Z
-updatedAt: 2025-09-10T03:13:45.492Z
+updatedAt: 2025-09-10T03:13:46.019Z
 tasks:
   - title: Update CLI Definition for Split Command
     done: false

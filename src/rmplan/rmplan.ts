@@ -442,8 +442,14 @@ program
 program
   .command('split <planArg>')
   .description(
-    'Use LLM to intelligently split a large plan into smaller, phase-based plans with dependencies'
+    'Split a plan into smaller plans. Use --auto for LLM-based split, or --tasks/--select for manual modes.'
   )
+  .option('--auto', 'Use LLM to split into phases (existing behavior)')
+  .option(
+    '--tasks <specifier>',
+    'Manually select tasks by index (1-based). Supports ranges and comma lists, e.g. 1-3,5'
+  )
+  .option('--select', 'Interactively choose tasks to split via a checkbox prompt')
   .action(async (planArg, options, command) => {
     const { handleSplitCommand } = await import('./commands/split.js');
     await handleSplitCommand(planArg, options, command).catch(handleCommandError);
