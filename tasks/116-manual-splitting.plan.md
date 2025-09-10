@@ -6,14 +6,17 @@ goal: To provide users with more control over how plans are split by adding
   LLM-based approach.
 id: 116
 status: in_progress
+statusDescription: Marking tasks as done via automation
 priority: medium
+container: false
 dependencies: []
 issue: []
+pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-10T02:39:46.333Z
 promptsGeneratedAt: 2025-09-10T03:13:45.489Z
 createdAt: 2025-09-10T02:28:16.765Z
-updatedAt: 2025-09-10T03:18:26.242Z
+updatedAt: 2025-09-10T03:28:44.376Z
 tasks:
   - title: Update CLI Definition for Split Command
     done: true
@@ -27,6 +30,7 @@ tasks:
       specifier, and `--select` should be a boolean for interactive selection.
     files:
       - src/rmplan/rmplan.ts
+    docs: []
     steps:
       - prompt: >
           Add the new command line options to the split command definition in
@@ -48,6 +52,7 @@ tasks:
       interactive splitting functionality.
     files:
       - src/rmplan/commands/split.ts
+    docs: []
     steps:
       - prompt: >
           Refactor the existing handleSplitCommand function to move all current
@@ -72,6 +77,7 @@ tasks:
     files:
       - src/rmplan/utils/task_specifier_parser.ts
       - src/rmplan/utils/task_specifier_parser.test.ts
+    docs: []
     steps:
       - prompt: >
           Create a new utility file with a parseTaskSpecifier function that
@@ -87,7 +93,7 @@ tasks:
           and invalid inputs.
         done: true
   - title: Implement Core Manual Splitting Logic
-    done: false
+    done: true
     description: >
       Create the core functionality for manual plan splitting that takes a
       source plan and array of task indices, then generates a new child plan and
@@ -99,6 +105,7 @@ tasks:
     files:
       - src/rmplan/commands/split.ts
       - src/rmplan/commands/split.test.ts
+    docs: []
     steps:
       - prompt: >
           Create comprehensive integration tests for manual splitting
@@ -106,22 +113,22 @@ tasks:
           the complete workflow: parsing task specifiers, splitting plans,
           verifying parent and child plan contents, and ensuring proper ID
           generation and file relationships.
-        done: false
+        done: true
       - prompt: >
           Implement the core manual splitting logic as a new function that takes
           a plan and array of task indices. Generate a new plan ID, create a
           child plan with selected tasks and proper parent reference, update the
           parent plan by removing tasks and adding dependency, and set container
           flag if parent becomes empty.
-        done: false
+        done: true
       - prompt: >
           Add the file saving functionality that writes both the updated parent
           plan and new child plan to disk using the existing writePlanFile
           utility. Ensure proper filename generation using the pattern from the
           add command.
-        done: false
+        done: true
   - title: Implement Child Plan Title and Details Generation
-    done: false
+    done: true
     description: >
       Develop logic for generating the child plan's title and details based on
       the selected tasks. For a single selected task, use the task's title as
@@ -133,24 +140,25 @@ tasks:
     files:
       - src/rmplan/commands/split.ts
       - src/rmplan/commands/split.test.ts
+    docs: []
     steps:
       - prompt: >
           Implement the logic for single task scenarios where the child plan's
           title comes directly from the selected task's title and the details
           come from the task's description. Add this to the manual splitting
           function.
-        done: false
+        done: true
       - prompt: >
           For multiple task scenarios, implement markdown formatting that
           combines all selected task titles and descriptions into the child
           plan's details field, using task titles as section headers.
-        done: false
+        done: true
       - prompt: >
           Add LLM integration for generating concise titles when multiple tasks
           are selected. Use createModel with 'google/gemini-2.0-flash' and
           generateText to create a one-line title based on the combined task
           information. Include proper error handling for LLM failures.
-        done: false
+        done: true
   - title: Add Tests for Manual Splitting
     done: false
     description: >
@@ -162,6 +170,7 @@ tasks:
       handling.
     files:
       - src/rmplan/commands/split.test.ts
+    docs: []
     steps:
       - prompt: >
           Add integration tests that create temporary plan files with multiple
@@ -186,6 +195,7 @@ tasks:
       should show task titles and provide keyboard shortcuts.
     files:
       - src/rmplan/commands/split.ts
+    docs: []
     steps:
       - prompt: >
           Import the checkbox function from @inquirer/prompts and implement the
@@ -209,6 +219,7 @@ tasks:
       consistency with the manual --tasks flag behavior.
     files:
       - src/rmplan/commands/split.ts
+    docs: []
     steps:
       - prompt: >
           Integrate the checkbox prompt results with the manual splitting logic
@@ -234,6 +245,7 @@ tasks:
     files:
       - src/rmplan/commands/split.ts
       - src/rmplan/commands/split.test.ts
+    docs: []
     steps:
       - prompt: >
           Add comprehensive argument validation that checks for mutually
@@ -257,6 +269,7 @@ changedFiles:
   - src/common/linear.ts
   - src/rmplan/commands/import/import.ts
   - src/rmplan/commands/merge.ts
+  - src/rmplan/commands/split.test.ts
   - src/rmplan/commands/split.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
   - src/rmplan/executors/claude_code.test.ts
