@@ -73,7 +73,6 @@ describe('LinearIssueTrackerClient', () => {
       const client = new LinearIssueTrackerClient(mockConfig);
 
       expect(client.parseIssueIdentifier('123')).toBeNull(); // Just a number
-      expect(client.parseIssueIdentifier('team-123')).toBeNull(); // Lowercase
       expect(client.parseIssueIdentifier('TEAM123')).toBeNull(); // Missing dash
       expect(client.parseIssueIdentifier('TEAM-')).toBeNull(); // Missing number
       expect(client.parseIssueIdentifier('https://github.com/owner/repo/issues/123')).toBeNull(); // GitHub URL

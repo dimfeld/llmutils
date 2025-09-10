@@ -36,7 +36,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
    * - Linear URL with slug: https://linear.app/workspace/issue/TEAM-123/some-title-slug
    */
   parseIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
-    const trimmedSpec = spec.trim().toUpperCase();
+    const trimmedSpec = spec.trim();
 
     // Linear issue key format: TEAM-123 (we allow case-insensitive)
     const keyMatch = trimmedSpec.toUpperCase().match(/^([A-Z][A-Z0-9]*-\d+)$/);
