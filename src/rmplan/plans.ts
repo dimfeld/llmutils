@@ -552,6 +552,7 @@ export async function writePlanFile(
   filePath: string,
   input: PlanSchema & { filename?: string }
 ): Promise<void> {
+  console.log(input);
   const absolutePath = resolve(filePath);
   // Plans from readAllPlans will have a filename which we want to strip out
   const { filename: _, ...plan } = input;

@@ -1,6 +1,5 @@
 import { streamText } from 'ai';
 import chalk from 'chalk';
-import path from 'path';
 import yaml from 'yaml';
 import { getGitRoot } from '../common/git.js';
 import { createModel } from '../common/model_factory.js';
@@ -8,18 +7,13 @@ import { commitAll } from '../common/process.js';
 import { boldMarkdownHeaders, debugLog, error, log, warn } from '../logging.js';
 import { resolveTasksDir, type RmplanConfig } from './configSchema.js';
 import { fixYaml } from './fix_yaml.js';
-import { generateAlphanumericId, generateNumericPlanId } from './id_utils.js';
+import { generateNumericPlanId } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
-import {
-  generateSuggestedFilename,
-  getMaxNumericPlanId,
-  isTaskDone,
-  readAllPlans,
-  writePlanFile,
-} from './plans.js';
+import { isTaskDone, writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
-import { input } from '@inquirer/prompts';
+// Note: previously used for prompting on multiphase directory names.
+// No longer needed since we always write a single plan file.
 import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 
 export function convertYamlToMarkdown(
@@ -319,7 +313,7 @@ export async function extractMarkdownToYaml(
 
   // Check if this is a multi-phase plan
   if (parsedYaml.phases && Array.isArray(parsedYaml.phases)) {
-    // Multi-phase plan - save as separate files
+    // Multi-phase plan, combine intelligently
     return await saveMultiPhaseYaml(parsedYaml, options, config, quiet);
   }
 
@@ -551,377 +545,196 @@ export async function saveMultiPhaseYaml(
   config: RmplanConfig,
   quiet: boolean
 ): Promise<string> {
-  // Check if there's actually just one phase. In this case we still do the multi-phase
-  // code since it will bring in the goal and details from both the global and phase,
-  // but we end up saving to a single file instead of a subdirectory.
-  const actuallyMultiphase = parsedYaml.phases.length > 1;
-  const stubPlan = options.stubPlan;
-  const putProjectInfoInStubPlan = actuallyMultiphase && stubPlan != null;
-
-  let outputDir = options.output;
-  if (options.output.endsWith('.plan.md')) {
-    outputDir = options.output.slice(0, options.output.lastIndexOf('.plan.md'));
-  } else if (options.output.endsWith('.yml') || options.output.endsWith('.md')) {
-    outputDir = options.output.slice(0, options.output.lastIndexOf('.'));
-  }
-  const outputDirComponents = outputDir.split(path.sep);
-  if (actuallyMultiphase && !Number.isNaN(Number(outputDirComponents.at(-1)))) {
-    const defaultName = await generateSuggestedFilename(
-      [parsedYaml.title, parsedYaml.goal].join('\n\n')
-    );
-
-    let newName = await input({
-      message: 'Enter a directory name for the multi-phase plan',
-      default: defaultName,
-    });
-
-    if (newName) {
-      outputDirComponents[outputDirComponents.length - 1] = defaultName;
-      outputDir = outputDirComponents.join(path.sep);
-    }
-  }
-
-  // Extract overall project information from the parsed YAML
+  // Always combine phases into a single plan file.
   const projectInfo = {
     goal: parsedYaml.goal || '',
     title: parsedYaml.title || '',
     details: parsedYaml.details || '',
   };
-  const hasProjectInfo = !!(projectInfo.goal || projectInfo.title || projectInfo.details);
 
-  // Process phases
-  const phaseIndexToId = new Map<number, number>();
-  let successfulWrites = 0;
-  const failedPhases: number[] = [];
-
-  const tasksDir = await resolveTasksDir(config);
-  let nextId = actuallyMultiphase
-    ? await generateNumericPlanId(tasksDir)
-    : options.updatePlan?.data?.id || options.stubPlan?.data?.id || options.projectId;
-  // Force it to be a number
-  // TODO we can remove this later once the last vestiges of string IDs are gone
-  if (typeof nextId !== 'number') {
-    nextId = Number(nextId);
-
-    if (Number.isNaN(nextId)) {
-      nextId = await generateNumericPlanId(tasksDir);
+  // Combine tasks from all phases in order
+  const combinedTasks: PlanSchema['tasks'] = [];
+  for (const phase of parsedYaml.phases) {
+    if (Array.isArray(phase.tasks)) {
+      combinedTasks.push(...phase.tasks);
     }
   }
 
-  // Log the appropriate IDs based on the scenario
-  if (!quiet) {
-    const mainPlanId =
-      options.updatePlan?.data?.id || options.stubPlan?.data?.id || options.projectId;
-    if (actuallyMultiphase) {
-      if (mainPlanId) {
-        log(chalk.blue('Parent Plan ID:'), mainPlanId);
-      }
-      const phaseIds = [];
-      for (let i = 0; i < parsedYaml.phases.length; i++) {
-        phaseIds.push(nextId + i);
-      }
-      log(chalk.blue('Phase IDs:'), phaseIds.join(', '));
-    } else if (mainPlanId) {
-      log(chalk.blue('Updating Plan ID:'), mainPlanId);
+  // Format phase title + details into a single Markdown document to include in details
+  const detailsSections: string[] = [];
+  if (projectInfo.details?.trim()) {
+    const projectHeader = projectInfo.title?.trim()
+      ? `## ${projectInfo.title.trim()}`
+      : undefined;
+    detailsSections.push(
+      [projectHeader, projectInfo.details.trim()].filter(Boolean).join('\n\n')
+    );
+  }
+
+  parsedYaml.phases.forEach((phase: any, idx: number) => {
+    const title = (phase.title || '').toString().trim();
+    const details = (phase.details || '').toString().trim();
+    const header = title ? `## Phase ${idx + 1}: ${title}` : `## Phase ${idx + 1}`;
+    const taskTitles = phase.tasks
+      .map((t: any) => t.title)
+      .map((t: any) => `- ${t}`)
+      .join('\n');
+    if (details) {
+      detailsSections.push(`${header}\n\nTasks:\n${taskTitles}\n\n${details}`);
     } else {
-      log(chalk.blue('New Plan ID:'), nextId);
+      // Always include a header so phases are visible even without details
+      detailsSections.push(`${header}\n\nTasks:\n${taskTitles}`);
     }
+  });
+
+  const combinedDetailsDoc = detailsSections.join('\n\n---\n\n');
+
+  // Build the combined plan
+  const initialPlan: PlanSchema = {
+    title: options.stubPlan?.data.title?.trim() || projectInfo.title || undefined,
+    goal: options.stubPlan?.data.goal?.trim() || projectInfo.goal || '',
+    details: combinedDetailsDoc,
+    status: options.updatePlan?.data?.status || options.stubPlan?.data?.status || 'pending',
+    priority: options.stubPlan?.data?.priority || undefined,
+    tasks: combinedTasks,
+  } as PlanSchema;
+
+  // Validate and normalize
+  const validation = planSchema.safeParse(initialPlan);
+  if (!validation.success) {
+    throw new Error(
+      'Combined multi-phase YAML failed validation: ' +
+        validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+    );
   }
+  let combinedPlan = validation.data;
 
-  // First pass: generate IDs and update dependencies
-  for (let i = 0; i < parsedYaml.phases.length; i++) {
-    const phase = parsedYaml.phases[i];
-    const phaseId = nextId;
-    nextId++;
+  // Preserve or set metadata similar to the single-phase path
+  const fieldsToPreserve = [
+    'parent',
+    'container',
+    'baseBranch',
+    'pullRequest',
+    'assignedTo',
+    'priority',
+    'project',
+  ] as const;
 
-    phaseIndexToId.set(i + 1, phaseId);
-    phase.id = phaseId;
+  const arrayFieldsToPreserve = [
+    'changedFiles',
+    'docs',
+    'issue',
+    'dependencies',
+    'rmfilter',
+  ] as const;
 
-    // Add metadata if not present
+  if (options.updatePlan?.data) {
+    const original = options.updatePlan.data;
+    for (const field of [...fieldsToPreserve, ...arrayFieldsToPreserve]) {
+      if (original[field] !== undefined && combinedPlan[field] === undefined) {
+        (combinedPlan as any)[field] = original[field];
+      }
+    }
+    combinedPlan.id = original.id;
+    combinedPlan.createdAt = original.createdAt;
+    combinedPlan.updatedAt = new Date().toISOString();
+    combinedPlan.planGeneratedAt =
+      combinedPlan.planGeneratedAt || original.planGeneratedAt || new Date().toISOString();
+
+    if (combinedPlan.tasks[0]?.steps?.[0]?.prompt) {
+      combinedPlan.promptsGeneratedAt = new Date().toISOString();
+    } else {
+      combinedPlan.promptsGeneratedAt = original.promptsGeneratedAt;
+    }
+
+    if (!combinedPlan.status) {
+      combinedPlan.status = original.status || 'pending';
+    }
+  } else {
+    const tasksDir = await resolveTasksDir(config);
+    combinedPlan.id =
+      options.stubPlan?.data?.id || options.projectId || (await generateNumericPlanId(tasksDir));
     const now = new Date().toISOString();
-    phase.planGeneratedAt = now;
-    // Use createdAt from stub/update plan if we are updating it. Otherwise
-    // this is a new file so we want a new createdAt.
-    phase.createdAt = actuallyMultiphase
-      ? now
-      : options.updatePlan?.data?.createdAt || options.stubPlan?.data?.createdAt || now;
-    phase.updatedAt = now;
-
-    phase.issue = options.issueUrls?.length ? options.issueUrls : undefined;
-
-    if (actuallyMultiphase) {
-      if (hasProjectInfo) {
-        phase.project = projectInfo;
-      }
-
-      if (options.stubPlan?.data) {
-        phase.parent = options.stubPlan?.data.id;
-      }
+    combinedPlan.createdAt = options.stubPlan?.data?.createdAt || now;
+    combinedPlan.updatedAt = now;
+    combinedPlan.planGeneratedAt = now;
+    if (combinedPlan.tasks[0]?.steps?.[0]?.prompt) {
+      combinedPlan.promptsGeneratedAt = now;
     }
-
-    // Add rmfilter and issue from options
-    if (options.planRmfilterArgs?.length) {
-      phase.rmfilter = options.planRmfilterArgs;
-    }
-
-    // Inherit fields from stub plan if provided
-    if (options.stubPlan?.data) {
-      // Combine dependencies from both stub plan and phase
-      if (options.stubPlan?.data.dependencies) {
-        const existingDeps = new Set(phase.dependencies || []);
-        const stubDeps = new Set(options.stubPlan?.data.dependencies);
-        phase.dependencies = Array.from(new Set([...existingDeps, ...stubDeps]));
-      }
-      // Inherit priority if not already set
-      if (!phase.priority && options.stubPlan?.data.priority) {
-        phase.priority = options.stubPlan?.data.priority;
-      }
-      // Inherit assignedTo if not already set
-      if (!phase.assignedTo && options.stubPlan?.data.assignedTo) {
-        phase.assignedTo = options.stubPlan?.data.assignedTo;
-      }
-      // Combine issue URLs from both sources
-      if (options.stubPlan?.data.issue) {
-        const existingIssues = new Set(phase.issue || []);
-        const stubIssues = new Set(options.stubPlan?.data.issue);
-        phase.issue = Array.from(new Set([...existingIssues, ...stubIssues]));
-      }
-
-      if (options.stubPlan?.data.docs) {
-        phase.docs = options.stubPlan?.data.docs;
-      }
-    }
-
-    // Update dependencies to use phase IDs
-    if (phase.dependencies && Array.isArray(phase.dependencies)) {
-      phase.dependencies = phase.dependencies.map((dep: string | number) => {
-        if (typeof dep === 'number') {
-          if (stubPlan?.data.dependencies?.includes(dep)) {
-            return dep;
-          } else {
-            dep = dep.toString();
-          }
-        }
-
-        // Convert from "project-N" or similar to actual phase ID
-        let match = dep.match(/-(\d+)$/) || dep.match(/Phase (\d+)$/) || dep.match(/(\d+)/);
-
-        if (match) {
-          const depIndex = parseInt(match[1], 10);
-          const mappedId = phaseIndexToId.get(depIndex);
-          // Convert numeric IDs to strings for dependencies
-          return mappedId !== undefined ? String(mappedId) : dep;
-        }
-        return dep;
-      });
+    if (!combinedPlan.status) {
+      combinedPlan.status = 'pending';
     }
   }
 
-  // Second pass: remove redundant dependencies
-  // Build a map of all dependencies for each phase
-  const phaseDependencies = new Map<string, Set<string>>();
+  // Inherit fields from stub plan if provided (merge arrays, prefer stub for scalars)
+  if (options.stubPlan?.data) {
+    const stubPlanDetails = options.stubPlan.data.details?.trim();
+    const stubPlanTitle = options.stubPlan.data.title?.trim();
+    const stubPlanGoal = options.stubPlan.data.goal?.trim();
 
-  for (const phase of parsedYaml.phases) {
-    if (phase.dependencies && Array.isArray(phase.dependencies)) {
-      phaseDependencies.set(phase.id, new Set(phase.dependencies));
-    } else {
-      phaseDependencies.set(phase.id, new Set());
+    if (stubPlanTitle) {
+      combinedPlan.title = stubPlanTitle;
+    }
+    if (stubPlanGoal) {
+      combinedPlan.goal = stubPlanGoal;
+    }
+    if (stubPlanDetails) {
+      combinedPlan.details = [
+        '# Original Plan Details',
+        stubPlanDetails,
+        '# Processed Plan Details',
+        combinedPlan.details,
+      ].join('\n\n');
+    }
+
+    for (const field of fieldsToPreserve) {
+      const stubValue = options.stubPlan.data[field];
+      if (stubValue !== undefined) {
+        (combinedPlan as any)[field] = stubValue;
+      }
+    }
+    for (const field of arrayFieldsToPreserve) {
+      const stubValue = options.stubPlan.data[field];
+      const newValue = combinedPlan[field];
+      if ((stubValue == null || Array.isArray(stubValue)) && (newValue == null || Array.isArray(newValue))) {
+        (combinedPlan as any)[field] = Array.from(new Set([...(stubValue || []), ...(newValue || [])]));
+      } else if (stubValue !== undefined) {
+        (combinedPlan as any)[field] = stubValue;
+      }
     }
   }
 
-  // For each phase, compute all transitive dependencies
-  function getTransitiveDependencies(phaseId: string, visited = new Set<string>()): Set<string> {
-    if (visited.has(phaseId)) {
-      return new Set();
+  // Populate issue/rmfilter for new plans (not updates)
+  if (!options.updatePlan?.data) {
+    if (options.issueUrls && options.issueUrls.length > 0) {
+      combinedPlan.issue = options.issueUrls;
     }
-    visited.add(phaseId);
-
-    const directDeps = phaseDependencies.get(phaseId) || new Set();
-    const allDeps = new Set(directDeps);
-
-    for (const dep of directDeps) {
-      const transitiveDeps = getTransitiveDependencies(dep, visited);
-      for (const transDep of transitiveDeps) {
-        allDeps.add(transDep);
-      }
-    }
-
-    return allDeps;
-  }
-
-  // Remove redundant dependencies
-  for (const phase of parsedYaml.phases) {
-    if (!phase.dependencies || phase.dependencies.length === 0) {
-      continue;
-    }
-
-    const originalDeps = new Set<string>(phase.dependencies);
-    const necessaryDeps = new Set<string>();
-
-    // For each dependency, check if it's transitively included by another dependency
-    for (const dep of originalDeps) {
-      let isRedundant = false;
-
-      for (const otherDep of originalDeps) {
-        if (dep === otherDep) continue;
-
-        const transitiveDeps = getTransitiveDependencies(otherDep);
-        if (transitiveDeps.has(dep)) {
-          isRedundant = true;
-          break;
-        }
-      }
-
-      if (!isRedundant) {
-        necessaryDeps.add(dep);
-      }
-    }
-
-    // Update the phase dependencies
-    phase.dependencies = Array.from(necessaryDeps).sort();
-  }
-
-  // Write phase YAML files
-  for (let i = 0; i < parsedYaml.phases.length; i++) {
-    const phase = parsedYaml.phases[i];
-    const phaseIndex = i + 1;
-
-    // Validate phase
-    const validationResult = phaseSchema.safeParse(phase);
-    if (!validationResult.success) {
-      warn(`Warning: Phase ${phaseIndex} failed validation:`, validationResult.error.issues);
-      failedPhases.push(phaseIndex);
-      continue;
-    }
-
-    const orderedContent = Object.fromEntries(
-      Object.keys(planSchema.shape).map((key) => {
-        const value = validationResult.data[key as keyof PlanSchema];
-        return [key, value];
-      })
-    ) as PlanSchema;
-
-    let phaseFilePath: string;
-    const stubPlanTitle = options.stubPlan?.data.title?.trim();
-    if (actuallyMultiphase) {
-      let baseTitle = stubPlanTitle || projectInfo?.title?.trim();
-      if (baseTitle) {
-        orderedContent.title = `${baseTitle} - ${orderedContent.title}`;
-      }
-      phaseFilePath = path.join(outputDir, `${phase.id}-phase-${phaseIndex}.plan.md`);
-    } else {
-      if (options.output.endsWith('.yml') || options.output.endsWith('.plan.md')) {
-        phaseFilePath = options.output;
-      } else {
-        phaseFilePath = `${outputDir}.plan.md`;
-      }
-      const stubPlanGoal = options.stubPlan?.data.goal?.trim();
-      const stubPlanDetails = options.stubPlan?.data.details?.trim();
-
-      const projectInfoDetails = projectInfo?.details?.trim();
-      if (projectInfoDetails) {
-        projectInfo.details = undefined;
-        orderedContent.details = [projectInfoDetails, orderedContent.details].join('\n\n');
-      }
-
-      if (stubPlanTitle) {
-        orderedContent.title = stubPlanTitle;
-      }
-
-      if (stubPlanGoal) {
-        orderedContent.goal = stubPlanGoal;
-      }
-
-      if (stubPlanDetails) {
-        orderedContent.details = [
-          '# Original Plan Details',
-          stubPlanDetails,
-          '# Processed Plan Details',
-          orderedContent.details,
-        ].join('\n\n');
-      }
-    }
-
-    try {
-      await writePlanFile(phaseFilePath, orderedContent);
-      successfulWrites++;
-    } catch (err) {
-      warn(`Warning: Failed to write phase ${phaseIndex} YAML file:`, err);
-      failedPhases.push(phaseIndex);
+    if (options.planRmfilterArgs && options.planRmfilterArgs.length > 0) {
+      combinedPlan.rmfilter = options.planRmfilterArgs;
     }
   }
 
-  if (successfulWrites === 0) {
-    throw new Error('Failed to write any phase YAML files');
-  }
+  // Determine output file path
+  const outputPath =
+    options.output.endsWith('.yml') || options.output.endsWith('.plan.md')
+      ? options.output
+      : `${options.output}.plan.md`;
 
-  if (putProjectInfoInStubPlan) {
-    stubPlan.data.dependencies ??= [];
-    stubPlan.data.dependencies.push(...phaseIndexToId.values().map((id) => id));
-    stubPlan.data.container = true;
-
-    if (hasProjectInfo) {
-      const stubPlanDetails = stubPlan.data.details?.trim();
-
-      if (projectInfo.details) {
-        let projectDetails = projectInfo.details.trim();
-        if (projectInfo.title) {
-          projectDetails = `## ${projectInfo.title}\n\n${projectDetails}`;
-        }
-
-        if (stubPlanDetails) {
-          stubPlan.data.details = [
-            '# Original Plan Details',
-            stubPlanDetails,
-            '# Processed Plan Details',
-            projectDetails,
-          ].join('\n\n');
-        } else {
-          stubPlan.data.details = projectDetails;
-        }
-      }
-
-      // Add the goal if the stub doesn't already have one.
-      if (projectInfo.goal && !stubPlan.data.goal?.trim()) {
-        stubPlan.data.goal = projectInfo.goal;
-      }
-    }
-
-    await writePlanFile(stubPlan.path, stubPlan.data);
-    log(chalk.green(`✓ Converted stub plan to container`));
-  }
+  await writePlanFile(outputPath, combinedPlan);
 
   if (!quiet) {
-    if (actuallyMultiphase) {
-      log(chalk.green(`✓ Successfully converted markdown to ${successfulWrites} phase files`));
-      log(`Output directory: ${outputDir}`);
-    } else {
-      log(chalk.green(`✓ Successfully converted markdown to 1 phase file`));
-      log(`Output file: ${options.output}`);
-    }
+    log(chalk.green('Success!'), `Wrote combined plan to ${outputPath}`);
   }
 
-  if (failedPhases.length > 0) {
-    warn(`Warning: Failed to write ${failedPhases.length} phase files: ${failedPhases.join(', ')}`);
-  }
-
-  // Commit if requested
   if (options.commit) {
     const gitRoot = await getGitRoot();
-    const projectTitle = parsedYaml.title || parsedYaml.goal || 'multi-phase plan';
-    const commitMessage = actuallyMultiphase
-      ? `Add multi-phase plan: ${projectTitle}`
-      : `Add plan: ${projectTitle}`;
+    const projectTitle = combinedPlan.title || combinedPlan.goal || parsedYaml.title || parsedYaml.goal;
+    const commitMessage = `Add plan: ${projectTitle}`;
     await commitAll(commitMessage, gitRoot);
     if (!quiet) {
       log(chalk.green('✓ Committed changes'));
     }
   }
 
-  // Return a message about what was created
-  if (actuallyMultiphase) {
-    return `Successfully created ${successfulWrites} phase files in ${outputDir}`;
-  } else {
-    return `Successfully created plan file at ${outputDir}.plan.md`;
-  }
+  return `Successfully created plan file at ${outputPath}`;
 }
