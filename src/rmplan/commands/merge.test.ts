@@ -66,6 +66,11 @@ describe('rmplan merge', () => {
     const parentFile = join(testDir, '1-parent.plan.md');
     await writePlanFile(parentFile, parentPlan);
 
+    // Create dependency placeholder plans to validate dependency carry-over
+    await writePlanFile(join(testDir, '10-dep.plan.md'), { id: 10, title: 'Dep 10', tasks: [] });
+    await writePlanFile(join(testDir, '11-dep.plan.md'), { id: 11, title: 'Dep 11', tasks: [] });
+    await writePlanFile(join(testDir, '12-dep.plan.md'), { id: 12, title: 'Dep 12', tasks: [] });
+
     // Create child plans
     const child1: PlanSchema = {
       id: 2,
@@ -249,6 +254,9 @@ describe('rmplan merge', () => {
     const parentFile = join(testDir, '1-parent.plan.md');
     await writePlanFile(parentFile, parentPlan);
 
+    // Create a real plan that the child depends on, so it remains after merge
+    await writePlanFile(join(testDir, '6-dep.plan.md'), { id: 6, title: 'Dep 6', tasks: [] });
+
     // Create child with dependency on parent (circular - should be filtered)
     const child: PlanSchema = {
       id: 2,
@@ -274,5 +282,72 @@ describe('rmplan merge', () => {
     const updatedParent = await readPlanFile(parentFile);
     expect(updatedParent.dependencies).toEqual([5, 6]);
     expect(updatedParent.dependencies).not.toContain(1);
+  });
+
+  test('removes dependencies pointing to merged child plans and keeps only existing deps', async () => {
+    // Create a main parent plan that already depends on its children (typical parent/child linkage)
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      tasks: [],
+      dependencies: [2, 3, 99], // 2 and 3 are children, 99 is some unrelated existing dep
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    // Create an existing plan that children depend on (should be retained)
+    const external: PlanSchema = {
+      id: 6,
+      title: 'External',
+      tasks: [],
+    };
+    await writePlanFile(join(testDir, '6-external.plan.md'), external);
+
+    // Create another plan that depends on the children; these dependencies should be pruned
+    const other: PlanSchema = {
+      id: 5,
+      title: 'Other',
+      tasks: [],
+      dependencies: [2, 3, 6],
+    };
+    const otherFile = join(testDir, '5-other.plan.md');
+    await writePlanFile(otherFile, other);
+
+    // Create child plans. child1 also depends on its sibling (3) which should NOT be added to the parent
+    const child1: PlanSchema = {
+      id: 2,
+      title: 'Child 1',
+      parent: 1,
+      tasks: [],
+      dependencies: [3],
+    };
+    await writePlanFile(join(testDir, '2-child1.plan.md'), child1);
+
+    const child2: PlanSchema = {
+      id: 3,
+      title: 'Child 2',
+      parent: 1,
+      tasks: [],
+      dependencies: [6], // valid existing plan
+    };
+    await writePlanFile(join(testDir, '3-child2.plan.md'), child2);
+
+    // Mock command structure
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Execute merge
+    await handleMergeCommand(parentFile, {}, command);
+
+    // Verify parent dependencies: should remove 2 and 3, keep 99, add 6 (from children)
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.dependencies).toEqual([6, 99]);
+
+    // Verify other plan had dangling deps on 2 and 3 removed, 6 remains
+    const updatedOther = await readPlanFile(otherFile);
+    expect(updatedOther.dependencies).toEqual([6]);
   });
 });

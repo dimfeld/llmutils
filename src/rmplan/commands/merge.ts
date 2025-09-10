@@ -126,20 +126,35 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
     mainPlan.details = mergedDetails.join('\n\n');
   }
 
-  // Add child dependencies to main plan
+  // Prepare ID sets for pruning dependencies and grandchildren updates
+  const childIds = new Set(childrenToMerge.map((c) => c.id).filter(Boolean));
+  const childIdsNumbers = new Set<number>(Array.from(childIds) as number[]);
+  const remainingPlanIds = new Set<number>(
+    Array.from(plans.values())
+      .map((p) => p.id)
+      .filter((id): id is number => typeof id === 'number' && !childIdsNumbers.has(id))
+  );
+
+  // Add child dependencies to main plan, but only if they still exist after merge
   if (allChildDependencies.size > 0) {
     const existingDeps = new Set(mainPlan.dependencies || []);
     for (const dep of allChildDependencies) {
-      existingDeps.add(dep);
+      if (remainingPlanIds.has(dep)) {
+        existingDeps.add(dep);
+      }
     }
     mainPlan.dependencies = Array.from(existingDeps).sort((a, b) => a - b);
+  }
+
+  // Also ensure main plan does not depend on any merged child plans
+  if (mainPlan.dependencies && mainPlan.dependencies.length > 0) {
+    mainPlan.dependencies = mainPlan.dependencies.filter((dep) => !childIdsNumbers.has(dep));
   }
 
   // Update the main plan's updatedAt timestamp
   mainPlan.updatedAt = new Date().toISOString();
 
   // Find grandchildren (children of the merged children) and update their parent
-  const childIds = new Set(childrenToMerge.map((c) => c.id).filter(Boolean));
   const grandchildren = Array.from(plans.values()).filter(
     (plan) => plan.parent && childIds.has(plan.parent)
   );
@@ -150,6 +165,24 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
     grandchild.updatedAt = new Date().toISOString();
     await writePlanFile(grandchild.filename, grandchild);
     log(`Updated parent of ${grandchild.title || `Plan ${grandchild.id}`} to main plan`);
+  }
+
+  // Prune dangling dependencies in all remaining plans (excluding the ones being deleted and main plan which we write below)
+  for (const plan of plans.values()) {
+    if ((plan.id && childIdsNumbers.has(plan.id)) || plan.filename === resolvedPlanFile) {
+      continue;
+    }
+    if (plan.dependencies && plan.dependencies.length > 0) {
+      const originalLen = plan.dependencies.length;
+      plan.dependencies = plan.dependencies.filter((dep) => !childIdsNumbers.has(dep));
+      if (plan.dependencies.length !== originalLen) {
+        plan.updatedAt = new Date().toISOString();
+        await writePlanFile(plan.filename, plan);
+        log(`Removed ${originalLen - plan.dependencies.length} dangling dependenc(ies) from ${
+          plan.title || `Plan ${plan.id}`
+        }`);
+      }
+    }
   }
 
   // Save the updated main plan
