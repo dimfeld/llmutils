@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
-import { ModuleMocker } from '../../testing.js';
-import type { IssueTrackerClient, IssueWithComments } from '../../common/issue_tracker/types.js';
+import { ModuleMocker } from '../../../testing.js';
+import type { IssueTrackerClient, IssueWithComments } from '../../../common/issue_tracker/types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -23,22 +23,22 @@ describe('Linear Plan File Structure Tests', () => {
     actualWrittenFiles.clear();
 
     // Mock common dependencies
-    await moduleMocker.mock('../../common/git.js', () => ({
+    await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(() => Promise.resolve(tempDir)),
     }));
 
-    await moduleMocker.mock('../../logging.js', () => ({
+    await moduleMocker.mock('../../../logging.js', () => ({
       log: mock(),
       warn: mock(),
       error: mock(),
     }));
 
-    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+    await moduleMocker.mock('../../../rmpr/comment_options.js', () => ({
       parseCommandOptionsFromComment: mock(() => ({ options: null })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));
 
-    await moduleMocker.mock('../../common/formatting.js', () => ({
+    await moduleMocker.mock('../../../common/formatting.js', () => ({
       singleLineWithPrefix: mock((prefix, text) => prefix + text),
       limitLines: mock((text) => text),
     }));
@@ -47,7 +47,7 @@ describe('Linear Plan File Structure Tests', () => {
       checkbox: mock(() => Promise.resolve([])),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() =>
         Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
       ),
@@ -64,7 +64,7 @@ describe('Linear Plan File Structure Tests', () => {
       getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
     }));
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() =>
         Promise.resolve({
           issueTracker: 'linear' as const,
@@ -148,11 +148,11 @@ describe('Linear Plan File Structure Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() =>
         Promise.resolve({
           suggestedFileName: 'team-struct-implement-new-feature-with-validation.md',
@@ -253,11 +253,11 @@ describe('Linear Plan File Structure Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() =>
         Promise.resolve({
           suggestedFileName: 'team-minimal-simple-task.md',
@@ -367,11 +367,11 @@ describe('Linear Plan File Structure Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() => {
         const issue = mockLinearIssueWithMetadata.issue;
         const labels = issue.labels?.map((l) => l.name).join(', ') || '';
@@ -495,11 +495,11 @@ describe('Linear Plan File Structure Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() => {
         // Simulate comment truncation (showing first 10 comments)
         const commentsToShow = mockLargeLinearIssue.comments.slice(0, 10);
@@ -596,11 +596,11 @@ describe('Linear Plan File Structure Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() =>
         Promise.resolve({
           suggestedFileName: 'team-url-url-format-validation-test.md',

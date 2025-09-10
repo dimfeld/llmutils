@@ -69,12 +69,21 @@ describe('Documentation Consistency Check', () => {
       const linearClient = createLinearClient({ type: 'linear' });
 
       // From linear-integration.md: "TEAM-123 where TEAM is your Linear team identifier (uppercase letters and numbers)"
-      const validPatterns = ['TEAM-123', 'PROJ-456', 'ABC123-789', 'A-1', 'TEAM123-456', 'PROJ1-2'];
+      const validPatterns = [
+        'TEAM-123',
+        'PROJ-456',
+        'ABC123-789',
+        'A-1',
+        'TEAM123-456',
+        'PROJ1-2',
+        // We also allow lowercase for convenience of typing, and convert before talking to the API
+        'team-123',
+      ];
 
       for (const pattern of validPatterns) {
         const result = linearClient.parseIssueIdentifier(pattern);
         expect(result).not.toBeNull();
-        expect(result?.identifier).toBe(pattern);
+        expect(result?.identifier).toBe(pattern.toUpperCase());
       }
     });
 
@@ -82,7 +91,7 @@ describe('Documentation Consistency Check', () => {
       const linearClient = createLinearClient({ type: 'linear' });
 
       const invalidPatterns = [
-        'team-123', // Lowercase team identifier
+        // 'team-123', // Lowercase team identifier. We allow this and convert internally to make things easier to type
         'TEAM123', // Missing dash
         'TEAM-', // Missing number
         '-123', // Missing team identifier

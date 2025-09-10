@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { selectHierarchicalIssueComments } from './issue_utils.js';
 import { ModuleMocker } from '../testing.js';
 import type { IssueWithComments, IssueData } from '../common/issue_tracker/types.js';
+import { checkbox } from '@inquirer/prompts';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -100,8 +101,6 @@ describe('selectHierarchicalIssueComments', () => {
 
     const result = await selectHierarchicalIssueComments(mockHierarchicalIssue, true);
 
-    const { checkbox } = await import('@inquirer/prompts');
-
     // Should have been called twice
     expect(checkbox).toHaveBeenCalledTimes(2);
 
@@ -139,7 +138,6 @@ describe('selectHierarchicalIssueComments', () => {
     const result = await selectHierarchicalIssueComments(mockHierarchicalIssue, true);
 
     // Should still call content selection for parent
-    const { checkbox } = await import('@inquirer/prompts');
     expect(checkbox).toHaveBeenCalledTimes(2);
 
     // Result should have no children content
@@ -159,8 +157,6 @@ describe('selectHierarchicalIssueComments', () => {
     }));
 
     const result = await selectHierarchicalIssueComments(issueWithNoChildren, true);
-
-    const { checkbox } = await import('@inquirer/prompts');
 
     // Should only be called once (for content selection)
     expect(checkbox).toHaveBeenCalledTimes(1);
@@ -187,8 +183,6 @@ describe('selectHierarchicalIssueComments', () => {
     }));
 
     await selectHierarchicalIssueComments(mockHierarchicalIssue, true);
-
-    const { checkbox } = await import('@inquirer/prompts');
 
     // Check that the second call (content selection) has the correct message
     expect((checkbox as any).mock.calls[1][0].message).toBe(

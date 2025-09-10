@@ -3,10 +3,10 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { markTaskDone, markStepDone } from './plans/mark_done.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from './plans.js';
-import type { PlanSchema } from './planSchema.js';
-import type { RmplanConfig } from './configSchema.js';
+import { markTaskDone, markStepDone } from '../../plans/mark_done.js';
+import { clearPlanCache, readPlanFile, writePlanFile } from '../../plans.js';
+import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
+import type { RmplanConfig } from '../../configSchema.js';
 
 describe('Parent Plan Completion', () => {
   let tempDir: string;
@@ -49,7 +49,7 @@ describe('Parent Plan Completion', () => {
     await writePlanFile(parentPath, parentPlan);
 
     // Create child plans
-    const child1: PlanSchema = {
+    const child1: PlanSchemaInput = {
       id: 2,
       title: 'Child Plan 1',
       goal: 'Child 1 goal',
@@ -69,7 +69,7 @@ describe('Parent Plan Completion', () => {
     const child1Path = path.join(tasksDir, '2.yaml');
     await writePlanFile(child1Path, child1);
 
-    const child2: PlanSchema = {
+    const child2: PlanSchemaInput = {
       id: 3,
       title: 'Child Plan 2',
       goal: 'Child 2 goal',
@@ -140,7 +140,7 @@ describe('Parent Plan Completion', () => {
     await writePlanFile(parentPath, parentPlan);
 
     // Create child plan
-    const childPlan: PlanSchema = {
+    const childPlan: PlanSchemaInput = {
       id: 3,
       title: 'Child Plan',
       goal: 'Child goal',
@@ -187,7 +187,7 @@ describe('Parent Plan Completion', () => {
     await writePlanFile(parentPath, parentPlan);
 
     // Create two child plans
-    const child1: PlanSchema = {
+    const child1: PlanSchemaInput = {
       id: 2,
       title: 'Child Plan 1',
       goal: 'Child 1 goal',
@@ -206,7 +206,7 @@ describe('Parent Plan Completion', () => {
     const child1Path = path.join(tasksDir, '2.yaml');
     await writePlanFile(child1Path, child1);
 
-    const child2: PlanSchema = {
+    const child2: PlanSchemaInput = {
       id: 3,
       title: 'Child Plan 2',
       goal: 'Child 2 goal',

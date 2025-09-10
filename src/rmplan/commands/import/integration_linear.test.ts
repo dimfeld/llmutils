@@ -1,16 +1,17 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
-import { ModuleMocker } from '../../testing.js';
-import type {
-  IssueTrackerClient,
-  IssueWithComments,
-  Issue,
-} from '../../common/issue_tracker/types.js';
-import type { PlanSchema } from '../planSchema.js';
+import { ModuleMocker } from '../../../testing.js';
+import type { IssueTrackerClient, IssueWithComments } from '../../../common/issue_tracker/types.js';
+import type { PlanSchema } from '../../planSchema.js';
+import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
+import { writePlanFile } from '../../plans.js';
+import { log } from '../../../logging.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
+import { getInstructionsFromIssue } from '../../issue_utils.js';
+import { checkbox } from '@inquirer/prompts';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -25,22 +26,22 @@ describe('Linear Integration Tests', () => {
     await fs.mkdir(tasksDir, { recursive: true });
 
     // Mock common dependencies with realistic behavior
-    await moduleMocker.mock('../../common/git.js', () => ({
+    await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(() => Promise.resolve(tempDir)),
     }));
 
-    await moduleMocker.mock('../../logging.js', () => ({
+    await moduleMocker.mock('../../../logging.js', () => ({
       log: mock(),
       warn: mock(),
       error: mock(),
     }));
 
-    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+    await moduleMocker.mock('../../../rmpr/comment_options.js', () => ({
       parseCommandOptionsFromComment: mock(() => ({ options: null })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));
 
-    await moduleMocker.mock('../../common/formatting.js', () => ({
+    await moduleMocker.mock('../../../common/formatting.js', () => ({
       singleLineWithPrefix: mock((prefix, text) => prefix + text),
       limitLines: mock((text) => text),
     }));
@@ -130,15 +131,15 @@ describe('Linear Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
-      await moduleMocker.mock('../plans.js', () => ({
+      await moduleMocker.mock('../../plans.js', () => ({
         readAllPlans: mock(() =>
           Promise.resolve({ plans: new Map(), maxNumericId: 5, duplicates: {} })
         ),
@@ -148,7 +149,7 @@ describe('Linear Integration Tests', () => {
         getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() =>
           Promise.resolve({
             suggestedFileName: 'team-123-implement-user-authentication.md',
@@ -181,9 +182,6 @@ describe('Linear Integration Tests', () => {
       await handleImportCommand('TEAM-123');
 
       // Verify interactions
-      const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-      const { writePlanFile } = await import('../plans.js');
-      const { log } = await import('../../logging.js');
 
       expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
       expect(mockLinearClient.fetchIssue).toHaveBeenCalledWith('TEAM-123');
@@ -236,15 +234,15 @@ describe('Linear Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
-      await moduleMocker.mock('../plans.js', () => ({
+      await moduleMocker.mock('../../plans.js', () => ({
         readAllPlans: mock(() =>
           Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
         ),
@@ -254,7 +252,7 @@ describe('Linear Integration Tests', () => {
         getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() =>
           Promise.resolve({
             suggestedFileName: 'team-456-fix-login-bug.md',
@@ -285,7 +283,6 @@ describe('Linear Integration Tests', () => {
 
       await handleImportCommand('TEAM-456');
 
-      const { writePlanFile } = await import('../plans.js');
       expect(writePlanFile).toHaveBeenCalled();
 
       const [_, planData] = (writePlanFile as any).mock.calls[0];
@@ -340,15 +337,15 @@ describe('Linear Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
-      await moduleMocker.mock('../plans.js', () => ({
+      await moduleMocker.mock('../../plans.js', () => ({
         readAllPlans: mock(() =>
           Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
         ),
@@ -358,7 +355,7 @@ describe('Linear Integration Tests', () => {
         getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock((client, identifier, include) => {
           // Simulate processing many comments
           const comments = mockLinearIssueWithManyComments.comments
@@ -394,9 +391,6 @@ describe('Linear Integration Tests', () => {
       }));
 
       await handleImportCommand('TEAM-789');
-
-      const { writePlanFile } = await import('../plans.js');
-      const { getInstructionsFromIssue } = await import('../issue_utils.js');
 
       expect(writePlanFile).toHaveBeenCalled();
       expect(getInstructionsFromIssue).toHaveBeenCalledWith(mockLinearClient, 'TEAM-789', false);
@@ -477,11 +471,11 @@ describe('Linear Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
@@ -490,7 +484,7 @@ describe('Linear Integration Tests', () => {
         checkbox: mock(() => Promise.resolve(['TEAM-100', 'TEAM-101', 'TEAM-102'])),
       }));
 
-      await moduleMocker.mock('../plans.js', () => ({
+      await moduleMocker.mock('../../plans.js', () => ({
         readAllPlans: mock(() =>
           Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
         ),
@@ -501,7 +495,7 @@ describe('Linear Integration Tests', () => {
       }));
 
       let callCount = 0;
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock((client, identifier) => {
           const issue = mockLinearIssues.find((i) => i.number === identifier);
           return Promise.resolve({
@@ -533,9 +527,6 @@ describe('Linear Integration Tests', () => {
       await handleImportCommand();
 
       const { fetchAllOpenIssues } = mockLinearClient;
-      const { checkbox } = await import('@inquirer/prompts');
-      const { writePlanFile } = await import('../plans.js');
-      const { log } = await import('../../logging.js');
 
       // Verify all issues were fetched
       expect(fetchAllOpenIssues).toHaveBeenCalled();
@@ -614,15 +605,15 @@ describe('Linear Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
-      await moduleMocker.mock('../plans.js', () => ({
+      await moduleMocker.mock('../../plans.js', () => ({
         readAllPlans: mock(() =>
           Promise.resolve({
             plans: new Map([[42, existingPlan]]),
@@ -638,7 +629,7 @@ describe('Linear Integration Tests', () => {
         ),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() =>
           Promise.resolve({
             suggestedFileName: 'team-999-updated-issue-title.md',
@@ -671,9 +662,6 @@ describe('Linear Integration Tests', () => {
       }));
 
       await handleImportCommand('TEAM-999');
-
-      const { writePlanFile } = await import('../plans.js');
-      const { log } = await import('../../logging.js');
 
       expect(writePlanFile).toHaveBeenCalled();
       expect(log).toHaveBeenCalledWith(
@@ -728,15 +716,15 @@ describe('Linear Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
-      await moduleMocker.mock('../plans.js', () => ({
+      await moduleMocker.mock('../../plans.js', () => ({
         readAllPlans: mock(() =>
           Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
         ),
@@ -746,7 +734,7 @@ describe('Linear Integration Tests', () => {
         getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock((client, identifier) => {
           const issue = mockLinearIssueWithPriority.issue;
           const labels = issue.labels?.map((l) => l.name).join(', ') || '';
@@ -780,7 +768,6 @@ describe('Linear Integration Tests', () => {
 
       await handleImportCommand('TEAM-PRIORITY');
 
-      const { writePlanFile } = await import('../plans.js');
       expect(writePlanFile).toHaveBeenCalled();
 
       const [_, planData] = (writePlanFile as any).mock.calls[0];
@@ -828,11 +815,11 @@ describe('Linear Integration Tests', () => {
           getConfig: mock(() => ({ type: 'linear' })),
         };
 
-        await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+        await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
           getIssueTracker: mock(() => Promise.resolve(mockClient)),
         }));
 
-        await moduleMocker.mock('../issue_utils.js', () => ({
+        await moduleMocker.mock('../../issue_utils.js', () => ({
           getInstructionsFromIssue: mock(() =>
             Promise.resolve({
               suggestedFileName: `team-${testCase.state.toLowerCase()}-issue.md`,
@@ -890,7 +877,7 @@ describe('Linear Integration Tests', () => {
           }),
         }));
 
-        await moduleMocker.mock('../plans.js', () => ({
+        await moduleMocker.mock('../../plans.js', () => ({
           readAllPlans: mock(() =>
             Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
           ),
@@ -902,7 +889,6 @@ describe('Linear Integration Tests', () => {
 
         await handleImportCommand(`TEAM-${testCase.state.toUpperCase()}`);
 
-        const { writePlanFile } = await import('../plans.js');
         expect(writePlanFile).toHaveBeenCalled();
         const [_, planData] = (writePlanFile as any).mock.calls[0];
 

@@ -1,12 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
-import { handleGenerateCommand } from './generate.js';
-import { ModuleMocker } from '../../testing.js';
-import type {
-  IssueTrackerClient,
-  IssueWithComments,
-  Issue,
-} from '../../common/issue_tracker/types.js';
+import { ModuleMocker } from '../../../testing.js';
+import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
+import type { IssueTrackerClient, IssueWithComments } from '../../../common/issue_tracker/types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -25,22 +21,22 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
     await fs.mkdir(tasksDir, { recursive: true });
 
     // Mock common dependencies
-    await moduleMocker.mock('../../common/git.js', () => ({
+    await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(() => Promise.resolve(tempDir)),
     }));
 
-    await moduleMocker.mock('../../logging.js', () => ({
+    await moduleMocker.mock('../../../logging.js', () => ({
       log: mock(),
       warn: mock(),
       error: mock(),
     }));
 
-    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+    await moduleMocker.mock('../../../rmpr/comment_options.js', () => ({
       parseCommandOptionsFromComment: mock(() => ({ options: null })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));
 
-    await moduleMocker.mock('../../common/formatting.js', () => ({
+    await moduleMocker.mock('../../../common/formatting.js', () => ({
       singleLineWithPrefix: mock((prefix, text) => prefix + text),
       limitLines: mock((text) => text),
     }));
@@ -49,7 +45,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
       checkbox: mock(() => Promise.resolve([])),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() =>
         Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
       ),
@@ -98,21 +94,21 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(githubConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() =>
           Promise.resolve({
-            suggestedFileName: 'issue-123-github-test-issue.md',
+            suggestedFileName: '../issue-123-github-test-issue.md',
             issue: {
-              title: 'GitHub Test Issue',
-              html_url: 'https://github.com/owner/repo/issues/123',
+              title: '../GitHub Test Issue',
+              html_url: '../https://github.com/owner/repo/issues/123',
               number: 123,
             },
             plan: 'This is a GitHub issue',
@@ -135,7 +131,6 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
 
       await handleImportCommand('123');
 
-      const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
       expect(getIssueTracker).toHaveBeenCalledWith(githubConfig);
       expect(mockGitHubClient.fetchIssue).toHaveBeenCalledWith('123');
       expect(mockGitHubClient.getDisplayName()).toBe('GitHub');
@@ -171,15 +166,15 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() =>
           Promise.resolve({
             suggestedFileName: 'team-123-linear-test-issue.md',
@@ -208,7 +203,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
 
       await handleImportCommand('TEAM-123');
 
-      const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
+      const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
       expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
       expect(mockLinearClient.fetchIssue).toHaveBeenCalledWith('TEAM-123');
       expect(mockLinearClient.getDisplayName()).toBe('Linear');
@@ -244,15 +239,15 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(defaultConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() =>
           Promise.resolve({
             suggestedFileName: 'issue-456-default-github-issue.md',
@@ -320,11 +315,11 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
           getConfig: mock(() => ({ type: 'github' })),
         };
 
-        await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+        await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
           getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
         }));
 
-        await moduleMocker.mock('../configLoader.js', () => ({
+        await moduleMocker.mock('../../configLoader.js', () => ({
           loadEffectiveConfig: mock(() =>
             Promise.resolve({
               issueTracker: 'github' as const,
@@ -333,7 +328,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
           ),
         }));
 
-        await moduleMocker.mock('../issue_utils.js', () => ({
+        await moduleMocker.mock('../../issue_utils.js', () => ({
           getInstructionsFromIssue: mock(() =>
             Promise.resolve({
               suggestedFileName: `issue-${testCase.expected}-test.md`,
@@ -402,11 +397,11 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
           getConfig: mock(() => ({ type: 'linear' })),
         };
 
-        await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+        await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
           getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
         }));
 
-        await moduleMocker.mock('../configLoader.js', () => ({
+        await moduleMocker.mock('../../configLoader.js', () => ({
           loadEffectiveConfig: mock(() =>
             Promise.resolve({
               issueTracker: 'linear' as const,
@@ -415,7 +410,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
           ),
         }));
 
-        await moduleMocker.mock('../issue_utils.js', () => ({
+        await moduleMocker.mock('../../issue_utils.js', () => ({
           getInstructionsFromIssue: mock(() =>
             Promise.resolve({
               suggestedFileName: `${testCase.expected.toLowerCase()}-test.md`,
@@ -461,7 +456,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         getConfig: mock(() => ({ type: 'github' })),
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() =>
           Promise.resolve({
             issueTracker: 'github' as const,
@@ -470,7 +465,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         ),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
       }));
 
@@ -494,7 +489,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         getConfig: mock(() => ({ type: 'linear' })),
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() =>
           Promise.resolve({
             issueTracker: 'linear' as const,
@@ -503,7 +498,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         ),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
@@ -519,7 +514,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
     });
 
     test('should handle factory initialization errors', async () => {
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() =>
           Promise.resolve({
             issueTracker: 'github' as const,
@@ -528,7 +523,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         ),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() =>
           Promise.reject(new Error('GITHUB_TOKEN environment variable is required'))
         ),
@@ -583,15 +578,15 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         getConfig: mock(() => ({ type: 'github' })),
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(githubConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() =>
           Promise.resolve({
             suggestedFileName: 'issue-999-github-switch-test.md',
@@ -659,15 +654,15 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
         getConfig: mock(() => ({ type: 'linear' })),
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
       }));
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() =>
           Promise.resolve({
             suggestedFileName: 'team-switch-linear-switch-test.md',

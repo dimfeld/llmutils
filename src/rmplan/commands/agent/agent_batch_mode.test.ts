@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { rmplanAgent } from './agent.js';
 import { clearPlanCache } from '../../plans.js';
-import type { PlanSchema } from '../../planSchema.js';
+import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import { ModuleMocker } from '../../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -66,7 +66,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
     }));
 
     // Mock dependencies
-    await moduleMocker.mock('../../logging.js', () => ({
+    await moduleMocker.mock('../../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
       warn: warnSpy,
@@ -75,33 +75,34 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       boldMarkdownHeaders: mock((text: string) => text),
     }));
 
-    await moduleMocker.mock('../../common/git.js', () => ({
+    getGitRootSpy.mockImplementation(async () => tempDir);
+    await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: getGitRootSpy,
     }));
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: loadEffectiveConfigSpy,
     }));
 
-    await moduleMocker.mock('../executors/index.js', () => ({
+    await moduleMocker.mock('../../executors/index.js', () => ({
       buildExecutorAndLog: buildExecutorAndLogSpy,
       DEFAULT_EXECUTOR: 'copy-only',
       defaultModelForExecutor: mock(() => 'test-model'),
     }));
 
-    await moduleMocker.mock('../prompt_builder.js', () => ({
+    await moduleMocker.mock('../../prompt_builder.js', () => ({
       buildExecutionPromptWithoutSteps: buildExecutionPromptWithoutStepsSpy,
     }));
 
-    await moduleMocker.mock('../actions.js', () => ({
+    await moduleMocker.mock('../../actions.js', () => ({
       executePostApplyCommand: executePostApplyCommandSpy,
     }));
 
-    await moduleMocker.mock('../plans/prepare_phase.js', () => ({
+    await moduleMocker.mock('../../plans/prepare_phase.js', () => ({
       preparePhase: mock(async () => {}),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       resolvePlanFile: resolvePlanFileSpy,
       readPlanFile: mock(async (filePath: string) => {
         // Read the actual file
@@ -127,7 +128,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       clearPlanCache: mock(() => {}),
     }));
 
-    await moduleMocker.mock('../configSchema.js', () => ({
+    await moduleMocker.mock('../../configSchema.js', () => ({
       resolveTasksDir: mock(async () => '/test/tasks'),
     }));
 
@@ -142,8 +143,8 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
     }
   });
 
-  async function createPlanFile(planData: Partial<PlanSchema>) {
-    const defaultPlan: PlanSchema = {
+  async function createPlanFile(planData: Partial<PlanSchemaInput>) {
+    const defaultPlan: PlanSchemaInput = {
       id: 1,
       title: 'Test Plan',
       goal: 'Test goal',
@@ -187,8 +188,8 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
 
       // Check the calls to the prompt builder for batch mode characteristics
       const callArgs = buildExecutionPromptWithoutStepsSpy.mock.calls[0][0];
-      expect(callArgs.task.title).toContain('Batch Processing');
-      expect(callArgs.task.description).toContain('batch mode');
+      expect(callArgs.task.title).toContain('2 Tasks');
+      expect(callArgs.task.description).toContain('select and complete');
       expect(callArgs.task.description).toContain('Task 1: Task 1');
       expect(callArgs.task.description).toContain('Task 2: Task 2');
     });
@@ -205,7 +206,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       });
 
       // Mock the normal execution path
-      await moduleMocker.mock('../plans/find_next.js', () => ({
+      await moduleMocker.mock('../../plans/find_next.js', () => ({
         findNextActionableItem: mock(() => null), // No actionable items
         getAllIncompleteTasks: mock(() => []),
       }));
@@ -318,7 +319,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         { taskIndex: 2, task: { title: 'Task 3', description: 'Third task' } },
       ]);
 
-      await moduleMocker.mock('../plans/find_next.js', () => ({
+      await moduleMocker.mock('../../plans/find_next.js', () => ({
         getAllIncompleteTasks: mockGetAllIncompleteTasks,
         findNextActionableItem: mock(() => null),
       }));
@@ -362,7 +363,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         },
       ]);
 
-      await moduleMocker.mock('../plans/find_next.js', () => ({
+      await moduleMocker.mock('../../plans/find_next.js', () => ({
         getAllIncompleteTasks: mockGetAllIncompleteTasks,
         findNextActionableItem: mock(() => null),
       }));
@@ -405,7 +406,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
         },
       ]);
 
-      await moduleMocker.mock('../plans/find_next.js', () => ({
+      await moduleMocker.mock('../../plans/find_next.js', () => ({
         getAllIncompleteTasks: mockGetAllIncompleteTasks,
         findNextActionableItem: mock(() => null),
       }));
@@ -616,8 +617,7 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
           planFilePath: planFile,
           includeCurrentPlanContext: true,
           task: expect.objectContaining({
-            title: 'Batch Processing: 1 Tasks',
-            description: expect.stringContaining('batch mode'),
+            description: expect.stringContaining('select and complete'),
           }),
         })
       );

@@ -122,7 +122,7 @@ describe('answerPr command', () => {
       'PR-123',
       {
         executor: 'copy-only', // DEFAULT_EXECUTOR
-        mode: 'inline-comments', // Default mode from the code
+        mode: 'hybrid', // Default mode from the code
       },
       { debug: false },
       {}

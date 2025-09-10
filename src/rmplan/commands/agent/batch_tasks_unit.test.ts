@@ -4,9 +4,9 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleAgentCommand } from './agent.js';
-import { clearPlanCache } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
+import { clearPlanCache } from '../../plans.js';
+import type { PlanSchema } from '../../planSchema.js';
+import { ModuleMocker } from '../../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -50,7 +50,7 @@ describe('--serial-tasks flag pass-through tests', () => {
     await fs.writeFile(planFile, yaml.stringify(testPlan));
 
     // Mock dependencies
-    await moduleMocker.mock('../../logging.js', () => ({
+    await moduleMocker.mock('../../../logging.js', () => ({
       log: logSpy,
       error: mock(() => {}),
       warn: mock(() => {}),
@@ -58,15 +58,15 @@ describe('--serial-tasks flag pass-through tests', () => {
       closeLogFile: mock(async () => {}),
     }));
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: loadEffectiveConfigSpy,
     }));
 
-    await moduleMocker.mock('../configSchema.js', () => ({
+    await moduleMocker.mock('../../configSchema.js', () => ({
       resolveTasksDir: resolveTasksDirSpy,
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       resolvePlanFile: resolvePlanFileSpy,
       findNextPlan: mock(async () => null), // No next plan available
     }));
@@ -232,7 +232,7 @@ describe('--serial-tasks flag pass-through tests', () => {
         filename: '/test/next-plan.yml',
       };
 
-      await moduleMocker.mock('../plans.js', () => ({
+      await moduleMocker.mock('../../plans.js', () => ({
         resolvePlanFile: resolvePlanFileSpy,
         findNextPlan: mock(async () => nextPlan),
       }));
@@ -259,7 +259,7 @@ describe('--serial-tasks flag pass-through tests', () => {
         filename: '/test/current-plan.yml',
       };
 
-      await moduleMocker.mock('../plans.js', () => ({
+      await moduleMocker.mock('../../plans.js', () => ({
         resolvePlanFile: resolvePlanFileSpy,
         findNextPlan: mock(async () => currentPlan),
       }));

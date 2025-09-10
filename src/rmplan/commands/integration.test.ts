@@ -554,7 +554,7 @@ describe('findNextReadyDependency integration tests', () => {
     // Should handle the circular dependency gracefully
     // None of the plans can be started due to circular dependencies
     expect(result.plan).toBeNull();
-    expect(result.message).toContain('No ready or pending dependencies found');
+    expect(result.message).toContain('No ready dependencies found');
   });
 
   test('large project with realistic priority distribution', async () => {

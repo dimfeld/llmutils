@@ -1,12 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../../testing.js';
-import type { PlanSchema } from '../../planSchema.js';
-import type {
-  IssueTrackerClient,
-  IssueWithComments,
-  Issue,
-} from '../../../common/issue_tracker/types.js';
+import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
+import type { IssueTrackerClient, IssueWithComments } from '../../../common/issue_tracker/types.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -44,7 +40,7 @@ const mockIssueWithComments: IssueWithComments = {
 };
 
 // Mock issues list for the generic interface
-const mockIssues: Issue[] = [
+const mockIssues = [
   {
     id: '123',
     number: 123,
@@ -138,7 +134,7 @@ const mockLinearIssueTracker: IssueTrackerClient = {
 describe('handleImportCommand', () => {
   beforeEach(async () => {
     // Mock all the dependencies
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() => Promise.resolve(mockIssueData)),
       createStubPlanFromIssue: mock(() => ({
         id: 6,
@@ -154,11 +150,11 @@ describe('handleImportCommand', () => {
       })),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockIssueTracker)),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansResult)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
@@ -166,15 +162,15 @@ describe('handleImportCommand', () => {
       getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
     }));
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() => Promise.resolve(mockConfig)),
     }));
 
-    await moduleMocker.mock('../../common/git.js', () => ({
+    await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(() => Promise.resolve('/test/git/root')),
     }));
 
-    await moduleMocker.mock('../../logging.js', () => ({
+    await moduleMocker.mock('../../../logging.js', () => ({
       log: mock(),
       warn: mock(),
       error: mock(),
@@ -184,12 +180,12 @@ describe('handleImportCommand', () => {
       checkbox: mock(() => Promise.resolve([0, 1])), // Return indices for selected items
     }));
 
-    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+    await moduleMocker.mock('../../../rmpr/comment_options.js', () => ({
       parseCommandOptionsFromComment: mock(() => ({ options: null })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));
 
-    await moduleMocker.mock('../../common/formatting.js', () => ({
+    await moduleMocker.mock('../../../common/formatting.js', () => ({
       singleLineWithPrefix: mock((prefix, text) => prefix + text),
       limitLines: mock((text) => text),
     }));
@@ -202,8 +198,8 @@ describe('handleImportCommand', () => {
   test('should import a single issue when --issue flag is provided', async () => {
     await handleImportCommand(undefined, { issue: '123' });
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
 
     expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
     expect(mockIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
@@ -213,8 +209,8 @@ describe('handleImportCommand', () => {
   test('should import a single issue when issue argument is provided', async () => {
     await handleImportCommand('456');
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
 
     expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
     expect(mockIssueTracker.fetchIssue).toHaveBeenCalledWith('456');
@@ -251,7 +247,7 @@ describe('handleImportCommand', () => {
       ),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
@@ -262,8 +258,8 @@ describe('handleImportCommand', () => {
 
     await handleImportCommand();
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { log } = await import('../../../logging.js');
     const { checkbox } = await import('@inquirer/prompts');
 
     expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
@@ -288,9 +284,10 @@ describe('handleImportCommand', () => {
       duplicates: {},
     };
 
-    const mockImportedPlan: PlanSchema = {
+    const mockImportedPlan: PlanSchemaInput = {
       id: 1,
       goal: 'Imported plan',
+      status: 'pending',
       details: 'Already imported',
       issue: ['https://github.com/owner/repo/issues/100'], // This one is already imported
       tasks: [],
@@ -335,11 +332,11 @@ describe('handleImportCommand', () => {
       ),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansWithImported)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
@@ -356,8 +353,8 @@ describe('handleImportCommand', () => {
 
     await handleImportCommand();
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { log } = await import('../../../logging.js');
     const { checkbox } = await import('@inquirer/prompts');
 
     expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
@@ -408,12 +405,12 @@ describe('handleImportCommand', () => {
       fetchIssue: mock(() => Promise.resolve(mockIssueWithComments)),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
     // Override the plans mock to include getImportedIssueUrls for this test
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansResult)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
@@ -428,9 +425,9 @@ describe('handleImportCommand', () => {
 
     await handleImportCommand();
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
+    const { log } = await import('../../../logging.js');
     const { checkbox } = await import('@inquirer/prompts');
 
     // Verify checkbox was called with correct choices
@@ -512,11 +509,11 @@ describe('handleImportCommand', () => {
       fetchIssue: mock(() => Promise.resolve(issueWithComments)),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansWithExisting)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
@@ -533,9 +530,9 @@ describe('handleImportCommand', () => {
 
     await handleImportCommand('123');
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
+    const { log } = await import('../../../logging.js');
 
     expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
     expect(testIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
@@ -564,8 +561,8 @@ describe('handleImportCommand', () => {
   test('should create stub plan file with correct metadata', async () => {
     await handleImportCommand('123');
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
 
     expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
     expect(mockIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
@@ -629,11 +626,11 @@ describe('handleImportCommand', () => {
       fetchIssue: mock(() => Promise.resolve(issueWithoutComments)),
     };
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansWithDuplicate)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
@@ -642,9 +639,9 @@ describe('handleImportCommand', () => {
 
     await handleImportCommand('123');
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
+    const { log } = await import('../../../logging.js');
 
     expect(getIssueTracker).toHaveBeenCalledWith(mockConfig);
     expect(testIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
@@ -664,17 +661,17 @@ describe('handleImportCommand', () => {
         paths: { tasks: 'tasks' },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(githubConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockIssueTracker)),
       }));
 
       await handleImportCommand('123');
 
-      const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
+      const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
       expect(getIssueTracker).toHaveBeenCalledWith(githubConfig);
       expect(mockIssueTracker.fetchIssue).toHaveBeenCalledWith('123');
     });
@@ -697,7 +694,7 @@ describe('handleImportCommand', () => {
         rmprOptions: null,
       };
 
-      await moduleMocker.mock('../issue_utils.js', () => ({
+      await moduleMocker.mock('../../issue_utils.js', () => ({
         getInstructionsFromIssue: mock(() => Promise.resolve(linearIssueData)),
         createStubPlanFromIssue: mock(() => ({
           id: 6,
@@ -712,18 +709,18 @@ describe('handleImportCommand', () => {
         })),
       }));
 
-      await moduleMocker.mock('../configLoader.js', () => ({
+      await moduleMocker.mock('../../configLoader.js', () => ({
         loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
       }));
 
-      await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+      await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
         getIssueTracker: mock(() => Promise.resolve(mockLinearIssueTracker)),
       }));
 
       await handleImportCommand('TEAM-123');
 
-      const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-      const { writePlanFile } = await import('../plans.js');
+      const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+      const { writePlanFile } = await import('../../plans.js');
 
       expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
       expect(mockLinearIssueTracker.fetchIssue).toHaveBeenCalledWith('TEAM-123');
@@ -749,11 +746,11 @@ describe('handleImportCommand', () => {
         const expectedTracker =
           config.issueTracker === 'github' ? mockIssueTracker : mockLinearIssueTracker;
 
-        await moduleMocker.mock('../configLoader.js', () => ({
+        await moduleMocker.mock('../../configLoader.js', () => ({
           loadEffectiveConfig: mock(() => Promise.resolve(config)),
         }));
 
-        await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+        await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
           getIssueTracker: mock(() => Promise.resolve(expectedTracker)),
         }));
 
@@ -763,8 +760,8 @@ describe('handleImportCommand', () => {
 
         await handleImportCommand();
 
-        const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-        const { log } = await import('../../logging.js');
+        const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+        const { log } = await import('../../../logging.js');
 
         expect(getIssueTracker).toHaveBeenCalledWith(config);
         expect(expectedTracker.fetchAllOpenIssues).toHaveBeenCalled();

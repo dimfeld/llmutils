@@ -1,12 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
-import { ModuleMocker } from '../../testing.js';
-import type {
-  IssueTrackerClient,
-  IssueWithComments,
-  Issue,
-} from '../../common/issue_tracker/types.js';
-import type { PlanSchema } from '../planSchema.js';
+import { ModuleMocker } from '../../../testing.js';
+import type { IssueTrackerClient, IssueWithComments } from '../../../common/issue_tracker/types.js';
+import type { Issue } from '@linear/sdk';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -154,7 +150,7 @@ const mockGitHubIssueData = {
 describe('handleImportCommand Integration Tests', () => {
   beforeEach(async () => {
     // Mock common dependencies
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansResult)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
@@ -162,11 +158,11 @@ describe('handleImportCommand Integration Tests', () => {
       getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
     }));
 
-    await moduleMocker.mock('../../common/git.js', () => ({
+    await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(() => Promise.resolve('/test/git/root')),
     }));
 
-    await moduleMocker.mock('../../logging.js', () => ({
+    await moduleMocker.mock('../../../logging.js', () => ({
       log: mock(),
       warn: mock(),
       error: mock(),
@@ -176,17 +172,17 @@ describe('handleImportCommand Integration Tests', () => {
       checkbox: mock(() => Promise.resolve([])), // Default to no selection
     }));
 
-    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+    await moduleMocker.mock('../../../rmpr/comment_options.js', () => ({
       parseCommandOptionsFromComment: mock(() => ({ options: null })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));
 
-    await moduleMocker.mock('../../common/formatting.js', () => ({
+    await moduleMocker.mock('../../../common/formatting.js', () => ({
       singleLineWithPrefix: mock((prefix, text) => prefix + text),
       limitLines: mock((text) => text),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock((client, issueId, include) => {
         // Return different data based on the issue ID pattern
         if (issueId.toString().startsWith('LIN-') || issueId.toString() === '123') {
@@ -229,26 +225,26 @@ describe('handleImportCommand Integration Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
     await handleImportCommand('LIN-123');
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
+    const { log } = await import('../../../logging.js');
 
     expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
     expect(mockLinearClient.fetchIssue).toHaveBeenCalledWith('LIN-123');
     expect(writePlanFile).toHaveBeenCalled();
 
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-    expect(filePath).toContain('linear-123-linear-issue-example.plan.md');
+    expect(filePath).toContain('-123-linear-issue-example.plan.md');
     expect(planData).toMatchObject({
       title: 'Linear Issue Example',
       issue: ['https://linear.app/team/issue/LIN-123'],
@@ -274,19 +270,19 @@ describe('handleImportCommand Integration Tests', () => {
       getConfig: mock(() => ({ type: 'github' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() => Promise.resolve(githubConfig)),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
     }));
 
     await handleImportCommand('456');
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
+    const { log } = await import('../../../logging.js');
 
     expect(getIssueTracker).toHaveBeenCalledWith(githubConfig);
     expect(mockGitHubClient.fetchIssue).toHaveBeenCalledWith('456');
@@ -318,11 +314,11 @@ describe('handleImportCommand Integration Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() => Promise.resolve(linearConfig)),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
@@ -333,9 +329,9 @@ describe('handleImportCommand Integration Tests', () => {
 
     await handleImportCommand(); // No issue specified, should enter interactive mode
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
+    const { log } = await import('../../../logging.js');
     const { checkbox } = await import('@inquirer/prompts');
 
     expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
@@ -370,11 +366,11 @@ describe('handleImportCommand Integration Tests', () => {
       getConfig: mock(() => ({ type: 'github' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() => Promise.resolve(githubConfig)),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
     }));
 
@@ -385,9 +381,9 @@ describe('handleImportCommand Integration Tests', () => {
 
     await handleImportCommand(); // No issue specified, should enter interactive mode
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
-    const { log } = await import('../../logging.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
+    const { log } = await import('../../../logging.js');
     const { checkbox } = await import('@inquirer/prompts');
 
     expect(getIssueTracker).toHaveBeenCalledWith(githubConfig);
@@ -414,12 +410,12 @@ describe('handleImportCommand Integration Tests', () => {
       paths: { tasks: 'tasks' },
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() => Promise.resolve(invalidConfig)),
     }));
 
     // Mock factory to throw an error (e.g., missing API key)
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() =>
         Promise.reject(new Error('GITHUB_TOKEN environment variable is required'))
       ),
@@ -451,18 +447,18 @@ describe('handleImportCommand Integration Tests', () => {
       getConfig: mock(() => ({ type: 'github' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() => Promise.resolve(legacyConfig)),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
     }));
 
     await handleImportCommand('456');
 
-    const { getIssueTracker } = await import('../../common/issue_tracker/factory.js');
-    const { writePlanFile } = await import('../plans.js');
+    const { getIssueTracker } = await import('../../../common/issue_tracker/factory.js');
+    const { writePlanFile } = await import('../../plans.js');
 
     expect(getIssueTracker).toHaveBeenCalledWith(legacyConfig);
     expect(mockGitHubClient.fetchIssue).toHaveBeenCalledWith('456');

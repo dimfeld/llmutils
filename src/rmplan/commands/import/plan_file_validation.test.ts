@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../../testing.js';
-import type { IssueTrackerClient, IssueWithComments } from '../../common/issue_tracker/types.js';
+import type { IssueTrackerClient, IssueWithComments } from '../../../common/issue_tracker/types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -22,22 +22,22 @@ describe('Plan File Validation Tests', () => {
     await fs.mkdir(tasksDir, { recursive: true });
     actualWrittenFiles.clear();
 
-    await moduleMocker.mock('../../common/git.js', () => ({
+    await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(() => Promise.resolve(tempDir)),
     }));
 
-    await moduleMocker.mock('../../logging.js', () => ({
+    await moduleMocker.mock('../../../logging.js', () => ({
       log: mock(),
       warn: mock(),
       error: mock(),
     }));
 
-    await moduleMocker.mock('../../rmpr/comment_options.js', () => ({
+    await moduleMocker.mock('../../../rmpr/comment_options.js', () => ({
       parseCommandOptionsFromComment: mock(() => ({ options: null })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));
 
-    await moduleMocker.mock('../../common/formatting.js', () => ({
+    await moduleMocker.mock('../../../common/formatting.js', () => ({
       singleLineWithPrefix: mock((prefix, text) => prefix + text),
       limitLines: mock((text) => text),
     }));
@@ -46,7 +46,7 @@ describe('Plan File Validation Tests', () => {
       checkbox: mock(() => Promise.resolve([])),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() =>
         Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
       ),
@@ -96,7 +96,7 @@ describe('Plan File Validation Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() =>
         Promise.resolve({
           issueTracker: 'linear' as const,
@@ -105,11 +105,11 @@ describe('Plan File Validation Tests', () => {
       ),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() =>
         Promise.resolve({
           suggestedFileName: 'valid-123-schema-validation-test.md',
@@ -210,7 +210,7 @@ describe('Plan File Validation Tests', () => {
       getConfig: mock(() => ({ type: 'github' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() =>
         Promise.resolve({
           issueTracker: 'github' as const,
@@ -219,11 +219,11 @@ describe('Plan File Validation Tests', () => {
       ),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() =>
         Promise.resolve({
           suggestedFileName: 'issue-123-github-schema-validation-test.md',
@@ -319,7 +319,7 @@ describe('Plan File Validation Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() =>
         Promise.resolve({
           issueTracker: 'linear' as const,
@@ -328,11 +328,11 @@ describe('Plan File Validation Tests', () => {
       ),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() =>
         Promise.resolve({
           suggestedFileName: 'edge-999-edge-case-test-with-special-characters.md',
@@ -434,7 +434,7 @@ describe('Plan File Validation Tests', () => {
       getConfig: mock(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(() =>
         Promise.resolve({
           issueTracker: 'linear' as const,
@@ -443,11 +443,11 @@ describe('Plan File Validation Tests', () => {
       ),
     }));
 
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
     }));
 
-    await moduleMocker.mock('../issue_utils.js', () => ({
+    await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() =>
         Promise.resolve({
           suggestedFileName: 'types-123-data-type-validation-test.md',

@@ -544,7 +544,10 @@ async function generateRegularDiffForReview(gitRoot: string): Promise<DiffResult
     // Use jj commands for diff generation
     try {
       // Get list of changed files
-      const filesResult = await $`jj diff --from ${safeBranch} --summary`.cwd(gitRoot).nothrow();
+      const filesResult = await $`jj diff --from ${safeBranch} --summary`
+        .quiet()
+        .cwd(gitRoot)
+        .nothrow();
       if (filesResult.exitCode === 0) {
         changedFiles = filesResult.stdout
           .toString()
@@ -610,7 +613,7 @@ async function generateRegularDiffForReview(gitRoot: string): Promise<DiffResult
       }
 
       // Get full diff content
-      const diffResult = await $`git diff ${safeBranch}`.cwd(gitRoot).nothrow();
+      const diffResult = await $`git diff ${safeBranch}`.cwd(gitRoot).nothrow().quiet();
       if (diffResult.exitCode === 0) {
         const fullDiff = diffResult.stdout.toString();
         if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {

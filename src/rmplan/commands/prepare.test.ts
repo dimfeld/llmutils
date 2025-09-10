@@ -425,7 +425,7 @@ describe('handlePrepareCommand with --next-ready flag', () => {
 
     // Should log the success message
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready dependency: 456 - Ready Dependency Plan')
+      expect.stringContaining('Found ready plan: 456 - Ready Dependency Plan')
     );
 
     // Should call preparePhase with the found plan's filename
@@ -496,7 +496,7 @@ describe('handlePrepareCommand with --next-ready flag', () => {
 
     // Should log the success message
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Found ready dependency: 456 - Ready Dependency Plan')
+      expect.stringContaining('Found ready plan: 456 - Ready Dependency Plan')
     );
 
     // Should call preparePhase with the found plan's filename

@@ -1,9 +1,8 @@
 // Command handler for 'rmplan review'
 // Analyzes code changes against plan requirements using the reviewer agent
 
-import { $ } from 'bun';
 import chalk from 'chalk';
-import { confirm, checkbox, select } from '@inquirer/prompts';
+import { checkbox, select } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';

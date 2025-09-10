@@ -23,7 +23,7 @@ export const phaseSchema = z
       }
 
       return s;
-    }, statusSchema.default('pending').optional()),
+    }, statusSchema.default('pending')),
     statusDescription: z.string().optional(),
     priority: prioritySchema.optional(),
     container: z.boolean().default(false).optional(),
@@ -75,11 +75,18 @@ export const phaseSchema = z
   .strict()
   .describe('rmplan phase file schema');
 
-export type PhaseSchema = z.infer<typeof phaseSchema>;
+export type PhaseSchema = z.output<typeof phaseSchema>;
 
 // Backward compatibility - export phaseSchema as planSchema
 export const planSchema = phaseSchema;
 export type PlanSchema = PhaseSchema;
+export type PlanSchemaWithFilename = PlanSchema & {
+  filename: string;
+};
+export type PlanSchemaInput = z.input<typeof phaseSchema>;
+export type PlanSchemaInputWithFilename = PlanSchemaInput & {
+  filename: string;
+};
 
 // Multi-phase plan schema for split command
 export const multiPhasePlanSchema = z

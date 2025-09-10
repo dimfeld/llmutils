@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { Glob } from 'bun';
 import { join, resolve } from 'node:path';
@@ -6,7 +6,7 @@ import * as yaml from 'yaml';
 import { debugLog, warn } from '../logging.js';
 import { getGitRoot, getTrunkBranch, getUsingJj } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
-import { phaseSchema, type PlanSchema } from './planSchema.js';
+import { phaseSchema, type PlanSchema, type PlanSchemaInput } from './planSchema.js';
 import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
 import { $ } from 'bun';
@@ -550,7 +550,7 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
  */
 export async function writePlanFile(
   filePath: string,
-  input: PlanSchema & { filename?: string }
+  input: PlanSchemaInput & { filename?: string }
 ): Promise<void> {
   const absolutePath = resolve(filePath);
   // Plans from readAllPlans will have a filename which we want to strip out

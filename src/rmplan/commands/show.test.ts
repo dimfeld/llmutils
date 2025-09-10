@@ -269,7 +269,7 @@ describe('handleShowCommand', () => {
     };
 
     await expect(handleShowCommand(undefined, options, command)).rejects.toThrow(
-      'Please provide a plan file or use --next/--current to find a plan'
+      'Please provide a plan file or use --next/--current/--next-ready to find a plan'
     );
   });
 });
