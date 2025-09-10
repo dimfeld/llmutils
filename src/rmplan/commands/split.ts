@@ -23,9 +23,11 @@ export async function handleSplitCommand(planArg: string, options: any, command:
   const globalOpts = command.parent!.opts();
 
   // Validate mutually exclusive modes
-  const modeFlags = [options?.auto ? 'auto' : null, options?.tasks ? 'tasks' : null, options?.select ? 'select' : null].filter(
-    Boolean
-  ) as string[];
+  const modeFlags = [
+    options?.auto ? 'auto' : null,
+    options?.tasks ? 'tasks' : null,
+    options?.select ? 'select' : null,
+  ].filter(Boolean) as string[];
 
   if (modeFlags.length === 0) {
     throw new Error(
@@ -34,7 +36,9 @@ export async function handleSplitCommand(planArg: string, options: any, command:
   }
 
   if (modeFlags.length > 1) {
-    throw new Error('Options --auto, --tasks, and --select are mutually exclusive. Choose only one.');
+    throw new Error(
+      'Options --auto, --tasks, and --select are mutually exclusive. Choose only one.'
+    );
   }
 
   // Step 1: Resolve the input plan file path
@@ -104,7 +108,9 @@ export async function handleSplitCommand(planArg: string, options: any, command:
     const validationResult = multiPhasePlanSchema.safeParse(parsedMultiPhase);
 
     if (!validationResult.success) {
-      error('Multi-phase plan validation failed. The LLM output does not match expected structure:');
+      error(
+        'Multi-phase plan validation failed. The LLM output does not match expected structure:'
+      );
       validationResult.error.issues.forEach((issue) => {
         error(`  - ${issue.path.join('.')}: ${issue.message}`);
       });

@@ -52,4 +52,3 @@ describe('parseTaskSpecifier', () => {
     expect(() => parseTaskSpecifier(' , ')).toThrow();
   });
 });
-

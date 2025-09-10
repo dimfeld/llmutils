@@ -58,4 +58,3 @@ export function parseTaskSpecifier(input: string): number[] {
 
   return Array.from(indices).sort((a, b) => a - b);
 }
-
