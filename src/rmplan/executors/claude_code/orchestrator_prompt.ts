@@ -15,7 +15,8 @@ function buildBatchModeInstructions(options: OrchestrationOptions): string {
 You have been provided with multiple incomplete tasks from a project plan. Your responsibility is to:
 
 1. **Analyze all provided tasks** to understand their scope, dependencies, and relationships
-2. **Select a logical subset** of tasks that make sense to execute together in this batch
+2. **Select a logical subset** of tasks that make sense to execute together in this batch.
+   You are permitted to implement tasks from different phases together, if it makes more sense.
 3. **Execute the selected tasks** using the specialized agents
 4. **Update the plan file** to mark completed tasks as done
 
