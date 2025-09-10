@@ -570,7 +570,9 @@ export async function saveMultiPhaseYaml(
   parsedYaml.phases.forEach((phase: any, idx: number) => {
     const title = (phase.title || '').toString().trim();
     const details = (phase.details || '').toString().trim();
-    const header = title ? `## Phase ${idx + 1}: ${title}` : `## Phase ${idx + 1}`;
+    // We call them "areas" an an additional hint to the agent that it's ok to do tasks across areas
+    // when it makes sense.
+    const header = title ? `## Area ${idx + 1}: ${title}` : `## Area ${idx + 1}`;
     const taskTitles = phase.tasks
       .map((t: any) => t.title)
       .map((t: any) => `- ${t}`)
