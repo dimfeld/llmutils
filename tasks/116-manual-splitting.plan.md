@@ -5,7 +5,7 @@ goal: To provide users with more control over how plans are split by adding
   manual and interactive methods, in addition to the existing automated
   LLM-based approach.
 id: 116
-status: in_progress
+status: done
 statusDescription: Marking tasks as done via automation
 priority: medium
 container: false
@@ -16,7 +16,7 @@ docs: []
 planGeneratedAt: 2025-09-10T02:39:46.333Z
 promptsGeneratedAt: 2025-09-10T03:13:45.489Z
 createdAt: 2025-09-10T02:28:16.765Z
-updatedAt: 2025-09-10T03:35:17.412Z
+updatedAt: 2025-09-10T03:42:43.406Z
 tasks:
   - title: Update CLI Definition for Split Command
     done: true
@@ -160,7 +160,7 @@ tasks:
           information. Include proper error handling for LLM failures.
         done: true
   - title: Add Tests for Manual Splitting
-    done: false
+    done: true
     description: >
       Expand the test coverage for manual splitting functionality with
       comprehensive integration tests that create temporary plans, execute the
@@ -177,13 +177,13 @@ tasks:
           tasks, run the split command with --tasks flag using various specifier
           formats, and verify the resulting parent and child plan files have
           correct content, relationships, and IDs.
-        done: false
+        done: true
       - prompt: >
           Add tests for edge cases including splitting all tasks (container
           flag), splitting single tasks, invalid task indices, empty specifiers,
           and error conditions. Verify appropriate error messages are shown for
           invalid inputs.
-        done: false
+        done: true
   - title: Implement Interactive Task Selection Prompt
     done: true
     description: >
@@ -234,7 +234,7 @@ tasks:
           splitting process.
         done: true
   - title: Finalize Command Argument Handling
-    done: false
+    done: true
     description: >
       Complete the command implementation by adding robust argument validation,
       comprehensive error messages, and help text. Ensure the three flags
@@ -252,19 +252,19 @@ tasks:
           exclusive flags and provides clear error messages. When no mode flag
           is specified, display helpful guidance on how to use the split command
           with the available options.
-        done: false
+        done: true
       - prompt: >
           Add tests for all argument validation scenarios including mutually
           exclusive flag combinations, missing flags, and verify that
           appropriate error messages are displayed. Test the help text
           functionality when no mode is specified.
-        done: false
+        done: true
       - prompt: >
           Add final integration tests that verify the complete command works
           end-to-end for all three modes (auto, tasks, select) and confirm that
           user feedback messages are appropriate and informative throughout the
           splitting process.
-        done: false
+        done: true
 changedFiles:
   - src/common/linear.ts
   - src/rmplan/commands/import/import.ts
@@ -276,7 +276,6 @@ changedFiles:
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/codex_cli/prompt.ts
   - src/rmplan/issue_utils.ts
-  - src/rmplan/plans.ts
   - src/rmplan/process_markdown.ts
   - src/rmplan/rmplan.ts
   - src/rmplan/utils/task_specifier_parser.test.ts
