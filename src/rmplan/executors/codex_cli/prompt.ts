@@ -48,21 +48,22 @@ Your development process should follow best practices, and include the following
    - Read the context and identify the concrete, minimal set of changes required.
    - Modify code incrementally. Prefer small, safe steps.
    - Follow existing patterns and architecture in this repository.
-   - Maintain strong type safety and runtime safety where applicable (e.g., TypeScript, Rust, Go, Java, Python with typing).
+   - Maintain strong type safety and runtime safety where applicable
    - When adding features, also add or update tests alongside the code.
 
 2) TESTING
    - Discover and use the project's toolchain and commands:
-     - Check for scripts (e.g., package.json, pyproject.toml, Makefile, Taskfile, Cargo.toml, go.mod, Gradle/Maven build files).
-     - Run the project's type checks and linters if present (e.g., tsc/mypy/ruff/eslint/flake8/cargo clippy/golangci-lint, etc.).
-     - Run the project's test suite (e.g., npm test/bun test/pnpm test/pytest/nox/tox/cargo test/go test/gradle test/mvn test, etc.).
-     - Run formatting if available (e.g., prettier/ruff format/black/clang-format/gofmt/cargo fmt, etc.).
+   - Run the project's type checks and linters if present
+   - Run the project's test suite
+   - Don't worry about resources or time taken to run tests. Verifying proper functionality is more important.
    - Fix failures and iterate until green.
 
 3) REVIEW
    - Critically review the tasks you just completed.
    - Identify bugs, violations of patterns, security issues, or inadequate tests.
    - If issues are found, write a short Review Report (issues + verdict NEEDS_FIXES) and loop back to IMPLEMENTATION to address them.
+   - Make sure tests actually pass and everything compiles.
+   - If your changes cause compile or test errors in other files, you must fix those files.
    - If acceptable, write a short Review Report with verdict ACCEPTABLE and proceed.
 
 ${planUpdate}
@@ -82,6 +83,7 @@ ${planUpdate}
 - Apply changes directly in the working tree.
 - Ensure all checks and tests pass.
 - Provide a concise Review Report at the end and stop when ACCEPTABLE.
+- Always check that your changes compile and pass tests, including in files you did not touch.
 
 ## Context and Task
 Plan: ${options.planTitle} (id: ${options.planId})
