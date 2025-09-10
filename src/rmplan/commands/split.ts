@@ -30,7 +30,10 @@ import { generateText } from 'ai';
  */
 export function parseTaskSpecifier(spec: string, taskCount: number): number[] {
   if (!spec || typeof spec !== 'string') throw new Error('Empty task specifier');
-  const parts = spec.split(',').map((s) => s.trim()).filter(Boolean);
+  const parts = spec
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const indices = new Set<number>();
   for (const part of parts) {
     const m = part.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
@@ -62,9 +65,7 @@ async function buildChildTitleAndDetails(
   }
 
   // Multiple tasks: combine details and call LLM for a concise title
-  const details = selectedTasks
-    .map((t) => `## ${t.title}\n\n${t.description}`)
-    .join('\n\n');
+  const details = selectedTasks.map((t) => `## ${t.title}\n\n${t.description}`).join('\n\n');
 
   let title = '';
   try {

@@ -123,4 +123,3 @@ describe('rmplan split - manual', () => {
     expect(child.details).toContain('Implement feature');
   });
 });
-
