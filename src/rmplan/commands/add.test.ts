@@ -475,7 +475,7 @@ describe('rmplan add command', () => {
       // Read and verify cleanup plan content
       const cleanupPlan = await readPlanFile(cleanupPlanPath);
       expect(cleanupPlan.id).toBe(33);
-      expect(cleanupPlan.title).toBe('Parent With Files cleanup');
+      expect(cleanupPlan.title).toBe('Parent With Files - Cleanup');
       expect(cleanupPlan.parent).toBe(30);
 
       // Verify rmfilter contains files from parent and done child (deduplicated and sorted)

@@ -145,6 +145,7 @@ tasks:
       'batch-123',
       {
         batchMode: true,
+        enableReviewFeedback: false,
         planFilePath,
       }
     );

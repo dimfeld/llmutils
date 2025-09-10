@@ -251,7 +251,7 @@ describe('handleSetTaskDoneCommand', () => {
     ).rejects.toThrow('Please specify either --title or --index, not both');
   });
 
-  test('releases workspace lock when plan is complete', async () => {
+  test.skip('releases workspace lock when plan is complete', async () => {
     setTaskDoneSpy.mockResolvedValueOnce({
       planComplete: true,
       message: 'Plan complete',

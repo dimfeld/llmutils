@@ -21,11 +21,11 @@ describe('configSchema', () => {
       expect(result.issueTracker).toBe('linear');
     });
 
-    test('should default to "github" when not specified', () => {
+    test('should be undefined when not specified', () => {
       const config = {};
 
       const result = rmplanConfigSchema.parse(config);
-      expect(result.issueTracker).toBe('github');
+      expect(result.issueTracker).toBeUndefined();
     });
 
     test('should reject invalid values', () => {
@@ -121,7 +121,7 @@ describe('configSchema', () => {
       };
 
       const result = rmplanConfigSchema.parse(config);
-      expect(result.issueTracker).toBe('github'); // Should use default
+      expect(result.issueTracker).toBeUndefined();
     });
   });
 

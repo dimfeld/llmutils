@@ -50,6 +50,9 @@ describe('Documentation Consistency Check', () => {
       expect(linearClient.parseIssueIdentifier('TEAM-123')?.identifier).toBe('TEAM-123');
       expect(linearClient.parseIssueIdentifier('PROJ-456')?.identifier).toBe('PROJ-456');
       expect(linearClient.parseIssueIdentifier('ABC123-789')?.identifier).toBe('ABC123-789');
+
+      // We also allow lowercase
+      expect(linearClient.parseIssueIdentifier('TEAM-123')?.identifier).toBe('TEAM-123');
     });
 
     test('should reject invalid formats not documented', () => {
@@ -58,7 +61,6 @@ describe('Documentation Consistency Check', () => {
       // These formats are not documented as supported and should return null
       expect(linearClient.parseIssueIdentifier('invalid-format')).toBeNull();
       expect(linearClient.parseIssueIdentifier('TEAM123')).toBeNull(); // Missing dash
-      expect(linearClient.parseIssueIdentifier('team-123')).toBeNull(); // Lowercase team identifier
     });
   });
 

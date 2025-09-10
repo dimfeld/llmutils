@@ -1,5 +1,5 @@
 import { $ } from 'bun';
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { vi, describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -21,6 +21,8 @@ describe('CLI integration tests for parent-child relationships', () => {
   let rmplanPath: string;
 
   beforeEach(async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
     // Create temporary directory structure
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-cli-integration-'));
     tasksDir = path.join(tempDir, 'tasks');

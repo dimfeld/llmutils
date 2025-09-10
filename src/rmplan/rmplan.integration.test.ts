@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { clearPlanCache, readPlanFile } from './plans.js';
+import type { PlanSchema } from './planSchema.js';
 
 describe('rmplan CLI integration tests', () => {
   let tempDir: string;
@@ -81,7 +82,7 @@ describe('rmplan CLI integration tests', () => {
 
   test('rmplan show displays plan details', async () => {
     // Create a test plan
-    const plan = {
+    const plan: PlanSchema = {
       id: 1,
       title: 'Show Test Plan',
       goal: 'Test showing plan details',
@@ -92,11 +93,11 @@ describe('rmplan CLI integration tests', () => {
         {
           title: 'Task 1',
           description: 'First task',
+          done: false,
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'pending',
+              done: false,
             },
           ],
         },
@@ -117,7 +118,7 @@ describe('rmplan CLI integration tests', () => {
 
   test('rmplan done marks steps as complete', async () => {
     // Create a test plan with steps
-    const plan = {
+    const plan: PlanSchema = {
       id: 1,
       title: 'Done Test Plan',
       goal: 'Test marking steps done',
@@ -127,16 +128,15 @@ describe('rmplan CLI integration tests', () => {
         {
           title: 'Task 1',
           description: 'First task',
+          done: false,
           steps: [
             {
-              description: 'Step 1',
               prompt: 'Do step 1',
-              status: 'pending',
+              done: false,
             },
             {
-              description: 'Step 2',
               prompt: 'Do step 2',
-              status: 'pending',
+              done: false,
             },
           ],
         },

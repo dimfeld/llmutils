@@ -361,7 +361,7 @@ export async function setTaskDone(
     const userIndex = options.taskIdentifier;
     if (userIndex < 0 || userIndex > planData.tasks.length - 1) {
       throw new Error(
-        `Invalid task index: ${userIndex}. Plan has ${planData.tasks.length} tasks (use 1-${planData.tasks.length})`
+        `Invalid task index: ${userIndex}. Plan has ${planData.tasks.length} tasks (use 0-${planData.tasks.length - 1})`
       );
     }
     taskIndex = userIndex;

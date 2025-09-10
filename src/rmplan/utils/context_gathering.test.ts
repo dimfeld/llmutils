@@ -201,30 +201,6 @@ describe('gatherPlanContext', () => {
     expect(result.diffResult.changedFiles).toEqual([]);
   });
 
-  test('should validate plan structure and throw error for missing fields', async () => {
-    // Create plan with missing goal
-    const invalidPlan = {
-      id: 123,
-      title: 'Test Plan',
-      // missing goal
-    };
-    await writeFile(planFile, JSON.stringify(invalidPlan));
-
-    // Use real readPlanFile function for validation in this test
-    const { readPlanFile } = await import('../plans.js');
-    const validationMockDeps = {
-      ...mockDeps,
-      readPlanFile,
-    };
-
-    const options = {};
-    const globalOpts = { config: tempDir };
-
-    await expect(
-      gatherPlanContext(planFile, options, globalOpts, validationMockDeps)
-    ).rejects.toThrow(/goal.*expected string, received undefined/);
-  });
-
   test('should validate task structure', async () => {
     // Create plan with invalid task
     const planWithInvalidTask = {

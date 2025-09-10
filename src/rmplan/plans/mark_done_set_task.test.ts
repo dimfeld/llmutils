@@ -108,7 +108,7 @@ describe('setTaskDone', () => {
     const planFile = path.join(tasksDir, '1.yml');
     await fs.writeFile(planFile, yaml.stringify(plan));
 
-    const result = await setTaskDone(planFile, { taskIdentifier: 2, commit: false }, tempDir);
+    const result = await setTaskDone(planFile, { taskIdentifier: 1, commit: false }, tempDir);
 
     expect(result.planComplete).toBe(false);
     expect(result.message).toContain('Second Task');
@@ -218,12 +218,12 @@ describe('setTaskDone', () => {
     await fs.writeFile(planFile, yaml.stringify(plan));
 
     await expect(
-      setTaskDone(planFile, { taskIdentifier: 0, commit: false }, tempDir)
-    ).rejects.toThrow('Invalid task index: 0. Plan has 2 tasks (use 1-2)');
+      setTaskDone(planFile, { taskIdentifier: -1, commit: false }, tempDir)
+    ).rejects.toThrow('Invalid task index: -1. Plan has 2 tasks (use 0-1)');
 
     await expect(
       setTaskDone(planFile, { taskIdentifier: 3, commit: false }, tempDir)
-    ).rejects.toThrow('Invalid task index: 3. Plan has 2 tasks (use 1-2)');
+    ).rejects.toThrow('Invalid task index: 3. Plan has 2 tasks (use 0-1)');
   });
 
   test('returns message when task is already done', async () => {

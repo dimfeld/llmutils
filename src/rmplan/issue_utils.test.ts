@@ -22,7 +22,6 @@ describe('createStubPlanFromIssue', () => {
 
     expect(result.project).toEqual({
       title: 'My Project',
-      goal: 'This is a test project for our team',
       details: 'This is a test project for our team',
     });
 
@@ -68,7 +67,6 @@ describe('createStubPlanFromIssue', () => {
 
     expect(result.project).toEqual({
       title: 'Project Without Description',
-      goal: 'Project Without Description',
       details: undefined,
     });
   });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, mock } from 'bun:test';
+import { vi, describe, it, expect, beforeAll, afterAll, mock } from 'bun:test';
 import { mkdtemp, rm, mkdir, writeFile, realpath, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -22,6 +22,8 @@ describe('resolvePlanFile', () => {
   let tasksDir: string;
 
   beforeAll(async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
     // Create a temporary directory for test files
     tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-test-')));
     tasksDir = join(tempDir, 'tasks');
@@ -857,6 +859,7 @@ describe('setPlanStatus', () => {
           title: 'Task 1',
           description: 'Task description',
           files: [],
+          done: false,
           steps: [
             { prompt: 'Step 1', done: true },
             { prompt: 'Step 2', done: false },
@@ -1051,6 +1054,7 @@ const test = "example";
           title: 'Test Task',
           description: 'A test task',
           files: ['test.ts'],
+          done: false,
           steps: [
             { prompt: 'Step 1', done: false },
             { prompt: 'Step 2', done: false },
@@ -1093,7 +1097,9 @@ const test = "example";
     expect(frontMatterData.priority).toBe('high');
     expect(frontMatterData.dependencies).toEqual([10, 20]);
     expect(frontMatterData.createdAt).toBe('2024-01-15T00:00:00.000Z');
-    expect(frontMatterData.updatedAt).toBe('2024-01-15T12:00:00.000Z');
+    // updatedAt should be updated when written
+    expect(frontMatterData.updatedAt).toBeString();
+    expect(frontMatterData.updatedAt).not.toBe('2024-01-15T12:00:00.000Z');
     expect(frontMatterData.tasks).toHaveLength(1);
 
     // Verify the body contains the original details content
@@ -1101,7 +1107,7 @@ const test = "example";
 
     // Also verify that readPlanFile can read it back correctly
     const readBackPlan = await readPlanFile(planPath);
-    expect(readBackPlan).toEqual(planToWrite);
+    expect(readBackPlan).toEqual({ ...planToWrite, updatedAt: expect.any(String) });
   });
 
   it('should merge YAML details field with markdown body for backward compatibility', async () => {
@@ -1178,6 +1184,7 @@ const roundTrip = "test";
         {
           title: 'Validate Round Trip',
           description: 'Ensure data integrity',
+          done: false,
           files: ['test1.ts', 'test2.ts'],
           steps: [
             { prompt: 'Write the plan', done: true },
@@ -1189,6 +1196,7 @@ const roundTrip = "test";
           title: 'Edge Cases',
           description: 'Test special characters and formatting',
           files: [],
+          done: false,
           steps: [{ prompt: 'Test with special chars: " \' \\ /', done: false }],
         },
       ],
@@ -1201,7 +1209,7 @@ const roundTrip = "test";
     const readBackPlan = await readPlanFile(planPath);
 
     // Assert deep equality
-    expect(readBackPlan).toEqual(originalPlan);
+    expect(readBackPlan).toEqual({ ...originalPlan, updatedAt: expect.any(String) });
 
     // Specifically check that complex fields are preserved
     expect(readBackPlan.tasks).toHaveLength(2);
@@ -1287,7 +1295,7 @@ The migration should preserve all data.`,
 
     // Finally, read the new file and ensure data integrity
     const migratedPlan = await readPlanFile(newFormatPath);
-    expect(migratedPlan).toEqual(readPlan);
+    expect(migratedPlan).toMatchObject({ ...readPlan, updatedAt: expect.any(String) });
   });
 
   it('should preserve task done flag when writing and reading plans', async () => {
@@ -1348,9 +1356,9 @@ when writing and reading plan files.`,
     expect(readBackPlan.tasks![1].title).toBe('Pending Task');
     expect(readBackPlan.tasks![1].done).toBe(false);
 
-    // Check third task (no explicit done flag, defaults to undefined when not set)
+    // Check third task (no explicit done flag, defaults to false when not set)
     expect(readBackPlan.tasks![2].title).toBe('Task without done flag');
-    expect(readBackPlan.tasks![2].done).toBeUndefined();
+    expect(readBackPlan.tasks![2].done).toBe(false);
   });
 
   it('should handle backward-compatibility merge-and-write scenario', async () => {
@@ -1435,7 +1443,7 @@ ${markdownBody}`;
 
     // Final verification: read the rewritten file and check data integrity
     const finalPlan = await readPlanFile(rewrittenPath);
-    expect(finalPlan).toEqual(mergedPlan);
+    expect(finalPlan).toMatchObject({ ...mergedPlan, updatedAt: expect.any(String) });
   });
 });
 

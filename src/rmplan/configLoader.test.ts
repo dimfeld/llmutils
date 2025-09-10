@@ -529,8 +529,8 @@ paths:
 
       const config = await loadEffectiveConfig();
 
-      // Should apply default issueTracker value
-      expect(config.issueTracker).toBe('github');
+      // Undefined so that local and global configs can properly override
+      expect(config.issueTracker).toBeUndefined();
     });
   });
 });

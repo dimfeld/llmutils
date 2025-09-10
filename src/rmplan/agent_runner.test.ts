@@ -33,6 +33,7 @@ test('runPlanContextWithExecutor - successful execution', async () => {
   // Verify
   expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(executorName, commonOpts, rmplanConfig);
   expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent, {
+    executionMode: 'normal',
     planId: 'standalone',
     planTitle: 'Standalone Execution',
     planFilePath: 'N/A',
@@ -93,6 +94,7 @@ test('runPlanContextWithExecutor - executor.execute throws error', async () => {
     'Failed to execute with executor test-executor: Execution failed'
   );
   expect(failingExecutor.execute).toHaveBeenCalledWith(contextContent, {
+    executionMode: 'normal',
     planId: 'standalone',
     planTitle: 'Standalone Execution',
     planFilePath: 'N/A',
@@ -127,6 +129,7 @@ test('runPlanContextWithExecutor - verifies parameter passing', async () => {
   // Verify exact parameter passing
   expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(executorName, commonOpts, rmplanConfig);
   expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent, {
+    executionMode: 'normal',
     planId: 'standalone',
     planTitle: 'Standalone Execution',
     planFilePath: 'N/A',
