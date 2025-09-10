@@ -16,7 +16,7 @@ docs: []
 planGeneratedAt: 2025-09-10T02:39:46.333Z
 promptsGeneratedAt: 2025-09-10T03:13:45.489Z
 createdAt: 2025-09-10T02:28:16.765Z
-updatedAt: 2025-09-10T03:28:44.376Z
+updatedAt: 2025-09-10T03:35:17.412Z
 tasks:
   - title: Update CLI Definition for Split Command
     done: true
@@ -185,7 +185,7 @@ tasks:
           invalid inputs.
         done: false
   - title: Implement Interactive Task Selection Prompt
-    done: false
+    done: true
     description: >
       Add interactive task selection functionality using the checkbox prompt
       from @inquirer/prompts. Display all tasks from the source plan in a
@@ -203,14 +203,14 @@ tasks:
           tasks, showing task titles with appropriate formatting. Include
           keyboard shortcuts and make the selection optional to allow
           cancellation.
-        done: false
+        done: true
       - prompt: >
           Add proper cancellation handling for the interactive prompt. If the
           user cancels or selects no tasks, exit gracefully with an appropriate
           message rather than proceeding with an empty selection.
-        done: false
+        done: true
   - title: Integrate Interactive Selection with Core Logic
-    done: false
+    done: true
     description: >
       Connect the interactive prompt output with the existing manual splitting
       logic developed in earlier tasks. The checkbox prompt returns an array of
@@ -226,13 +226,13 @@ tasks:
           by converting the selected task indices from the interactive prompt
           and passing them to the existing splitting functions. Ensure the flow
           matches the --tasks flag behavior.
-        done: false
+        done: true
       - prompt: >
           Add comprehensive error handling for the integration between
           interactive selection and manual splitting, including validation of
           selected indices and proper error messages for any failures during the
           splitting process.
-        done: false
+        done: true
   - title: Finalize Command Argument Handling
     done: false
     description: >
