@@ -12,7 +12,7 @@ import {
   type IncrementalReviewMetadata,
 } from './incremental_review.js';
 
-describe('incremental_review', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('incremental_review', () => {
   let tempDir: string;
   let testRepoDir: string;
   let jjAvailable: boolean;
