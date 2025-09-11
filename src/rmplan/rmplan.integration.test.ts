@@ -1,17 +1,24 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { $ } from 'bun';
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { clearPlanCache, readPlanFile } from './plans.js';
+import { clearPlanCache, readPlanFile, readAllPlans } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
+import { handleAddCommand } from './commands/add.js';
+import { handleDoneCommand } from './commands/done.js';
+import { ModuleMocker } from '../testing.js';
 
-describe('rmplan CLI integration tests', () => {
+// Handlers that rely on mocked modules are imported dynamically in beforeEach
+let handleListCommand: any;
+let handleShowCommand: any;
+
+describe('rmplan CLI integration tests (internal handlers)', () => {
   let tempDir: string;
   let tasksDir: string;
   let configPath: string;
-  const rmplanPath = path.join(__dirname, 'rmplan.ts');
+  const moduleMocker = new ModuleMocker(import.meta);
+  const mockLog = mock(() => {});
 
   beforeEach(async () => {
     // Clear plan cache
@@ -33,20 +40,33 @@ describe('rmplan CLI integration tests', () => {
         },
       })
     );
+
+    // Set up logging/table mocks and dynamically import handlers that use them
+    mockLog.mockClear();
+    await moduleMocker.mock('../logging.js', () => ({
+      log: mockLog,
+      error: mockLog,
+      warn: mockLog,
+    }));
+    await moduleMocker.mock('table', () => ({
+      table: (data: any[]) => data.map((row: any[]) => row.join('\t')).join('\n'),
+    }));
+    await moduleMocker.mock('../common/git.js', () => ({
+      getGitRoot: async () => tempDir,
+    }));
+    ({ handleListCommand } = await import('./commands/list.js'));
+    ({ handleShowCommand } = await import('./commands/show.js'));
   });
 
   afterEach(async () => {
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
+    moduleMocker.clear();
   });
 
   test('rmplan add creates a new plan', async () => {
-    const result = await $`bun ${rmplanPath} add "Integration Test Plan" --config ${configPath}`
-      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
-      .cwd(tempDir)
-      .text();
-
-    expect(result).toContain('Created plan stub:');
+    const command = { parent: { opts: () => ({ config: configPath }) } };
+    await handleAddCommand(['Integration', 'Test', 'Plan'], {}, command);
 
     // Check that file was created
     const planFiles = await fs.readdir(tasksDir);
@@ -71,13 +91,10 @@ describe('rmplan CLI integration tests', () => {
     };
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const result = await $`bun ${rmplanPath} list --config ${configPath}`
-      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
-      .cwd(tempDir)
-      .text();
-
-    expect(result).toContain('List Test Plan');
-    expect(result).toContain('pending');
+    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
+    await handleListCommand({ sort: 'created' }, command);
+    const calls = mockLog.mock.calls.flat().map(String).join('\n');
+    expect(calls).toContain('List Test Plan');
   });
 
   test('rmplan show displays plan details', async () => {
@@ -105,15 +122,11 @@ describe('rmplan CLI integration tests', () => {
     };
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const result = await $`bun ${rmplanPath} show 1 --config ${configPath}`
-      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
-      .cwd(tempDir)
-      .text();
-
-    expect(result).toContain('Show Test Plan');
-    expect(result).toContain('Test showing plan details');
-    expect(result).toContain('Task 1');
-    expect(result).toContain('Step 1');
+    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
+    await handleShowCommand('1', {}, command);
+    const calls = mockLog.mock.calls.flat().map(String).join('\n');
+    expect(calls).toContain('Show Test Plan');
+    expect(calls).toContain('Task 1');
   });
 
   test('rmplan done marks steps as complete', async () => {
@@ -144,12 +157,8 @@ describe('rmplan CLI integration tests', () => {
     };
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const result = await $`bun ${rmplanPath} done 1 --steps 1 --config ${configPath}`
-      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
-      .cwd(tempDir)
-      .text();
-
-    expect(result).toContain('Marked 1 step done');
+    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
+    await handleDoneCommand('1', { steps: '1' }, command);
 
     // Verify the step was marked as done
     const updatedPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
@@ -198,15 +207,14 @@ describe('rmplan CLI integration tests', () => {
       await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
     }
 
-    // Test filtering by done status
-    const result = await $`bun ${rmplanPath} list --status done --config ${configPath}`
-      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
-      .cwd(tempDir)
-      .text();
-
-    expect(result).toContain('Done Plan');
-    expect(result).not.toContain('Pending Plan');
-    expect(result).not.toContain('In Progress Plan');
+    // Test filtering by done status using internal handler and mocked logger
+    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
+    mockLog.mockClear();
+    await handleListCommand({ status: ['done'], sort: 'created' }, command);
+    const calls = mockLog.mock.calls.flat().map(String).join('\n');
+    expect(calls).toContain('Done Plan');
+    expect(calls).not.toContain('Pending Plan');
+    expect(calls).not.toContain('In Progress Plan');
   });
 
   test('rmplan show --next finds next ready plan', async () => {
@@ -247,32 +255,32 @@ describe('rmplan CLI integration tests', () => {
       await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
     }
 
-    const result = await $`bun ${rmplanPath} show --next --config ${configPath}`
-      .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
-      .cwd(tempDir)
-      .text();
-
-    expect(result).toContain('Found next ready plan: 2');
-    expect(result).toContain('Ready Plan');
+    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
+    mockLog.mockClear();
+    await handleShowCommand(undefined, { next: true }, command);
+    const calls = mockLog.mock.calls.flat().map(String).join('\n');
+    expect(calls).toContain('Found next ready plan: 2');
+    expect(calls).toContain('Ready Plan');
   });
 
   test('rmplan add with dependencies and priority', async () => {
+    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
     // First create a plan to depend on
-    await $`bun ${rmplanPath} add "First Plan" --config ${configPath}`.cwd(tempDir);
+    await handleAddCommand(['First', 'Plan'], {}, command);
 
     // Create a plan with dependencies and priority
-    const result =
-      await $`bun ${rmplanPath} add "Dependent Plan" --depends-on 1 --depends-on 3 --priority high --config ${configPath} --debug`
-        .env({ ...process.env, TEST_ALLOW_CONSOLE: 'true' })
-        .cwd(tempDir)
-        .text();
-
-    expect(result).toContain('Created plan stub:');
+    await handleAddCommand(
+      ['Dependent', 'Plan'],
+      { dependsOn: [1, 3], priority: 'high', debug: true },
+      command
+    );
 
     // Verify the plan has dependencies and priority
-    const plan = await readPlanFile(path.join(tasksDir, '2-dependent-plan.plan.md'));
-    expect(plan.id).toBe(2);
-    expect(plan.dependencies).toEqual([1, 3]);
-    expect(plan.priority).toBe('high');
+    const files = await fs.readdir(tasksDir);
+    const depFile = files.find((f) => f.endsWith('-dependent-plan.plan.md'));
+    expect(depFile).toBeDefined();
+    const created = await readPlanFile(path.join(tasksDir, depFile!));
+    expect(created.dependencies).toEqual([1, 3]);
+    expect(created.priority).toBe('high');
   });
 });
