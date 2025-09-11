@@ -1,10 +1,10 @@
-import { $ } from 'bun';
 import { beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
 import { readPlanFile } from '../plans.js';
+import { handleAddCommand } from './add.js';
 
 describe('rmplan add command', () => {
   let tempDir: string;
@@ -23,17 +23,20 @@ describe('rmplan add command', () => {
       configPath,
       yaml.stringify({
         paths: {
-          tasks: 'tasks',
+          tasks: tasksDir,
         },
       })
     );
   });
 
   test('creates plan with numeric ID when no plans exist', async () => {
-    // Run rmplan add command
-    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Test Title" --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
-      tempDir
-    );
+    // Run handler directly
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+    await handleAddCommand(['Test', 'Title'], {}, command);
 
     // The file should be named 1-test-title.plan.md since no plans exist
     const planPath = path.join(tasksDir, '1-test-title.plan.md');
@@ -88,11 +91,13 @@ describe('rmplan add command', () => {
         })
     );
 
-    // Run rmplan add command
-    const result =
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "New Plan Title" --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-        .cwd(tempDir)
-        .text();
+    // Run handler directly
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+    await handleAddCommand(['New', 'Plan', 'Title'], {}, command);
 
     // The file should be named 101-new-plan-title.plan.md (max ID was 100)
     const planPath = path.join(tasksDir, '101-new-plan-title.plan.md');
@@ -143,10 +148,13 @@ describe('rmplan add command', () => {
         })
     );
 
-    // Run rmplan add command
-    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Another Plan" --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-      .cwd(tempDir)
-      .text();
+    // Run handler directly
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+    await handleAddCommand(['Another', 'Plan'], {}, command);
 
     // The file should be named 6-another-plan.plan.md (max numeric ID was 5)
     const planPath = path.join(tasksDir, '6-another-plan.plan.md');
@@ -164,10 +172,13 @@ describe('rmplan add command', () => {
   });
 
   test('handles multi-word titles correctly', async () => {
-    // Run rmplan add command with multi-word title
-    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add This is a Multi Word Title --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-      .cwd(tempDir)
-      .text();
+    // Run handler directly with multi-word title
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+    await handleAddCommand(['This', 'is', 'a', 'Multi', 'Word', 'Title'], {}, command);
 
     // The file should be named 1-this-is-a-multi-word-title.plan.md
     const planPath = path.join(tasksDir, '1-this-is-a-multi-word-title.plan.md');
@@ -218,10 +229,17 @@ describe('rmplan add command', () => {
         })
     );
 
-    // Run rmplan add command with dependencies and priority
-    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Plan with Dependencies" --depends-on 1 2 --priority high --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-      .cwd(tempDir)
-      .text();
+    // Run handler directly with dependencies and priority
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+    await handleAddCommand(
+      ['Plan', 'with', 'Dependencies'],
+      { dependsOn: [1, 2], priority: 'high' },
+      command
+    );
 
     // The file should be named 3-plan-with-dependencies.plan.md
     const planPath = path.join(tasksDir, '3-plan-with-dependencies.plan.md');
@@ -265,10 +283,13 @@ describe('rmplan add command', () => {
     // Add a small delay to ensure timestamps are different
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    // Run rmplan add command with parent option
-    await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Child Plan" --parent 1 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
-      tempDir
-    );
+    // Run handler directly with parent option
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+    await handleAddCommand(['Child', 'Plan'], { parent: 1 }, command);
 
     // The child file should be named 2-child-plan.plan.md
     const childPlanPath = path.join(tasksDir, '2-child-plan.plan.md');
@@ -295,15 +316,14 @@ describe('rmplan add command', () => {
   });
 
   test('errors when parent plan does not exist', async () => {
-    // Run rmplan add command with non-existent parent
-    const result =
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Orphan Plan" --parent 999 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-        .cwd(tempDir)
-        .nothrow();
-
-    // Should exit with error code
-    expect(result.exitCode).toBeGreaterThan(0);
-    expect(result.stderr.toString()).toContain('Parent plan with ID 999 not found');
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+    await expect(
+      handleAddCommand(['Orphan', 'Plan'], { parent: 999 }, command)
+    ).rejects.toThrow('Parent plan with ID 999 not found');
   });
 
   describe('--cleanup option', () => {
@@ -327,10 +347,13 @@ describe('rmplan add command', () => {
           })
       );
 
-      // Run rmplan add command with --cleanup option (no custom title)
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 10 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
-        tempDir
-      );
+      // Run handler directly with --cleanup option (no custom title)
+      const command = {
+        parent: {
+          opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+        },
+      };
+      await handleAddCommand([], { cleanup: 10 }, command);
 
       // The cleanup file should be named 11-parent-plan-cleanup.plan.md
       const cleanupPlanPath = path.join(tasksDir, '11-parent-plan-cleanup.plan.md');
@@ -374,10 +397,13 @@ describe('rmplan add command', () => {
           })
       );
 
-      // Run rmplan add command with --cleanup option and custom title
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add "Custom Cleanup Title" --cleanup 20 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
-        tempDir
-      );
+      // Run handler directly with --cleanup option and custom title
+      const command = {
+        parent: {
+          opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+        },
+      };
+      await handleAddCommand(['Custom', 'Cleanup', 'Title'], { cleanup: 20 }, command);
 
       // The cleanup file should be named 21-custom-cleanup-title.plan.md
       const cleanupPlanPath = path.join(tasksDir, '21-custom-cleanup-title.plan.md');
@@ -458,10 +484,13 @@ describe('rmplan add command', () => {
           })
       );
 
-      // Run rmplan add command with --cleanup option
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 30 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
-        tempDir
-      );
+      // Run handler directly with --cleanup option
+      const command = {
+        parent: {
+          opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+        },
+      };
+      await handleAddCommand([], { cleanup: 30 }, command);
 
       // The cleanup file should be named 33-parent-with-files-cleanup.plan.md
       const cleanupPlanPath = path.join(tasksDir, '33-parent-with-files-cleanup.plan.md');
@@ -494,15 +523,15 @@ describe('rmplan add command', () => {
     });
 
     test('errors when referencing non-existent plan ID', async () => {
-      // Run rmplan add command with non-existent cleanup plan ID
-      const result =
-        await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 999 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`
-          .cwd(tempDir)
-          .nothrow();
-
-      // Should exit with error code
-      expect(result.exitCode).toBeGreaterThan(0);
-      expect(result.stderr.toString()).toContain('Plan with ID 999 not found');
+      // Run handler directly with non-existent cleanup plan ID
+      const command = {
+        parent: {
+          opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+        },
+      };
+      await expect(handleAddCommand([], { cleanup: 999 }, command)).rejects.toThrow(
+        'Plan with ID 999 not found'
+      );
     });
 
     test('changes referenced plan status from done to in_progress when adding cleanup dependency', async () => {
@@ -529,10 +558,13 @@ describe('rmplan add command', () => {
       // Add a small delay to ensure timestamps are different
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // Run rmplan add command with --cleanup option
-      await $`bun ${path.join(process.cwd(), 'src/rmplan/rmplan.ts')} add --cleanup 40 --config ${path.join(tempDir, '.rmfilter', 'rmplan.yml')}`.cwd(
-        tempDir
-      );
+      // Run handler directly with --cleanup option
+      const command = {
+        parent: {
+          opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+        },
+      };
+      await handleAddCommand([], { cleanup: 40 }, command);
 
       // The cleanup file should be named 41-done-plan-cleanup.plan.md
       const cleanupPlanPath = path.join(tasksDir, '41-done-plan-cleanup.plan.md');
