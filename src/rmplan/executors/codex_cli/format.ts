@@ -7,6 +7,12 @@ export interface CodexEnvelope<T = unknown> {
   id?: string | number;
   msg?: T;
   // Some initial line may not be under `msg` – accept arbitrary fields
+  [key: Exclude<string, 'id' | 'msg'>]: any;
+}
+
+interface AnyMessage {
+  type: string;
+
   [key: string]: any;
 }
 
@@ -41,7 +47,26 @@ export type CodexMessage =
     }
   | { type: 'token_count'; info: any }
   | { type: 'agent_message'; message?: string }
-  | { type: string; [key: string]: any };
+  | { type: 'turn_diff'; unified_diff?: string }
+  | {
+      type: 'patch_apply_begin';
+      call_id: string;
+      auto_approved?: boolean;
+      changes: Record<
+        string,
+        | {
+            add: { content: string };
+          }
+        | { update: { unified_diff?: string; move_path: string | null } }
+      >;
+    }
+  | {
+      type: 'patch_apply_end';
+      call_id: string;
+      stdout?: string;
+      stderr?: string;
+      success?: boolean;
+    };
 
 export interface FormattedCodexMessage {
   // Pretty-printed message to display to the console (optional for ignored types)
@@ -87,7 +112,7 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
     if (initial) return initial;
 
     const msg = obj.msg;
-    if (!msg || typeof msg !== 'object' || !('type' in msg)) {
+    if (msg == null || typeof msg !== 'object' || !('type' in msg)) {
       return { type: 'unknown' };
     }
 
@@ -130,10 +155,42 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
       }
       case 'token_count': {
         const info = msg.info ?? {};
-        const total = info.total_token_usage?.total_tokens ?? info.total_token_usage?.output_tokens;
+        const total = info.total_token_usage;
+        const last = info.last_token_usage;
+        const contextWindow = info.model_context_window;
+
+        const parts = [];
+        if (total) {
+          const totalTokens = total.total_tokens || 0;
+          const inputTokens = total.input_tokens || 0;
+          const cachedInputTokens = total.cached_input_tokens || 0;
+          const outputTokens = total.output_tokens || 0;
+          const reasoningTokens = total.reasoning_output_tokens || 0;
+
+          parts.push(`Total: ${totalTokens.toLocaleString()} tokens`);
+          parts.push(
+            `  Input: ${inputTokens.toLocaleString()} (${cachedInputTokens.toLocaleString()} cached)`
+          );
+          if (reasoningTokens > 0) {
+            parts.push(
+              `  Output: ${outputTokens.toLocaleString()} + ${reasoningTokens.toLocaleString()} reasoning`
+            );
+          } else {
+            parts.push(`  Output: ${outputTokens.toLocaleString()}`);
+          }
+        }
+
+        if (last && last.total_tokens) {
+          parts.push(`Last: ${last.total_tokens.toLocaleString()} tokens`);
+        }
+
+        if (contextWindow) {
+          parts.push(`Context Window: ${contextWindow.toLocaleString()}`);
+        }
+
         return {
           type: msg.type,
-          message: chalk.gray(`### Token Count [${ts}]\n\n`) + JSON.stringify(info),
+          message: chalk.gray(`### Token Count [${ts}]\n\n`) + parts.join('\n'),
         };
       }
       case 'agent_message': {
@@ -144,9 +201,74 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
           agentMessage: text,
         };
       }
+      case 'turn_diff': {
+        const diff = msg.unified_diff ?? '';
+        // Extract filenames from +++ and --- lines in the unified diff
+        const fileMatches = diff.match(/^(?:\+\+\+|---) (.+)$/gm) || [];
+        const filenames = fileMatches.map((match) =>
+          match.replace(/^\+\+\+ /, '').replace(/\t.*$/, '')
+        );
+        const uniqueFiles = [...new Set(filenames)];
+
+        const fileCount = uniqueFiles.length;
+        const fileText = fileCount === 1 ? '1 file' : `${fileCount} files`;
+        const fileList =
+          uniqueFiles.length <= 3
+            ? uniqueFiles.join(', ')
+            : `${uniqueFiles.slice(0, 3).join(', ')} and ${uniqueFiles.length - 3} more`;
+
+        return {
+          type: msg.type,
+          message:
+            chalk.magenta(`### Turn Diff [${ts}]\n\n`) +
+            `Changes to ${fileText}${uniqueFiles.length > 0 ? `: ${fileList}` : ''}`,
+        };
+      }
+      case 'patch_apply_begin': {
+        const autoApproved = msg.auto_approved ? ' (auto-approved)' : '';
+        const changes = msg.changes;
+        const changeCount = Object.keys(changes).length;
+        const changeText = changeCount === 1 ? '1 file' : `${changeCount} files`;
+
+        const header =
+          chalk.yellow(`### Patch Apply Begin [${ts}]${autoApproved}\n\n`) +
+          `Applying changes to ${changeText}:\n\n`;
+
+        const fileDetails = Object.entries(changes)
+          .map(([filePath, change]) => {
+            if ('add' in change) {
+              const content = truncateToLines(change.add.content, 10);
+              return `${chalk.green('ADD')} ${filePath}:\n${content}`;
+            } else if ('update' in change) {
+              const diff = change.update.unified_diff || '';
+              const movePath = change.update.move_path;
+              const content = truncateToLines(diff, 10);
+              const moveText = movePath ? ` -> ${movePath}` : '';
+              return `${chalk.cyan('UPDATE')} ${filePath}${moveText}:\n${content}`;
+            }
+
+            return `${chalk.gray('UNKNOWN')} ${filePath}`;
+          })
+          .join('\n\n');
+
+        return {
+          type: msg.type,
+          message: header + fileDetails,
+        };
+      }
+      case 'patch_apply_end': {
+        const success = msg.success ? 'SUCCESS' : 'FAILED';
+        const color = msg.success ? chalk.green : chalk.red;
+        const output = msg.stdout || msg.stderr || '';
+        const truncated = truncateToLines(output, 10);
+        return {
+          type: msg.type,
+          message: color(`### Patch Apply End [${ts}] - ${success}\n\n`) + truncated,
+        };
+      }
       default: {
         // Unknown but well-formed message; print compactly for debugging
-        return { type: msg.type, message: JSON.stringify(msg) };
+        return { type: (msg as AnyMessage).type, message: JSON.stringify(msg) };
       }
     }
   } catch (err) {
