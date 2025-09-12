@@ -185,16 +185,13 @@ export async function buildExecutionPromptWithoutSteps(
       promptParts.push(taskSection);
     }
 
-    // Add plan file reference for batch mode
-    if (batchMode) {
-      const gitRoot = await getGitRoot(baseDir);
-      const relativePlanPath = path.isAbsolute(planFilePath)
-        ? path.relative(gitRoot, planFilePath)
-        : planFilePath;
-      const prefix = filePathPrefix || '';
-      const planFileReference = `\n## Plan File for Task Updates\n\n- ${prefix}${relativePlanPath}: This is the plan file you must edit to mark tasks as done after completing them.\n`;
-      promptParts.push(planFileReference);
-    }
+    const gitRoot = await getGitRoot(baseDir);
+    const relativePlanPath = path.isAbsolute(planFilePath)
+      ? path.relative(gitRoot, planFilePath)
+      : planFilePath;
+    const prefix = filePathPrefix || '';
+    const planFileReference = `\n## Plan File\n\n- ${prefix}${relativePlanPath}: This is the plan file you can reference if you need to check the plan again.\n`;
+    promptParts.push(planFileReference);
 
     // Add task files if available
     if (task.files && task.files.length > 0) {

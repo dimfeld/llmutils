@@ -372,40 +372,8 @@ describe('prompt_builder', () => {
           batchMode: true,
         });
 
-        expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain(
-          '@/batch-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.'
-        );
-      });
-
-      test('does not include plan file reference in regular mode', async () => {
-        const planData: PlanSchema = {
-          title: 'Regular Plan',
-          goal: 'Regular Goal',
-          details: 'Regular Details',
-          tasks: [],
-        };
-
-        const regularTask = {
-          title: 'Regular Implementation',
-          description: 'Implement regular features',
-          files: ['src/regular.ts'],
-        };
-
-        const result = await buildExecutionPromptWithoutSteps({
-          executor: localMockExecutor,
-          planData,
-          planFilePath: path.join(localTempDir, 'regular-plan.yml'),
-          baseDir: localTempDir,
-          config: localMockConfig,
-          task: regularTask,
-          filePathPrefix: '@/',
-          includeCurrentPlanContext: false,
-          batchMode: false, // Regular mode means batchMode: false
-        });
-
-        expect(result).not.toContain('## Plan File for Task Updates');
-        expect(result).not.toContain('This is the plan file you must edit to mark tasks as done');
+        expect(result).toContain('## Plan File');
+        expect(result).toContain('@/batch-plan.yml: This is the plan file ');
       });
 
       test('uses relative path from git root for plan file reference', async () => {
@@ -441,10 +409,8 @@ describe('prompt_builder', () => {
           batchMode: true,
         });
 
-        expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain(
-          '@/nested/subdirs/nested-batch-plan.yml: This is the plan file you must edit'
-        );
+        expect(result).toContain('## Plan File');
+        expect(result).toContain('@/nested/subdirs/nested-batch-plan.yml: This is the plan file ');
       });
 
       test('handles already relative plan file paths', async () => {
@@ -474,10 +440,8 @@ describe('prompt_builder', () => {
           batchMode: true,
         });
 
-        expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain(
-          '@/tasks/relative-batch-plan.yml: This is the plan file you must edit'
-        );
+        expect(result).toContain('## Plan File');
+        expect(result).toContain('@/tasks/relative-batch-plan.yml: This is the plan file ');
       });
 
       test('uses empty prefix when filePathPrefix is not provided', async () => {
@@ -505,8 +469,8 @@ describe('prompt_builder', () => {
           batchMode: true,
         });
 
-        expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain('no-prefix-batch-plan.yml: This is the plan file you must edit');
+        expect(result).toContain('## Plan File');
+        expect(result).toContain('no-prefix-batch-plan.yml: This is the plan file ');
         expect(result).not.toContain('@/no-prefix-batch-plan.yml');
       });
 
@@ -535,10 +499,8 @@ describe('prompt_builder', () => {
           batchMode: true,
         });
 
-        expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain(
-          '$PROJECT/custom-prefix-batch-plan.yml: This is the plan file you must edit'
-        );
+        expect(result).toContain('## Plan File');
+        expect(result).toContain('$PROJECT/custom-prefix-batch-plan.yml: This is the plan file ');
       });
 
       test('batch mode detection works with description-based detection', async () => {
@@ -566,10 +528,8 @@ describe('prompt_builder', () => {
           batchMode: true,
         });
 
-        expect(result).toContain('## Plan File for Task Updates');
-        expect(result).toContain(
-          '@/description-batch-plan.yml: This is the plan file you must edit'
-        );
+        expect(result).toContain('## Plan File');
+        expect(result).toContain('@/description-batch-plan.yml: This is the plan file ');
       });
 
       test('handles git root resolution errors gracefully', async () => {
@@ -645,12 +605,12 @@ describe('prompt_builder', () => {
 
         // Verify the exact format of the plan file reference section
         expect(result).toContain(
-          '\n## Plan File for Task Updates\n\n- @/format-batch-plan.yml: This is the plan file you must edit to mark tasks as done after completing them.\n'
+          '\n## Plan File\n\n- @/format-batch-plan.yml: This is the plan file '
         );
 
         // Verify it appears after the task section
         const taskSectionIndex = result.indexOf('## Task: Batch Processing Format');
-        const planFileIndex = result.indexOf('## Plan File for Task Updates');
+        const planFileIndex = result.indexOf('## Plan File');
         expect(taskSectionIndex).toBeLessThan(planFileIndex);
         expect(taskSectionIndex).toBeGreaterThan(-1);
         expect(planFileIndex).toBeGreaterThan(-1);
