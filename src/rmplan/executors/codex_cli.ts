@@ -15,6 +15,7 @@ import {
 } from './claude_code/agent_prompts.ts';
 import { readPlanFile } from '../plans.ts';
 import * as path from 'path';
+import { analyzeReviewFeedback } from './codex_cli/review_analysis.ts';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
 
@@ -124,6 +125,26 @@ export class CodexCliExecutor implements Executor {
       return;
     } else if (verdict === 'NEEDS_FIXES') {
       log('Review verdict: NEEDS_FIXES');
+      // Analyze whether the flagged issues are in-scope and require fixes now
+      const reviewDoc = await this.loadRepositoryReviewDoc(gitRoot);
+      const analysis = await analyzeReviewFeedback({
+        reviewerOutput: reviewerOutput,
+        completedTasks: initiallyCompleted.map((t) => t.title),
+        pendingTasks: initiallyPending.map((t) => t.title),
+        implementerOutput,
+        repoReviewDoc: reviewDoc,
+      });
+
+      if (!analysis.needs_fixes) {
+        log('Review analysis: Issues are out-of-scope or non-blocking. Exiting without fixes.');
+        return;
+      }
+
+      log('Review analysis: Fixes required.');
+      if (analysis.fix_instructions) {
+        log(`Fix instructions: ${analysis.fix_instructions}`);
+      }
+      // Fix loop to be implemented in subsequent tasks (10/11)
       log('Fix loop not yet implemented in this phase.');
       return;
     } else {
@@ -259,5 +280,21 @@ export class CodexCliExecutor implements Executor {
     }
 
     return final;
+  }
+
+  /** Load repository-specific review guidance document if configured */
+  private async loadRepositoryReviewDoc(gitRoot: string): Promise<string | undefined> {
+    try {
+      const p = this.rmplanConfig.review?.customInstructionsPath;
+      if (!p) return undefined;
+      const resolved = path.isAbsolute(p) ? p : path.join(gitRoot, p);
+      const file = Bun.file(resolved);
+      if (!(await file.exists())) return undefined;
+      const content = await file.text();
+      log(`Including repository review guidance: ${path.relative(gitRoot, resolved)}`);
+      return content;
+    } catch {
+      return undefined;
+    }
   }
 }
