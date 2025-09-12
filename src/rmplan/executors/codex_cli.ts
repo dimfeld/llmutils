@@ -3,10 +3,13 @@ import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types';
 import type { RmplanConfig } from '../configSchema';
 import type { PrepareNextStepOptions } from '../plans/prepare_step';
 import { getGitRoot } from '../../common/git';
-import { spawnAndLogOutput } from '../../common/process';
+import { createLineSplitter, spawnAndLogOutput } from '../../common/process';
 import { log, error } from '../../logging';
 import { buildCodexOrchestrationPrompt } from './codex_cli/prompt';
 import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';
+import { createCodexStdoutFormatter } from './codex_cli/format.ts';
+import { getImplementerPrompt } from './claude_code/agent_prompts.ts';
+import * as path from 'path';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
 
@@ -36,35 +39,55 @@ export class CodexCliExecutor implements Executor {
   }
 
   async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
-    // If caller wants to capture what we would send, just return the composed prompt
+    // Build implementer prompt using the Claude Code agent prompt for consistency
+    const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
+    const implementerInstructions = await this.loadAgentInstructionsIfConfigured(gitRoot);
+    const implementer = getImplementerPrompt(contextContent, implementerInstructions, this.sharedOptions.model);
+
+    // If caller wants to capture what we would send, just return the composed implementer prompt
     if (planInfo.captureOutput && planInfo.captureOutput !== 'none') {
-      return buildCodexOrchestrationPrompt(contextContent, {
-        planId: planInfo.planId,
-        planTitle: planInfo.planTitle,
-        planFilePath: planInfo.planFilePath,
-        batchMode: planInfo.batchMode === true,
-      });
+      return implementer.prompt;
     }
 
-    const cwd = await getGitRoot(this.sharedOptions.baseDir);
-    const prompt = buildCodexOrchestrationPrompt(contextContent, {
-      planId: planInfo.planId,
-      planTitle: planInfo.planTitle,
-      planFilePath: planInfo.planFilePath,
-      batchMode: planInfo.batchMode === true,
-    });
+    // Execute a single Codex step and capture the final agent message
+    const finalMessage = await this.executeCodexStep(implementer.prompt, gitRoot);
 
+    log('Final implementer output captured.');
+    log(finalMessage);
+  }
+
+  /** Load implementer agent instructions if configured in rmplanConfig */
+  private async loadAgentInstructionsIfConfigured(gitRoot: string): Promise<string | undefined> {
+    try {
+      const p = this.rmplanConfig.agents?.implementer?.instructions;
+      if (!p) return undefined;
+      const resolved = path.isAbsolute(p) ? p : path.join(gitRoot, p);
+      const file = Bun.file(resolved);
+      if (!(await file.exists())) return undefined;
+      const content = await file.text();
+      log(`Including implementer instructions: ${path.relative(gitRoot, resolved)}`);
+      return content;
+    } catch (e) {
+      // Non-fatal
+      return undefined;
+    }
+  }
+
+  /**
+   * Runs a single-step Codex execution with JSON streaming enabled and returns the final agent message.
+   */
+  private async executeCodexStep(prompt: string, cwd: string): Promise<string> {
     const allowAllTools = process.env.ALLOW_ALL_TOOLS === 'true';
     const sandboxSettings = allowAllTools
       ? ['--dangerously-bypass-approvals-and-sandbox']
-      : // Defaults to read-only in exec mode, so allow writing to the workspace
-        ['--sandbox', 'workspace-write'];
+      : ['--sandbox', 'workspace-write'];
 
-    // Run `codex exec "<prompt>"` and stream output to the user
-    const { exitCode } = await spawnAndLogOutput(
+    const formatter = createCodexStdoutFormatter();
+
+    const { exitCode, stdout, stderr } = await spawnAndLogOutput(
       [
         'codex',
-        // Allow web search, not sure if this actually applies in exec mode
+        '--json',
         '--search',
         'exec',
         ...sandboxSettings,
@@ -72,13 +95,22 @@ export class CodexCliExecutor implements Executor {
       ],
       {
         cwd,
+        formatStdout: (chunk: string) => formatter.formatChunk(chunk),
+        // stderr is not JSON – print as-is
       }
     );
 
     if (exitCode !== 0) {
       throw new Error(`codex exited with code ${exitCode}`);
-    } else {
-      log('codex exec completed');
     }
+
+    const final = formatter.getFinalAgentMessage();
+    if (!final) {
+      // Provide helpful context for debugging
+      error('Codex returned no final agent message. Enable debug logs for details.');
+      throw new Error('No final agent message found in Codex output.');
+    }
+
+    return final;
   }
 }
