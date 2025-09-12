@@ -10,7 +10,10 @@ describe('codex_cli/format', () => {
   });
 
   test('parses task_started', () => {
-    const line = JSON.stringify({ id: '0', msg: { type: 'task_started', model_context_window: 272000 } });
+    const line = JSON.stringify({
+      id: '0',
+      msg: { type: 'task_started', model_context_window: 272000 },
+    });
     const res = formatCodexJsonMessage(line);
     expect(res.type).toBe('task_started');
     expect(res.message).toContain('Task Started');
@@ -31,7 +34,15 @@ describe('codex_cli/format', () => {
   });
 
   test('formats exec begin', () => {
-    const line = JSON.stringify({ id: '0', msg: { type: 'exec_command_begin', call_id: 'c1', command: ['bash','-lc','echo hi'], cwd: '/code' } });
+    const line = JSON.stringify({
+      id: '0',
+      msg: {
+        type: 'exec_command_begin',
+        call_id: 'c1',
+        command: ['bash', '-lc', 'echo hi'],
+        cwd: '/code',
+      },
+    });
     const res = formatCodexJsonMessage(line);
     expect(res.type).toBe('exec_command_begin');
     expect(res.message).toContain('Exec Begin');
@@ -40,11 +51,14 @@ describe('codex_cli/format', () => {
 
   test('truncates exec end output to 20 lines', () => {
     const longOut = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n');
-    const line = JSON.stringify({ id: '0', msg: { type: 'exec_command_end', call_id: 'c1', exit_code: 0, stdout: longOut } });
+    const line = JSON.stringify({
+      id: '0',
+      msg: { type: 'exec_command_end', call_id: 'c1', exit_code: 0, stdout: longOut },
+    });
     const res = formatCodexJsonMessage(line);
     expect(res.type).toBe('exec_command_end');
     const msg = res.message ?? '';
-    const count = msg.split('\n').filter(l => l.startsWith('line ')).length;
+    const count = msg.split('\n').filter((l) => l.startsWith('line ')).length;
     expect(count).toBe(20);
     expect(msg).toContain('(truncated long output...)');
   });
@@ -67,4 +81,3 @@ describe('codex_cli/format', () => {
     expect(res.type).toBe('parse_error');
   });
 });
-

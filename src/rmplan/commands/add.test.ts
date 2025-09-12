@@ -321,9 +321,9 @@ describe('rmplan add command', () => {
         opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
       },
     };
-    await expect(
-      handleAddCommand(['Orphan', 'Plan'], { parent: 999 }, command)
-    ).rejects.toThrow('Parent plan with ID 999 not found');
+    await expect(handleAddCommand(['Orphan', 'Plan'], { parent: 999 }, command)).rejects.toThrow(
+      'Parent plan with ID 999 not found'
+    );
   });
 
   describe('--cleanup option', () => {

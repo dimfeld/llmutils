@@ -86,7 +86,7 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
     const initial = tryFormatInitial(obj);
     if (initial) return initial;
 
-    const msg = obj.msg as CodexMessage | undefined;
+    const msg = obj.msg;
     if (!msg || typeof msg !== 'object' || !('type' in msg)) {
       return { type: 'unknown' };
     }
@@ -182,4 +182,3 @@ export function createCodexStdoutFormatter() {
 
   return { formatChunk, getFinalAgentMessage };
 }
-

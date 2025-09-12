@@ -42,7 +42,11 @@ export class CodexCliExecutor implements Executor {
     // Build implementer prompt using the Claude Code agent prompt for consistency
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
     const implementerInstructions = await this.loadAgentInstructionsIfConfigured(gitRoot);
-    const implementer = getImplementerPrompt(contextContent, implementerInstructions, this.sharedOptions.model);
+    const implementer = getImplementerPrompt(
+      contextContent,
+      implementerInstructions,
+      this.sharedOptions.model
+    );
 
     // If caller wants to capture what we would send, just return the composed implementer prompt
     if (planInfo.captureOutput && planInfo.captureOutput !== 'none') {
@@ -85,14 +89,7 @@ export class CodexCliExecutor implements Executor {
     const formatter = createCodexStdoutFormatter();
 
     const { exitCode, stdout, stderr } = await spawnAndLogOutput(
-      [
-        'codex',
-        '--json',
-        '--search',
-        'exec',
-        ...sandboxSettings,
-        prompt,
-      ],
+      ['codex', '--json', '--search', 'exec', ...sandboxSettings, prompt],
       {
         cwd,
         formatStdout: (chunk: string) => formatter.formatChunk(chunk),
