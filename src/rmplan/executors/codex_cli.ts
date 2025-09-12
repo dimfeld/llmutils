@@ -4,7 +4,7 @@ import type { RmplanConfig } from '../configSchema';
 import type { PrepareNextStepOptions } from '../plans/prepare_step';
 import { getGitRoot } from '../../common/git';
 import { spawnAndLogOutput } from '../../common/process';
-import { log, error } from '../../logging';
+import { log, error, warn } from '../../logging';
 import { buildCodexOrchestrationPrompt } from './codex_cli/prompt';
 import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';
 import { createCodexStdoutFormatter } from './codex_cli/format.ts';
@@ -144,8 +144,60 @@ export class CodexCliExecutor implements Executor {
       if (analysis.fix_instructions) {
         log(`Fix instructions: ${analysis.fix_instructions}`);
       }
-      // Fix loop to be implemented in subsequent tasks (10/11)
-      log('Fix loop not yet implemented in this phase.');
+
+      // Implement fix-and-review loop (up to 5 iterations)
+      const maxFixIterations = 5;
+      let lastFixerOutput = '';
+      for (let iter = 1; iter <= maxFixIterations; iter++) {
+        log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
+
+        const fixerPrompt = this.getFixerPrompt({
+          implementerOutput,
+          testerOutput,
+          completedTaskTitles: initiallyCompleted.map((t) => t.title),
+          fixInstructions: analysis.fix_instructions ?? 'Address reviewer-flagged issues.',
+        });
+
+        const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot);
+        lastFixerOutput = fixerOutput;
+        log('Fixer output captured. Re-running reviewer...');
+
+        // Re-run reviewer with updated context including fixer output
+        const rerunReviewerContext = this.composeReviewerContext(
+          contextContent,
+          implementerOutput,
+          testerOutput,
+          initiallyCompleted.map((t) => t.title),
+          initiallyPending.map((t) => t.title),
+          fixerOutput
+        );
+        const rerunReviewer = getReviewerPrompt(
+          rerunReviewerContext,
+          reviewerInstructions,
+          this.sharedOptions.model
+        );
+
+        const rerunReviewerOutput = await this.executeCodexStep(rerunReviewer.prompt, gitRoot);
+        const newVerdict = this.parseReviewerVerdict(rerunReviewerOutput);
+        if (newVerdict === 'ACCEPTABLE') {
+          log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
+          return;
+        }
+
+        if (newVerdict === 'NEEDS_FIXES') {
+          log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
+          continue; // attempt next iteration
+        }
+
+        // Unknown verdict – be conservative and continue up to limit
+        warn(
+          `Reviewer verdict could not be parsed after fixes (iteration ${iter}). Continuing fix loop.`
+        );
+      }
+
+      warn(
+        'Maximum fix iterations reached (5) and reviewer still reports issues. Exiting with warnings.'
+      );
       return;
     } else {
       error('Could not determine review verdict from reviewer output. Treating as NEEDS_FIXES.');
@@ -219,7 +271,8 @@ export class CodexCliExecutor implements Executor {
     implementerOutput: string,
     testerOutput: string,
     completedTitles: string[],
-    pendingTitles: string[]
+    pendingTitles: string[],
+    fixerOutput?: string
   ): string {
     const completedSection = completedTitles.length
       ? `\n\n### Completed Tasks\n- ${completedTitles.join('\n- ')}`
@@ -227,13 +280,14 @@ export class CodexCliExecutor implements Executor {
     const pendingSection = pendingTitles.length
       ? `\n\n### Pending Tasks\n- ${pendingTitles.join('\n- ')}`
       : '';
-    return (
+    const base =
       `${originalContext}` +
       `${completedSection}` +
       `${pendingSection}` +
       `\n\n### Implementer Output\n${implementerOutput}` +
-      `\n\n### Tester Output\n${testerOutput}`
-    );
+      `\n\n### Tester Output\n${testerOutput}`;
+    const fixerSection = fixerOutput ? `\n\n### Fixer Output\n${fixerOutput}` : '';
+    return base + fixerSection;
   }
 
   /** Parse the reviewer verdict from output text */
@@ -280,6 +334,40 @@ export class CodexCliExecutor implements Executor {
     }
 
     return final;
+  }
+
+  /** Build a prompt for the fixer step */
+  private getFixerPrompt(input: {
+    implementerOutput: string;
+    testerOutput: string;
+    completedTaskTitles: string[];
+    fixInstructions: string;
+  }): string {
+    const tasks = input.completedTaskTitles.length
+      ? `- ${input.completedTaskTitles.join('\n- ')}`
+      : '(none)';
+    return `You are a fixer agent focused on addressing reviewer-identified issues precisely and minimally.
+
+Context:
+## Completed Tasks (in scope)
+${tasks}
+
+## Implementer Output
+${input.implementerOutput}
+
+## Tester Output
+${input.testerOutput}
+
+## Fix Instructions
+${input.fixInstructions}
+
+Your job:
+1. Make only the changes required to satisfy the fix instructions
+2. Follow repository conventions and type safety
+3. Prefer small, safe changes; avoid broad refactors
+4. Run relevant tests and commands as needed
+
+When complete, summarize what you changed.`;
   }
 
   /** Load repository-specific review guidance document if configured */
