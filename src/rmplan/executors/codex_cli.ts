@@ -8,7 +8,11 @@ import { log, error } from '../../logging';
 import { buildCodexOrchestrationPrompt } from './codex_cli/prompt';
 import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';
 import { createCodexStdoutFormatter } from './codex_cli/format.ts';
-import { getImplementerPrompt, getTesterPrompt, getReviewerPrompt } from './claude_code/agent_prompts.ts';
+import {
+  getImplementerPrompt,
+  getTesterPrompt,
+  getReviewerPrompt,
+} from './claude_code/agent_prompts.ts';
 import { readPlanFile } from '../plans.ts';
 import * as path from 'path';
 
@@ -43,9 +47,8 @@ export class CodexCliExecutor implements Executor {
     // Analyze plan file to understand completed vs pending tasks
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
     const planData = await readPlanFile(planInfo.planFilePath);
-    const { completed: initiallyCompleted, pending: initiallyPending } = this.categorizeTasks(
-      planData
-    );
+    const { completed: initiallyCompleted, pending: initiallyPending } =
+      this.categorizeTasks(planData);
 
     this.logTaskStatus('Initial plan analysis', initiallyCompleted, initiallyPending, gitRoot);
 
