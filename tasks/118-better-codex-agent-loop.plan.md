@@ -15,7 +15,7 @@ docs: []
 planGeneratedAt: 2025-09-12T19:31:52.587Z
 promptsGeneratedAt: 2025-09-12T19:39:12.582Z
 createdAt: 2025-09-12T18:50:35.986Z
-updatedAt: 2025-09-12T19:48:45.245Z
+updatedAt: 2025-09-12T19:56:42.830Z
 tasks:
   - title: Create a Codex JSON Output Parser
     done: true
@@ -326,7 +326,7 @@ tasks:
           not actionable for the current scope.
         done: false
   - title: Implement the Fixer Step
-    done: false
+    done: true
     description: >
       Create a new prompt for the fixer step that includes the original
       implementation and testing outputs, the list of completed tasks, and the
@@ -345,21 +345,21 @@ tasks:
           the specific fix instructions from the review analysis. The fixer
           should understand what was previously done and what specifically needs
           to be corrected.
-        done: false
+        done: true
       - prompt: >
           Implement the fixer execution logic by calling `executeCodexStep` with
           the fixer prompt. The fixer should be able to make targeted
           corrections based on the specific instructions rather than starting
           over or making broad changes to the codebase.
-        done: false
+        done: true
       - prompt: >
           Add appropriate logging for the fixer step to show that correction
           work is being attempted and what specific issues are being addressed.
           Capture the fixer's output for use in the subsequent reviewer
           re-evaluation.
-        done: false
+        done: true
   - title: Implement the Full Fix-and-Review Loop
-    done: false
+    done: true
     description: >
       After the fixer step runs, re-execute the reviewer on the updated code.
       Wrap this entire fix-and-review cycle in a loop that terminates when the
@@ -376,26 +376,29 @@ tasks:
           step followed by re-executing the reviewer on the updated code. Track
           the iteration count and provide clear logging about which iteration is
           running and what the current status is.
-        done: false
+        done: true
       - prompt: >
           After each fixer execution, re-run the reviewer step to evaluate the
           fixes that were made. Parse the new reviewer verdict and either
           continue the loop (if NEEDS_FIXES) or exit successfully (if
           ACCEPTABLE). Ensure that each reviewer re-evaluation receives the
           updated context including any changes made by the fixer.
-        done: false
+        done: true
       - prompt: >
           Add termination conditions for the fix loop: exit successfully when
           the reviewer says ACCEPTABLE, exit with a warning after 5 iterations
           even if not acceptable, and handle any errors during the fix process
           gracefully. Provide clear final status reporting so users understand
           whether the code was successfully improved to meet standards.
-        done: false
+        done: true
 changedFiles:
   - src/rmplan/commands/add.test.ts
   - src/rmplan/commands/cli_integration.test.ts
   - src/rmplan/executors/codex_cli/format.test.ts
   - src/rmplan/executors/codex_cli/format.ts
+  - src/rmplan/executors/codex_cli/review_analysis.test.ts
+  - src/rmplan/executors/codex_cli/review_analysis.ts
+  - src/rmplan/executors/codex_cli.fix_loop.test.ts
   - src/rmplan/executors/codex_cli.ts
 rmfilter:
   - src/rmplan/executors
