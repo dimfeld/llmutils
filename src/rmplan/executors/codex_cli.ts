@@ -244,12 +244,14 @@ export class CodexCliExecutor implements Executor {
   ) {
     log(`${header}:`);
     if (completed.length) {
-      log(`- Completed tasks (${completed.length}): ${completed.map((t) => t.title).join('; ')}`);
+      log(
+        `- Completed tasks (${completed.length}):${completed.map((t) => `\n  - ${t.title}`).join('')}`
+      );
     } else {
       log('- Completed tasks (0)');
     }
     if (pending.length) {
-      log(`- Pending tasks (${pending.length}): ${pending.map((t) => t.title).join('; ')}`);
+      log(`- Pending tasks (${pending.length}):${pending.map((t) => `\n  - ${t.title}`).join('')}`);
     } else {
       log('- Pending tasks (0)');
     }
@@ -314,7 +316,7 @@ export class CodexCliExecutor implements Executor {
     const formatter = createCodexStdoutFormatter();
 
     const { exitCode, stdout, stderr } = await spawnAndLogOutput(
-      ['codex', '--json', '--search', 'exec', ...sandboxSettings, prompt],
+      ['codex', '--search', 'exec', ...sandboxSettings, prompt, '--json'],
       {
         cwd,
         formatStdout: (chunk: string) => formatter.formatChunk(chunk),

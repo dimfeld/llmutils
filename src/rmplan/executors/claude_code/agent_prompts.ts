@@ -94,6 +94,7 @@ ${contextContent}${customInstructionsSection}
 3. Write new tests if needed to fill coverage gaps
 4. Fix any failing tests to ensure they pass
 5. Verify all tests work correctly with the implementation
+6. Take your time to ensure test coverage is complete and passing. Run testing commands even if they may take a while or use system resources.
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:

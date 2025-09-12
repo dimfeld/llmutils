@@ -40,7 +40,7 @@ export type CodexMessage =
       aggregated_output?: string;
     }
   | { type: 'token_count'; info: any }
-  | { type: 'agent_message'; text?: string }
+  | { type: 'agent_message'; message?: string }
   | { type: string; [key: string]: any };
 
 export interface FormattedCodexMessage {
@@ -104,7 +104,7 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
         const text = msg.text ?? '';
         return {
           type: msg.type,
-          message: chalk.blue(`### Thinking [${ts}]\n`) + text,
+          message: chalk.blue(`### Thinking [${ts}]\n\n`) + text,
         };
       }
       case 'agent_reasoning_section_break': {
@@ -115,7 +115,7 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
         const cwd = msg.cwd ? `\nCWD: ${msg.cwd}` : '';
         return {
           type: msg.type,
-          message: chalk.cyan(`### Exec Begin [${ts}]\n`) + cmd + cwd,
+          message: chalk.cyan(`### Exec Begin [${ts}]\n\n`) + cmd + cwd,
         };
       }
       case 'exec_command_output_delta': {
@@ -126,21 +126,21 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
         const out = msg.formatted_output ?? msg.aggregated_output ?? msg.stdout ?? '';
         const truncated = truncateToLines(out, 20);
         const header = chalk.cyan(`### Exec End [${ts}] (exit ${msg.exit_code})`);
-        return { type: msg.type, message: `${header}\n${truncated}` };
+        return { type: msg.type, message: `${header}\n\n${truncated}` };
       }
       case 'token_count': {
         const info = msg.info ?? {};
         const total = info.total_token_usage?.total_tokens ?? info.total_token_usage?.output_tokens;
         return {
           type: msg.type,
-          message: chalk.gray(`### Token Count [${ts}]\n`) + JSON.stringify(info),
+          message: chalk.gray(`### Token Count [${ts}]\n\n`) + JSON.stringify(info),
         };
       }
       case 'agent_message': {
-        const text = msg.text ?? '';
+        const text = msg.message ?? '';
         return {
           type: msg.type,
-          message: chalk.bold.green(`### Agent Message [${ts}]`) + '\n' + text,
+          message: chalk.bold.green(`### Agent Message [${ts}]`) + '\n\n' + text,
           agentMessage: text,
         };
       }
@@ -173,7 +173,7 @@ export function createCodexStdoutFormatter() {
       }
       if (fm.message) out.push(fm.message);
     }
-    return out.length ? out.join('\n') + '\n' : '';
+    return out.length ? out.join('\n\n') + '\n\n' : '';
   }
 
   function getFinalAgentMessage(): string | undefined {
