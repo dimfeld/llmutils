@@ -1,4 +1,6 @@
 import { z } from 'zod/v4';
+// TODO Need to update to latest AI SDK
+import { z as z3 } from 'zod/v3';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types';
 import type { RmplanConfig } from '../configSchema';
 import type { PrepareNextStepOptions } from '../plans/prepare_step';
@@ -16,6 +18,9 @@ import {
 import { readPlanFile } from '../plans.ts';
 import * as path from 'path';
 import { analyzeReviewFeedback } from './codex_cli/review_analysis.ts';
+import { generateObject } from 'ai';
+import { createModel } from '../../common/model_factory.ts';
+import { setTaskDone } from '../plans/mark_done.ts';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
 
@@ -122,6 +127,7 @@ export class CodexCliExecutor implements Executor {
     const verdict = this.parseReviewerVerdict(reviewerOutput);
     if (verdict === 'ACCEPTABLE') {
       log('Review verdict: ACCEPTABLE');
+      await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
       return;
     } else if (verdict === 'NEEDS_FIXES') {
       log('Review verdict: NEEDS_FIXES');
@@ -137,6 +143,7 @@ export class CodexCliExecutor implements Executor {
 
       if (!analysis.needs_fixes) {
         log('Review analysis: Issues are out-of-scope or non-blocking. Exiting without fixes.');
+        await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
         return;
       }
 
@@ -191,6 +198,7 @@ export class CodexCliExecutor implements Executor {
 
         if (!newAnalysis.needs_fixes) {
           log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
+          await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
           return;
         }
 
@@ -349,6 +357,86 @@ export class CodexCliExecutor implements Executor {
     }
 
     return final;
+  }
+
+  /**
+   * Analyze the implementer output with Gemini 2.5 Flash to determine which plan tasks
+   * have been fully completed, and mark those tasks as done in the plan file.
+   * This is a conservative, best-effort step and will silently skip on any failure.
+   */
+  private async markCompletedTasksFromImplementer(
+    implementerOutput: string,
+    planInfo: ExecutePlanInfo,
+    gitRoot: string
+  ): Promise<void> {
+    try {
+      const plan = await readPlanFile(planInfo.planFilePath);
+      const tasks = (plan.tasks ?? []).map((t: any) => ({
+        title: t.title as string,
+        description: (t.description as string) ?? '',
+        done: t.done === true,
+        steps: Array.isArray(t.steps)
+          ? t.steps.map((s: any) => ({ prompt: s?.prompt ?? '', done: s?.done === true }))
+          : [],
+      }));
+
+      const pending = tasks.filter((t) => !t.done);
+      if (pending.length === 0) return;
+
+      const model = await createModel('google/gemini-2.5-flash');
+
+      const prompt = `You are given:
+- A software project plan consisting of tasks (with titles, optional descriptions, and steps)
+- The implementer agent's output (what was implemented)
+
+Goal: Identify which tasks from the plan were FULLY completed by the implementation. Only select a task if the implementer output clearly indicates the task is fully done (not partially). Use EXACT title matching from the provided task list.
+
+Rules:
+- Consider a task complete only if the implementation and tests are evidently finished for that task.
+- If uncertain, do not select it.
+- Return strict JSON with field "completed_titles" as an array of strings (the exact task titles). No commentary.
+
+Plan tasks (pending only):
+${JSON.stringify(pending, null, 2)}
+
+Implementer output:
+${implementerOutput}
+
+Return JSON only, like: {"completed_titles": ["Task A", "Task B"]}`;
+
+      const CompletedTasksSchema = z3.object({
+        completed_titles: z3.array(z3.string()),
+      });
+
+      const res = await generateObject({
+        model,
+        schema: CompletedTasksSchema,
+        prompt,
+        temperature: 0.1,
+      });
+
+      const pendingTitles = new Set(pending.map((t) => t.title));
+      for (const title of res.object.completed_titles) {
+        if (!pendingTitles.has(title)) continue;
+        try {
+          await setTaskDone(
+            planInfo.planFilePath,
+            { taskIdentifier: title, commit: false },
+            gitRoot,
+            this.rmplanConfig
+          );
+          log(`Marked task done (from implementer analysis): ${title}`);
+        } catch (e) {
+          warn(
+            `Failed to mark task done for title "${title}": ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+      }
+    } catch (e) {
+      warn(
+        `Skipping automatic task completion marking due to error: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
   }
 
   /** Build a prompt for the fixer step */

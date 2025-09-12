@@ -111,10 +111,14 @@ describe('CodexCliExecutor - Fix Loop', () => {
         } else if (prompt.startsWith('REVIEWER')) {
           if (callIndex === 2) {
             // First reviewer after tester
-            outputs.push(codexAgentMessage('Issues found that need to be fixed.\n\nVERDICT: NEEDS_FIXES'));
+            outputs.push(
+              codexAgentMessage('Issues found that need to be fixed.\n\nVERDICT: NEEDS_FIXES')
+            );
           } else {
             // Reviewer after fixer
-            outputs.push(codexAgentMessage('Looks good now. Everything is acceptable.\n\nVERDICT: ACCEPTABLE'));
+            outputs.push(
+              codexAgentMessage('Looks good now. Everything is acceptable.\n\nVERDICT: ACCEPTABLE')
+            );
           }
         } else if (prompt.includes('You are a fixer agent')) {
           outputs.push(codexAgentMessage('Applied targeted fixes.'));
@@ -223,7 +227,9 @@ describe('CodexCliExecutor - Fix Loop', () => {
         calls.push(prompt);
         const outputs: string[] = [codexTaskStarted()];
         if (prompt.startsWith('REVIEWER')) {
-          outputs.push(codexAgentMessage('Still has issues that need fixes.\n\nVERDICT: NEEDS_FIXES'));
+          outputs.push(
+            codexAgentMessage('Still has issues that need fixes.\n\nVERDICT: NEEDS_FIXES')
+          );
         } else if (prompt.includes('You are a fixer agent')) {
           outputs.push(codexAgentMessage('Attempted fixes.'));
         } else {

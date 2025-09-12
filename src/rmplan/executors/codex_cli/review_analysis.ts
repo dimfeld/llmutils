@@ -56,7 +56,6 @@ export async function analyzeReviewFeedback(
       model,
       schema: ReviewAnalysisSchema,
       prompt,
-      mode: 'json',
     });
 
     // Basic sanity defaults
@@ -71,7 +70,7 @@ export async function analyzeReviewFeedback(
     // Be conservative: if analysis fails, request fixes to avoid missing issues
     return {
       needs_fixes: true,
-      fix_instructions: 'Model call failed; proceed with targeted fixes.',
+      fix_instructions: '',
     };
   }
 }

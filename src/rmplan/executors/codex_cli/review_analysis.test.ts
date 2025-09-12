@@ -143,7 +143,7 @@ describe('analyzeReviewFeedback', () => {
     // Ensure the prompt included the fixer output content
     const promptArg = generateObjectSpy.mock.calls[0]?.[0]?.prompt as string;
     expect(promptArg).toContain(fixerOutput);
-    expect(promptArg).toContain('## Coding Agent\'s Response to Previous Review');
+    expect(promptArg).toContain("## Coding Agent's Response to Previous Review");
   });
 
   test('works without implementerOutput when fixerOutput is provided', async () => {
