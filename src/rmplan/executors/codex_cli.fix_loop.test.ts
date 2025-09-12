@@ -4,7 +4,7 @@ import type { RmplanConfig } from '../configSchema.ts';
 import { ModuleMocker } from '../../testing.js';
 
 function codexAgentMessage(text: string) {
-  return JSON.stringify({ id: '0', msg: { type: 'agent_message', text } }) + '\n';
+  return JSON.stringify({ id: '0', msg: { type: 'agent_message', message: text } }) + '\n';
 }
 
 function codexTaskStarted() {
@@ -71,11 +71,37 @@ describe('CodexCliExecutor - Fix Loop', () => {
       })),
     }));
 
+    // Mock the Codex stdout formatter
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: mock(() => {
+        let agentMessage = '';
+        return {
+          formatChunk: mock((chunk: string) => {
+            // Parse the simulated JSON lines and extract agent messages
+            const lines = chunk.split('\n').filter(Boolean);
+            for (const line of lines) {
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.msg?.type === 'agent_message' && parsed.msg.message) {
+                  agentMessage = parsed.msg.message;
+                }
+              } catch {
+                // ignore parsing errors in test
+              }
+            }
+            return chunk;
+          }),
+          getFinalAgentMessage: mock(() => agentMessage),
+        };
+      }),
+    }));
+
     // First review says NEEDS_FIXES, then after fixer returns ACCEPTABLE
     let callIndex = 0;
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock(async (args: string[], opts: any) => {
-        const prompt = args[args.length - 1] as string;
+        // The actual prompt is the second-to-last argument (before --json)
+        const prompt = args[args.length - 2] as string;
         // Simulate JSON streaming
         const outputs: string[] = [codexTaskStarted()];
         if (prompt.startsWith('IMPLEMENTER')) {
@@ -85,10 +111,10 @@ describe('CodexCliExecutor - Fix Loop', () => {
         } else if (prompt.startsWith('REVIEWER')) {
           if (callIndex === 2) {
             // First reviewer after tester
-            outputs.push(codexAgentMessage('Issues found. VERDICT: NEEDS_FIXES'));
+            outputs.push(codexAgentMessage('Issues found that need to be fixed.\n\nVERDICT: NEEDS_FIXES'));
           } else {
             // Reviewer after fixer
-            outputs.push(codexAgentMessage('Looks good now. VERDICT: ACCEPTABLE'));
+            outputs.push(codexAgentMessage('Looks good now. Everything is acceptable.\n\nVERDICT: ACCEPTABLE'));
           }
         } else if (prompt.includes('You are a fixer agent')) {
           outputs.push(codexAgentMessage('Applied targeted fixes.'));
@@ -103,12 +129,24 @@ describe('CodexCliExecutor - Fix Loop', () => {
       debug: false,
     }));
 
-    // Mock analysis result requiring fixes with instructions
+    // Mock analysis results: first needs fixes, then acceptable after fixer
+    let analysisCallCount = 0;
     await moduleMocker.mock('./codex_cli/review_analysis.ts', () => ({
-      analyzeReviewFeedback: mock(async () => ({
-        needs_fixes: true,
-        fix_instructions: 'Fix the issues reported by reviewer.',
-      })),
+      analyzeReviewFeedback: mock(async (params) => {
+        analysisCallCount++;
+        if (analysisCallCount === 1) {
+          // First analysis after initial review
+          return {
+            needs_fixes: true,
+            fix_instructions: 'Fix the issues reported by reviewer.',
+          };
+        } else {
+          // Analysis after fixer ran - now acceptable
+          return {
+            needs_fixes: false,
+          };
+        }
+      }),
     }));
 
     const { CodexCliExecutor } = await import('./codex_cli.ts');
@@ -152,14 +190,40 @@ describe('CodexCliExecutor - Fix Loop', () => {
       })),
     }));
 
+    // Mock the Codex stdout formatter
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: mock(() => {
+        let agentMessage = '';
+        return {
+          formatChunk: mock((chunk: string) => {
+            // Parse the simulated JSON lines and extract agent messages
+            const lines = chunk.split('\n').filter(Boolean);
+            for (const line of lines) {
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.msg?.type === 'agent_message' && parsed.msg.message) {
+                  agentMessage = parsed.msg.message;
+                }
+              } catch {
+                // ignore parsing errors in test
+              }
+            }
+            return chunk;
+          }),
+          getFinalAgentMessage: mock(() => agentMessage),
+        };
+      }),
+    }));
+
     const calls: string[] = [];
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock(async (args: string[], opts: any) => {
-        const prompt = args[args.length - 1] as string;
+        // The actual prompt is the second-to-last argument (before --json)
+        const prompt = args[args.length - 2] as string;
         calls.push(prompt);
         const outputs: string[] = [codexTaskStarted()];
         if (prompt.startsWith('REVIEWER')) {
-          outputs.push(codexAgentMessage('Still issues. VERDICT: NEEDS_FIXES'));
+          outputs.push(codexAgentMessage('Still has issues that need fixes.\n\nVERDICT: NEEDS_FIXES'));
         } else if (prompt.includes('You are a fixer agent')) {
           outputs.push(codexAgentMessage('Attempted fixes.'));
         } else {

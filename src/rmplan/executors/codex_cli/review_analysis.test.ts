@@ -116,4 +116,56 @@ describe('analyzeReviewFeedback', () => {
     expect(res.needs_fixes).toBe(true);
     expect(res.fix_instructions).toBeDefined();
   });
+
+  test('includes fixerOutput in prompt when provided', async () => {
+    const generateObjectSpy = mock(async ({ prompt }) => ({
+      object: { needs_fixes: false },
+    }));
+
+    await moduleMocker.mock('ai', () => ({
+      generateObject: generateObjectSpy,
+    }));
+
+    await moduleMocker.mock('../../../common/model_factory.ts', () => ({
+      createModel: mock(async () => ({}) as any),
+    }));
+
+    const { analyzeReviewFeedback } = await import('./review_analysis.ts');
+
+    const fixerOutput = 'Applied the requested changes to address the review feedback.';
+    await analyzeReviewFeedback({
+      reviewerOutput: 'Still has issues after fixes',
+      completedTasks: ['Task A'],
+      pendingTasks: ['Task B'],
+      fixerOutput,
+    });
+
+    // Ensure the prompt included the fixer output content
+    const promptArg = generateObjectSpy.mock.calls[0]?.[0]?.prompt as string;
+    expect(promptArg).toContain(fixerOutput);
+    expect(promptArg).toContain('## Coding Agent\'s Response to Previous Review');
+  });
+
+  test('works without implementerOutput when fixerOutput is provided', async () => {
+    await moduleMocker.mock('ai', () => ({
+      generateObject: mock(async () => ({
+        object: { needs_fixes: false },
+      })),
+    }));
+
+    await moduleMocker.mock('../../../common/model_factory.ts', () => ({
+      createModel: mock(async () => ({}) as any),
+    }));
+
+    const { analyzeReviewFeedback } = await import('./review_analysis.ts');
+
+    const res = await analyzeReviewFeedback({
+      reviewerOutput: 'Review after fixes',
+      completedTasks: ['Task A'],
+      pendingTasks: [],
+      fixerOutput: 'Implemented fixes for the issues',
+    });
+
+    expect(res.needs_fixes).toBe(false);
+  });
 });
