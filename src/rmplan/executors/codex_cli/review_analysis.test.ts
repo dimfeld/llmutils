@@ -20,7 +20,7 @@ describe('analyzeReviewFeedback', () => {
     }));
 
     await moduleMocker.mock('../../../common/model_factory.ts', () => ({
-      createModel: mock(async () => ({} as any)),
+      createModel: mock(async () => ({}) as any),
     }));
 
     const { analyzeReviewFeedback } = await import('./review_analysis.ts');
@@ -48,7 +48,7 @@ describe('analyzeReviewFeedback', () => {
     }));
 
     await moduleMocker.mock('../../../common/model_factory.ts', () => ({
-      createModel: mock(async () => ({} as any)),
+      createModel: mock(async () => ({}) as any),
     }));
 
     const { analyzeReviewFeedback } = await import('./review_analysis.ts');
@@ -74,7 +74,7 @@ describe('analyzeReviewFeedback', () => {
     }));
 
     await moduleMocker.mock('../../../common/model_factory.ts', () => ({
-      createModel: mock(async () => ({} as any)),
+      createModel: mock(async () => ({}) as any),
     }));
 
     const { analyzeReviewFeedback } = await import('./review_analysis.ts');
@@ -101,7 +101,7 @@ describe('analyzeReviewFeedback', () => {
     }));
 
     await moduleMocker.mock('../../../common/model_factory.ts', () => ({
-      createModel: mock(async () => ({} as any)),
+      createModel: mock(async () => ({}) as any),
     }));
 
     const { analyzeReviewFeedback } = await import('./review_analysis.ts');
@@ -117,4 +117,3 @@ describe('analyzeReviewFeedback', () => {
     expect(res.fix_instructions).toBeDefined();
   });
 });
-

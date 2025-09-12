@@ -4,9 +4,7 @@ import { createModel } from '../../../common/model_factory.ts';
 import { debugLog, error, log } from '../../../logging.ts';
 
 export const ReviewAnalysisSchema = z.object({
-  needs_fixes: z
-    .boolean()
-    .describe('Whether fixes are actually required within the current scope'),
+  needs_fixes: z.boolean().describe('Whether fixes are actually required within the current scope'),
   fix_instructions: z
     .string()
     .optional()
@@ -68,7 +66,10 @@ export async function analyzeReviewFeedback(
   } catch (e) {
     error(`Review analysis failed: ${(e as Error).toString()}`);
     // Be conservative: if analysis fails, request fixes to avoid missing issues
-    return { needs_fixes: true, fix_instructions: 'Model call failed; proceed with targeted fixes.' };
+    return {
+      needs_fixes: true,
+      fix_instructions: 'Model call failed; proceed with targeted fixes.',
+    };
   }
 }
 
@@ -81,9 +82,7 @@ function buildAnalysisPrompt(input: {
 }) {
   const { reviewerOutput, completedTasks, pendingTasks, implementerOutput, repoReviewDoc } = input;
 
-  const completed = completedTasks.length
-    ? `- ${completedTasks.join('\n- ')}`
-    : '(none)';
+  const completed = completedTasks.length ? `- ${completedTasks.join('\n- ')}` : '(none)';
   const pending = pendingTasks.length ? `- ${pendingTasks.join('\n- ')}` : '(none)';
 
   const reviewDocSection = repoReviewDoc
@@ -121,4 +120,3 @@ ${reviewerOutput}
 ${reviewDocSection}
 `;
 }
-
