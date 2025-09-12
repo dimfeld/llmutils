@@ -17,7 +17,8 @@ export interface AnalyzeReviewFeedbackParams {
   reviewerOutput: string;
   completedTasks: string[];
   pendingTasks: string[];
-  implementerOutput: string;
+  implementerOutput?: string;
+  fixerOutput?: string;
   repoReviewDoc?: string;
   /** Optional override for the model name; defaults to google/gemini-2.5-flash */
   modelName?: string;
@@ -35,6 +36,7 @@ export async function analyzeReviewFeedback(
     completedTasks,
     pendingTasks,
     implementerOutput,
+    fixerOutput,
     repoReviewDoc,
     modelName = 'google/gemini-2.5-flash',
   } = params;
@@ -44,6 +46,7 @@ export async function analyzeReviewFeedback(
     completedTasks,
     pendingTasks,
     implementerOutput,
+    fixerOutput,
     repoReviewDoc,
   });
 
@@ -77,16 +80,32 @@ function buildAnalysisPrompt(input: {
   reviewerOutput: string;
   completedTasks: string[];
   pendingTasks: string[];
-  implementerOutput: string;
+  implementerOutput?: string;
+  fixerOutput?: string;
   repoReviewDoc?: string;
 }) {
-  const { reviewerOutput, completedTasks, pendingTasks, implementerOutput, repoReviewDoc } = input;
+  const {
+    reviewerOutput,
+    completedTasks,
+    pendingTasks,
+    fixerOutput,
+    implementerOutput,
+    repoReviewDoc,
+  } = input;
 
   const completed = completedTasks.length ? `- ${completedTasks.join('\n- ')}` : '(none)';
   const pending = pendingTasks.length ? `- ${pendingTasks.join('\n- ')}` : '(none)';
 
   const reviewDocSection = repoReviewDoc
     ? `\n\n## Repository Review Guidance\n${repoReviewDoc}`
+    : '';
+
+  const implementerSection = implementerOutput
+    ? `\n\n## Implementer Output\n${implementerOutput}`
+    : '';
+
+  const fixerSection = fixerOutput
+    ? `\n\n## Coding Agent's Response to Previous Review\n${fixerOutput}`
     : '';
 
   return `You are a code review analysis assistant. Your job is to read a reviewer report and decide:
@@ -103,7 +122,7 @@ Rules:
 - If issues are out-of-scope because they relate to pending tasks, set needs_fixes=false.
 - If issues are trivial nits that do not impact correctness or acceptance criteria, set needs_fixes=false.
 - If issues block acceptance of the current batch, set needs_fixes=true and write clear fix_instructions.
-- fix_instructions should be specific (files, functions, steps), not generic policy statements.
+- fix_instructions should be quoted from the Reviewer Report section as much as possible. Modify it only if necessary.
 
 Context:
 ## Completed Tasks (current batch)
@@ -111,12 +130,11 @@ ${completed}
 
 ## Pending Tasks (future / out-of-scope)
 ${pending}
-
-## Implementer Output
-${implementerOutput}
+${implementerSection}
 
 ## Reviewer Report
 ${reviewerOutput}
 ${reviewDocSection}
+${fixerSection}
 `;
 }

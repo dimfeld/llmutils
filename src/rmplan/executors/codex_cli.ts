@@ -140,6 +140,8 @@ export class CodexCliExecutor implements Executor {
         return;
       }
 
+      let fixInstructions = analysis.fix_instructions ?? reviewerOutput;
+
       log('Review analysis: Fixes required.');
       if (analysis.fix_instructions) {
         log(`Fix instructions: ${analysis.fix_instructions}`);
@@ -155,7 +157,7 @@ export class CodexCliExecutor implements Executor {
           implementerOutput,
           testerOutput,
           completedTaskTitles: initiallyCompleted.map((t) => t.title),
-          fixInstructions: analysis.fix_instructions ?? 'Address reviewer-flagged issues.',
+          fixInstructions,
         });
 
         const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot);
@@ -169,6 +171,7 @@ export class CodexCliExecutor implements Executor {
           testerOutput,
           initiallyCompleted.map((t) => t.title),
           initiallyPending.map((t) => t.title),
+          fixInstructions,
           fixerOutput
         );
         const rerunReviewer = getReviewerPrompt(
@@ -178,21 +181,27 @@ export class CodexCliExecutor implements Executor {
         );
 
         const rerunReviewerOutput = await this.executeCodexStep(rerunReviewer.prompt, gitRoot);
-        const newVerdict = this.parseReviewerVerdict(rerunReviewerOutput);
-        if (newVerdict === 'ACCEPTABLE') {
+        const newAnalysis = await analyzeReviewFeedback({
+          reviewerOutput: rerunReviewerOutput,
+          completedTasks: initiallyCompleted.map((t) => t.title),
+          pendingTasks: initiallyPending.map((t) => t.title),
+          fixerOutput,
+          repoReviewDoc: reviewDoc,
+        });
+
+        if (!newAnalysis.needs_fixes) {
           log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
           return;
         }
 
-        if (newVerdict === 'NEEDS_FIXES') {
-          log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
-          continue; // attempt next iteration
+        log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
+        if (analysis.fix_instructions) {
+          log(`Fix instructions: ${analysis.fix_instructions}`);
         }
 
-        // Unknown verdict – be conservative and continue up to limit
-        warn(
-          `Reviewer verdict could not be parsed after fixes (iteration ${iter}). Continuing fix loop.`
-        );
+        // Give it the new fix instructions and continue
+        fixInstructions = analysis.fix_instructions ?? rerunReviewerOutput;
+        continue;
       }
 
       warn(
@@ -274,6 +283,7 @@ export class CodexCliExecutor implements Executor {
     testerOutput: string,
     completedTitles: string[],
     pendingTitles: string[],
+    previousReview?: string,
     fixerOutput?: string
   ): string {
     const completedSection = completedTitles.length
@@ -286,10 +296,13 @@ export class CodexCliExecutor implements Executor {
       `${originalContext}` +
       `${completedSection}` +
       `${pendingSection}` +
-      `\n\n### Implementer Output\n${implementerOutput}` +
-      `\n\n### Tester Output\n${testerOutput}`;
-    const fixerSection = fixerOutput ? `\n\n### Fixer Output\n${fixerOutput}` : '';
-    return base + fixerSection;
+      `\n\n### Initial Implementation Output\n${implementerOutput}` +
+      `\n\n### Initial Testing Output\n${testerOutput}`;
+    const fixerSection = fixerOutput ? `\n\n### Response to Previous Review\n${fixerOutput}` : '';
+    const previousReviewSection = previousReview
+      ? `\n\n### Previous Review\n${previousReview}`
+      : '';
+    return base + previousReviewSection + fixerSection;
   }
 
   /** Parse the reviewer verdict from output text */
