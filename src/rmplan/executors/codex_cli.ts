@@ -14,6 +14,7 @@ import {
   getImplementerPrompt,
   getTesterPrompt,
   getReviewerPrompt,
+  issueAndVerdictFormat,
 } from './claude_code/agent_prompts.ts';
 import { readPlanFile } from '../plans.ts';
 import * as path from 'path';
@@ -59,7 +60,10 @@ export class CodexCliExecutor implements Executor {
     this.logTaskStatus('Initial plan analysis', initiallyCompleted, initiallyPending, gitRoot);
 
     // Build implementer prompt using the Claude Code agent prompt for consistency
-    const implementerInstructions = await this.loadAgentInstructionsFor('implementer', gitRoot);
+    let implementerInstructions = await this.loadAgentInstructionsFor('implementer', gitRoot);
+
+    implementerInstructions += `\n\nIn your final message, be sure to include the titles of the tasks that you completed.\n`;
+
     const implementer = getImplementerPrompt(
       contextContent,
       implementerInstructions,
@@ -172,22 +176,18 @@ export class CodexCliExecutor implements Executor {
         log('Fixer output captured. Re-running reviewer...');
 
         // Re-run reviewer with updated context including fixer output
-        const rerunReviewerContext = this.composeReviewerContext(
+        const rerunReviewerContext = this.composeFixReviewContext(
           contextContent,
           implementerOutput,
           testerOutput,
           initiallyCompleted.map((t) => t.title),
           initiallyPending.map((t) => t.title),
           fixInstructions,
-          fixerOutput
-        );
-        const rerunReviewer = getReviewerPrompt(
-          rerunReviewerContext,
-          reviewerInstructions,
-          this.sharedOptions.model
+          fixerOutput,
+          reviewerInstructions
         );
 
-        const rerunReviewerOutput = await this.executeCodexStep(rerunReviewer.prompt, gitRoot);
+        const rerunReviewerOutput = await this.executeCodexStep(rerunReviewerContext, gitRoot);
         const newAnalysis = await analyzeReviewFeedback({
           reviewerOutput: rerunReviewerOutput,
           completedTasks: initiallyCompleted.map((t) => t.title),
@@ -290,9 +290,7 @@ export class CodexCliExecutor implements Executor {
     implementerOutput: string,
     testerOutput: string,
     completedTitles: string[],
-    pendingTitles: string[],
-    previousReview?: string,
-    fixerOutput?: string
+    pendingTitles: string[]
   ): string {
     const completedSection = completedTitles.length
       ? `\n\n### Completed Tasks\n- ${completedTitles.join('\n- ')}`
@@ -306,11 +304,121 @@ export class CodexCliExecutor implements Executor {
       `${pendingSection}` +
       `\n\n### Initial Implementation Output\n${implementerOutput}` +
       `\n\n### Initial Testing Output\n${testerOutput}`;
-    const fixerSection = fixerOutput ? `\n\n### Response to Previous Review\n${fixerOutput}` : '';
-    const previousReviewSection = previousReview
-      ? `\n\n### Previous Review\n${previousReview}`
+    return base;
+  }
+
+  private composeFixReviewContext(
+    originalContext: string,
+    implementerOutput: string,
+    testerOutput: string,
+    completedTitles: string[],
+    pendingTitles: string[],
+    previousReview: string,
+    fixerOutput: string,
+    customInstructions?: string
+  ) {
+    const baseContext = this.composeReviewerContext(
+      originalContext,
+      implementerOutput,
+      testerOutput,
+      completedTitles,
+      pendingTitles
+    );
+
+    const customInstructionsSection = customInstructions
+      ? `\n\n## Project-Specific Review Guidelines\n\n${customInstructions}`
       : '';
-    return base + previousReviewSection + fixerSection;
+
+    return `You are a fix verification assistant focused on determining whether previously identified issues have been adequately addressed by the implementer's fixes.
+
+Your job is to verify that specific issues flagged in the previous review have been resolved, NOT to conduct a full new code review. Focus exclusively on whether the fixes address the concerns that were raised.
+
+${baseContext}${customInstructionsSection}
+
+## Previous Review Issues
+
+The following issues were identified in the initial review:
+
+${previousReview}
+
+## Implementer's Response to Review
+
+The implementer attempted to address these issues with the following changes:
+
+${fixerOutput}
+
+## Your Verification Task
+
+For each issue identified in the previous review, determine:
+
+1. **Was the issue actually addressed?**
+   - Did the implementer make the requested changes?
+   - Are the changes sufficient to resolve the underlying problem?
+   - Do the changes align with what was requested in the review?
+
+2. **Are there valid reasons if an issue wasn't addressed?**
+   - Technical constraints that make the fix impractical
+   - Misunderstanding that should be clarified
+   - Issue was actually not applicable to the current scope
+
+3. **Did the fixes introduce new problems?**
+   - Breaking changes to existing functionality
+   - New bugs or regressions
+   - Violations of project patterns or conventions
+
+## Critical Focus Areas
+
+### Issues That MUST Be Addressed (mark as NEEDS_FIXES if not resolved):
+- **Security vulnerabilities** that were flagged
+- **Correctness bugs** and logic errors
+- **Critical performance issues** that affect system stability
+- **Resource leaks** (memory, files, connections)
+- **Type safety violations** that could cause runtime errors
+
+### Issues That Can Be Acceptable If Explained:
+- Style or formatting concerns (if consistent with codebase)
+- Minor performance optimizations (if impact is negligible)
+- Pattern deviations (if there's a clear justification)
+- Documentation gaps (if not critical for functionality)
+
+### Red Flags in Implementer Response:
+- Dismissing legitimate security concerns without proper mitigation
+- Ignoring correctness issues or claiming they don't matter
+- Making changes that don't actually address the root problem
+- Introducing new bugs while fixing old ones
+- Unclear or evasive explanations for not addressing issues
+
+## Verification Guidelines
+
+- **Be specific**: Reference exact issues from the previous review
+- **Check actual fixes**: Verify the implementer actually made the claimed changes
+- **Assess completeness**: Ensure fixes address the root cause, not just symptoms
+- **Consider scope**: Issues outside the current task scope may be acceptable to defer
+- **Validate explanations**: If an issue wasn't fixed, the reason should be technically sound
+
+## Response Format:
+
+For each major issue from the previous review, provide:
+
+**Issue**: [Brief description of the original concern]
+**Status**: RESOLVED | NOT_ADDRESSED | PARTIALLY_ADDRESSED
+**Assessment**: [Your verification of whether the fix is adequate]
+
+Additional concerns (if any new issues were introduced by the fixes):
+- CRITICAL: [Any new critical issues introduced by the fixes]
+- MAJOR: [Any new significant problems created]
+
+**VERDICT:** NEEDS_FIXES | ACCEPTABLE
+
+## Response Format Notes:
+
+For the verdict:
+- **NEEDS_FIXES**: Use when critical issues remain unresolved or new critical issues were introduced
+- **ACCEPTABLE**: Use when all critical issues have been adequately addressed, even if minor issues remain
+
+If NEEDS_FIXES: Focus on what specifically still needs to be resolved from the original review
+If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
+`;
   }
 
   /** Parse the reviewer verdict from output text */
@@ -455,13 +563,13 @@ Context:
 ## Completed Tasks (in scope)
 ${tasks}
 
-## Implementer Output
+## Initial Implementation Notes
 ${input.implementerOutput}
 
-## Tester Output
+## Testing Agent Output
 ${input.testerOutput}
 
-## Fix Instructions
+## Review Instructions
 ${input.fixInstructions}
 
 Your job:
@@ -470,7 +578,7 @@ Your job:
 3. Prefer small, safe changes; avoid broad refactors
 4. Run relevant tests and commands as needed
 
-When complete, summarize what you changed.`;
+When complete, summarize what you changed. If you could not address an issue, clearly explain why.`;
   }
 
   /** Load repository-specific review guidance document if configured */

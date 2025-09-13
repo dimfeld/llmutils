@@ -244,7 +244,13 @@ the later tasks will be implemented in a future batch of work.
 
 ## Response Format:
 
-Found Issues:
+${issueAndVerdictFormat}
+
+DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.`,
+  };
+}
+
+export const issueAndVerdictFormat = `Found Issues:
 - CRITICAL: [A critical bug, security issue, or correctness problem]
 - CRITICAL: [A critical bug, security issue, or correctness problem]
 - MAJOR: [A performance issue, pattern violation, or testing gap]
@@ -259,10 +265,7 @@ Found Issues:
 For the verdict:
 - If NEEDS_FIXES: Briefly explain what must be addressed
 - If ACCEPTABLE: State this in one sentence only
-
-DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.`,
-  };
-}
+`;
 
 export function getPrDescriptionPrompt(
   contextContent: string,
