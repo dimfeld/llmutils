@@ -199,6 +199,8 @@ Scrutinize interactions between tasks for conflicts, inconsistencies, and integr
 The implementation may be incomplete. If the directions indicate that only certain tasks in the plan have been done, it is okay to focus on those tasks;
 the later tasks will be implemented in a future batch of work.
 
+The plan file tasks may not be marked as done in the plan file, because they are waiting for a passing review from you. You do not need to flag this as an issue.
+
 ## Critical Issues to Flag:
 
 ### Code Correctness (HIGH PRIORITY)
@@ -251,12 +253,33 @@ DO NOT include praise, encouragement, or positive feedback. Focus exclusively on
 }
 
 export const issueAndVerdictFormat = `Found Issues:
-- CRITICAL: [A critical bug, security issue, or correctness problem]
-- CRITICAL: [A critical bug, security issue, or correctness problem]
-- MAJOR: [A performance issue, pattern violation, or testing gap]
-- MAJOR: [A performance issue, pattern violation, or testing gap]
-- MINOR: [Style inconsistency, minor optimizations]
-- MINOR: [Style inconsistency, minor optimizations]
+1. CRITICAL: [A critical bug, security issue, or correctness problem]
+
+[More details about the critical issue, including files and line numbers if applicable,
+explanations of the problem, and potential fixes.]
+
+2. CRITICAL: [A critical bug, security issue, or correctness problem]
+
+[More details about the critical issue, including files and line numbers if applicable,
+explanations of the problem, and potential fixes.]
+
+3. MAJOR: [A performance issue, pattern violation, or testing gap]
+
+[More details about the major issue, including files and line numbers if applicable,
+explanations of the problem, and potential fixes.]
+
+4. MAJOR: [A performance issue, pattern violation, or testing gap]
+
+[More details about the major issue, including files and line numbers if applicable,
+explanations of the problem, and potential fixes.]
+
+5. MINOR: [Style inconsistency, minor optimizations]
+
+[Suggestions for improving the code.]
+
+6. MINOR: [Style inconsistency, minor optimizations]
+
+[Suggestions for improving the code.]
 
 **VERDICT:** NEEDS_FIXES | ACCEPTABLE
 

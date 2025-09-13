@@ -108,8 +108,10 @@ function buildAnalysisPrompt(input: {
     : '';
 
   return `You are a code review analysis assistant. Your job is to read a reviewer report and decide:
-1) Are the concerns valid for the current batch scope (i.e., within completed tasks) or out-of-scope (belong to pending tasks or future phases)?
-2) For any concerns you deem valid, copy them into your fix_instructions output.
+1) Are the issues valid for the current batch scope (i.e., within completed tasks) or out-of-scope (belong to pending tasks or future phases)?
+2) Is the issue overlay pedantic or trivial nits that do not impact correctness or acceptance criteria? (Note, this judgement is independent of the issue's severity.)
+
+For any issues you deem valid, copy the issue title and its corresponding description verbatim into your fix_instructions output.
 
 Return a strict JSON object that matches this schema exactly:
 {
@@ -119,9 +121,9 @@ Return a strict JSON object that matches this schema exactly:
 
 Rules:
 - Issues that are out-of-scope because they relate to pending tasks do not need to be fixed.
-- For trivial nits that do not impact correctness or acceptance criteria, use your best judgment.
-- If issues block acceptance of the current batch, set needs_fixes=true and include them in your fix_instructions.
-- fix_instructions should be quoted from the Reviewer Report section as much as possible. Modify it only if necessary.
+- For trivial nits that do not impact correctness or acceptance criteria, use your best judgment. This does not mean to just exclude minor issues.
+- Issues in fix_instructions should be verbatim quotes from the Reviewer Report section as much as possible.
+- Set needs_fixes to true if there are any issues in fix_instructions.
 
 Context:
 ## Completed Tasks (current batch)

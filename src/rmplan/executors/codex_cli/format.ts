@@ -269,9 +269,11 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
               const content = truncateToLines(diff, 10);
               const moveText = movePath ? ` -> ${movePath}` : '';
               return `${chalk.cyan('UPDATE')} ${filePath}${moveText}:\n${content}`;
+            } else if ('remove' in change) {
+              return `${chalk.red('REMOVE')} ${filePath}`;
             }
 
-            return `${chalk.gray('UNKNOWN')} ${filePath}`;
+            return `${chalk.gray('UNKNOWN')} ${JSON.stringify(change)}`;
           })
           .join('\n\n');
 

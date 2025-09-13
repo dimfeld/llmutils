@@ -160,6 +160,33 @@ export interface PhaseGenerationContext {
   // Potentially add baseBranch if needed
 }
 
+const commonGenerateDetails = `
+Expected Behavior/Outcome
+- A clear, concise description of the new user-facing behavior.
+- Definition of all relevant states
+
+Key Findings
+- **Product & User Story**
+- **Design & UX Approach**
+- **Technical Plan & Risks**
+- **Pragmatic Effort Estimate**
+
+Acceptance Criteria
+- [ ] Functional Criterion: e.g. User can click X and see Y.
+- [ ] UX Criterion: e.g. The page is responsive and includes a loading state.
+- [ ] Technical Criterion: e.g. The API endpoint returns a \`201\` on success.
+- [ ] All new code paths are covered by tests.
+
+Dependencies & Constraints
+- **Dependencies**: Relies on existing Pagination component.
+- **Technical Constraints**: Must handle >10K records efficiently.
+
+Implementation Notes
+- **Recommended Approach**
+- **Potential Gotchas**
+- **Conflicting, Unclear, or Impossible Requirements, if any**
+`;
+
 export function planPrompt(plan: string) {
   // The first half of this prompt is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
   return `This is a description for an upcoming feature, and you will be tasked with creating a plan for it.
@@ -213,6 +240,10 @@ When generating the final output, create a phase-based plan with:
     - How this phase contributes to the overall project goal
   - A list of tasks with titles and descriptions
 
+The details section should include these sections:
+
+${commonGenerateDetails}
+
 IMPORTANT: In this high-level plan, tasks must include BOTH a title and a description.
 
 The title must be a single-sentence title that captures the essence of the task.
@@ -260,7 +291,7 @@ When generating the final output with the prompts, output a title (a concise sin
 
 For the priority level, choose one of the following based on importance and urgency:
 - low: Nice-to-have features or improvements with no pressing timeline
-- medium: Important features that should be done but aren't blocking critical functionality  
+- medium: Important features that should be done but aren't blocking critical functionality
 - high: Critical features or fixes that are needed soon or blocking other work
 - urgent: Must be done immediately, fixing production issues or critical blockers
 
@@ -591,6 +622,11 @@ For now, please:
 - Identify the key files and components that will be involved
 - Think about the best approach to implement this feature
 
+
+Make sure your plan includes these details:
+
+${commonGenerateDetails}
+
 Do not perform any implementation or write any files yet.
 
 When you're done with your analysis, let me know and I'll provide the next instruction.`;
@@ -608,6 +644,8 @@ The plan should be formatted as follows:
 Please output the plan in the exact Markdown format specified below:
 
 ${phaseBasedMarkdownExampleFormat}
+
+Make sure the details section includes all the requested sections.
 
 Generate the complete plan now.`;
 }

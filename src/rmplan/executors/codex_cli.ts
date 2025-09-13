@@ -70,155 +70,150 @@ export class CodexCliExecutor implements Executor {
       this.sharedOptions.model
     );
 
-    // If caller wants to capture what we would send, just return the composed implementer prompt
-    if (planInfo.captureOutput && planInfo.captureOutput !== 'none') {
-      return implementer.prompt;
-    }
-
     // Execute implementer step and capture its final agent message
     log('Running implementer step...');
     const implementerOutput = await this.executeCodexStep(implementer.prompt, gitRoot);
     log('Implementer output captured.');
 
-    // Re-read plan file to detect newly-completed tasks (if any)
-    let newlyCompletedTitles: string[] = [];
     try {
-      const updatedPlan = await readPlanFile(planInfo.planFilePath);
-      const { completed: afterCompleted } = this.categorizeTasks(updatedPlan);
-      const beforeTitles = new Set(initiallyCompleted.map((t) => t.title));
-      newlyCompletedTitles = afterCompleted
-        .map((t) => t.title)
-        .filter((title) => !beforeTitles.has(title));
-    } catch (e) {
-      // Non-fatal; proceed without delta if re-read fails
-    }
+      // Re-read plan file to detect newly-completed tasks (if any)
+      let newlyCompletedTitles: string[] = [];
+      try {
+        const updatedPlan = await readPlanFile(planInfo.planFilePath);
+        const { completed: afterCompleted } = this.categorizeTasks(updatedPlan);
+        const beforeTitles = new Set(initiallyCompleted.map((t) => t.title));
+        newlyCompletedTitles = afterCompleted
+          .map((t) => t.title)
+          .filter((title) => !beforeTitles.has(title));
+      } catch (e) {
+        // Non-fatal; proceed without delta if re-read fails
+      }
 
-    // Build tester context: include implementer output and focus tasks
-    const testerContext = this.composeTesterContext(
-      contextContent,
-      implementerOutput,
-      newlyCompletedTitles
-    );
-    const testerInstructions = await this.loadAgentInstructionsFor('tester', gitRoot);
-    const tester = getTesterPrompt(testerContext, testerInstructions, this.sharedOptions.model);
-
-    // Execute tester step
-    log('Running tester step...');
-    const testerOutput = await this.executeCodexStep(tester.prompt, gitRoot);
-    log('Tester output captured.');
-
-    // Build reviewer context with implementer + tester outputs and task context
-    const reviewerContext = this.composeReviewerContext(
-      contextContent,
-      implementerOutput,
-      testerOutput,
-      initiallyCompleted.map((t) => t.title),
-      initiallyPending.map((t) => t.title)
-    );
-    const reviewerInstructions = await this.loadAgentInstructionsFor('reviewer', gitRoot);
-    const reviewer = getReviewerPrompt(
-      reviewerContext,
-      reviewerInstructions,
-      this.sharedOptions.model
-    );
-
-    // Execute reviewer step
-    log('Running reviewer step...');
-    const reviewerOutput = await this.executeCodexStep(reviewer.prompt, gitRoot);
-    log('Reviewer output captured.');
-
-    // Parse and log verdict
-    const verdict = this.parseReviewerVerdict(reviewerOutput);
-    if (verdict === 'ACCEPTABLE') {
-      log('Review verdict: ACCEPTABLE');
-      await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
-      return;
-    } else if (verdict === 'NEEDS_FIXES') {
-      log('Review verdict: NEEDS_FIXES');
-      // Analyze whether the flagged issues are in-scope and require fixes now
-      const reviewDoc = await this.loadRepositoryReviewDoc(gitRoot);
-      const analysis = await analyzeReviewFeedback({
-        reviewerOutput: reviewerOutput,
-        completedTasks: initiallyCompleted.map((t) => t.title),
-        pendingTasks: initiallyPending.map((t) => t.title),
+      // Build tester context: include implementer output and focus tasks
+      const testerContext = this.composeTesterContext(
+        contextContent,
         implementerOutput,
-        repoReviewDoc: reviewDoc,
-      });
+        newlyCompletedTitles
+      );
+      const testerInstructions = await this.loadAgentInstructionsFor('tester', gitRoot);
+      const tester = getTesterPrompt(testerContext, testerInstructions, this.sharedOptions.model);
 
-      if (!analysis.needs_fixes) {
-        log('Review analysis: Issues are out-of-scope or non-blocking. Exiting without fixes.');
-        await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
+      // Execute tester step
+      log('Running tester step...');
+      const testerOutput = await this.executeCodexStep(tester.prompt, gitRoot);
+      log('Tester output captured.');
+
+      // Build reviewer context with implementer + tester outputs and task context
+      const reviewerContext = this.composeReviewerContext(
+        contextContent,
+        implementerOutput,
+        testerOutput,
+        initiallyCompleted.map((t) => t.title),
+        initiallyPending.map((t) => t.title)
+      );
+      const reviewerInstructions = await this.loadAgentInstructionsFor('reviewer', gitRoot);
+      const reviewer = getReviewerPrompt(
+        reviewerContext,
+        reviewerInstructions,
+        this.sharedOptions.model
+      );
+
+      // Execute reviewer step
+      log('Running reviewer step...');
+      const reviewerOutput = await this.executeCodexStep(reviewer.prompt, gitRoot);
+      log('Reviewer output captured.');
+
+      // Parse and log verdict
+      const verdict = this.parseReviewerVerdict(reviewerOutput);
+      if (verdict === 'ACCEPTABLE') {
+        log('Review verdict: ACCEPTABLE');
         return;
-      }
-
-      let fixInstructions = analysis.fix_instructions ?? reviewerOutput;
-
-      log('Review analysis: Fixes required.');
-      if (analysis.fix_instructions) {
-        log(`Fix instructions: ${analysis.fix_instructions}`);
-      }
-
-      // Implement fix-and-review loop (up to 5 iterations)
-      const maxFixIterations = 5;
-      let lastFixerOutput = '';
-      for (let iter = 1; iter <= maxFixIterations; iter++) {
-        log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
-
-        const fixerPrompt = this.getFixerPrompt({
-          implementerOutput,
-          testerOutput,
-          completedTaskTitles: initiallyCompleted.map((t) => t.title),
-          fixInstructions,
-        });
-
-        const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot);
-        lastFixerOutput = fixerOutput;
-        log('Fixer output captured. Re-running reviewer...');
-
-        // Re-run reviewer with updated context including fixer output
-        const rerunReviewerContext = this.composeFixReviewContext(
-          contextContent,
-          implementerOutput,
-          testerOutput,
-          initiallyCompleted.map((t) => t.title),
-          initiallyPending.map((t) => t.title),
-          fixInstructions,
-          fixerOutput,
-          reviewerInstructions
-        );
-
-        const rerunReviewerOutput = await this.executeCodexStep(rerunReviewerContext, gitRoot);
-        const newAnalysis = await analyzeReviewFeedback({
-          reviewerOutput: rerunReviewerOutput,
+      } else if (verdict === 'NEEDS_FIXES') {
+        log('Review verdict: NEEDS_FIXES');
+        // Analyze whether the flagged issues are in-scope and require fixes now
+        const reviewDoc = await this.loadRepositoryReviewDoc(gitRoot);
+        const analysis = await analyzeReviewFeedback({
+          reviewerOutput: reviewerOutput,
           completedTasks: initiallyCompleted.map((t) => t.title),
           pendingTasks: initiallyPending.map((t) => t.title),
-          fixerOutput,
+          implementerOutput,
           repoReviewDoc: reviewDoc,
         });
 
-        if (!newAnalysis.needs_fixes) {
-          log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
-          await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
+        if (!analysis.needs_fixes) {
+          log('Review analysis: Issues are out-of-scope or non-blocking. Exiting without fixes.');
           return;
         }
 
-        log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
+        let fixInstructions = analysis.fix_instructions ?? reviewerOutput;
+
+        log('Review analysis: Fixes required.');
         if (analysis.fix_instructions) {
           log(`Fix instructions: ${analysis.fix_instructions}`);
         }
 
-        // Give it the new fix instructions and continue
-        fixInstructions = analysis.fix_instructions ?? rerunReviewerOutput;
-        continue;
-      }
+        // Implement fix-and-review loop (up to 5 iterations)
+        const maxFixIterations = 5;
+        let lastFixerOutput = '';
+        for (let iter = 1; iter <= maxFixIterations; iter++) {
+          log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
 
-      warn(
-        'Maximum fix iterations reached (5) and reviewer still reports issues. Exiting with warnings.'
-      );
-      return;
-    } else {
-      error('Could not determine review verdict from reviewer output. Treating as NEEDS_FIXES.');
-      return;
+          const fixerPrompt = this.getFixerPrompt({
+            implementerOutput,
+            testerOutput,
+            completedTaskTitles: initiallyCompleted.map((t) => t.title),
+            fixInstructions,
+          });
+
+          const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot);
+          lastFixerOutput = fixerOutput;
+          log('Fixer output captured. Re-running reviewer...');
+
+          // Re-run reviewer with updated context including fixer output
+          const rerunReviewerContext = this.composeFixReviewContext(
+            contextContent,
+            implementerOutput,
+            testerOutput,
+            initiallyCompleted.map((t) => t.title),
+            initiallyPending.map((t) => t.title),
+            fixInstructions,
+            fixerOutput,
+            reviewerInstructions
+          );
+
+          const rerunReviewerOutput = await this.executeCodexStep(rerunReviewerContext, gitRoot);
+          const newAnalysis = await analyzeReviewFeedback({
+            reviewerOutput: rerunReviewerOutput,
+            completedTasks: initiallyCompleted.map((t) => t.title),
+            pendingTasks: initiallyPending.map((t) => t.title),
+            fixerOutput,
+            repoReviewDoc: reviewDoc,
+          });
+
+          if (!newAnalysis.needs_fixes) {
+            log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
+            return;
+          }
+
+          log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
+          if (analysis.fix_instructions) {
+            log(`Fix instructions: ${analysis.fix_instructions}`);
+          }
+
+          // Give it the new fix instructions and continue
+          fixInstructions = analysis.fix_instructions ?? rerunReviewerOutput;
+          continue;
+        }
+
+        warn(
+          'Maximum fix iterations reached (5) and reviewer still reports issues. Exiting with warnings.'
+        );
+      } else {
+        error('Could not determine review verdict from reviewer output. Treating as NEEDS_FIXES.');
+        return;
+      }
+    } finally {
+      await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
     }
   }
 
@@ -448,6 +443,10 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
       ['codex', '--search', 'exec', ...sandboxSettings, prompt, '--json'],
       {
         cwd,
+        env: {
+          ...process.env,
+          AGENT: process.env.AGENT || '1',
+        },
         formatStdout: (chunk: string) => formatter.formatChunk(chunk),
         // stderr is not JSON – print as-is
       }
