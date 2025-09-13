@@ -205,10 +205,29 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
         const diff = msg.unified_diff ?? '';
         // Extract filenames from +++ and --- lines in the unified diff
         const fileMatches = diff.match(/^(?:\+\+\+|---) (.+)$/gm) || [];
-        const filenames = fileMatches.map((match) =>
-          match.replace(/^\+\+\+ /, '').replace(/\t.*$/, '')
-        );
+        const filenames = fileMatches
+          .map((match) => match.replace(/^(?:\+\+\+|---) /, '').replace(/\t.*$/, ''))
+          .filter((filename) => filename !== '/dev/null') // Skip /dev/null entries
+          .map((filename) => {
+            // Strip a/ and b/ prefixes from git diff format
+            if (filename.startsWith('a/') || filename.startsWith('b/')) {
+              return filename.substring(2);
+            }
+            return filename;
+          });
         const uniqueFiles = [...new Set(filenames)];
+
+        // Count added and removed lines
+        const diffLines = diff.split('\n');
+        let addedLines = 0;
+        let removedLines = 0;
+        for (const line of diffLines) {
+          if (line.startsWith('+') && !line.startsWith('+++')) {
+            addedLines++;
+          } else if (line.startsWith('-') && !line.startsWith('---')) {
+            removedLines++;
+          }
+        }
 
         const fileCount = uniqueFiles.length;
         const fileText = fileCount === 1 ? '1 file' : `${fileCount} files`;
@@ -217,11 +236,16 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
             ? uniqueFiles.join(', ')
             : `${uniqueFiles.slice(0, 3).join(', ')} and ${uniqueFiles.length - 3} more`;
 
+        const changeStats = [];
+        if (addedLines > 0) changeStats.push(chalk.green(`+${addedLines}`));
+        if (removedLines > 0) changeStats.push(chalk.red(`-${removedLines}`));
+        const statsText = changeStats.length > 0 ? ` (${changeStats.join(', ')})` : '';
+
         return {
           type: msg.type,
           message:
             chalk.magenta(`### Turn Diff [${ts}]\n\n`) +
-            `Changes to ${fileText}${uniqueFiles.length > 0 ? `: ${fileList}` : ''}`,
+            `Changes to ${fileText}${uniqueFiles.length > 0 ? `: ${fileList}` : ''}${statsText}`,
         };
       }
       case 'patch_apply_begin': {

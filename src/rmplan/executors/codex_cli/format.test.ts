@@ -68,7 +68,7 @@ describe('codex_cli/format', () => {
     const lines = [
       JSON.stringify({ id: '0', msg: { type: 'task_started' } }),
       JSON.stringify({ id: '0', msg: { type: 'agent_reasoning', text: 'thinks' } }),
-      JSON.stringify({ id: '0', msg: { type: 'agent_message', text: 'FINAL ANSWER' } }),
+      JSON.stringify({ id: '0', msg: { type: 'agent_message', message: 'FINAL ANSWER' } }),
     ];
     for (const l of lines) {
       formatChunk(l + '\n');
