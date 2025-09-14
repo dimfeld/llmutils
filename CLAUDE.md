@@ -193,6 +193,37 @@ File Changes
 
 ```
 
+- Error example (abbreviated)
+
+```
+Execution Summary: Plan With Failures (1/2 • 50%)
+┌───────────────┬──────────────────────────────────────┐
+│ Plan ID       │ 999                                  │
+│ Mode          │ serial                               │
+│ Steps Executed│ 2                                    │
+│ Failed Steps  │ 1                                    │
+│ Files Changed │ 1                                    │
+│ Duration      │ 35s                                  │
+└───────────────┴──────────────────────────────────────┘
+
+Step Results
+───────────────────────────────────────────
+✔ Step 1 (claude-code) [#1] 12s
+  Implementer:
+  … final assistant message …
+
+✖ Step 2 (claude-code) [#2] 23s
+  Error: executor boom
+
+File Changes
+───────────────────────────────────────────
+• src/module/a.ts
+
+Errors
+───────────────────────────────────────────
+• executor boom
+```
+
 - Notes
 - Summaries are truncated to keep memory usage reasonable (collector truncates large outputs; display may clamp further).
 - Batch mode aggregates results across iterations; the metadata includes iteration counts and failed steps.
