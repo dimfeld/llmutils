@@ -519,6 +519,37 @@ rmplan agent plan.yml --workspace-task-id task-123
 # You can also use plan IDs instead of file paths
 rmplan agent my-feature-123 --steps 3
 
+### Execution Summaries
+
+`rmplan run` and `rmplan agent` produce an execution summary at the end of a run, aggregating step outputs, status, file changes, and timing.
+
+- Flags: use `--no-summary` to disable; `--summary-file <path>` to write to a file instead of stdout.
+- Env: `RMPLAN_SUMMARY_ENABLED=0` disables by default (CLI flags take precedence).
+
+Example (abbreviated):
+
+```text
+Execution Summary: My Plan Title (3/3 • 100%)
+┌───────────────┬────────────────┐
+│ Plan ID       │ 123            │
+│ Mode          │ serial         │
+│ Steps Executed│ 3              │
+│ Failed Steps  │ 0              │
+│ Files Changed │ 5              │
+│ Duration      │ 1m 12s         │
+└───────────────┴────────────────┘
+
+Step Results
+✔ Task 1 (codex-cli) [#1] 12s
+…
+
+File Changes
+• tasks/123-some-plan.yml
+• src/feature/new.ts
+```
+
+See CLAUDE.md for more details about what’s captured and configuration options.
+
 # Clean up end-of-line comments from changed files (by git diff, jj diff)
 rmplan cleanup
 
