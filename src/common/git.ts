@@ -42,6 +42,7 @@ export async function getGitRoot(cwd = process.cwd()): Promise<string> {
   let value = (
     await $`git rev-parse --show-toplevel`
       .cwd(cwd || process.cwd())
+      .quiet()
       .nothrow()
       .text()
   ).trim();
@@ -275,7 +276,7 @@ export async function getCurrentBranchName(cwd?: string): Promise<string | null>
  */
 export async function getGitRepository(): Promise<string> {
   if (!cachedGitRepository) {
-    let remote = (await $`git remote get-url origin`.nothrow().text()).trim();
+    let remote = (await $`git remote get-url origin`.quiet().nothrow().text()).trim();
     // Parse out the repository from the remote URL
     let lastColonIndex = remote.lastIndexOf(':');
     cachedGitRepository = remote.slice(lastColonIndex + 1).replace(/\.git$/, '');
@@ -372,7 +373,11 @@ export async function getChangedFilesOnBranch(
       '&'
     );
     const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
-    let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(gitRoot).nothrow().text();
+    let summ = await $`jj diff --from ${from} --summary ${exclude}`
+      .cwd(gitRoot)
+      .quiet()
+      .nothrow()
+      .text();
     changedFiles = summ
       .split('\n')
       .map((line) => {
@@ -388,7 +393,11 @@ export async function getChangedFilesOnBranch(
       .filter((line) => !!line);
   } else {
     const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
-    let summ = await $`git diff --name-only ${baseBranch} ${exclude}`.cwd(gitRoot).nothrow().text();
+    let summ = await $`git diff --name-only ${baseBranch} ${exclude}`
+      .cwd(gitRoot)
+      .quiet()
+      .nothrow()
+      .text();
     changedFiles = summ
       .split('\n')
       .map((line) => line.trim())
@@ -459,6 +468,7 @@ export async function getChangedFilesBetween(
     const to = toRef ?? '@';
     const summ = await $`jj diff --from ${fromRef} --to ${to} --summary ${exclude}`
       .cwd(gitRoot)
+      .quiet()
       .nothrow()
       .text();
     changedFiles = summ
@@ -476,11 +486,16 @@ export async function getChangedFilesBetween(
     if (toRef) {
       summ = await $`git diff --name-only ${fromRef} ${toRef} ${exclude}`
         .cwd(gitRoot)
+        .quiet()
         .nothrow()
         .text();
     } else {
       // Compare fromRef to working tree
-      summ = await $`git diff --name-only ${fromRef} ${exclude}`.cwd(gitRoot).nothrow().text();
+      summ = await $`git diff --name-only ${fromRef} ${exclude}`
+        .cwd(gitRoot)
+        .quiet()
+        .nothrow()
+        .text();
     }
     changedFiles = summ
       .split('\n')
