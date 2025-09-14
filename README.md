@@ -524,7 +524,7 @@ rmplan agent my-feature-123 --steps 3
 `rmplan run` and `rmplan agent` produce an execution summary at the end of a run, aggregating step outputs, status, file changes, and timing.
 
 - Flags: use `--no-summary` to disable; `--summary-file <path>` to write to a file instead of stdout.
-- Env: `RMPLAN_SUMMARY_ENABLED=0` disables by default (CLI flags take precedence).
+- Env: `RMPLAN_SUMMARY_ENABLED=0` disables summaries by default. CLI flags take precedence for disabling when enabled (for example, `--no-summary` overrides `RMPLAN_SUMMARY_ENABLED=true`). When summaries are disabled by the environment, passing `--summary-file` does not force-enable summaries; unset the env var or set it to `1/true` to enable.
 - Early validation: if a plan fails schema validation before execution starts, no summary is produced.
 - Executors: Claude Code and Codex CLI have tailored parsing; other executors contribute raw text (or none) and are still listed.
 

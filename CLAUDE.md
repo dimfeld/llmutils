@@ -144,7 +144,7 @@ rmplan run and rmplan agent display a consolidated execution summary at the end 
 - `--summary-file <path>` writes the summary to a file instead of stdout (parent dirs created automatically)
 
 - Environment
-- `RMPLAN_SUMMARY_ENABLED` enables/disables summaries by default. Set to `0` or `false` to disable; CLI flags still take precedence.
+- `RMPLAN_SUMMARY_ENABLED` enables/disables summaries by default. Set to `0` or `false` to disable; CLI flags still take precedence for disabling when enabled (e.g., `--no-summary` overrides `RMPLAN_SUMMARY_ENABLED=true`). When disabled by the environment, providing `--summary-file` does not force-enable summaries; unset the env var or set to `1/true` to enable.
 
 - Usage examples
   - Print to stdout (default): `rmplan agent tasks/123-plan.yml` or `rmplan run tasks/123-plan.yml`
