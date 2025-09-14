@@ -13,7 +13,7 @@ docs: []
 planGeneratedAt: 2025-09-14T09:17:46.197Z
 promptsGeneratedAt: 2025-09-14T09:43:06.976Z
 createdAt: 2025-09-14T07:54:56.352Z
-updatedAt: 2025-09-14T10:11:22.666Z
+updatedAt: 2025-09-14T10:46:14.362Z
 tasks:
   - title: Define Summary Data Structures
     done: true
@@ -335,7 +335,7 @@ tasks:
           compatibility and graceful degradation for missing data.
         done: false
   - title: Add CLI Configuration Options
-    done: false
+    done: true
     description: >
       Add user control options to the agent/run commands allowing users to
       enable/disable summary display and configure summary behavior. This
@@ -359,7 +359,7 @@ tasks:
           are available for both 'agent' and 'run' commands since they share the
           same option set through createAgentCommand. Follow existing patterns
           for option definition and help text formatting.
-        done: false
+        done: true
       - prompt: >
           Modify src/rmplan/commands/agent/agent.ts to use the new CLI options.
           Update rmplanAgent function to check for the --no-summary flag and
@@ -369,7 +369,7 @@ tasks:
           RMPLAN_SUMMARY_ENABLED to set default summary behavior. Ensure proper
           error handling for file write operations and that summary collection
           is disabled when --no-summary is used.
-        done: false
+        done: true
   - title: Implement Error Handling and Edge Cases
     done: false
     description: >
@@ -449,12 +449,19 @@ tasks:
         done: false
 changedFiles:
   - src/common/git.ts
+  - src/rmplan/commands/agent/agent.test.ts
   - src/rmplan/commands/agent/agent.ts
+  - src/rmplan/commands/agent/agent_batch_mode.test.ts
+  - src/rmplan/commands/agent/agent_summary_options.test.ts
   - src/rmplan/commands/agent/batch_mode.ts
+  - src/rmplan/commands/agent/batch_tasks_unit.test.ts
+  - src/rmplan/commands/agent/commander_negated_options.test.ts
   - src/rmplan/executors/claude_code_orchestrator.ts
+  - src/rmplan/executors/codex_cli.fix_loop.test.ts
   - src/rmplan/executors/codex_cli.ts
   - src/rmplan/prompt.test.ts
   - src/rmplan/prompt.ts
+  - src/rmplan/rmplan.ts
   - src/rmplan/summary/collector.test.ts
   - src/rmplan/summary/collector.ts
   - src/rmplan/summary/display.test.ts
