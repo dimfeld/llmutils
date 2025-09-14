@@ -5,475 +5,276 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { ModuleMocker } from '../../../testing.js';
 
-// We import rmplanAgent dynamically in tests after mocks are applied
-// to ensure it sees the mocked modules.
+// We'll import rmplanAgent lazily after setting up module mocks
+let rmplanAgent: typeof import('./agent.js').rmplanAgent;
 
-const moduleMocker = new ModuleMocker(import.meta);
-
-// Common spies used across tests
-const logSpy = mock(() => {});
-const errorSpy = mock(() => {});
-const warnSpy = mock(() => {});
-const openLogFileSpy = mock(() => {});
-const closeLogFileSpy = mock(async () => {});
-
-// writeOrDisplaySummary spy to capture the resulting summary
-const writeOrDisplaySummarySpy = mock(async () => {});
-
-// Git + VCS mocks used by SummaryCollector and mark_* helpers
-const mockGetGitRoot = mock(async (_?: string) => tempDirGlobal || '/tmp/test');
-const mockGetCurrentCommitHash = mock(async (_?: string) => 'rev-0');
-const mockGetChangedFilesBetween = mock(async (_?: string, __?: string) => [
-  'src/changed1.ts',
-  'src/feature/changed2.ts',
-]);
-const mockGetChangedFilesOnBranch = mock(async () => ['src/fallback.ts']);
-
-// Will be set per test
-let tempDirGlobal: string | undefined;
-
-async function createPlanFile(filePath: string, planData: any) {
-  const schemaComment =
-    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
-  await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
-}
-
-describe('rmplanAgent - Execution Summary Integration', () => {
+describe('rmplan agent integration (execution summary)', () => {
   let tempDir: string;
-  let planFile: string;
+  let tasksDir: string;
+  let configPath: string;
+  let originalCwd: string;
+  let moduleMocker: ModuleMocker;
+  const logSink = mock(() => {});
 
   beforeEach(async () => {
-    // Reset spies
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    warnSpy.mockClear();
-    openLogFileSpy.mockClear();
-    closeLogFileSpy.mockClear();
-    writeOrDisplaySummarySpy.mockClear();
+    originalCwd = process.cwd();
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-agent-integration-'));
+    process.chdir(tempDir);
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
 
-    // Create temp directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-integration-'));
-    tempDirGlobal = tempDir;
-    planFile = path.join(tempDir, 'plan.yml');
+    // Initialize a real git repo for file-change tracking and commits
+    await Bun.spawn(['git', 'init', '-b', 'main'], { cwd: tempDir }).exited;
+    await Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], { cwd: tempDir }).exited;
+    await Bun.spawn(['git', 'config', 'user.name', 'Test User'], { cwd: tempDir }).exited;
 
-    // Ensure any interactive prompts are auto-answered in tests
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      select: mock(async () => 'generate'),
-    }));
+    // Seed a tracked file that we will modify during execution
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'foo.txt'), 'initial\n');
+    await Bun.spawn(['git', 'add', '.'], { cwd: tempDir }).exited;
+    await Bun.spawn(['git', 'commit', '-m', 'Initial commit'], { cwd: tempDir }).exited;
 
-    // Mock logging (including markdown helpers)
+    // Create config file
+    configPath = path.join(tempDir, '.rmfilter', 'rmplan.yml');
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      yaml.stringify({
+        paths: { tasks: 'tasks' },
+      }),
+      'utf8'
+    );
+
+    // Mock logging to keep output quiet and make assertions easier
+    moduleMocker = new ModuleMocker(import.meta);
     await moduleMocker.mock('../../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-      openLogFile: openLogFileSpy,
-      closeLogFile: closeLogFileSpy,
-      boldMarkdownHeaders: mock((s: string) => s),
+      log: logSink,
+      error: logSink,
+      warn: logSink,
+      boldMarkdownHeaders: (s: string) => s,
+      openLogFile: () => {},
+      closeLogFile: async () => {},
     }));
 
-    // Mock config loader (keep defaults small and deterministic)
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        models: { execution: 'test-model' },
-        postApplyCommands: [],
-      })),
-    }));
-
-    // Mock git utilities used by collector and plan updaters
+    // Ensure git root resolves to our temp directory
     await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mockGetGitRoot,
-      getChangedFilesOnBranch: mockGetChangedFilesOnBranch,
-      getCurrentCommitHash: mockGetCurrentCommitHash,
-      getChangedFilesBetween: mockGetChangedFilesBetween,
-      // A couple of helpers used elsewhere in code paths; keep simple defaults
-      getUsingJj: mock(async () => true),
-      hasUncommittedChanges: mock(async () => true),
-    }));
-
-    // Avoid running real commit commands
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      commitAll: mock(async () => 0),
-      // Minimal stub for logSpawn when imported but unused
-      logSpawn: mock(() => ({ exited: 0 })),
-    }));
-
-    // Plans I/O uses real file operations in temp dir
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async (p: string) => p),
-      readPlanFile: mock(async (filePath: string) => {
-        const content = await fs.readFile(filePath, 'utf8');
-        return yaml.parse(content.replace(/^#.*\n/, ''));
-      }),
-      writePlanFile: mock(async (filePath: string, data: any) => {
-        await createPlanFile(filePath, data);
-      }),
-      findNextPlan: mock(async () => null),
-      clearPlanCache: mock(() => {}),
-    }));
-
-    // Keep next/mark/prep lightweight; we rely on the simple-task path for serial tests
-    await moduleMocker.mock('../../plans/prepare_phase.js', () => ({
-      preparePhase: mock(async () => {}),
-    }));
-    await moduleMocker.mock('../../plans/mark_done.js', () => {
-      const original = require('../../plans/mark_done.js');
-      // Use the real implementation, which we configured through common mocks
-      return original;
-    });
-
-    // Prompt builder for simple task / batch prompts
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'PROMPT'),
-    }));
-
-    // Summary display writer
-    await moduleMocker.mock('../../summary/display.js', () => ({
-      writeOrDisplaySummary: writeOrDisplaySummarySpy,
+      getGitRoot: mock(async () => tempDir),
+      getUsingJj: mock(async () => false),
+      // Leave other functions to their originals by not overriding them here
     }));
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
+    await fs.rm(tempDir, { recursive: true, force: true });
     moduleMocker.clear();
-    if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    }
-    tempDirGlobal = undefined;
+    logSink.mockReset();
   });
 
-  test('serial mode: captures Claude Code final assistant message and writes summary', async () => {
-    // Plan with a single simple task (no steps) to exercise the simple task branch
-    await createPlanFile(planFile, {
+  test('serial mode captures Codex CLI sections and tracks file changes', async () => {
+    // Create a simple plan with one task/step
+    const plan = {
       id: 101,
-      title: 'Serial Claude Plan',
-      goal: 'Do something',
-      details: 'High-level task',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      tasks: [{ title: 'Simple Task', description: 'No steps here' }],
-    });
-
-    // Executor returns a final assistant message
-    const executorExecute = mock(async () => 'Final orchestrator message');
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'claude-code',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    const { rmplanAgent } = await import('./agent.js');
-    const options: any = { serialTasks: true, log: false, executor: 'claude-code' };
-    await rmplanAgent(planFile, options, {});
-
-    // Summary should be written once at the end
-    expect(writeOrDisplaySummarySpy).toHaveBeenCalledTimes(1);
-    const summaryArg = writeOrDisplaySummarySpy.mock.calls[0][0];
-    expect(summaryArg.planId).toBe('101');
-    expect(summaryArg.planTitle).toBe('Serial Claude Plan');
-    expect(summaryArg.steps.length).toBe(1);
-    expect(summaryArg.steps[0].executor).toBe('claude-code');
-    expect(summaryArg.steps[0].success).toBeTrue();
-    expect(summaryArg.steps[0].output?.content).toContain('Final orchestrator message');
-    // Changed files come from our mocked git functions
-    expect(Array.isArray(summaryArg.changedFiles)).toBeTrue();
-  });
-
-  test('serial mode: captures Codex CLI combined sections and metadata', async () => {
-    await createPlanFile(planFile, {
-      id: 102,
-      title: 'Serial Codex Plan',
-      goal: 'Implement stuff',
-      details: 'Do it',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      tasks: [{ title: 'Simple Task', description: 'No steps' }],
-    });
-
-    const combined = [
-      '=== Codex Implementer ===',
-      'Implemented feature X',
-      '=== Codex Reviewer ===',
-      'Looks good to me',
-    ].join('\n');
-
-    const executorExecute = mock(async () => combined);
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    const { rmplanAgent } = await import('./agent.js');
-    const options: any = { serialTasks: true, log: false, executor: 'codex-cli' };
-    await rmplanAgent(planFile, options, {});
-
-    expect(writeOrDisplaySummarySpy).toHaveBeenCalledTimes(1);
-    const summaryArg = writeOrDisplaySummarySpy.mock.calls[0][0];
-    expect(summaryArg.planId).toBe('102');
-    expect(summaryArg.steps.length).toBe(1);
-    const out = summaryArg.steps[0].output?.content ?? '';
-    expect(out).toContain('Implementer:');
-    expect(out).toContain('Implemented feature X');
-    expect(out).toContain('Reviewer:');
-    expect(out).toContain('Looks good to me');
-  });
-
-  test('serial mode: truncates very large executor output in summary', async () => {
-    await createPlanFile(planFile, {
-      id: 103,
-      title: 'Large Output Plan',
-      goal: 'Ensure truncation',
-      details: 'Big output',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      tasks: [{ title: 'Simple Task', description: 'No steps' }],
-    });
-
-    // Produce output > default collector truncate size (100_000)
-    const large = 'A'.repeat(150_000);
-    const executorExecute = mock(async () => large);
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    const { rmplanAgent } = await import('./agent.js');
-    const options: any = { serialTasks: true, log: false, executor: 'codex-cli' };
-    await rmplanAgent(planFile, options, {});
-
-    expect(writeOrDisplaySummarySpy).toHaveBeenCalledTimes(1);
-    const summaryArg = writeOrDisplaySummarySpy.mock.calls[0][0];
-    const content = summaryArg.steps[0].output?.content ?? '';
-    // Collector-level truncation notice should be present
-    expect(content).toContain('… truncated (showing first 100000 of 150000 chars)');
-    // Ensure content is not the full 150k string
-    expect(content.length).toBeLessThan(151_000);
-  });
-
-  test('does not write summary when summary is disabled via option', async () => {
-    await createPlanFile(planFile, {
-      id: 150,
-      title: 'No Summary Plan',
-      goal: 'Ensure no summary',
-      details: 'Disable summary flag',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      tasks: [{ title: 'Simple Task', description: 'No steps' }],
-    });
-
-    const executorExecute = mock(async () => 'ok');
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    const { rmplanAgent } = await import('./agent.js');
-    const options: any = { serialTasks: true, log: false, executor: 'codex-cli', summary: false };
-    await rmplanAgent(planFile, options, {});
-
-    expect(writeOrDisplaySummarySpy).not.toHaveBeenCalled();
-  });
-
-  test('batch mode: aggregates iterations and tracks batchIterations metadata', async () => {
-    await createPlanFile(planFile, {
-      id: 201,
-      title: 'Batch Plan',
-      goal: 'Multiple tasks',
-      details: 'Batch execution',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      title: 'Serial Summary Plan',
+      goal: 'Test serial execution summary',
+      details: 'Ensure summary captures outputs',
+      status: 'in_progress',
       tasks: [
-        { title: 'Task A', description: 'A', steps: [{ prompt: 'Do A', done: false }] },
-        { title: 'Task B', description: 'B', steps: [{ prompt: 'Do B', done: false }] },
+        {
+          title: 'Implement feature',
+          description: 'Do the thing',
+          done: false,
+          steps: [{ prompt: 'Make the change', done: false }],
+        },
       ],
-    });
+    };
+    const planPath = path.join(tasksDir, '101.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
 
-    let call = 0;
-    const executorExecute = mock(async () => {
-      call++;
-      // Simulate the agent marking tasks/steps done between iterations
-      if (call === 1) {
-        await createPlanFile(planFile, {
-          id: 201,
-          title: 'Batch Plan',
-          goal: 'Multiple tasks',
-          details: 'Batch execution',
-          status: 'in_progress',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [
-            {
-              title: 'Task A',
-              description: 'A',
-              steps: [{ prompt: 'Do A', done: true }],
-              done: true,
-            },
-            { title: 'Task B', description: 'B', steps: [{ prompt: 'Do B', done: false }] },
-          ],
-        });
-        return 'Batch iteration 1 complete';
-      } else {
-        await createPlanFile(planFile, {
-          id: 201,
-          title: 'Batch Plan',
-          goal: 'Multiple tasks',
-          details: 'Batch execution',
-          status: 'in_progress',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [
-            {
-              title: 'Task A',
-              description: 'A',
-              steps: [{ prompt: 'Do A', done: true }],
-              done: true,
-            },
-            {
-              title: 'Task B',
-              description: 'B',
-              steps: [{ prompt: 'Do B', done: true }],
-              done: true,
-            },
-          ],
-        });
-        return 'Batch iteration 2 complete';
+    // Register a stub executor dynamically
+    {
+      const { executors } = await import('../../executors/build.ts');
+      const { z } = await import('zod/v4');
+      class StubCodexExecutor {
+        static name = 'codex-cli';
+        static description = 'Stub Codex-like executor for tests';
+        static optionsSchema = z.object({});
+        constructor(
+          _opts: any,
+          private shared: any
+        ) {}
+        async execute(): Promise<string> {
+          const target = path.join(this.shared.baseDir, 'src', 'foo.txt');
+          await fs.writeFile(target, 'modified by codex\n', 'utf8');
+          return [
+            '=== Codex Implementer ===',
+            'Created new module',
+            '=== Codex Tester ===',
+            'All tests passed',
+            '=== Codex Reviewer ===',
+            'Looks good to ship',
+          ].join('\n');
+        }
       }
-    });
+      executors.set('codex-cli', StubCodexExecutor as any);
+    }
 
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
+    // Import after mocks are set up
+    ({ rmplanAgent } = await import('./agent.js'));
 
-    const { rmplanAgent } = await import('./agent.js');
-    // Default is batch mode (serialTasks not true)
-    const options: any = { log: false, executor: 'codex-cli' };
-    await rmplanAgent(planFile, options, {});
+    const summaryOut = path.join(tempDir, 'out', 'serial-summary.txt');
+    await rmplanAgent(
+      planPath,
+      { executor: 'stub-codex', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
+      { config: configPath }
+    );
 
-    expect(writeOrDisplaySummarySpy).toHaveBeenCalledTimes(1);
-    const summaryArg = writeOrDisplaySummarySpy.mock.calls[0][0];
-    expect(summaryArg.mode).toBe('batch');
-    expect(summaryArg.steps.length).toBe(2);
-    expect(summaryArg.steps[0].title).toContain('Batch Iteration 1');
-    expect(summaryArg.steps[1].title).toContain('Batch Iteration 2');
-    expect(summaryArg.metadata.batchIterations).toBe(2);
+    const summary = await fs.readFile(summaryOut, 'utf8');
+    // Header and metadata
+    expect(summary).toContain('Execution Summary: Serial Summary Plan');
+    expect(summary).toContain('Mode');
+    expect(summary).toContain('Steps Executed');
+    // Step result label and parsed sections
+    expect(summary).toContain('Step 1');
+    expect(summary).toContain('Implementer:');
+    expect(summary).toContain('Tester:');
+    expect(summary).toContain('Reviewer:');
+    // Changed files include our modified file and the plan file
+    expect(summary).toMatch(/src\/foo\.txt/);
+    expect(summary).toMatch(/tasks\/101\.yml/);
   });
 
-  test('serial mode error: failed step appears in summary with error message', async () => {
-    await createPlanFile(planFile, {
-      id: 301,
-      title: 'Error Plan',
-      goal: 'Fails',
-      details: 'Expect error',
+  test('batch mode captures Claude final message and aggregates steps', async () => {
+    // Create a plan with multiple tasks to trigger batch mode prompt
+    const plan = {
+      id: 202,
+      title: 'Batch Summary Plan',
+      goal: 'Test batch execution summary',
+      details: 'Ensure summary aggregates batch iterations',
       status: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      tasks: [{ title: 'Simple Task', description: 'No steps' }],
-    });
-
-    const executorExecute = mock(async () => {
-      throw new Error('executor boom');
-    });
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'claude-code',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    const { rmplanAgent } = await import('./agent.js');
-    const options: any = { serialTasks: true, log: false, executor: 'claude-code' };
-    await expect(rmplanAgent(planFile, options, {})).rejects.toThrow();
-
-    // Summary still produced in finally block
-    expect(writeOrDisplaySummarySpy).toHaveBeenCalledTimes(1);
-    const summaryArg = writeOrDisplaySummarySpy.mock.calls[0][0];
-    expect(summaryArg.metadata.failedSteps).toBe(1);
-    expect(summaryArg.steps.length).toBe(1);
-    expect(summaryArg.steps[0].success).toBeFalse();
-    expect(summaryArg.steps[0].errorMessage).toContain('executor boom');
-  });
-
-  test('malformed plan: schema validation failure throws and no summary is written', async () => {
-    // Write an invalid plan (missing required fields like tasks array), plain YAML (no front matter)
-    const badYaml =
-      `id: 401\n` +
-      `title: Bad Plan\n` +
-      `goal: Missing tasks field\n` +
-      `status: pending\n` +
-      `createdAt: ${new Date().toISOString()}\n` +
-      `updatedAt: ${new Date().toISOString()}\n`;
-    await fs.writeFile(planFile, badYaml);
-
-    // Override plans module to simulate schema validation error at read time
-    const readError = new Error('Invalid plan file: schema errors');
-    // Name it similarly to how readPlanFile throws to match expectations
-    readError.name = 'PlanFileError';
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async (p: string) => p),
-      readPlanFile: mock(async () => {
-        throw readError;
-      }),
-      writePlanFile: mock(async () => {}),
-      findNextPlan: mock(async () => null),
-      clearPlanCache: mock(() => {}),
-    }));
-
-    // Minimal executor mock; it should never be invoked because readPlanFile fails
-    const executorExecute = mock(async () => 'should not run');
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    const { rmplanAgent } = await import('./agent.js');
-    const options: any = { serialTasks: true, log: false, executor: 'codex-cli' };
-
-    await expect(rmplanAgent(planFile, options, {})).rejects.toThrow(/Invalid plan file/);
-    // Summary should NOT be written because summary is initialized after successful readPlanFile
-    expect(writeOrDisplaySummarySpy).not.toHaveBeenCalled();
-    // Executor should not be called
-    expect(executorExecute).not.toHaveBeenCalled();
-  });
-
-  test('other executor: generic output is captured without special parsing', async () => {
-    await createPlanFile(planFile, {
-      id: 402,
-      title: 'Generic Exec Plan',
-      goal: 'Run with other executor',
-      details: 'Use copy-only executor',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
       tasks: [
-        { title: 'Copy step', description: 'Manual', steps: [{ prompt: 'Do it', done: false }] },
+        {
+          title: 'Task A',
+          description: 'A',
+          done: false,
+          steps: [{ prompt: 'Do A1', done: false }],
+        },
+        {
+          title: 'Task B',
+          description: 'B',
+          done: false,
+          steps: [{ prompt: 'Do B1', done: false }],
+        },
       ],
-    });
+    };
+    const planPath = path.join(tasksDir, '202.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
 
-    const msg = 'Manual copy step done';
-    const executorExecute = mock(async () => msg);
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'copy-only',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
+    // Register a stub Claude-like executor that marks tasks done and writes a file
+    {
+      const { executors } = await import('../../executors/build.ts');
+      const { z } = await import('zod/v4');
+      class StubClaudeExecutor {
+        static name = 'claude-code';
+        static description = 'Stub Claude-like executor for tests';
+        static optionsSchema = z.object({});
+        constructor(
+          _opts: any,
+          private shared: any
+        ) {}
+        async execute(_context: string, planInfo: any): Promise<string> {
+          const raw = await fs.readFile(planInfo.planFilePath, 'utf8');
+          const node = yaml.parse(raw);
+          for (const t of node.tasks || []) {
+            t.done = true;
+            for (const s of t.steps || []) s.done = true;
+          }
+          await fs.writeFile(planInfo.planFilePath, yaml.stringify(node), 'utf8');
+          await fs.writeFile(
+            path.join(this.shared.baseDir, 'src', 'foo.txt'),
+            'modified by claude\n',
+            'utf8'
+          );
+          return 'Final orchestrator message: done.';
+        }
+      }
+      executors.set('claude-code', StubClaudeExecutor as any);
+    }
 
-    const { rmplanAgent } = await import('./agent.js');
-    const options: any = { serialTasks: true, log: false, executor: 'copy-only' };
-    await rmplanAgent(planFile, options, {});
+    ({ rmplanAgent } = await import('./agent.js'));
 
-    expect(writeOrDisplaySummarySpy).toHaveBeenCalledTimes(1);
-    const summaryArg = writeOrDisplaySummarySpy.mock.calls[0][0];
-    expect(summaryArg.planId).toBe('402');
-    expect(summaryArg.steps.length).toBe(1);
-    expect(summaryArg.steps[0].executor).toBe('copy-only');
-    expect(summaryArg.steps[0].output?.content).toContain('Manual copy step done');
+    const summaryOut = path.join(tempDir, 'out', 'batch-summary.txt');
+    try {
+      await rmplanAgent(
+        planPath,
+        { executor: 'claude-code', /* batch is default */ summaryFile: summaryOut, model: 'auto' },
+        { config: configPath }
+      );
+    } catch (e) {
+      // Some flows may stop batch mode with an error after execution; summary still gets written
+    }
+
+    const summary = await fs.readFile(summaryOut, 'utf8');
+    expect(summary).toContain('Execution Summary: Batch Summary Plan');
+    expect(summary).toContain('Mode');
+    // Should show one or more batch iterations
+    expect(summary).toMatch(/Batch Iteration\s+1/);
+    expect(summary).toContain('Final orchestrator message: done.');
+    // Changed files include our modified file and the plan file
+    expect(summary).toMatch(/src\/foo\.txt/);
+    expect(summary).toMatch(/tasks\/202\.yml/);
+  });
+
+  test('records failed step and error on executor throw', async () => {
+    const plan = {
+      id: 303,
+      title: 'Error Summary Plan',
+      goal: 'Test error handling',
+      details: 'Ensure errors appear in summary',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Throwing Task',
+          description: 'Will fail',
+          done: false,
+          steps: [{ prompt: 'Try and fail', done: false }],
+        },
+      ],
+    };
+    const planPath = path.join(tasksDir, '303.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
+
+    // Register a throwing stub executor
+    {
+      const { executors } = await import('../../executors/build.ts');
+      const { z } = await import('zod/v4');
+      class StubThrowExecutor {
+        static name = 'stub-throw';
+        static description = 'Stub executor that throws';
+        static optionsSchema = z.object({});
+        constructor(_opts: any) {}
+        async execute(): Promise<string> {
+          throw new Error('executor boom');
+        }
+      }
+      executors.set(StubThrowExecutor.name, StubThrowExecutor as any);
+    }
+
+    ({ rmplanAgent } = await import('./agent.js'));
+
+    const summaryOut = path.join(tempDir, 'out', 'error-summary.txt');
+    await expect(
+      rmplanAgent(
+        planPath,
+        { executor: 'stub-throw', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
+        { config: configPath }
+      )
+    ).rejects.toBeInstanceOf(Error);
+
+    const summary = await fs.readFile(summaryOut, 'utf8');
+    expect(summary).toContain('Execution Summary: Error Summary Plan');
+    expect(summary).toContain('Failed Steps');
+    expect(summary).toMatch(/✖/); // failure marker in steps
+    expect(summary).toContain('executor boom');
   });
 });

@@ -150,12 +150,17 @@ rmplan run and rmplan agent display a consolidated execution summary at the end 
   - Print to stdout (default): `rmplan agent tasks/123-plan.yml`
   - Disable summaries: `rmplan agent --no-summary tasks/123-plan.yml`
   - Write to file: `rmplan agent --summary-file tmp/summary.txt tasks/123-plan.yml`
-  - Batch mode with file output: `rmplan agent --summary-file runs/summary.txt tasks/parent.yml` (batch mode is the default)
+- Batch mode with file output: `rmplan agent --summary-file runs/summary.txt tasks/parent.yml` (batch mode is the default)
 
 - Executor-specific capture
   - Claude Code: captures the orchestrator’s final assistant message when available
-  - Codex CLI: concatenates the final Implementer, Tester, and Reviewer sections
-  - Other executors: contribute raw text if provided; otherwise steps still appear without output
+- Codex CLI: concatenates the final Implementer, Tester, and Reviewer sections
+- Other executors: contribute raw text if provided; otherwise steps still appear without output
+
+- Integration and modes
+- Works in both serial (`--serial-tasks`) and batch (default) modes
+- Batch runs aggregate per-iteration results and count iterations executed
+- File change tracking uses a baseline commit captured at start of the run and reports changes since then
 
 - Truncation and performance
   - The collector truncates very large outputs to keep memory use reasonable and adds a truncation notice
