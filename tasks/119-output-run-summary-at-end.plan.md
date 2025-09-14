@@ -13,7 +13,7 @@ docs: []
 planGeneratedAt: 2025-09-14T09:17:46.197Z
 promptsGeneratedAt: 2025-09-14T09:43:06.976Z
 createdAt: 2025-09-14T07:54:56.352Z
-updatedAt: 2025-09-14T10:46:14.362Z
+updatedAt: 2025-09-14T11:26:09.952Z
 tasks:
   - title: Define Summary Data Structures
     done: true
@@ -77,7 +77,7 @@ tasks:
           sanitization.
         done: true
   - title: Modify Agent Execution for Summary Collection
-    done: false
+    done: true
     description: >
       Update the main agent execution flow to integrate summary collection
       throughout the execution process. This involves modifying
@@ -104,7 +104,7 @@ tasks:
           adding them to the summary via summaryCollector.addError(). Ensure the
           summary collection doesn't interfere with existing execution flow and
           maintains backward compatibility.
-        done: false
+        done: true
       - prompt: >
           Add summary display at the end of rmplanAgent function execution.
           After the main execution loop completes (either in serial mode or
@@ -112,7 +112,7 @@ tasks:
           collected summary data. Handle both successful completion and error
           scenarios. Ensure proper cleanup and final summary generation even
           when execution encounters errors or is interrupted.
-        done: false
+        done: true
   - title: Update Batch Mode for Summary Aggregation
     done: true
     description: >
@@ -261,7 +261,7 @@ tasks:
           consistent data structures for use by the SummaryCollector.
         done: false
   - title: Update Executors for Summary Support
-    done: false
+    done: true
     description: >
       Modify the existing executor implementations to ensure they provide the
       necessary data for summary collection. This involves verifying that the
@@ -285,7 +285,7 @@ tasks:
           executor metadata (name: 'claude_code', type: 'interactive') to the
           response data structure for summary collection identification. Ensure
           backward compatibility is maintained.
-        done: false
+        done: true
       - prompt: >
           Review and update src/rmplan/executors/codx_cli/codx_cli.ts to ensure
           proper final agent message capture for summary collection. Verify that
@@ -296,7 +296,7 @@ tasks:
           metadata (name: 'codx_cli', type: 'workflow') to the response for
           summary identification. Maintain existing functionality for all
           execution modes.
-        done: false
+        done: true
   - title: Enhance Summary Display Formatting
     done: false
     description: >
@@ -449,14 +449,17 @@ tasks:
         done: false
 changedFiles:
   - src/common/git.ts
+  - src/rmplan/commands/agent/agent.serial.capture_output.test.ts
   - src/rmplan/commands/agent/agent.test.ts
   - src/rmplan/commands/agent/agent.ts
   - src/rmplan/commands/agent/agent_batch_mode.test.ts
   - src/rmplan/commands/agent/agent_summary_options.test.ts
+  - src/rmplan/commands/agent/batch_mode.capture_output.test.ts
   - src/rmplan/commands/agent/batch_mode.ts
   - src/rmplan/commands/agent/batch_tasks_unit.test.ts
   - src/rmplan/commands/agent/commander_negated_options.test.ts
   - src/rmplan/executors/claude_code_orchestrator.ts
+  - src/rmplan/executors/codex_cli.capture_output.test.ts
   - src/rmplan/executors/codex_cli.fix_loop.test.ts
   - src/rmplan/executors/codex_cli.ts
   - src/rmplan/prompt.test.ts
