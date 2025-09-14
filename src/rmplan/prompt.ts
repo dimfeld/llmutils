@@ -796,12 +796,14 @@ ${tasksSection}
 
 Please analyze this plan and the codebase. Your task is to:
 
-1. Use your tools to explore the codebase and understand the existing code structure. Use parallel subagents to analyze related tasks together.
+1. Use your tools to explore the codebase and understand the existing code structure.
 2. Identify which files would need to be created or modified for each task
 3. Think about how to break down each task into detailed implementation steps
 4. Consider the order of operations and any dependencies between steps
 5. Understand the existing patterns, frameworks, and conventions used in the codebase
 6. Identify any potential challenges or edge cases
+
+Use parallel subagents to analyze related tasks together.
 
 Once you've analyzed the codebase, I'll ask you to generate detailed implementation steps in the required YAML format.
 

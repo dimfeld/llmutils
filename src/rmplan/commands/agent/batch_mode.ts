@@ -8,6 +8,8 @@ import { getAllIncompleteTasks } from '../../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 
+import type { SummaryCollector } from '../../summary/collector.js';
+
 export async function executeBatchMode({
   currentPlanFile,
   config,
@@ -20,10 +22,11 @@ export async function executeBatchMode({
   executor: Executor;
   baseDir: string;
   dryRun?: boolean;
-}) {
+}, summaryCollector?: SummaryCollector) {
   log('Starting batch mode execution:', currentPlanFile);
   try {
     let hasError = false;
+    let iteration = 0;
 
     // Batch mode: continue until no incomplete tasks remain
     while (true) {
@@ -101,16 +104,42 @@ export async function executeBatchMode({
 
       try {
         log(boldMarkdownHeaders('\n## Batch Mode Execution\n'));
-        await executor.execute(batchPrompt, {
+        const start = Date.now();
+        const output = await executor.execute(batchPrompt, {
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
           batchMode: true,
           executionMode: 'normal',
+          captureOutput: summaryCollector ? 'result' : 'none',
         });
+        iteration += 1;
+        if (summaryCollector) {
+          const end = Date.now();
+          summaryCollector.addStepResult({
+            title: `Batch Iteration ${iteration}`,
+            executor: (executor as any)?.constructor?.name ?? 'executor',
+            success: true,
+            output: typeof output === 'string' ? output : undefined,
+            startedAt: new Date(start).toISOString(),
+            endedAt: new Date(end).toISOString(),
+            durationMs: end - start,
+            iteration,
+          });
+        }
       } catch (err) {
         error('Batch execution failed:', err);
         hasError = true;
+        iteration += 1;
+        if (summaryCollector) {
+          summaryCollector.addStepResult({
+            title: `Batch Iteration ${iteration}`,
+            executor: (executor as any)?.constructor?.name ?? 'executor',
+            success: false,
+            errorMessage: String(err instanceof Error ? err.message : err),
+            iteration,
+          });
+        }
         break;
       }
 
@@ -149,9 +178,18 @@ export async function executeBatchMode({
           await checkAndMarkParentDone(updatedPlanData.parent, config, baseDir);
         }
         await commitAll(`Plan complete: ${planData.title}`, baseDir);
+        if (summaryCollector) {
+          await summaryCollector.trackFileChanges(baseDir);
+          // annotate iterations in metadata on final summary
+          const summary = summaryCollector.getExecutionSummary();
+          summary.metadata.batchIterations = iteration;
+        }
         break;
       } else {
         await commitAll('Finish batch tasks iteration', baseDir);
+        if (summaryCollector) {
+          await summaryCollector.trackFileChanges(baseDir);
+        }
       }
     }
 
