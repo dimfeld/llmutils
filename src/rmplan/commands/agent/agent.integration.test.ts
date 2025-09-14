@@ -399,4 +399,81 @@ describe('rmplanAgent - Execution Summary Integration', () => {
     expect(summaryArg.steps[0].success).toBeFalse();
     expect(summaryArg.steps[0].errorMessage).toContain('executor boom');
   });
+
+  test('malformed plan: schema validation failure throws and no summary is written', async () => {
+    // Write an invalid plan (missing required fields like tasks array), plain YAML (no front matter)
+    const badYaml =
+      `id: 401\n` +
+      `title: Bad Plan\n` +
+      `goal: Missing tasks field\n` +
+      `status: pending\n` +
+      `createdAt: ${new Date().toISOString()}\n` +
+      `updatedAt: ${new Date().toISOString()}\n`;
+    await fs.writeFile(planFile, badYaml);
+
+    // Override plans module to simulate schema validation error at read time
+    const readError = new Error('Invalid plan file: schema errors');
+    // Name it similarly to how readPlanFile throws to match expectations
+    readError.name = 'PlanFileError';
+    await moduleMocker.mock('../../plans.js', () => ({
+      resolvePlanFile: mock(async (p: string) => p),
+      readPlanFile: mock(async () => {
+        throw readError;
+      }),
+      writePlanFile: mock(async () => {}),
+      findNextPlan: mock(async () => null),
+      clearPlanCache: mock(() => {}),
+    }));
+
+    // Minimal executor mock; it should never be invoked because readPlanFile fails
+    const executorExecute = mock(async () => 'should not run');
+    await moduleMocker.mock('../../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
+      DEFAULT_EXECUTOR: 'codex-cli',
+      defaultModelForExecutor: mock(() => 'test-model'),
+    }));
+
+    const { rmplanAgent } = await import('./agent.js');
+    const options: any = { serialTasks: true, log: false, executor: 'codex-cli' };
+
+    await expect(rmplanAgent(planFile, options, {})).rejects.toThrow(/Invalid plan file/);
+    // Summary should NOT be written because summary is initialized after successful readPlanFile
+    expect(writeOrDisplaySummarySpy).not.toHaveBeenCalled();
+    // Executor should not be called
+    expect(executorExecute).not.toHaveBeenCalled();
+  });
+
+  test('other executor: generic output is captured without special parsing', async () => {
+    await createPlanFile(planFile, {
+      id: 402,
+      title: 'Generic Exec Plan',
+      goal: 'Run with other executor',
+      details: 'Use copy-only executor',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [
+        { title: 'Copy step', description: 'Manual', steps: [{ prompt: 'Do it', done: false }] },
+      ],
+    });
+
+    const msg = 'Manual copy step done';
+    const executorExecute = mock(async () => msg);
+    await moduleMocker.mock('../../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
+      DEFAULT_EXECUTOR: 'copy-only',
+      defaultModelForExecutor: mock(() => 'test-model'),
+    }));
+
+    const { rmplanAgent } = await import('./agent.js');
+    const options: any = { serialTasks: true, log: false, executor: 'copy-only' };
+    await rmplanAgent(planFile, options, {});
+
+    expect(writeOrDisplaySummarySpy).toHaveBeenCalledTimes(1);
+    const summaryArg = writeOrDisplaySummarySpy.mock.calls[0][0];
+    expect(summaryArg.planId).toBe('402');
+    expect(summaryArg.steps.length).toBe(1);
+    expect(summaryArg.steps[0].executor).toBe('copy-only');
+    expect(summaryArg.steps[0].output?.content).toContain('Manual copy step done');
+  });
 });

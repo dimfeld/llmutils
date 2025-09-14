@@ -162,6 +162,11 @@ rmplan run and rmplan agent display a consolidated execution summary at the end 
   - The display renderer may clamp again for terminal readability
   - Batch runs aggregate iteration counts and failed steps without storing intermediate logs
 
+- Tips
+  - CLI flags take precedence over environment defaults (e.g., `--no-summary` overrides `RMPLAN_SUMMARY_ENABLED=true`).
+  - Unsupported/other executors are still summarized; their output is treated as plain text without special parsing.
+  - When a plan file fails schema validation before execution starts, no summary is produced because the run never initializes collection.
+
 - Example output (abbreviated)
 
 ```
