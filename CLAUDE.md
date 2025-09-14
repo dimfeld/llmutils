@@ -223,7 +223,7 @@ The codebase uses OpenTelemetry for distributed tracing and monitoring:
 - When importing OpenTelemetry types, use type-only imports:
 ```typescript
 import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
-````
+```
 
 ## Type Safety
 
