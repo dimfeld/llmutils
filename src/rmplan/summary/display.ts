@@ -20,7 +20,8 @@ function stepStatusIcon(s: StepResult): string {
   return s.success ? chalk.green('✔') : chalk.red('✖');
 }
 
-const MAX_STEP_DISPLAY_CHARS = 50_000; // Secondary safety clamp per step
+// Keep the display clamp above collector truncation (100k) to avoid hiding its notice
+const MAX_STEP_DISPLAY_CHARS = 200_000;
 
 function summarizeSteps(steps: StepResult[]): string[] {
   const lines: string[] = [];

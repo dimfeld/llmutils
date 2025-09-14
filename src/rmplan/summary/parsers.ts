@@ -33,10 +33,12 @@ export function parseClaudeOutput(raw: unknown): ParsedExecutorOutput {
     const input = raw.trim();
     if (!input) return { content: '', success: true };
 
-    // Heuristic: if the string looks like JSONL, try to parse and extract last assistant.rawMessage
-    const looksJsonLine = input.includes('{') && input.includes('}') && input.includes('"type"');
-    if (looksJsonLine) {
-      const lines = input.split(/\r?\n/);
+    // Heuristic: treat as JSONL only if some line starts with a JSON object and mentions "type"
+    const lines = input.split(/\r?\n/);
+    const looksJsonl = lines.some(
+      (l) => l.trimStart().startsWith('{') && l.includes('"type"')
+    );
+    if (looksJsonl) {
       let lastAssistantRaw: string | undefined;
       for (const line of lines) {
         try {

@@ -79,13 +79,17 @@ export class SummaryCollector {
           content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
         };
       } else if (input.output && typeof input.output === 'object') {
+        const rawContent =
+          typeof (input.output as any).content === 'string'
+            ? (input.output as any).content
+            : String((input.output as any).content ?? '');
         const capped =
-          input.output.content.length > MAX_OUTPUT_LENGTH
-            ? input.output.content.slice(0, MAX_OUTPUT_LENGTH)
-            : input.output.content;
+          rawContent.length > MAX_OUTPUT_LENGTH
+            ? rawContent.slice(0, MAX_OUTPUT_LENGTH)
+            : rawContent;
         normalized = {
           content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
-          metadata: input.output.metadata,
+          metadata: (input.output as any).metadata,
         };
       }
 

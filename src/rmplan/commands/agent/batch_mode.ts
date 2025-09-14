@@ -125,28 +125,31 @@ export async function executeBatchMode(
             '../../summary/parsers.js'
           );
           const parsed = parseExecutorOutput(executorName, output);
+          const execNameNorm = (executorName ?? '')
+            .toLowerCase()
+            .replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
             executorType:
-              (executorName ?? '') === 'claude-code'
-                ? 'interactive'
-                : (executorName ?? '') === 'codex-cli'
-                  ? 'cli'
-                  : undefined,
+              execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
             executorPhase:
-              (executorName ?? '') === 'claude-code'
+              execNameNorm === 'claude-code'
                 ? 'orchestrator'
-                : (executorName ?? '') === 'codex-cli'
+                : execNameNorm === 'codex-cli'
                   ? 'implementer|tester|reviewer'
                   : undefined,
-            success: true,
+            success: parsed.success,
+            errorMessage: parsed.success ? undefined : parsed.error,
             output: toNormalizedOutput(parsed),
             startedAt: new Date(start).toISOString(),
             endedAt: new Date(end).toISOString(),
             durationMs: end - start,
             iteration,
           });
+          if (!parsed.success && parsed.error) {
+            summaryCollector.addError(parsed.error);
+          }
         }
       } catch (err) {
         error('Batch execution failed:', err);

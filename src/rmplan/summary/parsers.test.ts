@@ -19,6 +19,30 @@ describe('summary/parsers', () => {
     expect(res.content).toBe('hello world');
   });
 
+  it('parseClaudeOutput extracts last assistant rawMessage from JSONL', () => {
+    const jsonl = [
+      '{"type":"system","rawMessage":"sys"}',
+      '{"type":"assistant","rawMessage":"first"}',
+      'not json',
+      '{"type":"assistant","rawMessage":"second"}',
+    ].join('\n');
+    const res = parseClaudeOutput(jsonl);
+    expect(res.success).toBeTrue();
+    expect(res.content).toBe('second');
+    expect((res.metadata as any)?.phase).toBe('orchestrator');
+  });
+
+  it('parseClaudeOutput tolerates malformed mixed content', () => {
+    const jsonl = [
+      'garbage line',
+      '{ invalid json',
+      '{"type":"assistant","rawMessage":"ok"}',
+    ].join('\n');
+    const res = parseClaudeOutput(jsonl);
+    expect(res.success).toBeTrue();
+    expect(res.content).toBe('ok');
+  });
+
   it('parseCodexOutput extracts labeled sections into metadata', () => {
     const raw = `=== Codex Implementer ===\nimpl body\n\n=== Codex Tester ===\ntest body\n\n=== Codex Reviewer ===\nreview body\n`;
     const res = parseCodexOutput(raw);
