@@ -228,7 +228,8 @@ export class CodexCliExecutor implements Executor {
           finalReviewerOutput = rerunReviewerOutput;
           events.push({ type: 'reviewer', message: rerunReviewerOutput });
 
-          const verdict = this.parseReviewerVerdict(reviewerOutput);
+          // Parse verdict from the latest reviewer output (not the initial one)
+          const verdict = this.parseReviewerVerdict(rerunReviewerOutput);
 
           const newAnalysis =
             verdict === 'ACCEPTABLE'
@@ -249,12 +250,12 @@ export class CodexCliExecutor implements Executor {
           }
 
           log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
-          if (analysis.fix_instructions) {
-            log(`Fix instructions: ${analysis.fix_instructions}`);
+          if (newAnalysis.fix_instructions) {
+            log(`Fix instructions: ${newAnalysis.fix_instructions}`);
           }
 
           // Give it the new fix instructions and continue
-          fixInstructions = analysis.fix_instructions ?? rerunReviewerOutput;
+          fixInstructions = newAnalysis.fix_instructions ?? rerunReviewerOutput;
           continue;
         }
 
@@ -535,6 +536,17 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
     gitRoot: string
   ): Promise<void> {
     try {
+      // Skip entirely during tests or when explicitly disabled. This prevents
+      // slow, flaky external model calls from running inside unit tests.
+      const disableAutoMark =
+        process.env.NODE_ENV === 'test' ||
+        process.env.RMPLAN_DISABLE_AUTO_MARK === '1' ||
+        process.env.RMPLAN_DISABLE_AUTO_MARK === 'true';
+      if (disableAutoMark) {
+        warn('Skipping automatic task completion marking in test/disabled mode');
+        return;
+      }
+
       // Skip if no Google API key is available to avoid network calls in test/dev
       const hasGoogleKey =
         !!process.env.GOOGLE_API_KEY || !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
