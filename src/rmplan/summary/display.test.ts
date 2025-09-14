@@ -3,7 +3,6 @@ import stripAnsi from 'strip-ansi';
 import type { ExecutionSummary } from './types.js';
 
 describe('displayExecutionSummary', () => {
-
   it('renders an overview table, steps, files and no errors on success', async () => {
     const summary: ExecutionSummary = {
       planId: '42',
@@ -63,9 +62,7 @@ describe('displayExecutionSummary', () => {
       startedAt: new Date().toISOString(),
       endedAt: new Date().toISOString(),
       durationMs: 0,
-      steps: [
-        { title: 'Iter 1', executor: 'codx_cli', success: false, errorMessage: 'boom' },
-      ],
+      steps: [{ title: 'Iter 1', executor: 'codx_cli', success: false, errorMessage: 'boom' }],
       changedFiles: [],
       errors: ['Failed to track file changes'],
       metadata: { totalSteps: 1, failedSteps: 1, batchIterations: 1 },

@@ -16,7 +16,9 @@ const DEFAULT_TRUNCATE_LENGTH = 100_000; // Keep memory reasonable per step for 
 function truncate(text: string, maxLen = DEFAULT_TRUNCATE_LENGTH): string {
   if (typeof text !== 'string') return '';
   if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + `\n\n… truncated (showing first ${maxLen} of ${text.length} chars)`;
+  return (
+    text.slice(0, maxLen) + `\n\n… truncated (showing first ${maxLen} of ${text.length} chars)`
+  );
 }
 
 export interface SummaryCollectorInit {
@@ -53,9 +55,10 @@ export class SummaryCollector {
     try {
       let normalized: NormalizedExecutorOutput | undefined;
       if (typeof input.output === 'string') {
-        const capped = input.output.length > MAX_OUTPUT_LENGTH
-          ? input.output.slice(0, MAX_OUTPUT_LENGTH)
-          : input.output;
+        const capped =
+          input.output.length > MAX_OUTPUT_LENGTH
+            ? input.output.slice(0, MAX_OUTPUT_LENGTH)
+            : input.output;
         normalized = {
           content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
         };

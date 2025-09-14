@@ -86,4 +86,3 @@ export interface ExecutionSummary {
   /** Original plan info for reference if available */
   planInfo?: Partial<ExecutePlanInfo>;
 }
-

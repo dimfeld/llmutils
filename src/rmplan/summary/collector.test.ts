@@ -64,10 +64,7 @@ describe('SummaryCollector', () => {
     expect(summary.errors.length).toBe(1);
     expect(summary.errors[0]).toContain('something happened');
 
-    expect(summary.changedFiles).toEqual([
-      'src/file1.ts',
-      'src/dir/file2.ts',
-    ]);
+    expect(summary.changedFiles).toEqual(['src/file1.ts', 'src/dir/file2.ts']);
 
     expect(summary.metadata.totalSteps).toBe(1);
     expect(summary.metadata.failedSteps).toBe(0);
@@ -113,4 +110,3 @@ describe('SummaryCollector', () => {
     expect(summary.errors.some((e) => e.includes('Failed to track file changes'))).toBeTrue();
   });
 });
-

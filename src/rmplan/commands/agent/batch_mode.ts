@@ -10,21 +10,24 @@ import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js'
 
 import type { SummaryCollector } from '../../summary/collector.js';
 
-export async function executeBatchMode({
-  currentPlanFile,
-  config,
-  executor,
-  baseDir,
-  dryRun = false,
-  executorName,
-}: {
-  currentPlanFile: string;
-  config: RmplanConfig;
-  executor: Executor;
-  baseDir: string;
-  dryRun?: boolean;
-  executorName?: string;
-}, summaryCollector?: SummaryCollector) {
+export async function executeBatchMode(
+  {
+    currentPlanFile,
+    config,
+    executor,
+    baseDir,
+    dryRun = false,
+    executorName,
+  }: {
+    currentPlanFile: string;
+    config: RmplanConfig;
+    executor: Executor;
+    baseDir: string;
+    dryRun?: boolean;
+    executorName?: string;
+  },
+  summaryCollector?: SummaryCollector
+) {
   log('Starting batch mode execution:', currentPlanFile);
   try {
     let hasError = false;

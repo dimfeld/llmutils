@@ -39,7 +39,10 @@ function summarizeSteps(steps: StepResult[]): string[] {
       }
       if (excerpt) {
         // Indent output lines
-        const indented = excerpt.split('\n').map((l) => `  ${l}`).join('\n');
+        const indented = excerpt
+          .split('\n')
+          .map((l) => `  ${l}`)
+          .join('\n');
         lines.push(indented);
       }
     }
@@ -122,6 +125,10 @@ export function displayExecutionSummary(summary: ExecutionSummary): void {
       log(line);
     }
   } catch (e) {
-    log(chalk.yellow(`Warning: Failed to display summary: ${e instanceof Error ? e.message : String(e)}`));
+    log(
+      chalk.yellow(
+        `Warning: Failed to display summary: ${e instanceof Error ? e.message : String(e)}`
+      )
+    );
   }
 }

@@ -406,14 +406,17 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
   if (!options.serialTasks) {
-    const res = await executeBatchMode({
-      config,
-      baseDir: currentBaseDir,
-      currentPlanFile,
-      executor,
-      dryRun: options.dryRun,
-      executorName,
-    }, summaryEnabled ? summaryCollector : undefined);
+    const res = await executeBatchMode(
+      {
+        config,
+        baseDir: currentBaseDir,
+        currentPlanFile,
+        executor,
+        dryRun: options.dryRun,
+        executorName,
+      },
+      summaryEnabled ? summaryCollector : undefined
+    );
     if (summaryEnabled) {
       summaryCollector.recordExecutionEnd();
       await summaryCollector.trackFileChanges(currentBaseDir);

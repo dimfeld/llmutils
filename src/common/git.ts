@@ -294,10 +294,11 @@ export async function getTrunkBranch(gitRoot: string): Promise<string> {
   try {
     if (await getUsingJj()) {
       const out = await $`jj bookmark list`.cwd(gitRoot).nothrow().text();
-      const lines = out.split('\n').map((l) => l.trim()).filter(Boolean);
-      const names = lines
-        .map((l) => l.split(/\s+/)[0])
-        .filter((n) => !!n) as string[];
+      const lines = out
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const names = lines.map((l) => l.split(/\s+/)[0]).filter((n) => !!n) as string[];
       const candidates = ['main', 'master', 'trunk', 'default'];
       for (const c of candidates) {
         if (names.includes(c)) return c;
