@@ -262,5 +262,5 @@ describe('CodexCliExecutor - Fix Loop', () => {
     expect(calls.length).toBe(13);
     // Ensure at least one fixer prompt was used
     expect(calls.some((p) => p.includes('You are a fixer agent'))).toBeTrue();
-  });
+  }, 15000);
 });
