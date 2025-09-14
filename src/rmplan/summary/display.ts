@@ -152,9 +152,7 @@ export async function writeOrDisplaySummary(
     log(chalk.green(`Execution summary written to: ${filePath}`));
   } catch (e) {
     warn(
-      `Failed to write execution summary to file: ${String(
-        e instanceof Error ? e.message : e
-      )}`
+      `Failed to write execution summary to file: ${String(e instanceof Error ? e.message : e)}`
     );
     displayExecutionSummary(summary);
   }

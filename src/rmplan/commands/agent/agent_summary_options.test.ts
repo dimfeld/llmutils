@@ -52,9 +52,7 @@ async function writePlanWithTasks() {
     status: 'pending',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    tasks: [
-      { title: 'T1', description: 'D1', steps: [{ prompt: 'p1', done: false }] },
-    ],
+    tasks: [{ title: 'T1', description: 'D1', steps: [{ prompt: 'p1', done: false }] }],
   };
   const schemaComment =
     '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
