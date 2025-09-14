@@ -7,13 +7,25 @@ export interface ParsedExecutorOutput {
   error?: string;
 }
 
+// Hard safety cap to avoid processing arbitrarily large strings in memory
+const MAX_PARSED_OUTPUT = 10_000_000; // 10MB
+
+function clampContent(text: string): string {
+  if (typeof text !== 'string') return '';
+  if (text.length <= MAX_PARSED_OUTPUT) return text;
+  return (
+    text.slice(0, MAX_PARSED_OUTPUT) +
+    `\n\n… parser truncated (showing first ${MAX_PARSED_OUTPUT} of ${text.length} chars)`
+  );
+}
+
 /**
  * Generic parser that returns the input as content.
  */
 export function parseGenericOutput(raw: unknown): ParsedExecutorOutput {
   try {
     const content = typeof raw === 'string' ? raw : JSON.stringify(raw);
-    return { content: content?.trim?.() ?? String(content), success: true };
+    return { content: clampContent(content?.trim?.() ?? String(content)), success: true };
   } catch (e) {
     return { content: String(raw ?? ''), success: false, error: String(e) };
   }
@@ -30,7 +42,7 @@ export function parseClaudeOutput(raw: unknown): ParsedExecutorOutput {
   try {
     if (typeof raw !== 'string') return parseGenericOutput(raw);
 
-    const input = raw.trim();
+    const input = clampContent(raw.trim());
     if (!input) return { content: '', success: true };
 
     // Heuristic: treat as JSONL only if some line starts with a JSON object and mentions "type"
@@ -53,7 +65,7 @@ export function parseClaudeOutput(raw: unknown): ParsedExecutorOutput {
       }
       if (lastAssistantRaw != null) {
         return {
-          content: lastAssistantRaw.trim(),
+          content: clampContent(lastAssistantRaw.trim()),
           success: true,
           metadata: { phase: 'orchestrator' },
         };
@@ -79,7 +91,7 @@ export function parseClaudeOutput(raw: unknown): ParsedExecutorOutput {
 export function parseCodexOutput(raw: unknown): ParsedExecutorOutput {
   try {
     if (typeof raw !== 'string') return parseGenericOutput(raw);
-    const text = raw.trim();
+    const text = clampContent(raw.trim());
     if (!text) return { content: '', success: true };
 
     const headerRegex = /^===\s*Codex\s+(Implementer|Tester|Reviewer)\s*===\s*$/gim;
@@ -108,7 +120,7 @@ export function parseCodexOutput(raw: unknown): ParsedExecutorOutput {
       return { content: text, success: true };
     }
 
-    const content = parts.join('\n\n');
+    const content = clampContent(parts.join('\n\n'));
     return { content, success: true, metadata };
   } catch (e) {
     return { content: String(raw ?? ''), success: false, error: String(e) };

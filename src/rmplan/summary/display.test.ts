@@ -31,6 +31,8 @@ describe('displayExecutionSummary', () => {
     const out = stripAnsi(formatExecutionSummaryToLines(summary).join('\n'));
 
     expect(out).toContain('Execution Summary: My Plan');
+    // Progress indicator
+    expect(out).toMatch(/\(1\/1 • 100%\)/);
     expect(out).toContain('Plan ID');
     expect(out).toContain('42');
     expect(out).toContain('Steps Executed');
@@ -79,5 +81,41 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('Errors');
     expect(out).toContain('Failed to track file changes');
     expect(out).toContain('boom');
+  });
+
+  it('truncates very long step output and shows indicators, includes timestamps', async () => {
+    const long = 'function test() { return 1; }\n'.repeat(7_000); // > 200k chars
+    const summary: ExecutionSummary = {
+      planId: '1',
+      planTitle: 'Big Output',
+      planFilePath: 'tasks/plan.yml',
+      mode: 'serial',
+      startedAt: new Date(Date.now() - 10_000).toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 10_000,
+      steps: [
+        {
+          title: 'Big Step',
+          executor: 'codex_cli',
+          success: true,
+          durationMs: 10_000,
+          output: { content: long },
+        },
+      ],
+      changedFiles: [],
+      errors: [],
+      metadata: { totalSteps: 1, failedSteps: 0 },
+    };
+
+    const { formatExecutionSummaryToLines } = await import('./display.js');
+    const out = stripAnsi(formatExecutionSummaryToLines(summary).join('\n'));
+
+    // Timestamps present in overview table
+    expect(out).toContain('Started');
+    expect(out).toContain('Ended');
+    // Truncation marker for display-level clamp
+    expect(out).toContain('… display truncated (showing first 200000 chars)');
+    // Code snippet text still present after syntax-highlighting removal
+    expect(out).toContain('function test() { return 1; }');
   });
 });

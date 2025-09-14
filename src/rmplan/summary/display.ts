@@ -23,6 +23,35 @@ function stepStatusIcon(s: StepResult): string {
 // Keep the display clamp above collector truncation (100k) to avoid hiding its notice
 const MAX_STEP_DISPLAY_CHARS = 200_000;
 
+function percent(n: number, d: number): string {
+  if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0) return '0%';
+  const p = Math.round((n / d) * 100);
+  return `${p}%`;
+}
+
+function formatTimestamp(iso?: string): string {
+  if (!iso) return 'n/a';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'n/a';
+    return d.toLocaleString();
+  } catch {
+    return 'n/a';
+  }
+}
+
+function sectionHeader(title: string, color: typeof chalk = chalk.bold): string {
+  return chalk.bold(color(title));
+}
+
+// Very light syntax highlighting for common code keywords
+function highlightCodeLine(line: string): string {
+  // Simple heuristics; keep fast and low-cost
+  const kw =
+    /\b(function|class|const|let|var|import|export|return|if|else|for|while|try|catch|async|await|def)\b/g;
+  return line.replace(kw, (m) => chalk.cyan(m));
+}
+
 function summarizeSteps(steps: StepResult[]): string[] {
   const lines: string[] = [];
   for (const [idx, s] of steps.entries()) {
@@ -42,7 +71,7 @@ function summarizeSteps(steps: StepResult[]): string[] {
         // Indent output lines
         const indented = excerpt
           .split('\n')
-          .map((l) => `  ${l}`)
+          .map((l) => `  ${highlightCodeLine(l)}`)
           .join('\n');
         lines.push(indented);
       }
@@ -58,8 +87,12 @@ function summarizeSteps(steps: StepResult[]): string[] {
 export function formatExecutionSummaryToLines(summary: ExecutionSummary): string[] {
   const lines: string[] = [];
   const statusColor = summary.metadata.failedSteps > 0 ? chalk.red : chalk.green;
+  const completed = summary.metadata.totalSteps - summary.metadata.failedSteps;
+  const pct = percent(completed, summary.metadata.totalSteps || 0);
   const title = statusColor(`Execution Summary: ${summary.planTitle}`);
-  lines.push(`\n${chalk.bold(title)}`);
+  lines.push(
+    `\n${chalk.bold(title)} ${chalk.gray(`(${completed}/${summary.metadata.totalSteps} • ${pct})`)}`
+  );
   lines.push(divider());
 
   const tableData = [
@@ -69,6 +102,8 @@ export function formatExecutionSummaryToLines(summary: ExecutionSummary): string
     [chalk.bold('Failed Steps'), String(summary.metadata.failedSteps)],
     [chalk.bold('Files Changed'), String(summary.changedFiles.length)],
     [chalk.bold('Duration'), formatDuration(summary.durationMs)],
+    [chalk.bold('Started'), formatTimestamp(summary.startedAt)],
+    [chalk.bold('Ended'), formatTimestamp(summary.endedAt)],
   ];
 
   const tableConfig = {
@@ -94,12 +129,22 @@ export function formatExecutionSummaryToLines(summary: ExecutionSummary): string
   lines.push(table(tableData, tableConfig));
 
   if (summary.steps.length > 0) {
-    lines.push(chalk.bold.cyan('Step Results'));
+    // Stats
+    const avgMs = Math.round(
+      summary.steps.reduce((a, s) => a + (s.durationMs || 0), 0) / summary.steps.length || 0
+    );
+    lines.push(sectionHeader('Step Results', chalk.cyan));
     lines.push(divider());
+    lines.push(
+      chalk.gray(
+        `Steps: ${completed}/${summary.metadata.totalSteps} completed • Avg Step: ${formatDuration(avgMs)}`
+      )
+    );
+    lines.push('');
     lines.push(...summarizeSteps(summary.steps));
   }
 
-  lines.push(chalk.bold.cyan('File Changes'));
+  lines.push(sectionHeader('File Changes', chalk.cyan));
   lines.push(divider());
   if (summary.changedFiles.length === 0) {
     lines.push(chalk.gray('No changed files detected.'));
@@ -110,7 +155,7 @@ export function formatExecutionSummaryToLines(summary: ExecutionSummary): string
   }
 
   if (summary.errors.length > 0) {
-    lines.push(chalk.bold.red('Errors'));
+    lines.push(sectionHeader('Errors', chalk.red));
     lines.push(divider());
     for (const e of summary.errors) {
       lines.push(`${chalk.red('•')} ${e}`);
