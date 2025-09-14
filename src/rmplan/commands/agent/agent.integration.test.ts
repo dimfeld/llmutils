@@ -284,4 +284,28 @@ describe('rmplan agent integration (execution summary)', () => {
     expect(summary).toMatch(/✖/); // failure marker in steps
     expect(summary).toContain('executor boom');
   });
+
+  test('does not write a summary file if plan parsing fails early', async () => {
+    const badPlanPath = path.join(tasksDir, 'bad.yml');
+    await fs.writeFile(badPlanPath, 'this: is: not: valid: yaml: [', 'utf8');
+
+    // Ensure file is tracked so any accidental writes would be visible
+    await Bun.spawn(['git', 'add', badPlanPath], { cwd: tempDir }).exited;
+    await Bun.spawn(['git', 'commit', '-m', 'Add bad plan'], { cwd: tempDir }).exited;
+
+    ({ rmplanAgent } = await import('./agent.js'));
+
+    const summaryOut = path.join(tempDir, 'out', 'should-not-exist.txt');
+    await expect(
+      rmplanAgent(
+        badPlanPath,
+        { executor: 'codex-cli', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
+        { config: configPath }
+      )
+    ).rejects.toBeInstanceOf(Error);
+
+    // Since the plan failed to parse before summary collection initialized,
+    // no summary file should be present
+    await expect(fs.access(summaryOut)).rejects.toBeTruthy();
+  });
 });
