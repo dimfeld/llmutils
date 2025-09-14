@@ -5,7 +5,8 @@ import { SummaryCollector } from './collector.js';
 const moduleMocker = new ModuleMocker(import.meta);
 
 const mockGetGitRoot = mock(async (base?: string) => '/tmp/repo');
-const mockGetChangedFilesOnBranch = mock(async (_root?: string) => [
+const mockGetCurrentCommitHash = mock(async (_root?: string) => 'abc123');
+const mockGetChangedFilesBetween = mock(async (_root?: string, _from?: string) => [
   'src/file1.ts',
   'src/dir/file2.ts',
 ]);
@@ -14,14 +15,17 @@ describe('SummaryCollector', () => {
   beforeEach(async () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mockGetGitRoot,
-      getChangedFilesOnBranch: mockGetChangedFilesOnBranch,
+      getChangedFilesOnBranch: mock(async () => []),
+      getCurrentCommitHash: mockGetCurrentCommitHash,
+      getChangedFilesBetween: mockGetChangedFilesBetween,
     }));
   });
 
   afterEach(() => {
     moduleMocker.clear();
     mockGetGitRoot.mockReset();
-    mockGetChangedFilesOnBranch.mockReset();
+    mockGetCurrentCommitHash.mockReset();
+    mockGetChangedFilesBetween.mockReset();
   });
 
   it('initializes and records timing, steps, and errors', async () => {
@@ -94,7 +98,7 @@ describe('SummaryCollector', () => {
   });
 
   it('does not throw on git errors and records an error', async () => {
-    mockGetChangedFilesOnBranch.mockImplementationOnce(async () => {
+    mockGetGitRoot.mockImplementationOnce(async () => {
       throw new Error('git failed');
     });
 

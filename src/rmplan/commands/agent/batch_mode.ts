@@ -124,6 +124,18 @@ export async function executeBatchMode(
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
+            executorType:
+              (executorName ?? '') === 'claude-code'
+                ? 'interactive'
+                : (executorName ?? '') === 'codex-cli'
+                ? 'cli'
+                : undefined,
+            executorPhase:
+              (executorName ?? '') === 'claude-code'
+                ? 'orchestrator'
+                : (executorName ?? '') === 'codex-cli'
+                ? 'implementer|tester|reviewer'
+                : undefined,
             success: true,
             output: typeof output === 'string' ? output : undefined,
             startedAt: new Date(start).toISOString(),
@@ -140,6 +152,18 @@ export async function executeBatchMode(
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
+            executorType:
+              (executorName ?? '') === 'claude-code'
+                ? 'interactive'
+                : (executorName ?? '') === 'codex-cli'
+                ? 'cli'
+                : undefined,
+            executorPhase:
+              (executorName ?? '') === 'claude-code'
+                ? 'orchestrator'
+                : (executorName ?? '') === 'codex-cli'
+                ? 'implementer|tester|reviewer'
+                : undefined,
             success: false,
             errorMessage: String(err instanceof Error ? err.message : err),
             iteration,

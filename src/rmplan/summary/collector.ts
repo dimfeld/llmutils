@@ -1,4 +1,9 @@
-import { getGitRoot, getChangedFilesOnBranch } from '../../common/git.js';
+import {
+  getGitRoot,
+  getChangedFilesOnBranch,
+  getCurrentCommitHash,
+  getChangedFilesBetween,
+} from '../../common/git.js';
 import { debugLog } from '../../logging.js';
 import type {
   ExecutionSummary,
@@ -35,11 +40,22 @@ export class SummaryCollector {
   private startedAt: string = new Date().toISOString();
   private endedAt?: string;
   private batchIterations?: number;
+  private baselineRevision?: string | null;
 
   constructor(private init: SummaryCollectorInit) {}
 
   recordExecutionStart(): void {
     this.startedAt = new Date().toISOString();
+    // Capture baseline revision for accurate change tracking
+    // Best-effort: failures are ignored and tracked when computing changes
+    getGitRoot()
+      .then((root) => getCurrentCommitHash(root))
+      .then((rev) => {
+        this.baselineRevision = rev;
+      })
+      .catch(() => {
+        this.baselineRevision = undefined;
+      });
   }
 
   recordExecutionEnd(): void {
@@ -118,7 +134,21 @@ export class SummaryCollector {
   async trackFileChanges(baseDir?: string): Promise<void> {
     try {
       const gitRoot = await getGitRoot(baseDir);
-      const files = await getChangedFilesOnBranch(gitRoot);
+      // Ensure baseline exists; compute on-demand if needed
+      if (!this.baselineRevision) {
+        try {
+          this.baselineRevision = await getCurrentCommitHash(gitRoot);
+        } catch {
+          // ignore; will fall back below
+        }
+      }
+      let files: string[];
+      if (this.baselineRevision) {
+        files = await getChangedFilesBetween(gitRoot, this.baselineRevision);
+      } else {
+        // Fallback to previous behavior when baseline not available
+        files = await getChangedFilesOnBranch(gitRoot);
+      }
       for (const f of files) this.changedFiles.add(f);
     } catch (e) {
       debugLog('SummaryCollector.trackFileChanges error: %o', e);

@@ -24,6 +24,10 @@ export interface StepResult {
   title: string;
   /** Name of the executor that ran this step */
   executor: string;
+  /** Optional executor type (e.g., 'interactive', 'cli') */
+  executorType?: string;
+  /** Optional executor phase label(s) (e.g., 'orchestrator' or 'implementer|tester|reviewer') */
+  executorPhase?: string | string[];
   /** Whether the step finished without throwing from the executor */
   success: boolean;
   /** Optional error message when success is false */

@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { table } from 'table';
-import { boldMarkdownHeaders, log, warn } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import type { ExecutionSummary, StepResult } from './types.js';
 
 function formatDuration(ms?: number): string {
@@ -58,7 +58,7 @@ export function formatExecutionSummaryToLines(summary: ExecutionSummary): string
   const lines: string[] = [];
   const statusColor = summary.metadata.failedSteps > 0 ? chalk.red : chalk.green;
   const title = statusColor(`Execution Summary: ${summary.planTitle}`);
-  lines.push(boldMarkdownHeaders(`\n# ${title}`));
+  lines.push(`\n${chalk.bold(title)}`);
   lines.push(divider());
 
   const tableData = [
@@ -145,9 +145,7 @@ export async function writeOrDisplaySummary(
     return displayExecutionSummary(summary);
   }
   try {
-    const content =
-      `${summary.planTitle}\n${'-'.repeat(60)}\n` +
-      formatExecutionSummaryToLines(summary).join('\n');
+    const content = formatExecutionSummaryToLines(summary).join('\n');
     await Bun.write(filePath, content);
     log(chalk.green(`Execution summary written to: ${filePath}`));
   } catch (e) {

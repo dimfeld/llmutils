@@ -416,3 +416,96 @@ export async function getChangedFilesOnBranch(
 
   return changedFiles;
 }
+
+/**
+ * Gets the list of changed files between two revisions. If toRef is omitted,
+ * compares fromRef to the working copy.
+ */
+export async function getChangedFilesBetween(
+  gitRoot: string,
+  fromRef: string,
+  toRef?: string,
+  options: { excludePaths?: string[] } = {}
+): Promise<string[]> {
+  const excludeFiles = [
+    'pnpm-lock.yaml',
+    'bun.lockb',
+    'package-lock.json',
+    'bun.lock',
+    'yarn.lock',
+    'Cargo.lock',
+    '.gitignore',
+    '.gitattributes',
+    '.editorconfig',
+    '.prettierrc',
+    '.prettierignore',
+    '.eslintrc',
+    '.eslintignore',
+    'tsconfig.json',
+    'tsconfig.build.json',
+    '.vscode/settings.json',
+    '.idea/**/*',
+    '*.log',
+    '*.tmp',
+    '.DS_Store',
+    'Thumbs.db',
+  ];
+
+  let changedFiles: string[] = [];
+  if (await getUsingJj()) {
+    const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
+      '&'
+    );
+    const to = toRef ?? '@';
+    const summ = await $`jj diff --from ${fromRef} --to ${to} --summary ${exclude}`
+      .cwd(gitRoot)
+      .nothrow()
+      .text();
+    changedFiles = summ
+      .split('\n')
+      .map((line) => {
+        line = line.trim();
+        if (!line || line.startsWith('D')) return '';
+        if (line.startsWith('R')) return parseJjRename(line);
+        return line.slice(2);
+      })
+      .filter(Boolean);
+  } else {
+    const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
+    let summ: string;
+    if (toRef) {
+      summ = await $`git diff --name-only ${fromRef} ${toRef} ${exclude}`
+        .cwd(gitRoot)
+        .nothrow()
+        .text();
+    } else {
+      // Compare fromRef to working tree
+      summ = await $`git diff --name-only ${fromRef} ${exclude}`
+        .cwd(gitRoot)
+        .nothrow()
+        .text();
+    }
+    changedFiles = summ
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  // Filter out files based on excludePaths
+  const { excludePaths = [] } = options;
+  if (excludePaths.length > 0) {
+    changedFiles = changedFiles.filter((file) => {
+      const normalizedFile = path.normalize(file);
+      return !excludePaths.some((excludePath) => {
+        const normalizedExclude = path.normalize(excludePath);
+        return (
+          normalizedFile.startsWith(normalizedExclude + path.sep) ||
+          normalizedFile === normalizedExclude ||
+          normalizedFile.startsWith(normalizedExclude + '/')
+        );
+      });
+    });
+  }
+
+  return changedFiles;
+}

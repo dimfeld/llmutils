@@ -522,6 +522,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
+              executorType: executorName === 'claude-code' ? 'interactive' : executorName === 'codex-cli' ? 'cli' : undefined,
+              executorPhase: executorName === 'claude-code' ? 'orchestrator' : executorName === 'codex-cli' ? 'implementer|tester|reviewer' : undefined,
               success: true,
               output: typeof output === 'string' ? output : undefined,
               startedAt: new Date(start).toISOString(),
@@ -536,6 +538,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
+              executorType: executorName === 'claude-code' ? 'interactive' : executorName === 'codex-cli' ? 'cli' : undefined,
+              executorPhase: executorName === 'claude-code' ? 'orchestrator' : executorName === 'codex-cli' ? 'implementer|tester|reviewer' : undefined,
               success: false,
               errorMessage: String(err instanceof Error ? err.message : err),
             });
@@ -657,6 +661,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         if (exitRes !== 0) {
           error(`rmfilter exited with code ${exitRes}`);
           hasError = true;
+          if (summaryEnabled) {
+            const end = Date.now();
+            summaryCollector.addError(`rmfilter exited with code ${exitRes}`);
+            summaryCollector.addStepResult({
+              title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
+              executor: executorName,
+              // Treat as CLI tool failure before executor runs
+              success: false,
+              errorMessage: `rmfilter exited with code ${exitRes}`,
+              endedAt: new Date(end).toISOString(),
+            });
+          }
           break;
         }
         contextContent = await Bun.file(rmfilterOutputPath).text();
@@ -693,6 +709,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
+            executorType: executorName === 'claude-code' ? 'interactive' : executorName === 'codex-cli' ? 'cli' : undefined,
+            executorPhase: executorName === 'claude-code' ? 'orchestrator' : executorName === 'codex-cli' ? 'implementer|tester|reviewer' : undefined,
             success: true,
             output: typeof output === 'string' ? output : undefined,
             startedAt: new Date(start).toISOString(),
@@ -707,6 +725,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
+            executorType: executorName === 'claude-code' ? 'interactive' : executorName === 'codex-cli' ? 'cli' : undefined,
+            executorPhase: executorName === 'claude-code' ? 'orchestrator' : executorName === 'codex-cli' ? 'implementer|tester|reviewer' : undefined,
             success: false,
             errorMessage: String(err instanceof Error ? err.message : err),
           });
