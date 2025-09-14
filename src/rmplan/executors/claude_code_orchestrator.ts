@@ -28,7 +28,9 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
   const baseArgs = ['claude'];
 
   // Add model if specified
+  let hasModel = false;
   if (model?.includes('haiku') || model?.includes('sonnet') || model?.includes('opus')) {
+    hasModel = true;
     baseArgs.push('--model', model);
   }
 
@@ -88,7 +90,13 @@ export async function runClaudeCodeGeneration(config: ClaudeCodeGenerationConfig
   // Step 1: Execute with planning prompt
   log(chalk.bold.blue('### Step 1: Planning Phase'));
 
-  const planningArgs = [...baseArgs, '--print', planningPrompt];
+  const planningArgs = [
+    ...baseArgs,
+    // run first step with Opus, if not otherwise specified
+    ...(hasModel ? [] : ['--model', 'opus']),
+    '--print',
+    planningPrompt,
+  ];
   const splitter = createLineSplitter();
 
   const planningResult = await spawnAndLogOutput(planningArgs, {
