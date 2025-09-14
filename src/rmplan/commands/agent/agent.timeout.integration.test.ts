@@ -123,4 +123,3 @@ describe('rmplan agent integration (timeout simulation)', () => {
     expect(content).toContain('permission prompt timeout');
   });
 });
-
