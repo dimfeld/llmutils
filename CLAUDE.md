@@ -127,8 +127,6 @@ The codebase is organized into several main modules with improved modularity and
    apply-llm-edits --dry-run
    ```
 
-```
-
 ## Execution Summaries
 
 rmplan run and rmplan agent display a consolidated execution summary at the end of a run. The summary aggregates key outputs from the executor(s), step status, file changes, and timing info.
@@ -177,7 +175,7 @@ File Changes
 • tasks/123-some-plan.yml
 • src/feature/new.ts
 
-````
+```
 
 - Notes
 - Summaries are truncated to keep memory usage reasonable (collector truncates large outputs; display may clamp further).
