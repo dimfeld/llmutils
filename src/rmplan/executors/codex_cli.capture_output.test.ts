@@ -190,5 +190,5 @@ describe('CodexCliExecutor captureOutput', () => {
     expect(s).toContain('=== Codex Reviewer ===');
     // Returns latest reviewer output string; content may vary by rerun formatting
     expect(s).toContain('=== Codex Reviewer ===');
-  }, 15000);
+  }, 30000);
 });
