@@ -4,6 +4,7 @@
 import { select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import * as path from 'path';
+import * as fs from 'node:fs/promises';
 import { getGitRoot } from '../../../common/git.js';
 import { logSpawn } from '../../../common/process.js';
 import {
@@ -226,10 +227,12 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
 
       // Copy the plan file to the workspace
-      const workspacePlanFile = path.join(workspace.path, currentPlanFile);
+      // Copy the plan file into the workspace root with the same filename
+      const workspacePlanFile = path.join(workspace.path, path.basename(currentPlanFile));
       try {
         log(`Copying plan file to workspace: ${workspacePlanFile}`);
-        await Bun.write(workspacePlanFile, await Bun.file(currentPlanFile).text());
+        const srcContent = await fs.readFile(currentPlanFile, 'utf8');
+        await fs.writeFile(workspacePlanFile, srcContent, 'utf8');
 
         // Update the planFile to use the copy in the workspace
         currentPlanFile = workspacePlanFile;
@@ -785,7 +788,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         if (promptFilePath && executorStepOptions.rmfilter) {
           // Only unlink if rmfilter was supposed to use it
           try {
-            await Bun.file(promptFilePath).unlink();
+            await fs.unlink(promptFilePath);
           } catch (e) {
             warn('Warning: failed to clean up temp file:', promptFilePath);
           }
