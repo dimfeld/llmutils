@@ -51,23 +51,38 @@ export class CodexCliExecutor implements Executor {
   }
 
   async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+    // Accumulate every piece of output across all steps/iterations
+    type AgentType = 'implementer' | 'tester' | 'reviewer' | 'fixer';
+    const events: Array<{ type: AgentType; message: string }> = [];
+
     // Helper to optionally return a combined labeled output summary when captureOutput is enabled
-    const buildCombinedOutput = (parts: {
-      implementer?: string;
-      tester?: string;
-      reviewer?: string;
-    }) => {
+    const buildAggregatedOutput = () => {
       if (planInfo.captureOutput !== 'all' && planInfo.captureOutput !== 'result') return undefined;
       const sections: string[] = [];
-      if (parts.implementer) {
-        sections.push(`=== Codex Implementer ===\n${parts.implementer.trim()}\n`);
+      const counters: Record<AgentType, number> = {
+        implementer: 0,
+        tester: 0,
+        reviewer: 0,
+        fixer: 0,
+      };
+
+      for (const e of events) {
+        counters[e.type]++;
+        const n = counters[e.type];
+        // Keep first Reviewer label backward-compatible; number subsequent repeats for all types
+        let label: string;
+        if (e.type === 'implementer') {
+          label = n === 1 ? '=== Codex Implementer ===' : `=== Codex Implementer #${n} ===`;
+        } else if (e.type === 'tester') {
+          label = n === 1 ? '=== Codex Tester ===' : `=== Codex Tester #${n} ===`;
+        } else if (e.type === 'reviewer') {
+          label = n === 1 ? '=== Codex Reviewer ===' : `=== Codex Reviewer #${n} ===`;
+        } else {
+          label = `=== Codex Fixer #${n} ===`;
+        }
+        sections.push(`${label}\n${e.message.trim()}\n`);
       }
-      if (parts.tester) {
-        sections.push(`=== Codex Tester ===\n${parts.tester.trim()}\n`);
-      }
-      if (parts.reviewer) {
-        sections.push(`=== Codex Reviewer ===\n${parts.reviewer.trim()}\n`);
-      }
+
       return sections.join('\n');
     };
     // Analyze plan file to understand completed vs pending tasks
@@ -92,6 +107,7 @@ export class CodexCliExecutor implements Executor {
     // Execute implementer step and capture its final agent message
     log('Running implementer step...');
     const implementerOutput = await this.executeCodexStep(implementer.prompt, gitRoot);
+    events.push({ type: 'implementer', message: implementerOutput });
     log('Implementer output captured.');
 
     try {
@@ -120,6 +136,7 @@ export class CodexCliExecutor implements Executor {
       // Execute tester step
       log('Running tester step...');
       const testerOutput = await this.executeCodexStep(tester.prompt, gitRoot);
+      events.push({ type: 'tester', message: testerOutput });
       log('Tester output captured.');
 
       // Build reviewer context with implementer + tester outputs and task context
@@ -140,18 +157,15 @@ export class CodexCliExecutor implements Executor {
       // Execute reviewer step
       log('Running reviewer step...');
       const reviewerOutput = await this.executeCodexStep(reviewer.prompt, gitRoot);
+      events.push({ type: 'reviewer', message: reviewerOutput });
       log('Reviewer output captured.');
 
       // Parse and log verdict
       const verdict = this.parseReviewerVerdict(reviewerOutput);
       if (verdict === 'ACCEPTABLE') {
         log('Review verdict: ACCEPTABLE');
-        const combined = buildCombinedOutput({
-          implementer: implementerOutput,
-          tester: testerOutput,
-          reviewer: reviewerOutput,
-        });
-        if (combined != null) return combined;
+        const aggregated = buildAggregatedOutput();
+        if (aggregated != null) return aggregated;
         return;
       } else if (verdict === 'NEEDS_FIXES') {
         log('Review verdict: NEEDS_FIXES');
@@ -167,6 +181,8 @@ export class CodexCliExecutor implements Executor {
 
         if (!analysis.needs_fixes) {
           log('Review analysis: Issues are out-of-scope or non-blocking. Exiting without fixes.');
+          const aggregated = buildAggregatedOutput();
+          if (aggregated != null) return aggregated;
           return;
         }
 
@@ -193,6 +209,7 @@ export class CodexCliExecutor implements Executor {
 
           const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot);
           lastFixerOutput = fixerOutput;
+          events.push({ type: 'fixer', message: fixerOutput });
           log('Fixer output captured. Re-running reviewer...');
 
           // Re-run reviewer with updated context including fixer output
@@ -209,6 +226,7 @@ export class CodexCliExecutor implements Executor {
 
           const rerunReviewerOutput = await this.executeCodexStep(rerunReviewerContext, gitRoot);
           finalReviewerOutput = rerunReviewerOutput;
+          events.push({ type: 'reviewer', message: rerunReviewerOutput });
 
           const verdict = this.parseReviewerVerdict(reviewerOutput);
 
@@ -225,12 +243,8 @@ export class CodexCliExecutor implements Executor {
 
           if (!newAnalysis.needs_fixes) {
             log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
-            const combined = buildCombinedOutput({
-              implementer: implementerOutput,
-              tester: testerOutput,
-              reviewer: finalReviewerOutput,
-            });
-            if (combined != null) return combined;
+            const aggregated = buildAggregatedOutput();
+            if (aggregated != null) return aggregated;
             return;
           }
 
@@ -248,20 +262,12 @@ export class CodexCliExecutor implements Executor {
           'Maximum fix iterations reached (5) and reviewer still reports issues. Exiting with warnings.'
         );
         // Even if still needs fixes, provide the latest reviewer output when capturing
-        const combined = buildCombinedOutput({
-          implementer: implementerOutput,
-          tester: testerOutput,
-          reviewer: finalReviewerOutput,
-        });
-        if (combined != null) return combined;
+        const aggregated = buildAggregatedOutput();
+        if (aggregated != null) return aggregated;
       } else {
         error('Could not determine review verdict from reviewer output. Treating as NEEDS_FIXES.');
-        const combined = buildCombinedOutput({
-          implementer: implementerOutput,
-          tester: testerOutput,
-          reviewer: reviewerOutput,
-        });
-        if (combined != null) return combined;
+        const aggregated = buildAggregatedOutput();
+        if (aggregated != null) return aggregated;
         return;
       }
     } finally {

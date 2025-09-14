@@ -49,13 +49,8 @@ describe('rmplan agent integration (execution summaries)', () => {
     await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
       getCurrentCommitHash: mock(async () => 'baseline-commit'),
-      getChangedFilesBetween: mock(async () => [
-        'tasks/123-test-plan.yml',
-        'src/example.ts',
-      ]),
-      getChangedFilesOnBranch: mock(async () => [
-        'tasks/123-test-plan.yml',
-      ]),
+      getChangedFilesBetween: mock(async () => ['tasks/123-test-plan.yml', 'src/example.ts']),
+      getChangedFilesOnBranch: mock(async () => ['tasks/123-test-plan.yml']),
     }));
 
     // Avoid actually committing in batch mode
@@ -113,9 +108,7 @@ describe('rmplan agent integration (execution summaries)', () => {
           title: 'Task 1',
           description: 'Basic task description',
           done: false,
-          steps: [
-            { prompt: 'Do a thing', done: false },
-          ],
+          steps: [{ prompt: 'Do a thing', done: false }],
         },
       ],
     };
@@ -138,7 +131,14 @@ describe('rmplan agent integration (execution summaries)', () => {
 
     await rmplanAgent(
       planPath,
-      { serialTasks: true, nonInteractive: true, log: false, executor: 'claude_code', summaryFile, steps: '1' },
+      {
+        serialTasks: true,
+        nonInteractive: true,
+        log: false,
+        executor: 'claude_code',
+        summaryFile,
+        steps: '1',
+      },
       { config: configPath }
     );
 
@@ -163,9 +163,7 @@ describe('rmplan agent integration (execution summaries)', () => {
           title: 'Task 1',
           description: 'Implement and test task',
           done: false,
-          steps: [
-            { prompt: 'Implement and test', done: false },
-          ],
+          steps: [{ prompt: 'Implement and test', done: false }],
         },
       ],
     };
@@ -189,7 +187,14 @@ describe('rmplan agent integration (execution summaries)', () => {
     await expect(
       rmplanAgent(
         planPath,
-        { serialTasks: true, nonInteractive: true, log: false, executor: 'codex_cli', summaryFile, steps: '1' },
+        {
+          serialTasks: true,
+          nonInteractive: true,
+          log: false,
+          executor: 'codex_cli',
+          summaryFile,
+          steps: '1',
+        },
         { config: configPath }
       )
     ).rejects.toThrow('Agent stopped due to error.');
@@ -205,13 +210,15 @@ describe('rmplan agent integration (execution summaries)', () => {
     await moduleMocker.mock('../../executors/index.js', () => ({
       buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({
         filePathPrefix: '@/',
-        execute: mock(async () => [
-          '=== Codex Implementer ===',
-          'Implementation details here',
-          '',
-          '=== Codex Reviewer ===',
-          'ACCEPTABLE',
-        ].join('\n')),
+        execute: mock(async () =>
+          [
+            '=== Codex Implementer ===',
+            'Implementation details here',
+            '',
+            '=== Codex Reviewer ===',
+            'ACCEPTABLE',
+          ].join('\n')
+        ),
         prepareStepOptions: mock(() => ({})),
       })),
       defaultModelForExecutor: mock(() => 'mock-model'),
@@ -223,7 +230,14 @@ describe('rmplan agent integration (execution summaries)', () => {
 
     await rmplanAgent(
       planPath,
-      { serialTasks: true, nonInteractive: true, log: false, executor: 'codex_cli', summaryFile: summaryFile2, steps: '1' },
+      {
+        serialTasks: true,
+        nonInteractive: true,
+        log: false,
+        executor: 'codex_cli',
+        summaryFile: summaryFile2,
+        steps: '1',
+      },
       { config: configPath }
     );
 
@@ -283,7 +297,17 @@ describe('rmplan agent integration (execution summaries)', () => {
     ({ rmplanAgent } = await import('./agent.js'));
     const summaryFile = path.join(tempDir, 'out', 'batch-summary.txt');
 
-    await rmplanAgent(planPath, { serialTasks: false, nonInteractive: true, log: false, executor: 'claude_code', summaryFile }, { config: configPath });
+    await rmplanAgent(
+      planPath,
+      {
+        serialTasks: false,
+        nonInteractive: true,
+        log: false,
+        executor: 'claude_code',
+        summaryFile,
+      },
+      { config: configPath }
+    );
 
     const content = await fs.readFile(summaryFile, 'utf8');
     expect(content).toContain('Execution Summary: Batch Mode Plan');
