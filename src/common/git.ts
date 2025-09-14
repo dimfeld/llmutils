@@ -298,7 +298,7 @@ export async function getTrunkBranch(gitRoot: string): Promise<string> {
         .split('\n')
         .map((l) => l.trim())
         .filter(Boolean);
-      const names = lines.map((l) => l.split(/\s+/)[0]).filter((n) => !!n) as string[];
+      const names = lines.map((l) => l.split(/\s+/)[0]).filter((n) => !!n);
       const candidates = ['main', 'master', 'trunk', 'default'];
       for (const c of candidates) {
         if (names.includes(c)) return c;
