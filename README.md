@@ -525,6 +525,8 @@ rmplan agent my-feature-123 --steps 3
 
 - Flags: use `--no-summary` to disable; `--summary-file <path>` to write to a file instead of stdout.
 - Env: `RMPLAN_SUMMARY_ENABLED=0` disables by default (CLI flags take precedence).
+- Early validation: if a plan fails schema validation before execution starts, no summary is produced.
+- Executors: Claude Code and Codex CLI have tailored parsing; other executors contribute raw text (or none) and are still listed.
 
 Example (abbreviated):
 
@@ -546,6 +548,23 @@ Step Results
 File Changes
 • tasks/123-some-plan.yml
 • src/feature/new.ts
+```
+
+Error example (abbreviated):
+
+```text
+Execution Summary: Plan With Failures (1/2 • 50%)
+┌───────────────┬────────────────┐
+│ Steps Executed│ 2              │
+│ Failed Steps  │ 1              │
+└───────────────┴────────────────┘
+
+Step Results
+✔ Step 1 (claude-code) [#1] 12s
+…
+
+✖ Step 2 (claude-code) [#2] 23s
+Error: executor boom
 ```
 
 See CLAUDE.md for more details about what’s captured and configuration options.
