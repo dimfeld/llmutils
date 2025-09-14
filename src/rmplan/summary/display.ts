@@ -84,7 +84,8 @@ function summarizeSteps(steps: StepResult[]): string[] {
 }
 
 /**
- * Writes a formatted execution summary to the logger (stdout).
+ * Formats an execution summary into displayable lines.
+ * The caller is responsible for writing these lines to stdout or a file.
  */
 export function formatExecutionSummaryToLines(summary: ExecutionSummary): string[] {
   const lines: string[] = [];
