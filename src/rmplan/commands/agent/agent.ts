@@ -552,19 +552,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           error('Task execution failed:', err);
           hasError = true;
           if (summaryEnabled) {
+            const execNameNorm = (executorName ?? '')
+              .toLowerCase()
+              .replace(/[_\s]+/g, '-');
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
               executorType:
-                executorName === 'claude-code'
-                  ? 'interactive'
-                  : executorName === 'codex-cli'
-                    ? 'cli'
-                    : undefined,
+                execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
               executorPhase:
-                executorName === 'claude-code'
+                execNameNorm === 'claude-code'
                   ? 'orchestrator'
-                  : executorName === 'codex-cli'
+                  : execNameNorm === 'codex-cli'
                     ? 'implementer|tester|reviewer'
                     : undefined,
               success: false,
@@ -766,19 +765,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         error('Execution step failed:', err);
         hasError = true;
         if (summaryEnabled) {
+          const execNameNorm = (executorName ?? '')
+            .toLowerCase()
+            .replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
             executorType:
-              executorName === 'claude-code'
-                ? 'interactive'
-                : executorName === 'codex-cli'
-                  ? 'cli'
-                  : undefined,
+              execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
             executorPhase:
-              executorName === 'claude-code'
+              execNameNorm === 'claude-code'
                 ? 'orchestrator'
-                : executorName === 'codex-cli'
+                : execNameNorm === 'codex-cli'
                   ? 'implementer|tester|reviewer'
                   : undefined,
             success: false,

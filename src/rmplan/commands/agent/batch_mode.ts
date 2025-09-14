@@ -156,19 +156,18 @@ export async function executeBatchMode(
         hasError = true;
         iteration += 1;
         if (summaryCollector) {
+          const execNameNorm = (executorName ?? '')
+            .toLowerCase()
+            .replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
             executorType:
-              (executorName ?? '') === 'claude-code'
-                ? 'interactive'
-                : (executorName ?? '') === 'codex-cli'
-                  ? 'cli'
-                  : undefined,
+              execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
             executorPhase:
-              (executorName ?? '') === 'claude-code'
+              execNameNorm === 'claude-code'
                 ? 'orchestrator'
-                : (executorName ?? '') === 'codex-cli'
+                : execNameNorm === 'codex-cli'
                   ? 'implementer|tester|reviewer'
                   : undefined,
             success: false,
