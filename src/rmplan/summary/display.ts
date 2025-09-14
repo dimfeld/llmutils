@@ -201,7 +201,7 @@ export async function writeOrDisplaySummary(
     } catch {
       // ignore; we will try to write anyway and fall back on failure
     }
-    await Bun.write(filePath, content);
+    await fs.writeFile(filePath, content, 'utf8');
     log(chalk.green(`Execution summary written to: ${filePath}`));
   } catch (e) {
     warn(
