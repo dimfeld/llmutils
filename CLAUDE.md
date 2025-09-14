@@ -127,6 +127,64 @@ The codebase is organized into several main modules with improved modularity and
    apply-llm-edits --dry-run
    ```
 
+```
+
+## Execution Summaries
+
+rmplan run and rmplan agent display a consolidated execution summary at the end of a run. The summary aggregates key outputs from the executor(s), step status, file changes, and timing info.
+
+- What’s captured
+- Final LLM messages for each step
+  - Claude Code: the orchestrator’s final assistant message
+  - Codex CLI: final Implementer/Tester/Reviewer sections combined
+- Step status and duration per step
+- Aggregate stats (completed/failed steps, total duration)
+- Files changed during execution (from the repo root)
+
+- CLI options
+- `--no-summary` disables summary collection and display
+- `--summary-file <path>` writes the summary to a file instead of stdout (parent dirs created automatically)
+
+- Environment
+- `RMPLAN_SUMMARY_ENABLED` enables/disables summaries by default. Set to `0` or `false` to disable; CLI flags still take precedence.
+
+- Example output (abbreviated)
+
+```
+
+Execution Summary: My Plan Title (3/3 • 100%)
+┌───────────────┬──────────────────────────────────────┐
+│ Plan ID │ 123 │
+│ Mode │ serial │
+│ Steps Executed│ 3 │
+│ Failed Steps │ 0 │
+│ Files Changed │ 5 │
+│ Duration │ 1m 12s │
+│ Started │ 2025-09-14 02:10:03 │
+│ Ended │ 2025-09-14 02:11:15 │
+└───────────────┴──────────────────────────────────────┘
+
+Step Results
+───────────────────────────────────────────
+✔ Task 1 (codex-cli) [#1] 12s
+Implementer:
+… final implementation notes …
+Reviewer:
+ACCEPTABLE
+
+File Changes
+───────────────────────────────────────────
+• tasks/123-some-plan.yml
+• src/feature/new.ts
+
+````
+
+- Notes
+- Summaries are truncated to keep memory usage reasonable (collector truncates large outputs; display may clamp further).
+- Batch mode aggregates results across iterations; the metadata includes iteration counts and failed steps.
+- Executors without structured output still contribute raw text.
+- If output capture fails, the summary records the error without failing the run.
+
 ## Configuration Files
 
 The repository uses several configuration files:
@@ -165,9 +223,9 @@ The codebase uses OpenTelemetry for distributed tracing and monitoring:
 - Record events on spans using methods like `recordStateTransition` and `recordError`
 - Always handle cases where spans might be undefined with null checks
 - When importing OpenTelemetry types, use type-only imports:
-  ```typescript
-  import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
-  ```
+```typescript
+import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
+````
 
 ## Type Safety
 
