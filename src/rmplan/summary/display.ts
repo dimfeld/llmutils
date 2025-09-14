@@ -44,76 +44,77 @@ function summarizeSteps(steps: StepResult[]): string[] {
 /**
  * Writes a formatted execution summary to the logger (stdout).
  */
+export function formatExecutionSummaryToLines(summary: ExecutionSummary): string[] {
+  const lines: string[] = [];
+  const statusColor = summary.metadata.failedSteps > 0 ? chalk.red : chalk.green;
+  const title = statusColor(`Execution Summary: ${summary.planTitle}`);
+  lines.push(boldMarkdownHeaders(`\n# ${title}`));
+  lines.push(divider());
+
+  const tableData = [
+    [chalk.bold('Plan ID'), summary.planId],
+    [chalk.bold('Mode'), summary.mode],
+    [chalk.bold('Steps Executed'), String(summary.metadata.totalSteps)],
+    [chalk.bold('Failed Steps'), String(summary.metadata.failedSteps)],
+    [chalk.bold('Files Changed'), String(summary.changedFiles.length)],
+    [chalk.bold('Duration'), formatDuration(summary.durationMs)],
+  ];
+
+  const tableConfig = {
+    border: {
+      topBody: '─',
+      topJoin: '┬',
+      topLeft: '┌',
+      topRight: '┐',
+      bottomBody: '─',
+      bottomJoin: '┴',
+      bottomLeft: '└',
+      bottomRight: '┘',
+      bodyLeft: '│',
+      bodyRight: '│',
+      bodyJoin: '│',
+      joinBody: '─',
+      joinLeft: '├',
+      joinRight: '┤',
+      joinJoin: '┼',
+    },
+  } as const;
+
+  lines.push(table(tableData, tableConfig));
+
+  if (summary.steps.length > 0) {
+    lines.push(chalk.bold.cyan('Step Results'));
+    lines.push(divider());
+    lines.push(...summarizeSteps(summary.steps));
+  }
+
+  lines.push(chalk.bold.cyan('File Changes'));
+  lines.push(divider());
+  if (summary.changedFiles.length === 0) {
+    lines.push(chalk.gray('No changed files detected.'));
+  } else {
+    for (const f of summary.changedFiles) {
+      lines.push(`${chalk.yellow('•')} ${f}`);
+    }
+  }
+
+  if (summary.errors.length > 0) {
+    lines.push(chalk.bold.red('Errors'));
+    lines.push(divider());
+    for (const e of summary.errors) {
+      lines.push(`${chalk.red('•')} ${e}`);
+    }
+  }
+
+  return lines;
+}
+
 export function displayExecutionSummary(summary: ExecutionSummary): void {
   try {
-    const statusColor = summary.metadata.failedSteps > 0 ? chalk.red : chalk.green;
-    const title = statusColor(`Execution Summary: ${summary.planTitle}`);
-    log(boldMarkdownHeaders(`\n# ${title}`));
-    log(divider());
-
-    // Overview table
-    const tableData = [
-      [chalk.bold('Plan ID'), summary.planId],
-      [chalk.bold('Mode'), summary.mode],
-      [chalk.bold('Steps Executed'), String(summary.metadata.totalSteps)],
-      [chalk.bold('Failed Steps'), String(summary.metadata.failedSteps)],
-      [chalk.bold('Files Changed'), String(summary.changedFiles.length)],
-      [chalk.bold('Duration'), formatDuration(summary.durationMs)],
-    ];
-
-    const tableConfig = {
-      border: {
-        topBody: '─',
-        topJoin: '┬',
-        topLeft: '┌',
-        topRight: '┐',
-        bottomBody: '─',
-        bottomJoin: '┴',
-        bottomLeft: '└',
-        bottomRight: '┘',
-        bodyLeft: '│',
-        bodyRight: '│',
-        bodyJoin: '│',
-        joinBody: '─',
-        joinLeft: '├',
-        joinRight: '┤',
-        joinJoin: '┼',
-      },
-    } as const;
-
-    log(table(tableData, tableConfig));
-
-    // Steps
-    if (summary.steps.length > 0) {
-      log(chalk.bold.cyan('Step Results'));
-      log(divider());
-      for (const line of summarizeSteps(summary.steps)) {
-        log(line);
-      }
-    }
-
-    // Files
-    log(chalk.bold.cyan('File Changes'));
-    log(divider());
-    if (summary.changedFiles.length === 0) {
-      log(chalk.gray('No changed files detected.'));
-    } else {
-      for (const f of summary.changedFiles) {
-        log(`${chalk.yellow('•')} ${f}`);
-      }
-    }
-
-    // Errors
-    if (summary.errors.length > 0) {
-      log(chalk.bold.red('Errors'));
-      log(divider());
-      for (const e of summary.errors) {
-        log(`${chalk.red('•')} ${e}`);
-      }
+    for (const line of formatExecutionSummaryToLines(summary)) {
+      log(line);
     }
   } catch (e) {
-    // Rendering errors should never break execution
     log(chalk.yellow(`Warning: Failed to display summary: ${e instanceof Error ? e.message : String(e)}`));
   }
 }
-
