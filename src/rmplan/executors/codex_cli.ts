@@ -51,6 +51,25 @@ export class CodexCliExecutor implements Executor {
   }
 
   async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+    // Helper to optionally return a combined labeled output summary when captureOutput is enabled
+    const buildCombinedOutput = (parts: {
+      implementer?: string;
+      tester?: string;
+      reviewer?: string;
+    }) => {
+      if (planInfo.captureOutput !== 'all' && planInfo.captureOutput !== 'result') return undefined;
+      const sections: string[] = [];
+      if (parts.implementer) {
+        sections.push(`=== Codex Implementer ===\n${parts.implementer.trim()}\n`);
+      }
+      if (parts.tester) {
+        sections.push(`=== Codex Tester ===\n${parts.tester.trim()}\n`);
+      }
+      if (parts.reviewer) {
+        sections.push(`=== Codex Reviewer ===\n${parts.reviewer.trim()}\n`);
+      }
+      return sections.join('\n');
+    };
     // Analyze plan file to understand completed vs pending tasks
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
     const planData = await readPlanFile(planInfo.planFilePath);
@@ -127,6 +146,12 @@ export class CodexCliExecutor implements Executor {
       const verdict = this.parseReviewerVerdict(reviewerOutput);
       if (verdict === 'ACCEPTABLE') {
         log('Review verdict: ACCEPTABLE');
+        const combined = buildCombinedOutput({
+          implementer: implementerOutput,
+          tester: testerOutput,
+          reviewer: reviewerOutput,
+        });
+        if (combined != null) return combined;
         return;
       } else if (verdict === 'NEEDS_FIXES') {
         log('Review verdict: NEEDS_FIXES');
@@ -155,6 +180,7 @@ export class CodexCliExecutor implements Executor {
         // Implement fix-and-review loop (up to 5 iterations)
         const maxFixIterations = 5;
         let lastFixerOutput = '';
+        let finalReviewerOutput = reviewerOutput;
         for (let iter = 1; iter <= maxFixIterations; iter++) {
           log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
 
@@ -182,6 +208,7 @@ export class CodexCliExecutor implements Executor {
           );
 
           const rerunReviewerOutput = await this.executeCodexStep(rerunReviewerContext, gitRoot);
+          finalReviewerOutput = rerunReviewerOutput;
           const newAnalysis = await analyzeReviewFeedback({
             reviewerOutput: rerunReviewerOutput,
             completedTasks: initiallyCompleted.map((t) => t.title),
@@ -192,6 +219,12 @@ export class CodexCliExecutor implements Executor {
 
           if (!newAnalysis.needs_fixes) {
             log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
+            const combined = buildCombinedOutput({
+              implementer: implementerOutput,
+              tester: testerOutput,
+              reviewer: finalReviewerOutput,
+            });
+            if (combined != null) return combined;
             return;
           }
 
@@ -208,8 +241,21 @@ export class CodexCliExecutor implements Executor {
         warn(
           'Maximum fix iterations reached (5) and reviewer still reports issues. Exiting with warnings.'
         );
+        // Even if still needs fixes, provide the latest reviewer output when capturing
+        const combined = buildCombinedOutput({
+          implementer: implementerOutput,
+          tester: testerOutput,
+          reviewer: finalReviewerOutput,
+        });
+        if (combined != null) return combined;
       } else {
         error('Could not determine review verdict from reviewer output. Treating as NEEDS_FIXES.');
+        const combined = buildCombinedOutput({
+          implementer: implementerOutput,
+          tester: testerOutput,
+          reviewer: reviewerOutput,
+        });
+        if (combined != null) return combined;
         return;
       }
     } finally {
