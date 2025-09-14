@@ -144,6 +144,7 @@ export async function executeBatchMode(
             errorMessage: String(err instanceof Error ? err.message : err),
             iteration,
           });
+          summaryCollector.addError(err);
         }
         break;
       }
@@ -160,6 +161,7 @@ export async function executeBatchMode(
           }
         }
         if (hasError) {
+          if (summaryCollector) summaryCollector.addError('Post-apply command failed');
           break;
         }
       }

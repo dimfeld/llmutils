@@ -143,6 +143,18 @@ describe('rmplanAgent summary options', () => {
         `Execution Summary: ${s.planTitle}`,
         `Steps: ${s.metadata?.totalSteps ?? 0}`,
       ]),
+      writeOrDisplaySummary: mock(async (summary: any, filePath?: string) => {
+        if (!filePath) return;
+        const lines = [
+          `${summary.planTitle}`,
+          '------------------------------------------------------------',
+          ...[
+            `Execution Summary: ${summary.planTitle}`,
+            `Steps: ${summary.metadata?.totalSteps ?? 0}`,
+          ],
+        ];
+        await fs.writeFile(filePath, lines.join('\n'));
+      }),
     }));
 
     await writePlanWithTasks();
@@ -155,7 +167,7 @@ describe('rmplanAgent summary options', () => {
   });
 
   test('does not initialize summary when --no-summary is set', async () => {
-    const options = { 'no-log': true, nonInteractive: true, 'no-summary': true };
+    const options = { log: false, nonInteractive: true, summary: false } as any;
     const globalCliOptions = {};
 
     await rmplanAgent(planFile, options, globalCliOptions);
@@ -168,7 +180,7 @@ describe('rmplanAgent summary options', () => {
   test('env RMPLAN_SUMMARY_ENABLED=false disables summary by default', async () => {
     process.env.RMPLAN_SUMMARY_ENABLED = 'false';
 
-    const options = { 'no-log': true, nonInteractive: true };
+    const options = { log: false, nonInteractive: true } as any;
     const globalCliOptions = {};
 
     await rmplanAgent(planFile, options, globalCliOptions);
@@ -178,7 +190,7 @@ describe('rmplanAgent summary options', () => {
 
   test('writes summary to file when --summary-file is provided', async () => {
     const outPath = path.join(tempDir, 'summary.txt');
-    const options = { 'no-log': true, nonInteractive: true, summaryFile: outPath };
+    const options = { log: false, nonInteractive: true, summaryFile: outPath } as any;
     const globalCliOptions = {};
 
     await rmplanAgent(planFile, options, globalCliOptions);
@@ -193,4 +205,3 @@ describe('rmplanAgent summary options', () => {
     expect(content).toContain('Execution Summary: Test Plan');
   });
 });
-

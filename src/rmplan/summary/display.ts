@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { table } from 'table';
-import { boldMarkdownHeaders, log } from '../../logging.js';
+import { boldMarkdownHeaders, log, warn } from '../../logging.js';
 import type { ExecutionSummary, StepResult } from './types.js';
 
 function formatDuration(ms?: number): string {
@@ -130,5 +130,32 @@ export function displayExecutionSummary(summary: ExecutionSummary): void {
         `Warning: Failed to display summary: ${e instanceof Error ? e.message : String(e)}`
       )
     );
+  }
+}
+
+/**
+ * Write the summary to a file if a path is provided, otherwise display to stdout.
+ * Falls back to display if writing fails.
+ */
+export async function writeOrDisplaySummary(
+  summary: ExecutionSummary,
+  filePath?: string
+): Promise<void> {
+  if (!filePath) {
+    return displayExecutionSummary(summary);
+  }
+  try {
+    const content =
+      `${summary.planTitle}\n${'-'.repeat(60)}\n` +
+      formatExecutionSummaryToLines(summary).join('\n');
+    await Bun.write(filePath, content);
+    log(chalk.green(`Execution summary written to: ${filePath}`));
+  } catch (e) {
+    warn(
+      `Failed to write execution summary to file: ${String(
+        e instanceof Error ? e.message : e
+      )}`
+    );
+    displayExecutionSummary(summary);
   }
 }

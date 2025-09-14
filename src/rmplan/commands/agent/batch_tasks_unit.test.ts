@@ -177,7 +177,7 @@ describe('--serial-tasks flag pass-through tests', () => {
     test('serialTasks combined with logging options', async () => {
       const options = {
         serialTasks: true,
-        'no-log': true,
+        log: false,
         verbose: true,
       };
       const globalCliOptions = {};
@@ -188,7 +188,7 @@ describe('--serial-tasks flag pass-through tests', () => {
 
       const passedOptions = rmplanAgentSpy.mock.calls[0][1];
       expect(passedOptions.serialTasks).toBe(true);
-      expect(passedOptions['no-log']).toBe(true);
+      expect(passedOptions.log).toBe(false);
       expect(passedOptions.verbose).toBe(true);
     });
   });

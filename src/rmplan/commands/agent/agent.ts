@@ -39,7 +39,6 @@ import { executeBatchMode } from './batch_mode.js';
 import { markParentInProgress } from './parent_plans.js';
 import { executeStubPlan } from './stub_plan.js';
 import { SummaryCollector } from '../../summary/collector.js';
-import { displayExecutionSummary } from '../../summary/display.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -117,7 +116,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   let currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
   const config = await loadEffectiveConfig(globalCliOptions.config);
 
-  if (!options['no-log']) {
+  if (options.log !== false) {
     const parsed = path.parse(currentPlanFile);
     let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
     openLogFile(logFilePath);
@@ -289,7 +288,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const envSummary = process.env.RMPLAN_SUMMARY_ENABLED;
   const envSummaryEnabled =
     envSummary == null ? true : !(envSummary.toLowerCase() === 'false' || envSummary === '0');
-  const summaryEnabled = options['no-summary'] ? false : envSummaryEnabled;
+  const summaryEnabled = options.summary === false ? false : envSummaryEnabled;
   const summaryFilePath: string | undefined = options.summaryFile;
   const summaryCollector = new SummaryCollector({
     planId: planData.id?.toString() ?? 'unknown',
@@ -336,6 +335,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         });
         log('Successfully prepared the plan with detailed steps.');
       } catch (err) {
+        if (summaryEnabled) summaryCollector.addError(err);
         throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
       }
     } else {
@@ -352,17 +352,20 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           commit: true,
           dryRun: options.dryRun,
         });
-        // Direct branch end: finalize and show summary (no steps collected here)
+      } catch (err) {
+        error('Direct execution failed:', err);
+        if (summaryEnabled) summaryCollector.addError(err);
+        throw err;
+      } finally {
         if (summaryEnabled) {
           summaryCollector.recordExecutionEnd();
           await summaryCollector.trackFileChanges(currentBaseDir);
-          displayExecutionSummary(summaryCollector.getExecutionSummary());
+          const { writeOrDisplaySummary } = await import('../../summary/display.js');
+          await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
         }
-        return;
-      } catch (err) {
-        error('Direct execution failed:', err);
-        throw err;
+        await closeLogFile();
       }
+      return;
     }
   } else if (
     planData.tasks.length > 0 &&
@@ -401,6 +404,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         });
         log('Successfully prepared the plan with detailed steps.');
       } catch (err) {
+        if (summaryEnabled) summaryCollector.addError(err);
         throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
       }
     } else {
@@ -412,43 +416,33 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
   if (!options.serialTasks) {
-    const res = await executeBatchMode(
-      {
-        config,
-        baseDir: currentBaseDir,
-        currentPlanFile,
-        executor,
-        dryRun: options.dryRun,
-        executorName,
-      },
-      summaryEnabled ? summaryCollector : undefined
-    );
-    if (summaryEnabled) {
-      summaryCollector.recordExecutionEnd();
-      await summaryCollector.trackFileChanges(currentBaseDir);
-      const summary = summaryCollector.getExecutionSummary();
-      if (summaryFilePath) {
-        try {
-          const content = `${summary.planTitle}\n${'-'.repeat(60)}\n` +
-            (await (async () => {
-              // Reuse formatting used by displayExecutionSummary
-              const { formatExecutionSummaryToLines } = await import('../../summary/display.js');
-              return formatExecutionSummaryToLines(summary).join('\n');
-            })());
-          await Bun.write(summaryFilePath, content);
-          log(chalk.green(`Execution summary written to: ${summaryFilePath}`));
-        } catch (e) {
-          warn(
-            `Failed to write execution summary to file: ${String(e instanceof Error ? e.message : e)}`
-          );
-          displayExecutionSummary(summary);
-        }
-      } else {
-        displayExecutionSummary(summary);
+    try {
+      const res = await executeBatchMode(
+        {
+          config,
+          baseDir: currentBaseDir,
+          currentPlanFile,
+          executor,
+          dryRun: options.dryRun,
+          executorName,
+        },
+        summaryEnabled ? summaryCollector : undefined
+      );
+      return res;
+    } catch (err) {
+      if (summaryEnabled) summaryCollector.addError(err);
+      throw err;
+    } finally {
+      if (summaryEnabled) {
+        summaryCollector.recordExecutionEnd();
+        const { writeOrDisplaySummary } = await import('../../summary/display.js');
+        await writeOrDisplaySummary(
+          summaryCollector.getExecutionSummary(),
+          summaryFilePath
+        );
       }
+      await closeLogFile();
     }
-    await closeLogFile();
-    return res;
   }
 
   log('Starting agent to execute plan:', currentPlanFile);
@@ -564,6 +558,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             }
           }
           if (hasError) {
+            if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
             break;
           }
         }
@@ -728,6 +723,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           }
         }
         if (hasError) {
+          if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
           break;
         }
       }
@@ -771,25 +767,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     if (summaryEnabled) {
       summaryCollector.recordExecutionEnd();
       await summaryCollector.trackFileChanges(currentBaseDir);
-      const summary = summaryCollector.getExecutionSummary();
-      if (summaryFilePath) {
-        try {
-          const content = `${summary.planTitle}\n${'-'.repeat(60)}\n` +
-            (await (async () => {
-              const { formatExecutionSummaryToLines } = await import('../../summary/display.js');
-              return formatExecutionSummaryToLines(summary).join('\n');
-            })());
-          await Bun.write(summaryFilePath, content);
-          log(chalk.green(`Execution summary written to: ${summaryFilePath}`));
-        } catch (e) {
-          warn(
-            `Failed to write execution summary to file: ${String(e instanceof Error ? e.message : e)}`
-          );
-          displayExecutionSummary(summary);
-        }
-      } else {
-        displayExecutionSummary(summary);
-      }
+      const { writeOrDisplaySummary } = await import('../../summary/display.js');
+      await writeOrDisplaySummary(
+        summaryCollector.getExecutionSummary(),
+        summaryFilePath
+      );
     }
     await closeLogFile();
   }
