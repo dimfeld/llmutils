@@ -219,6 +219,32 @@ describe('rmplanAgent - Execution Summary Integration', () => {
     expect(out).toContain('Looks good to me');
   });
 
+  test('does not write summary when summary is disabled via option', async () => {
+    await createPlanFile(planFile, {
+      id: 150,
+      title: 'No Summary Plan',
+      goal: 'Ensure no summary',
+      details: 'Disable summary flag',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [{ title: 'Simple Task', description: 'No steps' }],
+    });
+
+    const executorExecute = mock(async () => 'ok');
+    await moduleMocker.mock('../../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
+      DEFAULT_EXECUTOR: 'codex-cli',
+      defaultModelForExecutor: mock(() => 'test-model'),
+    }));
+
+    const { rmplanAgent } = await import('./agent.js');
+    const options: any = { serialTasks: true, log: false, executor: 'codex-cli', summary: false };
+    await rmplanAgent(planFile, options, {});
+
+    expect(writeOrDisplaySummarySpy).not.toHaveBeenCalled();
+  });
+
   test('batch mode: aggregates iterations and tracks batchIterations metadata', async () => {
     await createPlanFile(planFile, {
       id: 201,

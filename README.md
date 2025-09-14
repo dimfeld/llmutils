@@ -638,7 +638,7 @@ rmplan validate --verbose
 
 # Validate without auto-fixing (report only)
 rmplan validate --no-fix
-````
+```
 
 When inconsistencies are found, the validate command will automatically update parent plan files and report what was changed, ensuring your project's dependency graph remains consistent and reliable.
 
