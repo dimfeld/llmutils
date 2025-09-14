@@ -1,6 +1,11 @@
 import { getGitRoot, getChangedFilesOnBranch } from '../../common/git.js';
 import { debugLog } from '../../logging.js';
-import type { ExecutionSummary, StepResult, SummaryExecutionMode } from './types.js';
+import type {
+  ExecutionSummary,
+  StepResult,
+  SummaryExecutionMode,
+  NormalizedExecutorOutput,
+} from './types.js';
 
 const MAX_OUTPUT_LENGTH = 10_000_000; // 10MB like review formatter
 const DEFAULT_TRUNCATE_LENGTH = 100_000; // Keep memory reasonable per step for terminal view
@@ -27,6 +32,7 @@ export class SummaryCollector {
   private errors: string[] = [];
   private startedAt: string = new Date().toISOString();
   private endedAt?: string;
+  private batchIterations?: number;
 
   constructor(private init: SummaryCollectorInit) {}
 
@@ -38,16 +44,30 @@ export class SummaryCollector {
     this.endedAt = new Date().toISOString();
   }
 
-  addStepResult(input: Omit<StepResult, 'output'> & { output?: string | null; outputTruncateAt?: number }): void {
+  addStepResult(
+    input: Omit<StepResult, 'output'> & {
+      output?: string | NormalizedExecutorOutput | null;
+      outputTruncateAt?: number;
+    }
+  ): void {
     try {
-      let content: string | undefined;
+      let normalized: NormalizedExecutorOutput | undefined;
       if (typeof input.output === 'string') {
-        // Global safety cap first
         const capped = input.output.length > MAX_OUTPUT_LENGTH
           ? input.output.slice(0, MAX_OUTPUT_LENGTH)
           : input.output;
-        // Then apply a display-oriented truncate
-        content = truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH);
+        normalized = {
+          content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
+        };
+      } else if (input.output && typeof input.output === 'object') {
+        const capped =
+          input.output.content.length > MAX_OUTPUT_LENGTH
+            ? input.output.content.slice(0, MAX_OUTPUT_LENGTH)
+            : input.output.content;
+        normalized = {
+          content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
+          metadata: input.output.metadata,
+        };
       }
 
       const step: StepResult = {
@@ -59,13 +79,23 @@ export class SummaryCollector {
         endedAt: input.endedAt,
         durationMs: input.durationMs,
         iteration: input.iteration,
-        output: content != null ? { content } : undefined,
+        output: normalized,
       };
       this.steps.push(step);
     } catch (e) {
       // Never throw from collector; just log and continue
       debugLog('SummaryCollector.addStepResult error: %o', e);
       this.errors.push(`Failed to add step result: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  setBatchIterations(iterations: number): void {
+    try {
+      if (Number.isFinite(iterations) && iterations > 0) {
+        this.batchIterations = Math.floor(iterations);
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -117,7 +147,7 @@ export class SummaryCollector {
       metadata: {
         totalSteps: this.steps.length,
         failedSteps,
-        // batchIterations is set by batch mode integration where applicable
+        batchIterations: this.batchIterations,
       },
       planInfo: {
         planId: this.init.planId,
@@ -127,4 +157,3 @@ export class SummaryCollector {
     };
   }
 }
-

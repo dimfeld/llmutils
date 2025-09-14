@@ -1,5 +1,5 @@
 import { commitAll } from '../../../common/process.js';
-import { boldMarkdownHeaders, closeLogFile, error, log } from '../../../logging.js';
+import { boldMarkdownHeaders, error, log } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { type RmplanConfig } from '../../configSchema.js';
 import type { Executor } from '../../executors/types.js';
@@ -16,12 +16,14 @@ export async function executeBatchMode({
   executor,
   baseDir,
   dryRun = false,
+  executorName,
 }: {
   currentPlanFile: string;
   config: RmplanConfig;
   executor: Executor;
   baseDir: string;
   dryRun?: boolean;
+  executorName?: string;
 }, summaryCollector?: SummaryCollector) {
   log('Starting batch mode execution:', currentPlanFile);
   try {
@@ -118,7 +120,7 @@ export async function executeBatchMode({
           const end = Date.now();
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
-            executor: (executor as any)?.constructor?.name ?? 'executor',
+            executor: executorName ?? 'executor',
             success: true,
             output: typeof output === 'string' ? output : undefined,
             startedAt: new Date(start).toISOString(),
@@ -134,7 +136,7 @@ export async function executeBatchMode({
         if (summaryCollector) {
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
-            executor: (executor as any)?.constructor?.name ?? 'executor',
+            executor: executorName ?? 'executor',
             success: false,
             errorMessage: String(err instanceof Error ? err.message : err),
             iteration,
@@ -180,15 +182,14 @@ export async function executeBatchMode({
         await commitAll(`Plan complete: ${planData.title}`, baseDir);
         if (summaryCollector) {
           await summaryCollector.trackFileChanges(baseDir);
-          // annotate iterations in metadata on final summary
-          const summary = summaryCollector.getExecutionSummary();
-          summary.metadata.batchIterations = iteration;
+          summaryCollector.setBatchIterations(iteration);
         }
         break;
       } else {
         await commitAll('Finish batch tasks iteration', baseDir);
         if (summaryCollector) {
           await summaryCollector.trackFileChanges(baseDir);
+          summaryCollector.setBatchIterations(iteration);
         }
       }
     }
@@ -197,6 +198,6 @@ export async function executeBatchMode({
       throw new Error('Batch mode stopped due to error.');
     }
   } finally {
-    await closeLogFile();
+    // Logging lifecycle is managed by the caller (rmplanAgent)
   }
 }

@@ -20,6 +20,8 @@ function stepStatusIcon(s: StepResult): string {
   return s.success ? chalk.green('✔') : chalk.red('✖');
 }
 
+const MAX_STEP_DISPLAY_CHARS = 50_000; // Secondary safety clamp per step
+
 function summarizeSteps(steps: StepResult[]): string[] {
   const lines: string[] = [];
   for (const [idx, s] of steps.entries()) {
@@ -29,7 +31,12 @@ function summarizeSteps(steps: StepResult[]): string[] {
       lines.push(chalk.red(`  Error: ${s.errorMessage}`));
     }
     if (s.output?.content) {
-      const excerpt = s.output.content.trim();
+      let excerpt = s.output.content.trim();
+      if (excerpt.length > MAX_STEP_DISPLAY_CHARS) {
+        excerpt =
+          excerpt.slice(0, MAX_STEP_DISPLAY_CHARS) +
+          `\n\n… display truncated (showing first ${MAX_STEP_DISPLAY_CHARS} chars)`;
+      }
       if (excerpt) {
         // Indent output lines
         const indented = excerpt.split('\n').map((l) => `  ${l}`).join('\n');

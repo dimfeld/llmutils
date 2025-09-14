@@ -412,12 +412,14 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       currentPlanFile,
       executor,
       dryRun: options.dryRun,
+      executorName,
     }, summaryEnabled ? summaryCollector : undefined);
     if (summaryEnabled) {
       summaryCollector.recordExecutionEnd();
       await summaryCollector.trackFileChanges(currentBaseDir);
       displayExecutionSummary(summaryCollector.getExecutionSummary());
     }
+    await closeLogFile();
     return res;
   }
 
@@ -548,9 +550,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             currentBaseDir,
             config
           );
-          if (summaryEnabled) {
-            await summaryCollector.trackFileChanges(currentBaseDir);
-          }
+          // Defer file change tracking to the end for efficiency
 
           if (markResult.planComplete) {
             log('Plan fully completed!');
@@ -714,9 +714,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           currentBaseDir,
           config
         );
-        if (summaryEnabled) {
-          await summaryCollector.trackFileChanges(currentBaseDir);
-        }
+        // Defer file change tracking to the end for efficiency
         log(`Marked step as done: ${markResult.message.split('\n')[0]}`);
         if (markResult.planComplete) {
           log('Plan fully completed!');

@@ -477,6 +477,14 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
     gitRoot: string
   ): Promise<void> {
     try {
+      // Skip if no Google API key is available to avoid network calls in test/dev
+      const hasGoogleKey =
+        !!process.env.GOOGLE_API_KEY || !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      if (!hasGoogleKey) {
+        warn('Skipping automatic task completion marking due to missing Google API key');
+        return;
+      }
+
       const plan = await readPlanFile(planInfo.planFilePath);
       const tasks = (plan.tasks ?? []).map((t: any) => ({
         title: t.title as string,

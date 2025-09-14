@@ -290,6 +290,24 @@ export interface GetChangedFilesOptions {
 }
 
 export async function getTrunkBranch(gitRoot: string): Promise<string> {
+  // Prefer a sensible bookmark when using jj repositories
+  try {
+    if (await getUsingJj()) {
+      const out = await $`jj bookmark list`.cwd(gitRoot).nothrow().text();
+      const lines = out.split('\n').map((l) => l.trim()).filter(Boolean);
+      const names = lines
+        .map((l) => l.split(/\s+/)[0])
+        .filter((n) => !!n) as string[];
+      const candidates = ['main', 'master', 'trunk', 'default'];
+      for (const c of candidates) {
+        if (names.includes(c)) return c;
+      }
+      // Fall through to git check as a last resort
+    }
+  } catch (e) {
+    debugLog('Error getting jj trunk bookmark: %o', e);
+  }
+
   const defaultBranch = (await $`git branch --list main master`.cwd(gitRoot).nothrow().text())
     .replace('*', '')
     .trim();

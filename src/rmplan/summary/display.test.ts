@@ -1,36 +1,8 @@
-import { describe, expect, it, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import stripAnsi from 'strip-ansi';
 import type { ExecutionSummary } from './types.js';
-// We'll rely on ConsoleAdapter by enabling TEST_ALLOW_CONSOLE
-
-const logs: string[] = [];
-let origLog: any;
-let origWarn: any;
-let origError: any;
 
 describe('displayExecutionSummary', () => {
-  beforeEach(async () => {
-    logs.length = 0;
-    process.env.TEST_ALLOW_CONSOLE = 'true';
-    origLog = console.log;
-    origWarn = console.warn;
-    origError = console.error;
-    console.log = (...args: any[]) => { for (const a of args) logs.push(String(a)); };
-    console.warn = (...args: any[]) => { for (const a of args) logs.push(String(a)); };
-    console.error = (...args: any[]) => { for (const a of args) logs.push(String(a)); };
-  });
-
-  afterEach(() => {
-    logs.length = 0;
-    console.log = origLog;
-    console.warn = origWarn;
-    console.error = origError;
-    delete process.env.TEST_ALLOW_CONSOLE;
-  });
-
-  function normalizedLogs() {
-    return logs.map((l) => stripAnsi(l));
-  }
 
   it('renders an overview table, steps, files and no errors on success', async () => {
     const summary: ExecutionSummary = {
