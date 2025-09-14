@@ -209,13 +209,19 @@ export class CodexCliExecutor implements Executor {
 
           const rerunReviewerOutput = await this.executeCodexStep(rerunReviewerContext, gitRoot);
           finalReviewerOutput = rerunReviewerOutput;
-          const newAnalysis = await analyzeReviewFeedback({
-            reviewerOutput: rerunReviewerOutput,
-            completedTasks: initiallyCompleted.map((t) => t.title),
-            pendingTasks: initiallyPending.map((t) => t.title),
-            fixerOutput,
-            repoReviewDoc: reviewDoc,
-          });
+
+          const verdict = this.parseReviewerVerdict(reviewerOutput);
+
+          const newAnalysis =
+            verdict === 'ACCEPTABLE'
+              ? { needs_fixes: false }
+              : await analyzeReviewFeedback({
+                  reviewerOutput: rerunReviewerOutput,
+                  completedTasks: initiallyCompleted.map((t) => t.title),
+                  pendingTasks: initiallyPending.map((t) => t.title),
+                  fixerOutput,
+                  repoReviewDoc: reviewDoc,
+                });
 
           if (!newAnalysis.needs_fixes) {
             log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);

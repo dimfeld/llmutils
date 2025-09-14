@@ -67,7 +67,6 @@ export async function analyzeReviewFeedback(
     return result;
   } catch (e) {
     error(`Review analysis failed: ${(e as Error).toString()}`);
-    // Be conservative: if analysis fails, request fixes to avoid missing issues
     return {
       needs_fixes: true,
       fix_instructions: '',
