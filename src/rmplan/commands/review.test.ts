@@ -29,7 +29,7 @@ afterEach(() => {
   moduleMocker.clear();
 });
 
-test.only('handleReviewCommand resolves plan by file path', async () => {
+test('handleReviewCommand resolves plan by file path', async () => {
   // Create a test plan file
   const planContent = `
 id: 1
