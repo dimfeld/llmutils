@@ -71,6 +71,12 @@ program.option(
 
 program.option('--debug', 'Enable debug logging', () => setDebug(true));
 
+// Surface commonly used options that live on subcommands
+program.addHelpText(
+  'after',
+  `\nExecution summaries:\n  'agent' and 'run' support '--no-summary' to disable end-of-run summaries\n  and '--summary-file <path>' to write a summary to a file.\n  Set 'RMPLAN_SUMMARY_ENABLED=0' to disable summaries by default (CLI flags win).\n`
+);
+
 program
   .command('generate [plan]')
   .description('Generate planning prompt and context for a task')
