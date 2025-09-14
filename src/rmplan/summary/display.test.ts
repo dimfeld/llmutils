@@ -172,18 +172,14 @@ describe('displayExecutionSummary', () => {
       startedAt: new Date().toISOString(),
       endedAt: new Date().toISOString(),
       durationMs: 100,
-      steps: [
-        { title: 'OK', executor: 'codex_cli', success: true, durationMs: 10 },
-      ],
+      steps: [{ title: 'OK', executor: 'codex_cli', success: true, durationMs: 10 }],
       changedFiles: [],
       errors: ['post-apply failed'],
       metadata: { totalSteps: 1, failedSteps: 0 },
     };
     const { formatExecutionSummaryToLines } = await import('./display.js');
     const out = formatExecutionSummaryToLines(summary).join('\n');
-    expect(out).toContain(
-      '[bold][red]Execution Summary: Errors Without Failed Steps[/red][/bold]'
-    );
+    expect(out).toContain('[bold][red]Execution Summary: Errors Without Failed Steps[/red][/bold]');
   });
 
   it('writeOrDisplaySummary creates parent directories when writing', async () => {

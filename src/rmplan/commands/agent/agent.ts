@@ -732,12 +732,12 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         error('Execution step failed:', err);
         hasError = true;
         if (summaryEnabled) {
-        summaryCollector.addStepResult({
-          title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
-          executor: executorName,
-          success: false,
-          errorMessage: String(err instanceof Error ? err.message : err),
-        });
+          summaryCollector.addStepResult({
+            title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
+            executor: executorName,
+            success: false,
+            errorMessage: String(err instanceof Error ? err.message : err),
+          });
         }
         break;
       }

@@ -175,9 +175,7 @@ export function displayExecutionSummary(summary: ExecutionSummary): void {
       log(line);
     }
   } catch (e) {
-    warn(
-      `Warning: Failed to display summary: ${e instanceof Error ? e.message : String(e)}`
-    );
+    warn(`Warning: Failed to display summary: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
