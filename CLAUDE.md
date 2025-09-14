@@ -147,10 +147,10 @@ rmplan run and rmplan agent display a consolidated execution summary at the end 
 - `RMPLAN_SUMMARY_ENABLED` enables/disables summaries by default. Set to `0` or `false` to disable; CLI flags still take precedence.
 
 - Usage examples
-  - Print to stdout (default): `rmplan agent tasks/123-plan.yml`
-  - Disable summaries: `rmplan agent --no-summary tasks/123-plan.yml`
-  - Write to file: `rmplan agent --summary-file tmp/summary.txt tasks/123-plan.yml`
-- Batch mode with file output: `rmplan agent --summary-file runs/summary.txt tasks/parent.yml` (batch mode is the default)
+  - Print to stdout (default): `rmplan agent tasks/123-plan.yml` or `rmplan run tasks/123-plan.yml`
+  - Disable summaries: `rmplan agent --no-summary tasks/123-plan.yml` or `rmplan run --no-summary tasks/123-plan.yml`
+  - Write to file: `rmplan agent --summary-file tmp/summary.txt tasks/123-plan.yml` or `rmplan run --summary-file tmp/summary.txt tasks/123-plan.yml`
+- Batch mode with file output: `rmplan agent --summary-file runs/summary.txt tasks/parent.yml` or `rmplan run --summary-file runs/summary.txt tasks/parent.yml` (batch mode is the default)
 
 - Executor-specific capture
   - Claude Code: captures the orchestrator’s final assistant message when available
