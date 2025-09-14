@@ -74,7 +74,7 @@ program.option('--debug', 'Enable debug logging', () => setDebug(true));
 // Surface commonly used options that live on subcommands
 program.addHelpText(
   'after',
-  `\nExecution summaries:\n  'agent' and 'run' support '--no-summary' to disable end-of-run summaries\n  and '--summary-file <path>' to write a summary to a file.\n  Set 'RMPLAN_SUMMARY_ENABLED=0' to disable summaries by default (CLI flags win).\n`
+  `\nExecution summaries:\n  'agent' and 'run' support '--no-summary' to disable end-of-run summaries\n  and '--summary-file <path>' to write a summary to a file.\n  Set 'RMPLAN_SUMMARY_ENABLED=0/false' to disable summaries by default. When enabled by env,\n  '--no-summary' takes precedence. When disabled by env, '--summary-file' does not force-enable.\n`
 );
 
 program
@@ -292,7 +292,7 @@ function createAgentCommand(command: Command, description: string) {
     .option('--no-summary', 'Disable execution summary display at the end')
     .option(
       '--summary-file <path>',
-      'Write execution summary to the specified file instead of stdout'
+      'Write execution summary to the specified file instead of stdout (creates parent directories)'
     )
     .option(
       '--workspace <id>',
