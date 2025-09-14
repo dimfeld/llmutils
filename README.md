@@ -363,7 +363,7 @@ When running `rmplan next` to paste the prompt into a web chat or send to an API
 
 Run `rmplan` with different commands to manage project plans:
 
-```bash
+````bash
 # Generate a plan from a text file and pass extra args to rmfilter
 rmplan generate --plan plan.txt -- src/**/*.ts --grep auth
 
@@ -546,55 +546,71 @@ Step Results
 File Changes
 • tasks/123-some-plan.yml
 • src/feature/new.ts
-```
+````
 
 See CLAUDE.md for more details about what’s captured and configuration options.
 
 # Clean up end-of-line comments from changed files (by git diff, jj diff)
+
 rmplan cleanup
 
 # Cleanup end-of-line comments in all files modified compared to a base branch
+
 rmplan cleanup --diff-from main
 
 # Clean up end-of-line comments from specific files
+
 rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 
 # Answer PR review comments, automatically detecting the current PR
+
 rmplan answer-pr
 
 # Answer PR review comments for a specific PR
+
 rmplan answer-pr dimfeld/llmutils#82
 
 # List all workspaces and their lock status
+
 rmplan workspace list
 
 # List workspaces for a specific repository
+
 rmplan workspace list --repo https://github.com/dimfeld/llmutils.git
 
 # Create a new workspace without associating it with a plan
+
 rmplan workspace add
 
 # Create a workspace with a specific ID
+
 rmplan workspace add --id my-custom-ws
 
 # Create a workspace and associate it with a plan by file path
+
 rmplan workspace add path/to/my-plan.yml
 
 # Create a workspace with a plan by ID and a custom workspace ID
+
 rmplan workspace add my-plan-id --id my-dev-space
 
 # Validate all plan files for schema and parent-child relationship consistency
+
 rmplan validate
 
 # Validate specific plan files
+
 rmplan validate tasks/feature-1.yml tasks/feature-2.yml
 
 # Validate with detailed output showing what was checked and fixed
+
 rmplan validate --verbose
 
 # Validate without auto-fixing inconsistencies (report-only mode)
+
 rmplan validate --no-fix
-```
+
+````
 
 ### Plan Validation
 
@@ -622,7 +638,7 @@ rmplan validate --verbose
 
 # Validate without auto-fixing (report only)
 rmplan validate --no-fix
-```
+````
 
 When inconsistencies are found, the validate command will automatically update parent plan files and report what was changed, ensuring your project's dependency graph remains consistent and reliable.
 

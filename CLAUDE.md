@@ -221,6 +221,7 @@ The codebase uses OpenTelemetry for distributed tracing and monitoring:
 - Record events on spans using methods like `recordStateTransition` and `recordError`
 - Always handle cases where spans might be undefined with null checks
 - When importing OpenTelemetry types, use type-only imports:
+
 ```typescript
 import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
 ```
