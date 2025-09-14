@@ -107,7 +107,12 @@ describe('rmplanAgent - summary file write (batch mode)', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           tasks: [
-            { title: 'Task A', description: 'A', steps: [{ prompt: 'Do A', done: true }], done: true },
+            {
+              title: 'Task A',
+              description: 'A',
+              steps: [{ prompt: 'Do A', done: true }],
+              done: true,
+            },
             { title: 'Task B', description: 'B', steps: [{ prompt: 'Do B', done: false }] },
           ],
         });
@@ -123,8 +128,18 @@ describe('rmplanAgent - summary file write (batch mode)', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           tasks: [
-            { title: 'Task A', description: 'A', steps: [{ prompt: 'Do A', done: true }], done: true },
-            { title: 'Task B', description: 'B', steps: [{ prompt: 'Do B', done: true }], done: true },
+            {
+              title: 'Task A',
+              description: 'A',
+              steps: [{ prompt: 'Do A', done: true }],
+              done: true,
+            },
+            {
+              title: 'Task B',
+              description: 'B',
+              steps: [{ prompt: 'Do B', done: true }],
+              done: true,
+            },
           ],
         });
         return 'Batch iteration 2 complete';
@@ -154,4 +169,3 @@ describe('rmplanAgent - summary file write (batch mode)', () => {
     expect(content).toContain('Batch Iteration 2');
   });
 });
-
