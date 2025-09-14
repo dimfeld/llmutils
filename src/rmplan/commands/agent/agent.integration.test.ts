@@ -285,6 +285,166 @@ describe('rmplan agent integration (execution summary)', () => {
     expect(summary).toContain('executor boom');
   });
 
+  test('honors --no-summary by not writing or printing a summary', async () => {
+    const plan = {
+      id: 404,
+      title: 'No Summary Plan',
+      goal: 'Verify summary can be disabled',
+      details: 'Ensure --no-summary suppresses output',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Simple Task',
+          description: 'Do it',
+          done: false,
+          steps: [{ prompt: 'Do it', done: false }],
+        },
+      ],
+    };
+    const planPath = path.join(tasksDir, '404.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
+
+    // Minimal stub executor that returns output which would normally be summarized
+    {
+      const { executors } = await import('../../executors/build.ts');
+      const { z } = await import('zod/v4');
+      class StubEchoExecutor {
+        static name = 'stub-echo';
+        static description = 'Echoes a short message';
+        static optionsSchema = z.object({});
+        async execute(): Promise<string> {
+          return 'Executor finished successfully';
+        }
+      }
+      executors.set(StubEchoExecutor.name, StubEchoExecutor as any);
+    }
+
+    ({ rmplanAgent } = await import('./agent.js'));
+
+    const summaryOut = path.join(tempDir, 'out', 'no-summary.txt');
+
+    await rmplanAgent(
+      planPath,
+      {
+        executor: 'stub-echo',
+        serialTasks: true,
+        summary: false,
+        summaryFile: summaryOut,
+        model: 'auto',
+      },
+      { config: configPath }
+    );
+
+    // Should not write a file
+    await expect(fs.access(summaryOut)).rejects.toBeTruthy();
+    // And should not print the summary header via logging either
+    const printed = logSink.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(printed.includes('Execution Summary:')).toBeFalse();
+  });
+
+  test('RMPLAN_SUMMARY_ENABLED=0 disables summary collection even with summaryFile', async () => {
+    const plan = {
+      id: 505,
+      title: 'Env Disabled Summary Plan',
+      goal: 'Respect env var to disable summaries',
+      details: 'Ensure env var disables summaries',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Simple Task',
+          description: 'Do it',
+          done: false,
+          steps: [{ prompt: 'Do it', done: false }],
+        },
+      ],
+    };
+    const planPath = path.join(tasksDir, '505.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
+
+    // Long-output stub to prove collector would have truncated content if enabled
+    {
+      const { executors } = await import('../../executors/build.ts');
+      const { z } = await import('zod/v4');
+      class StubBigOutputExecutor {
+        static name = 'stub-big';
+        static description = 'Produces very large output';
+        static optionsSchema = z.object({});
+        async execute(): Promise<string> {
+          return 'X'.repeat(300_000); // Would trigger collector truncation if enabled
+        }
+      }
+      executors.set(StubBigOutputExecutor.name, StubBigOutputExecutor as any);
+    }
+
+    ({ rmplanAgent } = await import('./agent.js'));
+
+    const summaryOut = path.join(tempDir, 'out', 'env-disabled.txt');
+    const prev = process.env.RMPLAN_SUMMARY_ENABLED;
+    try {
+      process.env.RMPLAN_SUMMARY_ENABLED = '0';
+      await rmplanAgent(
+        planPath,
+        { executor: 'stub-big', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
+        { config: configPath }
+      );
+    } finally {
+      if (prev == null) delete process.env.RMPLAN_SUMMARY_ENABLED;
+      else process.env.RMPLAN_SUMMARY_ENABLED = prev;
+    }
+
+    // No file written and no printed summary header
+    await expect(fs.access(summaryOut)).rejects.toBeTruthy();
+    const printed = logSink.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(printed.includes('Execution Summary:')).toBeFalse();
+  });
+
+  test('very large executor output is truncated with collector notice in file output', async () => {
+    const plan = {
+      id: 606,
+      title: 'Truncate Integration Plan',
+      goal: 'Ensure truncation notice appears in integration path',
+      details: 'Large output should be truncated by collector',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Big Output Task',
+          description: 'Generate huge output',
+          done: false,
+          steps: [{ prompt: 'Do big', done: false }],
+        },
+      ],
+    };
+    const planPath = path.join(tasksDir, '606.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
+
+    // Stub that returns very large text
+    {
+      const { executors } = await import('../../executors/build.ts');
+      const { z } = await import('zod/v4');
+      class StubHugeExecutor {
+        static name = 'stub-huge';
+        static description = 'Huge output';
+        static optionsSchema = z.object({});
+        async execute(): Promise<string> {
+          return 'A'.repeat(300_000);
+        }
+      }
+      executors.set(StubHugeExecutor.name, StubHugeExecutor as any);
+    }
+
+    ({ rmplanAgent } = await import('./agent.js'));
+
+    const summaryOut = path.join(tempDir, 'out', 'truncate-summary.txt');
+    await rmplanAgent(
+      planPath,
+      { executor: 'stub-huge', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
+      { config: configPath }
+    );
+
+    const summary = await fs.readFile(summaryOut, 'utf8');
+    // Collector-level truncation notice should be present with explicit lengths
+    expect(summary).toMatch(/… truncated \(showing first 100000 of 300000 chars\)/);
+  });
   test('does not write a summary file if plan parsing fails early', async () => {
     const badPlanPath = path.join(tasksDir, 'bad.yml');
     await fs.writeFile(badPlanPath, 'this: is: not: valid: yaml: [', 'utf8');
