@@ -4,6 +4,7 @@ import { log, warn } from '../../logging.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ExecutionSummary, StepResult } from './types.js';
+import stripAnsi from 'strip-ansi';
 
 function formatDuration(ms?: number): string {
   if (ms == null) return 'n/a';
@@ -192,7 +193,8 @@ export async function writeOrDisplaySummary(
     return displayExecutionSummary(summary);
   }
   try {
-    const content = formatExecutionSummaryToLines(summary).join('\n');
+    // Write plain text (no ANSI codes) to files for portability/readability
+    const content = stripAnsi(formatExecutionSummaryToLines(summary).join('\n'));
     try {
       const dir = path.dirname(filePath);
       await fs.mkdir(dir, { recursive: true });
