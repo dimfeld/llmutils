@@ -1,9 +1,45 @@
-import { describe, expect, it } from 'bun:test';
-import stripAnsi from 'strip-ansi';
+import { describe, expect, it, beforeEach, afterEach, mock } from 'bun:test';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { ModuleMocker } from '../../testing.js';
 import type { ExecutionSummary } from './types.js';
 
+const moduleMocker = new ModuleMocker(import.meta);
+
+// Simple chalk mock that annotates styles for verification
+const wrap = (name: string) => (s: string) => `[${name}]${s}[/${name}]`;
+const chalkMock = {
+  green: wrap('green'),
+  yellow: wrap('yellow'),
+  red: wrap('red'),
+  redBright: wrap('redBright'),
+  gray: wrap('gray'),
+  bold: wrap('bold'),
+  dim: wrap('dim'),
+  cyan: wrap('cyan'),
+  white: wrap('white'),
+  magenta: wrap('magenta'),
+  blue: wrap('blue'),
+  rgb: () => wrap('rgb'),
+  strikethrough: { gray: wrap('strikethrough.gray') },
+};
+
+// Mock table to a simple TSV-ish join so we can inspect structure
+const mockTable = mock((data: any[]) => data.map((row) => row.join('\t')).join('\n'));
+
+beforeEach(async () => {
+  await moduleMocker.mock('chalk', () => ({ default: chalkMock }));
+  await moduleMocker.mock('table', () => ({ table: mockTable }));
+});
+
+afterEach(() => {
+  moduleMocker.clear();
+  mockTable.mockClear();
+});
+
 describe('displayExecutionSummary', () => {
-  it('renders an overview table, steps, files and no errors on success', async () => {
+  it('renders overview, steps, files, and no errors on success', async () => {
     const summary: ExecutionSummary = {
       planId: '42',
       planTitle: 'My Plan',
@@ -28,9 +64,10 @@ describe('displayExecutionSummary', () => {
     };
 
     const { formatExecutionSummaryToLines } = await import('./display.js');
-    const out = stripAnsi(formatExecutionSummaryToLines(summary).join('\n'));
+    const out = formatExecutionSummaryToLines(summary).join('\n');
 
-    expect(out).toContain('Execution Summary: My Plan');
+    // Title present and colored green
+    expect(out).toContain('[bold][green]Execution Summary: My Plan[/green][/bold]');
     // Progress indicator
     expect(out).toMatch(/\(1\/1 • 100%\)/);
     expect(out).toContain('Plan ID');
@@ -41,13 +78,13 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('0');
 
     // Step section
-    expect(out).toContain('Step Results');
+    expect(out).toContain('[bold][cyan]Step Results[/cyan][/bold]');
     expect(out).toContain('Step A');
     expect(out).toContain('claude_code');
     expect(out).toContain('Final assistant message');
 
     // File section
-    expect(out).toContain('File Changes');
+    expect(out).toContain('[bold][cyan]File Changes[/cyan][/bold]');
     expect(out).toContain('src/a.ts');
     expect(out).toContain('src/b.ts');
 
@@ -71,14 +108,14 @@ describe('displayExecutionSummary', () => {
     };
 
     const { formatExecutionSummaryToLines } = await import('./display.js');
-    const out = stripAnsi(formatExecutionSummaryToLines(summary).join('\n'));
+    const out = formatExecutionSummaryToLines(summary).join('\n');
 
     expect(out).toContain('Execution Summary: Err Plan');
     expect(out).toContain('Mode');
     expect(out).toContain('batch');
-    expect(out).toContain('File Changes');
+    expect(out).toContain('[bold][cyan]File Changes[/cyan][/bold]');
     expect(out).toContain('No changed files detected.');
-    expect(out).toContain('Errors');
+    expect(out).toContain('[bold][red]Errors[/red][/bold]');
     expect(out).toContain('Failed to track file changes');
     expect(out).toContain('boom');
   });
@@ -111,18 +148,63 @@ describe('displayExecutionSummary', () => {
       ],
       changedFiles: [],
       errors: [],
-      metadata: { totalSteps: 1, failedSteps: 0 },
+      metadata: { totalSteps: 2, failedSteps: 0 },
     };
 
     const { formatExecutionSummaryToLines } = await import('./display.js');
-    const out = stripAnsi(formatExecutionSummaryToLines(summary).join('\n'));
+    const out = formatExecutionSummaryToLines(summary).join('\n');
 
     // Timestamps present in overview table
     expect(out).toContain('Started');
     expect(out).toContain('Ended');
     // Truncation marker for display-level clamp
     expect(out).toContain('… display truncated (showing first 200000 chars)');
-    // Code snippet text still present after syntax-highlighting removal (from small step)
-    expect(out).toContain('function test() { return 1; }');
+    // Code snippet content still present after simple highlighting
+    expect(out).toMatch(/test\(\)/);
+  });
+
+  it('uses red title color if non-step errors exist with no failed steps', async () => {
+    const summary: ExecutionSummary = {
+      planId: 'e1',
+      planTitle: 'Errors Without Failed Steps',
+      planFilePath: 'tasks/plan.yml',
+      mode: 'serial',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 100,
+      steps: [
+        { title: 'OK', executor: 'codex_cli', success: true, durationMs: 10 },
+      ],
+      changedFiles: [],
+      errors: ['post-apply failed'],
+      metadata: { totalSteps: 1, failedSteps: 0 },
+    };
+    const { formatExecutionSummaryToLines } = await import('./display.js');
+    const out = formatExecutionSummaryToLines(summary).join('\n');
+    expect(out).toContain(
+      '[bold][red]Execution Summary: Errors Without Failed Steps[/red][/bold]'
+    );
+  });
+
+  it('writeOrDisplaySummary creates parent directories when writing', async () => {
+    const summary: ExecutionSummary = {
+      planId: 'w1',
+      planTitle: 'Write Plan',
+      planFilePath: 'tasks/plan.yml',
+      mode: 'serial',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 50,
+      steps: [],
+      changedFiles: [],
+      errors: [],
+      metadata: { totalSteps: 0, failedSteps: 0 },
+    };
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'summary-write-'));
+    const target = path.join(tmp, 'nested', 'dir', 'out.txt');
+    const { writeOrDisplaySummary } = await import('./display.js');
+    await writeOrDisplaySummary(summary, target);
+    const content = await fs.readFile(target, 'utf8');
+    expect(content).toContain('Execution Summary: Write Plan');
   });
 });

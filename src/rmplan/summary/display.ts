@@ -1,6 +1,8 @@
 import chalk from 'chalk';
 import { table } from 'table';
 import { log, warn } from '../../logging.js';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import type { ExecutionSummary, StepResult } from './types.js';
 
 function formatDuration(ms?: number): string {
@@ -40,7 +42,7 @@ function formatTimestamp(iso?: string): string {
   }
 }
 
-function sectionHeader(title: string, color: typeof chalk = chalk.bold): string {
+function sectionHeader(title: string, color: (s: string) => string = chalk.bold): string {
   return chalk.bold(color(title));
 }
 
@@ -86,7 +88,9 @@ function summarizeSteps(steps: StepResult[]): string[] {
  */
 export function formatExecutionSummaryToLines(summary: ExecutionSummary): string[] {
   const lines: string[] = [];
-  const statusColor = summary.metadata.failedSteps > 0 ? chalk.red : chalk.green;
+  const hasFailures = summary.metadata.failedSteps > 0;
+  const hasErrors = summary.errors.length > 0;
+  const statusColor = hasFailures || hasErrors ? chalk.red : chalk.green;
   const completed = summary.metadata.totalSteps - summary.metadata.failedSteps;
   const pct = percent(completed, summary.metadata.totalSteps || 0);
   const title = statusColor(`Execution Summary: ${summary.planTitle}`);
@@ -171,10 +175,8 @@ export function displayExecutionSummary(summary: ExecutionSummary): void {
       log(line);
     }
   } catch (e) {
-    log(
-      chalk.yellow(
-        `Warning: Failed to display summary: ${e instanceof Error ? e.message : String(e)}`
-      )
+    warn(
+      `Warning: Failed to display summary: ${e instanceof Error ? e.message : String(e)}`
     );
   }
 }
@@ -192,6 +194,12 @@ export async function writeOrDisplaySummary(
   }
   try {
     const content = formatExecutionSummaryToLines(summary).join('\n');
+    try {
+      const dir = path.dirname(filePath);
+      await fs.mkdir(dir, { recursive: true });
+    } catch {
+      // ignore; we will try to write anyway and fall back on failure
+    }
     await Bun.write(filePath, content);
     log(chalk.green(`Execution summary written to: ${filePath}`));
   } catch (e) {

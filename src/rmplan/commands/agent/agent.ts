@@ -296,7 +296,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     planFilePath: currentPlanFile,
     mode: options.serialTasks ? 'serial' : 'batch',
   });
-  if (summaryEnabled) summaryCollector.recordExecutionStart();
+  if (summaryEnabled) summaryCollector.recordExecutionStart(currentBaseDir);
 
   // Check if this is a true stub plan (no tasks at all)
   const needsPreparation = !planData.tasks.length;
@@ -523,22 +523,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
               '../../summary/parsers.js'
             );
             const parsed = parseExecutorOutput(executorName, output);
-            const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
-              executorType:
-                execNameNorm === 'claude-code'
-                  ? 'interactive'
-                  : execNameNorm === 'codex-cli'
-                    ? 'cli'
-                    : undefined,
-              executorPhase:
-                execNameNorm === 'claude-code'
-                  ? 'orchestrator'
-                  : execNameNorm === 'codex-cli'
-                    ? 'implementer|tester|reviewer'
-                    : undefined,
               success: parsed.success,
               errorMessage: parsed.success ? undefined : parsed.error,
               output: toNormalizedOutput(parsed),
@@ -554,22 +541,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           error('Task execution failed:', err);
           hasError = true;
           if (summaryEnabled) {
-            const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
-              executorType:
-                execNameNorm === 'claude-code'
-                  ? 'interactive'
-                  : execNameNorm === 'codex-cli'
-                    ? 'cli'
-                    : undefined,
-              executorPhase:
-                execNameNorm === 'claude-code'
-                  ? 'orchestrator'
-                  : execNameNorm === 'codex-cli'
-                    ? 'implementer|tester|reviewer'
-                    : undefined,
               success: false,
               errorMessage: String(err instanceof Error ? err.message : err),
             });
@@ -740,22 +714,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             '../../summary/parsers.js'
           );
           const parsed = parseExecutorOutput(executorName, output);
-          const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
-            executorType:
-              execNameNorm === 'claude-code'
-                ? 'interactive'
-                : execNameNorm === 'codex-cli'
-                  ? 'cli'
-                  : undefined,
-            executorPhase:
-              execNameNorm === 'claude-code'
-                ? 'orchestrator'
-                : execNameNorm === 'codex-cli'
-                  ? 'implementer|tester|reviewer'
-                  : undefined,
             success: parsed.success,
             errorMessage: parsed.success ? undefined : parsed.error,
             output: toNormalizedOutput(parsed),
@@ -771,25 +732,12 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         error('Execution step failed:', err);
         hasError = true;
         if (summaryEnabled) {
-          const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
-          summaryCollector.addStepResult({
-            title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
-            executor: executorName,
-            executorType:
-              execNameNorm === 'claude-code'
-                ? 'interactive'
-                : execNameNorm === 'codex-cli'
-                  ? 'cli'
-                  : undefined,
-            executorPhase:
-              execNameNorm === 'claude-code'
-                ? 'orchestrator'
-                : execNameNorm === 'codex-cli'
-                  ? 'implementer|tester|reviewer'
-                  : undefined,
-            success: false,
-            errorMessage: String(err instanceof Error ? err.message : err),
-          });
+        summaryCollector.addStepResult({
+          title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
+          executor: executorName,
+          success: false,
+          errorMessage: String(err instanceof Error ? err.message : err),
+        });
         }
         break;
       }

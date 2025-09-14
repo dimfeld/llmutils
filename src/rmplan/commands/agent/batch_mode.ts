@@ -125,22 +125,9 @@ export async function executeBatchMode(
             '../../summary/parsers.js'
           );
           const parsed = parseExecutorOutput(executorName, output);
-          const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
-            executorType:
-              execNameNorm === 'claude-code'
-                ? 'interactive'
-                : execNameNorm === 'codex-cli'
-                  ? 'cli'
-                  : undefined,
-            executorPhase:
-              execNameNorm === 'claude-code'
-                ? 'orchestrator'
-                : execNameNorm === 'codex-cli'
-                  ? 'implementer|tester|reviewer'
-                  : undefined,
             success: parsed.success,
             errorMessage: parsed.success ? undefined : parsed.error,
             output: toNormalizedOutput(parsed),
@@ -158,22 +145,9 @@ export async function executeBatchMode(
         hasError = true;
         iteration += 1;
         if (summaryCollector) {
-          const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
-            executorType:
-              execNameNorm === 'claude-code'
-                ? 'interactive'
-                : execNameNorm === 'codex-cli'
-                  ? 'cli'
-                  : undefined,
-            executorPhase:
-              execNameNorm === 'claude-code'
-                ? 'orchestrator'
-                : execNameNorm === 'codex-cli'
-                  ? 'implementer|tester|reviewer'
-                  : undefined,
             success: false,
             errorMessage: String(err instanceof Error ? err.message : err),
             iteration,

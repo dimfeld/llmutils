@@ -44,11 +44,11 @@ export class SummaryCollector {
 
   constructor(private init: SummaryCollectorInit) {}
 
-  recordExecutionStart(): void {
+  recordExecutionStart(baseDir?: string): void {
     this.startedAt = new Date().toISOString();
     // Capture baseline revision for accurate change tracking
     // Best-effort: failures are ignored and tracked when computing changes
-    getGitRoot()
+    getGitRoot(baseDir)
       .then((root) => getCurrentCommitHash(root))
       .then((rev) => {
         this.baselineRevision = rev;
