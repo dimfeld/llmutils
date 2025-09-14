@@ -632,8 +632,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       if (stepPreparationResult.numStepsSelected === 1) {
         stepIndexes = `Step ${stepPreparationResult.stepIndex + 1}`;
       } else {
+        // end index should be inclusive: start (1-based) + count - 1
         const endIndex =
-          stepPreparationResult.stepIndex + stepPreparationResult.numStepsSelected + 1;
+          stepPreparationResult.stepIndex + stepPreparationResult.numStepsSelected;
         stepIndexes = `Steps ${stepPreparationResult.stepIndex + 1}-${endIndex}`;
       }
 
