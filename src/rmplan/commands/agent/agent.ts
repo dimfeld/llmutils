@@ -435,6 +435,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     } finally {
       if (summaryEnabled) {
         summaryCollector.recordExecutionEnd();
+        await summaryCollector.trackFileChanges(currentBaseDir);
         const { writeOrDisplaySummary } = await import('../../summary/display.js');
         await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
       }
