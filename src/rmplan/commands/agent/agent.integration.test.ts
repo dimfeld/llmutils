@@ -4,12 +4,15 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { ModuleMocker } from '../../../testing.js';
 
+const tempDirs: string[] = [];
+
 async function createTempRepoWithPlan(): Promise<{
   repoDir: string;
   planPath: string;
   relPlanPath: string;
 }> {
   const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-int-'));
+  tempDirs.push(repoDir);
   const planPath = path.join(repoDir, 'test.plan.yml');
   const planContent = `
 id: 1
@@ -33,8 +36,19 @@ describe('rmplanAgent integration summary', () => {
     moduleMocker.clear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     moduleMocker.clear();
+    // Clean up temp dirs
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) {
+        try {
+          await fs.rm(dir, { recursive: true, force: true });
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+    }
   });
 
   test('serial mode: collects step output and changed files, writes summary', async () => {
@@ -43,9 +57,9 @@ describe('rmplanAgent integration summary', () => {
     // Capture the produced summary for assertions
     const captured: { summary?: any; file?: string } = {};
 
-    // Mock config loader
+    // Mock config loader with correct shape
     await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({ executors: { default: 'codex-cli' } })),
+      loadEffectiveConfig: mock(async () => ({ defaultExecutor: 'codex-cli' })),
     }));
 
     // Use real plan file IO for this integration test
@@ -76,12 +90,20 @@ describe('rmplanAgent integration summary', () => {
       defaultModelForExecutor: mock(() => undefined),
     }));
 
+    // Capture initial contents to validate real change tracking
+    const initialContent = await fs.readFile(planPath, 'utf8');
     // Mock git helpers used by summary collector and mark_done
     await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(async () => repoDir),
       getCurrentCommitHash: mock(async () => 'BASE'),
-      getChangedFilesBetween: mock(async () => [relPlanPath]),
-      getChangedFilesOnBranch: mock(async () => [relPlanPath]),
+      getChangedFilesBetween: mock(async () => {
+        const after = await fs.readFile(planPath, 'utf8');
+        return after !== initialContent ? [relPlanPath] : [];
+      }),
+      getChangedFilesOnBranch: mock(async () => {
+        const after = await fs.readFile(planPath, 'utf8');
+        return after !== initialContent ? [relPlanPath] : [];
+      }),
       getTrunkBranch: mock(async () => 'main'),
       getUsingJj: mock(async () => false),
       hasUncommittedChanges: mock(async () => true),
@@ -121,8 +143,16 @@ describe('rmplanAgent integration summary', () => {
     expect(String(out)).toContain('Implementer');
     expect(String(out)).toContain('Tester');
     expect(String(out)).toContain('Reviewer');
-    expect(Array.isArray(captured.summary.changedFiles)).toBeTrue();
-    // Batch branch does not call trackFileChanges; changed files may be empty here
+    // Verify plan metadata and timings present
+    expect(captured.summary.planId).toBe('1');
+    expect(captured.summary.planTitle).toBe('Integration Plan');
+    expect(typeof captured.summary.startedAt).toBe('string');
+    expect(typeof captured.summary.endedAt).toBe('string');
+    expect(typeof captured.summary.durationMs).toBe('number');
+    expect(captured.summary.metadata.totalSteps).toBe(1);
+    expect(captured.summary.metadata.failedSteps).toBe(0);
+    // Verify changed files include the plan (validated via real file change)
+    expect(captured.summary.changedFiles).toContain(relPlanPath);
   });
 
   test('batch mode: aggregates multiple step results and failures', async () => {
@@ -131,7 +161,7 @@ describe('rmplanAgent integration summary', () => {
     const captured: { summary?: any } = {};
 
     await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({ executors: { default: 'codex-cli' } })),
+      loadEffectiveConfig: mock(async () => ({ defaultExecutor: 'codex-cli' })),
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
@@ -165,8 +195,8 @@ describe('rmplanAgent integration summary', () => {
     await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: mock(async () => repoDir),
       getCurrentCommitHash: mock(async () => 'BASE'),
-      getChangedFilesBetween: mock(async () => [relPlanPath]),
-      getChangedFilesOnBranch: mock(async () => [relPlanPath]),
+      getChangedFilesBetween: mock(async () => []),
+      getChangedFilesOnBranch: mock(async () => []),
       getTrunkBranch: mock(async () => 'main'),
       getUsingJj: mock(async () => false),
       hasUncommittedChanges: mock(async () => true),
