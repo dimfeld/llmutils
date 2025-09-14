@@ -223,7 +223,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           );
         }
       } catch (err) {
-        warn(`Error validating workspace: ${String(err)}`);
+        warn(`Error validating workspace: ${err as Error}`);
       }
 
       // Copy the plan file to the workspace
@@ -238,7 +238,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         currentPlanFile = workspacePlanFile;
         log(`Using plan file in workspace: ${currentPlanFile}`);
       } catch (err) {
-        error(`Failed to copy plan file to workspace: ${String(err)}`);
+        error(`Failed to copy plan file to workspace: ${err as Error}`);
         error('Continuing with original plan file.');
       }
 
@@ -255,7 +255,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           );
           WorkspaceLock.setupCleanupHandlers(workspace.path);
         } catch (error) {
-          log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
+          log(`Warning: Failed to acquire workspace lock: ${error as Error}`);
         }
       }
 
