@@ -283,8 +283,14 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   // Check if the plan needs preparation
   const planData = await readPlanFile(currentPlanFile);
 
-  // Initialize execution summary collection (enabled by default)
-  const summaryEnabled = true;
+  // Initialize execution summary collection
+  // Default enabled unless explicitly disabled by CLI or env var
+  // RMPLAN_SUMMARY_ENABLED can be set to '0' or 'false' (case-insensitive) to disable by default
+  const envSummary = process.env.RMPLAN_SUMMARY_ENABLED;
+  const envSummaryEnabled =
+    envSummary == null ? true : !(envSummary.toLowerCase() === 'false' || envSummary === '0');
+  const summaryEnabled = options['no-summary'] ? false : envSummaryEnabled;
+  const summaryFilePath: string | undefined = options.summaryFile;
   const summaryCollector = new SummaryCollector({
     planId: planData.id?.toString() ?? 'unknown',
     planTitle: planData.title ?? 'Untitled Plan',
@@ -420,7 +426,26 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     if (summaryEnabled) {
       summaryCollector.recordExecutionEnd();
       await summaryCollector.trackFileChanges(currentBaseDir);
-      displayExecutionSummary(summaryCollector.getExecutionSummary());
+      const summary = summaryCollector.getExecutionSummary();
+      if (summaryFilePath) {
+        try {
+          const content = `${summary.planTitle}\n${'-'.repeat(60)}\n` +
+            (await (async () => {
+              // Reuse formatting used by displayExecutionSummary
+              const { formatExecutionSummaryToLines } = await import('../../summary/display.js');
+              return formatExecutionSummaryToLines(summary).join('\n');
+            })());
+          await Bun.write(summaryFilePath, content);
+          log(chalk.green(`Execution summary written to: ${summaryFilePath}`));
+        } catch (e) {
+          warn(
+            `Failed to write execution summary to file: ${String(e instanceof Error ? e.message : e)}`
+          );
+          displayExecutionSummary(summary);
+        }
+      } else {
+        displayExecutionSummary(summary);
+      }
     }
     await closeLogFile();
     return res;
@@ -746,7 +771,25 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     if (summaryEnabled) {
       summaryCollector.recordExecutionEnd();
       await summaryCollector.trackFileChanges(currentBaseDir);
-      displayExecutionSummary(summaryCollector.getExecutionSummary());
+      const summary = summaryCollector.getExecutionSummary();
+      if (summaryFilePath) {
+        try {
+          const content = `${summary.planTitle}\n${'-'.repeat(60)}\n` +
+            (await (async () => {
+              const { formatExecutionSummaryToLines } = await import('../../summary/display.js');
+              return formatExecutionSummaryToLines(summary).join('\n');
+            })());
+          await Bun.write(summaryFilePath, content);
+          log(chalk.green(`Execution summary written to: ${summaryFilePath}`));
+        } catch (e) {
+          warn(
+            `Failed to write execution summary to file: ${String(e instanceof Error ? e.message : e)}`
+          );
+          displayExecutionSummary(summary);
+        }
+      } else {
+        displayExecutionSummary(summary);
+      }
     }
     await closeLogFile();
   }

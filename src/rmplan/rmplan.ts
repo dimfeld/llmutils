@@ -283,6 +283,11 @@ function createAgentCommand(command: Command, description: string) {
     .addHelpText('after', `Available executors: ${executorNames}`)
     .option('--steps <steps>', 'Number of steps to execute')
     .option('--no-log', 'Do not log to file')
+    .option('--no-summary', 'Disable execution summary display at the end')
+    .option(
+      '--summary-file <path>',
+      'Write execution summary to the specified file instead of stdout'
+    )
     .option(
       '--workspace <id>',
       'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
