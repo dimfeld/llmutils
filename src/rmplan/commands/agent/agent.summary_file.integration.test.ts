@@ -169,4 +169,78 @@ describe('rmplanAgent - summary file write (batch mode)', () => {
     expect(content).toContain('Batch Iteration 1');
     expect(content).toContain('Batch Iteration 2');
   });
+
+  test('creates parent directories for --summary-file when missing', async () => {
+    // Executor that progresses the plan to completion across two iterations
+    let call = 0;
+    const executorExecute = mock(async () => {
+      call++;
+      if (call === 1) {
+        // Mark first task done
+        await createPlanFile(planFile, {
+          id: 551,
+          title: 'Batch Plan',
+          goal: 'Run multiple tasks',
+          details: 'Batch summary file test',
+          status: 'in_progress',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          tasks: [
+            {
+              title: 'Task A',
+              description: 'A',
+              steps: [{ prompt: 'Do A', done: true }],
+              done: true,
+            },
+            { title: 'Task B', description: 'B', steps: [{ prompt: 'Do B', done: false }] },
+          ],
+        });
+        return 'iteration 1';
+      }
+      // Mark all done
+      await createPlanFile(planFile, {
+        id: 551,
+        title: 'Batch Plan',
+        goal: 'Run multiple tasks',
+        details: 'Batch summary file test',
+        status: 'in_progress',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [
+          {
+            title: 'Task A',
+            description: 'A',
+            steps: [{ prompt: 'Do A', done: true }],
+            done: true,
+          },
+          {
+            title: 'Task B',
+            description: 'B',
+            steps: [{ prompt: 'Do B', done: true }],
+            done: true,
+          },
+        ],
+      });
+      return 'iteration 2';
+    });
+    await moduleMocker.mock('../../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
+      DEFAULT_EXECUTOR: 'codex-cli',
+      defaultModelForExecutor: mock(() => 'test-model'),
+    }));
+
+    const { rmplanAgent } = await import('./agent.js');
+
+    const nestedOut = path.join(tempDir, 'nested', 'dir', 'another', 'summary.txt');
+
+    // Ensure parent directory does not exist beforehand
+    await expect(fs.access(path.dirname(nestedOut))).rejects.toBeTruthy();
+
+    const options: any = { log: false, executor: 'codex-cli', summaryFile: nestedOut };
+    await rmplanAgent(planFile, options, {});
+
+    // File should now exist and contain a header
+    const content = await fs.readFile(nestedOut, 'utf8');
+    expect(content).toContain('Execution Summary: Batch Plan');
+  });
 });

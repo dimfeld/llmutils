@@ -445,6 +445,54 @@ describe('rmplan agent integration (execution summary)', () => {
     // Collector-level truncation notice should be present with explicit lengths
     expect(summary).toMatch(/… truncated \(showing first 100000 of 300000 chars\)/);
   });
+
+  test('prints execution summary to stdout when no summaryFile is provided', async () => {
+    const plan = {
+      id: 707,
+      title: 'Stdout Summary Plan',
+      goal: 'Print summary to stdout',
+      details: 'No summary file specified',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Simple',
+          description: 'Just run',
+          done: false,
+          steps: [{ prompt: 'run', done: false }],
+        },
+      ],
+    };
+    const planPath = path.join(tasksDir, '707.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
+
+    // Minimal stub executor
+    {
+      const { executors } = await import('../../executors/build.ts');
+      const { z } = await import('zod/v4');
+      class StubStdoutExecutor {
+        static name = 'stub-stdout';
+        static description = 'Emits small output';
+        static optionsSchema = z.object({});
+        async execute(): Promise<string> {
+          return 'ok';
+        }
+      }
+      executors.set(StubStdoutExecutor.name, StubStdoutExecutor as any);
+    }
+
+    ({ rmplanAgent } = await import('./agent.js'));
+
+    await rmplanAgent(
+      planPath,
+      { executor: 'stub-stdout', serialTasks: true, model: 'auto' },
+      { config: configPath }
+    );
+
+    const printed = logSink.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(printed).toContain('Execution Summary: Stdout Summary Plan');
+    // Ensure we did not log a file write notice
+    expect(printed).not.toContain('Execution summary written to:');
+  });
   test('does not write a summary file if plan parsing fails early', async () => {
     const badPlanPath = path.join(tasksDir, 'bad.yml');
     await fs.writeFile(badPlanPath, 'this: is: not: valid: yaml: [', 'utf8');
