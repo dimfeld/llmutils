@@ -219,6 +219,40 @@ describe('rmplanAgent - Execution Summary Integration', () => {
     expect(out).toContain('Looks good to me');
   });
 
+  test('serial mode: truncates very large executor output in summary', async () => {
+    await createPlanFile(planFile, {
+      id: 103,
+      title: 'Large Output Plan',
+      goal: 'Ensure truncation',
+      details: 'Big output',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tasks: [{ title: 'Simple Task', description: 'No steps' }],
+    });
+
+    // Produce output > default collector truncate size (100_000)
+    const large = 'A'.repeat(150_000);
+    const executorExecute = mock(async () => large);
+    await moduleMocker.mock('../../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => ({ execute: executorExecute, filePathPrefix: '' })),
+      DEFAULT_EXECUTOR: 'codex-cli',
+      defaultModelForExecutor: mock(() => 'test-model'),
+    }));
+
+    const { rmplanAgent } = await import('./agent.js');
+    const options: any = { serialTasks: true, log: false, executor: 'codex-cli' };
+    await rmplanAgent(planFile, options, {});
+
+    expect(writeOrDisplaySummarySpy).toHaveBeenCalledTimes(1);
+    const summaryArg = writeOrDisplaySummarySpy.mock.calls[0][0];
+    const content = summaryArg.steps[0].output?.content ?? '';
+    // Collector-level truncation notice should be present
+    expect(content).toContain('… truncated (showing first 100000 of 150000 chars)');
+    // Ensure content is not the full 150k string
+    expect(content.length).toBeLessThan(151_000);
+  });
+
   test('does not write summary when summary is disabled via option', async () => {
     await createPlanFile(planFile, {
       id: 150,
