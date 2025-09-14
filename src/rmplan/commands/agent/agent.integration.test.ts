@@ -495,7 +495,11 @@ tasks: []
     const { rmplanAgent } = await import('./agent.js');
 
     // Set nonInteractive=false to allow select(); our mock returns 'direct'
-    await rmplanAgent(planPath, { summary: true, log: false, nonInteractive: false, serialTasks: true }, {});
+    await rmplanAgent(
+      planPath,
+      { summary: true, log: false, nonInteractive: false, serialTasks: true },
+      {}
+    );
 
     // Verify summary exists with metadata but no steps
     expect(captured.summary).toBeDefined();

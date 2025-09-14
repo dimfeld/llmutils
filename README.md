@@ -514,7 +514,7 @@ rmplan agent --next
 rmplan run --next
 
 # Execute plan with auto-created workspace
-rmplan agent plan.yml --workspace-task-id task-123
+rmplan agent plan.yml --workspace task-123
 
 # You can also use plan IDs instead of file paths
 rmplan agent my-feature-123 --steps 3
@@ -983,7 +983,7 @@ workspaceCreation:
 
 ```bash
 # Create a workspace with a specific task ID
-rmplan agent plan.yml --workspace-task-id my-feature-123
+rmplan agent plan.yml --workspace my-feature-123
 
 # The agent runs in the new workspace automatically
 ```
@@ -1555,7 +1555,7 @@ rmplan agent --next-ready 100
 rmplan agent tasks/0003-new-feature.yml --executor claude-code
 
 # Execute a plan in a newly created, isolated workspace
-rmplan agent tasks/my-feature.yml --workspace-task-id feature-xyz
+rmplan agent tasks/my-feature.yml --workspace feature-xyz
 
 # Create new plan stubs for quick capture of future work
 rmplan add "Implement user authentication" --output tasks/auth.yml
