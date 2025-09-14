@@ -84,7 +84,7 @@ describe('displayExecutionSummary', () => {
   });
 
   it('truncates very long step output and shows indicators, includes timestamps', async () => {
-    const long = 'function test() { return 1; }\n'.repeat(7_000); // > 200k chars
+    const long = 'A'.repeat(210_001); // > 200k chars, single line for speed
     const summary: ExecutionSummary = {
       planId: '1',
       planTitle: 'Big Output',
@@ -101,6 +101,13 @@ describe('displayExecutionSummary', () => {
           durationMs: 10_000,
           output: { content: long },
         },
+        {
+          title: 'Small Code',
+          executor: 'codex_cli',
+          success: true,
+          durationMs: 100,
+          output: { content: 'function test() { return 1; }' },
+        },
       ],
       changedFiles: [],
       errors: [],
@@ -115,7 +122,7 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('Ended');
     // Truncation marker for display-level clamp
     expect(out).toContain('… display truncated (showing first 200000 chars)');
-    // Code snippet text still present after syntax-highlighting removal
+    // Code snippet text still present after syntax-highlighting removal (from small step)
     expect(out).toContain('function test() { return 1; }');
   });
 });

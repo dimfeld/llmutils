@@ -19,6 +19,21 @@ function clampContent(text: string): string {
   );
 }
 
+function safeString(val: unknown): string {
+  if (typeof val === 'string') return val;
+  try {
+    return JSON.stringify(val);
+  } catch {
+    try {
+      // fall back to toString only if defined to avoid [object Object]
+      const s = (val as any)?.toString?.();
+      return typeof s === 'string' ? s : '';
+    } catch {
+      return '';
+    }
+  }
+}
+
 /**
  * Generic parser that returns the input as content.
  */
@@ -27,7 +42,7 @@ export function parseGenericOutput(raw: unknown): ParsedExecutorOutput {
     const content = typeof raw === 'string' ? raw : JSON.stringify(raw);
     return { content: clampContent(content?.trim?.() ?? String(content)), success: true };
   } catch (e) {
-    return { content: String(raw ?? ''), success: false, error: String(e) };
+    return { content: safeString(raw), success: false, error: safeString(e) };
   }
 }
 
@@ -75,7 +90,7 @@ export function parseClaudeOutput(raw: unknown): ParsedExecutorOutput {
     // Default: treat entire string as final assistant message
     return { content: input, success: true, metadata: { phase: 'orchestrator' } };
   } catch (e) {
-    return { content: String(raw ?? ''), success: false, error: String(e) };
+    return { content: safeString(raw), success: false, error: safeString(e) };
   }
 }
 
@@ -123,7 +138,7 @@ export function parseCodexOutput(raw: unknown): ParsedExecutorOutput {
     const content = clampContent(parts.join('\n\n'));
     return { content, success: true, metadata };
   } catch (e) {
-    return { content: String(raw ?? ''), success: false, error: String(e) };
+    return { content: safeString(raw), success: false, error: safeString(e) };
   }
 }
 
@@ -145,7 +160,7 @@ export function parseExecutorOutput(
     }
     return parseGenericOutput(raw);
   } catch (e) {
-    return { content: String(raw ?? ''), success: false, error: String(e) };
+    return { content: safeString(raw), success: false, error: safeString(e) };
   }
 }
 
