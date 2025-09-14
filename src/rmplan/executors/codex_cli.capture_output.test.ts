@@ -48,9 +48,21 @@ describe('CodexCliExecutor captureOutput', () => {
     }));
 
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: mock((ctx: string) => ({ name: 'impl', description: '', prompt: 'IMPLEMENTER\n' + ctx })),
-      getTesterPrompt: mock((ctx: string) => ({ name: 'tester', description: '', prompt: 'TESTER\n' + ctx })),
-      getReviewerPrompt: mock((ctx: string) => ({ name: 'reviewer', description: '', prompt: 'REVIEWER\n' + ctx })),
+      getImplementerPrompt: mock((ctx: string) => ({
+        name: 'impl',
+        description: '',
+        prompt: 'IMPLEMENTER\n' + ctx,
+      })),
+      getTesterPrompt: mock((ctx: string) => ({
+        name: 'tester',
+        description: '',
+        prompt: 'TESTER\n' + ctx,
+      })),
+      getReviewerPrompt: mock((ctx: string) => ({
+        name: 'reviewer',
+        description: '',
+        prompt: 'REVIEWER\n' + ctx,
+      })),
       issueAndVerdictFormat: 'VERDICT: X',
     }));
 
@@ -110,9 +122,21 @@ describe('CodexCliExecutor captureOutput', () => {
     }));
 
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: mock((ctx: string) => ({ name: 'impl', description: '', prompt: 'IMPLEMENTER\n' + ctx })),
-      getTesterPrompt: mock((ctx: string) => ({ name: 'tester', description: '', prompt: 'TESTER\n' + ctx })),
-      getReviewerPrompt: mock((ctx: string) => ({ name: 'reviewer', description: '', prompt: 'REVIEWER\n' + ctx })),
+      getImplementerPrompt: mock((ctx: string) => ({
+        name: 'impl',
+        description: '',
+        prompt: 'IMPLEMENTER\n' + ctx,
+      })),
+      getTesterPrompt: mock((ctx: string) => ({
+        name: 'tester',
+        description: '',
+        prompt: 'TESTER\n' + ctx,
+      })),
+      getReviewerPrompt: mock((ctx: string) => ({
+        name: 'reviewer',
+        description: '',
+        prompt: 'REVIEWER\n' + ctx,
+      })),
       issueAndVerdictFormat: 'VERDICT: X',
     }));
 
@@ -122,8 +146,10 @@ describe('CodexCliExecutor captureOutput', () => {
         const outs: string[] = [codexTaskStarted()];
         if (prompt.startsWith('IMPLEMENTER')) outs.push(codexAgentMessage('impl out'));
         else if (prompt.startsWith('TESTER')) outs.push(codexAgentMessage('tester out'));
-        else if (prompt.startsWith('REVIEWER')) outs.push(codexAgentMessage('still issues\n\nVERDICT: NEEDS_FIXES'));
-        else if (prompt.includes('You are a fixer agent')) outs.push(codexAgentMessage('fixed a bit'));
+        else if (prompt.startsWith('REVIEWER'))
+          outs.push(codexAgentMessage('still issues\n\nVERDICT: NEEDS_FIXES'));
+        else if (prompt.includes('You are a fixer agent'))
+          outs.push(codexAgentMessage('fixed a bit'));
         else outs.push(codexAgentMessage('fallback agent message'));
         for (const line of outs) opts.formatStdout(line);
         return { exitCode: 0, stdout: '', stderr: '' };

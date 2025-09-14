@@ -480,10 +480,7 @@ export async function getChangedFilesBetween(
         .text();
     } else {
       // Compare fromRef to working tree
-      summ = await $`git diff --name-only ${fromRef} ${exclude}`
-        .cwd(gitRoot)
-        .nothrow()
-        .text();
+      summ = await $`git diff --name-only ${fromRef} ${exclude}`.cwd(gitRoot).nothrow().text();
     }
     changedFiles = summ
       .split('\n')

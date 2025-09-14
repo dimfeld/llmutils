@@ -85,4 +85,3 @@ describe('executeBatchMode captureOutput integration', () => {
     expect(stepArg.output).toContain('FINAL OUTPUT');
   });
 });
-

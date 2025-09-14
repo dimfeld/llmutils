@@ -522,8 +522,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
-              executorType: executorName === 'claude-code' ? 'interactive' : executorName === 'codex-cli' ? 'cli' : undefined,
-              executorPhase: executorName === 'claude-code' ? 'orchestrator' : executorName === 'codex-cli' ? 'implementer|tester|reviewer' : undefined,
+              executorType:
+                executorName === 'claude-code'
+                  ? 'interactive'
+                  : executorName === 'codex-cli'
+                    ? 'cli'
+                    : undefined,
+              executorPhase:
+                executorName === 'claude-code'
+                  ? 'orchestrator'
+                  : executorName === 'codex-cli'
+                    ? 'implementer|tester|reviewer'
+                    : undefined,
               success: true,
               output: typeof output === 'string' ? output : undefined,
               startedAt: new Date(start).toISOString(),
@@ -538,8 +548,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
-              executorType: executorName === 'claude-code' ? 'interactive' : executorName === 'codex-cli' ? 'cli' : undefined,
-              executorPhase: executorName === 'claude-code' ? 'orchestrator' : executorName === 'codex-cli' ? 'implementer|tester|reviewer' : undefined,
+              executorType:
+                executorName === 'claude-code'
+                  ? 'interactive'
+                  : executorName === 'codex-cli'
+                    ? 'cli'
+                    : undefined,
+              executorPhase:
+                executorName === 'claude-code'
+                  ? 'orchestrator'
+                  : executorName === 'codex-cli'
+                    ? 'implementer|tester|reviewer'
+                    : undefined,
               success: false,
               errorMessage: String(err instanceof Error ? err.message : err),
             });
@@ -709,8 +729,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
-            executorType: executorName === 'claude-code' ? 'interactive' : executorName === 'codex-cli' ? 'cli' : undefined,
-            executorPhase: executorName === 'claude-code' ? 'orchestrator' : executorName === 'codex-cli' ? 'implementer|tester|reviewer' : undefined,
+            executorType:
+              executorName === 'claude-code'
+                ? 'interactive'
+                : executorName === 'codex-cli'
+                  ? 'cli'
+                  : undefined,
+            executorPhase:
+              executorName === 'claude-code'
+                ? 'orchestrator'
+                : executorName === 'codex-cli'
+                  ? 'implementer|tester|reviewer'
+                  : undefined,
             success: true,
             output: typeof output === 'string' ? output : undefined,
             startedAt: new Date(start).toISOString(),
@@ -725,8 +755,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
-            executorType: executorName === 'claude-code' ? 'interactive' : executorName === 'codex-cli' ? 'cli' : undefined,
-            executorPhase: executorName === 'claude-code' ? 'orchestrator' : executorName === 'codex-cli' ? 'implementer|tester|reviewer' : undefined,
+            executorType:
+              executorName === 'claude-code'
+                ? 'interactive'
+                : executorName === 'codex-cli'
+                  ? 'cli'
+                  : undefined,
+            executorPhase:
+              executorName === 'claude-code'
+                ? 'orchestrator'
+                : executorName === 'codex-cli'
+                  ? 'implementer|tester|reviewer'
+                  : undefined,
             success: false,
             errorMessage: String(err instanceof Error ? err.message : err),
           });

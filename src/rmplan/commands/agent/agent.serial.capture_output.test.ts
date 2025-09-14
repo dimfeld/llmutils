@@ -52,7 +52,11 @@ describe('rmplanAgent serial captureOutput integration', () => {
     // Mock plans
     await moduleMocker.mock('../../plans.js', () => ({
       resolvePlanFile: mock(async (_p: string) => '/tmp/plan.yml'),
-      readPlanFile: mock(async () => ({ id: 1, title: 'P', tasks: [{ title: 'T1', steps: [{ prompt: 'p', done: false }] }] })),
+      readPlanFile: mock(async () => ({
+        id: 1,
+        title: 'P',
+        tasks: [{ title: 'T1', steps: [{ prompt: 'p', done: false }] }],
+      })),
       writePlanFile: mock(async (_p: string, _data: any) => {}),
       findNextPlan: mock(async () => null),
     }));
@@ -108,7 +112,7 @@ describe('rmplanAgent serial captureOutput integration', () => {
         constructor(_init: any) {}
       },
     }));
-    
+
     // Mock display to avoid terminal noise
     await moduleMocker.mock('../../summary/display.js', () => ({
       writeOrDisplaySummary: mock(async () => {}),
