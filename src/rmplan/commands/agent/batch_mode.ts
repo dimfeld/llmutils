@@ -121,6 +121,10 @@ export async function executeBatchMode(
         iteration += 1;
         if (summaryCollector) {
           const end = Date.now();
+          const { parseExecutorOutput, toNormalizedOutput } = await import(
+            '../../summary/parsers.js'
+          );
+          const parsed = parseExecutorOutput(executorName, output);
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
@@ -137,7 +141,7 @@ export async function executeBatchMode(
                   ? 'implementer|tester|reviewer'
                   : undefined,
             success: true,
-            output: typeof output === 'string' ? output : undefined,
+            output: toNormalizedOutput(parsed),
             startedAt: new Date(start).toISOString(),
             endedAt: new Date(end).toISOString(),
             durationMs: end - start,

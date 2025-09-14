@@ -82,6 +82,8 @@ describe('executeBatchMode captureOutput integration', () => {
     expect(summaryCollector.addStepResult).toHaveBeenCalled();
     const stepArg = (summaryCollector.addStepResult as any).mock.calls[0][0];
     expect(stepArg.success).toBeTrue();
-    expect(stepArg.output).toContain('FINAL OUTPUT');
+    // Accept either legacy string or new normalized object
+    const out = typeof stepArg.output === 'string' ? stepArg.output : stepArg.output?.content;
+    expect(String(out)).toContain('FINAL OUTPUT');
   });
 });
