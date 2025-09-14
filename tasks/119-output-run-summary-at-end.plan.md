@@ -13,7 +13,7 @@ docs: []
 planGeneratedAt: 2025-09-14T09:17:46.197Z
 promptsGeneratedAt: 2025-09-14T09:43:06.976Z
 createdAt: 2025-09-14T07:54:56.352Z
-updatedAt: 2025-09-14T11:26:09.952Z
+updatedAt: 2025-09-14T11:48:31.990Z
 tasks:
   - title: Define Summary Data Structures
     done: true
@@ -225,7 +225,7 @@ tasks:
           truncation, empty file changes lists, and missing metadata fields.
         done: false
   - title: Add Executor-Specific Output Parsing
-    done: false
+    done: true
     description: >
       Implement specialized parsing logic for extracting meaningful summary
       information from different executor types. This involves creating parser
@@ -250,7 +250,7 @@ tasks:
           that returns the output content directly. Each parser should handle
           malformed input gracefully and return standardized parsed result
           objects with content, metadata, and success indicators.
-        done: false
+        done: true
       - prompt: >
           Add a main parseExecutorOutput function that dispatches to the
           appropriate parser based on executor type. This function should accept
@@ -259,7 +259,7 @@ tasks:
           meaningful fallback results when parsing fails. Add TypeScript
           interfaces for parsed output results and ensure all parsers return
           consistent data structures for use by the SummaryCollector.
-        done: false
+        done: true
   - title: Update Executors for Summary Support
     done: true
     description: >
@@ -449,6 +449,7 @@ tasks:
         done: false
 changedFiles:
   - src/common/git.ts
+  - src/dependency_graph/__snapshots__/walk_imports.test.ts.snap
   - src/rmplan/commands/agent/agent.serial.capture_output.test.ts
   - src/rmplan/commands/agent/agent.test.ts
   - src/rmplan/commands/agent/agent.ts
@@ -469,6 +470,8 @@ changedFiles:
   - src/rmplan/summary/collector.ts
   - src/rmplan/summary/display.test.ts
   - src/rmplan/summary/display.ts
+  - src/rmplan/summary/parsers.test.ts
+  - src/rmplan/summary/parsers.ts
   - src/rmplan/summary/types.ts
 rmfilter: []
 ---

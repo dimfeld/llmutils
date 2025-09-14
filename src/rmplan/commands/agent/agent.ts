@@ -523,14 +523,16 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
               '../../summary/parsers.js'
             );
             const parsed = parseExecutorOutput(executorName, output);
-            const execNameNorm = (executorName ?? '')
-              .toLowerCase()
-              .replace(/[_\s]+/g, '-');
+            const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
               executorType:
-                execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
+                execNameNorm === 'claude-code'
+                  ? 'interactive'
+                  : execNameNorm === 'codex-cli'
+                    ? 'cli'
+                    : undefined,
               executorPhase:
                 execNameNorm === 'claude-code'
                   ? 'orchestrator'
@@ -552,14 +554,16 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           error('Task execution failed:', err);
           hasError = true;
           if (summaryEnabled) {
-            const execNameNorm = (executorName ?? '')
-              .toLowerCase()
-              .replace(/[_\s]+/g, '-');
+            const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
               executorType:
-                execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
+                execNameNorm === 'claude-code'
+                  ? 'interactive'
+                  : execNameNorm === 'codex-cli'
+                    ? 'cli'
+                    : undefined,
               executorPhase:
                 execNameNorm === 'claude-code'
                   ? 'orchestrator'
@@ -736,14 +740,16 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             '../../summary/parsers.js'
           );
           const parsed = parseExecutorOutput(executorName, output);
-          const execNameNorm = (executorName ?? '')
-            .toLowerCase()
-            .replace(/[_\s]+/g, '-');
+          const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
             executorType:
-              execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
+              execNameNorm === 'claude-code'
+                ? 'interactive'
+                : execNameNorm === 'codex-cli'
+                  ? 'cli'
+                  : undefined,
             executorPhase:
               execNameNorm === 'claude-code'
                 ? 'orchestrator'
@@ -765,14 +771,16 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         error('Execution step failed:', err);
         hasError = true;
         if (summaryEnabled) {
-          const execNameNorm = (executorName ?? '')
-            .toLowerCase()
-            .replace(/[_\s]+/g, '-');
+          const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
             executorType:
-              execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
+              execNameNorm === 'claude-code'
+                ? 'interactive'
+                : execNameNorm === 'codex-cli'
+                  ? 'cli'
+                  : undefined,
             executorPhase:
               execNameNorm === 'claude-code'
                 ? 'orchestrator'

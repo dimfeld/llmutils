@@ -35,9 +35,7 @@ export function parseClaudeOutput(raw: unknown): ParsedExecutorOutput {
 
     // Heuristic: treat as JSONL only if some line starts with a JSON object and mentions "type"
     const lines = input.split(/\r?\n/);
-    const looksJsonl = lines.some(
-      (l) => l.trimStart().startsWith('{') && l.includes('"type"')
-    );
+    const looksJsonl = lines.some((l) => l.trimStart().startsWith('{') && l.includes('"type"'));
     if (looksJsonl) {
       let lastAssistantRaw: string | undefined;
       for (const line of lines) {

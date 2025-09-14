@@ -125,14 +125,16 @@ export async function executeBatchMode(
             '../../summary/parsers.js'
           );
           const parsed = parseExecutorOutput(executorName, output);
-          const execNameNorm = (executorName ?? '')
-            .toLowerCase()
-            .replace(/[_\s]+/g, '-');
+          const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
             executorType:
-              execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
+              execNameNorm === 'claude-code'
+                ? 'interactive'
+                : execNameNorm === 'codex-cli'
+                  ? 'cli'
+                  : undefined,
             executorPhase:
               execNameNorm === 'claude-code'
                 ? 'orchestrator'
@@ -156,14 +158,16 @@ export async function executeBatchMode(
         hasError = true;
         iteration += 1;
         if (summaryCollector) {
-          const execNameNorm = (executorName ?? '')
-            .toLowerCase()
-            .replace(/[_\s]+/g, '-');
+          const execNameNorm = (executorName ?? '').toLowerCase().replace(/[_\s]+/g, '-');
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
             executorType:
-              execNameNorm === 'claude-code' ? 'interactive' : execNameNorm === 'codex-cli' ? 'cli' : undefined,
+              execNameNorm === 'claude-code'
+                ? 'interactive'
+                : execNameNorm === 'codex-cli'
+                  ? 'cli'
+                  : undefined,
             executorPhase:
               execNameNorm === 'claude-code'
                 ? 'orchestrator'

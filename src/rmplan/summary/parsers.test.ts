@@ -33,11 +33,9 @@ describe('summary/parsers', () => {
   });
 
   it('parseClaudeOutput tolerates malformed mixed content', () => {
-    const jsonl = [
-      'garbage line',
-      '{ invalid json',
-      '{"type":"assistant","rawMessage":"ok"}',
-    ].join('\n');
+    const jsonl = ['garbage line', '{ invalid json', '{"type":"assistant","rawMessage":"ok"}'].join(
+      '\n'
+    );
     const res = parseClaudeOutput(jsonl);
     expect(res.success).toBeTrue();
     expect(res.content).toBe('ok');
