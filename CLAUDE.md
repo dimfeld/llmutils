@@ -150,7 +150,7 @@ rmplan run and rmplan agent display a consolidated execution summary at the end 
   - Print to stdout (default): `rmplan agent tasks/123-plan.yml`
   - Disable summaries: `rmplan agent --no-summary tasks/123-plan.yml`
   - Write to file: `rmplan agent --summary-file tmp/summary.txt tasks/123-plan.yml`
-  - Batch mode with file output: `rmplan agent --batch-tasks --summary-file runs/summary.txt tasks/parent.yml`
+  - Batch mode with file output: `rmplan agent --summary-file runs/summary.txt tasks/parent.yml` (batch mode is the default)
 
 - Executor-specific capture
   - Claude Code: captures the orchestrator’s final assistant message when available
