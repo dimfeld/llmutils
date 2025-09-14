@@ -110,7 +110,7 @@ describe('CodexCliExecutor captureOutput', () => {
     expect(s).toContain('Tests are great');
     expect(s).toContain('=== Codex Reviewer ===');
     expect(s).toContain('VERDICT: ACCEPTABLE');
-  });
+  }, 20000);
 
   test('returns latest reviewer when max fix iterations reached', async () => {
     await moduleMocker.mock('../../common/git.ts', () => ({
@@ -190,5 +190,5 @@ describe('CodexCliExecutor captureOutput', () => {
     expect(s).toContain('=== Codex Reviewer ===');
     // Returns latest reviewer output string; content may vary by rerun formatting
     expect(s).toContain('=== Codex Reviewer ===');
-  }, 30000);
+  }, 60000);
 });

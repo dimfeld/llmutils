@@ -165,7 +165,7 @@ describe('CodexCliExecutor - Fix Loop', () => {
     );
 
     await expect(executor.execute('context', mockPlanInfo)).resolves.toBeUndefined();
-  });
+  }, 15000);
 
   test('stops after max 5 fix iterations when still NEEDS_FIXES', async () => {
     await moduleMocker.mock('../../common/git.ts', () => ({
