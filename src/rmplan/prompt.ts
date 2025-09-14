@@ -629,6 +629,8 @@ ${commonGenerateDetails}
 
 Do not perform any implementation or write any files yet.
 
+Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
+Then prepare to synthesize these reports into the final plan.
 When you're done with your analysis, let me know and I'll provide the next instruction.`;
 }
 
@@ -645,7 +647,8 @@ Please output the plan in the exact Markdown format specified below:
 
 ${phaseBasedMarkdownExampleFormat}
 
-Make sure the details section includes all the requested sections.
+Everything you said above will not be saved anywhere, so be sure to include it again when generating the plan below. Remember to include all the below sections in the project details, along with any other relevant details that an engineer will require to know how to implement the plan:
+${commonGenerateDetails}
 
 Generate the complete plan now.`;
 }
