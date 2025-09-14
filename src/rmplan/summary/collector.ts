@@ -92,6 +92,8 @@ export class SummaryCollector {
       const step: StepResult = {
         title: input.title,
         executor: input.executor,
+        executorType: (input as any).executorType,
+        executorPhase: (input as any).executorPhase,
         success: input.success,
         errorMessage: input.errorMessage,
         startedAt: input.startedAt,
