@@ -38,6 +38,10 @@ describe('CodexCliExecutor - Fix Loop', () => {
   });
 
   test('runs fixer then reviewer becomes ACCEPTABLE', async () => {
+    // Avoid any network call from auto task-marking by mocking AI SDK
+    await moduleMocker.mock('ai', () => ({
+      generateObject: mock(async () => ({ object: { completed_titles: [] } })),
+    }));
     // Mock git root and plan reading
     await moduleMocker.mock('../../common/git.ts', () => ({
       getGitRoot: mock(async () => '/tmp/repo'),
@@ -168,6 +172,10 @@ describe('CodexCliExecutor - Fix Loop', () => {
   }, 15000);
 
   test('stops after max 5 fix iterations when still NEEDS_FIXES', async () => {
+    // Avoid any network call from auto task-marking by mocking AI SDK
+    await moduleMocker.mock('ai', () => ({
+      generateObject: mock(async () => ({ object: { completed_titles: [] } })),
+    }));
     await moduleMocker.mock('../../common/git.ts', () => ({
       getGitRoot: mock(async () => '/tmp/repo'),
     }));
