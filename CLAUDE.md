@@ -172,6 +172,11 @@ rmplan run and rmplan agent display a consolidated execution summary at the end 
   - Unsupported/other executors are still summarized; their output is treated as plain text without special parsing.
   - When a plan file fails schema validation before execution starts, no summary is produced because the run never initializes collection.
 
+- Timeouts and failures
+  - If an executor throws or times out, the step is marked failed and the error message appears in the summary’s Errors section.
+  - Claude Code permission prompts can be configured with a timeout via executor options; when a timeout occurs, the default response is used and the run continues. The summary still reflects the step’s final status and captured output.
+  - Timeout and error details are kept concise; very verbose traces are truncated with a notice.
+
 - Example output (abbreviated)
 
 ```
@@ -239,6 +244,12 @@ Errors
 - Batch mode aggregates results across iterations; the metadata includes iteration counts and failed steps.
 - Executors without structured output still contribute raw text.
 - If output capture fails, the summary records the error without failing the run.
+
+### Quick Usage
+
+- Disable summaries for a single run: `rmplan run --no-summary tasks/plan.yml`
+- Force-enable and write to file: `rmplan run --summary-file tmp/summary.txt tasks/plan.yml`
+- Disable by environment (all runs): `export RMPLAN_SUMMARY_ENABLED=0`
 
 ## Configuration Files
 
