@@ -90,6 +90,9 @@ describe('rmplan agent integration (execution summary)', () => {
     };
     const planPath = path.join(tasksDir, '101.yml');
     await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
+    // Track the plan file so later commits include it
+    await Bun.spawn(['git', 'add', planPath], { cwd: tempDir }).exited;
+    await Bun.spawn(['git', 'commit', '-m', 'Add plan file'], { cwd: tempDir }).exited;
 
     // Register a stub executor dynamically
     {
@@ -125,7 +128,7 @@ describe('rmplan agent integration (execution summary)', () => {
     const summaryOut = path.join(tempDir, 'out', 'serial-summary.txt');
     await rmplanAgent(
       planPath,
-      { executor: 'stub-codex', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
+      { executor: 'codex-cli', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
       { config: configPath }
     );
 
@@ -169,6 +172,9 @@ describe('rmplan agent integration (execution summary)', () => {
     };
     const planPath = path.join(tasksDir, '202.yml');
     await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
+    // Track the plan file so later commits include it
+    await Bun.spawn(['git', 'add', planPath], { cwd: tempDir }).exited;
+    await Bun.spawn(['git', 'commit', '-m', 'Add plan file'], { cwd: tempDir }).exited;
 
     // Register a stub Claude-like executor that marks tasks done and writes a file
     {
@@ -183,13 +189,14 @@ describe('rmplan agent integration (execution summary)', () => {
           private shared: any
         ) {}
         async execute(_context: string, planInfo: any): Promise<string> {
-          const raw = await fs.readFile(planInfo.planFilePath, 'utf8');
-          const node = yaml.parse(raw);
+          // Use project helpers to safely parse/write plan files with front-matter
+          const { readPlanFile, writePlanFile } = await import('../../plans.js');
+          const node: any = await readPlanFile(planInfo.planFilePath);
           for (const t of node.tasks || []) {
             t.done = true;
             for (const s of t.steps || []) s.done = true;
           }
-          await fs.writeFile(planInfo.planFilePath, yaml.stringify(node), 'utf8');
+          await writePlanFile(planInfo.planFilePath, node);
           await fs.writeFile(
             path.join(this.shared.baseDir, 'src', 'foo.txt'),
             'modified by claude\n',

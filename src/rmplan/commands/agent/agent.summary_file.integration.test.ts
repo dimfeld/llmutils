@@ -46,8 +46,9 @@ describe('rmplanAgent - summary file write (batch mode)', () => {
       getChangedFilesOnBranch: mock(async () => ['src/a.ts']),
       getCurrentCommitHash: mock(async () => 'rev-0'),
       getChangedFilesBetween: mock(async () => ['src/a.ts']),
-      getUsingJj: mock(async () => true),
-      hasUncommittedChanges: mock(async () => true),
+      // Force Git path and skip committing to avoid touching jj/git in temp dir
+      getUsingJj: mock(async () => false),
+      hasUncommittedChanges: mock(async () => false),
     }));
 
     // Real summary display is used: DO NOT mock '../../summary/display.js'
