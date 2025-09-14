@@ -546,7 +546,7 @@ Step Results
 File Changes
 • tasks/123-some-plan.yml
 • src/feature/new.ts
-````
+```
 
 See CLAUDE.md for more details about what’s captured and configuration options.
 
