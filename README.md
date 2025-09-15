@@ -961,7 +961,7 @@ Behavior:
 
 - `rmplan show` displays the latest 10 notes by default (use `--full` for all).
 - `rmplan list` shows a Notes column when any plan has notes.
-- Agent prompts include a “Progress Notes” section (timestamps omitted to reduce noise).
+- Agent prompts include a “Progress Notes” section (timestamps omitted to reduce noise), limited to the last 10 notes with a summary line like "... and N more earlier note(s)" when older notes are hidden.
 
 ### Requirements
 

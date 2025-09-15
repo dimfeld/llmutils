@@ -169,4 +169,35 @@ Line 3: YAML-ish : & % [ ] { } < >`;
     expect(out).not.toMatch(/^\s*•\s.*Note 1$/m);
     expect(out).toContain('and 2 more earlier note(s)');
   });
+
+  test('prompt truncates very long single note lines', async () => {
+    const plan: PlanSchema = {
+      id: 304,
+      title: 'Edge: Prompt Truncation',
+      goal: 'Prompt per-note truncation',
+      details: 'Details',
+      tasks: [],
+    };
+    const planFile = path.join(tasksDir, '304.yml');
+    await fs.writeFile(planFile, yaml.stringify(plan));
+
+    const longText = 'Y'.repeat(300) + ' END';
+    await handleAddProgressNoteCommand('304', longText, {
+      parent: { opts: () => ({ config: configPath }) },
+    } as any);
+
+    const updated = await readPlanFile(planFile);
+    const prompt = await buildExecutionPromptWithoutSteps({
+      executor: { execute: async () => {} },
+      planData: updated,
+      planFilePath: planFile,
+      baseDir: tempDir,
+      config: { paths: { tasks: 'tasks' } },
+    });
+
+    // Prompt should contain truncated bullet (160 chars max, with ...)
+    const bulletLine = prompt.split('\n').find((l) => l.startsWith('- ')) as string;
+    expect(bulletLine.length).toBeLessThanOrEqual(2 + 160); // '- ' + 160
+    expect(bulletLine.endsWith('...')).toBe(true);
+  });
 });

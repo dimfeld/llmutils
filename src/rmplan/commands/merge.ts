@@ -99,8 +99,8 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
   const mergedTasks = [...(mainPlan.tasks || [])];
   const mergedDetails: string[] = [];
   // Progress notes: combine parent + children notes, preserving chronological order
-  const mergedProgressNotes: NonNullable<PlanSchema['progressNotes']> = [
-    ...((mainPlan.progressNotes as any) || []),
+  const mergedProgressNotes: { timestamp: string; text: string }[] = [
+    ...(mainPlan.progressNotes ?? []),
   ];
 
   if (mainPlan.details) {

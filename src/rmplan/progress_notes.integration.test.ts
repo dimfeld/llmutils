@@ -148,4 +148,31 @@ describe('Progress Notes Integration', () => {
       'Agent B: added tests and fixes',
     ]);
   });
+
+  test('concurrent additions do not lose notes (optimistic retry merge)', async () => {
+    const plan: PlanSchema = {
+      id: 203,
+      title: 'True Concurrency',
+      goal: 'Ensure concurrent writes are safe',
+      details: 'Details',
+      tasks: [],
+    };
+    const planFile = path.join(tasksDir, '203.yml');
+    await fs.writeFile(planFile, yaml.stringify(plan));
+
+    const cmd = { parent: { opts: () => ({ config: configPath }) } } as any;
+
+    // Fire two concurrent add-progress-note operations
+    await Promise.all([
+      handleAddProgressNoteCommand('203', 'Concurrent A finished step', cmd),
+      handleAddProgressNoteCommand('203', 'Concurrent B finished step', cmd),
+    ]);
+
+    const updated = await readPlanFile(planFile);
+    expect(updated.progressNotes?.length).toBe(2);
+    const texts = updated.progressNotes?.map((n) => n.text) || [];
+    expect(texts.sort()).toEqual(
+      ['Concurrent A finished step', 'Concurrent B finished step'].sort()
+    );
+  });
 });

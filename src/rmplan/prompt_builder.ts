@@ -305,6 +305,7 @@ export function buildProgressNotesSection(planData: PlanSchema): string {
   if (!notes.length) return '';
 
   const MAX_NOTES = 10;
+  const MAX_NOTE_CHARS = 160;
   const startIndex = Math.max(0, notes.length - MAX_NOTES);
   const latest = notes.slice(startIndex);
 
@@ -315,7 +316,11 @@ export function buildProgressNotesSection(planData: PlanSchema): string {
     if (text.length) {
       // Preserve single-line bullets; collapse newlines to spaces to keep prompt compact
       const singleLine = text.replace(/\s+/g, ' ').trim();
-      lines.push(`- ${singleLine}`);
+      const truncated =
+        singleLine.length > MAX_NOTE_CHARS
+          ? singleLine.slice(0, MAX_NOTE_CHARS - 3) + '...'
+          : singleLine;
+      lines.push(`- ${truncated}`);
     }
   }
   const hiddenCount = notes.length - latest.length;
