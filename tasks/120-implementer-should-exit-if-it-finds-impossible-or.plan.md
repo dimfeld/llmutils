@@ -7,7 +7,7 @@ goal: Enable rmplan executors to gracefully exit when they encounter conflicting
   incorrect implementations from proceeding.
 id: 120
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 dependencies: []
 issue: []
@@ -15,7 +15,7 @@ docs: []
 planGeneratedAt: 2025-09-15T03:12:44.945Z
 promptsGeneratedAt: 2025-09-15T03:52:50.945Z
 createdAt: 2025-09-14T08:19:24.654Z
-updatedAt: 2025-09-15T05:38:48.775Z
+updatedAt: 2025-09-15T05:49:25.047Z
 tasks:
   - title: Create Standardized Failure Detection Template
     done: true
@@ -239,7 +239,7 @@ tasks:
       - src/rmplan/summary/display.ts
     steps: []
   - title: Create Failure Detection Tests
-    done: false
+    done: true
     description: >
       Write comprehensive tests in
       `src/rmplan/executors/failure_detection.test.ts` for the utility
@@ -253,7 +253,7 @@ tasks:
       - src/rmplan/executors/failure_detection.test.ts
     steps: []
   - title: Test Executor Failure Scenarios
-    done: false
+    done: true
     description: >
       Add tests to `src/rmplan/executors/claude_code.test.ts` and
       `src/rmplan/executors/codex_cli.test.ts` for failure detection scenarios,
@@ -268,7 +268,7 @@ tasks:
       - src/rmplan/executors/codex_cli.test.ts
     steps: []
   - title: Test Agent Loop Failure Handling
-    done: false
+    done: true
     description: >
       Create tests for the main agent loop's handling of executor failures in
       both serial and batch modes, verifying exit codes and error messages.
