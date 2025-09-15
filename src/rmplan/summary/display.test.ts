@@ -182,6 +182,53 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('[bold][red]Execution Summary: Errors Without Failed Steps[/red][/bold]');
   });
 
+  it('renders FAILED details with requirements and solutions for failed steps', async () => {
+    const summary: ExecutionSummary = {
+      planId: 'f1',
+      planTitle: 'Failure Plan',
+      planFilePath: 'tasks/plan.yml',
+      mode: 'serial',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 100,
+      steps: [
+        {
+          title: 'Step X',
+          executor: 'claude_code',
+          success: false,
+          durationMs: 10,
+          output: {
+            content: 'FAILED: Implementer cannot proceed',
+            failureDetails: {
+              sourceAgent: 'implementer',
+              problems: 'Mutually exclusive API requirements',
+              requirements: '- Return array\n- Return object map',
+              solutions: '- Clarify expected shape\n- Support versioned endpoint',
+            },
+          },
+        },
+      ],
+      changedFiles: [],
+      errors: [],
+      metadata: { totalSteps: 1, failedSteps: 1 },
+    };
+
+    const { formatExecutionSummaryToLines } = await import('./display.js');
+    const out = formatExecutionSummaryToLines(summary).join('\n');
+
+    // Header reflects failure state
+    expect(out).toContain('[bold][red]Execution Summary: Failure Plan[/red][/bold]');
+    // FAILED line with source agent and problems
+    expect(out).toContain('FAILED (implementer): Mutually exclusive API requirements');
+    // Requirements and Possible solutions sections rendered
+    expect(out).toContain('Requirements:');
+    expect(out).toContain('Return array');
+    expect(out).toContain('Return object map');
+    expect(out).toContain('Possible solutions:');
+    expect(out).toContain('Clarify expected shape');
+    expect(out).toContain('Support versioned endpoint');
+  });
+
   it('writeOrDisplaySummary creates parent directories when writing', async () => {
     const summary: ExecutionSummary = {
       planId: 'w1',
