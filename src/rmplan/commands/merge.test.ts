@@ -156,6 +156,59 @@ describe('rmplan merge', () => {
     expect(child2Exists).toBe(false);
   });
 
+  test('merges progress notes from children into parent in chronological order', async () => {
+    // Parent with one existing note
+    const parentPlan: PlanSchema = {
+      id: 1,
+      goal: 'Parent goal',
+      title: 'Parent Plan',
+      tasks: [],
+      progressNotes: [
+        { timestamp: new Date('2024-01-01T10:00:00Z').toISOString(), text: 'Parent note' },
+      ],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    // Children with notes
+    const child1: PlanSchema = {
+      id: 2,
+      title: 'Child 1',
+      parent: 1,
+      tasks: [],
+      progressNotes: [
+        { timestamp: new Date('2024-01-01T12:00:00Z').toISOString(), text: 'Child1 later note' },
+        { timestamp: new Date('2023-12-31T23:59:00Z').toISOString(), text: 'Child1 earlier note' },
+      ],
+    };
+    await writePlanFile(join(testDir, '2-child1.plan.md'), child1);
+
+    const child2: PlanSchema = {
+      id: 3,
+      title: 'Child 2',
+      parent: 1,
+      tasks: [],
+      progressNotes: [
+        { timestamp: new Date('2024-01-02T00:00:00Z').toISOString(), text: 'Child2 newest' },
+      ],
+    };
+    await writePlanFile(join(testDir, '3-child2.plan.md'), child2);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+    await handleMergeCommand(parentFile, {}, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.progressNotes?.length).toBe(4);
+    // Should be sorted ascending by timestamp
+    const texts = updatedParent.progressNotes!.map((n) => n.text);
+    expect(texts).toEqual([
+      'Child1 earlier note',
+      'Parent note',
+      'Child1 later note',
+      'Child2 newest',
+    ]);
+  });
+
   test('merges specific children when provided', async () => {
     // Create parent plan
     const parentPlan: PlanSchema = {

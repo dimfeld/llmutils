@@ -804,6 +804,8 @@ Please analyze this plan and the codebase. Your task is to:
 6. Identify any potential challenges or edge cases
 
 Use parallel subagents to analyze related tasks together.
+You can also use subagents to examine particular aspects of the plan such as system design or UX requirements.
+All subagents should run from the perspective of an experienced, senior employee.
 
 Once you've analyzed the codebase, I'll ask you to generate detailed implementation steps in the required YAML format.
 

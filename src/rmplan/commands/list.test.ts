@@ -191,6 +191,72 @@ describe('handleListCommand', () => {
     expect(planIds).toContain(3);
   });
 
+  test('adds Notes column only when at least one plan has progress notes', async () => {
+    // Case 1: No notes present across plans -> no Notes column
+    clearPlanCache();
+    mockTable.mockClear();
+
+    const planA = {
+      id: 1,
+      title: 'No Notes A',
+      goal: 'g',
+      details: 'd',
+      status: 'pending',
+      tasks: [],
+    };
+    const planB = {
+      id: 2,
+      title: 'No Notes B',
+      goal: 'g',
+      details: 'd',
+      status: 'pending',
+      tasks: [],
+    };
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(planA));
+    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(planB));
+
+    await handleListCommand({}, { parent: { opts: () => ({}) } } as any);
+    const tableData1 = mockTable.mock.calls[0][0];
+    const headers1 = tableData1[0];
+    expect(headers1).not.toContain('Notes');
+
+    // Case 2: Add a plan with notes -> Notes column appears with counts
+    clearPlanCache();
+    mockTable.mockClear();
+    const planC = {
+      id: 3,
+      title: 'Has Notes',
+      goal: 'g',
+      details: 'd',
+      status: 'pending',
+      tasks: [],
+      progressNotes: [
+        { timestamp: new Date('2024-01-01T00:00:00.000Z').toISOString(), text: 'First' },
+        { timestamp: new Date('2024-01-02T00:00:00.000Z').toISOString(), text: 'Second' },
+      ],
+    } as any;
+    await fs.writeFile(path.join(tasksDir, '3.yml'), yaml.stringify(planC));
+
+    await handleListCommand({ all: true }, { parent: { opts: () => ({}) } } as any);
+    const tableData2 = mockTable.mock.calls[0][0];
+    const headers2 = tableData2[0];
+    expect(headers2).toContain('Notes');
+    // Find the row for plan id 3
+    const row = tableData2.find((r: any[]) => r[0] === 3);
+    expect(row).toBeTruthy();
+    // Columns should be: ID, Title, Status, Priority, Tasks, Steps, Notes, Depends On
+    expect(headers2[0]).toBe('ID');
+    expect(headers2[1]).toBe('Title');
+    expect(headers2[2]).toBe('Status');
+    expect(headers2[3]).toBe('Priority');
+    expect(headers2[4]).toBe('Tasks');
+    expect(headers2[5]).toBe('Steps');
+    expect(headers2[6]).toBe('Notes');
+    expect(headers2[7]).toBe('Depends On');
+    // Notes count shows 2 for the plan with notes
+    expect(row[6]).toBe('2');
+  });
+
   test('filters plans by status when --status flag is used', async () => {
     // Create test plans
     const plans = [

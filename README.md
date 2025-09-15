@@ -292,6 +292,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
+- **Progress Notes**: Add timestamped progress notes to plans during execution; notes appear in `rmplan show`, are counted in `rmplan list`, and are included in agent prompts (timestamps omitted).
 - **Plan Inspection**: Display detailed information about plans including dependencies with resolution, tasks with completion status, and metadata.
 - **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, `run`, and `prepare` commands.
 - **Dependency-Based Execution**: Use `--next-ready <parentPlan>` to automatically find and execute the next actionable dependency in complex multi-phase projects, with intelligent prioritization and comprehensive error feedback.
@@ -938,6 +939,29 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 - The command only removes comments that appear after code on the same line, preserving standalone comment lines and empty lines.
 - Files must exist and have a supported extension to be processed.
 - Use `--diff-from` to specify a different base branch for determining changed files when no files are provided.
+
+#### Progress Notes
+
+Record significant milestones, deviations, or discoveries during execution. Notes are timestamped and persisted in the plan file.
+
+Usage:
+
+```bash
+rmplan add-progress-note <planIdOrPath> "<note text>"
+```
+
+Examples:
+
+```bash
+rmplan add-progress-note 123 "Finished initial refactor; updated API surface and tests"
+rmplan add-progress-note tasks/123-feature.plan.md "Investigated flaky test; root cause is async race in setup"
+```
+
+Behavior:
+
+- `rmplan show` displays the latest 10 notes by default (use `--full` for all).
+- `rmplan list` shows a Notes column when any plan has notes.
+- Agent prompts include a “Progress Notes” section (timestamps omitted to reduce noise), limited to the last 50 notes with a summary line like "... and N more earlier note(s)" when older notes are hidden.
 
 ### Requirements
 

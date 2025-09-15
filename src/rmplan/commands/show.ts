@@ -174,6 +174,9 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   }
   log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
   log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
+  if (plan.progressNotes && plan.progressNotes.length > 0) {
+    log(`${chalk.cyan('Progress Notes:')} ${plan.progressNotes.length}`);
+  }
 
   if (plan.baseBranch) {
     log(`${chalk.cyan('Base Branch:')} ${plan.baseBranch}`);
@@ -248,6 +251,38 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       }
     } else {
       log(plan.details);
+    }
+  }
+
+  // Display progress notes (if any)
+  if (plan.progressNotes && plan.progressNotes.length > 0) {
+    log('\n' + chalk.bold('Progress Notes:'));
+    log('─'.repeat(60));
+    const { MAX_SHOW_NOTES, MAX_NOTE_CHARS } = await import('../truncation.js');
+    const notes = plan.progressNotes;
+    const startIndex = options.full ? 0 : Math.max(0, notes.length - MAX_SHOW_NOTES);
+    const visible = notes.slice(startIndex);
+    for (const n of visible) {
+      const ts = new Date(n.timestamp).toLocaleString();
+      const text = n.text || '';
+      if (options.full) {
+        // Show full text, preserving line breaks with indentation
+        const lines = text.split('\n');
+        log(`  • ${chalk.gray(ts)}\n    ${lines.join('\n    ')}`);
+      } else {
+        // Truncate to a single line for compact display
+        const singleLine = text.replace(/\s+/g, ' ').trim();
+        const truncated =
+          singleLine.length > MAX_NOTE_CHARS
+            ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
+            : singleLine;
+        log(`  • ${chalk.gray(ts)}  ${truncated}`);
+      }
+    }
+    const hidden = notes.length - visible.length;
+    if (hidden > 0) {
+      const { formatHiddenNotesSummary } = await import('../truncation.js');
+      log(chalk.gray(formatHiddenNotesSummary(hidden)));
     }
   }
 

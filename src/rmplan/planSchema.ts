@@ -38,6 +38,17 @@ export const phaseSchema = z
     promptsGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
+    progressNotes: z
+      .array(
+        z
+          .object({
+            timestamp: z.string().datetime(),
+            text: z.string(),
+          })
+          .strict()
+      )
+      .default([])
+      .optional(),
     project: z
       .object({
         title: z.string(),
