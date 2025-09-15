@@ -15,10 +15,10 @@ docs: []
 planGeneratedAt: 2025-09-15T03:12:44.945Z
 promptsGeneratedAt: 2025-09-15T03:52:50.945Z
 createdAt: 2025-09-14T08:19:24.654Z
-updatedAt: 2025-09-15T04:26:06.210Z
+updatedAt: 2025-09-15T04:40:42.230Z
 tasks:
   - title: Create Standardized Failure Detection Template
-    done: false
+    done: true
     description: >
       Create a reusable prompt template in
       `src/rmplan/executors/claude_code/agent_prompts.ts` that instructs agents
@@ -36,7 +36,7 @@ tasks:
       - src/rmplan/executors/claude_code/agent_prompts.ts
     steps: []
   - title: Update Shared Agent Prompts
-    done: false
+    done: true
     description: >
       Integrate the failure detection template into `getImplementerPrompt()`,
       `getTesterPrompt()`, and `getReviewerPrompt()` functions in
@@ -52,7 +52,7 @@ tasks:
       - src/rmplan/executors/claude_code/agent_prompts.ts
     steps: []
   - title: Update Claude Orchestrator Prompt
-    done: false
+    done: true
     description: >
       Add failure detection instructions to the orchestrator prompt in
       `src/rmplan/executors/claude_code/orchestrator_prompt.ts`. Include
@@ -68,7 +68,7 @@ tasks:
       - src/rmplan/executors/claude_code/orchestrator_prompt.ts
     steps: []
   - title: Update Codex Fixer Prompt
-    done: false
+    done: true
     description: >
       Modify the `getFixerPrompt()` method in
       `src/rmplan/executors/codex_cli.ts` to include the failure detection
@@ -82,7 +82,7 @@ tasks:
       - src/rmplan/executors/codex_cli.ts
     steps: []
   - title: Enhance ExecutorOutput Interface
-    done: false
+    done: true
     description: >
       Update `src/rmplan/executors/types.ts` to add optional `success: boolean`
       and `failureDetails?: { requirements: string; problems: string;
@@ -97,7 +97,7 @@ tasks:
       - src/rmplan/executors/types.ts
     steps: []
   - title: Create Failure Detection Utilities
-    done: false
+    done: true
     description: >
       Create utility functions in a new file
       `src/rmplan/executors/failure_detection.ts` for detecting "FAILED:"
@@ -296,7 +296,17 @@ tasks:
       - README.md
       - CLAUDE.md
     steps: []
-changedFiles: []
+changedFiles:
+  - src/rmplan/executors/claude_code/agent_prompts.test.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/codex_cli.fixer_prompt.test.ts
+  - src/rmplan/executors/codex_cli.ts
+  - src/rmplan/executors/failure_detection.test.ts
+  - src/rmplan/executors/failure_detection.ts
+  - src/rmplan/executors/types.ts
+  - src/rmplan/summary/parsers.ts
 rmfilter: []
 ---
 
