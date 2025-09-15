@@ -150,8 +150,8 @@ describe('handleShowCommand', () => {
     expect(logs).toContain('A multi-line note with details');
     // Default view flattens whitespace to single line
     expect(logs).toContain('A multi-line note with details');
-    // Hidden count displayed
-    expect(logs).toContain('… and 2 more earlier note(s)');
+    // Hidden count displayed (standardized ASCII)
+    expect(logs).toContain('... and 2 more earlier note(s)');
     // Timestamps are shown in show output (they are omitted only in prompts)
     expect(logs).toMatch(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
   });

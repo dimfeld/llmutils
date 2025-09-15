@@ -272,13 +272,14 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       } else {
         // Truncate to a single line for compact display
         const singleLine = text.replace(/\s+/g, ' ').trim();
-        const truncated = singleLine.length > 160 ? singleLine.slice(0, 157) + '…' : singleLine;
+        const truncated = singleLine.length > 160 ? singleLine.slice(0, 157) + '...' : singleLine;
         log(`  • ${chalk.gray(ts)}  ${truncated}`);
       }
     }
     const hidden = notes.length - visible.length;
     if (hidden > 0) {
-      log(chalk.gray(`… and ${hidden} more earlier note(s)`));
+      const { formatHiddenNotesSummary } = await import('../truncation.js');
+      log(chalk.gray(formatHiddenNotesSummary(hidden)));
     }
   }
 

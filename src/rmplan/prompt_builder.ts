@@ -1,5 +1,6 @@
 import * as path from 'path';
 import type { PlanSchema } from './planSchema.js';
+import { formatHiddenNotesSummary } from './truncation.js';
 import type { RmplanConfig } from './configSchema.js';
 import { buildPlanContextPrompt, isURL } from './context_helpers.js';
 import { getGitRoot } from '../common/git.js';
@@ -319,7 +320,8 @@ export function buildProgressNotesSection(planData: PlanSchema): string {
   }
   const hiddenCount = notes.length - latest.length;
   if (hiddenCount > 0) {
-    lines.push(`\n… and ${hiddenCount} more earlier note(s)`);
+    // Standardized ASCII summary
+    lines.push(`\n${formatHiddenNotesSummary(hiddenCount)}`);
   }
 
   return lines.join('\n');

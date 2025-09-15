@@ -15,4 +15,10 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Progress Notes');
     expect(out).toContain('rmplan add-progress-note 123 "<note text>"');
   });
+
+  it('includes progress notes guidance in non-batch mode as well', () => {
+    const out = wrapWithOrchestration('Context', '999', { batchMode: false });
+    expect(out).toContain('Progress Notes');
+    expect(out).toContain('rmplan add-progress-note 999 "<note text>"');
+  });
 });

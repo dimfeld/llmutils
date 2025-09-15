@@ -90,4 +90,57 @@ describe('handleAddProgressNoteCommand', () => {
       handleAddProgressNoteCommand(planFile, '   ', { parent: { opts: () => ({}) } })
     ).rejects.toThrow('You must provide a non-empty progress note');
   });
+
+  test('resolves plan by numeric ID using configured tasks dir', async () => {
+    // Write config pointing tasks to our temp tasksDir
+    const configDir = path.join(tempDir, '.rmfilter');
+    await fs.mkdir(configDir, { recursive: true });
+    const configPath = path.join(configDir, 'rmplan.yml');
+    await fs.writeFile(configPath, yaml.stringify({ paths: { tasks: tasksDir } }));
+
+    const plan: PlanSchema = {
+      id: 777,
+      title: 'ID Plan',
+      goal: 'Goal',
+      details: 'Details',
+      tasks: [],
+    };
+    await fs.writeFile(path.join(tasksDir, '777.yml'), yaml.stringify(plan));
+
+    await handleAddProgressNoteCommand('777', 'Note via ID', {
+      parent: { opts: () => ({ config: configPath }) },
+    } as any);
+
+    const updated = await readPlanFile(path.join(tasksDir, '777.yml'));
+    expect(updated.progressNotes?.length).toBe(1);
+    expect(updated.progressNotes?.[0].text).toBe('Note via ID');
+  });
+
+  test('fails when plan ID is duplicated across files', async () => {
+    // Write config pointing tasks to our temp tasksDir
+    const configDir = path.join(tempDir, '.rmfilter');
+    await fs.mkdir(configDir, { recursive: true });
+    const configPath = path.join(configDir, 'rmplan.yml');
+    await fs.writeFile(configPath, yaml.stringify({ paths: { tasks: tasksDir } }));
+
+    const dupPlanA: PlanSchema = {
+      id: 42,
+      title: 'Dup A',
+      goal: 'Goal',
+      details: 'Details',
+      tasks: [],
+    };
+    const subdirA = path.join(tasksDir, 'subA');
+    const subdirB = path.join(tasksDir, 'subB');
+    await fs.mkdir(subdirA, { recursive: true });
+    await fs.mkdir(subdirB, { recursive: true });
+    await fs.writeFile(path.join(subdirA, '42.yml'), yaml.stringify(dupPlanA));
+    await fs.writeFile(path.join(subdirB, '42.yml'), yaml.stringify({ ...dupPlanA, title: 'Dup B' }));
+
+    await expect(
+      handleAddProgressNoteCommand('42', 'Should fail', {
+        parent: { opts: () => ({ config: configPath }) },
+      } as any)
+    ).rejects.toThrow(/duplicated in multiple files/i);
+  });
 });

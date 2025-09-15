@@ -171,7 +171,8 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - Do NOT proceed to further phases or mark tasks done after a failure.
 - You may add brief additional context if necessary (e.g., which tasks were being processed).`;
 
-  const batchModeGuidelines = options.batchMode
+  // Batch-mode specific guidance
+  const batchModeOnly = options.batchMode
     ? `
 - Subagents will have access to the entire list of incomplete tasks from the plan file, so be sure to include which tasks to focus on in your subagent instructions.
 - **Be selective**: Don't attempt all tasks at once - choose a reasonable subset that works well together.
@@ -183,7 +184,11 @@ If any agent emitted a line beginning with 'FAILED:', do not run any of the foll
 
 When updating tasks after successful implementation, testing, and review, use the Bash command 'rmplan set-task-done ${planId} --title "<taskTitle>"'.
 To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'. To set multiple tasks done, run the command multiple times for each task.
+`
+    : '';
 
+  // Progress notes guidance should be present in both batch and non-batch modes
+  const progressNotesGuidance = `
 ## Progress Notes
 
 While executing, add progress notes whenever you:
@@ -192,10 +197,9 @@ While executing, add progress notes whenever you:
 - Discover important details future runs should know
 
 Use the Bash command 'rmplan add-progress-note ${planId} "<note text>"'. Notes should be self-contained and understandable without extra context.
-`
-    : '';
+`;
 
-  return baseGuidelines + failureProtocol + batchModeGuidelines;
+  return baseGuidelines + failureProtocol + batchModeOnly + progressNotesGuidance;
 }
 
 /**

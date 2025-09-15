@@ -324,8 +324,8 @@ describe('prompt_builder', () => {
       expect(result).not.toContain('Note #2 content');
       expect(result).toContain('Note #3 content');
       expect(result).toContain('Note #12 content');
-      // Summary line
-      expect(result).toContain('… and 2 more earlier note(s)');
+      // Summary line (standardized ASCII)
+      expect(result).toContain('... and 2 more earlier note(s)');
       // Timestamps are not included in prompts
       expect(result).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
     });
