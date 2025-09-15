@@ -1,6 +1,6 @@
 import * as path from 'path';
 import type { PlanSchema } from './planSchema.js';
-import { formatHiddenNotesSummary } from './truncation.js';
+import { formatHiddenNotesSummary, MAX_PROMPT_NOTES, MAX_NOTE_CHARS } from './truncation.js';
 import type { RmplanConfig } from './configSchema.js';
 import { buildPlanContextPrompt, isURL } from './context_helpers.js';
 import { getGitRoot } from '../common/git.js';
@@ -304,9 +304,7 @@ export function buildProgressNotesSection(planData: PlanSchema): string {
   const notes = planData.progressNotes || [];
   if (!notes.length) return '';
 
-  const MAX_NOTES = 10;
-  const MAX_NOTE_CHARS = 160;
-  const startIndex = Math.max(0, notes.length - MAX_NOTES);
+  const startIndex = Math.max(0, notes.length - MAX_PROMPT_NOTES);
   const latest = notes.slice(startIndex);
 
   const lines: string[] = ['## Progress Notes', ''];

@@ -258,9 +258,9 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   if (plan.progressNotes && plan.progressNotes.length > 0) {
     log('\n' + chalk.bold('Progress Notes:'));
     log('─'.repeat(60));
-    const MAX_NOTES = 10;
+    const { MAX_SHOW_NOTES, MAX_NOTE_CHARS } = await import('../truncation.js');
     const notes = plan.progressNotes;
-    const startIndex = options.full ? 0 : Math.max(0, notes.length - MAX_NOTES);
+    const startIndex = options.full ? 0 : Math.max(0, notes.length - MAX_SHOW_NOTES);
     const visible = notes.slice(startIndex);
     for (const n of visible) {
       const ts = new Date(n.timestamp).toLocaleString();
@@ -272,7 +272,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       } else {
         // Truncate to a single line for compact display
         const singleLine = text.replace(/\s+/g, ' ').trim();
-        const truncated = singleLine.length > 160 ? singleLine.slice(0, 157) + '...' : singleLine;
+        const truncated =
+          singleLine.length > MAX_NOTE_CHARS
+            ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
+            : singleLine;
         log(`  • ${chalk.gray(ts)}  ${truncated}`);
       }
     }
