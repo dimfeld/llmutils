@@ -14,6 +14,7 @@ export const phaseSchema = z
       .optional()
       .describe('Plan details. This can also be in markdown content after the YAML'),
     id: z.coerce.number().int().positive().optional(),
+    generatedBy: z.enum(['agent', 'oneshot']).optional(),
     status: z.preprocess((s) => {
       if (typeof s === 'string') {
         // common synonyms

@@ -274,6 +274,7 @@ export interface ExtractMarkdownToYamlOptions {
   stubPlan?: { data: PlanSchema; path: string };
   updatePlan?: { data: PlanSchema; path: string };
   commit?: boolean;
+  generatedBy?: 'agent' | 'oneshot';
 }
 
 export async function extractMarkdownToYaml(
@@ -388,6 +389,11 @@ export async function extractMarkdownToYaml(
           validatedPlan.status = originalPlan.status || 'pending';
         }
       }
+
+      // Set generatedBy if provided
+      if (options.generatedBy) {
+        validatedPlan.generatedBy = options.generatedBy;
+      }
     } else {
       // Not an update - set metadata fields for new plan
       validatedPlan.id =
@@ -406,6 +412,11 @@ export async function extractMarkdownToYaml(
       // Set defaults for status if not already set
       if (!validatedPlan.status) {
         validatedPlan.status = 'pending';
+      }
+
+      // Set generatedBy if provided
+      if (options.generatedBy) {
+        validatedPlan.generatedBy = options.generatedBy;
       }
     }
 

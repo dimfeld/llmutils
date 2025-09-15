@@ -239,6 +239,7 @@ export async function handleGenerateCommand(
       issueUrls: [],
       commit: options.commit,
       stubPlan,
+      generatedBy: 'oneshot',
     };
 
     await extractMarkdownToYaml(yamlContent, config, options.quiet ?? false, extractOptions);
@@ -624,6 +625,7 @@ export async function handleGenerateCommand(
         issueUrls: issueUrlsForExtract,
         stubPlan,
         commit: options.commit,
+        generatedBy: options.claude ? 'agent' : 'oneshot',
       };
 
       await extractMarkdownToYaml(input, config, options.quiet ?? false, extractOptions);
