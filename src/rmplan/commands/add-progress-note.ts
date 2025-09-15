@@ -4,6 +4,7 @@
 import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import { log } from '../../logging.js';
 import { open, unlink } from 'node:fs/promises';
+import { loadEffectiveConfig } from '../configLoader.js';
 
 export async function handleAddProgressNoteCommand(planFile: string, note: string, command: any) {
   if (!planFile || typeof planFile !== 'string') {
@@ -14,6 +15,7 @@ export async function handleAddProgressNoteCommand(planFile: string, note: strin
   }
 
   const globalOpts = command.parent.opts();
+  const config = await loadEffectiveConfig(globalOpts.config);
   // Resolve file or ID to an absolute plan file path
   const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
 
@@ -40,6 +42,7 @@ export async function handleAddProgressNoteCommand(planFile: string, note: strin
         index === self.findIndex((n) => n.timestamp === value.timestamp && n.text === value.text)
       );
     });
+    const maxStored = config.progressNotes?.maxStored;
 
     // Acquire a simple advisory lock to serialize writes
     let lockHandle: any = null;
@@ -57,11 +60,20 @@ export async function handleAddProgressNoteCommand(planFile: string, note: strin
       const latestNotes = Array.isArray(latestBeforeWrite.progressNotes)
         ? latestBeforeWrite.progressNotes
         : [];
-      const union = [...merged, ...latestNotes].filter((value, index, self) => {
-        return (
-          index === self.findIndex((n) => n.timestamp === value.timestamp && n.text === value.text)
-        );
-      });
+      // Build a last-wins union to avoid re-introducing discarded notes
+      // Combine existing latestNotes first, then our merged (which ends with the new entry)
+      const combined = [...latestNotes, ...merged];
+      const key = (n: { timestamp: string; text: string }) => `${n.timestamp}|${n.text}`;
+      const map = new Map<string, (typeof combined)[number]>();
+      for (const n of combined) {
+        map.set(key(n), n); // last occurrence wins
+      }
+      let union = Array.from(map.values());
+      // Apply rotation to keep only the most recent notes by array order
+      if (typeof maxStored === 'number' && maxStored > 0 && union.length > maxStored) {
+        // Keep the most recent notes by array order
+        union = union.slice(-maxStored);
+      }
 
       // Write the most up-to-date object to avoid clobbering other fields.
       latestBeforeWrite.progressNotes = union;
