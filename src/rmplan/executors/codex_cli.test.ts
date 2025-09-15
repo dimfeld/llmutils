@@ -137,4 +137,68 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     expect(out.failureDetails?.sourceAgent).toBe('reviewer');
     expect(out.failureDetails?.problems).toContain('conflict');
   });
+
+  test('fixer failure short-circuits after NEEDS_FIXES reviewer verdict', async () => {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async (_p: string) => ({
+        id: 1,
+        title: 'Plan',
+        tasks: [{ title: 'Task A', done: false }],
+      })),
+    }));
+
+    // Reviewer will return NEEDS_FIXES; analyzer says fixes needed
+    await moduleMocker.mock('./codex_cli/review_analysis.ts', () => ({
+      analyzeReviewFeedback: mock(async () => ({ needs_fixes: true, fix_instructions: 'Please fix X' })),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') opts.formatStdout('ignored');
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }),
+    }));
+
+    // Sequence: implementer OK, tester OK, reviewer NEEDS_FIXES, fixer FAILED
+    const finals = [
+      'Implementer OK',
+      'Tester OK',
+      'Some review text\nVERDICT: NEEDS_FIXES',
+      'FAILED: Fixer unable to proceed\nProblems:\n- conflict',
+    ];
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: () => {
+        let final: string | undefined;
+        return {
+          formatChunk: () => {
+            final = finals.shift();
+            return '';
+          },
+          getFinalAgentMessage: () => final,
+          getFailedAgentMessage: () => (final && final.startsWith('FAILED:') ? final : undefined),
+        };
+      },
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    const out = (await exec.execute('CTX', {
+      planId: '1',
+      planTitle: 'P',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+      captureOutput: 'result',
+    })) as any;
+
+    expect(out).toBeDefined();
+    expect(out.success).toBeFalse();
+    expect(out.failureDetails?.sourceAgent).toBe('fixer');
+    expect(out.failureDetails?.problems).toContain('conflict');
+  });
 });

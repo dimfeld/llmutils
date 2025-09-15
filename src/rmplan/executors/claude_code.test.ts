@@ -120,4 +120,51 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(out.success).toBeFalse();
     expect(out.failureDetails?.sourceAgent).toBe('reviewer');
   });
+
+  test('detects FAILED when not first line and returns orchestrator source by default', async () => {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    const failureRaw = `PREFACE\nSome lines first\n\nFAILED: Could not proceed due to constraints\nProblems:\n- X`;
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((_line: string) => ({
+        type: 'assistant',
+        message: 'Model output...',
+        rawMessage: failureRaw,
+        // failed flag missing to force executor to detect using parseFailedReportAnywhere
+      })),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    const out = (await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'T',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    })) as any;
+
+    expect(out).toBeDefined();
+    expect(out.success).toBeFalse();
+    expect(out.failureDetails?.sourceAgent).toBe('orchestrator');
+    expect(out.failureDetails?.problems).toContain('X');
+  });
 });

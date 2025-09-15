@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { detectFailedLine, extractFailureDetails, parseFailedReport } from './failure_detection.ts';
+import {
+  detectFailedLine,
+  detectFailedLineAnywhere,
+  extractFailureDetails,
+  parseFailedReport,
+  parseFailedReportAnywhere,
+  sliceFromFirstFailed,
+} from './failure_detection.ts';
 
 describe('failure_detection utilities', () => {
   test('detects FAILED on first non-empty line and extracts details', () => {
@@ -38,5 +45,40 @@ describe('failure_detection utilities', () => {
     const det = detectFailedLine(msg);
     expect(det.failed).toBeFalse();
     expect(parseFailedReport(msg).failed).toBeFalse();
+  });
+
+  test('detects FAILED appearing later with detectFailedLineAnywhere and slices correctly', () => {
+    const msg = `Intro line\n\nSome preface\nFAILED: Later failure line\nProblems:\n- X`;
+    const detFirst = detectFailedLine(msg);
+    expect(detFirst.failed).toBeFalse();
+
+    const detAny = detectFailedLineAnywhere(msg);
+    expect(detAny.failed).toBeTrue();
+    expect(detAny.summary).toBe('Later failure line');
+
+    const sliced = sliceFromFirstFailed(msg)!;
+    expect(sliced.startsWith('FAILED:')).toBeTrue();
+    expect(sliced).toContain('Problems:');
+
+    // extractFailureDetails uses strict first-line detection and should not parse from full message
+    expect(extractFailureDetails(msg)).toBeUndefined();
+
+    // But parseFailedReportAnywhere should succeed by slicing first
+    const parsed = parseFailedReportAnywhere(msg);
+    expect(parsed.failed).toBeTrue();
+    expect(parsed.details?.problems).toContain('X');
+  });
+
+  test('handles Windows newlines and varied heading casing', () => {
+    const msg = `\r\n  \r\nFAILED: Mixed-casing headings and CRLF\r\nrequirements:\r\n- R1\r\n\r\nPROBLEMS:\r\n- P1\r\n\r\nPossible Solutions:\r\n- S1\r\n`;
+
+    const det = detectFailedLine(msg);
+    expect(det.failed).toBeTrue();
+    expect(det.summary).toContain('Mixed-casing');
+
+    const details = extractFailureDetails(msg)!;
+    expect(details.requirements).toContain('R1');
+    expect(details.problems).toContain('P1');
+    expect(details.solutions).toContain('S1');
   });
 });
