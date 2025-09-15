@@ -97,12 +97,13 @@ export class CodexCliExecutor implements Executor {
     // Track failure state across agents
     let hadFailure = false;
     let failureOutput: string | undefined;
-    let failureSource: AgentType | 'reviewer' | 'orchestrator' | undefined;
 
     // Build implementer prompt using the Claude Code agent prompt for consistency
     let implementerInstructions = await this.loadAgentInstructionsFor('implementer', gitRoot);
-
-    implementerInstructions += `\n\nIn your final message, be sure to include the titles of the tasks that you completed.\n`;
+    // Safely append extra guidance without coercing undefined to string
+    implementerInstructions =
+      (implementerInstructions || '') +
+      `\n\nIn your final message, be sure to include the titles of the tasks that you completed.\n`;
 
     const implementer = getImplementerPrompt(
       contextContent,
@@ -122,14 +123,17 @@ export class CodexCliExecutor implements Executor {
       if (parsed.failed) {
         hadFailure = true;
         failureOutput = implementerOutput;
-        failureSource = 'implementer';
         const aggregated = buildAggregatedOutput();
         return {
           ...(aggregated ?? { content: implementerOutput }),
           success: false,
           failureDetails: parsed.details
             ? { ...parsed.details, sourceAgent: 'implementer' }
-            : { requirements: '', problems: parsed.summary || 'FAILED', sourceAgent: 'implementer' },
+            : {
+                requirements: '',
+                problems: parsed.summary || 'FAILED',
+                sourceAgent: 'implementer',
+              },
         };
       }
     }
@@ -169,7 +173,6 @@ export class CodexCliExecutor implements Executor {
         if (parsed.failed) {
           hadFailure = true;
           failureOutput = testerOutput;
-          failureSource = 'tester';
           const aggregated = buildAggregatedOutput();
           return {
             ...(aggregated ?? { content: testerOutput }),
@@ -208,7 +211,6 @@ export class CodexCliExecutor implements Executor {
         if (parsed.failed) {
           hadFailure = true;
           failureOutput = reviewerOutput;
-          failureSource = 'reviewer';
           const aggregated = buildAggregatedOutput();
           return {
             ...(aggregated ?? { content: reviewerOutput }),
@@ -278,14 +280,17 @@ export class CodexCliExecutor implements Executor {
             if (parsed.failed) {
               hadFailure = true;
               failureOutput = fixerOutput;
-              failureSource = 'fixer';
               const aggregated = buildAggregatedOutput();
               return {
                 ...(aggregated ?? { content: fixerOutput }),
                 success: false,
                 failureDetails: parsed.details
                   ? { ...parsed.details, sourceAgent: 'fixer' }
-                  : { requirements: '', problems: parsed.summary || 'FAILED', sourceAgent: 'fixer' },
+                  : {
+                      requirements: '',
+                      problems: parsed.summary || 'FAILED',
+                      sourceAgent: 'fixer',
+                    },
               };
             }
           }
@@ -597,7 +602,12 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
       throw new Error(`codex exited with code ${exitCode}`);
     }
 
-    const final = formatter.getFinalAgentMessage();
+    // Prefer a FAILED agent message when available to surface failures reliably
+    const failedMsg =
+      typeof (formatter as any).getFailedAgentMessage === 'function'
+        ? (formatter as any).getFailedAgentMessage()
+        : undefined;
+    const final = failedMsg || formatter.getFinalAgentMessage();
     if (!final) {
       // Provide helpful context for debugging
       error('Codex returned no final agent message. Enable debug logs for details.');

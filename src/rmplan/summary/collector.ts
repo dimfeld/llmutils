@@ -82,6 +82,7 @@ export class SummaryCollector {
       content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
       steps,
       metadata: input.output?.metadata,
+      failureDetails: input.output?.failureDetails,
     };
 
     const step: StepResult = {

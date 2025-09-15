@@ -284,7 +284,7 @@ Before marking the task as done, verify:
 - [ ] All tests pass successfully
 - [ ] Linting checks pass without errors
 - [ ] No unnecessary files or debug code included
-- [ ] Changes are focused and don't include unrelated modifications
+- [ ] Changes are focused and don't include modifications to unrelated parts of the code
 
 Remember: Quality is more important than speed. Take time to understand the codebase and verify your changes work correctly within the existing system.`;
 }

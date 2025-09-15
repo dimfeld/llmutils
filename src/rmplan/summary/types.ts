@@ -16,6 +16,13 @@ export interface NormalizedExecutorOutput {
   steps?: Array<{ title: string; body: string }>;
   /** Optional metadata from the executor (agent names, phases, etc). */
   metadata?: Record<string, unknown>;
+  /** Optional standardized failure details when executor reports failure. */
+  failureDetails?: {
+    sourceAgent?: string;
+    requirements?: string;
+    problems?: string;
+    solutions?: string;
+  };
 }
 
 /**

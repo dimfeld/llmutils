@@ -17,6 +17,9 @@ export interface FailureDetails {
 // as the first non-empty line of the assistant's final message.
 const FAILED_PREFIX_FIRST_LINE = /^\s*FAILED:\s*(.*)$/;
 
+// More permissive detection: match any line in the content starting with FAILED:
+const FAILED_PREFIX_ANY_LINE = /^\s*FAILED:\s*(.*)$/;
+
 /** Returns true and the 1-line summary if content contains a FAILED line. */
 export function detectFailedLine(content: string): FailureDetection {
   const text = content.replace(/\r\n?/g, '\n');
@@ -29,6 +32,31 @@ export function detectFailedLine(content: string): FailureDetection {
   if (!m) return { failed: false };
   const summary = (m[1] || '').trim();
   return { failed: true, summary };
+}
+
+/** Returns true and the 1-line summary even if FAILED appears later in the message. */
+export function detectFailedLineAnywhere(content: string): FailureDetection & { index?: number } {
+  const text = content.replace(/\r\n?/g, '\n');
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || line.trim() === '') continue;
+    const m = line.match(FAILED_PREFIX_ANY_LINE);
+    if (m) {
+      const summary = (m[1] || '').trim();
+      return { failed: true, summary, index: i };
+    }
+  }
+  return { failed: false };
+}
+
+/** Slice message starting at the first FAILED line when present. */
+export function sliceFromFirstFailed(content: string): string | undefined {
+  const det = detectFailedLineAnywhere(content);
+  if (!det.failed || det.index == null) return undefined;
+  const text = content.replace(/\r\n?/g, '\n');
+  const lines = text.split('\n');
+  return lines.slice(det.index).join('\n');
 }
 
 /**
@@ -117,4 +145,13 @@ export function parseFailedReport(
   if (!det.failed) return { failed: false };
   const details = extractFailureDetails(content);
   return { failed: true, summary: det.summary, details };
+}
+
+/** Like parseFailedReport, but will detect FAILED lines anywhere and parse from there. */
+export function parseFailedReportAnywhere(
+  content: string
+): { failed: true; summary?: string; details?: FailureDetails } | { failed: false } {
+  const slice = sliceFromFirstFailed(content);
+  if (!slice) return { failed: false };
+  return parseFailedReport(slice);
 }

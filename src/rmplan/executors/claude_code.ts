@@ -26,7 +26,11 @@ import {
   getTesterPrompt,
   getReviewerPrompt,
 } from './claude_code/agent_prompts.ts';
-import { parseFailedReport } from './failure_detection.ts';
+import {
+  parseFailedReport,
+  parseFailedReportAnywhere,
+  detectFailedLineAnywhere,
+} from './failure_detection.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -1116,7 +1120,7 @@ export class ClaudeCodeExecutor implements Executor {
 
         // Determine failure from stream if not already captured
         if (!failureRaw && lastAssistantRaw) {
-          const parsed = parseFailedReport(lastAssistantRaw);
+          const parsed = parseFailedReportAnywhere(lastAssistantRaw);
           if (parsed.failed) {
             failureRaw = lastAssistantRaw;
             failureSummary = parsed.summary || 'Agent reported FAILED';
@@ -1125,21 +1129,36 @@ export class ClaudeCodeExecutor implements Executor {
 
         // If a failure was detected at any point, return structured failure regardless of capture mode
         if (failureRaw) {
-          const parsed = parseFailedReport(failureRaw);
+          const parsedAny = parseFailedReportAnywhere(failureRaw);
+          // Try to infer sub-agent identity from the FAILED summary line
+          const failedLine = detectFailedLineAnywhere(failureRaw);
+          const sum = failedLine.summary || '';
+          const lower = sum.toLowerCase();
+          let sourceAgent: 'implementer' | 'tester' | 'reviewer' | 'fixer' | 'orchestrator' =
+            'orchestrator';
+          if (lower.startsWith('implementer')) sourceAgent = 'implementer';
+          else if (lower.startsWith('tester')) sourceAgent = 'tester';
+          else if (lower.startsWith('reviewer')) sourceAgent = 'reviewer';
+          else if (lower.startsWith('fixer')) sourceAgent = 'fixer';
+
           return {
             content: failureRaw,
             metadata: { phase: 'orchestrator' },
             success: false,
-            failureDetails: parsed.failed && parsed.details
-              ? { ...parsed.details, sourceAgent: 'orchestrator' }
-              : { requirements: '', problems: failureSummary || 'FAILED', sourceAgent: 'orchestrator' },
+            failureDetails:
+              parsedAny.failed && parsedAny.details
+                ? { ...parsedAny.details, sourceAgent }
+                : { requirements: '', problems: failureSummary || 'FAILED', sourceAgent },
           };
         }
 
         // Return captured output if any capture mode was enabled, otherwise return void explicitly
         const captureMode = planInfo?.captureOutput;
         if (captureMode === 'all' || captureMode === 'result') {
-          return { content: capturedOutputLines.join(''), metadata: { phase: 'orchestrator' } };
+          return {
+            content: capturedOutputLines.join('\n\n'),
+            metadata: { phase: 'orchestrator' },
+          };
         }
 
         return; // Explicitly return void for 'none' or undefined captureOutput

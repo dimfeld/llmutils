@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  detectFailedLine,
-  extractFailureDetails,
-  parseFailedReport,
-} from './failure_detection.ts';
+import { detectFailedLine, extractFailureDetails, parseFailedReport } from './failure_detection.ts';
 
 describe('failure_detection utilities', () => {
   test('detects FAILED on first non-empty line and extracts details', () => {
@@ -44,4 +40,3 @@ describe('failure_detection utilities', () => {
     expect(parseFailedReport(msg).failed).toBeFalse();
   });
 });
-

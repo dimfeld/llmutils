@@ -198,7 +198,12 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
       case 'agent_message': {
         const text = msg.message ?? '';
         // Failure detection: recognize standardized FAILED: protocol on first non-empty line
-        const failed = /^\s*FAILED:\s*/.test((text || '').replace(/\r\n?/g, '\n').split('\n').find((l) => l.trim() !== '') ?? '');
+        const failed = /^\s*FAILED:\s*/.test(
+          (text || '')
+            .replace(/\r\n?/g, '\n')
+            .split('\n')
+            .find((l) => l.trim() !== '') ?? ''
+        );
         return {
           type: msg.type,
           message: chalk.bold.green(`### Agent Message [${ts}]`) + '\n\n' + text,

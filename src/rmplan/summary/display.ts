@@ -76,6 +76,30 @@ function summarizeSteps(steps: StepResult[]): string[] {
     if (s.errorMessage) {
       lines.push(chalk.red(`  Error: ${s.errorMessage}`));
     }
+    // Emphasize standardized failure details when available
+    if (!s.success && s.output?.failureDetails) {
+      const fd = s.output.failureDetails;
+      const src = fd.sourceAgent ? ` (${fd.sourceAgent})` : '';
+      if (fd.problems) lines.push(chalk.red(`  FAILED${src}: ${fd.problems}`));
+      if (fd.requirements && fd.requirements.trim()) {
+        lines.push(chalk.yellow('  Requirements:'));
+        lines.push(
+          ...fd.requirements
+            .trim()
+            .split('\n')
+            .map((l) => `    ${highlightCodeLine(l)}`)
+        );
+      }
+      if (fd.solutions && fd.solutions.trim()) {
+        lines.push(chalk.yellow('  Possible solutions:'));
+        lines.push(
+          ...fd.solutions
+            .trim()
+            .split('\n')
+            .map((l) => `    ${highlightCodeLine(l)}`)
+        );
+      }
+    }
     // Prefer structured steps when provided
     const structured = s.output?.steps;
     const legacySections = s.output?.metadata && (s.output.metadata as any).sections;

@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import yaml from 'yaml';
 import { debugLog } from '../../../logging.ts';
 import { createTwoFilesPatch, diffLines } from 'diff';
-import { detectFailedLine } from '../failure_detection.ts';
+import { detectFailedLineAnywhere } from '../failure_detection.ts';
 
 // Represents the top-level message object
 export type Message =
@@ -315,7 +315,9 @@ export function formatJsonMessage(input: string): {
       }
     }
     const rawCombined = rawMessage.filter(Boolean).join('\n');
-    const failure = message.type === 'assistant' ? detectFailedLine(rawCombined) : { failed: false };
+    // Detect FAILED anywhere in the assistant message (not only first non-empty line)
+    const failure =
+      message.type === 'assistant' ? detectFailedLineAnywhere(rawCombined) : { failed: false };
     return {
       message: outputLines.join('\n\n'),
       rawMessage: rawCombined,
