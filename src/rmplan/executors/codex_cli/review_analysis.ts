@@ -69,7 +69,8 @@ export async function analyzeReviewFeedback(
     error(`Review analysis failed: ${(e as Error).toString()}`);
     return {
       needs_fixes: true,
-      fix_instructions: '',
+      // Just pass back the original reviewer output
+      fix_instructions: reviewerOutput,
     };
   }
 }

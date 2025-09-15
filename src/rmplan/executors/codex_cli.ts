@@ -248,7 +248,7 @@ export class CodexCliExecutor implements Executor {
           return;
         }
 
-        let fixInstructions = analysis.fix_instructions ?? reviewerOutput;
+        let fixInstructions = analysis.fix_instructions || reviewerOutput;
 
         log('Review analysis: Fixes required.');
         if (analysis.fix_instructions) {
@@ -338,7 +338,7 @@ export class CodexCliExecutor implements Executor {
           }
 
           // Give it the new fix instructions and continue
-          fixInstructions = newAnalysis.fix_instructions ?? rerunReviewerOutput;
+          fixInstructions = newAnalysis.fix_instructions || rerunReviewerOutput;
           continue;
         }
 
