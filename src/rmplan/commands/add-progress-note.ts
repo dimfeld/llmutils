@@ -63,8 +63,9 @@ export async function handleAddProgressNoteCommand(planFile: string, note: strin
         );
       });
 
-      current.progressNotes = union;
-      await writePlanFile(resolvedPlanFile, current);
+      // Write the most up-to-date object to avoid clobbering other fields.
+      latestBeforeWrite.progressNotes = union;
+      await writePlanFile(resolvedPlanFile, latestBeforeWrite);
 
       // Re-read to ensure our note and union survived any concurrent writes
       const after = await readPlanFile(resolvedPlanFile);
@@ -87,6 +88,8 @@ export async function handleAddProgressNoteCommand(planFile: string, note: strin
     }
   }
 
-  // If we exit loop without confirming, log success best-effort
-  log(`Added progress note to ${resolvedPlanFile}`);
+  // If we exit the retry loop without confirming success, report failure
+  throw new Error(
+    `Failed to add progress note after ${maxRetries} attempts due to concurrent modifications`
+  );
 }
