@@ -12,4 +12,3 @@ describe('truncation helpers', () => {
     expect(formatHiddenNotesSummary(2)).toBe('... and 2 more earlier note(s)');
   });
 });
-

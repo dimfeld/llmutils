@@ -13,4 +13,3 @@ export function formatHiddenNotesSummary(count: number): string {
   if (count <= 0) return '';
   return `${ELLIPSIS_ASCII} and ${count} more earlier note(s)`;
 }
-

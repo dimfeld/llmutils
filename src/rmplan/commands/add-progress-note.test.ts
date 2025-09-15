@@ -135,7 +135,10 @@ describe('handleAddProgressNoteCommand', () => {
     await fs.mkdir(subdirA, { recursive: true });
     await fs.mkdir(subdirB, { recursive: true });
     await fs.writeFile(path.join(subdirA, '42.yml'), yaml.stringify(dupPlanA));
-    await fs.writeFile(path.join(subdirB, '42.yml'), yaml.stringify({ ...dupPlanA, title: 'Dup B' }));
+    await fs.writeFile(
+      path.join(subdirB, '42.yml'),
+      yaml.stringify({ ...dupPlanA, title: 'Dup B' })
+    );
 
     await expect(
       handleAddProgressNoteCommand('42', 'Should fail', {

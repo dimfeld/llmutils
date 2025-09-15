@@ -14,10 +14,10 @@ issue: []
 docs: []
 planGeneratedAt: 2025-09-15T08:23:05.434Z
 createdAt: 2025-09-15T03:02:03.721Z
-updatedAt: 2025-09-15T08:27:45.809Z
+updatedAt: 2025-09-15T08:52:07.998Z
 tasks:
   - title: Extend Plan Schema
-    done: false
+    done: true
     description: >
       Add progressNotes field to phaseSchema in `src/rmplan/planSchema.ts` after
       line 35 with other array fields:
@@ -32,12 +32,12 @@ tasks:
       ```
     steps: []
   - title: Regenerate JSON Schema
-    done: false
+    done: true
     description: Run `bun run scripts/update-json-schemas.ts` to regenerate the JSON
       schema file that provides IDE support for plan files.
     steps: []
   - title: Add Schema Validation Tests
-    done: false
+    done: true
     description: |
       Create tests in `src/rmplan/planSchema.test.ts` to validate:
       - Plans with valid progress notes are accepted
@@ -47,7 +47,7 @@ tasks:
       - Backward compatibility with plans lacking progressNotes
     steps: []
   - title: Create Command Handler
-    done: false
+    done: true
     description: |
       Create `src/rmplan/commands/add-progress-note.ts` with:
       - Interface for command options
@@ -56,7 +56,7 @@ tasks:
       - Integration with plan resolution and config loading
     steps: []
   - title: Register Command in CLI
-    done: false
+    done: true
     description: >
       Add command registration to `src/rmplan/rmplan.ts`:
 
@@ -74,7 +74,7 @@ tasks:
       ```
     steps: []
   - title: Write Command Tests
-    done: false
+    done: true
     description: |
       Create `src/rmplan/commands/add-progress-note.test.ts` with tests for:
       - Adding notes to existing plans
@@ -84,7 +84,7 @@ tasks:
       - Error handling for invalid inputs
     steps: []
   - title: Add Progress Notes to Prompt Builder
-    done: false
+    done: true
     description: |
       Modify `src/rmplan/prompt_builder.ts`:
       - Create `buildProgressNotesSection()` function
@@ -93,7 +93,7 @@ tasks:
       - Handle empty notes array gracefully
     steps: []
   - title: Update Show Command
-    done: false
+    done: true
     description: |
       Modify `src/rmplan/commands/show.ts`:
       - Display progress notes section when notes exist
@@ -102,7 +102,7 @@ tasks:
       - Handle long notes with appropriate truncation
     steps: []
   - title: Update List Command
-    done: false
+    done: true
     description: |
       Modify `src/rmplan/commands/list.ts`:
       - Add progress note count to plan listings
@@ -110,7 +110,7 @@ tasks:
       - Maintain clean output format
     steps: []
   - title: Update Agent Documentation
-    done: false
+    done: true
     description: |
       Modify executor prompts to document progress note capability:
       - Update `src/rmplan/executors/claude_code/orchestrator_prompt.ts`
@@ -154,7 +154,24 @@ tasks:
       - Provide examples of when agents should add notes
       - Include progress notes in workflow examples
     steps: []
-changedFiles: []
+changedFiles:
+  - schema/rmplan-plan-schema.json
+  - src/rmplan/commands/add-progress-note.test.ts
+  - src/rmplan/commands/add-progress-note.ts
+  - src/rmplan/commands/list.test.ts
+  - src/rmplan/commands/list.ts
+  - src/rmplan/commands/show.test.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/planSchema.test.ts
+  - src/rmplan/planSchema.ts
+  - src/rmplan/prompt.ts
+  - src/rmplan/prompt_builder.test.ts
+  - src/rmplan/prompt_builder.ts
+  - src/rmplan/rmplan.ts
+  - src/rmplan/truncation.test.ts
+  - src/rmplan/truncation.ts
 rmfilter: []
 ---
 
