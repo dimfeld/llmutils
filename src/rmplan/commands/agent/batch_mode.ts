@@ -118,18 +118,36 @@ export async function executeBatchMode(
           captureOutput: summaryCollector ? 'result' : 'none',
         });
         iteration += 1;
+        const ok = output ? output.success !== false : true;
+        if (!ok) {
+          const fd = output?.failureDetails as any;
+          const src = fd?.sourceAgent ? ` (${fd.sourceAgent})` : '';
+          error(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`);
+          if (fd?.requirements && String(fd.requirements).trim()) {
+            log(boldMarkdownHeaders('\nRequirements\n'));
+            log(String(fd.requirements).trim());
+          }
+          if (fd?.solutions && String(fd.solutions).trim()) {
+            log(boldMarkdownHeaders('\nPossible solutions\n'));
+            log(String(fd.solutions).trim());
+          }
+        }
         if (summaryCollector) {
           const end = Date.now();
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
-            success: true,
+            success: ok,
             output: output ?? undefined,
             startedAt: new Date(start).toISOString(),
             endedAt: new Date(end).toISOString(),
             durationMs: end - start,
             iteration,
           });
+        }
+        if (!ok) {
+          hasError = true;
+          break;
         }
       } catch (err) {
         error('Batch execution failed:', err);
