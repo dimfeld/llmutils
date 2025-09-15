@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 // TODO Need to update to latest AI SDK
 import { z as z3 } from 'zod/v3';
-import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types';
+import type { Executor, ExecutorCommonOptions, ExecutePlanInfo, ExecutorOutput } from './types';
 import type { RmplanConfig } from '../configSchema';
 import type { PrepareNextStepOptions } from '../plans/prepare_step';
 import { getGitRoot } from '../../common/git';
@@ -50,7 +50,41 @@ export class CodexCliExecutor implements Executor {
     } satisfies Partial<PrepareNextStepOptions>;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
+    // Accumulate every piece of output across all steps/iterations
+    type AgentType = 'implementer' | 'tester' | 'reviewer' | 'fixer';
+    const events: Array<{ type: AgentType; message: string }> = [];
+
+    // Helper to optionally return structured output when captureOutput is enabled
+    const buildAggregatedOutput = (): ExecutorOutput | undefined => {
+      if (planInfo.captureOutput !== 'all' && planInfo.captureOutput !== 'result') return undefined;
+      const steps: Array<{ title: string; body: string }> = [];
+      const counters: Record<AgentType, number> = {
+        implementer: 0,
+        tester: 0,
+        reviewer: 0,
+        fixer: 0,
+      };
+      for (const e of events) {
+        counters[e.type]++;
+        const n = counters[e.type];
+        const prettyType =
+          e.type === 'implementer'
+            ? 'Codex Implementer'
+            : e.type === 'tester'
+              ? 'Codex Tester'
+              : e.type === 'reviewer'
+                ? 'Codex Reviewer'
+                : 'Codex Fixer';
+        const title = n === 1 ? prettyType : `${prettyType} #${n}`;
+        steps.push({ title, body: e.message.trim() });
+      }
+      const lastReviewer = [...events].reverse().find((e) => e.type === 'reviewer');
+      const lastAny = events[events.length - 1];
+      const content = (lastReviewer?.message || lastAny?.message || '').trim();
+      // Provide structured steps preferred by summary; keep `content` as fallback.
+      return { content, steps };
+    };
     // Analyze plan file to understand completed vs pending tasks
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
     const planData = await readPlanFile(planInfo.planFilePath);
@@ -73,6 +107,7 @@ export class CodexCliExecutor implements Executor {
     // Execute implementer step and capture its final agent message
     log('Running implementer step...');
     const implementerOutput = await this.executeCodexStep(implementer.prompt, gitRoot);
+    events.push({ type: 'implementer', message: implementerOutput });
     log('Implementer output captured.');
 
     try {
@@ -101,6 +136,7 @@ export class CodexCliExecutor implements Executor {
       // Execute tester step
       log('Running tester step...');
       const testerOutput = await this.executeCodexStep(tester.prompt, gitRoot);
+      events.push({ type: 'tester', message: testerOutput });
       log('Tester output captured.');
 
       // Build reviewer context with implementer + tester outputs and task context
@@ -121,12 +157,15 @@ export class CodexCliExecutor implements Executor {
       // Execute reviewer step
       log('Running reviewer step...');
       const reviewerOutput = await this.executeCodexStep(reviewer.prompt, gitRoot);
+      events.push({ type: 'reviewer', message: reviewerOutput });
       log('Reviewer output captured.');
 
       // Parse and log verdict
       const verdict = this.parseReviewerVerdict(reviewerOutput);
       if (verdict === 'ACCEPTABLE') {
         log('Review verdict: ACCEPTABLE');
+        const aggregated = buildAggregatedOutput();
+        if (aggregated != null) return aggregated;
         return;
       } else if (verdict === 'NEEDS_FIXES') {
         log('Review verdict: NEEDS_FIXES');
@@ -142,6 +181,8 @@ export class CodexCliExecutor implements Executor {
 
         if (!analysis.needs_fixes) {
           log('Review analysis: Issues are out-of-scope or non-blocking. Exiting without fixes.');
+          const aggregated = buildAggregatedOutput();
+          if (aggregated != null) return aggregated;
           return;
         }
 
@@ -155,6 +196,7 @@ export class CodexCliExecutor implements Executor {
         // Implement fix-and-review loop (up to 5 iterations)
         const maxFixIterations = 5;
         let lastFixerOutput = '';
+        let finalReviewerOutput = reviewerOutput;
         for (let iter = 1; iter <= maxFixIterations; iter++) {
           log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
 
@@ -167,6 +209,7 @@ export class CodexCliExecutor implements Executor {
 
           const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot);
           lastFixerOutput = fixerOutput;
+          events.push({ type: 'fixer', message: fixerOutput });
           log('Fixer output captured. Re-running reviewer...');
 
           // Re-run reviewer with updated context including fixer output
@@ -182,34 +225,50 @@ export class CodexCliExecutor implements Executor {
           );
 
           const rerunReviewerOutput = await this.executeCodexStep(rerunReviewerContext, gitRoot);
-          const newAnalysis = await analyzeReviewFeedback({
-            reviewerOutput: rerunReviewerOutput,
-            completedTasks: initiallyCompleted.map((t) => t.title),
-            pendingTasks: initiallyPending.map((t) => t.title),
-            fixerOutput,
-            repoReviewDoc: reviewDoc,
-          });
+          finalReviewerOutput = rerunReviewerOutput;
+          events.push({ type: 'reviewer', message: rerunReviewerOutput });
+
+          // Parse verdict from the latest reviewer output (not the initial one)
+          const verdict = this.parseReviewerVerdict(rerunReviewerOutput);
+
+          const newAnalysis =
+            verdict === 'ACCEPTABLE'
+              ? { needs_fixes: false }
+              : await analyzeReviewFeedback({
+                  reviewerOutput: rerunReviewerOutput,
+                  completedTasks: initiallyCompleted.map((t) => t.title),
+                  pendingTasks: initiallyPending.map((t) => t.title),
+                  fixerOutput,
+                  repoReviewDoc: reviewDoc,
+                });
 
           if (!newAnalysis.needs_fixes) {
             log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
+            const aggregated = buildAggregatedOutput();
+            if (aggregated != null) return aggregated;
             return;
           }
 
           log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
-          if (analysis.fix_instructions) {
-            log(`Fix instructions: ${analysis.fix_instructions}`);
+          if (newAnalysis.fix_instructions) {
+            log(`Fix instructions: ${newAnalysis.fix_instructions}`);
           }
 
           // Give it the new fix instructions and continue
-          fixInstructions = analysis.fix_instructions ?? rerunReviewerOutput;
+          fixInstructions = newAnalysis.fix_instructions ?? rerunReviewerOutput;
           continue;
         }
 
         warn(
           'Maximum fix iterations reached (5) and reviewer still reports issues. Exiting with warnings.'
         );
+        // Even if still needs fixes, provide the latest reviewer output when capturing
+        const aggregated = buildAggregatedOutput();
+        if (aggregated != null) return aggregated;
       } else {
         error('Could not determine review verdict from reviewer output. Treating as NEEDS_FIXES.');
+        const aggregated = buildAggregatedOutput();
+        if (aggregated != null) return aggregated;
         return;
       }
     } finally {
@@ -419,7 +478,7 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
   /** Parse the reviewer verdict from output text */
   private parseReviewerVerdict(output: string): 'ACCEPTABLE' | 'NEEDS_FIXES' | 'UNKNOWN' {
     // Look for a line like: "VERDICT: ACCEPTABLE" or "VERDICT: NEEDS_FIXES"
-    const regex = /\bVERDICT\s*:\s*(ACCEPTABLE|NEEDS_FIXES)\b/i;
+    const regex = /\bVERDICT.*:\s*(ACCEPTABLE|NEEDS_FIXES)\b/i;
     const m = output.match(regex);
     if (!m) return 'UNKNOWN';
     const v = m[1].toUpperCase();
@@ -477,6 +536,25 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
     gitRoot: string
   ): Promise<void> {
     try {
+      // Skip entirely during tests or when explicitly disabled. This prevents
+      // slow, flaky external model calls from running inside unit tests.
+      const disableAutoMark =
+        process.env.NODE_ENV === 'test' ||
+        process.env.RMPLAN_DISABLE_AUTO_MARK === '1' ||
+        process.env.RMPLAN_DISABLE_AUTO_MARK === 'true';
+      if (disableAutoMark) {
+        warn('Skipping automatic task completion marking in test/disabled mode');
+        return;
+      }
+
+      // Skip if no Google API key is available to avoid network calls in test/dev
+      const hasGoogleKey =
+        !!process.env.GOOGLE_API_KEY || !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      if (!hasGoogleKey) {
+        warn('Skipping automatic task completion marking due to missing Google API key');
+        return;
+      }
+
       const plan = await readPlanFile(planInfo.planFilePath);
       const tasks = (plan.tasks ?? []).map((t: any) => ({
         title: t.title as string,
@@ -490,7 +568,7 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
       const pending = tasks.filter((t) => !t.done);
       if (pending.length === 0) return;
 
-      const model = await createModel('google/gemini-2.5-flash');
+      const model = await createModel('google/gemini-2.0-flash');
 
       const prompt = `You are given:
 - A software project plan consisting of tasks (with titles, optional descriptions, and steps)

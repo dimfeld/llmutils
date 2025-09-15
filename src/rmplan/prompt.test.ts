@@ -26,7 +26,7 @@ describe('generatePhaseStepsPrompt', () => {
     const prompt = generatePhaseStepsPrompt(context);
 
     // Check that the prompt contains key elements
-    expect(prompt).toContain('Phase Implementation Generation');
+    expect(prompt).toContain('Plan Implementation Generation');
     expect(prompt).toContain('Build a task management system');
     expect(prompt).toContain('A web-based task management application with user authentication');
     expect(prompt).toContain('Implement user authentication');
@@ -81,7 +81,7 @@ describe('generatePhaseStepsPrompt', () => {
     expect(prompt).toContain('**Description:** JWT-based authentication system');
 
     // Check changed files section
-    expect(prompt).toContain('Files Changed in Previous Phases');
+    expect(prompt).toContain('Files Changed in Previous Plans');
     expect(prompt).toContain('src/models/user.ts');
     expect(prompt).toContain('src/routes/auth.ts');
     expect(prompt).toContain('src/middleware/auth.ts');

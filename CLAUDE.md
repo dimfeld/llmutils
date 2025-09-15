@@ -127,6 +127,130 @@ The codebase is organized into several main modules with improved modularity and
    apply-llm-edits --dry-run
    ```
 
+## Execution Summaries
+
+rmplan run and rmplan agent display a consolidated execution summary at the end of a run. The summary aggregates key outputs from the executor(s), step status, file changes, and timing info.
+
+- What’s captured
+- Final LLM messages for each step
+  - Claude Code: the orchestrator’s final assistant message
+  - Codex CLI: final Implementer/Tester/Reviewer sections combined
+- Step status and duration per step
+- Aggregate stats (completed/failed steps, total duration)
+- Files changed during execution (from the repo root)
+
+- CLI options
+- `--no-summary` disables summary collection and display
+- `--summary-file <path>` writes the summary to a file instead of stdout (parent dirs created automatically)
+
+- Environment
+- `RMPLAN_SUMMARY_ENABLED` enables/disables summaries by default. Set to `0` or `false` to disable; CLI flags still take precedence for disabling when enabled (e.g., `--no-summary` overrides `RMPLAN_SUMMARY_ENABLED=true`). When disabled by the environment, providing `--summary-file` does not force-enable summaries; unset the env var or set to `1/true` to enable.
+
+- Usage examples
+  - Print to stdout (default): `rmplan agent tasks/123-plan.yml` or `rmplan run tasks/123-plan.yml`
+  - Disable summaries: `rmplan agent --no-summary tasks/123-plan.yml` or `rmplan run --no-summary tasks/123-plan.yml`
+  - Write to file: `rmplan agent --summary-file tmp/summary.txt tasks/123-plan.yml` or `rmplan run --summary-file tmp/summary.txt tasks/123-plan.yml`
+- Batch mode with file output: `rmplan agent --summary-file runs/summary.txt tasks/parent.yml` or `rmplan run --summary-file runs/summary.txt tasks/parent.yml` (batch mode is the default)
+
+- Executor-specific capture
+  - Claude Code: captures the orchestrator’s final assistant message when available
+- Codex CLI: concatenates the final Implementer, Tester, and Reviewer sections
+- Other executors: contribute raw text if provided; otherwise steps still appear without output
+
+- Integration and modes
+- Works in both serial (`--serial-tasks`) and batch (default) modes
+- Batch runs aggregate per-iteration results and count iterations executed
+- File change tracking uses a baseline commit captured at start of the run and reports changes since then
+
+- Truncation and performance
+  - The collector truncates very large outputs to keep memory use reasonable and adds a truncation notice
+  - The display renderer may clamp again for terminal readability
+  - Batch runs aggregate iteration counts and failed steps without storing intermediate logs
+
+- Tips
+  - CLI flags take precedence over environment defaults (e.g., `--no-summary` overrides `RMPLAN_SUMMARY_ENABLED=true`).
+  - Unsupported/other executors are still summarized; their output is treated as plain text without special parsing.
+  - When a plan file fails schema validation before execution starts, no summary is produced because the run never initializes collection.
+
+- Timeouts and failures
+  - If an executor throws or times out, the step is marked failed and the error message appears in the summary’s Errors section.
+  - Claude Code permission prompts can be configured with a timeout via executor options; when a timeout occurs, the default response is used and the run continues. The summary still reflects the step’s final status and captured output.
+  - Timeout and error details are kept concise; very verbose traces are truncated with a notice.
+
+- Example output (abbreviated)
+
+```
+
+Execution Summary: My Plan Title (3/3 • 100%)
+┌───────────────┬──────────────────────────────────────┐
+│ Plan ID │ 123 │
+│ Mode │ serial │
+│ Steps Executed│ 3 │
+│ Failed Steps │ 0 │
+│ Files Changed │ 5 │
+│ Duration │ 1m 12s │
+│ Started │ 2025-09-14 02:10:03 │
+│ Ended │ 2025-09-14 02:11:15 │
+└───────────────┴──────────────────────────────────────┘
+
+Step Results
+───────────────────────────────────────────
+✔ Task 1 (codex-cli) [#1] 12s
+Implementer:
+… final implementation notes …
+Reviewer:
+ACCEPTABLE
+
+File Changes
+───────────────────────────────────────────
+• tasks/123-some-plan.yml
+• src/feature/new.ts
+
+```
+
+- Error example (abbreviated)
+
+```
+Execution Summary: Plan With Failures (1/2 • 50%)
+┌───────────────┬──────────────────────────────────────┐
+│ Plan ID       │ 999                                  │
+│ Mode          │ serial                               │
+│ Steps Executed│ 2                                    │
+│ Failed Steps  │ 1                                    │
+│ Files Changed │ 1                                    │
+│ Duration      │ 35s                                  │
+└───────────────┴──────────────────────────────────────┘
+
+Step Results
+───────────────────────────────────────────
+✔ Step 1 (claude-code) [#1] 12s
+  Implementer:
+  … final assistant message …
+
+✖ Step 2 (claude-code) [#2] 23s
+  Error: executor boom
+
+File Changes
+───────────────────────────────────────────
+• src/module/a.ts
+
+Errors
+───────────────────────────────────────────
+• executor boom
+```
+
+- Notes
+- Summaries are truncated to keep memory usage reasonable (collector truncates large outputs; display may clamp further).
+- Batch mode aggregates results across iterations; the metadata includes iteration counts and failed steps.
+- Executors without structured output still contribute raw text.
+- If output capture fails, the summary records the error without failing the run.
+
+### Quick Usage
+
+- Disable summaries for a single run: `rmplan run --no-summary tasks/plan.yml`
+- Force-enable and write to file: `rmplan run --summary-file tmp/summary.txt tasks/plan.yml`
+- Disable by environment (all runs): `export RMPLAN_SUMMARY_ENABLED=0`
+
 ## Configuration Files
 
 The repository uses several configuration files:
@@ -165,9 +289,10 @@ The codebase uses OpenTelemetry for distributed tracing and monitoring:
 - Record events on spans using methods like `recordStateTransition` and `recordError`
 - Always handle cases where spans might be undefined with null checks
 - When importing OpenTelemetry types, use type-only imports:
-  ```typescript
-  import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
-  ```
+
+```typescript
+import type { Tracer, Context, Span, AttributeValue } from '@opentelemetry/api';
+```
 
 ## Type Safety
 

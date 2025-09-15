@@ -42,6 +42,7 @@ export async function getGitRoot(cwd = process.cwd()): Promise<string> {
   let value = (
     await $`git rev-parse --show-toplevel`
       .cwd(cwd || process.cwd())
+      .quiet()
       .nothrow()
       .text()
   ).trim();
@@ -275,7 +276,7 @@ export async function getCurrentBranchName(cwd?: string): Promise<string | null>
  */
 export async function getGitRepository(): Promise<string> {
   if (!cachedGitRepository) {
-    let remote = (await $`git remote get-url origin`.nothrow().text()).trim();
+    let remote = (await $`git remote get-url origin`.quiet().nothrow().text()).trim();
     // Parse out the repository from the remote URL
     let lastColonIndex = remote.lastIndexOf(':');
     cachedGitRepository = remote.slice(lastColonIndex + 1).replace(/\.git$/, '');
@@ -290,6 +291,25 @@ export interface GetChangedFilesOptions {
 }
 
 export async function getTrunkBranch(gitRoot: string): Promise<string> {
+  // Prefer a sensible bookmark when using jj repositories
+  try {
+    if (await getUsingJj()) {
+      const out = await $`jj bookmark list`.cwd(gitRoot).nothrow().text();
+      const lines = out
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const names = lines.map((l) => l.split(/\s+/)[0]).filter((n) => !!n);
+      const candidates = ['main', 'master', 'trunk', 'default'];
+      for (const c of candidates) {
+        if (names.includes(c)) return c;
+      }
+      // Fall through to git check as a last resort
+    }
+  } catch (e) {
+    debugLog('Error getting jj trunk bookmark: %o', e);
+  }
+
   const defaultBranch = (await $`git branch --list main master`.cwd(gitRoot).nothrow().text())
     .replace('*', '')
     .trim();
@@ -353,7 +373,11 @@ export async function getChangedFilesOnBranch(
       '&'
     );
     const from = `latest(ancestors(${baseBranch})&ancestors(@))`;
-    let summ = await $`jj diff --from ${from} --summary ${exclude}`.cwd(gitRoot).nothrow().text();
+    let summ = await $`jj diff --from ${from} --summary ${exclude}`
+      .cwd(gitRoot)
+      .quiet()
+      .nothrow()
+      .text();
     changedFiles = summ
       .split('\n')
       .map((line) => {
@@ -369,7 +393,11 @@ export async function getChangedFilesOnBranch(
       .filter((line) => !!line);
   } else {
     const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
-    let summ = await $`git diff --name-only ${baseBranch} ${exclude}`.cwd(gitRoot).nothrow().text();
+    let summ = await $`git diff --name-only ${baseBranch} ${exclude}`
+      .cwd(gitRoot)
+      .quiet()
+      .nothrow()
+      .text();
     changedFiles = summ
       .split('\n')
       .map((line) => line.trim())
@@ -386,6 +414,102 @@ export async function getChangedFilesOnBranch(
         const normalizedExclude = path.normalize(excludePath);
 
         // Check if file is under the exclude path
+        return (
+          normalizedFile.startsWith(normalizedExclude + path.sep) ||
+          normalizedFile === normalizedExclude ||
+          normalizedFile.startsWith(normalizedExclude + '/')
+        );
+      });
+    });
+  }
+
+  return changedFiles;
+}
+
+/**
+ * Gets the list of changed files between two revisions. If toRef is omitted,
+ * compares fromRef to the working copy.
+ */
+export async function getChangedFilesBetween(
+  gitRoot: string,
+  fromRef: string,
+  toRef?: string,
+  options: { excludePaths?: string[] } = {}
+): Promise<string[]> {
+  const excludeFiles = [
+    'pnpm-lock.yaml',
+    'bun.lockb',
+    'package-lock.json',
+    'bun.lock',
+    'yarn.lock',
+    'Cargo.lock',
+    '.gitignore',
+    '.gitattributes',
+    '.editorconfig',
+    '.prettierrc',
+    '.prettierignore',
+    '.eslintrc',
+    '.eslintignore',
+    'tsconfig.json',
+    'tsconfig.build.json',
+    '.vscode/settings.json',
+    '.idea/**/*',
+    '*.log',
+    '*.tmp',
+    '.DS_Store',
+    'Thumbs.db',
+  ];
+
+  let changedFiles: string[] = [];
+  if (await getUsingJj()) {
+    const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
+      '&'
+    );
+    const to = toRef ?? '@';
+    const summ = await $`jj diff --from ${fromRef} --to ${to} --summary ${exclude}`
+      .cwd(gitRoot)
+      .quiet()
+      .nothrow()
+      .text();
+    changedFiles = summ
+      .split('\n')
+      .map((line) => {
+        line = line.trim();
+        if (!line || line.startsWith('D')) return '';
+        if (line.startsWith('R')) return parseJjRename(line);
+        return line.slice(2);
+      })
+      .filter(Boolean);
+  } else {
+    const exclude = excludeFiles.map((f) => `:(exclude)${f}`);
+    let summ: string;
+    if (toRef) {
+      summ = await $`git diff --name-only ${fromRef} ${toRef} ${exclude}`
+        .cwd(gitRoot)
+        .quiet()
+        .nothrow()
+        .text();
+    } else {
+      // Compare fromRef to working tree
+      summ = await $`git diff --name-only ${fromRef} ${exclude}`
+        .cwd(gitRoot)
+        .quiet()
+        .nothrow()
+        .text();
+    }
+    changedFiles = summ
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  // Filter out files based on excludePaths
+  const { excludePaths = [] } = options;
+  if (excludePaths.length > 0) {
+    changedFiles = changedFiles.filter((file) => {
+      const normalizedFile = path.normalize(file);
+      return !excludePaths.some((excludePath) => {
+        const normalizedExclude = path.normalize(excludePath);
         return (
           normalizedFile.startsWith(normalizedExclude + path.sep) ||
           normalizedFile === normalizedExclude ||

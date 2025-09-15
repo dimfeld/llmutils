@@ -1,5 +1,11 @@
 import { z } from 'zod/v4';
-import type { ExecutorCommonOptions, Executor, ExecutorFactory, ExecutePlanInfo } from './types';
+import type {
+  ExecutorCommonOptions,
+  Executor,
+  ExecutorFactory,
+  ExecutePlanInfo,
+  ExecutorOutput,
+} from './types';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { applyLlmEdits, type ApplyLlmEditsOptions } from '../../apply-llm-edits/apply';
 import { log } from '../../logging';
@@ -48,7 +54,7 @@ export class OneCallExecutor implements Executor {
     return options;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
     const retryRequester = createRetryRequester(this.executionModel);
     const { text: llmOutput } = await runStreamingPrompt({
       input: contextContent,
@@ -59,7 +65,7 @@ export class OneCallExecutor implements Executor {
 
     // Handle output capture mode for review
     if (planInfo.captureOutput) {
-      return llmOutput;
+      return { content: llmOutput } satisfies ExecutorOutput;
     }
 
     // Add a newline for better separation in logs if streaming to console

@@ -67,7 +67,6 @@ export async function analyzeReviewFeedback(
     return result;
   } catch (e) {
     error(`Review analysis failed: ${(e as Error).toString()}`);
-    // Be conservative: if analysis fails, request fixes to avoid missing issues
     return {
       needs_fixes: true,
       fix_instructions: '',
@@ -110,6 +109,7 @@ function buildAnalysisPrompt(input: {
   return `You are a code review analysis assistant. Your job is to read a reviewer report and decide:
 1) Are the issues valid for the current batch scope (i.e., within completed tasks) or out-of-scope (belong to pending tasks or future phases)?
 2) Is the issue overlay pedantic or trivial nits that do not impact correctness or acceptance criteria? (Note, this judgement is independent of the issue's severity.)
+3) Is the issue still present? Issues marked "resolved" or similar do not need to be fixed.
 
 For any issues you deem valid, copy the issue title and its corresponding description verbatim into your fix_instructions output.
 

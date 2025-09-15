@@ -754,7 +754,10 @@ export class ClaudeCodeExecutor implements Executor {
     return server;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+  async execute(
+    contextContent: string,
+    planInfo: ExecutePlanInfo
+  ): Promise<void | import('./types').ExecutorOutput> {
     // Clear tracked files set for proper state isolation between runs
     this.trackedFiles.clear();
 
@@ -1103,7 +1106,7 @@ export class ClaudeCodeExecutor implements Executor {
         // Return captured output if any capture mode was enabled, otherwise return void explicitly
         const captureMode = planInfo?.captureOutput;
         if (captureMode === 'all' || captureMode === 'result') {
-          return capturedOutputLines.join('');
+          return { content: capturedOutputLines.join(''), metadata: { phase: 'orchestrator' } };
         }
 
         return; // Explicitly return void for 'none' or undefined captureOutput

@@ -39,6 +39,22 @@ export interface ExecutePlanInfo {
   executionMode: 'normal' | 'review' | 'planning';
 }
 
+/**
+ * Structured output from an executor when output capture is enabled.
+ * This lets summary code format results without parsing ad-hoc strings.
+ */
+export interface ExecutorOutput {
+  /** Primary textual content to display (if any). */
+  content: string;
+  /**
+   * Optional structured steps to display. When present, summary functionality
+   * should prefer rendering these over raw `content`.
+   */
+  steps?: Array<{ title: string; body: string }>;
+  /** Optional structured metadata for rich summary formatting. */
+  metadata?: Record<string, unknown>;
+}
+
 export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {
   new (
     executorOptions: z.infer<SCHEMA>,
@@ -79,7 +95,7 @@ export interface Executor {
    * The asynchronous function that executes the generated context.
    * @param contextContent - The string content for execution (output from `rmfilter` or direct prompt).
    * @param planInfo - Plan information containing planId, planTitle, and planFilePath.
-   * @returns Promise<void> for normal execution, or Promise<string> when captureOutput is 'all' or 'result'.
+   * @returns Promise<void> for normal execution, or Promise<ExecutorOutput> when captureOutput is 'all' or 'result'.
    */
-  execute: (contextContent: string, planInfo: ExecutePlanInfo) => Promise<void | string>;
+  execute: (contextContent: string, planInfo: ExecutePlanInfo) => Promise<ExecutorOutput | void>;
 }

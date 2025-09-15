@@ -184,7 +184,7 @@ Dependencies & Constraints
 Implementation Notes
 - **Recommended Approach**
 - **Potential Gotchas**
-- **Conflicting, Unclear, or Impossible Requirements, if any**
+- **Conflicting, Unclear, or Impossible Requirements, if any** -- you can omit this section if there are none
 `;
 
 export function planPrompt(plan: string) {
@@ -322,7 +322,7 @@ ${context.previousPhasesInfo
   )
   .join('\n\n')}
 
-# Files Changed in Previous Phases
+# Files Changed in Previous Plans
 ${context.changedFilesFromDependencies.join('\n')}
 `
       : '';
@@ -418,17 +418,17 @@ ${context.changedFilesFromDependencies.join('\n')}
     currentPlanSection = `## Current Plan File: ${context.currentPlanFilename}\n\n`;
   }
 
-  return `# Phase Implementation Generation
+  return `# Plan Implementation Generation
 
 You are generating detailed implementation steps${hasProjectContext ? ' for a specific phase of a larger project' : ' for a project'}.
 
 ${currentPlanSection}${projectContextSection}${parentPlanSection}${siblingPlansSection}${previousPhasesSection}
 
-## Current Phase Details
+## Current Plan Details
 
-**Phase Goal:** ${context.currentPhaseGoal || context.currentPhaseTitle}
+**Project Goal:** ${context.currentPhaseGoal || context.currentPhaseTitle}
 
-**Phase Details:** ${context.currentPhaseDetails}
+**Project Details:** ${context.currentPhaseDetails}
 
 ${docURLsSection}## Tasks to Implement
 
@@ -629,6 +629,8 @@ ${commonGenerateDetails}
 
 Do not perform any implementation or write any files yet.
 
+Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
+Then prepare to synthesize these reports into the final plan.
 When you're done with your analysis, let me know and I'll provide the next instruction.`;
 }
 
@@ -645,7 +647,8 @@ Please output the plan in the exact Markdown format specified below:
 
 ${phaseBasedMarkdownExampleFormat}
 
-Make sure the details section includes all the requested sections.
+Everything you said above will not be saved anywhere, so be sure to include it again when generating the plan below. Remember to include all the below sections in the project details, along with any other relevant details that an engineer will require to know how to implement the plan:
+${commonGenerateDetails}
 
 Generate the complete plan now.`;
 }
@@ -773,17 +776,17 @@ ${context.changedFilesFromDependencies.join('\n')}
     }
   }
 
-  return `# Phase Implementation Analysis
+  return `# Project Implementation Analysis
 
-You are analyzing a specific phase of a larger project to prepare for generating detailed implementation steps.
+You are analyzing a project consisting of multiple tasks to prepare for generating detailed implementation steps.
 
 ${currentPlanSection}${projectContextSection}${parentPlanSection}${siblingPlansSection}${previousPhasesSection}
 
-## Current Phase Details
+## Plan Details
 
-**Phase Goal:** ${context.currentPhaseGoal || context.currentPhaseTitle}
+**Project Goal:** ${context.currentPhaseGoal || context.currentPhaseTitle}
 
-**Phase Details:** ${context.currentPhaseDetails}
+**Project Details:** ${context.currentPhaseDetails}
 
 ${docURLsSection}${potentialFilesSection}## Tasks to Implement
 
@@ -791,20 +794,22 @@ ${tasksSection}
 
 ## Instructions
 
-Please analyze this phase and the codebase. Your task is to:
+Please analyze this plan and the codebase. Your task is to:
 
-1. Use your tools to explore the codebase and understand the existing code structure
-2. Identify which files would need to be created or modified for each task in this phase
+1. Use your tools to explore the codebase and understand the existing code structure.
+2. Identify which files would need to be created or modified for each task
 3. Think about how to break down each task into detailed implementation steps
 4. Consider the order of operations and any dependencies between steps
 5. Understand the existing patterns, frameworks, and conventions used in the codebase
 6. Identify any potential challenges or edge cases
 
+Use parallel subagents to analyze related tasks together.
+
 Once you've analyzed the codebase, I'll ask you to generate detailed implementation steps in the required YAML format.
 
 For now, please:
 - Explore the relevant parts of the codebase mentioned in the context
-- Look at files changed in previous phases to understand patterns
+- If relevant, look at files changed in previous sibling or parent plans to understand patterns
 - Check the project structure and existing implementations
 - Identify the key files and components that will be involved
 - Think about the best approach to implement each task
@@ -815,9 +820,9 @@ When you're done with your analysis, let me know and I'll provide the next instr
 }
 
 export function generateClaudeCodePhaseStepsGenerationPrompt(): string {
-  return `Based on your analysis of the codebase and the phase context, please now generate detailed implementation steps for each task.
+  return `Based on your analysis of the codebase and the plan context, please now generate detailed implementation steps for each task.
 
-For each task listed in the phase, you need to generate:
+For each task listed in the plan, you need to generate:
 1. **files**: The specific files that need to be created or modified for this task
 2. **steps**: Implementation steps -- each step should be a prompt a few sentences long
 
@@ -829,7 +834,7 @@ For each task listed in the phase, you need to generate:
 
 2. **Incremental Progress**: Each step should be self-contained, achievable, and verifiable
 
-3. **Build on Previous Work**: Reference and utilize code/patterns from completed phases listed above
+3. **Build on Previous Work**: Reference and utilize code/patterns from completed plans listed above, if any.
 
 4. **Description**:
    - Most of the details on the task should go into the description.
@@ -838,7 +843,7 @@ For each task listed in the phase, you need to generate:
 
 5. **File Selection**:
    - Be specific about which files need modification
-   - Consider files changed in previous phases when they're relevant
+   - Consider files changed in previous plans when they're relevant
 
 6. **Step Prompts**:
    - Write clear, actionable prompts for each step
@@ -846,6 +851,8 @@ For each task listed in the phase, you need to generate:
    - The agent implementing the code is smart and has access to the entire codebase, so you should be clear on what to do, but not overly prescriptive.
    - No need to supply sample code in your prompts unless it illustrates a specific code pattern.
    - If a task is designed to create documentation, make sure to save the documentation in a file so that the later tasks can reference it.
+
+Everything you said above will not be saved anywhere, so be sure to include relevant details again when generating the output below.
 
 ### Output Format
 

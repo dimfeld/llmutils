@@ -8,7 +8,7 @@ import { log } from '../../logging';
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { RmplanConfig } from '../configSchema.ts';
-import type { ExecutorCommonOptions, Executor, ExecutePlanInfo } from './types';
+import type { ExecutorCommonOptions, Executor, ExecutePlanInfo, ExecutorOutput } from './types';
 import { sshAwarePasteAction } from '../../common/ssh_detection.ts';
 import { copyPasteOptionsSchema, CopyPasteExecutorName } from './schemas.js';
 
@@ -49,11 +49,11 @@ export class CopyPasteExecutor implements Executor {
     return options;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
     // Handle output capture mode for review
     if (planInfo.captureOutput) {
       // In capture mode, we can't interact with the user, so we just return the context content
-      return contextContent;
+      return { content: contextContent } satisfies ExecutorOutput;
     }
 
     // Normal execution: interactive copy-paste

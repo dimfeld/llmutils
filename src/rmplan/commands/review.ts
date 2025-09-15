@@ -167,6 +167,7 @@ export async function handleReviewCommand(
   options: any,
   command: any
 ) {
+  const isInteractiveEnv = process.env.RMPLAN_INTERACTIVE !== '0';
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -335,7 +336,10 @@ export async function handleReviewCommand(
     });
 
     // Use the actual executor output for parsing
-    const rawOutput = executorOutput || reviewPrompt;
+    const rawOutput =
+      typeof executorOutput === 'string'
+        ? executorOutput
+        : (executorOutput?.content ?? reviewPrompt);
 
     // Create structured review result
     const reviewResult = createReviewResult(
@@ -385,7 +389,11 @@ export async function handleReviewCommand(
         shouldAutofix = true;
         if (!options.autofixAll && reviewResult.issues && reviewResult.issues.length > 0) {
           // Allow selection unless --autofix-all is used
-          selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
+          if (isInteractiveEnv) {
+            selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
+          } else {
+            selectedIssues = reviewResult.issues;
+          }
           shouldAutofix = selectedIssues.length > 0;
           if (!shouldAutofix) {
             log(chalk.yellow('No issues selected for autofix.'));
@@ -394,23 +402,35 @@ export async function handleReviewCommand(
       } else if (options.createCleanupPlan) {
         shouldCreateCleanupPlan = true;
         if (reviewResult.issues && reviewResult.issues.length > 0) {
-          selectedIssues = await selectIssuesToFix(reviewResult.issues, 'include in cleanup plan');
+          if (isInteractiveEnv) {
+            selectedIssues = await selectIssuesToFix(
+              reviewResult.issues,
+              'include in cleanup plan'
+            );
+          } else {
+            selectedIssues = reviewResult.issues;
+          }
           shouldCreateCleanupPlan = selectedIssues.length > 0;
           if (!shouldCreateCleanupPlan) {
             log(chalk.yellow('No issues selected for cleanup plan.'));
           }
         }
       } else if (!options.noAutofix) {
-        // Prompt user for action
-        const action = await select({
-          message: 'Issues were found during review. What would you like to do?',
-          choices: [
-            { name: 'Fix now (apply fixes immediately)', value: 'fix' },
-            { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
-            { name: 'Exit (do nothing)', value: 'exit' },
-          ],
-          default: 'exit',
-        });
+        // Prompt user for action when interactive; otherwise skip prompting
+        let action: 'fix' | 'cleanup' | 'exit' = 'exit';
+        if (isInteractiveEnv) {
+          action = await select({
+            message: 'Issues were found during review. What would you like to do?',
+            choices: [
+              { name: 'Fix now (apply fixes immediately)', value: 'fix' },
+              { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
+              { name: 'Exit (do nothing)', value: 'exit' },
+            ],
+            default: 'exit',
+          });
+        } else {
+          log(chalk.gray('Non-interactive environment detected; skipping fix/cleanup prompts.'));
+        }
 
         if (action === 'fix') {
           shouldAutofix = true;
@@ -699,6 +719,10 @@ async function selectIssuesToFix(
   issues: ReviewIssue[],
   purpose: string = 'fix'
 ): Promise<ReviewIssue[]> {
+  const isInteractiveEnv = process.env.RMPLAN_INTERACTIVE !== '0';
+  if (!isInteractiveEnv) {
+    return issues;
+  }
   // Group issues by severity for better organization
   const groupedIssues = issues.reduce(
     (acc, issue) => {

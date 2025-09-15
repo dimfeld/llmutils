@@ -4,6 +4,7 @@
 import { select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import * as path from 'path';
+import * as fs from 'node:fs/promises';
 import { getGitRoot } from '../../../common/git.js';
 import { logSpawn } from '../../../common/process.js';
 import {
@@ -38,6 +39,8 @@ import { findNextReadyDependency } from '../find_next_dependency.js';
 import { executeBatchMode } from './batch_mode.js';
 import { markParentInProgress } from './parent_plans.js';
 import { executeStubPlan } from './stub_plan.js';
+import { SummaryCollector } from '../../summary/collector.js';
+import { writeOrDisplaySummary } from '../../summary/display.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -115,7 +118,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   let currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
   const config = await loadEffectiveConfig(globalCliOptions.config);
 
-  if (!options['no-log']) {
+  if (options.log !== false) {
     const parsed = path.parse(currentPlanFile);
     let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
     openLogFile(logFilePath);
@@ -221,20 +224,22 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           );
         }
       } catch (err) {
-        warn(`Error validating workspace: ${String(err)}`);
+        warn(`Error validating workspace: ${err as Error}`);
       }
 
       // Copy the plan file to the workspace
-      const workspacePlanFile = path.join(workspace.path, currentPlanFile);
+      // Copy the plan file into the workspace root with the same filename
+      const workspacePlanFile = path.join(workspace.path, path.basename(currentPlanFile));
       try {
         log(`Copying plan file to workspace: ${workspacePlanFile}`);
-        await Bun.write(workspacePlanFile, await Bun.file(currentPlanFile).text());
+        const srcContent = await fs.readFile(currentPlanFile, 'utf8');
+        await fs.writeFile(workspacePlanFile, srcContent, 'utf8');
 
         // Update the planFile to use the copy in the workspace
         currentPlanFile = workspacePlanFile;
         log(`Using plan file in workspace: ${currentPlanFile}`);
       } catch (err) {
-        error(`Failed to copy plan file to workspace: ${String(err)}`);
+        error(`Failed to copy plan file to workspace: ${err as Error}`);
         error('Continuing with original plan file.');
       }
 
@@ -251,7 +256,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           );
           WorkspaceLock.setupCleanupHandlers(workspace.path);
         } catch (error) {
-          log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
+          log(`Warning: Failed to acquire workspace lock: ${error as Error}`);
         }
       }
 
@@ -280,6 +285,22 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Check if the plan needs preparation
   const planData = await readPlanFile(currentPlanFile);
+
+  // Initialize execution summary collection
+  // Default enabled unless explicitly disabled by CLI or env var
+  // RMPLAN_SUMMARY_ENABLED can be set to '0' or 'false' (case-insensitive) to disable by default
+  const envSummary = process.env.RMPLAN_SUMMARY_ENABLED;
+  const envSummaryEnabled =
+    envSummary == null ? true : !(envSummary.toLowerCase() === 'false' || envSummary === '0');
+  const summaryEnabled = options.summary === false ? false : envSummaryEnabled;
+  const summaryFilePath: string | undefined = options.summaryFile;
+  const summaryCollector = new SummaryCollector({
+    planId: planData.id?.toString() ?? 'unknown',
+    planTitle: planData.title ?? 'Untitled Plan',
+    planFilePath: currentPlanFile,
+    mode: options.serialTasks ? 'serial' : 'batch',
+  });
+  if (summaryEnabled) summaryCollector.recordExecutionStart(currentBaseDir);
 
   // Check if this is a true stub plan (no tasks at all)
   const needsPreparation = !planData.tasks.length;
@@ -318,6 +339,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         });
         log('Successfully prepared the plan with detailed steps.');
       } catch (err) {
+        if (summaryEnabled) summaryCollector.addError(err);
         throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
       }
     } else {
@@ -334,11 +356,19 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           commit: true,
           dryRun: options.dryRun,
         });
-        return;
       } catch (err) {
         error('Direct execution failed:', err);
+        if (summaryEnabled) summaryCollector.addError(err);
         throw err;
+      } finally {
+        if (summaryEnabled) {
+          summaryCollector.recordExecutionEnd();
+          await summaryCollector.trackFileChanges(currentBaseDir);
+          await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
+        }
+        await closeLogFile();
       }
+      return;
     }
   } else if (
     planData.tasks.length > 0 &&
@@ -377,6 +407,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         });
         log('Successfully prepared the plan with detailed steps.');
       } catch (err) {
+        if (summaryEnabled) summaryCollector.addError(err);
         throw new Error(`Failed to automatically prepare the plan: ${err as Error}`);
       }
     } else {
@@ -388,13 +419,30 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
   if (!options.serialTasks) {
-    return executeBatchMode({
-      config,
-      baseDir: currentBaseDir,
-      currentPlanFile,
-      executor,
-      dryRun: options.dryRun,
-    });
+    try {
+      const res = await executeBatchMode(
+        {
+          config,
+          baseDir: currentBaseDir,
+          currentPlanFile,
+          executor,
+          dryRun: options.dryRun,
+          executorName,
+        },
+        summaryEnabled ? summaryCollector : undefined
+      );
+      return res;
+    } catch (err) {
+      if (summaryEnabled) summaryCollector.addError(err);
+      throw err;
+    } finally {
+      if (summaryEnabled) {
+        summaryCollector.recordExecutionEnd();
+        await summaryCollector.trackFileChanges(currentBaseDir);
+        await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
+      }
+      await closeLogFile();
+    }
   }
 
   log('Starting agent to execute plan:', currentPlanFile);
@@ -464,15 +512,37 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
         try {
           log(boldMarkdownHeaders('\n## Execution\n'));
-          await executor.execute(taskPrompt, {
+          const start = Date.now();
+          const output = await executor.execute(taskPrompt, {
             planId: planData.id?.toString() ?? 'unknown',
             planTitle: planData.title ?? 'Untitled Plan',
             planFilePath: currentPlanFile,
             executionMode: 'normal',
+            captureOutput: summaryEnabled ? 'result' : 'none',
           });
+          if (summaryEnabled) {
+            const end = Date.now();
+            summaryCollector.addStepResult({
+              title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
+              executor: executorName,
+              output: output ?? undefined,
+              success: true,
+              startedAt: new Date(start).toISOString(),
+              endedAt: new Date(end).toISOString(),
+              durationMs: end - start,
+            });
+          }
         } catch (err) {
           error('Task execution failed:', err);
           hasError = true;
+          if (summaryEnabled) {
+            summaryCollector.addStepResult({
+              title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
+              executor: executorName,
+              success: false,
+              errorMessage: String(err instanceof Error ? err.message : err),
+            });
+          }
           break;
         }
 
@@ -488,6 +558,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             }
           }
           if (hasError) {
+            if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
             break;
           }
         }
@@ -502,6 +573,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             currentBaseDir,
             config
           );
+          // Defer file change tracking to the end for efficiency
 
           if (markResult.planComplete) {
             log('Plan fully completed!');
@@ -510,6 +582,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         } catch (err) {
           error('Failed to mark task as done:', err);
           hasError = true;
+          if (summaryEnabled) summaryCollector.addError(err);
           break;
         }
 
@@ -538,6 +611,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       ).catch((err) => {
         error('Failed to prepare next step:', err);
         hasError = true;
+        if (summaryEnabled) summaryCollector.addError(err);
         return null;
       });
 
@@ -549,8 +623,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       if (stepPreparationResult.numStepsSelected === 1) {
         stepIndexes = `Step ${stepPreparationResult.stepIndex + 1}`;
       } else {
-        const endIndex =
-          stepPreparationResult.stepIndex + stepPreparationResult.numStepsSelected + 1;
+        // end index should be inclusive: start (1-based) + count - 1
+        const endIndex = stepPreparationResult.stepIndex + stepPreparationResult.numStepsSelected;
         stepIndexes = `Steps ${stepPreparationResult.stepIndex + 1}-${endIndex}`;
       }
 
@@ -570,6 +644,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             'Executor requires rmfilter, but no prompt file path or rmfilter args were generated by prepareNextStep.'
           );
           hasError = true;
+          if (summaryEnabled)
+            summaryCollector.addError(
+              'Executor requires rmfilter, but prepareNextStep did not provide required data'
+            );
           break;
         }
         log(boldMarkdownHeaders('\n## Generating Context with rmfilter\n'));
@@ -582,6 +660,18 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         if (exitRes !== 0) {
           error(`rmfilter exited with code ${exitRes}`);
           hasError = true;
+          if (summaryEnabled) {
+            const end = Date.now();
+            summaryCollector.addError(`rmfilter exited with code ${exitRes}`);
+            summaryCollector.addStepResult({
+              title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
+              executor: executorName,
+              // Treat as CLI tool failure before executor runs
+              success: false,
+              errorMessage: `rmfilter exited with code ${exitRes}`,
+              endedAt: new Date(end).toISOString(),
+            });
+          }
           break;
         }
         contextContent = await Bun.file(rmfilterOutputPath).text();
@@ -605,15 +695,37 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
       try {
         log(boldMarkdownHeaders('\n## Execution\n'));
-        await executor.execute(contextContent, {
+        const start = Date.now();
+        const output = await executor.execute(contextContent, {
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
           executionMode: 'normal',
+          captureOutput: summaryEnabled ? 'result' : 'none',
         });
+        if (summaryEnabled) {
+          const end = Date.now();
+          summaryCollector.addStepResult({
+            title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
+            executor: executorName,
+            success: true,
+            output: output ?? undefined,
+            startedAt: new Date(start).toISOString(),
+            endedAt: new Date(end).toISOString(),
+            durationMs: end - start,
+          });
+        }
       } catch (err) {
         error('Execution step failed:', err);
         hasError = true;
+        if (summaryEnabled) {
+          summaryCollector.addStepResult({
+            title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
+            executor: executorName,
+            success: false,
+            errorMessage: String(err instanceof Error ? err.message : err),
+          });
+        }
         break;
       }
 
@@ -629,6 +741,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           }
         }
         if (hasError) {
+          if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
           break;
         }
       }
@@ -643,6 +756,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           currentBaseDir,
           config
         );
+        // Defer file change tracking to the end for efficiency
         log(`Marked step as done: ${markResult.message.split('\n')[0]}`);
         if (markResult.planComplete) {
           log('Plan fully completed!');
@@ -651,12 +765,13 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       } catch (err) {
         error('Failed to mark step as done:', err);
         hasError = true;
+        if (summaryEnabled) summaryCollector.addError(err);
         break;
       } finally {
         if (promptFilePath && executorStepOptions.rmfilter) {
           // Only unlink if rmfilter was supposed to use it
           try {
-            await Bun.file(promptFilePath).unlink();
+            await fs.unlink(promptFilePath);
           } catch (e) {
             warn('Warning: failed to clean up temp file:', promptFilePath);
           }
@@ -668,6 +783,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       throw new Error('Agent stopped due to error.');
     }
   } finally {
+    if (summaryEnabled) {
+      summaryCollector.recordExecutionEnd();
+      await summaryCollector.trackFileChanges(currentBaseDir);
+      await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
+    }
     await closeLogFile();
   }
 }

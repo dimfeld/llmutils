@@ -363,7 +363,7 @@ When running `rmplan next` to paste the prompt into a web chat or send to an API
 
 Run `rmplan` with different commands to manage project plans:
 
-```bash
+````bash
 # Generate a plan from a text file and pass extra args to rmfilter
 rmplan generate --plan plan.txt -- src/**/*.ts --grep auth
 
@@ -514,56 +514,122 @@ rmplan agent --next
 rmplan run --next
 
 # Execute plan with auto-created workspace
-rmplan agent plan.yml --workspace-task-id task-123
+rmplan agent plan.yml --workspace task-123
 
 # You can also use plan IDs instead of file paths
 rmplan agent my-feature-123 --steps 3
 
+### Execution Summaries
+
+`rmplan run` and `rmplan agent` produce an execution summary at the end of a run, aggregating step outputs, status, file changes, and timing.
+
+- Flags: use `--no-summary` to disable; `--summary-file <path>` to write to a file instead of stdout.
+- Env: `RMPLAN_SUMMARY_ENABLED=0` disables summaries by default. CLI flags take precedence for disabling when enabled (for example, `--no-summary` overrides `RMPLAN_SUMMARY_ENABLED=true`). When summaries are disabled by the environment, passing `--summary-file` does not force-enable summaries; unset the env var or set it to `1/true` to enable.
+- Early validation: if a plan fails schema validation before execution starts, no summary is produced.
+- Executors: Claude Code and Codex CLI have tailored parsing; other executors contribute raw text (or none) and are still listed.
+
+Example (abbreviated):
+
+```text
+Execution Summary: My Plan Title (3/3 • 100%)
+┌───────────────┬────────────────┐
+│ Plan ID       │ 123            │
+│ Mode          │ serial         │
+│ Steps Executed│ 3              │
+│ Failed Steps  │ 0              │
+│ Files Changed │ 5              │
+│ Duration      │ 1m 12s         │
+└───────────────┴────────────────┘
+
+Step Results
+✔ Task 1 (codex-cli) [#1] 12s
+…
+
+File Changes
+• tasks/123-some-plan.yml
+• src/feature/new.ts
+```
+
+Error example (abbreviated):
+
+```text
+Execution Summary: Plan With Failures (1/2 • 50%)
+┌───────────────┬────────────────┐
+│ Steps Executed│ 2              │
+│ Failed Steps  │ 1              │
+└───────────────┴────────────────┘
+
+Step Results
+✔ Step 1 (claude-code) [#1] 12s
+…
+
+✖ Step 2 (claude-code) [#2] 23s
+Error: executor boom
+```
+
+See CLAUDE.md for more details about what’s captured and configuration options.
+
 # Clean up end-of-line comments from changed files (by git diff, jj diff)
+
 rmplan cleanup
 
 # Cleanup end-of-line comments in all files modified compared to a base branch
+
 rmplan cleanup --diff-from main
 
 # Clean up end-of-line comments from specific files
+
 rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 
 # Answer PR review comments, automatically detecting the current PR
+
 rmplan answer-pr
 
 # Answer PR review comments for a specific PR
+
 rmplan answer-pr dimfeld/llmutils#82
 
 # List all workspaces and their lock status
+
 rmplan workspace list
 
 # List workspaces for a specific repository
+
 rmplan workspace list --repo https://github.com/dimfeld/llmutils.git
 
 # Create a new workspace without associating it with a plan
+
 rmplan workspace add
 
 # Create a workspace with a specific ID
+
 rmplan workspace add --id my-custom-ws
 
 # Create a workspace and associate it with a plan by file path
+
 rmplan workspace add path/to/my-plan.yml
 
 # Create a workspace with a plan by ID and a custom workspace ID
+
 rmplan workspace add my-plan-id --id my-dev-space
 
 # Validate all plan files for schema and parent-child relationship consistency
+
 rmplan validate
 
 # Validate specific plan files
+
 rmplan validate tasks/feature-1.yml tasks/feature-2.yml
 
 # Validate with detailed output showing what was checked and fixed
+
 rmplan validate --verbose
 
 # Validate without auto-fixing inconsistencies (report-only mode)
+
 rmplan validate --no-fix
-```
+
+````
 
 ### Plan Validation
 
@@ -936,7 +1002,7 @@ workspaceCreation:
 
 ```bash
 # Create a workspace with a specific task ID
-rmplan agent plan.yml --workspace-task-id my-feature-123
+rmplan agent plan.yml --workspace my-feature-123
 
 # The agent runs in the new workspace automatically
 ```
@@ -1508,7 +1574,7 @@ rmplan agent --next-ready 100
 rmplan agent tasks/0003-new-feature.yml --executor claude-code
 
 # Execute a plan in a newly created, isolated workspace
-rmplan agent tasks/my-feature.yml --workspace-task-id feature-xyz
+rmplan agent tasks/my-feature.yml --workspace feature-xyz
 
 # Create new plan stubs for quick capture of future work
 rmplan add "Implement user authentication" --output tasks/auth.yml

@@ -250,7 +250,7 @@ describe.skip('rmplanAgent - Parent Plan Status Updates', () => {
       .mockReturnValueOnce({ type: 'task', taskIndex: 0, task: { title: 'Child Task' } })
       .mockReturnValueOnce(null); // Stop after first iteration
 
-    const options = { 'no-log': true, nonInteractive: true };
+    const options = { log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
 
     await rmplanAgent(childPlanFile, options, globalCliOptions);
@@ -286,7 +286,7 @@ describe.skip('rmplanAgent - Parent Plan Status Updates', () => {
       .mockReturnValueOnce({ type: 'task', taskIndex: 0, task: { title: 'Child Task' } })
       .mockReturnValueOnce(null); // Stop after first iteration
 
-    const options = { 'no-log': true, nonInteractive: true };
+    const options = { log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
 
     await rmplanAgent(childPlanFile, options, globalCliOptions);
@@ -486,7 +486,7 @@ describe.skip('rmplanAgent - Direct Execution Flow', () => {
       })
       .mockReturnValueOnce(null);
 
-    const options = { 'no-log': true };
+    const options = { log: false } as any;
     const globalCliOptions = {};
 
     await rmplanAgent(stubPlanFile, options, globalCliOptions);
@@ -522,7 +522,7 @@ describe.skip('rmplanAgent - Direct Execution Flow', () => {
     // Mock user selecting "generate" option
     selectSpy.mockResolvedValue('generate');
 
-    const options = { 'no-log': true };
+    const options = { log: false } as any;
     const globalCliOptions = {};
 
     await rmplanAgent(stubPlanFile, options, globalCliOptions);
@@ -568,7 +568,7 @@ describe.skip('rmplanAgent - Direct Execution Flow', () => {
       })
       .mockReturnValueOnce(null);
 
-    const options = { 'no-log': true, nonInteractive: true };
+    const options = { log: false, nonInteractive: true } as any;
     const globalCliOptions = {};
 
     await rmplanAgent(stubPlanFile, options, globalCliOptions);
@@ -1004,9 +1004,9 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     const options = {
       nextReady: '100',
-      'no-log': true,
+      log: false,
       verbose: true,
-    };
+    } as any;
     const globalCliOptions = {};
 
     await handleAgentCommand(undefined, options, globalCliOptions);
@@ -1318,7 +1318,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
   });
 
   test('batch mode executes and actually modifies plan file to mark tasks done', async () => {
-    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
 
     await rmplanAgent(batchPlanFile, options, globalCliOptions);
@@ -1349,7 +1349,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
       defaultModelForExecutor: () => 'test-model',
     }));
 
-    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
 
     await rmplanAgent(batchPlanFile, options, globalCliOptions);
@@ -1373,7 +1373,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
     });
     await writePlanFile(batchPlanFile, plan);
 
-    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
 
     await rmplanAgent(batchPlanFile, options, globalCliOptions);
@@ -1396,7 +1396,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
       defaultModelForExecutor: () => 'test-model',
     }));
 
-    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
 
     await expect(rmplanAgent(batchPlanFile, options, globalCliOptions)).rejects.toThrow(
@@ -1413,7 +1413,7 @@ describe('rmplanAgent - Batch Tasks Mode', () => {
   });
 
   test('batch mode correctly updates plan status from pending to in_progress to done', async () => {
-    const options = { batchTasks: true, 'no-log': true, nonInteractive: true };
+    const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
 
     // Verify initial status using real plan reading
@@ -1553,10 +1553,10 @@ describe('rmplanAgent - Batch Tasks Mode Integration', () => {
     await fs.writeFile(path.join(srcDir, 'main.js'), 'console.log("Hello world");');
 
     const options = {
-      'no-log': true,
+      log: false,
       nonInteractive: true,
       executor: 'copy-only',
-    };
+    } as any;
     const globalCliOptions = {
       config: {
         paths: { tasks: path.join(tempDir, 'tasks') },
