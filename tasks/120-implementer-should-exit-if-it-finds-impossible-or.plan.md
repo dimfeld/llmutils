@@ -15,7 +15,7 @@ docs: []
 planGeneratedAt: 2025-09-15T03:12:44.945Z
 promptsGeneratedAt: 2025-09-15T03:52:50.945Z
 createdAt: 2025-09-14T08:19:24.654Z
-updatedAt: 2025-09-15T05:19:55.050Z
+updatedAt: 2025-09-15T05:38:48.775Z
 tasks:
   - title: Create Standardized Failure Detection Template
     done: true
@@ -282,7 +282,7 @@ tasks:
       - src/rmplan/commands/agent/batch_mode.test.ts
     steps: []
   - title: Update Documentation
-    done: false
+    done: true
     description: >
       Update README.md and CLAUDE.md to document the new failure handling
       behavior, including examples of when failures occur and how to resolve
@@ -297,6 +297,8 @@ tasks:
       - CLAUDE.md
     steps: []
 changedFiles:
+  - CLAUDE.md
+  - README.md
   - src/rmplan/commands/agent/agent.failure_handling.test.ts
   - src/rmplan/commands/agent/agent.ts
   - src/rmplan/commands/agent/batch_mode.soft_failure.test.ts
