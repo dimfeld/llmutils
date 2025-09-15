@@ -569,6 +569,44 @@ Error: executor boom
 
 See CLAUDE.md for more details about what’s captured and configuration options.
 
+# Executor Failure Handling
+
+When an executor (Claude Code or Codex CLI) encounters conflicting or impossible requirements it cannot safely resolve, it fails fast instead of attempting an incorrect implementation.
+
+Protocol and behavior:
+
+- Agents emit a line starting with `FAILED:` as the first non-empty line of the final message, followed by a concise summary.
+- A structured report should follow, with these sections when possible:
+  - Requirements: what was being attempted
+  - Problems: why the requirements are conflicting or impossible
+  - Possible solutions: suggested next steps to resolve
+- Executors detect the `FAILED:` protocol and return a structured failure result.
+- rmplan’s main agent loop stops immediately on failure, prints a summary, and exits with a non‑zero status code.
+- Tasks are not marked as done when a failure occurs.
+- Execution summaries (when enabled) capture the failure details and source agent.
+
+Example:
+
+```
+FAILED: Implementer cannot proceed due to mutually exclusive API shapes
+
+Requirements:
+- /v1/items returns an array of Item
+- Keep legacy map<string, Item> shape for compatibility
+
+Problems:
+- Response formats are mutually exclusive for a single endpoint
+
+Possible solutions:
+- Clarify expected shape and accept a breaking change, or
+- Add versioned endpoint /v2/items with the new array format
+```
+
+Notes:
+
+- The Claude orchestrator monitors implementer/tester/reviewer output and propagates failures.
+- The Codex fixer also participates in this protocol; failures short‑circuit the fix loop and skip auto‑marking tasks as done.
+
 # Clean up end-of-line comments from changed files (by git diff, jj diff)
 
 rmplan cleanup

@@ -251,6 +251,45 @@ Errors
 - Force-enable and write to file: `rmplan run --summary-file tmp/summary.txt tasks/plan.yml`
 - Disable by environment (all runs): `export RMPLAN_SUMMARY_ENABLED=0`
 
+## Executor Failure Handling
+
+Executors fail fast when requirements are conflicting or impossible to implement safely. This prevents cascading errors and incorrect changes.
+
+Protocol:
+
+- Agents must emit a line beginning with `FAILED:` as the first non-empty line of their final message, followed by a one‑line summary.
+- A structured report should follow with sections (when possible):
+  - Requirements: what was attempted
+  - Problems: why it cannot proceed (conflicts, constraints, policy)
+  - Possible solutions: concrete suggestions or next steps
+
+Example:
+
+```
+FAILED: Reviewer reported a failure — Blocked by policy
+
+Requirements:
+- Add endpoint /v1/users/export
+
+Problems:
+- Export of PII requires DPO approval and encryption controls
+
+Possible solutions:
+- Use anonymized export now; file a follow‑up for PII export with approvals
+```
+
+Runtime behavior:
+
+- Claude orchestrator monitors implementer/tester/reviewer outputs and propagates any `FAILED:` result.
+- Codex implementer/tester/reviewer and fixer all participate; fixer failures short‑circuit the loop and skip task auto‑marking.
+- Executors return `{ success: false, failureDetails: { summary, problems, requirements?, solutions?, sourceAgent? } }`.
+- The main agent loop detects `success === false`, prints a concise FAILED line, records it in the summary, and exits with a non‑zero status.
+
+Implementation notes:
+
+- Utility functions in `src/rmplan/executors/failure_detection.ts` detect and parse `FAILED:` reports.
+- Tests cover utilities and executor integration, including orchestrator and subagent failure cases.
+
 ## Configuration Files
 
 The repository uses several configuration files:
