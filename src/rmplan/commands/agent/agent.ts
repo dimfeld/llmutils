@@ -523,18 +523,33 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             executionMode: 'normal',
             captureOutput: summaryEnabled ? 'result' : 'none',
           });
+          // Detect executor-declared failure and stop early
+          const ok = output ? output.success !== false : true;
+          if (!ok) {
+            const fd = output?.failureDetails;
+            const src = fd?.sourceAgent ? ` (${fd.sourceAgent})` : '';
+            log(chalk.redBright(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`));
+            if (fd?.requirements?.trim()) {
+              log(chalk.yellow('\nRequirements:\n') + fd.requirements.trim());
+            }
+            if (fd?.solutions?.trim()) {
+              log(chalk.yellow('\nPossible solutions:\n') + fd.solutions.trim());
+            }
+            hasError = true;
+          }
           if (summaryEnabled) {
             const end = Date.now();
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
               output: output ?? undefined,
-              success: true,
+              success: ok,
               startedAt: new Date(start).toISOString(),
               endedAt: new Date(end).toISOString(),
               durationMs: end - start,
             });
           }
+          if (hasError) break;
         } catch (err) {
           error('Task execution failed:', err);
           hasError = true;
@@ -706,18 +721,32 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           executionMode: 'normal',
           captureOutput: summaryEnabled ? 'result' : 'none',
         });
+        const ok = output ? output.success !== false : true;
+        if (!ok) {
+          const fd = output?.failureDetails;
+          const src = fd?.sourceAgent ? ` (${fd.sourceAgent})` : '';
+          log(chalk.redBright(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`));
+          if (fd?.requirements?.trim()) {
+            log(chalk.yellow('\nRequirements:\n') + fd.requirements.trim());
+          }
+          if (fd?.solutions?.trim()) {
+            log(chalk.yellow('\nPossible solutions:\n') + fd.solutions.trim());
+          }
+          hasError = true;
+        }
         if (summaryEnabled) {
           const end = Date.now();
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
-            success: true,
+            success: ok,
             output: output ?? undefined,
             startedAt: new Date(start).toISOString(),
             endedAt: new Date(end).toISOString(),
             durationMs: end - start,
           });
         }
+        if (hasError) break;
       } catch (err) {
         error('Execution step failed:', err);
         hasError = true;

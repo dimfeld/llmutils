@@ -75,6 +75,8 @@ export interface FormattedCodexMessage {
   type: string;
   // If this line carries or finalizes the agent message, include it here
   agentMessage?: string;
+  // Failure detection info for agent messages
+  failed?: boolean;
 }
 
 function truncateToLines(input: string | undefined, maxLines = 20): string {
@@ -195,10 +197,13 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
       }
       case 'agent_message': {
         const text = msg.message ?? '';
+        // Failure detection: recognize standardized FAILED: protocol on first non-empty line
+        const failed = /^\s*FAILED:\s*/.test((text || '').replace(/\r\n?/g, '\n').split('\n').find((l) => l.trim() !== '') ?? '');
         return {
           type: msg.type,
           message: chalk.bold.green(`### Agent Message [${ts}]`) + '\n\n' + text,
           agentMessage: text,
+          failed: failed || undefined,
         };
       }
       case 'turn_diff': {
@@ -310,6 +315,7 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
 export function createCodexStdoutFormatter() {
   const split = createLineSplitter();
   let finalAgentMessage: string | undefined;
+  let lastFailedAgentMessage: string | undefined;
 
   function formatChunk(chunk: string): string {
     const lines = split(chunk);
@@ -318,6 +324,7 @@ export function createCodexStdoutFormatter() {
       const fm = formatCodexJsonMessage(line);
       if (fm.agentMessage) {
         finalAgentMessage = fm.agentMessage;
+        if (fm.failed) lastFailedAgentMessage = fm.agentMessage;
       }
       if (fm.message) out.push(fm.message);
     }
@@ -328,5 +335,9 @@ export function createCodexStdoutFormatter() {
     return finalAgentMessage;
   }
 
-  return { formatChunk, getFinalAgentMessage };
+  function getFailedAgentMessage(): string | undefined {
+    return lastFailedAgentMessage;
+  }
+
+  return { formatChunk, getFinalAgentMessage, getFailedAgentMessage };
 }

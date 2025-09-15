@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import yaml from 'yaml';
 import { debugLog } from '../../../logging.ts';
 import { createTwoFilesPatch, diffLines } from 'diff';
+import { detectFailedLine } from '../failure_detection.ts';
 
 // Represents the top-level message object
 export type Message =
@@ -75,6 +76,9 @@ export function formatJsonMessage(input: string): {
   rawMessage?: string;
   type: string;
   filePaths?: string[];
+  // Failure detection for assistant messages
+  failed?: boolean;
+  failedSummary?: string;
 } {
   // TODOS implemented:
   // - Cache tool use IDs across calls so that we can print the tool names with the results
@@ -310,11 +314,15 @@ export function formatJsonMessage(input: string): {
         outputLines.push(`### ${content.type as string} [${timestamp}]`, formatValue(content));
       }
     }
+    const rawCombined = rawMessage.filter(Boolean).join('\n');
+    const failure = message.type === 'assistant' ? detectFailedLine(rawCombined) : { failed: false };
     return {
       message: outputLines.join('\n\n'),
-      rawMessage: rawMessage.filter(Boolean).join('\n'),
+      rawMessage: rawCombined,
       type: message.type,
       filePaths: filePaths.length > 0 ? filePaths : undefined,
+      failed: failure.failed || undefined,
+      failedSummary: failure.failed ? failure.summary : undefined,
     };
   }
 

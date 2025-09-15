@@ -22,6 +22,7 @@ import { analyzeReviewFeedback } from './codex_cli/review_analysis.ts';
 import { generateObject } from 'ai';
 import { createModel } from '../../common/model_factory.ts';
 import { setTaskDone } from '../plans/mark_done.ts';
+import { parseFailedReport } from './failure_detection.ts';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
 
@@ -93,6 +94,11 @@ export class CodexCliExecutor implements Executor {
 
     this.logTaskStatus('Initial plan analysis', initiallyCompleted, initiallyPending, gitRoot);
 
+    // Track failure state across agents
+    let hadFailure = false;
+    let failureOutput: string | undefined;
+    let failureSource: AgentType | 'reviewer' | 'orchestrator' | undefined;
+
     // Build implementer prompt using the Claude Code agent prompt for consistency
     let implementerInstructions = await this.loadAgentInstructionsFor('implementer', gitRoot);
 
@@ -109,6 +115,24 @@ export class CodexCliExecutor implements Executor {
     const implementerOutput = await this.executeCodexStep(implementer.prompt, gitRoot);
     events.push({ type: 'implementer', message: implementerOutput });
     log('Implementer output captured.');
+
+    // Failure detection: implementer
+    {
+      const parsed = parseFailedReport(implementerOutput);
+      if (parsed.failed) {
+        hadFailure = true;
+        failureOutput = implementerOutput;
+        failureSource = 'implementer';
+        const aggregated = buildAggregatedOutput();
+        return {
+          ...(aggregated ?? { content: implementerOutput }),
+          success: false,
+          failureDetails: parsed.details
+            ? { ...parsed.details, sourceAgent: 'implementer' }
+            : { requirements: '', problems: parsed.summary || 'FAILED', sourceAgent: 'implementer' },
+        };
+      }
+    }
 
     try {
       // Re-read plan file to detect newly-completed tasks (if any)
@@ -139,6 +163,24 @@ export class CodexCliExecutor implements Executor {
       events.push({ type: 'tester', message: testerOutput });
       log('Tester output captured.');
 
+      // Failure detection: tester
+      {
+        const parsed = parseFailedReport(testerOutput);
+        if (parsed.failed) {
+          hadFailure = true;
+          failureOutput = testerOutput;
+          failureSource = 'tester';
+          const aggregated = buildAggregatedOutput();
+          return {
+            ...(aggregated ?? { content: testerOutput }),
+            success: false,
+            failureDetails: parsed.details
+              ? { ...parsed.details, sourceAgent: 'tester' }
+              : { requirements: '', problems: parsed.summary || 'FAILED', sourceAgent: 'tester' },
+          };
+        }
+      }
+
       // Build reviewer context with implementer + tester outputs and task context
       const reviewerContext = this.composeReviewerContext(
         contextContent,
@@ -159,6 +201,24 @@ export class CodexCliExecutor implements Executor {
       const reviewerOutput = await this.executeCodexStep(reviewer.prompt, gitRoot);
       events.push({ type: 'reviewer', message: reviewerOutput });
       log('Reviewer output captured.');
+
+      // Failure detection: reviewer
+      {
+        const parsed = parseFailedReport(reviewerOutput);
+        if (parsed.failed) {
+          hadFailure = true;
+          failureOutput = reviewerOutput;
+          failureSource = 'reviewer';
+          const aggregated = buildAggregatedOutput();
+          return {
+            ...(aggregated ?? { content: reviewerOutput }),
+            success: false,
+            failureDetails: parsed.details
+              ? { ...parsed.details, sourceAgent: 'reviewer' }
+              : { requirements: '', problems: parsed.summary || 'FAILED', sourceAgent: 'reviewer' },
+          };
+        }
+      }
 
       // Parse and log verdict
       const verdict = this.parseReviewerVerdict(reviewerOutput);
@@ -211,6 +271,24 @@ export class CodexCliExecutor implements Executor {
           lastFixerOutput = fixerOutput;
           events.push({ type: 'fixer', message: fixerOutput });
           log('Fixer output captured. Re-running reviewer...');
+
+          // Failure detection: fixer
+          {
+            const parsed = parseFailedReport(fixerOutput);
+            if (parsed.failed) {
+              hadFailure = true;
+              failureOutput = fixerOutput;
+              failureSource = 'fixer';
+              const aggregated = buildAggregatedOutput();
+              return {
+                ...(aggregated ?? { content: fixerOutput }),
+                success: false,
+                failureDetails: parsed.details
+                  ? { ...parsed.details, sourceAgent: 'fixer' }
+                  : { requirements: '', problems: parsed.summary || 'FAILED', sourceAgent: 'fixer' },
+              };
+            }
+          }
 
           // Re-run reviewer with updated context including fixer output
           const rerunReviewerContext = this.composeFixReviewContext(
@@ -272,7 +350,11 @@ export class CodexCliExecutor implements Executor {
         return;
       }
     } finally {
-      await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
+      if (!hadFailure) {
+        await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
+      } else {
+        warn('Skipping automatic task completion marking due to executor failure.');
+      }
     }
   }
 

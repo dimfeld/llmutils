@@ -26,6 +26,7 @@ import {
   getTesterPrompt,
   getReviewerPrompt,
 } from './claude_code/agent_prompts.ts';
+import { parseFailedReport } from './failure_detection.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -1052,6 +1053,9 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
         let splitter = createLineSplitter();
         let capturedOutputLines: string[] = [];
+        let lastAssistantRaw: string | undefined;
+        let failureSummary: string | undefined;
+        let failureRaw: string | undefined;
 
         log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
         const result = await spawnAndLogOutput(args, {
@@ -1091,6 +1095,13 @@ export class ClaudeCodeExecutor implements Executor {
                   capturedOutputLines = [result.rawMessage];
                 }
               }
+              if (result.type === 'assistant' && result.rawMessage) {
+                lastAssistantRaw = result.rawMessage;
+              }
+              if (result.failed && result.rawMessage) {
+                failureSummary = result.failedSummary || 'Agent reported FAILED';
+                failureRaw = result.rawMessage;
+              }
             }
 
             const formattedOutput =
@@ -1101,6 +1112,28 @@ export class ClaudeCodeExecutor implements Executor {
 
         if (result.exitCode !== 0) {
           throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
+        }
+
+        // Determine failure from stream if not already captured
+        if (!failureRaw && lastAssistantRaw) {
+          const parsed = parseFailedReport(lastAssistantRaw);
+          if (parsed.failed) {
+            failureRaw = lastAssistantRaw;
+            failureSummary = parsed.summary || 'Agent reported FAILED';
+          }
+        }
+
+        // If a failure was detected at any point, return structured failure regardless of capture mode
+        if (failureRaw) {
+          const parsed = parseFailedReport(failureRaw);
+          return {
+            content: failureRaw,
+            metadata: { phase: 'orchestrator' },
+            success: false,
+            failureDetails: parsed.failed && parsed.details
+              ? { ...parsed.details, sourceAgent: 'orchestrator' }
+              : { requirements: '', problems: failureSummary || 'FAILED', sourceAgent: 'orchestrator' },
+          };
         }
 
         // Return captured output if any capture mode was enabled, otherwise return void explicitly
