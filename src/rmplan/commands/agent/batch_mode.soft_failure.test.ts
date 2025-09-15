@@ -31,7 +31,12 @@ describe('executeBatchMode stops on structured executor failure', () => {
     // Mock plans and helpers used by batch_mode
     let readCount = 0;
     await moduleMocker.mock('../../plans.js', () => ({
-      readPlanFile: mock(async () => ({ id: 1, title: 'P', status: readCount++ === 0 ? 'pending' : 'in_progress', tasks: [ { title: 'T', steps: [{ prompt: 'p', done: false }] } ] })),
+      readPlanFile: mock(async () => ({
+        id: 1,
+        title: 'P',
+        status: readCount++ === 0 ? 'pending' : 'in_progress',
+        tasks: [{ title: 'T', steps: [{ prompt: 'p', done: false }] }],
+      })),
       writePlanFile: mock(async (_p: string, _data: any) => {}),
       setPlanStatus: mock(async () => {}),
     }));
@@ -137,4 +142,3 @@ describe('executeBatchMode stops on structured executor failure', () => {
     expect(lines.join('\n')).toContain('Possible solutions:');
   });
 });
-

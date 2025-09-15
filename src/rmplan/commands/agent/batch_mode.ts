@@ -137,9 +137,7 @@ export async function executeBatchMode(
           const end = Date.now();
           // Coerce executor output to normalized shape for predictable summaries
           const normalizedOutput =
-            typeof output === 'string'
-              ? { content: output }
-              : (output as any) ?? undefined;
+            typeof output === 'string' ? { content: output } : ((output as any) ?? undefined);
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',

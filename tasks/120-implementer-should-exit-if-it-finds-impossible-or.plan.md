@@ -15,7 +15,7 @@ docs: []
 planGeneratedAt: 2025-09-15T03:12:44.945Z
 promptsGeneratedAt: 2025-09-15T03:52:50.945Z
 createdAt: 2025-09-14T08:19:24.654Z
-updatedAt: 2025-09-15T05:00:50.671Z
+updatedAt: 2025-09-15T05:19:55.050Z
 tasks:
   - title: Create Standardized Failure Detection Template
     done: true
@@ -142,7 +142,7 @@ tasks:
       - src/rmplan/executors/claude_code/format.ts
     steps: []
   - title: Handle Orchestrator Subagent Failures
-    done: false
+    done: true
     description: >
       Update the orchestrator handling in
       `src/rmplan/executors/claude_code_orchestrator.ts` to detect when
@@ -210,7 +210,7 @@ tasks:
       - src/rmplan/commands/agent/agent.ts
     steps: []
   - title: Update Batch Mode Handler
-    done: false
+    done: true
     description: >
       Modify `src/rmplan/commands/agent/batch_mode.ts` to handle executor
       failures in batch execution. Implement strategy for partial failures when
@@ -224,7 +224,7 @@ tasks:
       - src/rmplan/commands/agent/batch_mode.ts
     steps: []
   - title: Enhance Summary Collection
-    done: false
+    done: true
     description: >
       Update the summary collector integration to capture and display failure
       details when executors return failure information, ensuring visibility in
@@ -299,6 +299,8 @@ tasks:
 changedFiles:
   - src/rmplan/commands/agent/agent.failure_handling.test.ts
   - src/rmplan/commands/agent/agent.ts
+  - src/rmplan/commands/agent/batch_mode.soft_failure.test.ts
+  - src/rmplan/commands/agent/batch_mode.ts
   - src/rmplan/executors/claude_code/agent_prompts.test.ts
   - src/rmplan/executors/claude_code/agent_prompts.ts
   - src/rmplan/executors/claude_code/format.ts
@@ -315,6 +317,7 @@ changedFiles:
   - src/rmplan/executors/types.ts
   - src/rmplan/prompt_builder.ts
   - src/rmplan/summary/collector.ts
+  - src/rmplan/summary/display.test.ts
   - src/rmplan/summary/display.ts
   - src/rmplan/summary/parsers.ts
   - src/rmplan/summary/types.ts
