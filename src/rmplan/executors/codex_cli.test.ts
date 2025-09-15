@@ -153,7 +153,10 @@ describe('CodexCliExecutor - failure detection across agents', () => {
 
     // Reviewer will return NEEDS_FIXES; analyzer says fixes needed
     await moduleMocker.mock('./codex_cli/review_analysis.ts', () => ({
-      analyzeReviewFeedback: mock(async () => ({ needs_fixes: true, fix_instructions: 'Please fix X' })),
+      analyzeReviewFeedback: mock(async () => ({
+        needs_fixes: true,
+        fix_instructions: 'Please fix X',
+      })),
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
