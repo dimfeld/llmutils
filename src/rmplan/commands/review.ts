@@ -336,7 +336,10 @@ export async function handleReviewCommand(
     });
 
     // Use the actual executor output for parsing
-    const rawOutput = executorOutput || reviewPrompt;
+    const rawOutput =
+      typeof executorOutput === 'string'
+        ? executorOutput
+        : (executorOutput?.content ?? reviewPrompt);
 
     // Create structured review result
     const reviewResult = createReviewResult(

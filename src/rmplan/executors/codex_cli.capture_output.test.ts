@@ -106,14 +106,16 @@ describe('CodexCliExecutor captureOutput', () => {
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const exec = new CodexCliExecutor({} as any, mockSharedOptions, mockConfig);
     const res = await exec.execute('CTX', planInfoWithCapture);
-    expect(typeof res).toBe('string');
-    const s = String(res);
-    expect(s).toContain('=== Codex Implementer ===');
-    expect(s).toContain('I did work');
-    expect(s).toContain('=== Codex Tester ===');
-    expect(s).toContain('Tests are great');
-    expect(s).toContain('=== Codex Reviewer ===');
-    expect(s).toContain('VERDICT: ACCEPTABLE');
+    expect(res && typeof res === 'object').toBeTrue();
+    const sections = (res as any).metadata?.sections ?? [];
+    expect(Array.isArray(sections)).toBeTrue();
+    const text = sections.map((s: any) => `${s.title}\n${s.body}`).join('\n');
+    expect(text).toContain('Codex Implementer');
+    expect(text).toContain('I did work');
+    expect(text).toContain('Codex Tester');
+    expect(text).toContain('Tests are great');
+    expect(text).toContain('Codex Reviewer');
+    expect(text).toContain('VERDICT: ACCEPTABLE');
   }, 20000);
 
   test('returns latest reviewer when max fix iterations reached', async () => {
@@ -187,12 +189,11 @@ describe('CodexCliExecutor captureOutput', () => {
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const exec = new CodexCliExecutor({} as any, mockSharedOptions, mockConfig);
     const res = await exec.execute('CTX', planInfoWithCapture);
-    expect(typeof res).toBe('string');
-    const s = String(res);
-    expect(s).toContain('=== Codex Implementer ===');
-    expect(s).toContain('=== Codex Tester ===');
-    expect(s).toContain('=== Codex Reviewer ===');
-    // Returns latest reviewer output string; content may vary by rerun formatting
-    expect(s).toContain('=== Codex Reviewer ===');
+    expect(res && typeof res === 'object').toBeTrue();
+    const sections = (res as any).metadata?.sections ?? [];
+    const titles = sections.map((s: any) => s.title).join(' | ');
+    expect(titles).toContain('Codex Implementer');
+    expect(titles).toContain('Codex Tester');
+    expect(titles).toContain('Codex Reviewer');
   }, 60000);
 });

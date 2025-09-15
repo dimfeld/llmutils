@@ -7,7 +7,6 @@ import { readPlanFile, setPlanStatus, writePlanFile } from '../../plans.js';
 import { getAllIncompleteTasks } from '../../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
-
 import type { SummaryCollector } from '../../summary/collector.js';
 
 export async function executeBatchMode(
@@ -121,24 +120,16 @@ export async function executeBatchMode(
         iteration += 1;
         if (summaryCollector) {
           const end = Date.now();
-          const { parseExecutorOutput, toNormalizedOutput } = await import(
-            '../../summary/parsers.js'
-          );
-          const parsed = parseExecutorOutput(executorName, output);
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
-            success: parsed.success,
-            errorMessage: parsed.success ? undefined : parsed.error,
-            output: toNormalizedOutput(parsed),
+            success: true,
+            output: output ?? undefined,
             startedAt: new Date(start).toISOString(),
             endedAt: new Date(end).toISOString(),
             durationMs: end - start,
             iteration,
           });
-          if (!parsed.success && parsed.error) {
-            summaryCollector.addError(parsed.error);
-          }
         }
       } catch (err) {
         error('Batch execution failed:', err);

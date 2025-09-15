@@ -40,6 +40,7 @@ import { executeBatchMode } from './batch_mode.js';
 import { markParentInProgress } from './parent_plans.js';
 import { executeStubPlan } from './stub_plan.js';
 import { SummaryCollector } from '../../summary/collector.js';
+import { writeOrDisplaySummary } from '../../summary/display.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -363,7 +364,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         if (summaryEnabled) {
           summaryCollector.recordExecutionEnd();
           await summaryCollector.trackFileChanges(currentBaseDir);
-          const { writeOrDisplaySummary } = await import('../../summary/display.js');
           await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
         }
         await closeLogFile();
@@ -439,7 +439,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       if (summaryEnabled) {
         summaryCollector.recordExecutionEnd();
         await summaryCollector.trackFileChanges(currentBaseDir);
-        const { writeOrDisplaySummary } = await import('../../summary/display.js');
         await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
       }
       await closeLogFile();
@@ -523,23 +522,15 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           });
           if (summaryEnabled) {
             const end = Date.now();
-            const { parseExecutorOutput, toNormalizedOutput } = await import(
-              '../../summary/parsers.js'
-            );
-            const parsed = parseExecutorOutput(executorName, output);
             summaryCollector.addStepResult({
               title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
-              success: parsed.success,
-              errorMessage: parsed.success ? undefined : parsed.error,
-              output: toNormalizedOutput(parsed),
+              output: output ?? undefined,
+              success: true,
               startedAt: new Date(start).toISOString(),
               endedAt: new Date(end).toISOString(),
               durationMs: end - start,
             });
-            if (!parsed.success && parsed.error) {
-              summaryCollector.addError(parsed.error);
-            }
           }
         } catch (err) {
           error('Task execution failed:', err);
@@ -714,23 +705,15 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         });
         if (summaryEnabled) {
           const end = Date.now();
-          const { parseExecutorOutput, toNormalizedOutput } = await import(
-            '../../summary/parsers.js'
-          );
-          const parsed = parseExecutorOutput(executorName, output);
           summaryCollector.addStepResult({
             title: `${stepIndexes}: ${pendingTaskInfo.task.title}`,
             executor: executorName,
-            success: parsed.success,
-            errorMessage: parsed.success ? undefined : parsed.error,
-            output: toNormalizedOutput(parsed),
+            success: true,
+            output: output ?? undefined,
             startedAt: new Date(start).toISOString(),
             endedAt: new Date(end).toISOString(),
             durationMs: end - start,
           });
-          if (!parsed.success && parsed.error) {
-            summaryCollector.addError(parsed.error);
-          }
         }
       } catch (err) {
         error('Execution step failed:', err);
@@ -803,7 +786,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     if (summaryEnabled) {
       summaryCollector.recordExecutionEnd();
       await summaryCollector.trackFileChanges(currentBaseDir);
-      const { writeOrDisplaySummary } = await import('../../summary/display.js');
       await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
     }
     await closeLogFile();

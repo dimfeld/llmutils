@@ -118,7 +118,7 @@ describe('rmplan agent integration (execution summaries)', () => {
     await moduleMocker.mock('../../executors/index.js', () => ({
       buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({
         filePathPrefix: '@/',
-        execute: mock(async () => 'This is the final orchestrator message.'),
+        execute: mock(async () => ({ content: 'This is the final orchestrator message.' })),
         prepareStepOptions: mock(() => ({})),
       })),
       defaultModelForExecutor: mock(() => 'mock-model'),
@@ -210,15 +210,15 @@ describe('rmplan agent integration (execution summaries)', () => {
     await moduleMocker.mock('../../executors/index.js', () => ({
       buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({
         filePathPrefix: '@/',
-        execute: mock(async () =>
-          [
+        execute: mock(async () => ({
+          content: [
             '=== Codex Implementer ===',
             'Implementation details here',
             '',
             '=== Codex Reviewer ===',
             'ACCEPTABLE',
-          ].join('\n')
-        ),
+          ].join('\n'),
+        })),
         prepareStepOptions: mock(() => ({})),
       })),
       defaultModelForExecutor: mock(() => 'mock-model'),
@@ -242,9 +242,9 @@ describe('rmplan agent integration (execution summaries)', () => {
     );
 
     const content2 = await fs.readFile(summaryFile2, 'utf8');
-    expect(content2).toContain('Implementer:');
+    expect(content2).toContain('Implementer');
     expect(content2).toContain('Implementation details here');
-    expect(content2).toContain('Reviewer:');
+    expect(content2).toContain('Reviewer');
     expect(content2).toContain('ACCEPTABLE');
   });
 
@@ -288,7 +288,7 @@ describe('rmplan agent integration (execution summaries)', () => {
     await moduleMocker.mock('../../executors/index.js', () => ({
       buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({
         filePathPrefix: '@/',
-        execute: mock(async () => 'Batch output here'),
+        execute: mock(async () => ({ content: 'Batch output here' })),
         prepareStepOptions: mock(() => ({})),
       })),
       defaultModelForExecutor: mock(() => 'mock-model'),

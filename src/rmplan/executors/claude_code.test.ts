@@ -5490,10 +5490,10 @@ More content
 
       const result = await executor.execute('test content', planInfo);
 
-      // Should return captured output when captureOutput is 'all'
+      // Should return structured output when captureOutput is 'all'
       expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
-      expect(result).toContain('Formatted message from:');
+      expect(typeof result).toBe('object');
+      expect((result as any).content).toContain('Formatted message from:');
     });
 
     test('captures only result output when captureOutput is "result"', async () => {
@@ -5564,12 +5564,12 @@ More content
 
       // Should return only the LAST result output when captureOutput is 'result'
       expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
+      expect(typeof result).toBe('object');
       // Only the last result message is captured
-      expect(result).toBe('Formatted: result - another result');
-      expect(result).not.toContain('Formatted: result - important result'); // First result is overwritten
-      expect(result).not.toContain('Formatted: output - regular output');
-      expect(result).not.toContain('Formatted: debug - debug info');
+      expect((result as any).content).toBe('Formatted: result - another result');
+      expect((result as any).content).not.toContain('Formatted: result - important result'); // First result is overwritten
+      expect((result as any).content).not.toContain('Formatted: output - regular output');
+      expect((result as any).content).not.toContain('Formatted: debug - debug info');
     });
 
     test('handles empty result capture gracefully', async () => {
@@ -5618,9 +5618,9 @@ More content
 
       const result = await executor.execute('test content', planInfo);
 
-      // Should return empty string when no results captured
+      // Should return empty content when no results captured
       expect(result).toBeDefined();
-      expect(result).toBe('');
+      expect((result as any).content).toBe('');
     });
 
     test('handles malformed JSON gracefully during result capture', async () => {
@@ -5689,7 +5689,7 @@ More content
 
       // Should handle malformed JSON gracefully and still capture valid results
       expect(result).toBeDefined();
-      expect(result).toContain('Formatted: result - valid result');
+      expect((result as any).content).toContain('Formatted: result - valid result');
     });
   });
 

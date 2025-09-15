@@ -1,5 +1,6 @@
 import { describe, test, expect, mock, afterEach, beforeEach } from 'bun:test';
 import { ModuleMocker } from '../../../testing.js';
+import { rmplanAgent } from './agent.js';
 
 describe('rmplanAgent serial captureOutput integration', () => {
   const moduleMocker = new ModuleMocker(import.meta);
@@ -133,8 +134,6 @@ describe('rmplanAgent serial captureOutput integration', () => {
       warn: (...args: any[]) => console.warn(...args),
     }));
 
-    const { rmplanAgent } = await import('./agent.js');
-
     await rmplanAgent('/tmp/plan.yml', { summary: true, log: false, serialTasks: true }, {});
 
     // Verify executor called with captureOutput: 'result'
@@ -147,106 +146,5 @@ describe('rmplanAgent serial captureOutput integration', () => {
     const stepArg = (summaryCollector.addStepResult as any).mock.calls[0][0];
     expect(stepArg.success).toBeTrue();
     expect(typeof stepArg.output === 'string' || !!stepArg.output).toBeTrue();
-  });
-
-  test('surfaces parser failure as a failed step with error message', async () => {
-    // Local circular object to force JSON.stringify failure in generic parser
-    const circ: any = {};
-    circ.self = circ;
-    const failingExecuteSpy = mock(async () => circ);
-
-    // Mock config loader
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        executors: { default: 'codex-cli' },
-      })),
-    }));
-
-    // Mock plans
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async (_p: string) => '/tmp/plan.yml'),
-      readPlanFile: mock(async () => ({
-        id: 1,
-        title: 'P',
-        tasks: [{ title: 'T1', steps: [{ prompt: 'p', done: false }] }],
-      })),
-      writePlanFile: mock(async (_p: string, _data: any) => {}),
-      findNextPlan: mock(async () => null),
-    }));
-
-    await moduleMocker.mock('../../plans/mark_done.js', () => ({
-      markTaskDone: mock(async () => ({ planComplete: false })),
-      markStepDone: mock(async () => ({ message: 'ok', planComplete: false })),
-    }));
-
-    let called = false;
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => {
-        if (called) return null;
-        called = true;
-        return {
-          type: 'step',
-          taskIndex: 0,
-          stepIndex: 0,
-          task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
-        };
-      }),
-    }));
-
-    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
-      prepareNextStep: mock(async () => ({
-        prompt: 'CONTEXT',
-        promptFilePath: undefined,
-        rmfilterArgs: undefined,
-        taskIndex: 0,
-        stepIndex: 0,
-        numStepsSelected: 1,
-      })),
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: failingExecuteSpy, filePathPrefix: '' })),
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: mock(() => undefined),
-    }));
-
-    await moduleMocker.mock('../../summary/collector.js', () => ({
-      SummaryCollector: class {
-        recordExecutionStart = summaryCollector.recordExecutionStart;
-        recordExecutionEnd = summaryCollector.recordExecutionEnd;
-        addStepResult = summaryCollector.addStepResult;
-        addError = summaryCollector.addError;
-        trackFileChanges = summaryCollector.trackFileChanges;
-        getExecutionSummary = summaryCollector.getExecutionSummary;
-        constructor(_init: any) {}
-      },
-    }));
-
-    await moduleMocker.mock('../../summary/display.js', () => ({
-      writeOrDisplaySummary: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => '/tmp/repo'),
-    }));
-
-    await moduleMocker.mock('../../../logging.js', () => ({
-      boldMarkdownHeaders: (s: string) => s,
-      openLogFile: mock(() => {}),
-      closeLogFile: mock(() => {}),
-      log: (...args: any[]) => console.log(...args),
-      error: (...args: any[]) => console.error(...args),
-      warn: (...args: any[]) => console.warn(...args),
-    }));
-
-    const { rmplanAgent } = await import('./agent.js');
-
-    await rmplanAgent('/tmp/plan.yml', { summary: true, log: false, serialTasks: true }, {});
-
-    expect(failingExecuteSpy).toHaveBeenCalledTimes(1);
-    expect(summaryCollector.addStepResult).toHaveBeenCalled();
-    const stepArg = (summaryCollector.addStepResult as any).mock.calls[0][0];
-    expect(stepArg.success).toBeFalse();
-    expect(String(stepArg.errorMessage || '')).not.toBe('');
   });
 });

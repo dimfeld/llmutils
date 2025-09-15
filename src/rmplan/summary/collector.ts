@@ -64,54 +64,32 @@ export class SummaryCollector {
 
   addStepResult(
     input: Omit<StepResult, 'output'> & {
-      output?: string | NormalizedExecutorOutput | null;
+      output?: NormalizedExecutorOutput | undefined;
       outputTruncateAt?: number;
     }
   ): void {
-    try {
-      let normalized: NormalizedExecutorOutput | undefined;
-      if (typeof input.output === 'string') {
-        const capped =
-          input.output.length > MAX_OUTPUT_LENGTH
-            ? input.output.slice(0, MAX_OUTPUT_LENGTH)
-            : input.output;
-        normalized = {
-          content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
-        };
-      } else if (input.output && typeof input.output === 'object') {
-        const rawContent =
-          typeof (input.output as any).content === 'string'
-            ? (input.output as any).content
-            : String((input.output as any).content ?? '');
-        const capped =
-          rawContent.length > MAX_OUTPUT_LENGTH
-            ? rawContent.slice(0, MAX_OUTPUT_LENGTH)
-            : rawContent;
-        normalized = {
-          content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
-          metadata: (input.output as any).metadata,
-        };
-      }
+    const rawContent = input.output?.content || '';
+    const capped =
+      rawContent.length > MAX_OUTPUT_LENGTH ? rawContent.slice(0, MAX_OUTPUT_LENGTH) : rawContent;
+    const normalized = {
+      content: truncate(capped, input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
+      metadata: input.output?.metadata,
+    };
 
-      const step: StepResult = {
-        title: input.title,
-        executor: input.executor,
-        executorType: (input as any).executorType,
-        executorPhase: (input as any).executorPhase,
-        success: input.success,
-        errorMessage: input.errorMessage,
-        startedAt: input.startedAt,
-        endedAt: input.endedAt,
-        durationMs: input.durationMs,
-        iteration: input.iteration,
-        output: normalized,
-      };
-      this.steps.push(step);
-    } catch (e) {
-      // Never throw from collector; just log and continue
-      debugLog('SummaryCollector.addStepResult error: %o', e);
-      this.errors.push(`Failed to add step result: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    const step: StepResult = {
+      title: input.title,
+      executor: input.executor,
+      executorType: (input as any).executorType,
+      executorPhase: (input as any).executorPhase,
+      success: input.success,
+      errorMessage: input.errorMessage,
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      durationMs: input.durationMs,
+      iteration: input.iteration,
+      output: normalized,
+    };
+    this.steps.push(step);
   }
 
   setBatchIterations(iterations: number): void {
@@ -126,7 +104,7 @@ export class SummaryCollector {
 
   addError(err: unknown): void {
     try {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? err.stack || err.message : String(err);
       this.errors.push(msg);
     } catch (e) {
       // ignore

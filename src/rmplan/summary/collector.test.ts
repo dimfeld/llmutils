@@ -43,7 +43,7 @@ describe('SummaryCollector', () => {
       title: 'Step 1',
       executor: 'claude_code',
       success: true,
-      output: 'final message',
+      output: { content: 'final message' },
       startedAt: new Date().toISOString(),
       endedAt: new Date().toISOString(),
       durationMs: 1500,
@@ -90,7 +90,7 @@ describe('SummaryCollector', () => {
       title: 'Big',
       executor: 'codx_cli',
       success: true,
-      output: large,
+      output: { content: large },
     });
 
     const summary = collector.getExecutionSummary();
@@ -133,7 +133,7 @@ describe('SummaryCollector', () => {
       title: 'Override',
       executor: 'codex_cli',
       success: true,
-      output: data,
+      output: { content: data },
       outputTruncateAt: 50,
     });
     const content = collector.getExecutionSummary().steps[0].output?.content ?? '';

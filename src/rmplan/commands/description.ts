@@ -506,8 +506,11 @@ export async function handleDescriptionCommand(
       executionMode: 'planning', // Use planning mode for description-only operation
     });
 
-    // Use the actual executor output
-    const generatedDescription = executorOutput || 'No description generated';
+    // Use the actual executor output (support structured or string)
+    const generatedDescription =
+      typeof executorOutput === 'string'
+        ? executorOutput
+        : (executorOutput?.content ?? 'No description generated');
 
     // Display the generated description
     log('\n' + chalk.bold('Generated PR Description:'));

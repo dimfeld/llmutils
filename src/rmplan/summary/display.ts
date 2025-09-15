@@ -55,6 +55,19 @@ function highlightCodeLine(line: string): string {
   return line.replace(kw, (m) => chalk.cyan(m));
 }
 
+function isSectionList(val: unknown): val is Array<{ title: string; body: string }> {
+  return (
+    Array.isArray(val) &&
+    val.every(
+      (s) =>
+        s &&
+        typeof s === 'object' &&
+        typeof (s as any).title === 'string' &&
+        typeof (s as any).body === 'string'
+    )
+  );
+}
+
 function summarizeSteps(steps: StepResult[]): string[] {
   const lines: string[] = [];
   for (const [idx, s] of steps.entries()) {
@@ -63,7 +76,21 @@ function summarizeSteps(steps: StepResult[]): string[] {
     if (s.errorMessage) {
       lines.push(chalk.red(`  Error: ${s.errorMessage}`));
     }
-    if (s.output?.content) {
+    const sections = s.output?.metadata && (s.output.metadata as any).sections;
+    if (isSectionList(sections)) {
+      for (const sec of sections) {
+        lines.push(`  ${chalk.bold(sec.title)}`);
+        const body = sec.body.trim();
+        if (body) {
+          const indented = body
+            .split('\n')
+            .map((l) => `    ${highlightCodeLine(l)}`)
+            .join('\n');
+          lines.push(indented);
+        }
+        lines.push('');
+      }
+    } else if (s.output?.content) {
       let excerpt = s.output.content.trim();
       if (excerpt.length > MAX_STEP_DISPLAY_CHARS) {
         excerpt =

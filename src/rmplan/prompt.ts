@@ -184,7 +184,7 @@ Dependencies & Constraints
 Implementation Notes
 - **Recommended Approach**
 - **Potential Gotchas**
-- **Conflicting, Unclear, or Impossible Requirements, if any**
+- **Conflicting, Unclear, or Impossible Requirements, if any** -- you can omit this section if there are none
 `;
 
 export function planPrompt(plan: string) {

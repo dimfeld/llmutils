@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 // TODO Need to update to latest AI SDK
 import { z as z3 } from 'zod/v3';
-import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types';
+import type { Executor, ExecutorCommonOptions, ExecutePlanInfo, ExecutorOutput } from './types';
 import type { RmplanConfig } from '../configSchema';
 import type { PrepareNextStepOptions } from '../plans/prepare_step';
 import { getGitRoot } from '../../common/git';
@@ -50,40 +50,39 @@ export class CodexCliExecutor implements Executor {
     } satisfies Partial<PrepareNextStepOptions>;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | string> {
+  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
     // Accumulate every piece of output across all steps/iterations
     type AgentType = 'implementer' | 'tester' | 'reviewer' | 'fixer';
     const events: Array<{ type: AgentType; message: string }> = [];
 
-    // Helper to optionally return a combined labeled output summary when captureOutput is enabled
-    const buildAggregatedOutput = () => {
+    // Helper to optionally return structured output when captureOutput is enabled
+    const buildAggregatedOutput = (): ExecutorOutput | undefined => {
       if (planInfo.captureOutput !== 'all' && planInfo.captureOutput !== 'result') return undefined;
-      const sections: string[] = [];
+      const sections: Array<{ title: string; body: string }> = [];
       const counters: Record<AgentType, number> = {
         implementer: 0,
         tester: 0,
         reviewer: 0,
         fixer: 0,
       };
-
       for (const e of events) {
         counters[e.type]++;
         const n = counters[e.type];
-        // Keep first Reviewer label backward-compatible; number subsequent repeats for all types
-        let label: string;
-        if (e.type === 'implementer') {
-          label = n === 1 ? '=== Codex Implementer ===' : `=== Codex Implementer #${n} ===`;
-        } else if (e.type === 'tester') {
-          label = n === 1 ? '=== Codex Tester ===' : `=== Codex Tester #${n} ===`;
-        } else if (e.type === 'reviewer') {
-          label = n === 1 ? '=== Codex Reviewer ===' : `=== Codex Reviewer #${n} ===`;
-        } else {
-          label = `=== Codex Fixer #${n} ===`;
-        }
-        sections.push(`${label}\n${e.message.trim()}\n`);
+        const prettyType =
+          e.type === 'implementer'
+            ? 'Codex Implementer'
+            : e.type === 'tester'
+              ? 'Codex Tester'
+              : e.type === 'reviewer'
+                ? 'Codex Reviewer'
+                : 'Codex Fixer';
+        const title = n === 1 ? prettyType : `${prettyType} #${n}`;
+        sections.push({ title, body: e.message.trim() });
       }
-
-      return sections.join('\n');
+      const lastReviewer = [...events].reverse().find((e) => e.type === 'reviewer');
+      const lastAny = events[events.length - 1];
+      const content = (lastReviewer?.message || lastAny?.message || '').trim();
+      return { content, metadata: { sections } };
     };
     // Analyze plan file to understand completed vs pending tasks
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
