@@ -98,6 +98,10 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
   // Merge tasks from children into main plan
   const mergedTasks = [...(mainPlan.tasks || [])];
   const mergedDetails: string[] = [];
+  // Progress notes: combine parent + children notes, preserving chronological order
+  const mergedProgressNotes: NonNullable<PlanSchema['progressNotes']> = [
+    ...((mainPlan.progressNotes as any) || []),
+  ];
 
   if (mainPlan.details) {
     mergedDetails.push(mainPlan.details);
@@ -118,12 +122,26 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
     if (child.tasks) {
       mergedTasks.push(...child.tasks);
     }
+
+    // Merge progress notes
+    if (child.progressNotes && child.progressNotes.length > 0) {
+      mergedProgressNotes.push(...child.progressNotes);
+    }
   }
 
   // Update the main plan
   mainPlan.tasks = mergedTasks;
   if (mergedDetails.length > 0) {
     mainPlan.details = mergedDetails.join('\n\n');
+  }
+  // Attach merged progress notes (sorted by timestamp ascending)
+  if (mergedProgressNotes.length > 0) {
+    mergedProgressNotes.sort((a, b) => {
+      const at = Date.parse(a.timestamp);
+      const bt = Date.parse(b.timestamp);
+      return at - bt;
+    });
+    mainPlan.progressNotes = mergedProgressNotes;
   }
   // If the main plan was marked as a container, clear it after merging
   if (mainPlan.container) {
