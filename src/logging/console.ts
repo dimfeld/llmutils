@@ -3,6 +3,10 @@ import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import { inspect } from 'node:util';
 
+function convert(arg: unknown): string {
+  return typeof arg === 'string' ? arg : inspect(arg);
+}
+
 /**
  * A LoggerAdapter implementation that logs to both the console and a file.
  * This replicates the behavior of the original logging functions in logging.ts.
@@ -14,7 +18,7 @@ export class ConsoleAdapter implements LoggerAdapter {
    */
   log(...args: any[]): void {
     console.log(...args);
-    writeToLogFile(args.map((arg) => inspect(arg)).join(' ') + '\n');
+    writeToLogFile(args.map((arg) => convert(arg)).join(' ') + '\n');
   }
 
   /**
@@ -23,7 +27,7 @@ export class ConsoleAdapter implements LoggerAdapter {
    */
   error(...args: any[]): void {
     console.error(...args);
-    writeToLogFile(args.map((arg) => inspect(arg)).join(' ') + '\n');
+    writeToLogFile(args.map((arg) => convert(arg)).join(' ') + '\n');
   }
 
   /**
@@ -32,7 +36,7 @@ export class ConsoleAdapter implements LoggerAdapter {
    */
   warn(...args: any[]): void {
     console.warn(...args);
-    writeToLogFile(args.map((arg) => inspect(arg)).join(' ') + '\n');
+    writeToLogFile(args.map((arg) => convert(arg)).join(' ') + '\n');
   }
 
   /**
