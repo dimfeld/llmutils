@@ -14,7 +14,7 @@ issue: []
 docs: []
 planGeneratedAt: 2025-09-15T08:23:05.434Z
 createdAt: 2025-09-15T03:02:03.721Z
-updatedAt: 2025-09-15T08:52:07.998Z
+updatedAt: 2025-09-15T09:23:26.268Z
 tasks:
   - title: Extend Plan Schema
     done: true
@@ -118,7 +118,7 @@ tasks:
       - Include example of adding progress notes
     steps: []
   - title: Write Integration Tests
-    done: false
+    done: true
     description: |
       Create integration tests that verify:
       - Progress notes flow from command to file to display
@@ -127,7 +127,7 @@ tasks:
       - Notes persist through plan updates
     steps: []
   - title: Test Plan Operations Compatibility
-    done: false
+    done: true
     description: |
       Ensure progress notes work with:
       - Plan splitting (notes stay with parent)
@@ -146,7 +146,7 @@ tasks:
       - Notes with multi-line text
     steps: []
   - title: Update Documentation
-    done: false
+    done: true
     description: |
       Update README and relevant documentation:
       - Add progress notes to feature list
@@ -155,17 +155,23 @@ tasks:
       - Include progress notes in workflow examples
     steps: []
 changedFiles:
+  - README.md
   - schema/rmplan-plan-schema.json
   - src/rmplan/commands/add-progress-note.test.ts
   - src/rmplan/commands/add-progress-note.ts
   - src/rmplan/commands/list.test.ts
   - src/rmplan/commands/list.ts
+  - src/rmplan/commands/merge.test.ts
+  - src/rmplan/commands/merge.ts
   - src/rmplan/commands/show.test.ts
   - src/rmplan/commands/show.ts
+  - src/rmplan/commands/split.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
   - src/rmplan/planSchema.test.ts
   - src/rmplan/planSchema.ts
+  - src/rmplan/progress_notes.edge_cases.test.ts
+  - src/rmplan/progress_notes.integration.test.ts
   - src/rmplan/prompt.ts
   - src/rmplan/prompt_builder.test.ts
   - src/rmplan/prompt_builder.ts
