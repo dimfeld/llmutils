@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { ModuleMocker } from '../../testing.js';
+import stripAnsi from 'strip-ansi';
 
 let handleListCommand: any;
 
@@ -78,7 +79,7 @@ describe('rmplan list shows progress notes counts', () => {
 
     const out = mockLog.mock.calls.flat().map(String).join('\n');
     const lines = out.split('\n');
-    const header = lines[0].split('\t');
+    const header = lines[0].split('\t').map(stripAnsi);
     expect(header).toContain('Notes');
 
     // Find the row for the plan with notes and assert count is shown as 3

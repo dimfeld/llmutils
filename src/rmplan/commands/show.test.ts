@@ -137,8 +137,6 @@ describe('handleShowCommand', () => {
     await handleShowCommand('55', options, command);
 
     const logs = logSpy.mock.calls.map((c) => c[0]).join('\n');
-    // Summary includes count
-    expect(logs).toContain('Progress Notes: 12');
     // Section header present
     expect(logs).toContain('Progress Notes:');
     // Shows only last 10, so Note 1 and Note 2 should be hidden

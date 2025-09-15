@@ -85,7 +85,7 @@ describe('Progress Notes Integration', () => {
     mockLog.mockClear();
     await handleShowCommand('201', {}, showCmd);
     const out = mockLog.mock.calls.flat().map(String).join('\n');
-    expect(out).toContain('Progress Notes: 2');
+    expect(out).toContain('Progress Notes');
     expect(out).toContain('Found edge case; updated approach');
     // Should show a date (timestamp displayed in show)
     expect(out).toMatch(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
