@@ -2,6 +2,25 @@ import type { AgentDefinition } from './agent_generator.ts';
 
 const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
 
+export const FAILED_PROTOCOL_INSTRUCTIONS = `
+## Failure Protocol (Conflicting/Impossible Requirements)
+
+If you encounter conflicting or impossible requirements that you cannot safely resolve, do NOT proceed.
+
+Instead, stop immediately and output a single line starting with:
+FAILED: <1-sentence summary>
+
+Follow that line with a detailed report containing:
+- Requirements you were trying to satisfy
+- Problems encountered (why this is conflicting or impossible)
+- Possible solutions or next steps the user could take
+
+Example:
+FAILED: Implementer cannot proceed due to mutually exclusive requirements for API shape
+Requirements:\n- Add endpoint /v1/items returning array of Item\n- Keep response structure identical to legacy /v0/items (object map)
+Problems:\n- New requirement mandates array shape; legacy requires object map; both cannot be true simultaneously
+Possible solutions:\n- Clarify expected response format;\n- Add versioned endpoint with transform;\n- Update client to accept array`;
+
 export function getImplementerPrompt(
   contextContent: string,
   customInstructions?: string,
@@ -66,7 +85,9 @@ You may receive a single task or multiple related tasks to implement together. W
 
 Remember: You are implementing functionality with tests, not writing documentation. Focus on clean, working code that follows project conventions.
 
-Do not mark anything in the plan file as done. This is your manager's responsibility`,
+Do not mark anything in the plan file as done. This is your manager's responsibility
+
+${FAILED_PROTOCOL_INSTRUCTIONS}`,
   };
 }
 
@@ -149,7 +170,9 @@ You may receive a single task or multiple related tasks to test. When testing mu
 - Update tests if the implementation has changed the expected behavior
 - Add new tests only where coverage is missing
 
-Remember: Your goal is to ensure all tests pass and that the code has comprehensive test coverage. Focus on making the test suite reliable and complete.`,
+Remember: Your goal is to ensure all tests pass and that the code has comprehensive test coverage. Focus on making the test suite reliable and complete.
+
+${FAILED_PROTOCOL_INSTRUCTIONS}`,
   };
 }
 
@@ -248,7 +271,9 @@ The plan file tasks may not be marked as done in the plan file, because they are
 
 ${issueAndVerdictFormat}
 
-DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.`,
+DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.
+
+${FAILED_PROTOCOL_INSTRUCTIONS}`,
   };
 }
 

@@ -53,6 +53,16 @@ export interface ExecutorOutput {
   steps?: Array<{ title: string; body: string }>;
   /** Optional structured metadata for rich summary formatting. */
   metadata?: Record<string, unknown>;
+  /** Optional success indicator; defaults to true when absent for backward compatibility. */
+  success?: boolean;
+  /** Optional structured failure details when success === false. */
+  failureDetails?: {
+    requirements: string;
+    problems: string;
+    solutions?: string;
+    /** Optional agent identifier/source of failure, e.g., implementer/tester/reviewer/fixer/orchestrator */
+    sourceAgent?: string;
+  };
 }
 
 export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = z.ZodType> {

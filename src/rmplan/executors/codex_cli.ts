@@ -15,6 +15,7 @@ import {
   getTesterPrompt,
   getReviewerPrompt,
   issueAndVerdictFormat,
+  FAILED_PROTOCOL_INSTRUCTIONS,
 } from './claude_code/agent_prompts.ts';
 import { readPlanFile } from '../plans.ts';
 import * as path from 'path';
@@ -655,7 +656,9 @@ Your job:
 3. Prefer small, safe changes; avoid broad refactors
 4. Run relevant tests and commands as needed
 
-When complete, summarize what you changed. If you could not address an issue, clearly explain why.`;
+When complete, summarize what you changed. If you could not address an issue, clearly explain why.
+
+${FAILED_PROTOCOL_INSTRUCTIONS}`;
   }
 
   /** Load repository-specific review guidance document if configured */

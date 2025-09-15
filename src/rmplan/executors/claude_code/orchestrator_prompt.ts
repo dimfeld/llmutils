@@ -159,6 +159,20 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - **If the user indicates certain reviewer feedback is incorrect or not important**, you MUST respect the user's judgment and proceed accordingly rather than insisting on addressing reviewer concerns that the user has dismissed.
 - **The user maintains ultimate control** over the development process and their decisions should be followed without question, even when they contradict the reviewer agent's analysis.`;
 
+  const failureProtocol =
+    `
+\n## Failure Protocol (Conflicting/Impossible Requirements)
+
+- Monitor all subagent outputs (implementer, tester, reviewer) for a line starting with "FAILED:".
+- If any subagent emits a FAILED line, you MUST stop orchestration immediately.
+- Output a concise failure message and propagate details:
+  - First line: ` +
+    'FAILED: ${agentName} reported a failure — <1-sentence summary>' +
+    `
+  - Then include the subagent's detailed report verbatim (requirements, problems, possible solutions).
+- Do NOT proceed to further phases or mark tasks done after a failure.
+- You may add brief additional context if necessary (e.g., which tasks were being processed).`;
+
   const batchModeGuidelines = options.batchMode
     ? `
 - Subagents will have access to the entire list of incomplete tasks from the plan file, so be sure to include which tasks to focus on in your subagent instructions.
@@ -173,7 +187,7 @@ To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'.
 `
     : '';
 
-  return baseGuidelines + batchModeGuidelines;
+  return baseGuidelines + failureProtocol + batchModeGuidelines;
 }
 
 /**
