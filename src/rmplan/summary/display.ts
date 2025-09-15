@@ -76,9 +76,16 @@ function summarizeSteps(steps: StepResult[]): string[] {
     if (s.errorMessage) {
       lines.push(chalk.red(`  Error: ${s.errorMessage}`));
     }
-    const sections = s.output?.metadata && (s.output.metadata as any).sections;
-    if (isSectionList(sections)) {
-      for (const sec of sections) {
+    // Prefer structured steps when provided
+    const structured = s.output?.steps;
+    const legacySections = s.output?.metadata && (s.output.metadata as any).sections;
+    const sectionsToRender = isSectionList(structured)
+      ? structured
+      : isSectionList(legacySections)
+        ? legacySections
+        : undefined;
+    if (sectionsToRender) {
+      for (const sec of sectionsToRender) {
         lines.push(`  ${chalk.bold(sec.title)}`);
         const body = sec.body.trim();
         if (body) {

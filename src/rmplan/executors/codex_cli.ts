@@ -58,7 +58,7 @@ export class CodexCliExecutor implements Executor {
     // Helper to optionally return structured output when captureOutput is enabled
     const buildAggregatedOutput = (): ExecutorOutput | undefined => {
       if (planInfo.captureOutput !== 'all' && planInfo.captureOutput !== 'result') return undefined;
-      const sections: Array<{ title: string; body: string }> = [];
+      const steps: Array<{ title: string; body: string }> = [];
       const counters: Record<AgentType, number> = {
         implementer: 0,
         tester: 0,
@@ -77,12 +77,13 @@ export class CodexCliExecutor implements Executor {
                 ? 'Codex Reviewer'
                 : 'Codex Fixer';
         const title = n === 1 ? prettyType : `${prettyType} #${n}`;
-        sections.push({ title, body: e.message.trim() });
+        steps.push({ title, body: e.message.trim() });
       }
       const lastReviewer = [...events].reverse().find((e) => e.type === 'reviewer');
       const lastAny = events[events.length - 1];
       const content = (lastReviewer?.message || lastAny?.message || '').trim();
-      return { content, metadata: { sections } };
+      // Provide structured steps preferred by summary; keep `content` as fallback.
+      return { content, steps };
     };
     // Analyze plan file to understand completed vs pending tasks
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);

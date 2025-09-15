@@ -46,6 +46,11 @@ export interface ExecutePlanInfo {
 export interface ExecutorOutput {
   /** Primary textual content to display (if any). */
   content: string;
+  /**
+   * Optional structured steps to display. When present, summary functionality
+   * should prefer rendering these over raw `content`.
+   */
+  steps?: Array<{ title: string; body: string }>;
   /** Optional structured metadata for rich summary formatting. */
   metadata?: Record<string, unknown>;
 }

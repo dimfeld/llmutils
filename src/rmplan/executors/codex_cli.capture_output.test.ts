@@ -107,7 +107,7 @@ describe('CodexCliExecutor captureOutput', () => {
     const exec = new CodexCliExecutor({} as any, mockSharedOptions, mockConfig);
     const res = await exec.execute('CTX', planInfoWithCapture);
     expect(res && typeof res === 'object').toBeTrue();
-    const sections = (res as any).metadata?.sections ?? [];
+    const sections = (res as any).steps ?? [];
     expect(Array.isArray(sections)).toBeTrue();
     const text = sections.map((s: any) => `${s.title}\n${s.body}`).join('\n');
     expect(text).toContain('Codex Implementer');
@@ -190,7 +190,7 @@ describe('CodexCliExecutor captureOutput', () => {
     const exec = new CodexCliExecutor({} as any, mockSharedOptions, mockConfig);
     const res = await exec.execute('CTX', planInfoWithCapture);
     expect(res && typeof res === 'object').toBeTrue();
-    const sections = (res as any).metadata?.sections ?? [];
+    const sections = (res as any).steps ?? [];
     const titles = sections.map((s: any) => s.title).join(' | ');
     expect(titles).toContain('Codex Implementer');
     expect(titles).toContain('Codex Tester');

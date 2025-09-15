@@ -12,6 +12,8 @@ export type SummaryExecutionMode = 'serial' | 'batch';
 export interface NormalizedExecutorOutput {
   /** The raw textual content to display (already sanitized/truncated). */
   content: string;
+  /** Optional structured steps; if present, preferred over `content`. */
+  steps?: Array<{ title: string; body: string }>;
   /** Optional metadata from the executor (agent names, phases, etc). */
   metadata?: Record<string, unknown>;
 }
