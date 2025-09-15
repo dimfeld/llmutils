@@ -70,4 +70,54 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     // Orchestrator is reported as source in Claude executor
     expect(out.failureDetails.sourceAgent).toBe('orchestrator');
   });
+
+  test('infers sourceAgent from FAILED summary when agent is specified', async () => {
+    // Mock git root
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    // Make spawn call succeed and invoke the provided formatter once
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    // Mock formatter to produce an assistant message with an agent-tagged FAILED summary
+    const failureRaw = `FAILED: Reviewer reported a failure — Blocked by policy\n\nRequirements:\n- A\nProblems:\n- B\nPossible solutions:\n- C`;
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((_line: string) => ({
+        type: 'assistant',
+        message: 'Model output...',
+        rawMessage: failureRaw,
+        failed: true,
+        failedSummary: 'Reviewer reported a failure — Blocked by policy',
+      })),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    const out = (await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'T',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    })) as any;
+
+    expect(out).toBeDefined();
+    expect(out.success).toBeFalse();
+    expect(out.failureDetails?.sourceAgent).toBe('reviewer');
+  });
 });

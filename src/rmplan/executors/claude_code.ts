@@ -1130,16 +1130,38 @@ export class ClaudeCodeExecutor implements Executor {
         // If a failure was detected at any point, return structured failure regardless of capture mode
         if (failureRaw) {
           const parsedAny = parseFailedReportAnywhere(failureRaw);
-          // Try to infer sub-agent identity from the FAILED summary line
+          // Try to infer sub-agent identity from the FAILED summary line first
           const failedLine = detectFailedLineAnywhere(failureRaw);
-          const sum = failedLine.summary || '';
-          const lower = sum.toLowerCase();
+          const sum = (failedLine.summary || '').trim();
           let sourceAgent: 'implementer' | 'tester' | 'reviewer' | 'fixer' | 'orchestrator' =
             'orchestrator';
-          if (lower.startsWith('implementer')) sourceAgent = 'implementer';
-          else if (lower.startsWith('tester')) sourceAgent = 'tester';
-          else if (lower.startsWith('reviewer')) sourceAgent = 'reviewer';
-          else if (lower.startsWith('fixer')) sourceAgent = 'fixer';
+          const m = sum.match(/^\s*(implementer|tester|reviewer|fixer)\b/i);
+          if (m) {
+            const a = m[1].toLowerCase();
+            if (a === 'implementer' || a === 'tester' || a === 'reviewer' || a === 'fixer') {
+              sourceAgent = a;
+            }
+          } else {
+            // Fallback: look for an explicit phrasing from the orchestrator prompt
+            const m2 = sum.match(
+              /^\s*(implementer|tester|reviewer|fixer)\s+reported\s+a\s+failure\b/i
+            );
+            if (m2) {
+              const a = m2[1].toLowerCase();
+              if (a === 'implementer' || a === 'tester' || a === 'reviewer' || a === 'fixer') {
+                sourceAgent = a;
+              }
+            } else {
+              // Last resort: scan the full text for a FAILED: <agent> prefix anywhere
+              const m3 = failureRaw.match(/FAILED:\s*(implementer|tester|reviewer|fixer)\b/i);
+              if (m3) {
+                const a = m3[1].toLowerCase();
+                if (a === 'implementer' || a === 'tester' || a === 'reviewer' || a === 'fixer') {
+                  sourceAgent = a;
+                }
+              }
+            }
+          }
 
           return {
             content: failureRaw,

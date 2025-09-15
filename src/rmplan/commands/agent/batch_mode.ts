@@ -1,5 +1,6 @@
 import { commitAll } from '../../../common/process.js';
 import { boldMarkdownHeaders, error, log } from '../../../logging.js';
+import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
 import { type RmplanConfig } from '../../configSchema.js';
 import type { Executor } from '../../executors/types.js';
@@ -118,27 +119,32 @@ export async function executeBatchMode(
           captureOutput: summaryCollector ? 'result' : 'none',
         });
         iteration += 1;
-        const ok = output ? output.success !== false : true;
+        const ok = output ? (output as any).success !== false : true;
         if (!ok) {
-          const fd = output?.failureDetails as any;
+          const fd = (output as any)?.failureDetails as any;
           const src = fd?.sourceAgent ? ` (${fd.sourceAgent})` : '';
-          error(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`);
-          if (fd?.requirements && String(fd.requirements).trim()) {
-            log(boldMarkdownHeaders('\nRequirements\n'));
-            log(String(fd.requirements).trim());
+          log(chalk.redBright(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`));
+          const req = typeof fd?.requirements === 'string' ? fd.requirements.trim() : '';
+          if (req) {
+            log(chalk.yellow('\nRequirements:\n') + req);
           }
-          if (fd?.solutions && String(fd.solutions).trim()) {
-            log(boldMarkdownHeaders('\nPossible solutions\n'));
-            log(String(fd.solutions).trim());
+          const sols = typeof fd?.solutions === 'string' ? fd.solutions.trim() : '';
+          if (sols) {
+            log(chalk.yellow('\nPossible solutions:\n') + sols);
           }
         }
         if (summaryCollector) {
           const end = Date.now();
+          // Coerce executor output to normalized shape for predictable summaries
+          const normalizedOutput =
+            typeof output === 'string'
+              ? { content: output }
+              : (output as any) ?? undefined;
           summaryCollector.addStepResult({
             title: `Batch Iteration ${iteration}`,
             executor: executorName ?? 'executor',
             success: ok,
-            output: output ?? undefined,
+            output: normalizedOutput,
             startedAt: new Date(start).toISOString(),
             endedAt: new Date(end).toISOString(),
             durationMs: end - start,
@@ -147,6 +153,10 @@ export async function executeBatchMode(
         }
         if (!ok) {
           hasError = true;
+          if (summaryCollector) {
+            await summaryCollector.trackFileChanges(baseDir);
+            summaryCollector.setBatchIterations(iteration);
+          }
           break;
         }
       } catch (err) {
