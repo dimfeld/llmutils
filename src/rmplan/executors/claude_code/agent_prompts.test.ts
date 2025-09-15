@@ -30,4 +30,3 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('Failure Protocol');
   });
 });
-

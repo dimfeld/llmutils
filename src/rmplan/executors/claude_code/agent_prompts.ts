@@ -17,9 +17,15 @@ Follow that line with a detailed report containing:
 
 Example:
 FAILED: Implementer cannot proceed due to mutually exclusive requirements for API shape
-Requirements:\n- Add endpoint /v1/items returning array of Item\n- Keep response structure identical to legacy /v0/items (object map)
-Problems:\n- New requirement mandates array shape; legacy requires object map; both cannot be true simultaneously
-Possible solutions:\n- Clarify expected response format;\n- Add versioned endpoint with transform;\n- Update client to accept array`;
+Requirements:
+- Add endpoint /v1/items returning array of Item
+- Keep response structure identical to legacy /v0/items (object map)
+Problems:
+- New requirement mandates array shape; legacy requires object map; both cannot be true simultaneously
+Possible solutions:
+- Clarify expected response format;
+- Add versioned endpoint with transform;
+- Update client to accept array`;
 
 export function getImplementerPrompt(
   contextContent: string,
@@ -76,6 +82,8 @@ You may receive a single task or multiple related tasks to implement together. W
 - Unexpected errors should generally be allowed to bubble up so that error reporting logic will handle them. Don't just catch them and log or return a default value unless it really makes sense for the function.
 - Add proper null/undefined checks where needed
 
+${FAILED_PROTOCOL_INSTRUCTIONS}
+
 ### Implementation Approach
 1. First understand the existing code structure and patterns
 2. Look at similar implementations in the codebase
@@ -85,9 +93,7 @@ You may receive a single task or multiple related tasks to implement together. W
 
 Remember: You are implementing functionality with tests, not writing documentation. Focus on clean, working code that follows project conventions.
 
-Do not mark anything in the plan file as done. This is your manager's responsibility
-
-${FAILED_PROTOCOL_INSTRUCTIONS}`,
+Do not mark anything in the plan file as done. This is your manager's responsibility`,
   };
 }
 
@@ -170,9 +176,14 @@ You may receive a single task or multiple related tasks to test. When testing mu
 - Update tests if the implementation has changed the expected behavior
 - Add new tests only where coverage is missing
 
+### Test Failure Handling
+If testing reveals conflicting or impossible requirements that cannot be safely resolved within scope, stop and follow this failure protocol instead of proceeding:
+
+${FAILED_PROTOCOL_INSTRUCTIONS}
+
 Remember: Your goal is to ensure all tests pass and that the code has comprehensive test coverage. Focus on making the test suite reliable and complete.
 
-${FAILED_PROTOCOL_INSTRUCTIONS}`,
+`,
   };
 }
 
@@ -271,9 +282,13 @@ The plan file tasks may not be marked as done in the plan file, because they are
 
 ${issueAndVerdictFormat}
 
-DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.
+### If a clear verdict is impossible due to conflicting or irreconcilable requirements
+Stop and follow this failure protocol instead of providing a verdict:
 
-${FAILED_PROTOCOL_INSTRUCTIONS}`,
+${FAILED_PROTOCOL_INSTRUCTIONS}
+
+DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.
+`,
   };
 }
 

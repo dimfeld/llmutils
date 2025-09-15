@@ -2,8 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { detectFailedLine, extractFailureDetails, parseFailedReport } from './failure_detection.ts';
 
 describe('failure_detection', () => {
-  it('detects simple FAILED line with summary', () => {
-    const out = 'Some logs here\nFAILED: Could not proceed due to conflicts\nMore';
+  it('detects FAILED only when the first non-empty line starts with FAILED:', () => {
+    const out = '  \nFAILED: Could not proceed due to conflicts\nMore';
     const det = detectFailedLine(out);
     expect(det.failed).toBeTrue();
     expect(det.summary).toBe('Could not proceed due to conflicts');
@@ -36,5 +36,12 @@ describe('failure_detection', () => {
     const report = `FAILED: Something went wrong\nWe could not do X because Y and Z.`;
     const details = extractFailureDetails(report)!;
     expect(details.problems).toContain('could not do X');
+  });
+
+  it('does not falsely detect typical pytest/Jest failure summaries', () => {
+    const pytest = `============================= test session starts =============================\nplatform linux -- Python 3.11\ncollected 10 items\n\ntests/test_api.py::test_a PASSED\ntests/test_api.py::test_b FAILED\n\n=========================== short test summary info ===========================\nFAILED tests/test_api.py::test_b - AssertionError: expected 1 == 2\n`;
+    const jest = `Test Suites: 1 failed, 3 passed, 4 total\nTests:       2 failed, 18 passed, 20 total\nSnapshots:   0 total\nTime:        3.123 s\nRan all test suites.\n`;
+    expect(detectFailedLine(pytest).failed).toBeFalse();
+    expect(detectFailedLine(jest).failed).toBeFalse();
   });
 });

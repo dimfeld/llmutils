@@ -159,16 +159,14 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - **If the user indicates certain reviewer feedback is incorrect or not important**, you MUST respect the user's judgment and proceed accordingly rather than insisting on addressing reviewer concerns that the user has dismissed.
 - **The user maintains ultimate control** over the development process and their decisions should be followed without question, even when they contradict the reviewer agent's analysis.`;
 
-  const failureProtocol =
-    `
+  const failureProtocol = `
 \n## Failure Protocol (Conflicting/Impossible Requirements)
 
 - Monitor all subagent outputs (implementer, tester, reviewer) for a line starting with "FAILED:".
 - If any subagent emits a FAILED line, you MUST stop orchestration immediately.
 - Output a concise failure message and propagate details:
-  - First line: ` +
-    'FAILED: ${agentName} reported a failure — <1-sentence summary>' +
-    `
+  - First line: FAILED: <agent> reported a failure — <1-sentence summary>
+    - Where <agent> is one of: implementer | tester | reviewer | fixer
   - Then include the subagent's detailed report verbatim (requirements, problems, possible solutions).
 - Do NOT proceed to further phases or mark tasks done after a failure.
 - You may add brief additional context if necessary (e.g., which tasks were being processed).`;
@@ -180,10 +178,11 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 
 ## Marking Tasks Done
 
-You must update the plan file to mark completed tasks as done before stopping.
+Only perform the following if no subagent failure occurred during this run.
+If any agent emitted a line beginning with 'FAILED:', do not run any of the following commands — stop immediately.
 
-When updating tasks, use the Bash command 'rmplan set-task-done ${planId} --title "<taskTitle>"'.
-To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'. To set multiple tasks done, just run the command multiple times.
+When updating tasks after successful implementation, testing, and review, use the Bash command 'rmplan set-task-done ${planId} --title "<taskTitle>"'.
+To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'. To set multiple tasks done, run the command multiple times for each task.
 `
     : '';
 

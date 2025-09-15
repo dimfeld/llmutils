@@ -13,11 +13,19 @@ export interface FailureDetails {
   solutions?: string;
 }
 
-const FAILED_PREFIX = /^\s*FAILED:\s*(.*)$/im;
+// Exact, case-sensitive FAILED prefix. Detection is only valid when it appears
+// as the first non-empty line of the assistant's final message.
+const FAILED_PREFIX_FIRST_LINE = /^\s*FAILED:\s*(.*)$/;
 
 /** Returns true and the 1-line summary if content contains a FAILED line. */
 export function detectFailedLine(content: string): FailureDetection {
-  const m = content.match(FAILED_PREFIX);
+  const text = content.replace(/\r\n?/g, '\n');
+  const lines = text.split('\n');
+  // Find the first non-empty line
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  if (i >= lines.length) return { failed: false };
+  const m = lines[i].match(FAILED_PREFIX_FIRST_LINE);
   if (!m) return { failed: false };
   const summary = (m[1] || '').trim();
   return { failed: true, summary };
@@ -75,9 +83,13 @@ export function extractFailureDetails(content: string): FailureDetails | undefin
   if (indices.problems != null) probs = sliceSection(indices.problems);
   if (indices.solutions != null) sols = sliceSection(indices.solutions);
 
-  // Fallback heuristics when headings are missing: use text after FAILED line
+  // Fallback heuristics when headings are missing: use text after FAILED line (first non-empty line only)
   if (!req || !probs) {
-    const failedLineIdx = lines.findIndex((l) => FAILED_PREFIX.test(l));
+    // Find first non-empty line
+    let idx = 0;
+    while (idx < lines.length && lines[idx].trim() === '') idx++;
+    const failedLineIdx =
+      idx < lines.length && FAILED_PREFIX_FIRST_LINE.test(lines[idx]) ? idx : -1;
     if (failedLineIdx >= 0) {
       const after = lines
         .slice(failedLineIdx + 1)

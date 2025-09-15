@@ -9,4 +9,3 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Monitor all subagent outputs');
   });
 });
-

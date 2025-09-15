@@ -14,7 +14,6 @@ import {
   getImplementerPrompt,
   getTesterPrompt,
   getReviewerPrompt,
-  issueAndVerdictFormat,
   FAILED_PROTOCOL_INSTRUCTIONS,
 } from './claude_code/agent_prompts.ts';
 import { readPlanFile } from '../plans.ts';
