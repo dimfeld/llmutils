@@ -270,6 +270,33 @@ describe('prompt_builder', () => {
       expect(result).toContain('@/task/file2.ts');
     });
 
+    test('includes progress notes without timestamps', async () => {
+      const planData: PlanSchema = {
+        title: 'Plan with Notes',
+        goal: 'Plan Goal',
+        details: 'Plan Details',
+        tasks: [],
+        progressNotes: [
+          { timestamp: '2024-01-01T00:00:00.000Z', text: 'Finished initial scaffolding' },
+          { timestamp: '2024-01-02T00:00:00.000Z', text: 'Encountered edge case; updated schema' },
+        ],
+      } as any;
+
+      const result = await buildExecutionPromptWithoutSteps({
+        executor: mockExecutor,
+        planData,
+        planFilePath: path.join(tempDir, 'test-plan.yml'),
+        baseDir: tempDir,
+        config: mockConfig,
+      });
+
+      expect(result).toContain('## Progress Notes');
+      expect(result).toContain('- Finished initial scaffolding');
+      expect(result).toContain('- Encountered edge case; updated schema');
+      // Timestamps should not appear in prompt
+      expect(result).not.toContain('2024-01-01T00:00:00.000Z');
+    });
+
     test('builds prompt with project context', async () => {
       const planData: PlanSchema = {
         title: 'Phase Plan',

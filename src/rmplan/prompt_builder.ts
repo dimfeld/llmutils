@@ -178,6 +178,12 @@ export async function buildExecutionPromptWithoutSteps(
     promptParts.push(planContext);
   }
 
+  // Add progress notes (if any)
+  const notesSection = buildProgressNotesSection(planData);
+  if (notesSection) {
+    promptParts.push(notesSection);
+  }
+
   // Add task details if provided
   if (task) {
     const taskSection = buildTaskSection(task);
@@ -287,4 +293,34 @@ Before marking the task as done, verify:
 - [ ] Changes are focused and don't include modifications to unrelated parts of the code
 
 Remember: Quality is more important than speed. Take time to understand the codebase and verify your changes work correctly within the existing system.`;
+}
+
+/**
+ * Build a progress notes section for agent prompts.
+ * Notes are included without timestamps to reduce noise in prompts.
+ */
+export function buildProgressNotesSection(planData: PlanSchema): string {
+  const notes = planData.progressNotes || [];
+  if (!notes.length) return '';
+
+  const MAX_NOTES = 10;
+  const startIndex = Math.max(0, notes.length - MAX_NOTES);
+  const latest = notes.slice(startIndex);
+
+  const lines: string[] = ['## Progress Notes', ''];
+  for (const n of latest) {
+    // Exclude timestamps per acceptance criteria; include text only
+    const text = (n.text || '').trim();
+    if (text.length) {
+      // Preserve single-line bullets; collapse newlines to spaces to keep prompt compact
+      const singleLine = text.replace(/\s+/g, ' ').trim();
+      lines.push(`- ${singleLine}`);
+    }
+  }
+  const hiddenCount = notes.length - latest.length;
+  if (hiddenCount > 0) {
+    lines.push(`\n… and ${hiddenCount} more earlier note(s)`);
+  }
+
+  return lines.join('\n');
 }

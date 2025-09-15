@@ -164,6 +164,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     chalk.bold('Depends On'),
   ];
 
+  const showNotesColumn = planArray.some((p) => (p.progressNotes?.length || 0) > 0);
+  if (showNotesColumn) {
+    headers.splice(6, 0, chalk.bold('Notes'));
+  }
+
   if (options.files) {
     headers.push(chalk.bold('File'));
   }
@@ -264,6 +269,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       dependenciesDisplay,
     ];
 
+    if (showNotesColumn) {
+      const n = plan.progressNotes?.length || 0;
+      row.splice(6, 0, n > 0 ? String(n) : '-');
+    }
+
     if (options.files) {
       row.push(chalk.gray(path.relative(searchDir, plan.filename)));
     }
@@ -281,10 +291,10 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   // Configure table options with dynamic column widths
   const terminalWidth = process.stdout.columns || 120; // fallback to 120 if not available
 
-  // Fixed column widths: ID(5), Status(12), Priority(10), Tasks(7), Steps(7), Depends(15)
-  const fixedColumnsWidth = 5 + 12 + 10 + 7 + 7 + 15;
+  // Fixed column widths: ID(5), Status(12), Priority(10), Tasks(7), Steps(7), [Notes(7)], Depends(15)
+  const fixedColumnsWidth = 5 + 12 + 10 + 7 + 7 + (showNotesColumn ? 7 : 0) + 15;
   const fileColumnWidth = options.files ? 20 : 0;
-  const columnCount = options.files ? 8 : 7;
+  const columnCount = options.files ? (showNotesColumn ? 9 : 8) : showNotesColumn ? 8 : 7;
   const borderPadding = columnCount * 3 + 1; // 3 chars per column separator + 1 for end
 
   // Calculate available width for the title column
@@ -300,7 +310,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   const tableConfig: any = {
     columns: {
       1: { width: titleWidth, wrapWord: true },
-      6: { width: dependsWidth, wrapWord: true },
+      [showNotesColumn ? 7 : 6]: { width: dependsWidth, wrapWord: true },
     },
     border: {
       topBody: '─',
@@ -323,7 +333,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   // Add file column configuration if showing files
   if (options.files) {
-    tableConfig.columns[7] = { width: fileWidth, wrapWord: true };
+    tableConfig.columns[showNotesColumn ? 8 : 7] = { width: fileWidth, wrapWord: true };
   }
 
   const output = table(tableData, tableConfig);

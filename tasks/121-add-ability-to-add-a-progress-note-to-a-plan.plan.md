@@ -6,14 +6,15 @@ goal: Enable agents to add timestamped progress notes to plans during execution,
   and important discoveries that persist across plan updates and appear in agent
   prompts.
 id: 121
-status: pending
+generatedBy: agent
+status: in_progress
 priority: medium
 dependencies: []
 issue: []
 docs: []
 planGeneratedAt: 2025-09-15T08:23:05.434Z
 createdAt: 2025-09-15T03:02:03.721Z
-updatedAt: 2025-09-15T08:23:05.435Z
+updatedAt: 2025-09-15T08:27:45.809Z
 tasks:
   - title: Extend Plan Schema
     done: false

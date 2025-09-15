@@ -417,6 +417,14 @@ program
   });
 
 program
+  .command('add-progress-note <planFile> <note>')
+  .description('Add a progress note to a plan')
+  .action(async (planFile, note, command) => {
+    const { handleAddProgressNoteCommand } = await import('./commands/add-progress-note.js');
+    await handleAddProgressNoteCommand(planFile, note, command).catch(handleCommandError);
+  });
+
+program
   .command('edit <planArg>')
   .description('Open a plan file in your editor. Can be a file path or plan ID.')
   .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')
