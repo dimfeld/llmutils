@@ -124,10 +124,10 @@ Line 3: YAML-ish : & % [ ] { } < >`;
     expect(prompt).toContain('backticks ` code Line 2: emoji');
   });
 
-  test('prompt shows last 10 notes and summary for hidden ones', async () => {
+  test('prompt shows last 50 notes and summary for hidden ones', async () => {
     const plan: PlanSchema = {
       id: 303,
-      title: 'Edge: >10 Notes',
+      title: 'Edge: >50 Notes',
       goal: 'Test prompt truncation',
       details: 'Details',
       tasks: [],
@@ -137,13 +137,13 @@ Line 3: YAML-ish : & % [ ] { } < >`;
 
     // Add 12 notes
     const showCmd = { parent: { opts: () => ({ config: configPath }) } } as any;
-    for (let i = 1; i <= 12; i++) {
+    for (let i = 1; i <= 52; i++) {
       // eslint-disable-next-line no-await-in-loop
       await handleAddProgressNoteCommand('303', `Note ${i}`, showCmd);
     }
 
     const updated = await readPlanFile(planFile);
-    expect(updated.progressNotes?.length).toBe(12);
+    expect(updated.progressNotes?.length).toBe(52);
 
     const prompt = await buildExecutionPromptWithoutSteps({
       executor: { execute: async () => {} },
@@ -156,7 +156,7 @@ Line 3: YAML-ish : & % [ ] { } < >`;
     // Should include notes 3..12 (last 10)
     expect(prompt).not.toMatch(/^\- Note 1$/m);
     expect(prompt).not.toMatch(/^\- Note 2$/m);
-    for (let i = 3; i <= 12; i++) {
+    for (let i = 3; i <= 52; i++) {
       expect(prompt).toMatch(new RegExp(`^\\- Note ${i}$`, 'm'));
     }
     expect(prompt).toContain('... and 2 more earlier note(s)');
@@ -165,9 +165,9 @@ Line 3: YAML-ish : & % [ ] { } < >`;
     mockLog.mockClear();
     await handleShowCommand('303', {}, showCmd);
     const out = mockLog.mock.calls.flat().map(String).join('\n');
-    expect(out).toMatch(/^\s*•\s.*Note 12/m);
+    expect(out).toMatch(/^\s*•\s.*Note 52/m);
     expect(out).not.toMatch(/^\s*•\s.*Note 1$/m);
-    expect(out).toContain('and 2 more earlier note(s)');
+    expect(out).toContain('and 42 more earlier note(s)');
   });
 
   test('prompt truncates very long single note lines', async () => {

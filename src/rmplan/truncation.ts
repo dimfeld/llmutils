@@ -6,7 +6,7 @@
 export const ELLIPSIS_ASCII = '...';
 
 /** Number of progress notes to include in prompts by default */
-export const MAX_PROMPT_NOTES = 10;
+export const MAX_PROMPT_NOTES = 50;
 
 /** Maximum characters per note when shown in compact views */
 export const MAX_NOTE_CHARS = 160;

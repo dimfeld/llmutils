@@ -297,8 +297,8 @@ describe('prompt_builder', () => {
       expect(result).not.toContain('2024-01-01T00:00:00.000Z');
     });
 
-    test('progress notes are truncated to last 10 with summary line', async () => {
-      const progressNotes = Array.from({ length: 12 }).map((_, i) => ({
+    test('progress notes are truncated to last 50 with summary line', async () => {
+      const progressNotes = Array.from({ length: 52 }).map((_, i) => ({
         timestamp: new Date(2024, 0, i + 1).toISOString(),
         text: `Note #${i + 1} content`,
       }));
@@ -323,7 +323,7 @@ describe('prompt_builder', () => {
       expect(result).not.toContain('Note #1 content');
       expect(result).not.toContain('Note #2 content');
       expect(result).toContain('Note #3 content');
-      expect(result).toContain('Note #12 content');
+      expect(result).toContain('Note #52 content');
       // Summary line (standardized ASCII)
       expect(result).toContain('... and 2 more earlier note(s)');
       // Timestamps are not included in prompts
