@@ -297,6 +297,39 @@ describe('prompt_builder', () => {
       expect(result).not.toContain('2024-01-01T00:00:00.000Z');
     });
 
+    test('progress notes are truncated to last 10 with summary line', async () => {
+      const progressNotes = Array.from({ length: 12 }).map((_, i) => ({
+        timestamp: new Date(2024, 0, i + 1).toISOString(),
+        text: `Note #${i + 1} content`,
+      }));
+
+      const planData: PlanSchema = {
+        title: 'Plan with many notes',
+        goal: 'Goal',
+        details: 'Details',
+        tasks: [],
+        progressNotes,
+      } as any;
+
+      const result = await buildExecutionPromptWithoutSteps({
+        executor: mockExecutor,
+        planData,
+        planFilePath: path.join(tempDir, 'test-plan.yml'),
+        baseDir: tempDir,
+        config: mockConfig,
+      });
+
+      // Oldest two should be truncated
+      expect(result).not.toContain('Note #1 content');
+      expect(result).not.toContain('Note #2 content');
+      expect(result).toContain('Note #3 content');
+      expect(result).toContain('Note #12 content');
+      // Summary line
+      expect(result).toContain('… and 2 more earlier note(s)');
+      // Timestamps are not included in prompts
+      expect(result).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+    });
+
     test('builds prompt with project context', async () => {
       const planData: PlanSchema = {
         title: 'Phase Plan',

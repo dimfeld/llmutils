@@ -109,6 +109,90 @@ describe('handleShowCommand', () => {
     expect(allOutput).toContain('Test goal');
   });
 
+  test('displays progress notes count and formatted list (default)', async () => {
+    const notes = [] as Array<{ timestamp: string; text: string }>;
+    // Create 12 notes to exercise truncation to last 10
+    for (let i = 1; i <= 12; i++) {
+      notes.push({
+        timestamp: new Date(2024, 0, i, 12, 0, 0).toISOString(),
+        text: i === 12 ? 'A multi-line\nnote with details' : `Note ${i} text goes here`,
+      });
+    }
+
+    const plan = {
+      id: '55',
+      title: 'Notes Plan',
+      goal: 'Test notes',
+      details: 'Details',
+      status: 'pending',
+      tasks: [],
+      progressNotes: notes,
+    } as any;
+
+    await fs.writeFile(path.join(tasksDir, '55.yml'), yaml.stringify(plan));
+
+    const options = {};
+    const command = { parent: { opts: () => ({}) } } as any;
+
+    await handleShowCommand('55', options, command);
+
+    const logs = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    // Summary includes count
+    expect(logs).toContain('Progress Notes: 12');
+    // Section header present
+    expect(logs).toContain('Progress Notes:');
+    // Shows only last 10, so Note 1 and Note 2 should be hidden
+    expect(logs).not.toContain('Note 1 text goes here');
+    expect(logs).not.toContain('Note 2 text goes here');
+    // Note 3..12 should appear. We check a few
+    expect(logs).toContain('Note 3 text goes here');
+    // Latest note appears, collapsed to single line
+    expect(logs).toContain('A multi-line note with details');
+    // Default view flattens whitespace to single line
+    expect(logs).toContain('A multi-line note with details');
+    // Hidden count displayed
+    expect(logs).toContain('… and 2 more earlier note(s)');
+    // Timestamps are shown in show output (they are omitted only in prompts)
+    expect(logs).toMatch(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
+  });
+
+  test('displays full progress notes with --full preserving line breaks', async () => {
+    const notes = [
+      { timestamp: new Date('2024-01-01T00:00:00.000Z').toISOString(), text: 'First line' },
+      {
+        timestamp: new Date('2024-01-02T00:00:00.000Z').toISOString(),
+        text: 'Line A\nLine B\nLine C',
+      },
+    ];
+
+    const plan = {
+      id: '56',
+      title: 'Notes Full Plan',
+      goal: 'Test notes full',
+      details: 'Details',
+      status: 'pending',
+      tasks: [],
+      progressNotes: notes,
+    } as any;
+
+    await fs.writeFile(path.join(tasksDir, '56.yml'), yaml.stringify(plan));
+
+    const options = { full: true } as any;
+    const command = { parent: { opts: () => ({}) } } as any;
+
+    await handleShowCommand('56', options, command);
+
+    const logs = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    // Both notes visible, no truncation message
+    expect(logs).toContain('First line');
+    expect(logs).toContain('Line A');
+    expect(logs).toContain('Line B');
+    expect(logs).toContain('Line C');
+    expect(logs).not.toContain('more earlier note(s)');
+    // Indentation marker (four spaces) should appear before continued lines
+    expect(logs).toContain('\n    Line B');
+  });
+
   test('shows error when plan file not found', async () => {
     const options = {};
     const command = {
